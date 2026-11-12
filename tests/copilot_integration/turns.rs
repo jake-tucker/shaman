@@ -11,7 +11,7 @@ use crate::copilot_integration::support::{
     titling_turned_off,
 };
 use serde_json::Value;
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, AgentSelection, Cost, CostBasis,
         CreateSessionRequest, InitialPrompt, MessageStatus, ModelId, ModelOptionChoiceId,
@@ -212,7 +212,7 @@ async fn auto_snapshots(
                 model: ModelId::new("auto"),
                 options: Vec::new(),
             }),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -450,7 +450,7 @@ async fn assert_live_models(timeline: &str, channel: &'static str, tool_gate: bo
                 model: ModelId::new("auto"),
                 options: Vec::new(),
             }),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -567,7 +567,7 @@ async fn copilot_auto_records_each_reported_model_call_and_restores_it() {
         .await
         .expect("spawn server");
         let client = crate::copilot_integration::support::connect_in(
-            suru::managed_client::ManagedClientConfig::new(state.path(), "copilot-auto-calls")
+            shaman::managed_client::ManagedClientConfig::new(state.path(), "copilot-auto-calls")
                 .expect("configure client")
                 .with_data_dir(data.path()),
         )
@@ -586,7 +586,7 @@ async fn copilot_auto_records_each_reported_model_call_and_restores_it() {
                 model: ModelId::new("auto"),
                 options: Vec::new(),
             }),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -666,7 +666,7 @@ async fn copilot_per_call_usage_is_bracketed_into_turns_with_reported_catalog_co
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -780,7 +780,7 @@ async fn copilot_cost_is_absent_when_an_applicable_cache_price_is_not_published(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -826,7 +826,7 @@ async fn a_prompt_streams_a_copilot_message_into_the_transcript_and_settles_the_
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -869,20 +869,20 @@ async fn a_prompt_streams_a_copilot_message_into_the_transcript_and_settles_the_
         parameters["sessionId"]
             .as_str()
             .is_some_and(|id| !id.is_empty()),
-        "Suru generates the Copilot Session identifier before creation: {parameters}"
+        "Shaman generates the Copilot Session identifier before creation: {parameters}"
     );
     assert_eq!(parameters["streaming"], Value::Bool(true));
     assert_eq!(
         parameters["requestPermission"],
         Value::Bool(true),
-        "Suru installs the permission handler before opening the native Session"
+        "Shaman installs the permission handler before opening the native Session"
     );
     assert_eq!(
         parameters["workingDirectory"].as_str(),
-        suru::paths::canonical(workspace.path())
+        shaman::paths::canonical(workspace.path())
             .expect("canonicalize Workspace")
             .to_str(),
-        "the Copilot Session works in the Suru Session's Workspace"
+        "the Copilot Session works in the Shaman Session's Workspace"
     );
     assert_eq!(
         copilot
@@ -926,7 +926,7 @@ async fn a_turn_selected_under_another_model_switches_copilot_onto_it_first() {
             session_id: None,
             preparation_id: None,
             agent_selection: Some(selection("claude-fixture", "low", "long_context")),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1004,7 +1004,7 @@ async fn a_switch_naming_a_reasoning_effort_is_made_only_after_the_sessions_mode
             session_id: None,
             preparation_id: None,
             agent_selection: Some(selection("claude-fixture", "low", "default")),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1084,7 +1084,7 @@ async fn a_session_whose_cli_reports_no_active_model_runs_under_the_selected_one
             session_id: None,
             preparation_id: None,
             agent_selection: Some(selection("claude-fixture", "low", "long_context")),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1138,7 +1138,7 @@ async fn a_modelless_session_with_no_chosen_selection_runs_under_the_catalog_def
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1197,7 +1197,7 @@ async fn a_copilot_error_settles_the_turn_as_failed_with_a_concise_reason() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1266,7 +1266,7 @@ async fn a_harness_crash_mid_turn_loses_the_session_and_the_next_prompt_resumes_
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1377,7 +1377,7 @@ async fn a_prompt_queued_behind_a_failed_turn_runs_rather_than_settling_on_its_i
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

@@ -67,7 +67,7 @@ const ALLOWED_TRANSPORTS: &str = "file:git:http:https:ssh";
 
 /// The marker within a staging directory, naming the Server run whose
 /// Clone made it and locked while that Clone lives.
-const MARKER: &str = "suru-clone";
+const MARKER: &str = "shaman-clone";
 
 /// Where within its staging directory Git makes a clone.
 const CLONED: &str = "clone";
@@ -312,16 +312,16 @@ fn random_suffix() -> String {
 
 /// The hidden name a Clone of `name` is made under, told apart by `suffix`.
 fn staging_name(name: &str, suffix: &str) -> String {
-    format!(".{name}.suru-clone-{suffix}")
+    format!(".{name}.shaman-clone-{suffix}")
 }
 
 /// Whether `name` is one a Clone names its staging by: `.`, a name, and
-/// `.suru-clone-` with eight lowercase hex digits.
+/// `.shaman-clone-` with eight lowercase hex digits.
 fn is_staging_name(name: &str) -> bool {
     let Some(rest) = name.strip_prefix('.') else {
         return false;
     };
-    let Some((named, suffix)) = rest.rsplit_once(".suru-clone-") else {
+    let Some((named, suffix)) = rest.rsplit_once(".shaman-clone-") else {
         return false;
     };
     !named.is_empty()
@@ -1234,10 +1234,10 @@ mod tests {
             .arg("-C")
             .arg(directory)
             .args(args)
-            .env("GIT_AUTHOR_NAME", "Suru Test")
-            .env("GIT_AUTHOR_EMAIL", "suru@example.invalid")
-            .env("GIT_COMMITTER_NAME", "Suru Test")
-            .env("GIT_COMMITTER_EMAIL", "suru@example.invalid")
+            .env("GIT_AUTHOR_NAME", "Shaman Test")
+            .env("GIT_AUTHOR_EMAIL", "shaman@example.invalid")
+            .env("GIT_COMMITTER_NAME", "Shaman Test")
+            .env("GIT_COMMITTER_EMAIL", "shaman@example.invalid")
             .output()
             .unwrap();
         assert!(
@@ -1357,7 +1357,7 @@ mod tests {
             .filter(|path| {
                 path.file_name()
                     .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.contains(".suru-clone-"))
+                    .is_some_and(|name| name.contains(".shaman-clone-"))
             })
             .collect()
     }
@@ -1487,7 +1487,7 @@ mod tests {
     fn neither_the_hidden_name_nor_the_logged_arguments_carry_a_credential() {
         let url = "https://octocat:ghp_SECRET@example.invalid/org/atlas.git";
         let hidden = staging_name("atlas", "0123abcd");
-        assert_eq!(hidden, ".atlas.suru-clone-0123abcd");
+        assert_eq!(hidden, ".atlas.shaman-clone-0123abcd");
         let logged = format!(
             "{:?}",
             Shown(&["clone", "--quiet", "--branch=main", "--", url, &hidden])
@@ -1980,26 +1980,26 @@ mod tests {
             staging
         };
         let abandoned = left(
-            ".atlas.suru-clone-0123abcd",
+            ".atlas.shaman-clone-0123abcd",
             Some("a dead run"),
             Some("a dead run"),
         );
-        let unrecorded = left(".maps.suru-clone-89abcdef", Some("a dead run"), None);
+        let unrecorded = left(".maps.shaman-clone-89abcdef", Some("a dead run"), None);
         let remarked = left(
-            ".charts.suru-clone-00000000",
+            ".charts.shaman-clone-00000000",
             Some("another run"),
             Some("a dead run"),
         );
-        let unmarked = left(".logs.suru-clone-44444444", None, Some("a dead run"));
-        let unmarked_unrecorded = left(".tiles.suru-clone-66666666", None, None);
+        let unmarked = left(".logs.shaman-clone-44444444", None, Some("a dead run"));
+        let unmarked_unrecorded = left(".tiles.shaman-clone-66666666", None, None);
         let renamed = left("atlas", Some("a dead run"), Some("a dead run"));
         let ours = left(
-            ".notes.suru-clone-11111111",
+            ".notes.shaman-clone-11111111",
             Some("this run"),
             Some("this run"),
         );
         let held = left(
-            ".held.suru-clone-22222222",
+            ".held.shaman-clone-22222222",
             Some("a dead run"),
             Some("a dead run"),
         );
@@ -2009,8 +2009,8 @@ mod tests {
             .open(held.join(MARKER))
             .unwrap();
         holder.lock_exclusive().unwrap();
-        let gone = root.join(".gone.suru-clone-33333333");
-        let unmounted = root.join("unmounted").join(".atlas.suru-clone-55555555");
+        let gone = root.join(".gone.shaman-clone-33333333");
+        let unmounted = root.join("unmounted").join(".atlas.shaman-clone-55555555");
         for directory in [&gone, &unmounted] {
             run.records
                 .record(&StagingRecord {

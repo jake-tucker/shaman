@@ -4,7 +4,7 @@ Measured on Linux on 2026-09-07, with release builds, warm filesystem caches, an
 
 Each run uses disposable absolute state/data/config roots, disables all three Providers and remote serving, lets the binary create/migrate SQLite, then seeds synthetic Session rows. Roots have no history; tree fixtures have four Turns per Session, disjoint historical intervals, one open leaf Turn, and reported output Usage. The authenticated listing count and tree Usage total are checked after every start. No user database or configuration is used.
 
-Times below are medians in milliseconds. Projection measures the Working/Usage derivation only. Store restoration measures `SessionStore::new`, including record/channel construction and projection, but excludes SQLite loading and writer initialization. Readiness measures subprocess launch through successful `suru server start`, including loading, executable/launcher work, and readiness polling. These are local observations, not CI thresholds; small readiness differences are dominated by polling and scheduling.
+Times below are medians in milliseconds. Projection measures the Working/Usage derivation only. Store restoration measures `SessionStore::new`, including record/channel construction and projection, but excludes SQLite loading and writer initialization. Readiness measures subprocess launch through successful `shaman server start`, including loading, executable/launcher work, and readiness polling. These are local observations, not CI thresholds; small readiness differences are dominated by polling and scheduling.
 
 | Shape | Sessions | Projection before → after | Store restoration before → after | Readiness before → after |
 | --- | ---: | ---: | ---: | ---: |
@@ -26,11 +26,11 @@ Reproduce with an instrumented baseline and the new release binary:
 
 ```sh
 cargo build --release --locked
-python3 docs/benchmarks/session-restoration.py /absolute/path/to/baseline-suru
-python3 docs/benchmarks/session-restoration.py target/release/suru
+python3 docs/benchmarks/session-restoration.py /absolute/path/to/baseline-shaman
+python3 docs/benchmarks/session-restoration.py target/release/shaman
 ```
 
-The harness emits all three samples and medians as JSON lines. Enable `SURU_LOG=suru::sessions=debug` for the same timing event outside the harness. The harness uses Python’s standard library and platform-absolute temporary paths. Execution and benchmarks were performed on Linux; Windows and macOS execution was not available locally.
+The harness emits all three samples and medians as JSON lines. Enable `SHAMAN_LOG=shaman::sessions=debug` for the same timing event outside the harness. The harness uses Python’s standard library and platform-absolute temporary paths. Execution and benchmarks were performed on Linux; Windows and macOS execution was not available locally.
 
 Completed Linux checks:
 

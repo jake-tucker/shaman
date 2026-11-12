@@ -12,7 +12,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         Activity, ActivityStatus, AgentId, AgentIdentity, AgentSelection, Cost, CostBasis,
@@ -107,7 +107,7 @@ fn child_session_snapshot(
             context_fill: None,
             prompt_cache: None,
             id: child_id,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             workspace: Workspace::directory(workspace.to_owned()),
@@ -154,7 +154,7 @@ fn child_session_snapshot(
         subagent_interventions: Vec::new(),
         pending_approvals: Vec::new(),
         submitting_approvals: Vec::new(),
-        pending_approvals_revision: suru::protocol::SessionRevision(0),
+        pending_approvals_revision: shaman::protocol::SessionRevision(0),
         watches: Vec::new(),
         waiting_on_subagents: None,
         current_model: None,
@@ -205,8 +205,8 @@ fn pressing_a_working_subagent_row_opens_the_childs_session() {
 
     assert_eq!(
         press_text(&mut application, 80, 22, "Explore: Map the provider seams"),
-        ApplicationTransition::AttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::AttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             child_id,
         )),
         "pressing the row asks to open the child session it names"
@@ -236,8 +236,8 @@ fn a_settled_subagent_row_in_history_still_opens_the_child() {
 
     assert_eq!(
         press_text(&mut application, 80, 22, "Explore: Map the provider seams"),
-        ApplicationTransition::AttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::AttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             child_id,
         )),
         "a settled row in scrollback is still the way into the child"
@@ -257,8 +257,8 @@ fn escape_in_a_subagent_session_returns_to_the_parent() {
 
     assert_eq!(
         press_key(&mut application, KeyCode::Esc),
-        ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::ViewAndAttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             parent_id,
         )),
         "Escape reports the root parent viewed while opening it, never interrupting the child"
@@ -326,8 +326,8 @@ fn returning_to_the_parent_restores_the_readers_view_state() {
     rendered_application_rows_at(&application, 80, 15);
     assert_eq!(
         press_key(&mut application, KeyCode::Esc),
-        ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::ViewAndAttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             parent_id,
         )),
         "Escape reports the root parent viewed while asking for it back"
@@ -354,7 +354,7 @@ fn a_subagent_view_brackets_its_own_subtree_while_the_parent_brackets_the_whole_
         output_tokens: Some(5_000),
         ..Usage::default()
     });
-    parent.session.context_fill = Some(suru::protocol::ContextFill {
+    parent.session.context_fill = Some(shaman::protocol::ContextFill {
         occupied_tokens: 12_400,
         capacity_tokens: Some(200_000),
     });
@@ -374,7 +374,7 @@ fn a_subagent_view_brackets_its_own_subtree_while_the_parent_brackets_the_whole_
         output_tokens: Some(1_000),
         ..Usage::default()
     });
-    child.session.context_fill = Some(suru::protocol::ContextFill {
+    child.session.context_fill = Some(shaman::protocol::ContextFill {
         occupied_tokens: 1000,
         capacity_tokens: Some(100_000),
     });
@@ -493,7 +493,7 @@ fn a_subagent_session_streams_live_while_attached() {
 
 #[test]
 fn child_questionnaire_attention_opens_the_child_panel_and_preserves_parent_and_child_drafts() {
-    use suru::protocol::{
+    use shaman::protocol::{
         Question, Questionnaire, QuestionnaireId, QuestionnaireOutcome, SubagentInterventions,
     };
     let workspace = workspace_dir();
@@ -501,7 +501,7 @@ fn child_questionnaire_attention_opens_the_child_panel_and_preserves_parent_and_
         parent_with_subagent_row(workspace.path(), ActivityStatus::Active, None, false);
     let mut child = child_session_snapshot(child_id, parent.session.id, workspace.path());
     let questionnaire_id = QuestionnaireId::new();
-    let activity_id = suru::protocol::ActivityId::new();
+    let activity_id = shaman::protocol::ActivityId::new();
     child.activities.push(Activity::Questionnaire {
         id: activity_id,
         turn_id: child.turns[0].id,
@@ -602,10 +602,10 @@ fn child_questionnaire_attention_opens_the_child_panel_and_preserves_parent_and_
     app.handle_event(ApplicationEvent::SessionAttached(parent.clone()))
         .unwrap();
     app.handle_event(ApplicationEvent::Managed(
-        suru::managed_client::ManagedEvent::SessionStandingInputsChanged(
-            suru::protocol::SessionStandingInputsChanged {
+        shaman::managed_client::ManagedEvent::SessionStandingInputsChanged(
+            shaman::protocol::SessionStandingInputsChanged {
                 session_id: parent.session.id,
-                inputs: suru::protocol::SessionStandingInputs {
+                inputs: shaman::protocol::SessionStandingInputs {
                     subagent_interventions: vec![SubagentInterventions {
                         submitting_questionnaires: Vec::new(),
                         submitting_approvals: Vec::new(),
@@ -640,7 +640,7 @@ fn child_questionnaire_attention_opens_the_child_panel_and_preserves_parent_and_
 
 #[test]
 fn child_approval_attention_opens_the_owning_session_and_submits_its_decision_there() {
-    use suru::protocol::{
+    use shaman::protocol::{
         Approval, ApprovalId, ApprovalOutcome, ApprovalSubject, Decision, QuestionnaireId,
         SubagentInterventions,
     };
@@ -649,7 +649,7 @@ fn child_approval_attention_opens_the_owning_session_and_submits_its_decision_th
         parent_with_subagent_row(workspace.path(), ActivityStatus::Active, None, false);
     let mut child = child_session_snapshot(child_id, parent.session.id, workspace.path());
     let approval_id = ApprovalId::new();
-    let activity_id = suru::protocol::ActivityId::new();
+    let activity_id = shaman::protocol::ActivityId::new();
     child.activities.push(Activity::Approval {
         id: activity_id,
         turn_id: child.turns[0].id,
@@ -759,8 +759,8 @@ fn escape_clears_text_selection_before_leaving_a_subagent() {
     );
     assert_eq!(
         press_key(&mut application, KeyCode::Esc),
-        ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::ViewAndAttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             parent_id
         ))
     );
@@ -947,7 +947,7 @@ fn a_folded_turn_in_a_subagent_session_keeps_its_delegation_visible() {
     child.turns[0].started_at = Some(SessionTimestamp(1_755_000_000_000));
     child.turns[0].settled_at = Some(SessionTimestamp(1_755_000_012_000));
     let spawn = delegation(turn_id, parent_id, None, "Map the provider seams.");
-    let command_id = suru::protocol::ActivityId::new();
+    let command_id = shaman::protocol::ActivityId::new();
     let answer = Message {
         id: MessageId::new(),
         turn_id,
@@ -1100,8 +1100,8 @@ fn a_brokered_subagents_row_renders_like_a_native_one_and_opens_its_session() {
     );
     assert_eq!(
         press_text(&mut application, 80, 22, "Explore: Map the provider seams"),
-        ApplicationTransition::AttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::AttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             child_id,
         )),
         "and pressing it opens the brokered subagent's own session"

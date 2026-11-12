@@ -10,7 +10,7 @@
 //! opens nothing, so the most a lying Relay can do is mislabel a row.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use suru_relay_protocol::{self as relay_protocol, ListedLogin};
+use shaman_relay_protocol::{self as relay_protocol, ListedLogin};
 
 use crate::{
     protocol::{RelayMachine, RelayMachinesAnswer, Remote, RemoteStatus},
@@ -63,7 +63,7 @@ pub(super) fn listed(
 
 #[cfg(test)]
 mod tests {
-    use suru_relay_protocol::Bytes;
+    use shaman_relay_protocol::Bytes;
 
     use super::*;
 

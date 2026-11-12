@@ -20,14 +20,7 @@ use axum::{
     routing::get,
 };
 use futures_util::{StreamExt, stream};
-use std::{
-    convert::Infallible,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-};
-use suru::{
+use shaman::{
     build_identity,
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent, SessionEvent},
     protocol::{
@@ -40,6 +33,13 @@ use suru::{
         SessionUpdate, TranscriptItem, Turn, TurnId, TurnStatus, Workspace,
     },
     server::ServerConfig,
+};
+use std::{
+    convert::Infallible,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 use tokio::time::{Duration, timeout};
 
@@ -65,7 +65,7 @@ async fn managed_clients_can_reconnect_to_a_session_that_outlives_its_first_clie
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -147,7 +147,7 @@ async fn managed_client_can_discover_read_and_attach_to_a_known_session() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -232,7 +232,7 @@ async fn managed_clients_observe_durable_session_deletion() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -296,7 +296,7 @@ async fn managed_clients_observe_durable_session_deletion() {
         .await
         .expect("the end of Working reaches the connected client"),
         Some(ManagedEvent::SessionWorkingChanged(
-            suru::protocol::SessionWorkingChanged {
+            shaman::protocol::SessionWorkingChanged {
                 session_id,
                 working_since: None,
             }
@@ -398,7 +398,7 @@ async fn managed_client_switching_away_does_not_interrupt_an_active_turn() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -422,7 +422,7 @@ async fn managed_client_switching_away_does_not_interrupt_an_active_turn() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -573,7 +573,7 @@ async fn two_clients_converge_on_one_session_without_observing_another_session()
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -590,7 +590,7 @@ async fn two_clients_converge_on_one_session_without_observing_another_session()
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -950,7 +950,7 @@ fn failed_session_snapshot(session_id: SessionId, workspace: &std::path::Path) -
             context_fill: None,
             prompt_cache: None,
             id: session_id,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             workspace: Workspace::directory(workspace.to_owned()),
@@ -1011,7 +1011,7 @@ fn failed_session_snapshot(session_id: SessionId, workspace: &std::path::Path) -
         subagent_interventions: Vec::new(),
         pending_approvals: Vec::new(),
         submitting_approvals: Vec::new(),
-        pending_approvals_revision: suru::protocol::SessionRevision(0),
+        pending_approvals_revision: shaman::protocol::SessionRevision(0),
         watches: Vec::new(),
         waiting_on_subagents: None,
         current_model: None,
@@ -1312,16 +1312,16 @@ fn fixture_lifecycle_stream()
         .chain(stream::once(async move {
             Ok::<_, Infallible>(
                 Event::default()
-                    .event(suru::protocol::SETTINGS_SNAPSHOT_EVENT)
-                    .json_data(suru::protocol::SettingsSnapshot::default())
+                    .event(shaman::protocol::SETTINGS_SNAPSHOT_EVENT)
+                    .json_data(shaman::protocol::SettingsSnapshot::default())
                     .expect("serialize fixture settings snapshot"),
             )
         }))
         .chain(stream::once(async move {
             Ok::<_, Infallible>(
                 Event::default()
-                    .event(suru::protocol::MODEL_CATALOG_EVENT)
-                    .json_data(suru::protocol::ModelCatalog {
+                    .event(shaman::protocol::MODEL_CATALOG_EVENT)
+                    .json_data(shaman::protocol::ModelCatalog {
                         providers: Vec::new(),
                     })
                     .expect("serialize fixture Model Catalog"),
@@ -1330,8 +1330,8 @@ fn fixture_lifecycle_stream()
         .chain(stream::once(async move {
             Ok::<_, Infallible>(
                 Event::default()
-                    .event(suru::protocol::RELAYS_EVENT)
-                    .json_data(suru::protocol::RelayListing {
+                    .event(shaman::protocol::RELAYS_EVENT)
+                    .json_data(shaman::protocol::RelayListing {
                         instance: uuid::Uuid::from_u128(1),
                         revision: 1,
                         relays: Vec::new(),
@@ -1342,15 +1342,15 @@ fn fixture_lifecycle_stream()
         .chain(stream::once(async move {
             Ok::<_, Infallible>(
                 Event::default()
-                    .event(suru::protocol::SERVING_LISTENER_EVENT)
-                    .json_data(suru::protocol::ListenerState::Off)
+                    .event(shaman::protocol::SERVING_LISTENER_EVENT)
+                    .json_data(shaman::protocol::ListenerState::Off)
                     .expect("serialize fixture Serving listener state"),
             )
         }))
         .chain(stream::once(async move {
             Ok::<_, Infallible>(
                 Event::default()
-                    .event(suru::protocol::ONBOARDED_EVENT)
+                    .event(shaman::protocol::ONBOARDED_EVENT)
                     .json_data(true)
                     .expect("serialize whether the fixture has been onboarded"),
             )

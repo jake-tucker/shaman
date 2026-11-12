@@ -12,7 +12,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::json;
-use suru::{
+use shaman::{
     protocol::{
         AgentId, AgentIdentity, CreateSessionRequest, DerivationErrand, InitialPrompt, PromptId,
         ProviderId,
@@ -30,7 +30,7 @@ fn create_request(workspace: &std::path::Path, prompt: &str) -> CreateSessionReq
         session_id: None,
         preparation_id: None,
         agent_selection: Some(hosted_selection(PROVIDER, MODEL)),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -55,9 +55,9 @@ fn workspace_icon_provider() -> (
 async fn connected_client(
     state_dir: &std::path::Path,
     channel: &str,
-) -> suru::managed_client::ManagedClient {
-    let mut client = suru::managed_client::ManagedClient::connect(
-        suru::managed_client::ManagedClientConfig::new(state_dir, channel)
+) -> shaman::managed_client::ManagedClient {
+    let mut client = shaman::managed_client::ManagedClient::connect(
+        shaman::managed_client::ManagedClientConfig::new(state_dir, channel)
             .expect("configure client"),
     )
     .await
@@ -148,7 +148,7 @@ async fn derivation_on_the_first_session_lands_the_catalog_change_and_the_listin
 
     assert_eq!(
         next_workspace_icon_changed(&mut client).await,
-        suru::protocol::WorkspaceIconChanged {
+        shaman::protocol::WorkspaceIconChanged {
             workspace_id: workspace_id.clone(),
             icon: Some("dev-rust".to_owned()),
         }
@@ -267,7 +267,7 @@ async fn the_prompt_carries_the_readme_of_a_workspace_with_a_known_main_root() {
     git(workspace.path(), &["init", "-b", "main"]);
     std::fs::write(
         workspace.path().join("README.md"),
-        "Suru is an interactive workspace for collaborating with an agent.",
+        "Shaman is an interactive workspace for collaborating with an agent.",
     )
     .unwrap();
     git(workspace.path(), &["add", "README.md"]);
@@ -293,7 +293,7 @@ async fn the_prompt_carries_the_readme_of_a_workspace_with_a_known_main_root() {
     assert!(
         errand
             .prompt()
-            .contains("Suru is an interactive workspace for collaborating with an agent."),
+            .contains("Shaman is an interactive workspace for collaborating with an agent."),
         "the Workspace Errand carries the README's opening text: {:?}",
         errand.prompt()
     );
@@ -365,7 +365,7 @@ async fn derivation_turned_off_asks_for_neither_errand() {
 
     assert!(
         provider.try_next_errand().is_none(),
-        "a user who turned derivation off is charged for no Provider call on Suru's behalf"
+        "a user who turned derivation off is charged for no Provider call on Shaman's behalf"
     );
 
     server.shutdown().await.expect("shut down server");
@@ -446,7 +446,7 @@ async fn the_sidekick_workspace_goes_by_sidekick_for_clients_and_by_its_director
         .await
         .and_then(reqwest::Response::error_for_status)
         .expect("read health")
-        .json::<suru::protocol::Health>()
+        .json::<shaman::protocol::Health>()
         .await
         .expect("decode health");
     let listing = http
@@ -456,7 +456,7 @@ async fn the_sidekick_workspace_goes_by_sidekick_for_clients_and_by_its_director
         .await
         .and_then(reqwest::Response::error_for_status)
         .expect("list Workspaces")
-        .json::<suru::protocol::WorkspaceListing>()
+        .json::<shaman::protocol::WorkspaceListing>()
         .await
         .expect("decode the Workspace listing");
 

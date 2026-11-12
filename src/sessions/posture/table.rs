@@ -71,7 +71,7 @@ impl PostureLevel {
 
     /// The one value `provider` acts under at this level, or `None` for a
     /// Provider whose native values the table has no column for — one with no
-    /// native posture Suru can name, as [`ApprovalPosture::for_provider`]
+    /// native posture Shaman can name, as [`ApprovalPosture::for_provider`]
     /// knows none for it either.
     pub(super) fn canonical(self, provider: &ProviderId) -> Option<ApprovalPosture> {
         use ClaudePermissionMode as Claude;

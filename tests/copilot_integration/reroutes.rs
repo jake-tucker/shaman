@@ -10,7 +10,7 @@ use crate::copilot_integration::support::{
     ScriptedCopilot, connect_in, conversation_fixture, opened_session, settled_session,
     titling_turned_off, transcript_outline,
 };
-use suru::{
+use shaman::{
     managed_client::ManagedClientConfig,
     protocol::{
         Activity, AgentSelection, CreateSessionRequest, InitialPrompt, ModelId,
@@ -123,7 +123,7 @@ async fn read_across_a_restart(
             session_id: None,
             preparation_id: None,
             agent_selection: selection,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

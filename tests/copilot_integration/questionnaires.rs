@@ -1,6 +1,6 @@
 use crate::copilot_integration::support::{LiveTurn, ScriptedCopilot, conversation_arms, send_arm};
 use crate::support::PROGRESS_DEADLINE;
-use suru::{
+use shaman::{
     protocol::{Activity, Answer, QuestionAnswer, QuestionnaireOutcome, QuestionnaireSubmission},
     provider::CopilotRuntime,
 };
@@ -112,7 +112,7 @@ async fn copilot_native_questionnaire_maps_selected_freeform_and_decline_results
         .unwrap();
         assert_eq!(response["result"], native);
         live.wait_for("native response lets Turn settle", |s| {
-            s.turns[0].status == suru::protocol::TurnStatus::Completed
+            s.turns[0].status == shaman::protocol::TurnStatus::Completed
         })
         .await;
         live.shutdown().await;
@@ -156,7 +156,7 @@ async fn interrupting_a_native_questionnaire_stops_work_and_disables_its_answer(
         .unwrap();
     let snapshot = live
         .wait_for("owning Turn interrupted", |s| {
-            s.turns[0].status == suru::protocol::TurnStatus::Interrupted
+            s.turns[0].status == shaman::protocol::TurnStatus::Interrupted
         })
         .await;
     assert!(snapshot.activities.iter().any(|a| matches!(

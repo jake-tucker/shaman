@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use suru::{
+use shaman::{
     managed_client::ManagedClient,
     protocol::{
         ContextBreakdown, ContextFill, ContextItem, ContextPart, ContextSource,

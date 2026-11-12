@@ -19,8 +19,7 @@ use reqwest::{
     StatusCode,
     header::{CONTENT_LENGTH, CONTENT_TYPE},
 };
-use std::sync::Arc;
-use suru::{
+use shaman::{
     protocol::{
         AdmitPromptRequest, AgentId, AgentIdentity, AttachmentBinding, AttachmentDescriptor,
         AttachmentId, AttachmentKind, CreateSessionRequest, InitialPrompt, Message, MessageRole,
@@ -32,6 +31,7 @@ use suru::{
     provider::{ProviderAttachment, ProviderEvent},
     server::{self, ManualClock, ServerClock, ServerConfig, ServerTimings},
 };
+use std::sync::Arc;
 use tokio::time::{Duration, timeout};
 
 const MEBIBYTE: usize = 1024 * 1024;
@@ -109,7 +109,7 @@ fn creation(
         session_id: None,
         preparation_id: None,
         agent_selection: None,
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -382,7 +382,7 @@ async fn an_attachment_is_fetched_by_id_with_its_sniffed_type_and_an_unknown_id_
 /// route, which answers the type and length a fetch would without the bytes.
 #[tokio::test]
 async fn a_head_of_an_attachment_answers_whether_it_is_stored_without_its_bytes() {
-    use suru::{
+    use shaman::{
         managed_client::{ManagedClient, ManagedClientConfig},
         protocol::Outlook,
     };
@@ -1633,7 +1633,7 @@ async fn server_start_sweeps_uploads_no_stored_prompt_binds_once_past_their_grac
 /// client, builds a Prompt the Server admits exactly as it was bound.
 #[tokio::test]
 async fn a_prompt_the_composer_builds_around_a_pasted_image_is_admitted_as_bound() {
-    use suru::{
+    use shaman::{
         managed_client::{ManagedClient, ManagedClientConfig},
         protocol::Outlook,
         tui::{

@@ -2,10 +2,10 @@
 //! tiers, which the `provider.copilot.fusionTiers` Setting governs (ADR 0060), and the Routing Tier
 //! Model Option those tiers become on `auto` (ADR 0070).
 //!
-//! This assignment is hand-written. Copilot's experimentation service did not issue it, and Suru
+//! This assignment is hand-written. Copilot's experimentation service did not issue it, and Shaman
 //! never calls that service: a Session driven over the SDK receives no assignments from the CLI,
-//! and these parameters did not come back to any request identifying itself as Suru. The SDK takes
-//! assignments from its integrator, so Suru states the two it needs and nothing else
+//! and these parameters did not come back to any request identifying itself as Shaman. The SDK takes
+//! assignments from its integrator, so Shaman states the two it needs and nothing else
 //! (docs/validation/copilot-dynamic-auto-tiers.md).
 
 use std::collections::HashMap;
@@ -130,7 +130,7 @@ async fn listed_tiers(
     let session_id = config
         .session_id
         .clone()
-        .expect("a Session Suru opens for itself is given its identifier");
+        .expect("a Session Shaman opens for itself is given its identifier");
     let client = connection.client();
     let native = match client.create_session(config).await {
         Ok(native) => native,

@@ -17,7 +17,7 @@
 //!
 //! The server is also the only writer. A typed mutation becomes a
 //! format-preserving CST edit of the winning Config Document, so a user's key
-//! order, spacing, and comments survive an edit Suru makes; the file it leaves
+//! order, spacing, and comments survive an edit Shaman makes; the file it leaves
 //! behind is then reloaded, which keeps the file — not an in-memory shadow of
 //! it — the source of truth for the Settings it pins. What is in force is another
 //! matter once anything else edits the document, since that takes effect at the
@@ -54,10 +54,10 @@ use crate::protocol::{
 };
 use crate::relays::holdable_address;
 
-/// The Config Document Suru prefers when both accepted names exist.
-pub const PRIMARY_CONFIG_FILE: &str = "suru.jsonc";
+/// The Config Document Shaman prefers when both accepted names exist.
+pub const PRIMARY_CONFIG_FILE: &str = "shaman.jsonc";
 /// Accepted when the primary file is absent; parsed just as leniently.
-pub const FALLBACK_CONFIG_FILE: &str = "suru.json";
+pub const FALLBACK_CONFIG_FILE: &str = "shaman.json";
 
 // The dotted key of each Setting, named once so the schema and the typed
 // mutations that edit it can never drift apart.
@@ -213,10 +213,10 @@ const APPROVAL_POSTURE_ACCESS: SidekickAccess = SidekickAccess::ReadOnly {
           the user",
 };
 
-/// What each Setting governing scheduled Compaction declares: with it, Suru
+/// What each Setting governing scheduled Compaction declares: with it, Shaman
 /// spends on the user's behalf without being asked in the moment (ADR 0073).
 const SCHEDULED_COMPACTION_ACCESS: SidekickAccess = SidekickAccess::ReadOnly {
-    why: "it lets Suru spend on the user's behalf without asking, which is the user's to allow",
+    why: "it lets Shaman spend on the user's behalf without asking, which is the user's to allow",
 };
 
 /// The namespaces reserved for the Settings governing Serving and Pairing:
@@ -281,7 +281,7 @@ enum Applied {
 /// What a Setting accepts. Almost every Setting is Fixed: a set of compile-time
 /// choices, which is what lets a client cycle one through its values and what
 /// lets a diagnostic tell a reader exactly what to type. A Setting whose values
-/// are not all known until Suru is running — one holding an Agent Selection
+/// are not all known until Shaman is running — one holding an Agent Selection
 /// discovered from a Provider, say — cannot be written down that way, so an
 /// Open one names the values the schema can and describes the rest.
 pub enum SettingValues {
@@ -304,19 +304,19 @@ pub enum SettingValues {
         spell: fn(&EffectiveSettings) -> String,
         /// Where a reader chooses one of those unnamed values, for a Setting
         /// whose unnamed values are theirs to pick. `None` where they are not:
-        /// a Setting holding something Suru worked out for itself offers the
+        /// a Setting holding something Shaman worked out for itself offers the
         /// reader the named values and nothing more.
         chosen_at: Option<SettingChoiceSurface>,
     },
 }
 
 /// The surface a reader chooses an Open Setting's unnamed value at, and the pin
-/// that puts what they chose in force. The surface is one Suru already has, so
+/// that puts what they chose in force. The surface is one Shaman already has, so
 /// a Setting holding a value too rich to cycle through costs no second place to
 /// choose that kind of value.
 #[derive(Clone, Copy)]
 pub enum SettingChoiceSurface {
-    /// The Model picker, which is where every Agent Selection in Suru is
+    /// The Model picker, which is where every Agent Selection in Shaman is
     /// chosen.
     AgentSelection {
         /// The Selection in force, where the Setting is holding one, so the
@@ -529,7 +529,7 @@ impl TextListSettingChoice {
     }
 }
 
-/// Whether `root` names one directory on this machine however Suru's working
+/// Whether `root` names one directory on this machine however Shaman's working
 /// directory moves: absolute, as this platform judges a path — a drive-rooted
 /// one on Windows — or beginning with `~`, for the user's home. Whether
 /// anything is there is no part of it, so a Root on an unplugged drive keeps
@@ -733,7 +733,7 @@ const SERVING_PORT_NUMERIC: NumericSettingChoice = NumericSettingChoice::new(
 
 /// The least a Broker cap counts: a tree of the top-level Session alone, or one
 /// brokered Subagent at a time. A cap is typed rather than chosen from a list,
-/// and like the side columns' widths it is bounded below alone: Suru sets it no
+/// and like the side columns' widths it is bounded below alone: Shaman sets it no
 /// maximum of its own. Its one ceiling is the most the `u32` the Broker counts
 /// in can hold, which the Setting names — as the Serving port names the most a
 /// port can be — so a count pinned past it is told so, rather than told of a
@@ -1228,7 +1228,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: APPEARANCE_LANDING_PAGE,
         label: "Landing page",
-        description: "Minimal shows the composer alone; Fancy adds the Japanese Suru banner",
+        description: "Minimal shows the composer alone; Fancy adds the Japanese Shaman banner",
         group: SettingGroup::Appearance,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,
@@ -1836,7 +1836,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         group: SettingGroup::SourceControl,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadOnly {
-            why: "turning it on lets Suru remove worktrees, ignored files and all, which no \
+            why: "turning it on lets Shaman remove worktrees, ignored files and all, which no \
                   later change can undo",
         },
         outside_edit: OutsideEdit::AtNextStart,
@@ -1917,7 +1917,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: PROVIDER_CODEX_ENABLED,
         label: "Codex provider",
-        description: "Whether Suru offers Codex, or leaves it entirely alone",
+        description: "Whether Shaman offers Codex, or leaves it entirely alone",
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
@@ -2055,7 +2055,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: PROVIDER_COPILOT_ENABLED,
         label: "Copilot provider",
-        description: "Whether Suru offers Copilot, or leaves it entirely alone",
+        description: "Whether Shaman offers Copilot, or leaves it entirely alone",
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
@@ -2115,7 +2115,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: PROVIDER_CLAUDE_ENABLED,
         label: "Claude provider",
-        description: "Whether Suru offers Claude, or leaves it entirely alone",
+        description: "Whether Shaman offers Claude, or leaves it entirely alone",
         group: SettingGroup::Providers,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadAndChange,
@@ -2439,7 +2439,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: COMPACTION_SCHEDULED_ENABLED,
         label: "Scheduled compaction",
-        description: "Whether Suru compacts an idle session of its own accord two minutes before its prompt cache lapses, so it goes cold small, where the lapse penalty reaches the Scheduled compaction minimum",
+        description: "Whether Shaman compacts an idle session of its own accord two minutes before its prompt cache lapses, so it goes cold small, where the lapse penalty reaches the Scheduled compaction minimum",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SCHEDULED_COMPACTION_ACCESS,
@@ -2564,15 +2564,15 @@ fn apply_value<T: serde::de::DeserializeOwned>(value: &Value, write: impl FnOnce
 }
 
 /// Resolves the config root the way the state directory resolves: an explicit
-/// `SURU_CONFIG_DIR` wins, then `$XDG_CONFIG_HOME/suru/`, then the literal
-/// `~/.config/suru/` on every platform — raw XDG, replicating opencode,
+/// `SHAMAN_CONFIG_DIR` wins, then `$XDG_CONFIG_HOME/shaman/`, then the literal
+/// `~/.config/shaman/` on every platform — raw XDG, replicating opencode,
 /// deliberately not the platform-native dirs used for state and data.
 pub fn resolve_config_root(
-    suru_config_dir: Option<&OsStr>,
+    shaman_config_dir: Option<&OsStr>,
     xdg_config_home: Option<&OsStr>,
     home_dir: Option<&Path>,
 ) -> Option<PathBuf> {
-    if let Some(dir) = suru_config_dir.filter(|dir| !dir.is_empty()) {
+    if let Some(dir) = shaman_config_dir.filter(|dir| !dir.is_empty()) {
         return Some(PathBuf::from(dir));
     }
     if let Some(xdg) = xdg_config_home.filter(|dir| !dir.is_empty()) {
@@ -2580,10 +2580,10 @@ pub fn resolve_config_root(
         // The XDG base-directory spec says a relative XDG_CONFIG_HOME is
         // invalid and must be ignored.
         if xdg.is_absolute() {
-            return Some(xdg.join("suru"));
+            return Some(xdg.join("shaman"));
         }
     }
-    home_dir.map(|home| home.join(".config").join("suru"))
+    home_dir.map(|home| home.join(".config").join("shaman"))
 }
 
 /// The Config Document stack the server reads and — as the file's only writer
@@ -2592,7 +2592,7 @@ pub fn resolve_config_root(
 /// even while handlers run concurrently.
 #[derive(Clone)]
 pub struct ConfigDocuments {
-    /// `None` when no config root resolved: Suru runs on built-in defaults and
+    /// `None` when no config root resolved: Shaman runs on built-in defaults and
     /// has nowhere to pin a Setting.
     root: Option<PathBuf>,
     writer: Arc<Mutex<()>>,
@@ -2781,7 +2781,7 @@ pub enum SettingsMutationError {
     NoConfigRoot,
     /// The document on disk cannot take a surgical edit: it does not parse, or
     /// something that is not an object stands where a Setting's group belongs.
-    /// Suru never rewrites a document to fix it.
+    /// Shaman never rewrites a document to fix it.
     NotEditable { path: PathBuf, reason: String },
     /// The filesystem refused the read or the write the edit needed.
     Io { path: PathBuf, message: String },
@@ -3025,7 +3025,7 @@ fn edited_document(
             // A group that held only the removed pin goes with it, so the
             // document stays as sparse as the user's own hand would keep it. A
             // group still holding a comment stays: that comment is the
-            // author's to remove, not Suru's.
+            // author's to remove, not Shaman's.
             for (holder, group_name, group) in groups.into_iter().rev() {
                 let is_spent = group.properties().is_empty()
                     && !group.children().iter().any(CstNode::is_comment);
@@ -3148,7 +3148,7 @@ pub fn log_diagnostics(diagnostics: &[SettingsDiagnostic]) {
 }
 
 /// The ordered Config Document stack under one root, lowest precedence first.
-/// Depth one today: `suru.jsonc`, or `suru.json` when it is the only file,
+/// Depth one today: `shaman.jsonc`, or `shaman.json` when it is the only file,
 /// with a diagnostic when both exist and the fallback is ignored.
 fn discover_documents(
     config_dir: &Path,
@@ -3433,12 +3433,12 @@ mod tests {
     /// shape rather than only the Settings that happen to ship today.
     static OPEN_STAND_IN: SettingDescriptor = posture_stand_in(SettingValues::Open {
         named: FOLDED,
-        accepts: "a posture Suru worked out for itself",
+        accepts: "a posture Shaman worked out for itself",
         spell: |settings| match settings.transcript.default_fold_posture {
             FoldPosture::Folded => "folded".to_owned(),
             FoldPosture::Expanded => "expanded".to_owned(),
         },
-        // A posture Suru worked out is nothing a reader picks, which is the
+        // A posture Shaman worked out is nothing a reader picks, which is the
         // half of the Open shape the shipped Setting does not cover.
         chosen_at: None,
     });
@@ -3623,7 +3623,7 @@ mod tests {
     fn a_setting_the_schema_cannot_enumerate_is_diagnosed_with_what_it_accepts() {
         assert_eq!(
             OPEN_STAND_IN.expected(),
-            "one of \"folded\" or a posture Suru worked out for itself"
+            "one of \"folded\" or a posture Shaman worked out for itself"
         );
     }
 
@@ -3982,7 +3982,7 @@ mod tests {
         let dotfiles = tempfile::tempdir().expect("create a dotfiles directory");
         let documents = ConfigDocuments::new(Some(root.path()));
         let link = root.path().join(PRIMARY_CONFIG_FILE);
-        let target = dotfiles.path().join("suru.jsonc");
+        let target = dotfiles.path().join("shaman.jsonc");
         fs::write(&target, "{}\n").unwrap();
         age(&target);
         std::os::unix::fs::symlink(&target, &link).unwrap();
@@ -4165,7 +4165,7 @@ mod tests {
     /// gone again once the stack and what is in force agree.
     #[test]
     fn what_comes_into_force_is_what_was_changed_and_what_is_followed() {
-        let document = PathBuf::from("suru.jsonc");
+        let document = PathBuf::from("shaman.jsonc");
         let in_force = SettingsSnapshot::default();
         let said = |port: u16, relays: &[&str]| {
             let mut said = SettingsSnapshot::default();
@@ -4251,7 +4251,7 @@ mod tests {
         let mut snapshot = SettingsSnapshot::default();
         snapshot.diagnostics.push(SettingsDiagnostic {
             severity: SettingsDiagnosticSeverity::AtNextStart,
-            file: PathBuf::from("suru.jsonc"),
+            file: PathBuf::from("shaman.jsonc"),
             key: Some(WORKSPACE_ROOTS.to_owned()),
             message: String::new(),
         });
@@ -4506,7 +4506,7 @@ mod tests {
     const RELATIVE_ELSEWHERE: &str = r"C:\Users\user\src";
 
     #[test]
-    fn suru_config_dir_overrides_every_other_config_root() {
+    fn shaman_config_dir_overrides_every_other_config_root() {
         let root = resolve_config_root(
             Some(OsStr::new(OVERRIDE_DIR)),
             Some(OsStr::new(XDG_CONFIG_HOME)),
@@ -4516,13 +4516,13 @@ mod tests {
     }
 
     #[test]
-    fn xdg_config_home_hosts_the_suru_directory() {
+    fn xdg_config_home_hosts_the_shaman_directory() {
         let root = resolve_config_root(
             None,
             Some(OsStr::new(XDG_CONFIG_HOME)),
             Some(Path::new(HOME_DIR)),
         );
-        assert_eq!(root, Some(Path::new(XDG_CONFIG_HOME).join("suru")));
+        assert_eq!(root, Some(Path::new(XDG_CONFIG_HOME).join("shaman")));
     }
 
     #[test]
@@ -4530,7 +4530,10 @@ mod tests {
         for invalid in ["relative/config", ""] {
             let root =
                 resolve_config_root(None, Some(OsStr::new(invalid)), Some(Path::new(HOME_DIR)));
-            assert_eq!(root, Some(Path::new(HOME_DIR).join(".config").join("suru")));
+            assert_eq!(
+                root,
+                Some(Path::new(HOME_DIR).join(".config").join("shaman"))
+            );
         }
     }
 

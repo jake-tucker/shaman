@@ -43,8 +43,8 @@ const APPEND_LINE: &str = r#"append_line() {
 ///   the process waiting as soon as the fixture is no longer running, with status 1, since it never
 ///   got what it waited for.
 ///
-/// A fixture a test kills to see whether Suru takes what it started down with it waits on
-/// `test_running` alone, since a part that ended with its main process would hide Suru failing to.
+/// A fixture a test kills to see whether Shaman takes what it started down with it waits on
+/// `test_running` alone, since a part that ended with its main process would hide Shaman failing to.
 /// The checks are builtins, so each poll costs what the bare `sleep` loop it replaced did.
 const FIXTURE_LIFETIME: &str = r#"fixture_main=$$
 test_running() {

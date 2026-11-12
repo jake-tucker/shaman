@@ -11,7 +11,7 @@ use std::{
 #[path = "../tests/support/failing_provider.rs"]
 mod failing_provider;
 use diesel::{connection::SimpleConnection, prelude::*, sql_types::Text};
-use suru::{
+use shaman::{
     protocol::{SessionId, SessionSnapshot},
     server::ServerConfig,
 };
@@ -142,7 +142,8 @@ async fn prepare(
     let server = failing_provider::spawn_with_failing_provider(config.clone()).await?;
     server.shutdown().await?;
     let id = SessionId::new();
-    let mut db = SqliteConnection::establish(config.data_dir().join("suru.db").to_str().unwrap())?;
+    let mut db =
+        SqliteConnection::establish(config.data_dir().join("shaman.db").to_str().unwrap())?;
     db.batch_execute("PRAGMA foreign_keys = ON;")?;
     let workspace = serde_json::json!({"path":root}).to_string();
     let content = "x".repeat(*bytes);

@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use suru::{
+use shaman::{
     protocol::{ResolveWorkspaceRequest, ResolvedWorkspace, WorkspaceId},
     server::ServerClock,
 };
@@ -269,7 +269,7 @@ pub(super) async fn start_sidekick(
 async fn the_sidekick_workspace_is_made_on_first_use_beside_each_channels_own_data() {
     const {
         assert!(
-            suru::protocol::PROTOCOL_VERSION >= 71,
+            shaman::protocol::PROTOCOL_VERSION >= 71,
             "the Sidekick Workspace route changes the wire, a Remote's included"
         );
     }
@@ -295,7 +295,7 @@ async fn the_sidekick_workspace_is_made_on_first_use_beside_each_channels_own_da
     )
     .await
     .expect("spawn the development server");
-    let release_data = suru::paths::canonical(data_dir.path()).expect("read the data root");
+    let release_data = shaman::paths::canonical(data_dir.path()).expect("read the data root");
     let development_data = release_data.join("sidekick-development");
     assert!(
         !release_data.join("sidekick").exists() && !development_data.join("sidekick").exists(),
@@ -313,7 +313,7 @@ async fn the_sidekick_workspace_is_made_on_first_use_beside_each_channels_own_da
     assert_eq!(resolved.workspace.path, expected);
     assert_eq!(
         resolved.execution_status,
-        suru::protocol::ExecutionDirectoryStatus::Available
+        shaman::protocol::ExecutionDirectoryStatus::Available
     );
     assert!(
         resolved.workspace.repository.is_none(),
@@ -436,7 +436,7 @@ async fn a_sidekicks_brokered_subagent_is_offered_the_ordinary_tools_alone() {
     assert_eq!(
         listed_tools(&mut subagent).await,
         ORDINARY_TOOLS,
-        "work a Sidekick delegates is offered nothing that reaches across Suru"
+        "work a Sidekick delegates is offered nothing that reaches across Shaman"
     );
     let refused = unoffered(&mut subagent, "list_sessions", json!({})).await;
     assert_eq!(
@@ -563,7 +563,7 @@ async fn with_the_broker_off_a_sidekick_is_offered_nothing() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         "{ \"broker\": { \"enabled\": false } }\n",
     )
     .expect("write Config Document");
@@ -660,7 +660,7 @@ async fn list_sessions_lists_active_top_level_sessions_most_recent_first_and_say
         ],
         "a row is compact: {row}"
     );
-    let canonical_workspace = suru::paths::canonical(&workspace).expect("read the Workspace");
+    let canonical_workspace = shaman::paths::canonical(&workspace).expect("read the Workspace");
     assert_eq!(row["workspace"], json!(canonical_workspace));
     assert_eq!(row["standing"], json!("working"));
     assert_eq!(row["settled"], json!(false));
@@ -736,13 +736,13 @@ async fn list_sessions_narrows_by_workspace_title_liveness_standing_and_last_act
         .error_for_status()
         .expect("the Session is settled");
 
-    let atlas_path = suru::paths::canonical(atlas.path()).expect("read the atlas Workspace");
+    let atlas_path = shaman::paths::canonical(atlas.path()).expect("read the atlas Workspace");
     let in_atlas = list_sessions(&mut sidekick, json!({ "workspace": atlas_path })).await;
     assert_eq!(titles(&in_atlas), ["Plan the work"], "{in_atlas}");
     assert_eq!(in_atlas["sessions"][0]["standing"], json!("done"));
     assert_eq!(in_atlas["omitted"], json!(0));
 
-    let ledger_path = suru::paths::canonical(ledger.path()).expect("read the ledger Workspace");
+    let ledger_path = shaman::paths::canonical(ledger.path()).expect("read the ledger Workspace");
     assert_eq!(
         titles(&list_sessions(&mut sidekick, json!({ "workspace": ledger_path })).await),
         ["Reconcile the LEDGER"],
@@ -892,7 +892,7 @@ async fn list_sessions_refuses_what_it_does_not_take_in_words_the_sidekick_can_a
     for (arguments, says) in [
         (
             json!({ "origin": "studio" }),
-            "Suru is paired with no Remote named `studio`",
+            "Shaman is paired with no Remote named `studio`",
         ),
         (
             json!({ "liveness": "everything" }),
@@ -940,7 +940,7 @@ async fn a_sidekick_workspace_reached_through_a_symlink_is_the_directory_it_name
     let directory = sidekick_directory(&descriptor).await;
     assert_eq!(
         directory,
-        suru::paths::canonical(elsewhere.path()).expect("read the named directory"),
+        shaman::paths::canonical(elsewhere.path()).expect("read the named directory"),
         "the Sidekick Workspace is the directory the symlink names"
     );
     for spelling in [directory.clone(), data_root.join("sidekick")] {
@@ -1119,9 +1119,9 @@ async fn list_sessions_narrows_to_each_standing_and_counts_only_what_matched_as_
     .await;
     asking_provider
         .emit_and_wait_until_observed(ProviderEvent::ApprovalRequested {
-            approval: suru::protocol::Approval {
-                id: suru::protocol::ApprovalId::new(),
-                subject: suru::protocol::ApprovalSubject::Command {
+            approval: shaman::protocol::Approval {
+                id: shaman::protocol::ApprovalId::new(),
+                subject: shaman::protocol::ApprovalSubject::Command {
                     command: "cargo nextest run".into(),
                     cwd: None,
                     actions: Vec::new(),
@@ -1153,7 +1153,7 @@ async fn list_sessions_narrows_to_each_standing_and_counts_only_what_matched_as_
     let (watching, watching_provider) =
         started_session(&descriptor, &mut claude, atlas.path(), "Watching the tests").await;
     watching_provider.emit(ProviderEvent::WatchStarted {
-        watch_id: suru::provider::ProviderWatchId::new("tests"),
+        watch_id: shaman::provider::ProviderWatchId::new("tests"),
         description: "cargo test".to_owned(),
     });
     watching_provider.emit(ProviderEvent::TurnCompleted);
@@ -1209,7 +1209,7 @@ async fn list_sessions_narrows_to_each_standing_and_counts_only_what_matched_as_
         );
     }
 
-    let atlas_path = suru::paths::canonical(atlas.path()).expect("read the atlas Workspace");
+    let atlas_path = shaman::paths::canonical(atlas.path()).expect("read the atlas Workspace");
     let narrowed = list_sessions(
         &mut sidekick,
         json!({ "standing": "done", "workspace": atlas_path, "limit": 1 }),

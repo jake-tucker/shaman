@@ -10,7 +10,7 @@ use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use ratatui::layout::Position;
-use suru::{
+use shaman::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
         AgentSelection, ContextFill, Cost, CostBasis, CostTotal, ModelId, NativeMeter, PromptId,
@@ -293,7 +293,7 @@ fn skill_completion_replaces_only_the_query_binds_it_and_keeps_the_prompt_open()
         .expect("connect application");
     let request = SkillCatalogRequest {
         provider: ProviderId::new("codex"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.path().to_owned(),
         },
     };
@@ -711,7 +711,7 @@ fn skill_bindings_follow_outside_edits_and_same_named_replacements_stay_stale() 
         .expect("paste a bound prompt");
     let request = SkillCatalogRequest {
         provider: ProviderId::new("codex"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.path().to_owned(),
         },
     };
@@ -755,7 +755,7 @@ fn skill_bindings_follow_outside_edits_and_same_named_replacements_stay_stale() 
 
 #[test]
 fn skill_completion_details_the_selected_skill_beside_the_list_and_copies_it_as_written() {
-    use suru::protocol::{EffectiveSettings, SidebarVisibility, TextSelectionCopy};
+    use shaman::protocol::{EffectiveSettings, SidebarVisibility, TextSelectionCopy};
 
     const DESCRIPTION: &str = "Review the current change for correctness, clarity, and missing tests. This \
          explanation runs longer than one list row so its closing advice stays readable.";
@@ -830,7 +830,7 @@ fn a_catalog_warning_spans_the_split_skill_completion_beneath_the_list_and_pane(
         .expect("connect application");
     let request = SkillCatalogRequest {
         provider: ProviderId::new("codex"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.path().to_owned(),
         },
     };
@@ -1147,7 +1147,7 @@ fn skill_completion_shows_live_catalog_states_and_retries_failed_discovery() {
         .expect("connect application");
     let request = SkillCatalogRequest {
         provider: ProviderId::new("codex"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.path().to_owned(),
         },
     };
@@ -1298,7 +1298,7 @@ fn composer_text_keeps_a_column_of_air_inside_the_prompt_border() {
 #[test]
 fn composer_moves_whole_words_to_the_next_row_and_splits_only_oversized_ones() {
     let prompt = concat!(
-        "Suru wraps the composer by whole words so that no ordinary word ",
+        "Shaman wraps the composer by whole words so that no ordinary word ",
         "is ever cut across two rendered rows of the prompt block"
     );
     let mut application = Application::default();
@@ -1871,7 +1871,7 @@ pub(crate) fn application_with_skills(
         .expect("connect application");
     let request = SkillCatalogRequest {
         provider: ProviderId::new("codex"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.path().to_owned(),
         },
     };
@@ -2242,8 +2242,8 @@ fn composer_selection_highlights_typed_text_and_not_the_padding_past_it() {
 fn composer_selection_copies_unwrapped_text_on_release_then_replaces_the_draft() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    let mut settings = suru::protocol::EffectiveSettings::default();
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    let mut settings = shaman::protocol::EffectiveSettings::default();
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
     crate::tui_rendering::support::deliver_settings(&mut application, settings);
     let draft = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima";
     type_terminal_text(&mut application, draft);
@@ -2420,8 +2420,8 @@ fn assert_composer_mark(application: &Application, width: u16, text: &str, selec
 fn composer_selection_survives_resize_and_copies_the_same_wrapped_text() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    let mut settings = suru::protocol::EffectiveSettings::default();
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    let mut settings = shaman::protocol::EffectiveSettings::default();
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
     crate::tui_rendering::support::deliver_settings(&mut application, settings);
     type_terminal_text(
         &mut application,
@@ -2453,11 +2453,11 @@ fn composer_selection_survives_resize_and_copies_the_same_wrapped_text() {
 
 #[test]
 fn composer_selection_survives_sidebar_and_picker_key_ownership() {
-    use suru::tui::SemanticCommandId;
+    use shaman::tui::SemanticCommandId;
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    let mut settings = suru::protocol::EffectiveSettings::default();
-    settings.sidebar.initial_visibility = suru::protocol::SidebarVisibility::Hidden;
+    let mut settings = shaman::protocol::EffectiveSettings::default();
+    settings.sidebar.initial_visibility = shaman::protocol::SidebarVisibility::Hidden;
     crate::tui_rendering::support::deliver_settings(&mut application, settings);
     type_terminal_text(&mut application, "marked draft");
     let buffer = rendered_application_buffer(&application, 140, 32);
@@ -2814,8 +2814,8 @@ fn deleting_half_a_bound_skill_drops_its_binding_and_rebases_the_following_skill
 fn keyboard_selection_bindings_belong_only_to_the_composer() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    let mut settings = suru::protocol::EffectiveSettings::default();
-    settings.sidebar.initial_visibility = suru::protocol::SidebarVisibility::Hidden;
+    let mut settings = shaman::protocol::EffectiveSettings::default();
+    settings.sidebar.initial_visibility = shaman::protocol::SidebarVisibility::Hidden;
     crate::tui_rendering::support::deliver_settings(&mut application, settings);
     type_terminal_text(&mut application, "draft");
     let bindings = [
@@ -2852,7 +2852,7 @@ fn keyboard_selection_bindings_belong_only_to_the_composer() {
     assert_composer_mark(&application, 140, "draft", true);
     application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ThemeList,
+            shaman::tui::SemanticCommandId::ThemeList,
         )))
         .unwrap();
     for (key, command) in &bindings {
@@ -3233,12 +3233,12 @@ fn select_all_empty_draft_preserves_transcript_selection_and_new_selection_repla
 #[test]
 fn cut_copies_exact_plain_text_in_both_modes_and_without_selection_remains_leader() {
     for copy in [
-        suru::protocol::TextSelectionCopy::Manual,
-        suru::protocol::TextSelectionCopy::Release,
+        shaman::protocol::TextSelectionCopy::Manual,
+        shaman::protocol::TextSelectionCopy::Release,
     ] {
         let workspace = workspace_dir();
         let mut application = connected_application(workspace.path());
-        let mut settings = suru::protocol::EffectiveSettings::default();
+        let mut settings = shaman::protocol::EffectiveSettings::default();
         settings.text_selection.copy = copy;
         crate::tui_rendering::support::deliver_settings(&mut application, settings);
         application
@@ -3321,8 +3321,8 @@ fn select_all_and_cut_work_with_completion_popup() {
 fn select_all_and_cut_bindings_leave_sidebar_and_picker_ownership_alone() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    let mut settings = suru::protocol::EffectiveSettings::default();
-    settings.sidebar.initial_visibility = suru::protocol::SidebarVisibility::Hidden;
+    let mut settings = shaman::protocol::EffectiveSettings::default();
+    settings.sidebar.initial_visibility = shaman::protocol::SidebarVisibility::Hidden;
     crate::tui_rendering::support::deliver_settings(&mut application, settings);
     type_terminal_text(&mut application, "draft");
     composer_selection_key(&mut application, KeyCode::Home, KeyModifiers::SHIFT);
@@ -3332,7 +3332,7 @@ fn select_all_and_cut_bindings_leave_sidebar_and_picker_ownership_alone() {
         } else {
             application
                 .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                    suru::tui::SemanticCommandId::ThemeList,
+                    shaman::tui::SemanticCommandId::ThemeList,
                 )))
                 .unwrap();
         }
@@ -3574,7 +3574,7 @@ fn a_caret_behind_an_overlay_is_not_drawn() {
 
     application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ThemeList,
+            shaman::tui::SemanticCommandId::ThemeList,
         )))
         .expect("open the Theme picker");
 

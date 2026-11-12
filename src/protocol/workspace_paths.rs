@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 /// The directory a Server puts the Worktrees it manages under. What it lays
-/// out beneath that directory is Suru's own business rather than the reader's,
+/// out beneath that directory is Shaman's own business rather than the reader's,
 /// so a Worktree standing anywhere under it presents as its leaf name alone.
 /// The Server that makes those Worktrees and the surfaces that present them
 /// both answer for the same directory, so both name it from here.
@@ -138,7 +138,7 @@ impl WorkspacePaths {
     }
 
     /// The name a Workspace goes by wherever Workspaces are listed: its
-    /// presented root's [`Self::name`], said to be no checkout where Suru
+    /// presented root's [`Self::name`], said to be no checkout where Shaman
     /// presents it by its Repository's metadata for want of a known main
     /// checkout.
     pub fn workspace_name(&self, workspace: &super::Workspace) -> String {
@@ -153,7 +153,7 @@ impl WorkspacePaths {
     /// Where a Worktree stands, said as shortly as it can be said without
     /// leaving the reader guessing which working copy they are looking at.
     ///
-    /// A Worktree Suru made itself lives at any depth under a managed
+    /// A Worktree Shaman made itself lives at any depth under a managed
     /// directory whose layout means nothing to the reader, so only its leaf
     /// name is shown. One standing inside `presented_root` — the path the
     /// Repository's Workspace is presented by — is said relative to that root,
@@ -312,29 +312,29 @@ mod tests {
     fn managed_worktrees_present_as_their_leaf_name_in_either_syntax() {
         assert_eq!(
             paths(PathStyle::Unix, "/home/reader").worktree_location(
-                Path::new("/home/reader/suru/.worktrees/review-landing"),
-                Some(Path::new("/home/reader/suru")),
+                Path::new("/home/reader/shaman/.worktrees/review-landing"),
+                Some(Path::new("/home/reader/shaman")),
             ),
             "review-landing"
         );
         assert_eq!(
             paths(PathStyle::Unix, "/home/reader").worktree_location(
-                Path::new("/home/reader/suru/.worktrees/nested/deeper/review-landing"),
-                Some(Path::new("/home/reader/suru")),
+                Path::new("/home/reader/shaman/.worktrees/nested/deeper/review-landing"),
+                Some(Path::new("/home/reader/shaman")),
             ),
             "review-landing"
         );
         assert_eq!(
             paths(PathStyle::Windows, r"C:\Users\reader").worktree_location(
-                Path::new(r"C:\Users\reader\suru\.worktrees\review-landing"),
-                Some(Path::new(r"C:\Users\reader\suru")),
+                Path::new(r"C:\Users\reader\shaman\.worktrees\review-landing"),
+                Some(Path::new(r"C:\Users\reader\shaman")),
             ),
             "review-landing"
         );
         assert_eq!(
             paths(PathStyle::Windows, r"C:\Users\reader").worktree_location(
-                Path::new(r"C:\Users\reader\suru\.worktrees\nested\review-landing"),
-                Some(Path::new(r"C:\Users\reader\suru")),
+                Path::new(r"C:\Users\reader\shaman\.worktrees\nested\review-landing"),
+                Some(Path::new(r"C:\Users\reader\shaman")),
             ),
             "review-landing"
         );
@@ -344,15 +344,15 @@ mod tests {
     fn worktrees_inside_the_presented_root_are_said_relative_to_it() {
         assert_eq!(
             paths(PathStyle::Unix, "/home/reader").worktree_location(
-                Path::new("/home/reader/suru/trees/feature"),
-                Some(Path::new("/home/reader/suru")),
+                Path::new("/home/reader/shaman/trees/feature"),
+                Some(Path::new("/home/reader/shaman")),
             ),
             "trees/feature"
         );
         assert_eq!(
             paths(PathStyle::Windows, r"C:\Users\reader").worktree_location(
-                Path::new(r"C:\Users\reader\suru\trees\feature"),
-                Some(Path::new(r"C:\Users\reader\suru\")),
+                Path::new(r"C:\Users\reader\shaman\trees\feature"),
+                Some(Path::new(r"C:\Users\reader\shaman\")),
             ),
             r"trees\feature"
         );
@@ -361,8 +361,8 @@ mod tests {
     #[test]
     fn the_presented_root_and_anything_outside_it_keep_their_whole_label() {
         let unix = paths(PathStyle::Unix, "/home/reader");
-        let root = Path::new("/home/reader/suru");
-        assert_eq!(unix.worktree_location(root, Some(root)), "~/suru");
+        let root = Path::new("/home/reader/shaman");
+        assert_eq!(unix.worktree_location(root, Some(root)), "~/shaman");
         assert_eq!(
             unix.worktree_location(Path::new("/home/reader/elsewhere/feature"), Some(root)),
             "~/elsewhere/feature"
@@ -372,20 +372,20 @@ mod tests {
             "/srv/feature"
         );
         assert_eq!(
-            unix.worktree_location(Path::new("/home/reader/suru-adjacent"), Some(root)),
-            "~/suru-adjacent",
+            unix.worktree_location(Path::new("/home/reader/shaman-adjacent"), Some(root)),
+            "~/shaman-adjacent",
             "a sibling sharing the root's opening characters is not inside it"
         );
         let windows = paths(PathStyle::Windows, r"C:\Users\reader");
-        let root = Path::new(r"C:\Users\reader\suru");
-        assert_eq!(windows.worktree_location(root, Some(root)), r"~\suru");
+        let root = Path::new(r"C:\Users\reader\shaman");
+        assert_eq!(windows.worktree_location(root, Some(root)), r"~\shaman");
         assert_eq!(
             windows.worktree_location(Path::new(r"D:\feature"), Some(root)),
             r"D:\feature"
         );
         assert_eq!(
-            windows.worktree_location(Path::new(r"C:\Users\reader\suru\trees\feature"), None),
-            r"~\suru\trees\feature",
+            windows.worktree_location(Path::new(r"C:\Users\reader\shaman\trees\feature"), None),
+            r"~\shaman\trees\feature",
             "a Workspace with no presented root has nothing to be relative to"
         );
     }
@@ -400,28 +400,28 @@ mod tests {
             (
                 PathStyle::Unix,
                 "/home/reader",
-                "/home/reader/.local/share/suru/sidekick",
+                "/home/reader/.local/share/shaman/sidekick",
                 vec![
-                    "/home/reader/.local/share/suru/sidekick",
-                    "/home/reader/.local/share/suru/sidekick/",
+                    "/home/reader/.local/share/shaman/sidekick",
+                    "/home/reader/.local/share/shaman/sidekick/",
                 ],
                 (
-                    "/home/reader/.local/share/suru/sidekick/notes",
-                    "~/.local/share/suru/sidekick/notes",
+                    "/home/reader/.local/share/shaman/sidekick/notes",
+                    "~/.local/share/shaman/sidekick/notes",
                 ),
             ),
             (
                 PathStyle::Windows,
                 r"C:\Users\reader",
-                r"C:\Users\reader\AppData\Local\suru\sidekick",
+                r"C:\Users\reader\AppData\Local\shaman\sidekick",
                 vec![
-                    r"C:\Users\reader\AppData\Local\suru\sidekick",
-                    r"\\?\C:\Users\reader\AppData\Local\suru\sidekick",
-                    "C:/Users/reader/AppData/Local/suru/sidekick/",
+                    r"C:\Users\reader\AppData\Local\shaman\sidekick",
+                    r"\\?\C:\Users\reader\AppData\Local\shaman\sidekick",
+                    "C:/Users/reader/AppData/Local/shaman/sidekick/",
                 ],
                 (
-                    r"C:\Users\reader\AppData\Local\suru\sidekick\notes",
-                    r"~\AppData\Local\suru\sidekick\notes",
+                    r"C:\Users\reader\AppData\Local\shaman\sidekick\notes",
+                    r"~\AppData\Local\shaman\sidekick\notes",
                 ),
             ),
         ] {

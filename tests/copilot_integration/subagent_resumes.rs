@@ -2,7 +2,7 @@
 //! whose stretch has settled runs the same agent again on its own context, whatever its
 //! `delivery` says — `queued` when it was sent while the Subagent still worked and held until
 //! that stretch's `subagent.completed`, `idle` when it was sent afterwards. Copilot opens the new
-//! run with no `subagent.started` and closes it with nothing, so Suru settles it where the agent
+//! run with no `subagent.started` and closes it with nothing, so Shaman settles it where the agent
 //! loop exits.
 //!
 //! Each resume is a second Turn in the Subagent's one Session, opened by the message as its
@@ -20,7 +20,7 @@ use crate::copilot_integration::{
         subagent_children as children, transcript_outline as outline,
     },
 };
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, SubagentTreeEvent},
     protocol::{SessionId, SessionSnapshot, TurnStatus},
 };

@@ -814,7 +814,7 @@ pub struct TuiState {
     /// frame, as [`Self::session_animation_on_screen`] is, so a line covered
     /// by Usage Metrics or a terminal too small for it wakes nothing.
     pub(super) composer_top_drawn: Cell<Option<SessionId>>,
-    /// The composer's caret, which Suru draws itself (ADR 0075).
+    /// The composer's caret, which Shaman draws itself (ADR 0075).
     pub(super) caret: super::caret::Caret,
     /// The Monitoring Session whose Watches the reader has confirmed stopping,
     /// with when that Monitoring began. The stop settles nothing itself — the
@@ -3440,7 +3440,7 @@ impl TuiState {
                     } => Some(format!(
                         "The move to {} failed: {}",
                         super::sidebar::workspace_name(&to.execution_directory.path),
-                        error.as_deref().unwrap_or("Suru could not apply it")
+                        error.as_deref().unwrap_or("Shaman could not apply it")
                     )),
                     _ => None,
                 });
@@ -3888,7 +3888,7 @@ impl TuiState {
     }
 
     /// Whether the working Subagent `subagent` may be stopped on its own from
-    /// its Subagent Picker row. A brokered one always may: Suru runs it on a
+    /// its Subagent Picker row. A brokered one always may: Shaman runs it on a
     /// Provider actor of its own (ADR 0035). A native one may where the open
     /// Session's Provider offers stopping one of its Subagents on its own —
     /// read off the Session's own settled Selection, because the native
@@ -6340,7 +6340,7 @@ pub enum ApplicationTransition {
     },
     /// What a reader wrote as a Workspace's Description in the Workspace
     /// Picker, sent to the Workspace's own Origin like its chosen Icon:
-    /// blank text clears it, so Suru may derive one again. `path` is where
+    /// blank text clears it, so Shaman may derive one again. `path` is where
     /// the Workspace is presented, which lets its Server take as its own a
     /// Workspace no Session has been begun in yet.
     SetWorkspaceDescription {
@@ -8714,7 +8714,7 @@ impl Application {
         let Some(remote) = origin.remote_name() else {
             return false;
         };
-        // Naming the Remote, never "Suru": the rest of the Client is working.
+        // Naming the Remote, never "Shaman": the rest of the Client is working.
         let why = self
             .state
             .unreachable_reason(origin)
@@ -13368,7 +13368,7 @@ impl Application {
             // context menu and the header Icon press both build the
             // invocation with one, so the picker never has to guess which
             // Session an unlabeled press meant. Inert while Icons are off,
-            // since no Icon Suru derives, stores, or draws would ever show
+            // since no Icon Shaman derives, stores, or draws would ever show
             // through a Catalog choice made while they are hidden.
             SemanticCommandId::SessionIconChoose => {
                 self.state.command_mode = CommandMode::Composer;
@@ -15106,7 +15106,7 @@ impl Application {
 /// The one reading of a Workspace directory: the canonical path, which is how
 /// the server reads the Workspace it roots a Session at and the one it
 /// narrows a listing by, so the client and the server never hold two
-/// spellings of the same directory. A Workspace Suru cannot read that way is
+/// spellings of the same directory. A Workspace Shaman cannot read that way is
 /// not a reason to refuse to work in it, so the path stands as given where
 /// canonicalizing fails.
 fn workspace_reading(workspace: &Path) -> PathBuf {

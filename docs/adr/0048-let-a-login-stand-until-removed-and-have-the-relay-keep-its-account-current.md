@@ -13,7 +13,7 @@ An Account is the Relay's own record, apart from the identity that logs in as it
 - **A bearer token the Relay issues and the Server stores.** Rejected: a new secret to store, rotate, and leak, and a copy of it is the Login. A Login proven by the identity key is useless off the machine that holds the key, and removing it at the Relay is the whole of revoking it.
 - **A Login that expires, renewed by logging in again at its Server.** Rejected: it is the unattended Server that would expire, and it could not be reached to be renewed.
 - **A GitHub OAuth App.** Rejected: organizations restrict third-party OAuth Apps by default, so private membership stays out of sight until an owner approves the app, and checking again later would mean keeping each user's token.
-- **One GitHub App the Suru project publishes for every Relay.** Rejected: checking an organization needs the app's private key, which cannot be shared, and every Relay's logins would hang on the project's app continuing to exist — against the set-up-and-forget of ADR-0047.
+- **One GitHub App the Shaman project publishes for every Relay.** Rejected: checking an organization needs the app's private key, which cannot be shared, and every Relay's logins would hang on the project's app continuing to exist — against the set-up-and-forget of ADR-0047.
 
 ## Consequences
 

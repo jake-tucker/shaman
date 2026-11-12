@@ -312,7 +312,7 @@ pub enum SemanticCommandId {
     WorkspaceDescriptionInsert,
     WorkspaceDescriptionDeleteBackward,
     /// Empties the Description editor, which saved as it stands clears the
-    /// Workspace's Description so Suru may derive one again.
+    /// Workspace's Description so Shaman may derive one again.
     WorkspaceDescriptionClear,
     /// Sends the Description editor's text to its Workspace's own Origin.
     WorkspaceDescriptionSave,
@@ -413,7 +413,7 @@ pub enum SemanticCommandId {
     /// or off, writing its Enablement at once.
     OnboardingProvidersToggle,
     /// Re-reads every Provider's Availability from Onboarding's Providers
-    /// step, for a reader who has just fixed one outside Suru.
+    /// step, for a reader who has just fixed one outside Shaman.
     OnboardingProvidersRecheck,
     /// Moves Row Focus on Onboarding's Icons step to the answer above, or
     /// below, wrapping past either end; from neither answer, to the last, or
@@ -1539,7 +1539,7 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
     },
     SemanticCommandDescriptor {
         id: SemanticCommandId::ApplicationExit,
-        title: "Exit Suru",
+        title: "Exit Shaman",
         reach: SemanticReach::Client,
         description: "Close this TUI",
         slash: Some(SlashCommand {
@@ -1735,7 +1735,7 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
         title: "Switch workspace",
         reach: SemanticReach::Origin,
         description: "Choose the workspace to work in",
-        // "Project" is vocabulary Suru avoids, so it stands only as a typed
+        // "Project" is vocabulary Shaman avoids, so it stands only as a typed
         // synonym: an alias is matchable and never displayed, which lets
         // whichever word a reader's fingers reach for find the one command.
         slash: Some(SlashCommand {
@@ -1947,7 +1947,7 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
         // It asks the Outlook's Server for its Sidekick Workspace, so an
         // Origin that has stopped answering refuses it like any other start.
         reach: SemanticReach::Origin,
-        description: "Begin a session with a sidekick, an agent that works across Suru itself",
+        description: "Begin a session with a sidekick, an agent that works across Shaman itself",
         slash: Some(SlashCommand {
             name: "sidekick",
             aliases: &[],
@@ -2677,7 +2677,7 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
         id: SemanticCommandId::WorkspaceDescriptionClear,
         title: "Clear description",
         reach: SemanticReach::Client,
-        description: "Empty the description being written, so saving lets Suru derive one",
+        description: "Empty the description being written, so saving lets Shaman derive one",
         slash: None,
         keybinding: None,
     },

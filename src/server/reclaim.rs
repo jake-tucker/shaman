@@ -707,7 +707,7 @@ impl RegistryReads {
     fn new(timeout: Duration) -> Self {
         Self {
             timeout,
-            reads: ReadsApart::new("suru-reclaim-registry-read", usize::MAX),
+            reads: ReadsApart::new("shaman-reclaim-registry-read", usize::MAX),
         }
     }
 

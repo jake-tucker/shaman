@@ -7,7 +7,7 @@ use crate::copilot_integration::support::{
     ScriptedCopilot, abort_arm, agent_messages, conversation_arms, conversation_fixture,
     opened_session, send_arm, session_where, settled_session,
 };
-use suru::protocol::{
+use shaman::protocol::{
     Activity, ActivityStatus, Delegator, MessageRole, SessionSnapshot, TranscriptItem, TurnStatus,
 };
 

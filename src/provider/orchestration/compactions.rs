@@ -10,8 +10,8 @@
 //! with it, as the Session store settles everything a Turn leaves in flight.
 //!
 //! A Provider reports the Compaction an interrupt cancelled as failed. Only
-//! Suru knows it asked for that, so a failure reported once the Provider has
-//! acknowledged Suru's interrupt of the Turn holding the Compaction Settles it
+//! Shaman knows it asked for that, so a failure reported once the Provider has
+//! acknowledged Shaman's interrupt of the Turn holding the Compaction Settles it
 //! as interrupted instead (ADR 0039).
 //!
 //! A Turn a Compaction request began (ADR 0041) holds the one Compaction it
@@ -19,11 +19,11 @@
 //! says of compacting once that one has Settled restates it. The Turn Settles
 //! at the Provider's own boundary, but as its Compaction did rather than as
 //! the boundary says, since a Provider may close the work with a success that
-//! compacted nothing, or fail it for a cancellation Suru asked for. One that
+//! compacted nothing, or fail it for a cancellation Shaman asked for. One that
 //! never reported compacting at all fails with that said — in the Provider's
 //! words where it failed the Turn — and holds no Compaction: nothing is
 //! guessed. A Turn the user interrupted is stopped instead: once the Provider
-//! has acknowledged Suru's interrupt, or ends the Turn as interrupted itself,
+//! has acknowledged Shaman's interrupt, or ends the Turn as interrupted itself,
 //! a Compaction it never settled was stopped, and so was a Turn it never
 //! began compacting in.
 //!
@@ -48,7 +48,7 @@ use crate::{
 const NOTHING_COMPACTED: &str =
     "Provider execution failed: the Provider ended the Turn without reporting a Compaction.";
 
-/// The most characters of a Compaction's summary Suru stores. A summary is
+/// The most characters of a Compaction's summary Shaman stores. A summary is
 /// prose the Provider wrote for its Agent to carry on from, so it is capped as
 /// Reasoning is rather than as a log: generous next to any real summary, which
 /// runs to a few pages at most, and low enough that a Provider summarising
@@ -62,9 +62,9 @@ pub(super) enum CompactionOutcome {
         after_tokens: Option<u64>,
         summary: Option<String>,
     },
-    /// The Provider reported it failing. `stop_requested` says whether Suru
+    /// The Provider reported it failing. `stop_requested` says whether Shaman
     /// had asked the Provider to stop the work holding it, and had that
-    /// acknowledged: then the failure is the cancellation Suru asked for, and
+    /// acknowledged: then the failure is the cancellation Shaman asked for, and
     /// the Compaction Settles interrupted, with no failure to explain.
     Failed {
         error: Option<String>,
@@ -72,7 +72,7 @@ pub(super) enum CompactionOutcome {
     },
 }
 
-/// A Compaction's record once it settles, as Suru stores it.
+/// A Compaction's record once it settles, as Shaman stores it.
 struct SettledRecord {
     status: ActivityStatus,
     before_tokens: Option<u64>,
@@ -127,7 +127,7 @@ impl CompactionOutcome {
     }
 }
 
-/// A summary as Suru stores it: normalized like any Provider text, cut to
+/// A summary as Shaman stores it: normalized like any Provider text, cut to
 /// [`MAX_STORED_SUMMARY_CHARS`], and whether the cut dropped any of it. A
 /// summary with nothing to read is no summary.
 fn stored_summary(summary: Option<String>) -> (Option<String>, bool) {
@@ -258,7 +258,7 @@ impl LiveCompaction {
 
     /// How the Turn a Compaction request began Settles once its Provider ends
     /// it: as its Compaction did. `stopped` says whether the Provider stopped
-    /// the work on request: it acknowledged Suru's interrupt, or ended the
+    /// the work on request: it acknowledged Shaman's interrupt, or ended the
     /// Turn as interrupted itself. Then a Compaction it left running, or never
     /// reported at all, was stopped, and the Turn Settles interrupted, with
     /// nothing stood beside a stop (ADR 0039). Otherwise one left running
@@ -295,7 +295,7 @@ impl LiveCompaction {
     /// The Compaction still decides, as at any other boundary. One the
     /// Provider left running failed for the reason the Turn did, and settles
     /// so here, unless the Turn was `stopped`: then the failure is the stop
-    /// Suru asked for, and the Turn Settles interrupted with it (ADR 0039).
+    /// Shaman asked for, and the Turn Settles interrupted with it (ADR 0039).
     /// A Provider that failed before it reported compacting at all fails the
     /// Turn in its own words.
     pub(super) fn requested_turn_failed(

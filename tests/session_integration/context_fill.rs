@@ -5,7 +5,7 @@ use crate::session_integration::{
         controlled_selection, read_session, read_session_until, the_subagent_row, working_turn,
     },
 };
-use suru::{
+use shaman::{
     protocol::{Activity, ContextFill, SessionChange, TurnId, TurnStatus},
     provider::{
         ContextFillReport, ProviderEvent, ProviderEventAttribution, ProviderSubagentId,
@@ -257,14 +257,14 @@ async fn selection_preserves_working_measurement_but_a_new_model_invalidates_it(
             fixture.session_id
         ))
         .bearer_auth(&fixture.server.descriptor().token)
-        .json(&suru::protocol::AdmitPromptRequest {
-            prompt: suru::protocol::InitialPrompt {
-                id: suru::protocol::PromptId::new(),
+        .json(&shaman::protocol::AdmitPromptRequest {
+            prompt: shaman::protocol::InitialPrompt {
+                id: shaman::protocol::PromptId::new(),
                 text: "New model".into(),
                 skill_invocations: Vec::new(),
                 attachments: Vec::new(),
             },
-            delivery: suru::protocol::PromptDelivery::Queue,
+            delivery: shaman::protocol::PromptDelivery::Queue,
         })
         .send()
         .await
@@ -322,14 +322,14 @@ async fn selection_preserves_working_measurement_but_a_new_model_invalidates_it(
             fixture.session_id
         ))
         .bearer_auth(&fixture.server.descriptor().token)
-        .json(&suru::protocol::AdmitPromptRequest {
-            prompt: suru::protocol::InitialPrompt {
-                id: suru::protocol::PromptId::new(),
+        .json(&shaman::protocol::AdmitPromptRequest {
+            prompt: shaman::protocol::InitialPrompt {
+                id: shaman::protocol::PromptId::new(),
                 text: "Same model".into(),
                 skill_invocations: Vec::new(),
                 attachments: Vec::new(),
             },
-            delivery: suru::protocol::PromptDelivery::Queue,
+            delivery: shaman::protocol::PromptDelivery::Queue,
         })
         .send()
         .await

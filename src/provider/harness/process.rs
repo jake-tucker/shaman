@@ -1,4 +1,4 @@
-//! Ownership of the harness server child processes Suru launches.
+//! Ownership of the harness server child processes Shaman launches.
 //!
 //! Every launched process is registered with a [`ProcessRegistry`] and supervised by a task that
 //! outlives its transport, so a Session shutdown, a runtime shutdown, and an unexpected exit all
@@ -45,9 +45,9 @@ pub(crate) struct HarnessSpec {
     pub(crate) args: Vec<OsString>,
     pub(crate) name: String,
     /// The directory the process starts in, for a harness that takes its working
-    /// directory from the process rather than over its wire. `None` inherits Suru's own.
+    /// directory from the process rather than over its wire. `None` inherits Shaman's own.
     pub(crate) cwd: Option<std::path::PathBuf>,
-    /// Variables set in the process's environment over those it inherits from Suru's.
+    /// Variables set in the process's environment over those it inherits from Shaman's.
     pub(crate) env: Vec<(OsString, OsString)>,
     /// What the user does when `executable` is not there to launch: the Provider's own fix for
     /// [`ProviderUnavailability::NotInstalled`], since only the Provider knows where its CLI is
@@ -296,7 +296,7 @@ fn harness_command(spec: &HarnessSpec) -> Command {
     command
 }
 
-/// Launches `command` as the root of a process tree bound to the handle Suru holds on it: a
+/// Launches `command` as the root of a process tree bound to the handle Shaman holds on it: a
 /// harness's tool shells and MCP servers are its own, so they end with it however it ends.
 async fn spawn_harness_tree(command: &mut Command) -> std::io::Result<(ProcessTree, ProcessPipes)> {
     ProcessTree::spawn(command, Descendants::EndWithRoot).await
@@ -343,7 +343,7 @@ pub(crate) async fn spawn_harness_process(
         use tokio::io::{AsyncBufReadExt, BufReader};
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            tracing::debug!(target: "suru::provider::harness::stderr", harness = %stderr_name, bytes = line.len(), "drained native stderr");
+            tracing::debug!(target: "shaman::provider::harness::stderr", harness = %stderr_name, bytes = line.len(), "drained native stderr");
         }
     });
 
@@ -353,7 +353,7 @@ pub(crate) async fn spawn_harness_process(
     ))
 }
 
-/// What a harness Suru ran once and waited out left behind.
+/// What a harness Shaman ran once and waited out left behind.
 pub(crate) struct HarnessRun {
     pub(crate) status: std::process::ExitStatus,
     pub(crate) stdout: String,
@@ -367,7 +367,7 @@ pub(crate) struct HarnessRun {
 ///
 /// This is the one-shot counterpart to [`spawn_harness_process`]: a harness invoked to answer
 /// once and exit — the mode a Provider fulfils an Errand through where its harness offers one
-/// (ADR 0011) — rather than a server Suru speaks a protocol to for as long as a Session lives.
+/// (ADR 0011) — rather than a server Shaman speaks a protocol to for as long as a Session lives.
 /// Nothing is registered with a [`ProcessRegistry`], because there is no Session to lose and
 /// nothing for a runtime shutdown to stop: whoever asked bounds the wait with its own deadline,
 /// and abandoning that wait takes the process tree down with it.
@@ -391,7 +391,7 @@ pub(crate) async fn run_harness_to_completion(
     tracing::info!(pid = tree.id(), harness = %name, "launched one-shot harness process");
 
     // Nothing here fails the run on its own. A harness that has already made up
-    // its mind stops reading, and one that says something Suru cannot read back
+    // its mind stops reading, and one that says something Shaman cannot read back
     // as text has still said it in the only place that matters — the exit
     // status, and whatever did arrive, are what the run is judged on.
     let mut collected_stdout = String::new();

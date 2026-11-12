@@ -1,6 +1,6 @@
 //! A Claude conversation outliving the child that opened it.
 //!
-//! The provider-session identifier Suru mints persists as the Session's Resume State, and every
+//! The provider-session identifier Shaman mints persists as the Session's Resume State, and every
 //! child after the first asks the CLI to resume the conversation filed under it: the child a
 //! replacement server spawns after a restart, the child the next Turn spawns once an idle
 //! Session's own was stopped, and the child an Agent Selection change respawns —
@@ -12,7 +12,7 @@ use crate::claude_integration::support::{
     CLAUDE_MODELS, DurableSession, ScriptedClaude, agent_messages, connect, conversation_arms,
     conversation_fixture, discovery_arms, flag_value, rejecting_resume_preamble, settled_session,
 };
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, AgentSelection, ApprovalPosture,
         ApprovalPostureApplication, ClaudePermissionMode, CreateSessionRequest, InitialPrompt,
@@ -31,7 +31,7 @@ const STREAMED_MESSAGE: &str = r#"      emit '{"type":"stream_event","event":{"t
 "#;
 
 /// A fixture that answers the Session's discoveries and Turns, but refuses every resume — a CLI
-/// that has lost the conversation Suru comes back for.
+/// that has lost the conversation Shaman comes back for.
 fn forgetful_fixture() -> ScriptedClaude {
     ScriptedClaude::with_preamble(
         &rejecting_resume_preamble(),
@@ -106,7 +106,7 @@ async fn a_session_reopened_after_a_restart_resumes_the_conversation_it_opened()
     );
 
     assert_second_child_resumed_the_first(&claude, "the restart");
-    let expected = suru::paths::canonical(
+    let expected = shaman::paths::canonical(
         restored
             .workspace
             .path()
@@ -162,7 +162,7 @@ async fn a_moved_sessions_next_turn_resumes_the_conversation_in_its_new_director
     let session = DurableSession::start(&claude, None, "claude-moved-resume").await;
     let destination = session.workspace.path().join("moved here");
     std::fs::create_dir(&destination).unwrap();
-    let destination = suru::paths::canonical(destination).unwrap();
+    let destination = shaman::paths::canonical(destination).unwrap();
     let origin = session
         .client
         .read_session(session.session_id)
@@ -201,9 +201,9 @@ async fn a_moved_sessions_next_turn_resumes_the_conversation_in_its_new_director
         destination,
         "the resumed child works where the Session Moved to"
     );
-    let note = suru::provider::MoveNote {
+    let note = shaman::provider::MoveNote {
         from: origin,
-        to: suru::protocol::ExecutionDirectory { path: destination },
+        to: shaman::protocol::ExecutionDirectory { path: destination },
         continues: false,
     };
     assert_eq!(
@@ -552,14 +552,14 @@ async fn an_evicted_session_stops_its_claude_and_resumes_under_the_settings_in_f
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let channel = "claude-eviction-resume";
-    let server = suru::server::spawn_with_providers_and_timings(
-        suru::server::ServerConfig::new(state_dir.path(), channel)
+    let server = shaman::server::spawn_with_providers_and_timings(
+        shaman::server::ServerConfig::new(state_dir.path(), channel)
             .expect("configure server")
             .with_config_dir(config_dir.path()),
-        vec![std::sync::Arc::new(suru::provider::ClaudeRuntime::new(
+        vec![std::sync::Arc::new(shaman::provider::ClaudeRuntime::new(
             claude.executable(),
         ))],
-        suru::server::ServerTimings::default().with_session_eviction(
+        shaman::server::ServerTimings::default().with_session_eviction(
             std::time::Duration::from_millis(200),
             std::time::Duration::from_millis(20),
         ),
@@ -572,7 +572,7 @@ async fn an_evicted_session_stops_its_claude_and_resumes_under_the_settings_in_f
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

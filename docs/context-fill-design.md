@@ -20,9 +20,9 @@ The confirmed design is implemented through #298 (shared behavior and Codex), #2
 
 The issue's original assertion that this needs display work only is incorrect. The current protocol carries some context capacity but no distinct occupancy snapshot. Existing Usage aggregates consumption and merges capacity by maximum, which cannot represent current Context Fill after compaction or a change to a smaller Model.
 
-- Codex supplies latest context occupancy in native `last.total_tokens`, currently discarded by Suru.
-- Copilot supplies `session.usage_info` with `currentTokens` and `tokenLimit`, currently ignored by Suru.
-- Claude's official SDK exposes a native `get_context_usage` control request. Its response distinguishes `totalTokens`, `rawMaxTokens` (raw Model window), and `maxTokens` (effective capacity, potentially reduced by a compaction buffer). Compatibility with Suru's supported CLI versions and live behavior still need verification. See the [official response types](https://raw.githubusercontent.com/anthropics/claude-agent-sdk-python/main/src/claude_agent_sdk/types.py) and [request implementation](https://raw.githubusercontent.com/anthropics/claude-agent-sdk-python/main/src/claude_agent_sdk/_internal/query.py).
+- Codex supplies latest context occupancy in native `last.total_tokens`, currently discarded by Shaman.
+- Copilot supplies `session.usage_info` with `currentTokens` and `tokenLimit`, currently ignored by Shaman.
+- Claude's official SDK exposes a native `get_context_usage` control request. Its response distinguishes `totalTokens`, `rawMaxTokens` (raw Model window), and `maxTokens` (effective capacity, potentially reduced by a compaction buffer). Compatibility with Shaman's supported CLI versions and live behavior still need verification. See the [official response types](https://raw.githubusercontent.com/anthropics/claude-agent-sdk-python/main/src/claude_agent_sdk/types.py) and [request implementation](https://raw.githubusercontent.com/anthropics/claude-agent-sdk-python/main/src/claude_agent_sdk/_internal/query.py).
 
 ## Implementation verification
 

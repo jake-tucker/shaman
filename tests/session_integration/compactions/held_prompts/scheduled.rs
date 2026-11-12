@@ -5,7 +5,7 @@
 //! Prompt begins the next Turn whether the Compaction completes or fails, and
 //! is withdrawn, its text returned to the client that wrote it, only where an
 //! interrupt reached the Compaction's Turn before the Compaction completed.
-//! Suru stopping withdraws it too, as it does any Prompt still owed a Turn,
+//! Shaman stopping withdraws it too, as it does any Prompt still owed a Turn,
 //! saying why; its text is then recovered only by a client still holding it.
 
 use super::super::{compaction_statuses, failed, turn_settled};
@@ -21,7 +21,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use axum::http::StatusCode;
-use suru::{
+use shaman::{
     protocol::{
         ActivityStatus, AdmitPromptRequest, CompactionRequest, InitialPrompt, Prompt,
         PromptDelivery, PromptId, PromptStatus, SessionSnapshot, TurnStatus,
@@ -445,7 +445,7 @@ async fn each_prompt_held_behind_a_failed_scheduled_compaction_begins_a_turn_of_
     assert_eq!(next.prompt(), text);
     assert_eq!(
         next.attachments(),
-        [suru::provider::ProviderAttachment {
+        [shaman::provider::ProviderAttachment {
             label: "[Image 1]".to_owned(),
             mime_type: "image/png".to_owned(),
             bytes: image,
@@ -646,14 +646,14 @@ async fn the_writer_and_not_the_interrupter_takes_back_a_prompt_withdrawn_behind
     }
 }
 
-/// Suru stopping mid-Compaction leaves nothing to deliver the held Prompt, so
+/// Shaman stopping mid-Compaction leaves nothing to deliver the held Prompt, so
 /// it is stored withdrawn, as any Prompt still owed a Turn is when its process
 /// goes (ADR 0024), saying behind which Compaction: whether the Server stopped
 /// gracefully, settling the Turn as it went, or died, leaving the Turn to
 /// settle failed at the next start. Nothing returns its text after a restart
 /// but a client still holding it.
 #[tokio::test]
-async fn a_prompt_held_behind_a_scheduled_compaction_when_suru_stops_is_stored_withdrawn_saying_why()
+async fn a_prompt_held_behind_a_scheduled_compaction_when_shaman_stops_is_stored_withdrawn_saying_why()
  {
     for died in [false, true] {
         let described = if died {
@@ -663,7 +663,7 @@ async fn a_prompt_held_behind_a_scheduled_compaction_when_suru_stops_is_stored_w
         };
         let state = tempfile::tempdir().unwrap();
         let channel = "scheduled-held-stop";
-        let config = suru::server::ServerConfig::new(state.path(), channel).expect("configure");
+        let config = shaman::server::ServerConfig::new(state.path(), channel).expect("configure");
         let mut idle = idle(state.path(), channel, ON, true).await;
         let session_id = idle.fixture.session_id;
         let (begun, prompt) = held_behind_a_scheduled_compaction(&mut idle, true).await;
@@ -675,7 +675,7 @@ async fn a_prompt_held_behind_a_scheduled_compaction_when_suru_stops_is_stored_w
         let (runtime, _provider) = crate::support::provider::ControlledProvider::new();
         let restarted = timeout(
             PROGRESS_DEADLINE,
-            suru::server::spawn_with_provider(config, runtime),
+            shaman::server::spawn_with_provider(config, runtime),
         )
         .await
         .expect("the server restarts in time")
@@ -757,7 +757,7 @@ async fn a_manual_compaction_after_a_scheduled_one_still_withdraws_its_held_prom
     assert_eq!(prompt_status(&settled, prompt.id), PromptStatus::Cancelled);
     assert_eq!(
         withdrawal(&settled, prompt.id),
-        Some(suru::protocol::PromptWithdrawal::CompactionUnfinished {
+        Some(shaman::protocol::PromptWithdrawal::CompactionUnfinished {
             turn_id: settled.turns[2].id,
         })
     );

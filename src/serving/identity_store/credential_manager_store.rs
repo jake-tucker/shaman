@@ -10,7 +10,7 @@
 //! (`CRED_PERSIST_LOCAL_MACHINE`), never carried to another by a roaming
 //! profile: a Server's identity is its machine's.
 //!
-//! Credential Manager brings up no prompt for what Suru asks of it; the
+//! Credential Manager brings up no prompt for what Shaman asks of it; the
 //! [`super::BoundedStore`] every call goes through bounds each call all the
 //! same. A logon session with no credential set to keep anything in — a
 //! network logon, which an SSH login with a key may be — counts as
@@ -36,9 +36,9 @@ use zeroize::Zeroize;
 use super::IdentityStore;
 use super::{ItemId, StoreUnavailable, Stored};
 
-/// What every credential Suru keeps a Server identity key as is named
+/// What every credential Shaman keeps a Server identity key as is named
 /// first, before the item's id.
-const TARGET_PREFIX: &str = "ai.suru.server-identity/";
+const TARGET_PREFIX: &str = "ai.shaman.server-identity/";
 /// The most bytes a credential's secret holds:
 /// `CRED_MAX_CREDENTIAL_BLOB_SIZE`.
 const BLOB_LIMIT: usize = 5 * 512;
@@ -119,7 +119,7 @@ impl IdentityStore for CredentialManagerStore {
     }
 }
 
-/// A credential Credential Manager read out, in a buffer it made for Suru,
+/// A credential Credential Manager read out, in a buffer it made for Shaman,
 /// which is freed, its secret wiped first, once this is dropped.
 #[cfg(windows)]
 struct ReadCredential(NonNull<CREDENTIALW>);
@@ -292,14 +292,14 @@ mod tests {
         }
     }
 
-    /// Each item is the credential named for Suru's Server identity keys
+    /// Each item is the credential named for Shaman's Server identity keys
     /// and the item's id, so the id alone finds it.
     #[test]
-    fn an_item_is_the_credential_named_for_suru_and_its_id() {
+    fn an_item_is_the_credential_named_for_shaman_and_its_id() {
         let item = ItemId::random();
         assert_eq!(
             target_name(&item),
-            format!("ai.suru.server-identity/{item}")
+            format!("ai.shaman.server-identity/{item}")
         );
         assert_ne!(target_name(&item), target_name(&ItemId::random()));
     }
@@ -307,7 +307,8 @@ mod tests {
     /// A label that fits is kept as it is.
     #[test]
     fn a_label_that_fits_is_kept_whole() {
-        let label = r"Suru Server identity key (stable channel, C:\Users\ana\AppData\Roaming\suru)";
+        let label =
+            r"Shaman Server identity key (stable channel, C:\Users\ana\AppData\Roaming\shaman)";
         assert_eq!(fitted(label, COMMENT_LIMIT), label);
         let exact = "x".repeat(COMMENT_LIMIT);
         assert_eq!(fitted(&exact, COMMENT_LIMIT), exact);
@@ -318,16 +319,16 @@ mod tests {
     /// cut from between them marked.
     #[test]
     fn a_label_too_long_is_cut_short_in_the_middle() {
-        let directory = format!(r"C:\{}suru", "deep\\".repeat(120));
-        let label = format!("Suru Server identity key (stable channel, {directory})");
+        let directory = format!(r"C:\{}shaman", "deep\\".repeat(120));
+        let label = format!("Shaman Server identity key (stable channel, {directory})");
         for limit in [COMMENT_LIMIT, USER_NAME_LIMIT] {
             let fitted = fitted(&label, limit);
             assert_eq!(fitted.encode_utf16().count(), limit, "{fitted}");
             assert!(
-                fitted.starts_with("Suru Server identity key (stable channel, C:\\deep\\"),
+                fitted.starts_with("Shaman Server identity key (stable channel, C:\\deep\\"),
                 "{fitted}"
             );
-            assert!(fitted.ends_with("\\deep\\suru)"), "{fitted}");
+            assert!(fitted.ends_with("\\deep\\shaman)"), "{fitted}");
             assert_eq!(fitted.matches('…').count(), 1, "{fitted}");
         }
     }
@@ -460,7 +461,7 @@ mod tests {
         let item = Throwaway(ItemId::random());
         // Longer than a user name or a comment holds.
         let label = format!(
-            "Suru smoke test credential, safe to delete ({})",
+            "Shaman smoke test credential, safe to delete ({})",
             "padding ".repeat(80)
         );
 

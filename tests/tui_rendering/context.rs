@@ -5,7 +5,7 @@ use crate::tui_rendering::support::{
     rendered_application_rows_at, type_terminal_text, workspace_dir,
 };
 use crossterm::event::KeyCode;
-use suru::{
+use shaman::{
     protocol::{
         AgentSelection, ContextBreakdown, ContextFill, ContextItem, ContextPart, ContextSource,
         ModelId, Outlook, PromptId, ProviderId, SessionId, SessionReference,

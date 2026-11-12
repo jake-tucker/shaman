@@ -2,7 +2,7 @@ use std::{path::PathBuf, process::ExitCode};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use suru::{
+use shaman::{
     IdentityStoreChoice, LastStop,
     cli::{self, RelayCommand, ServeCommand},
     logging,
@@ -18,12 +18,12 @@ use suru::{
 // Keep the marker in allocated storage so stripping debug information preserves
 // it. Taking its address in main also prevents linker garbage collection.
 #[used]
-#[cfg_attr(target_os = "macos", unsafe(link_section = "__DATA,__suru"))]
-#[cfg_attr(not(target_os = "macos"), unsafe(link_section = ".suru"))]
-static BUILD_ID: [u8; 32] = suru_build_id::generate!();
+#[cfg_attr(target_os = "macos", unsafe(link_section = "__DATA,__shaman"))]
+#[cfg_attr(not(target_os = "macos"), unsafe(link_section = ".shaman"))]
+static BUILD_ID: [u8; 32] = shaman_build_id::generate!();
 
 #[derive(Debug, Parser)]
-#[command(name = "suru", version, about)]
+#[command(name = "shaman", version, about)]
 struct Cli {
     #[command(subcommand)]
     command: Option<CliCommand>,
@@ -70,7 +70,7 @@ enum CliCommand {
         #[arg(long, hide = true)]
         last_stop: Option<LastStop>,
         /// The store a new identity key is kept in whatever the build, as
-        /// the launcher read `SURU_IDENTITY_STORE`: `system` or `file`.
+        /// the launcher read `SHAMAN_IDENTITY_STORE`: `system` or `file`.
         #[arg(long, hide = true)]
         identity_store: Option<IdentityStoreChoice>,
         /// How long this server waits for the channel's election lock to come
@@ -159,7 +159,7 @@ async fn main() -> Result<ExitCode> {
             }
             let health = start_server(&config).await?;
             println!(
-                "Suru server ready (pid {}, instance {})",
+                "Shaman server ready (pid {}, instance {})",
                 health.identity.pid, health.identity.instance_id
             );
             Ok(())
@@ -199,12 +199,12 @@ async fn main() -> Result<ExitCode> {
             }
             match stop_server(&config).await? {
                 ServerStop::Stopped(health) => println!(
-                    "Suru server stopped (pid {}, instance {})",
+                    "Shaman server stopped (pid {}, instance {})",
                     health.identity.pid, health.identity.instance_id
                 ),
                 ServerStop::NoneRunning => println!(
-                    "No Suru server was running on the `{}` channel. A stop is recorded, so none \
-                     is restarted until the next login or `suru server start`.",
+                    "No Shaman server was running on the `{}` channel. A stop is recorded, so none \
+                     is restarted until the next login or `shaman server start`.",
                     config.channel()
                 ),
             }
@@ -261,7 +261,7 @@ async fn main() -> Result<ExitCode> {
                 .context("initialize server logging")?;
             // Before anything is spawned: every Provider process and Git
             // command holds descriptors of the Server's.
-            suru::open_files::raise_limit();
+            shaman::open_files::raise_limit();
             let signals = server::ShutdownSignals::listen()?;
             let mut timings = server::ServerTimings::default();
             if let Some(interval_ms) = state_dir_check_interval_ms {
@@ -313,7 +313,7 @@ async fn main() -> Result<ExitCode> {
                 .context("initialize client logging")?;
             let client = ManagedClient::connect(config)
                 .await
-                .context("prepare the managed Suru server connection")?;
+                .context("prepare the managed Shaman server connection")?;
             tui::run(client).await
         }
     };
@@ -321,39 +321,39 @@ async fn main() -> Result<ExitCode> {
 }
 
 fn default_client_config() -> Result<ManagedClientConfig> {
-    let state_base_dir = match std::env::var_os("SURU_STATE_DIR") {
+    let state_base_dir = match std::env::var_os("SHAMAN_STATE_DIR") {
         Some(path) => PathBuf::from(path),
         None => dirs::state_dir()
             .or_else(dirs::data_local_dir)
             .context("determine the current user's state directory")?
-            .join("suru"),
+            .join("shaman"),
     };
-    let data_base_dir = match std::env::var_os("SURU_DATA_DIR") {
+    let data_base_dir = match std::env::var_os("SHAMAN_DATA_DIR") {
         Some(path) => PathBuf::from(path),
         None => dirs::data_local_dir()
             .context("determine the current user's data directory")?
-            .join("suru"),
+            .join("shaman"),
     };
-    let config_dir = suru::settings::resolve_config_root(
-        std::env::var_os("SURU_CONFIG_DIR").as_deref(),
+    let config_dir = shaman::settings::resolve_config_root(
+        std::env::var_os("SHAMAN_CONFIG_DIR").as_deref(),
         std::env::var_os("XDG_CONFIG_HOME").as_deref(),
         dirs::home_dir().as_deref(),
     );
-    let channel = std::env::var("SURU_CHANNEL").unwrap_or_else(|_| {
+    let channel = std::env::var("SHAMAN_CHANNEL").unwrap_or_else(|_| {
         if cfg!(debug_assertions) {
             "debug".to_owned()
         } else {
             "release".to_owned()
         }
     });
-    let identity_store = match std::env::var("SURU_IDENTITY_STORE") {
+    let identity_store = match std::env::var("SHAMAN_IDENTITY_STORE") {
         Ok(store) => Some(
             store
                 .parse::<IdentityStoreChoice>()
-                .context("read SURU_IDENTITY_STORE")?,
+                .context("read SHAMAN_IDENTITY_STORE")?,
         ),
         Err(std::env::VarError::NotPresent) => None,
-        Err(error) => return Err(error).context("read SURU_IDENTITY_STORE"),
+        Err(error) => return Err(error).context("read SHAMAN_IDENTITY_STORE"),
     };
     let mut config =
         ManagedClientConfig::new(state_base_dir, channel)?.with_data_dir(data_base_dir);

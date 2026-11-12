@@ -182,7 +182,7 @@ fn safe_scope(scope: NativeSkillScope) -> &'static str {
 
 fn opaque_skill_id(execution_directory: &Path, native_path: &Path) -> SkillId {
     let mut hash = blake3::Hasher::new();
-    hash.update(b"suru:codex-skill:v1\0");
+    hash.update(b"shaman:codex-skill:v1\0");
     hash.update(execution_directory.to_string_lossy().as_bytes());
     hash.update(b"\0");
     hash.update(native_path.to_string_lossy().as_bytes());

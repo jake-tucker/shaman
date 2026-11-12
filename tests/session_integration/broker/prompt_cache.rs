@@ -3,8 +3,8 @@
 //! lapses is published on its Session alone, and nothing of it rolls up into
 //! the Session that delegated to it.
 
-use suru::protocol::SessionTimestamp;
-use suru::provider::CacheLifetime;
+use shaman::protocol::SessionTimestamp;
+use shaman::provider::CacheLifetime;
 
 use super::*;
 
@@ -29,7 +29,7 @@ async fn a_brokered_subagents_lapse_is_its_own_and_never_its_callers() {
             lapses_at: callers,
             model: None,
             lifetime: None,
-            write_price: suru::protocol::CacheWritePrice::Default,
+            write_price: shaman::protocol::CacheWritePrice::Default,
             prompt_limit_tokens: None,
         })
         .await;
@@ -38,7 +38,7 @@ async fn a_brokered_subagents_lapse_is_its_own_and_never_its_callers() {
             lapses_at: childs,
             model: None,
             lifetime: None,
-            write_price: suru::protocol::CacheWritePrice::Default,
+            write_price: shaman::protocol::CacheWritePrice::Default,
             prompt_limit_tokens: None,
         })
         .await;

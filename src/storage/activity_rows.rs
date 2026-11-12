@@ -36,9 +36,9 @@ const SESSIONS_PER_ACTIVITY_READ: usize = 500;
 pub(crate) enum Spelled<T> {
     /// The payload has none.
     Absent,
-    /// A spelling this Suru reads.
+    /// A spelling this Shaman reads.
     Known(T),
-    /// A spelling this Suru does not read, as written.
+    /// A spelling this Shaman does not read, as written.
     Unknown(String),
 }
 

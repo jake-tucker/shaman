@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Measure an instrumented release binary using disposable state and SQLite rows.
 
-Usage: python3 docs/benchmarks/session-restoration.py /absolute/path/to/suru
+Usage: python3 docs/benchmarks/session-restoration.py /absolute/path/to/shaman
 Requires the `Session restoration completed` debug event added for #279.
 Uses only the Python standard library; no user database or config is touched.
 """
@@ -21,17 +21,17 @@ import uuid
 
 
 def measure(binary, count, shape):
-    with tempfile.TemporaryDirectory(prefix="suru-restoration-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="shaman-restoration-") as temporary:
         root = Path(temporary).resolve()
         config = root / "config"
         config.mkdir()
-        (config / "suru.json").write_text(json.dumps({
+        (config / "shaman.json").write_text(json.dumps({
             "provider": {name: {"enabled": False} for name in ("codex", "copilot", "claude")},
             "serving": {"enabled": False},
         }), encoding="utf-8")
-        env = dict(os.environ, SURU_STATE_DIR=str(root / "state"),
-                   SURU_DATA_DIR=str(root / "data"), SURU_CONFIG_DIR=str(config),
-                   SURU_CHANNEL="release", SURU_LOG="suru::sessions=debug")
+        env = dict(os.environ, SHAMAN_STATE_DIR=str(root / "state"),
+                   SHAMAN_DATA_DIR=str(root / "data"), SHAMAN_CONFIG_DIR=str(config),
+                   SHAMAN_CHANNEL="release", SHAMAN_LOG="shaman::sessions=debug")
 
         def command(action):
             return subprocess.run([binary, "server", action], env=env, check=True,
@@ -40,7 +40,7 @@ def measure(binary, count, shape):
         try:
             command("start")  # Let the binary create and migrate its database.
             command("stop")
-            database = root / "data" / "suru.db"
+            database = root / "data" / "shaman.db"
             ids = [str(uuid.uuid4()) for _ in range(count)]
             with sqlite3.connect(database) as connection:
                 for index, session_id in enumerate(ids):

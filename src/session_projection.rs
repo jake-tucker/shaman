@@ -976,7 +976,7 @@ impl<'a> Validation<'a> {
                     validate_model_attribution(model)?;
                 }
                 // A Delegation arrives whole, so it is added in its final
-                // state, which may already be cut short by Suru's cap. Every
+                // state, which may already be cut short by Shaman's cap. Every
                 // other Message is added before any content reaches it.
                 if message.truncated && message.role.delegator().is_none() {
                     bail!("Session update added a Message outside its initial state");

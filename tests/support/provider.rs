@@ -8,13 +8,13 @@ use std::{
 
 use futures_util::{StreamExt, stream};
 use serde_json::Value;
-use suru::pricing::{CacheRates, PromptRates, PromptRatesFuture};
-use suru::protocol::{
+use shaman::pricing::{CacheRates, PromptRates, PromptRatesFuture};
+use shaman::protocol::{
     AgentIdentity, AgentSelection, ContextBreakdown, ModelDescriptor, ModelId,
     ModelOptionSelection, ProviderId, ProviderUnavailability, SkillCatalog,
     SkillCatalogCapabilities, SkillCatalogStatus, SkillDescriptor, SkillId, SkillPromptDelivery,
 };
-use suru::provider::{
+use shaman::provider::{
     AttributedProviderEvent, CacheLifetime, ErrandAnswer, ErrandConsumption, ErrandFailed,
     ErrandFuture, ManualCompaction, ProviderCompactionInput, ProviderDecisionDelivery,
     ProviderErrand, ProviderError, ProviderEvent, ProviderEventAttribution, ProviderEventStream,
@@ -57,7 +57,7 @@ pub struct ControlledProviderRuntime {
     /// in for a Provider the user has yet to install or sign in to. Shared so a
     /// test can fix it the way a user would and refresh.
     unavailable: Arc<Mutex<Option<ProviderUnavailability>>>,
-    /// How many times Suru has asked this Provider for its Models. Every other
+    /// How many times Shaman has asked this Provider for its Models. Every other
     /// assertion can only establish that a Provider is not selectable; this is
     /// what lets a test see that a Provider was never consulted at all.
     /// Session startup proves its own negative — a start request that never
@@ -88,7 +88,7 @@ pub struct ControlledProviderRuntime {
     /// a test declares one, at a millisecond scale where it counts down.
     cache_lifetime: Arc<Mutex<CacheLifetime>>,
     /// Whether this Provider declares it launches a process for each Session,
-    /// which Suru stops once the Session has waited idle. Off by default, as
+    /// which Shaman stops once the Session has waited idle. Off by default, as
     /// for a Provider whose one process every Session shares; a test
     /// declares it, before any Session starts, to see that process stopped.
     process_per_session: Arc<AtomicBool>,
@@ -152,15 +152,15 @@ pub struct ErrandRequest {
 
 /// Holding a gated delivery exposes arbitration while Provider acknowledgement waits.
 pub struct QuestionnaireDelivery {
-    pub id: suru::protocol::QuestionnaireId,
-    pub submission: suru::protocol::QuestionnaireSubmission,
+    pub id: shaman::protocol::QuestionnaireId,
+    pub submission: shaman::protocol::QuestionnaireSubmission,
     response: Option<oneshot::Sender<Result<(), ProviderError>>>,
 }
 
 /// Holding one exposes Decision arbitration while Provider acknowledgement waits.
 pub struct DecisionDelivery {
-    pub id: suru::protocol::ApprovalId,
-    pub decision: suru::protocol::Decision,
+    pub id: shaman::protocol::ApprovalId,
+    pub decision: shaman::protocol::Decision,
     response: Option<oneshot::Sender<Result<(), ProviderError>>>,
 }
 
@@ -227,17 +227,18 @@ pub struct ControlledProviderSession {
 }
 
 pub struct PostureUpdate {
-    pub posture: suru::protocol::ApprovalPosture,
+    pub posture: shaman::protocol::ApprovalPosture,
     pub has_active_work: bool,
-    response:
-        Option<oneshot::Sender<Result<suru::provider::ProviderPostureApplication, ProviderError>>>,
+    response: Option<
+        oneshot::Sender<Result<shaman::provider::ProviderPostureApplication, ProviderError>>,
+    >,
 }
 
 impl PostureUpdate {
     pub fn next_turn(self) {
         self.response
             .expect("posture updates must be gated")
-            .send(Ok(suru::provider::ProviderPostureApplication::NextTurn))
+            .send(Ok(shaman::provider::ProviderPostureApplication::NextTurn))
             .ok();
     }
 }
@@ -307,7 +308,7 @@ pub struct SubagentStop {
     response: oneshot::Sender<Result<(), ProviderError>>,
 }
 
-/// Input Suru delivered to one native Subagent by the identity the double
+/// Input Shaman delivered to one native Subagent by the identity the double
 /// minted for it — a Subagent Report to a native Subagent that delegated
 /// through the Broker — held until the test answers it.
 pub struct SubagentDelivery {
@@ -525,7 +526,7 @@ impl ControlledProviderRuntime {
     }
 
     /// Declares this Provider launches a process for each Session from here
-    /// on, standing in for Claude or Codex, whose idle process Suru stops. An
+    /// on, standing in for Claude or Codex, whose idle process Shaman stops. An
     /// actor reads it as it starts.
     pub fn declare_process_per_session(&self) {
         self.process_per_session.store(true, Ordering::SeqCst);
@@ -597,7 +598,7 @@ impl ControlledProviderRuntime {
     }
 
     /// Holds the next Model discovery open until the returned sender is used
-    /// or dropped, so a test can see what Suru serves while a Provider has not
+    /// or dropped, so a test can see what Shaman serves while a Provider has not
     /// yet answered.
     pub fn block_next_model_discovery(&self) -> oneshot::Sender<()> {
         let (release, blocked) = oneshot::channel();
@@ -614,7 +615,7 @@ impl ControlledProviderRuntime {
     }
 
     /// Makes Model discovery report `reason`, or — with `None` — serve the
-    /// catalog again, as a user fixing the condition outside Suru would.
+    /// catalog again, as a user fixing the condition outside Shaman would.
     pub fn set_unavailable(&self, reason: Option<ProviderUnavailability>) {
         *self
             .unavailable
@@ -622,7 +623,7 @@ impl ControlledProviderRuntime {
             .expect("controlled Provider availability lock is not poisoned") = reason;
     }
 
-    /// How many times Suru has asked this Provider for its Models.
+    /// How many times Shaman has asked this Provider for its Models.
     pub fn model_discoveries(&self) -> usize {
         self.discoveries.load(Ordering::SeqCst)
     }
@@ -639,7 +640,7 @@ impl ControlledProviderRuntime {
 
     /// Drops `model` from the catalog this Provider serves, the way a Provider
     /// withdrawing a Model from its own catalog does. The next discovery is
-    /// what makes the withdrawal visible to Suru.
+    /// what makes the withdrawal visible to Shaman.
     pub fn withdraw_model(&self, model: &ModelId) {
         self.models
             .lock()
@@ -650,7 +651,7 @@ impl ControlledProviderRuntime {
     /// Makes this double stand in for a Provider whose harness has no one-shot
     /// mode: an Errand is fulfilled by starting a Provider-side session,
     /// delivering the one Prompt, draining for the reply, and discarding the
-    /// session. Which path ran is the runtime's own business, so nothing Suru
+    /// session. Which path ran is the runtime's own business, so nothing Shaman
     /// asks of it changes.
     pub fn run_errands_through_a_session(&self) {
         *self
@@ -728,17 +729,17 @@ impl StartRequest {
         &self.request.execution_directory
     }
 
-    pub fn resume_state(&self) -> Option<&suru::provider::ProviderResumeState> {
+    pub fn resume_state(&self) -> Option<&shaman::provider::ProviderResumeState> {
         self.request.resume_state.as_ref()
     }
 
-    pub fn approval_posture(&self) -> Option<&suru::protocol::ApprovalPosture> {
+    pub fn approval_posture(&self) -> Option<&shaman::protocol::ApprovalPosture> {
         self.request.approval_posture.as_ref()
     }
 
     /// The Broker endpoint and bearer token this start was handed beside its
     /// posture, or nothing while the Broker is off.
-    pub fn broker(&self) -> Option<&suru::provider::BrokerHandoff> {
+    pub fn broker(&self) -> Option<&shaman::provider::BrokerHandoff> {
         self.request.broker.as_ref()
     }
 
@@ -749,7 +750,7 @@ impl StartRequest {
     pub fn succeed_with_resume(
         self,
         identity: AgentIdentity,
-        resume: Option<suru::provider::ProviderResumeState>,
+        resume: Option<shaman::provider::ProviderResumeState>,
     ) -> ControlledProviderSession {
         let (decisions_tx, decisions_rx) = mpsc::unbounded_channel();
         let gate_decisions = Arc::new(AtomicBool::new(false));
@@ -863,7 +864,7 @@ impl ControlledProviderSession {
 
     pub async fn next_decision(
         &mut self,
-    ) -> (suru::protocol::ApprovalId, suru::protocol::Decision) {
+    ) -> (shaman::protocol::ApprovalId, shaman::protocol::Decision) {
         let delivery = self.next_decision_delivery().await;
         let result = (delivery.id, delivery.decision);
         delivery.succeed();
@@ -891,8 +892,8 @@ impl ControlledProviderSession {
     pub async fn next_questionnaire_submission(
         &mut self,
     ) -> (
-        suru::protocol::QuestionnaireId,
-        suru::protocol::QuestionnaireSubmission,
+        shaman::protocol::QuestionnaireId,
+        shaman::protocol::QuestionnaireSubmission,
     ) {
         let delivery = self.next_questionnaire_delivery().await;
         let result = (delivery.id, delivery.submission.clone());
@@ -1017,17 +1018,17 @@ impl ControlledProviderSession {
         self.watches_stops.try_recv().ok()
     }
 
-    /// Waits for Suru to shut this Provider Session down, as it does when it
+    /// Waits for Shaman to shut this Provider Session down, as it does when it
     /// closes the Provider actor that held it — the Session's deletion, say.
     pub async fn next_shutdown(&mut self) {
         self.shutdowns
             .recv()
             .await
-            .expect("Suru shuts the Provider Session down rather than dropping it");
+            .expect("Shaman shuts the Provider Session down rather than dropping it");
     }
 
     /// Keeps this Provider Session's shutdown from finishing until the answer
-    /// is dropped, as a Provider process slow to exit keeps it. Suru is told
+    /// is dropped, as a Provider process slow to exit keeps it. Shaman is told
     /// of the shutdown it asks for all the same ([`Self::next_shutdown`]).
     pub fn hold_shutdown(&self) -> tokio::sync::OwnedRwLockWriteGuard<()> {
         self.shutdown_hold
@@ -1036,14 +1037,14 @@ impl ControlledProviderSession {
             .expect("nothing else holds or awaits this Provider Session's shutdown")
     }
 
-    /// Whether Suru has already shut this Provider Session down, without
+    /// Whether Shaman has already shut this Provider Session down, without
     /// waiting. A test that must show a Provider Session was *never* shut down
     /// reads the absence here rather than waiting out a timeout.
     pub fn was_shut_down(&mut self) -> bool {
         self.shutdowns.try_recv().is_ok()
     }
 
-    /// The next input Suru delivers to one of this Provider's native
+    /// The next input Shaman delivers to one of this Provider's native
     /// Subagents by identity.
     pub async fn next_subagent_delivery(&mut self) -> SubagentDelivery {
         self.subagent_deliveries
@@ -1093,13 +1094,13 @@ impl PromptOperation {
         &self.begun_with().text
     }
 
-    pub fn skill_invocations(&self) -> &[suru::provider::ProviderSkillInvocation] {
+    pub fn skill_invocations(&self) -> &[shaman::provider::ProviderSkillInvocation] {
         &self.begun_with().skill_invocations
     }
 
     /// The Attachments the Prompt this Turn began with carried, bytes and
     /// all, in the order their labels stand in its text.
-    pub fn attachments(&self) -> &[suru::provider::ProviderAttachment] {
+    pub fn attachments(&self) -> &[shaman::provider::ProviderAttachment] {
         &self.begun_with().attachments
     }
 
@@ -1109,7 +1110,7 @@ impl PromptOperation {
         self.input.input.prompt.is_some()
     }
 
-    /// The Reports at the head of this Turn's input, in the order Suru
+    /// The Reports at the head of this Turn's input, in the order Shaman
     /// delivered them — the whole input of a Continuation a Report woke.
     pub fn reports(&self) -> &[Report] {
         &self.input.input.reports
@@ -1123,11 +1124,11 @@ impl PromptOperation {
             .unwrap_or_else(|| panic!("the Turn began with Reports alone: {:?}", self.input))
     }
 
-    pub fn selection(&self) -> &suru::protocol::AgentSelection {
+    pub fn selection(&self) -> &shaman::protocol::AgentSelection {
         &self.input.selection
     }
 
-    pub fn approval_posture(&self) -> Option<&suru::protocol::ApprovalPosture> {
+    pub fn approval_posture(&self) -> Option<&shaman::protocol::ApprovalPosture> {
         self.input.approval_posture.as_ref()
     }
 
@@ -1184,13 +1185,13 @@ impl TurnSteer {
         &self.steered_with().text
     }
 
-    pub fn skill_invocations(&self) -> &[suru::provider::ProviderSkillInvocation] {
+    pub fn skill_invocations(&self) -> &[shaman::provider::ProviderSkillInvocation] {
         &self.steered_with().skill_invocations
     }
 
     /// The Attachments the steer Prompt carried, bytes and all, in the order
     /// their labels stand in its text.
-    pub fn attachments(&self) -> &[suru::provider::ProviderAttachment] {
+    pub fn attachments(&self) -> &[shaman::provider::ProviderAttachment] {
         &self.steered_with().attachments
     }
 
@@ -1278,7 +1279,7 @@ impl SubagentDelivery {
         self.subagent_id.as_str()
     }
 
-    /// The Subagent Reports delivered, in the order Suru delivered them.
+    /// The Subagent Reports delivered, in the order Shaman delivered them.
     pub fn reports(&self) -> &[Report] {
         &self.input.reports
     }
@@ -1552,7 +1553,7 @@ pub fn fixture_skill_catalog(provider: ProviderId, workspace: std::path::PathBuf
     .collect();
     SkillCatalog {
         provider,
-        execution_directory: suru::protocol::ExecutionDirectory { path: workspace },
+        execution_directory: shaman::protocol::ExecutionDirectory { path: workspace },
         skills,
         capabilities: SkillCatalogCapabilities {
             max_distinct_invocations: None,
@@ -1586,7 +1587,7 @@ fn dispatch_start(
 
 /// The escape hatch ADR 0011 keeps for a harness with no one-shot mode: start a
 /// Provider-side session, deliver the one Prompt, drain it for the reply, and
-/// shut it down. No Suru Session is involved on any of it — the request names
+/// shut it down. No Shaman Session is involved on any of it — the request names
 /// none, and nothing here reaches the Session store.
 async fn run_errand_through_a_session(
     starts: mpsc::UnboundedSender<StartRequest>,
@@ -1605,7 +1606,7 @@ async fn run_errand_through_a_session(
     let (_identity, _resume_state, session, mut events) = connection.into_parts();
     session
         .start_turn(ProviderTurnInput {
-            turn_id: suru::protocol::TurnId::new(),
+            turn_id: shaman::protocol::TurnId::new(),
             input: ProviderInput::from_prompt(ProviderPrompt::plain(errand.prompt)),
             selection: errand.selection,
             approval_posture: None,
@@ -1668,9 +1669,9 @@ fn dispatch_steer_operation(
 impl ProviderSession for ControlledSessionHandle {
     fn update_approval_posture(
         &self,
-        posture: suru::protocol::ApprovalPosture,
+        posture: shaman::protocol::ApprovalPosture,
         has_active_work: bool,
-    ) -> ProviderFuture<'_, suru::provider::ProviderPostureApplication> {
+    ) -> ProviderFuture<'_, shaman::provider::ProviderPostureApplication> {
         Box::pin(async move {
             let (response, received) = oneshot::channel();
             let gated = self.gate_posture_updates.load(Ordering::SeqCst);
@@ -1686,15 +1687,15 @@ impl ProviderSession for ControlledSessionHandle {
                     .await
                     .map_err(|_| ProviderError::new("test posture update abandoned"))?
             } else {
-                Ok(suru::provider::ProviderPostureApplication::Applied)
+                Ok(shaman::provider::ProviderPostureApplication::Applied)
             }
         })
     }
 
     fn submit_decision(
         &self,
-        id: suru::protocol::ApprovalId,
-        decision: suru::protocol::Decision,
+        id: shaman::protocol::ApprovalId,
+        decision: shaman::protocol::Decision,
     ) -> ProviderFuture<'_, ProviderDecisionDelivery> {
         Box::pin(async move {
             let (response, delivered) = oneshot::channel();
@@ -1717,8 +1718,8 @@ impl ProviderSession for ControlledSessionHandle {
 
     fn submit_questionnaire(
         &self,
-        id: suru::protocol::QuestionnaireId,
-        submission: suru::protocol::QuestionnaireSubmission,
+        id: shaman::protocol::QuestionnaireId,
+        submission: shaman::protocol::QuestionnaireSubmission,
     ) -> ProviderFuture<'_, ()> {
         Box::pin(async move {
             let (response, delivered) = oneshot::channel();

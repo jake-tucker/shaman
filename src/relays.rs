@@ -38,7 +38,7 @@ use axum::http::StatusCode;
 use futures_util::{Sink, SinkExt, StreamExt, task::AtomicWaker};
 use reqwest::header;
 use serde::{Deserialize, Serialize};
-use suru_relay_protocol::{
+use shaman_relay_protocol::{
     self as relay_protocol, Bytes, Cap, ENDPOINT_PATH, MAX_MESSAGE_LEN, Refusal, RelayMessage,
     SPOKEN, ServerMessage, Side,
 };
@@ -133,8 +133,8 @@ pub(crate) struct RelayController {
 }
 
 /// A Relay entry as it is stored. Beside the identity key, a Server's Logins
-/// are the one part of what it stores that a Suru upgrade carries forward
-/// (ADR-0047), so this tolerates fields a later Suru adds.
+/// are the one part of what it stores that a Shaman upgrade carries forward
+/// (ADR-0047), so this tolerates fields a later Shaman adds.
 #[derive(Clone, Deserialize, Serialize)]
 struct StoredRelay {
     address: String,
@@ -2124,7 +2124,7 @@ fn mismatch(relay_versions: &[relay_protocol::Version], behind: Side) -> String 
     match behind {
         Side::Server => format!(
             "this Server speaks Relay protocol {ours} and the Relay {theirs}: this Server is \
-             behind, so upgrade Suru"
+             behind, so upgrade Shaman"
         ),
         Side::Relay => format!(
             "this Server speaks Relay protocol {ours} and the Relay {theirs}: the Relay is \

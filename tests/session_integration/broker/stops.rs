@@ -1,11 +1,11 @@
-//! Stopping brokered Subagents. Suru runs a brokered Subagent on a Provider
+//! Stopping brokered Subagents. Shaman runs a brokered Subagent on a Provider
 //! actor of its own (ADR 0035), so whatever stops one reaches that actor: the
 //! delegating Agent's `stop_subagent`, the client's stop of the one Subagent
 //! from its row — whatever its parent's Provider allows for Subagents of its
 //! own — and an interrupt of any Session above it, which carries down to
 //! everything beneath. None of them asks before acting.
 
-use suru::provider::{ProviderSubagentId, ProviderWatchId, ProviderWatchOutcome};
+use shaman::provider::{ProviderSubagentId, ProviderWatchId, ProviderWatchOutcome};
 
 use super::*;
 
@@ -391,7 +391,7 @@ async fn stop_subagent_refuses_anything_but_a_brokered_subagent_beneath_the_call
             json!(foreign_id),
             "a brokered Subagent beneath another Session",
         ),
-        (json!(SessionId::new()), "a Session Suru does not hold"),
+        (json!(SessionId::new()), "a Session Shaman does not hold"),
     ] {
         let refusal = delegating
             .client
@@ -731,7 +731,7 @@ async fn the_clients_stop_of_a_brokered_subagent_reaches_its_own_provider_whatev
     };
     assert!(
         *brokered,
-        "the row says Suru spawned the Subagent through the Broker, which is what offers its \
+        "the row says Shaman spawned the Subagent through the Broker, which is what offers its \
          stop whatever the parent's Provider allows"
     );
 

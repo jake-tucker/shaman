@@ -44,7 +44,7 @@
 //! of its own, listed and counted as one. Each is ranked once its Cost is
 //! added, the few asked for picked out without sorting the rest.
 //!
-//! The Errands this Server ran count beside the Sessions (ADR 0057). Suru
+//! The Errands this Server ran count beside the Sessions (ADR 0057). Shaman
 //! never holds their records in memory, so the read asks storage, on a
 //! blocking task once the lock is let go, for those that began over the
 //! buckets and the comparison interval. Each lands where it began, by the

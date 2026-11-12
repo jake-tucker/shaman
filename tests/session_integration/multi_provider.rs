@@ -11,7 +11,7 @@ use crate::session_integration::{
         create_session, hosted_model, hosted_selection, list_catalog, read_session, refresh_catalog,
     },
 };
-use suru::{
+use shaman::{
     protocol::{
         Activity, AdmitPromptRequest, AgentId, AgentIdentity, AgentSelectionOperationId,
         CreateSessionRequest, InitialPrompt, ModelCatalog, PromptDelivery, PromptId,
@@ -32,7 +32,7 @@ fn create_session_request(
         session_id: None,
         preparation_id: None,
         agent_selection: Some(hosted_selection(provider, model)),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -302,7 +302,7 @@ async fn a_fresh_landing_defaults_to_the_first_provider_in_the_built_in_order() 
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -321,7 +321,7 @@ async fn a_fresh_landing_defaults_to_the_first_provider_in_the_built_in_order() 
     );
     assert!(
         alpha.next_start().await.execution_directory()
-            == suru::paths::canonical(workspace.path()).expect("canonicalize Workspace"),
+            == shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace"),
         "the defaulted Session routes to the first hosted Provider"
     );
 
@@ -489,7 +489,7 @@ async fn a_stale_landing_selection_on_an_unhosted_provider_yields_to_the_built_i
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -544,7 +544,7 @@ async fn the_landing_default_falls_to_the_next_provider_when_the_first_has_no_ca
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -742,7 +742,7 @@ async fn a_fresh_landing_default_skips_an_unavailable_provider() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -761,7 +761,7 @@ async fn a_fresh_landing_default_skips_an_unavailable_provider() {
     );
     assert!(
         beta.next_start().await.execution_directory()
-            == suru::paths::canonical(workspace.path()).expect("canonicalize Workspace"),
+            == shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace"),
         "the defaulted Session routes to the first available Provider"
     );
 

@@ -65,22 +65,22 @@ use crate::sessions::{
 use crate::skill_catalog::{SkillCatalogError, SkillCatalogService};
 use crate::storage::StoredSubagentIdentity;
 
-/// The most characters of Provider-sent output Suru stores for one command; the
-/// truncation marker Suru appends past the cap is its own and is not charged
+/// The most characters of Provider-sent output Shaman stores for one command; the
+/// truncation marker Shaman appends past the cap is its own and is not charged
 /// against it. Command output is machine-generated and can run without bound, so
 /// the cap sits well above the output a reader would scroll through while
 /// keeping a single Activity small enough to load, project, and re-render on
 /// every frame.
 const MAX_STORED_COMMAND_OUTPUT_CHARS: usize = 64 * 1024;
 
-/// The most characters of a Tool Call's rendered input Suru stores. The input
+/// The most characters of a Tool Call's rendered input Shaman stores. The input
 /// is display text a row reads on one line, not the arguments the Provider
 /// keeps, so a few KB say all a reader can take in while a Tool handed a whole
 /// file's contents cannot grow one Activity by as much. A Tool Call's output is
 /// capped at [`MAX_STORED_COMMAND_OUTPUT_CHARS`], on a command's terms.
 const MAX_STORED_TOOL_CALL_INPUT_CHARS: usize = 4 * 1024;
 
-/// The most characters of Provider-sent content Suru stores for one agent
+/// The most characters of Provider-sent content Shaman stores for one agent
 /// Message, on the same terms as the command-output cap. Agent prose is written
 /// to be read, so real Messages sit orders of magnitude below this; the cap only
 /// stops a Provider that streams deltas without end from growing stored content
@@ -88,7 +88,7 @@ const MAX_STORED_TOOL_CALL_INPUT_CHARS: usize = 4 * 1024;
 /// cutting an explanation short costs a reader more than cutting a log short.
 const MAX_STORED_MESSAGE_CHARS: usize = 512 * 1024;
 
-/// The most characters of Provider-sent content Suru stores for one Reasoning
+/// The most characters of Provider-sent content Shaman stores for one Reasoning
 /// Activity. Reasoning is prose, so it is capped like an agent Message rather
 /// than like a log, but it is a summary of work rather than the answer the
 /// reader came for, so the cap sits at the command-output figure: generous next
@@ -114,7 +114,7 @@ const SUBAGENT_PARENT_MOVED_MESSAGE: &str = "Provider execution ended: the paren
 
 /// The failure a Subagent's child Turn settles with when the Provider reported
 /// the Subagent itself failing. The Provider's settle carries no prose, so the
-/// child's Transcript states the fact in Suru's own words.
+/// child's Transcript states the fact in Shaman's own words.
 const SUBAGENT_FAILED_MESSAGE: &str =
     "Provider execution failed: the Provider reported this Subagent failing.";
 
@@ -131,10 +131,10 @@ const COMPACTION_WHILE_WORKING_MESSAGE: &str = "Provider execution failed: the S
 
 /// The failure the Turn a Compaction request began settles with when its
 /// Provider begins a turn of its own — a Watch waking its Agent, say — before
-/// Suru has asked it to compact.
+/// Shaman has asked it to compact.
 const COMPACTION_OVERTAKEN_MESSAGE: &str = "Compaction not started: the Agent began working on its own before its Provider was asked to compact.";
 
-/// How long Suru waits for a Provider Session it stops to wind down, and then, as the Server
+/// How long Shaman waits for a Provider Session it stops to wind down, and then, as the Server
 /// stops, for each Provider runtime to stop every process it launched. A runtime still waiting
 /// on one when that wait ends takes it down along with everything it started.
 pub(crate) const PROVIDER_STOP_TIMEOUT: Duration = Duration::from_secs(2);
@@ -534,7 +534,7 @@ pub(crate) enum ContextBreakdownError {
     SessionNotFound,
     /// The Session's Provider attributes no context.
     Unsupported,
-    /// No Provider runs for the Session: none has started since Suru did,
+    /// No Provider runs for the Session: none has started since Shaman did,
     /// or the one that ran was stopped for waiting idle.
     NotRunning,
     /// The Session is a native Subagent's, whose conversation rides an
@@ -650,7 +650,7 @@ struct ActiveProviderToolCall {
     output_normalizer: ProviderTextNormalizer,
 }
 
-/// A Reasoning block the Provider is still streaming. Suru times the block
+/// A Reasoning block the Provider is still streaming. Shaman times the block
 /// itself rather than asking every Provider to report a duration, so `started`
 /// is the moment this actor admitted the block and the elapsed time it yields
 /// is what the Transcript reports. Like an Agent Message, its normalizer holds
@@ -791,13 +791,13 @@ struct SubagentRoutes {
     /// a resume finds the Session it continues here, and delayed
     /// attach/metadata replies can still identify a child after it settles.
     identities: HashMap<ProviderSubagentId, SubagentIdentity>,
-    /// The Subagents Suru itself settled by stopping them. Their rows and
+    /// The Subagents Shaman itself settled by stopping them. Their rows and
     /// routes are gone, but the Provider was not the one to close them, so
     /// its own account of their end — the settle it still owes, the progress
     /// it had in flight — can trail in afterwards and must read as a late
     /// echo to discard rather than as an event it never spawned. A Subagent
-    /// woken while Suru held no Session for it joins them, because its
-    /// stretch is one Suru never opened and so has nothing to settle.
+    /// woken while Shaman held no Session for it joins them, because its
+    /// stretch is one Shaman never opened and so has nothing to settle.
     stopped: HashSet<ProviderSubagentId>,
     /// Whether a Subagent has settled, or a Watch's settling woke the Agent,
     /// since a Turn last began. The output a completion provokes can arrive
@@ -826,7 +826,7 @@ struct SubagentRoute {
     turn: ActiveProviderTurn,
 }
 
-/// One stretch of a Subagent's work still going. Suru times the stretch
+/// One stretch of a Subagent's work still going. Shaman times the stretch
 /// itself, the way it times a Reasoning block: `started` is the moment the
 /// spawn, resume or wake was admitted, and the elapsed time it yields is the
 /// duration the settled row reports — this stretch's alone, however long the
@@ -1038,7 +1038,7 @@ impl SubagentRoutes {
         }
     }
 
-    /// Whether Suru itself stopped this Subagent, which is what makes the
+    /// Whether Shaman itself stopped this Subagent, which is what makes the
     /// Provider's later events for it late echoes rather than events it never
     /// spawned.
     fn was_stopped(&self, subagent: &ProviderSubagentId) -> bool {
@@ -1069,7 +1069,7 @@ impl SubagentRoutes {
     /// Settles one stopped Subagent — and every Subagent below it, since
     /// stopping a delegation stops whatever it delegated in turn — as
     /// Interrupted: the Turn its current stretch works in closes with the
-    /// stop, that stretch's row records the duration Suru timed, and the
+    /// stop, that stretch's row records the duration Shaman timed, and the
     /// identities join the stopped set so the Provider's trailing account of
     /// them is discarded.
     fn settle_stopped(
@@ -1388,7 +1388,7 @@ impl SubagentRoutes {
         let Some(identity) = self.identities.get(&subagent) else {
             tracing::info!(
                 subagent = subagent.as_str(),
-                "recording a resume of a Subagent Suru holds no Session for as a new Subagent"
+                "recording a resume of a Subagent Shaman holds no Session for as a new Subagent"
             );
             return self.spawn(
                 sessions,
@@ -1468,7 +1468,7 @@ impl SubagentRoutes {
         let Some(identity) = self.identities.get(delegator) else {
             tracing::debug!(
                 delegator = delegator.as_str(),
-                "discarding a resume delegated by a Subagent Suru holds no Session for"
+                "discarding a resume delegated by a Subagent Shaman holds no Session for"
             );
             return Ok(());
         };
@@ -1504,7 +1504,7 @@ impl SubagentRoutes {
     /// the Turn it works in. One neither this connection nor the store knows
     /// is not recorded as a new Subagent, as a resume would be: nothing in any
     /// Transcript delegated it, so there is no Turn a new row could stand in,
-    /// and it held no Watch Suru saw settle. Its work lands nowhere, like any
+    /// and it held no Watch Shaman saw settle. Its work lands nowhere, like any
     /// unrouted Subagent's, and its settle is discarded as a late echo rather
     /// than read as a Subagent the Provider never spawned.
     fn wake(
@@ -1518,7 +1518,7 @@ impl SubagentRoutes {
         let Some(identity) = self.identities.get(&subagent) else {
             tracing::info!(
                 subagent = subagent.as_str(),
-                "ignoring the wake of a Subagent Suru holds no Session for"
+                "ignoring the wake of a Subagent Shaman holds no Session for"
             );
             self.stopped.insert(subagent);
             return Ok(());
@@ -1540,7 +1540,7 @@ impl SubagentRoutes {
 
     /// Routes a Subagent's events into the stretch just begun: its row is
     /// timed from now, its output and Context Fill land in the stretch's
-    /// Turn, and its Model evidence follows it there. A Subagent Suru stopped
+    /// Turn, and its Model evidence follows it there. A Subagent Shaman stopped
     /// before is working again, so what the Provider says of it from here on
     /// is no late echo.
     fn open_stretch(
@@ -1749,7 +1749,7 @@ impl ProviderOrchestrator {
     /// actor holding its conversation: its own, or — for a native Subagent —
     /// the one its nearest ancestor owns. With no actor running there is no
     /// Provider process to take them, and they wait for the head of the
-    /// Session's next Turn: Suru starts no Provider to deliver one.
+    /// Session's next Turn: Shaman starts no Provider to deliver one.
     fn deliver_held_reports(&self, recipient: SessionId) {
         if let Some(actor) = self.owner_commands(recipient) {
             let _ = actor.send(ProviderCommand::DeliverReports { target: recipient });
@@ -1871,12 +1871,12 @@ impl ProviderOrchestrator {
             .cloned()
             .ok_or_else(|| {
                 BrokeredSpawnRefusal::Refused(format!(
-                    "Provider `{provider}` is not hosted by this Suru server."
+                    "Provider `{provider}` is not hosted by this Shaman server."
                 ))
             })?;
         if !self.is_enabled(&provider) {
             return Err(BrokeredSpawnRefusal::Refused(format!(
-                "Provider `{provider}` is turned off in Suru's Settings; ask the user to turn \
+                "Provider `{provider}` is turned off in Shaman's Settings; ask the user to turn \
                  `provider.{provider}.enabled` back on, or choose another Provider."
             )));
         }
@@ -1900,7 +1900,7 @@ impl ProviderOrchestrator {
             .map_err(|error| match error {
                 BrokeredSpawnError::Capped(cap) => BrokeredSpawnRefusal::Capped(cap),
                 error => BrokeredSpawnRefusal::Refused(format!(
-                    "Suru could not spawn the Subagent: {error}."
+                    "Shaman could not spawn the Subagent: {error}."
                 )),
             })?;
         let input = delegated_prompt(&spawned.delegator, &delivered);
@@ -1958,12 +1958,12 @@ impl ProviderOrchestrator {
     /// turned it off. Enablement is the one condition that has to reach a
     /// Session already running on its Provider, so it is asked separately from
     /// [`Self::resolve_runtime`], which only answers where a new actor would
-    /// run. The fix is inside Suru rather than outside it, so the message names
+    /// run. The fix is inside Shaman rather than outside it, so the message names
     /// the Setting rather than reading like an unavailability reason.
     ///
     /// Steering deliberately does not ask: a steer Prompt joins the Turn
     /// already under way rather than beginning another, and Enablement governs
-    /// what Suru does next rather than what it is doing.
+    /// what Shaman does next rather than what it is doing.
     fn disabled_provider_failure(&self, session_id: SessionId) -> Option<String> {
         let provider = self.sessions.provider(session_id)?;
         if self.is_enabled(&provider) {
@@ -2616,16 +2616,16 @@ impl ProviderOrchestrator {
             Ok(SessionStop::WithdrewPrompt(_)) => Ok(BrokeredStop::WithdrewPrompt),
             Err(InterruptSessionError::NothingToInterrupt) => Ok(BrokeredStop::NothingRunning),
             Err(InterruptSessionError::SessionNotFound) => {
-                Err("The Subagent's Session no longer exists on this Suru server.".to_owned())
+                Err("The Subagent's Session no longer exists on this Shaman server.".to_owned())
             }
             Err(
                 InterruptSessionError::ProviderFailure(message)
                 | InterruptSessionError::Storage(message),
-            ) => Err(format!("Suru could not stop the Subagent: {message}")),
+            ) => Err(format!("Shaman could not stop the Subagent: {message}")),
             // A brokered Subagent owns its actor, so its interrupt never
             // asks its Provider to stop one Subagent of its own.
             Err(InterruptSessionError::SubagentStopUnsupported) => {
-                Err("Suru could not stop the Subagent: its Provider offers no stop.".to_owned())
+                Err("Shaman could not stop the Subagent: its Provider offers no stop.".to_owned())
             }
         }
     }
@@ -4295,7 +4295,7 @@ async fn run_provider_session(
             // as a steer when a Delegation began it (ADR 0032); one its
             // Provider will not take is held until that Turn settles, and
             // resumes the Subagent then. A Continuation is no Delegation's to
-            // steer: one Suru opened for late output settles at once, as
+            // steer: one Shaman opened for late output settles at once, as
             // worked, and one whose stop is under way settles when its
             // Provider says, and the resume begins after either.
             ActorInput::Command(Some(ProviderCommand::DeliverDelegation(pending))) => {
@@ -4400,8 +4400,8 @@ async fn run_provider_session(
             // Turn, as a steer Prompt would, and begins nothing. A Turn being
             // interrupted is left to settle: what the user stopped is not
             // steered, and the Reports wait for the next Turn. A Continuation
-            // opened for late output is no Turn its Provider began for Suru —
-            // Suru opened it for output owed to Subagents — so no harness has
+            // opened for late output is no Turn its Provider began for Shaman —
+            // Shaman opened it for output owed to Subagents — so no harness has
             // a Turn to steer there: rather than a steer bound to be refused,
             // the Reports wait, and wake the Agent once that Continuation
             // settles, unless a Prompt settles it first and carries them at
@@ -4441,7 +4441,7 @@ async fn run_provider_session(
                     }
                     Err(error) => {
                         // The Provider's Turn ended before the steer reached
-                        // it — Suru hears of its end only after — or the
+                        // it — Shaman hears of its end only after — or the
                         // Provider refused it. Either way the Reports wait,
                         // and once this Turn settles they wake the Agent
                         // afresh.
@@ -4575,7 +4575,7 @@ async fn run_provider_session(
                 }
                 if current.continuation == Some(ContinuationExecution::LateOutput) {
                     // A Continuation runs no Provider loop of its own — it is
-                    // the Turn Suru opened for the output its Subagents still
+                    // the Turn Shaman opened for the output its Subagents still
                     // owed. Interrupting it stops those Subagents, and the
                     // Continuation settles as interrupted here rather than on
                     // a terminal event no loop will send.
@@ -4926,7 +4926,7 @@ async fn run_provider_session(
             &updates,
             session_id,
             &mut current,
-            "Provider execution failed: Suru stopped the Provider Session before the Turn completed."
+            "Provider execution failed: Shaman stopped the Provider Session before the Turn completed."
                 .to_owned(),
             OpenInterventions::Abandoned,
         );
@@ -4955,7 +4955,7 @@ enum ConnectionFailure {
     /// or what it answered could not be recorded: the message says which, in
     /// the words the Turn's failure carries.
     Failed(String),
-    /// Suru is stopping, and the actor stops with it.
+    /// Shaman is stopping, and the actor stops with it.
     Stopping,
 }
 
@@ -5310,7 +5310,7 @@ enum DelegatedTurnStart {
     /// gone, its Provider could not start or refused it — or had settled
     /// already, stopped before its Delegation got this far.
     Settled,
-    /// Suru is stopping, and the actor stops with it.
+    /// Shaman is stopping, and the actor stops with it.
     Stopping,
 }
 
@@ -5455,7 +5455,7 @@ enum AgentWake {
     /// of, whatever waited still waits, and a Continuation owed for a Move is
     /// owed still, to be begun afresh where the Session works now.
     MovedMeanwhile,
-    /// Suru is stopping, and the actor stops with it.
+    /// Shaman is stopping, and the actor stops with it.
     Stopping,
 }
 
@@ -5466,7 +5466,7 @@ enum AgentWake {
 /// at its own boundary like any Turn. Once the Provider takes them, a Session
 /// the user had set aside is brought back. A Provider connection already open
 /// takes them, and only while the user has left that Provider on; otherwise
-/// they wait for the Session's next Turn, since Suru starts no Provider to
+/// they wait for the Session's next Turn, since Shaman starts no Provider to
 /// deliver a Report but one: the note of a Move the Session's own Agent asked
 /// for and ended its Turn for (ADR 0059). That Move stopped the Provider, so
 /// one is started where the Session now works for the Agent to carry on in,
@@ -5628,7 +5628,7 @@ async fn wake_idle_agent(
 /// settle of it settles that Continuation. A working one is steered and begins
 /// nothing. With no connection open, or none that knows the Subagent, they
 /// wait; a Provider that refuses them — one offering no such route — leaves
-/// nothing to wait for, since no later Turn of a native Subagent's is Suru's
+/// nothing to wait for, since no later Turn of a native Subagent's is Shaman's
 /// to begin, and they are dropped.
 async fn deliver_to_native_subagent(
     connection: Option<Arc<dyn ProviderSession>>,
@@ -5711,7 +5711,7 @@ fn delegated_prompt(delegator: &DelegatingAgent, delegation: &str) -> ProviderPr
         DelegatingAgent::Subagent { name } => format!("the Subagent \"{}\"", one_line(name)),
     };
     ProviderPrompt::plain(format!(
-        "Delegated to you through Suru by {from}.\n\n{delegation}"
+        "Delegated to you through Shaman by {from}.\n\n{delegation}"
     ))
 }
 
@@ -6048,7 +6048,7 @@ fn steer_subagent(
 /// Provider reported only after the spawn or resume that began the stretch
 /// (see [`SubagentRoutes::deliver_opening_delegation`]). Like a steer, it is
 /// no output of the Turn active here, and one that cannot be recorded is
-/// logged rather than failing that Turn. A Subagent Suru stopped can trail it
+/// logged rather than failing that Turn. A Subagent Shaman stopped can trail it
 /// as a late echo to discard. One naming a Subagent with no working stretch
 /// otherwise is an invalid event, and fails the Turn it would have landed in
 /// had it projected, as any invalid event does: a delegating Subagent's
@@ -7112,7 +7112,7 @@ fn project_provider_event(
                 subagent_id,
                 description,
             } => match subagents.update_row(sessions, &subagent_id, &description) {
-                // A Subagent Suru stopped can still trail the Provider's
+                // A Subagent Shaman stopped can still trail the Provider's
                 // account of it; that is a late echo to discard, not an
                 // update to a Subagent never spawned.
                 None if subagents.was_stopped(&subagent_id) => {
@@ -7147,7 +7147,7 @@ fn project_provider_event(
                 status,
             } => match subagents.settle_subagent(sessions, &subagent_id, status) {
                 // The settle a stopped Subagent still owed arrives as a late
-                // echo: Suru already settled the row, so there is nothing
+                // echo: Shaman already settled the row, so there is nothing
                 // left for the Provider's own account to close.
                 None if subagents.was_stopped(&subagent_id) => {
                     Ok(ProviderEventProjection::Continue)
@@ -7255,7 +7255,7 @@ fn project_provider_event(
                 // A Turn a Compaction request began Settles there too, but as
                 // its Compaction did (ADR 0041): a Provider may close the work
                 // with a success that compacted nothing — Claude's `/compact`
-                // does so even once Suru's interrupt has stopped it.
+                // does so even once Shaman's interrupt has stopped it.
                 let trailing_output = active.take_trailing_output();
                 let turn_id = active.turn_id;
                 let outcome = if active.compaction.is_requested() {
@@ -7298,7 +7298,7 @@ fn project_provider_event(
                 let message = normalize_provider_text(&message);
                 // A Turn a Compaction request began Settles as its
                 // Compaction did here too (ADR 0041), and a failure once the
-                // Provider acknowledged Suru's interrupt is the stop.
+                // Provider acknowledged Shaman's interrupt is the stop.
                 let outcome = if active.compaction.is_requested() {
                     active.compaction.requested_turn_failed(
                         sessions,
@@ -7406,7 +7406,7 @@ fn answer_context_breakdown(
 }
 
 /// The message a Provider startup failure carries. A failure naming a typed
-/// condition the user fixes outside Suru — an uninstalled CLI, an account not
+/// condition the user fixes outside Shaman — an uninstalled CLI, an account not
 /// signed in — leads with that condition, so the Turn says what to do about it
 /// rather than only that a launch went wrong.
 fn startup_failure_message(provider: &ProviderId, error: &ProviderError) -> String {
@@ -7452,7 +7452,7 @@ fn stored_route_decision(mut decision: RouteDecision) -> RouteDecision {
     decision
 }
 
-/// A Tool Call's rendered input as Suru stores it: normalized like any
+/// A Tool Call's rendered input as Shaman stores it: normalized like any
 /// Provider text and cut to [`MAX_STORED_TOOL_CALL_INPUT_CHARS`].
 fn stored_tool_call_input(input: &str) -> NormalizedText {
     ProviderTextNormalizer::with_max_chars(MAX_STORED_TOOL_CALL_INPUT_CHARS).push(input)
@@ -7761,7 +7761,7 @@ mod tests {
 
     /// A Provider may reach its own Turn boundary with streams it never
     /// settled — Codex completes a Turn without the `item/completed` its open
-    /// command or Agent Message was owed. Those streams are Suru's to close,
+    /// command or Agent Message was owed. Those streams are Shaman's to close,
     /// the way an interruption closes them; losing the Turn over them would
     /// cost the reader the answer it already watched arrive.
     #[tokio::test]
@@ -7784,7 +7784,7 @@ mod tests {
                 activity_id: command.clone(),
                 // The second line is unterminated, so only this actor's
                 // normalizer holds it when the Turn settles.
-                content: "   Compiling suru
+                content: "   Compiling shaman
 running 1 test"
                     .to_owned(),
             },
@@ -7832,7 +7832,7 @@ running 1 test"
         );
         assert_eq!(
             output,
-            "   Compiling suru
+            "   Compiling shaman
 running 1 test",
             "the line only this actor held is stored before the stream closes"
         );
@@ -8072,7 +8072,7 @@ running 1 test",
         (created.session.id, delivered.turn_id)
     }
 
-    /// A Provider connection that records the input Suru delivers to its
+    /// A Provider connection that records the input Shaman delivers to its
     /// native Subagents by identity, and takes it — or, standing in for a
     /// Provider offering no such route, refuses it.
     struct NativeRoute {
@@ -8382,7 +8382,7 @@ running 1 test",
         );
         assert!(
             sessions.take_held_reports(native_session).is_empty(),
-            "and no Turn of a native Subagent's is Suru's to begin, so it is not kept"
+            "and no Turn of a native Subagent's is Shaman's to begin, so it is not kept"
         );
     }
 
@@ -8589,7 +8589,7 @@ running 1 test",
                 "Map the seams.",
             )
             .text,
-            "Delegated to you through Suru by the Agent working on \"Plan the work\".\n\n\
+            "Delegated to you through Shaman by the Agent working on \"Plan the work\".\n\n\
              Map the seams.",
             "a top-level Session's Agent is named by its Session's Title"
         );
@@ -8601,7 +8601,7 @@ running 1 test",
                 "Map the seams.",
             )
             .text,
-            "Delegated to you through Suru by the Subagent \"Researcher\".\n\nMap the seams.",
+            "Delegated to you through Shaman by the Subagent \"Researcher\".\n\nMap the seams.",
             "a Subagent by the name its rows carry"
         );
 

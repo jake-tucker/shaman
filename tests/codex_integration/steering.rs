@@ -2,8 +2,7 @@
 
 use crate::codex_integration::support::{ScriptedCodex, receive_initial_state};
 use crate::support::PROGRESS_DEADLINE;
-use std::sync::Arc;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent, SessionSubscription},
     protocol::{
         Activity, AdmitPromptRequest, CreateSessionRequest, InitialPrompt, MessageRole,
@@ -13,6 +12,7 @@ use suru::{
     provider::CodexRuntime,
     server::{self, RunningServer, ServerConfig},
 };
+use std::sync::Arc;
 use tokio::time::timeout;
 
 const START_TURN: &str = r#"      printf '%s\n' '{"id":4,"result":{"turn":{"id":"native-turn"}}}'"#;
@@ -122,7 +122,7 @@ impl SteeringFixture {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 prompt: InitialPrompt {
@@ -260,7 +260,7 @@ async fn scripted_codex_delivers_the_authoritative_queue_once_in_admission_order
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -459,7 +459,7 @@ async fn scripted_codex_delivers_the_authoritative_queue_once_in_admission_order
         requests
             .iter()
             .all(|request| request["method"] != "turn/queue"),
-        "Suru must not submit Prompts to Codex's queue API"
+        "Shaman must not submit Prompts to Codex's queue API"
     );
 
     drop(feed);

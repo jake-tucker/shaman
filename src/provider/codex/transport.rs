@@ -1,4 +1,4 @@
-//! The JSON-RPC transport Suru speaks over a Codex app-server's stdio.
+//! The JSON-RPC transport Shaman speaks over a Codex app-server's stdio.
 //!
 //! [`JsonRpcTransport::launch`] is the only way to obtain one: it spawns a supervised app-server,
 //! completes the handshake, and returns the request channel alongside the notification stream.
@@ -260,8 +260,8 @@ impl JsonRpcTransport {
                 "initialize",
                 &InitializeParams {
                     client_info: ClientInfo {
-                        name: "suru",
-                        title: "Suru",
+                        name: "shaman",
+                        title: "Shaman",
                         version: env!("CARGO_PKG_VERSION"),
                     },
                     capabilities: InitializeCapabilities {
@@ -620,7 +620,7 @@ async fn route_message(
                     writer,
                     id,
                     UNSUPPORTED_INTERACTION_ERROR_CODE,
-                    format!("Suru does not support interactive request `{display_method}`"),
+                    format!("Shaman does not support interactive request `{display_method}`"),
                 )
                 .await?;
                 tracing::warn!(
@@ -633,7 +633,7 @@ async fn route_message(
                 writer,
                 id,
                 METHOD_NOT_FOUND_ERROR_CODE,
-                format!("Suru does not recognize server request `{display_method}`"),
+                format!("Shaman does not recognize server request `{display_method}`"),
             )
             .await?;
             return Ok(());
@@ -1158,7 +1158,7 @@ mod tests {
 
     fn warning_for(version: &str) -> Option<String> {
         codex_version_warning(&json!({
-            "userAgent": format!("suru/{version} (Linux 6; x86_64) codex_cli_rs/0.1")
+            "userAgent": format!("shaman/{version} (Linux 6; x86_64) codex_cli_rs/0.1")
         }))
     }
 
@@ -1238,7 +1238,7 @@ mod tests {
                 "item": {
                     "type": "mcpToolCall",
                     "id": "call-broker",
-                    "server": "suru",
+                    "server": "shaman",
                     "tool": tool,
                     "status": status,
                     "arguments": {"provider": "claude", "model": "opus", "prompt": "Map it."},
@@ -1258,7 +1258,7 @@ mod tests {
         .expect("an MCP tool call decodes")
     }
 
-    /// The Broker's Tools reach Codex as MCP tool calls on server `suru`. A call that spawns,
+    /// The Broker's Tools reach Codex as MCP tool calls on server `shaman`. A call that spawns,
     /// sends to, or stops a Subagent is work the Subagent row it affects records — a row the
     /// Broker adds itself — so neither its start nor its completion reaches the projection.
     #[test]
@@ -1396,7 +1396,7 @@ mod tests {
         for initialize in [
             json!({}),
             json!({"userAgent": "codex"}),
-            json!({"userAgent": "suru/not-a-version"}),
+            json!({"userAgent": "shaman/not-a-version"}),
         ] {
             assert_eq!(codex_version_warning(&initialize), None);
         }

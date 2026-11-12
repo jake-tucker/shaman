@@ -3,7 +3,7 @@
 //! actor of its own and may be Moved on its own, so what it stands in stays
 //! referenced until it leaves too, however a native Subagent's would read.
 
-use suru::protocol::{MoveDestination, MoveOutcome, MoveSessionRequest};
+use shaman::protocol::{MoveDestination, MoveOutcome, MoveSessionRequest};
 
 use super::*;
 use crate::session_integration::repositories::git;
@@ -57,7 +57,7 @@ async fn a_brokered_subagents_session_holds_the_worktree_its_parent_moves_out_of
     )
     .await;
     let descriptor = hosted.server.descriptor().clone();
-    let main = suru::paths::canonical(hosted.workspace.path()).expect("canonicalize Workspace");
+    let main = shaman::paths::canonical(hosted.workspace.path()).expect("canonicalize Workspace");
     git(&main, &["init", "-b", "main"]);
     git(
         &main,
@@ -70,7 +70,7 @@ async fn a_brokered_subagents_session_holds_the_worktree_its_parent_moves_out_of
             "initial",
         ],
     );
-    let container = main.join(suru::protocol::MANAGED_WORKTREE_DIRECTORY);
+    let container = main.join(shaman::protocol::MANAGED_WORKTREE_DIRECTORY);
     let worktree = container.join("held");
     // No Session stands in this one, so the parent's check takes it, and has
     // been at work by the time it has gone.
@@ -159,7 +159,7 @@ async fn a_brokered_subagent_at_work_holds_no_move_of_its_parent() {
         .execution_directory;
     let destination = delegating.hosted.workspace.path().join("moved here");
     std::fs::create_dir(&destination).expect("create the destination");
-    let destination = suru::paths::canonical(&destination).expect("canonicalize the destination");
+    let destination = shaman::paths::canonical(&destination).expect("canonicalize the destination");
 
     move_session(&descriptor, delegating.caller, &destination).await;
 

@@ -217,18 +217,18 @@ pub struct ServerTimings {
     /// go by then however each has gone, so a stop accepted ends within
     /// `shutdown_deadline` and this together.
     pub shutdown_overrun: Duration,
-    /// How long past its deadline and overrun the process of a `suru
+    /// How long past its deadline and overrun the process of a `shaman
     /// __server` stop may run before its [`ProcessCutoff`] ends it, and how
     /// long such a process whose Server has stopped may take to report how
     /// the stop went, flush its Log and exit. Kept by the process, not the
     /// Server: a Server run in another process is never cut off.
     pub shutdown_cutoff_margin: Duration,
-    /// How long an Errand may take before Suru stops waiting on it.
+    /// How long an Errand may take before Shaman stops waiting on it.
     pub errand_timeout: Duration,
     /// How long making a new Managed Worktree waits on the Errand naming it
     /// before the name its Prompt or Title gave it stands.
     pub worktree_naming_timeout: Duration,
-    /// How long a Provider Session Suru stops is waited on to wind down, and
+    /// How long a Provider Session Shaman stops is waited on to wind down, and
     /// then, as the Server stops, how long each Provider runtime is waited on
     /// to stop every process it launched. A runtime still waiting on one when
     /// its wait ends takes it down along with everything it started, so a
@@ -1294,7 +1294,7 @@ impl ShutdownController {
                     ));
                     return;
                 };
-                let recorded = match write_while_elected(elected, "suru-stop-record", move || {
+                let recorded = match write_while_elected(elected, "shaman-stop-record", move || {
                     election::record_stop(&path, instance_id)
                 }) {
                     Ok(answer) => match answer.await {
@@ -1957,7 +1957,7 @@ async fn start(
         naming.without_default_routing_tier(selection)
     }));
     let skill_catalog = SkillCatalogService::new(runtimes.clone(), settings.subscribe());
-    // The Workspace Roots a Clone may go in are told apart from Suru's own
+    // The Workspace Roots a Clone may go in are told apart from Shaman's own
     // data directory, which is none, alike for a Clone and for what a
     // Sidekick is told of them.
     let clone_roots = operations::CloneRoots::new(
@@ -2442,7 +2442,7 @@ async fn start(
         instance_id = %descriptor.identity.instance_id,
         pid = descriptor.identity.pid,
         channel = config.channel(),
-        "Suru server ready"
+        "Shaman server ready"
     );
 
     Ok(RunningServer {
@@ -5569,7 +5569,7 @@ async fn remove_own_descriptor(
     until: Instant,
     elected: Arc<election::Holding>,
 ) {
-    let removal = write_while_elected(elected, "suru-descriptor", move || {
+    let removal = write_while_elected(elected, "shaman-descriptor", move || {
         remove_descriptor_naming(&path, instance_id);
     });
     let removed = match removal {
@@ -5657,7 +5657,7 @@ mod tests {
         lock.take(Duration::ZERO).await.expect("take the lock");
         let holding = Arc::new(election::Holding::new(Arc::new(lock)));
         let (release, released) = std::sync::mpsc::channel::<()>();
-        let written = write_while_elected(holding.clone(), "suru-test-write", move || {
+        let written = write_while_elected(holding.clone(), "shaman-test-write", move || {
             let _ = released.recv();
         })
         .expect("begin the write");

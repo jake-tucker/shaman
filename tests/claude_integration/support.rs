@@ -7,7 +7,7 @@
 //! correlation ID.
 
 use crate::support::PROGRESS_DEADLINE;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionSubscription},
     protocol::{
         AdmitPromptRequest, AgentSelection, AgentSelectionOperationId, CreateSessionRequest,
@@ -74,12 +74,12 @@ pub fn models_without(models: &str, value: &str) -> String {
 ///
 /// A launch pointed at an MCP config with `--mcp-config` also records that file as it found it —
 /// its permissions, its path, and its contents — ahead of the launch itself, because the file is
-/// Suru's to remove once the launch is done with it and a test reading the launch must still be able
+/// Shaman's to remove once the launch is done with it and a test reading the launch must still be able
 /// to read what it was handed.
 ///
 /// A [warm-up](warm_up) launch leaves before any of that, so it is never counted as a launch.
 const SCRIPT_PREFIX: &str = r#"#!/bin/sh
-[ -n "$SURU_FIXTURE_WARM_UP" ] && exit 0
+[ -n "$SHAMAN_FIXTURE_WARM_UP" ] && exit 0
 attempt=1
 if [ -e "$CLAUDE_FIXTURE_ATTEMPTS" ]; then
   attempt=$(( $(cat "$CLAUDE_FIXTURE_ATTEMPTS") + 1 ))
@@ -116,7 +116,7 @@ lifecycle() {
 /// `uuid` — the one the CLI reports the message's `lifecycle` under — as `$uuid`.
 ///
 /// The `uuid` is found wherever it stands in the envelope: a message's text is JSON-escaped, so
-/// `"uuid":"` appears unescaped only as the envelope's own field, which Suru writes exactly once
+/// `"uuid":"` appears unescaped only as the envelope's own field, which Shaman writes exactly once
 /// (pinned by `a_user_message_names_its_uuid_once_whatever_its_text_holds` in the wire module). A
 /// line carrying two would leave `$uuid` holding both, which no lifecycle frame matches.
 const SCRIPT_LOOP: &str = r#"while IFS= read -r line; do
@@ -127,7 +127,7 @@ const SCRIPT_LOOP: &str = r#"while IFS= read -r line; do
 "#;
 
 /// The version the fixture reports when nothing has downgraded it: the suggestion itself, which is
-/// the version Suru's wire behavior is verified against.
+/// the version Shaman's wire behavior is verified against.
 pub const CLAUDE_SUGGESTED_VERSION: &str = "2.1.280";
 
 /// A readable version below the suggestion, which remains usable with guidance.
@@ -158,7 +158,7 @@ pub fn version_arm(version: &str) -> String {
 
 /// The same arm for a CLI below the suggestion — until [`ScriptedClaude::upgrade`] leaves the
 /// marker that makes it report a version above it, which is the user updating their CLI
-/// while Suru is running.
+/// while Shaman is running.
 pub fn upgradable_version_arm() -> String {
     format!(
         r#"    *'"subtype":"get_binary_version"'*)
@@ -175,7 +175,7 @@ pub fn upgradable_version_arm() -> String {
 }
 
 /// A `get_binary_version` arm from a CLI that has never heard of the request, which is how one too
-/// old for the wire Suru speaks answers a question it predates.
+/// old for the wire Shaman speaks answers a question it predates.
 pub fn unknown_version_request_arm() -> String {
     r#"    *'"subtype":"get_binary_version"'*)
       printf '%s\n' '{"type":"control_response","response":{"subtype":"error","request_id":"'"$request_id"'","error":"Unsupported control request subtype: get_binary_version"}}'
@@ -207,7 +207,7 @@ pub fn initialize_arm(account: &str) -> String {
 
 /// The same arm for a CLI no one is signed in to — until [`ScriptedClaude::sign_in`] leaves the
 /// marker that makes it report an account, which is the user signing in with the Claude Code CLI
-/// while Suru is running.
+/// while Shaman is running.
 pub fn signed_out_initialize_arm() -> String {
     format!(
         r#"    *'"subtype":"initialize"'*)
@@ -225,7 +225,7 @@ pub fn signed_out_initialize_arm() -> String {
 
 /// The control-request subtypes a fixture's log reads as when `subtypes` were asked of a CLI the
 /// availability probe found usable: every probe leads with the two questions it puts to the CLI
-/// before Suru asks it to do anything.
+/// before Shaman asks it to do anything.
 pub fn after_probe<const N: usize>(subtypes: [&str; N]) -> Vec<String> {
     ["get_binary_version", "initialize"]
         .into_iter()
@@ -234,7 +234,7 @@ pub fn after_probe<const N: usize>(subtypes: [&str; N]) -> Vec<String> {
         .collect()
 }
 
-/// The arms an availability probe asks of every usable CLI: the version Suru's wire is verified
+/// The arms an availability probe asks of every usable CLI: the version Shaman's wire is verified
 /// against, and an account a user is signed in to.
 pub fn probe_arms() -> String {
     format!(
@@ -261,7 +261,7 @@ pub fn list_models_arm(models: &str) -> String {
 }
 
 /// A `list_models` arm that leads its real answer with a control response of a subtype this build
-/// of Suru has never heard of, standing in for a newer CLI whose wire has drifted.
+/// of Shaman has never heard of, standing in for a newer CLI whose wire has drifted.
 pub fn drifting_list_models_arm(models: &str) -> String {
     format!(
         r#"    *'"subtype":"list_models"'*)
@@ -292,7 +292,7 @@ pub fn crashing_list_models_arm() -> String {
     .to_owned()
 }
 
-/// A `list_models` arm whose answer is not the response shape Suru expects.
+/// A `list_models` arm whose answer is not the response shape Shaman expects.
 pub fn malformed_list_models_arm() -> String {
     r#"    *'"subtype":"list_models"'*)
       printf '%s\n' '{"type":"control_response","response":{"subtype":"success","request_id":"'"$request_id"'","response":{"models":"not-a-list"}}}'
@@ -468,7 +468,7 @@ impl ScriptedClaude {
 
     /// Takes the program off disk, standing in for a Claude Code CLI the user has not installed.
     /// The runtime already holds the path, so [`install`](Self::install) is the user installing it
-    /// while Suru runs.
+    /// while Shaman runs.
     pub fn uninstall(&self) {
         std::fs::remove_file(&self.executable).expect("uninstall the scripted Claude");
     }
@@ -480,13 +480,13 @@ impl ScriptedClaude {
     }
 
     /// Signs the fixture's user in, which is what [`signed_out_initialize_arm`] answers the account
-    /// probe with from here on — the user signing in through the CLI while Suru runs.
+    /// probe with from here on — the user signing in through the CLI while Shaman runs.
     pub fn sign_in(&self) {
         std::fs::write(&self.signed_in, b"signed in").expect("sign the scripted Claude in");
     }
 
     /// Moves the fixture above the suggested version, which is what [`upgradable_version_arm`] reports
-    /// from here on — the user updating their CLI while Suru runs.
+    /// from here on — the user updating their CLI while Shaman runs.
     pub fn upgrade(&self) {
         std::fs::write(&self.upgraded, b"upgraded").expect("upgrade the scripted Claude");
     }
@@ -685,7 +685,7 @@ fn fixture_path(path: &std::path::Path) -> &str {
 /// makes would time out on the assessment rather than on what the test is about.
 fn warm_up(executable: &std::path::Path) {
     let status = std::process::Command::new(executable)
-        .env("SURU_FIXTURE_WARM_UP", "1")
+        .env("SHAMAN_FIXTURE_WARM_UP", "1")
         .stdin(std::process::Stdio::null())
         .status()
         .expect("run the scripted Claude's warm-up launch");
@@ -936,7 +936,7 @@ pub async fn opened_session_in(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1030,7 +1030,7 @@ impl LiveTurn {
         let workspace = tempfile::tempdir().expect("create valid Workspace");
         let config_dir = document.map(|document| {
             let directory = tempfile::tempdir().expect("create isolated config directory");
-            std::fs::write(directory.path().join("suru.jsonc"), document)
+            std::fs::write(directory.path().join("shaman.jsonc"), document)
                 .expect("write Config Document");
             directory
         });
@@ -1058,7 +1058,7 @@ impl LiveTurn {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: execution_directory,
                 },
                 prompt: InitialPrompt {
@@ -1197,7 +1197,7 @@ impl DurableSession {
     ) -> Self {
         let config_dir = document.map(|document| {
             let directory = tempfile::tempdir().expect("create isolated config directory");
-            std::fs::write(directory.path().join("suru.jsonc"), document)
+            std::fs::write(directory.path().join("shaman.jsonc"), document)
                 .expect("write Config Document");
             directory
         });
@@ -1205,7 +1205,7 @@ impl DurableSession {
         let workspace = tempfile::tempdir().expect("create valid Workspace");
         let execution_directory = workspace.path().join("packages/nested agent directory");
         std::fs::create_dir_all(&execution_directory).unwrap();
-        let execution_directory = suru::paths::canonical(execution_directory).unwrap();
+        let execution_directory = shaman::paths::canonical(execution_directory).unwrap();
         let (server, client) = hosting_runtime_configured(
             runtime,
             channel,
@@ -1223,7 +1223,7 @@ impl DurableSession {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: selection,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: execution_directory.clone(),
                 },
                 prompt: InitialPrompt {
@@ -1254,7 +1254,7 @@ impl DurableSession {
         }
     }
 
-    /// The same Suru Session on a replacement server, reached the way a user restarting Suru
+    /// The same Shaman Session on a replacement server, reached the way a user restarting Shaman
     /// reaches it. Every process the original server launched is gone before the replacement asks
     /// for the conversation back, so only a child the replacement spawned itself can serve it.
     pub async fn restarted(self, claude: &ScriptedClaude) -> Self {

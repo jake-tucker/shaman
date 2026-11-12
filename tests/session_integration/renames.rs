@@ -1,5 +1,5 @@
 //! Renaming a Session: setting its Title to a line the user writes, and asking
-//! Suru to propose one derived anew from the Session's Prompts so far.
+//! Shaman to propose one derived anew from the Session's Prompts so far.
 
 use crate::session_integration::{
     failing_provider_support::spawn_with_failing_provider,
@@ -12,7 +12,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::json;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         AdmitPromptRequest, AgentId, AgentIdentity, CreateSessionRequest, DerivationErrand,
@@ -36,7 +36,7 @@ fn create_request(
         session_id: None,
         preparation_id: None,
         agent_selection: with_provider.then(|| hosted_selection(PROVIDER, MODEL)),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -425,7 +425,7 @@ async fn no_proposal_is_offered_while_derivation_is_off() {
     );
     assert!(
         provider.try_next_errand().is_none(),
-        "no Provider call is made on Suru's behalf"
+        "no Provider call is made on Shaman's behalf"
     );
 
     server.shutdown().await.expect("shut down server");

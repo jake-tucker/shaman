@@ -21,7 +21,7 @@ use axum::{
 };
 use fs2::FileExt;
 use futures_util::{StreamExt, stream};
-use suru::{
+use shaman::{
     build_identity,
     managed_client::{
         ManagedClient, ManagedClientConfig, ManagedEvent, RecoveryStatus, StoppedDuringLaunch,
@@ -47,9 +47,9 @@ use support::{
     receive_initial_state, request_server_shutdown, write_runtime_descriptor,
 };
 
-fn suru_binary_build_identity() -> String {
-    build_identity::for_executable(env!("CARGO_BIN_EXE_suru"))
-        .expect("identify the tested Suru executable")
+fn shaman_binary_build_identity() -> String {
+    build_identity::for_executable(env!("CARGO_BIN_EXE_shaman"))
+        .expect("identify the tested Shaman executable")
 }
 
 fn inert_server_executable(state_dir: &std::path::Path) -> PathBuf {
@@ -71,7 +71,7 @@ async fn launching_current_build_replaces_an_authenticated_mismatched_server() {
     let servers = DetachedServers::new();
     let channel = "build-replacement-test";
     let fixture =
-        BuildReplacementFixture::spawn(servers.state_dir(), channel, "suru@old-build").await;
+        BuildReplacementFixture::spawn(servers.state_dir(), channel, "shaman@old-build").await;
     let previous = fixture.descriptor();
     let config = servers.client_config(channel);
 
@@ -81,7 +81,7 @@ async fn launching_current_build_replaces_an_authenticated_mismatched_server() {
 
     assert_ne!(replacement.instance_id, previous.instance_id);
     assert_ne!(replacement.pid, previous.pid);
-    assert_eq!(replacement.build_identity, suru_binary_build_identity());
+    assert_eq!(replacement.build_identity, shaman_binary_build_identity());
     let shutdown = fixture
         .shutdown_request()
         .expect("old server receives replacement request");
@@ -112,7 +112,7 @@ async fn configured_executable_replaced_at_the_same_path_replaces_then_reuses_se
 
     let modified = std::fs::metadata(&executable).unwrap().modified().unwrap();
     let replacement_file = tempfile::NamedTempFile::new_in(servers.state_dir()).unwrap();
-    std::fs::copy(env!("CARGO_BIN_EXE_suru"), replacement_file.path()).unwrap();
+    std::fs::copy(env!("CARGO_BIN_EXE_shaman"), replacement_file.path()).unwrap();
     replacement_file.as_file().set_modified(modified).unwrap();
     drop(
         replacement_file
@@ -124,7 +124,7 @@ async fn configured_executable_replaced_at_the_same_path_replaces_then_reuses_se
         .await
         .expect("launch rebuilt configured executable");
     assert_ne!(replacement.instance_id, original.instance_id);
-    assert_eq!(replacement.build_identity, suru_binary_build_identity());
+    assert_eq!(replacement.build_identity, shaman_binary_build_identity());
     assert_eq!(
         fixture.shutdown_request().unwrap().reason,
         ShutdownReason::Replacement
@@ -227,7 +227,7 @@ async fn attached_old_client_surfaces_a_strict_fatal_error_for_an_incompatible_r
     let incompatible = BuildReplacementFixture::spawn_with_protocol(
         state_dir.path(),
         channel,
-        "suru@incompatible-build",
+        "shaman@incompatible-build",
         PROTOCOL_VERSION + 1,
     )
     .await;
@@ -269,7 +269,7 @@ async fn launcher_replaces_a_build_and_protocol_mismatch_before_connecting() {
     let mismatched = BuildReplacementFixture::spawn_with_protocol(
         servers.state_dir(),
         channel,
-        "suru@old-incompatible-build",
+        "shaman@old-incompatible-build",
         PROTOCOL_VERSION - 1,
     )
     .await;
@@ -283,7 +283,7 @@ async fn launcher_replaces_a_build_and_protocol_mismatch_before_connecting() {
 
     assert_ne!(replacement.instance_id, previous.instance_id);
     assert_ne!(replacement.pid, previous.pid);
-    assert_eq!(replacement.build_identity, suru_binary_build_identity());
+    assert_eq!(replacement.build_identity, shaman_binary_build_identity());
     assert_eq!(replacement.protocol_version, PROTOCOL_VERSION);
     let shutdown = mismatched
         .shutdown_request()
@@ -303,7 +303,7 @@ async fn launcher_rejects_a_protocol_incompatible_matching_build_without_replaci
     let incompatible = BuildReplacementFixture::spawn_with_protocol(
         servers.state_dir(),
         channel,
-        &suru_binary_build_identity(),
+        &shaman_binary_build_identity(),
         PROTOCOL_VERSION - 1,
     )
     .await;
@@ -314,7 +314,7 @@ async fn launcher_rejects_a_protocol_incompatible_matching_build_without_replaci
         .expect_err("matching build with an incompatible protocol cannot be reused")
         .to_string();
 
-    assert!(error.contains("registered Suru server protocol version"));
+    assert!(error.contains("registered Shaman server protocol version"));
     assert!(error.contains("incompatible"));
     assert!(incompatible.shutdown_request().is_none());
 }
@@ -324,7 +324,7 @@ async fn simultaneous_replacement_launchers_converge_on_one_new_instance() {
     let servers = DetachedServers::new();
     let channel = "replacement-race-test";
     let fixture =
-        BuildReplacementFixture::spawn(servers.state_dir(), channel, "suru@old-build").await;
+        BuildReplacementFixture::spawn(servers.state_dir(), channel, "shaman@old-build").await;
     let previous_instance_id = fixture.descriptor().instance_id;
     let config = servers
         .client_config(channel)
@@ -388,7 +388,7 @@ async fn launcher_retries_after_losing_election_to_a_mismatched_build() {
     let mismatched = BuildReplacementFixture::spawn_with_lock(
         servers.state_dir(),
         channel,
-        "suru@other-racing-build",
+        "shaman@other-racing-build",
         PROTOCOL_VERSION,
         lock,
     )
@@ -400,7 +400,7 @@ async fn launcher_retries_after_losing_election_to_a_mismatched_build() {
         .expect("launcher retries its current build after the transition");
 
     assert_ne!(replacement.instance_id, mismatched.descriptor().instance_id);
-    assert_eq!(replacement.build_identity, suru_binary_build_identity());
+    assert_eq!(replacement.build_identity, shaman_binary_build_identity());
     assert_eq!(
         mismatched
             .shutdown_request()
@@ -416,12 +416,12 @@ async fn mismatched_build_in_another_channel_is_not_replaced() {
     let old_channel = "isolated-old-build";
     let current_channel = "isolated-current-build";
     let old =
-        BuildReplacementFixture::spawn(servers.state_dir(), old_channel, "suru@old-build").await;
+        BuildReplacementFixture::spawn(servers.state_dir(), old_channel, "shaman@old-build").await;
     let current = start_server(&servers.client_config(current_channel))
         .await
         .expect("start current build in another channel");
 
-    assert_eq!(current.build_identity, suru_binary_build_identity());
+    assert_eq!(current.build_identity, shaman_binary_build_identity());
     assert!(old.shutdown_request().is_none());
     let old_health = crate::support::loopback_client()
         .get(format!("{}/health", old.descriptor().base_url))
@@ -740,7 +740,7 @@ async fn stale_descriptor_pid_is_never_used_to_terminate_an_unrelated_process() 
         .expect("configure unrelated server")
         .create_private_runtime_dir()
         .expect("make the unrelated server's directories");
-    let mut unrelated = tokio::process::Command::new(env!("CARGO_BIN_EXE_suru"));
+    let mut unrelated = tokio::process::Command::new(env!("CARGO_BIN_EXE_shaman"));
     unrelated
         .arg("__server")
         .arg("--state-dir")
@@ -790,7 +790,7 @@ async fn stale_descriptor_pid_is_never_used_to_terminate_an_unrelated_process() 
     let stop = run_server_cli(&servers, channel, "stop").await;
     assert!(stop.status.success(), "{stop:?}");
     assert!(
-        String::from_utf8_lossy(&stop.stdout).contains("No Suru server was running"),
+        String::from_utf8_lossy(&stop.stdout).contains("No Shaman server was running"),
         "{stop:?}"
     );
     assert!(
@@ -896,16 +896,16 @@ fn mutate_instance_id(descriptor: &mut RuntimeDescriptor) {
     descriptor.instance_id = Uuid::new_v4();
 }
 
-/// `SURU_IDENTITY_STORE`, as the client launching a Server reads it, is
+/// `SHAMAN_IDENTITY_STORE`, as the client launching a Server reads it, is
 /// where that Server keeps a new identity key: one Serving from its start
 /// makes its key then, and its Log says the variable chose where it is
 /// kept. A value naming no store fails the client, which launches nothing.
 #[tokio::test]
-async fn suru_identity_store_chooses_where_a_launched_server_keeps_its_key() {
+async fn shaman_identity_store_chooses_where_a_launched_server_keeps_its_key() {
     let servers = DetachedServers::new();
     let channel = "identity-store-test";
     std::fs::write(
-        servers.state_dir().join("suru.jsonc"),
+        servers.state_dir().join("shaman.jsonc"),
         r#"{ "serving": { "enabled": true, "port": 0, "bindAddress": "127.0.0.1" } }"#,
     )
     .expect("write a serving config document");
@@ -913,7 +913,7 @@ async fn suru_identity_store_chooses_where_a_launched_server_keeps_its_key() {
         &servers,
         channel,
         "start",
-        "SURU_IDENTITY_STORE",
+        "SHAMAN_IDENTITY_STORE",
         "keychain",
     )
     .await;
@@ -933,7 +933,7 @@ async fn suru_identity_store_chooses_where_a_launched_server_keeps_its_key() {
     );
 
     let started =
-        run_server_cli_with_env(&servers, channel, "start", "SURU_IDENTITY_STORE", "file").await;
+        run_server_cli_with_env(&servers, channel, "start", "SHAMAN_IDENTITY_STORE", "file").await;
     assert!(
         started.status.success(),
         "server start failed: {}",
@@ -941,7 +941,7 @@ async fn suru_identity_store_chooses_where_a_launched_server_keeps_its_key() {
     );
     let logs = servers.state_dir().join(channel).join("log");
     let chosen = "Server identity key is made and kept in an owner-only file in the data \
-                  directory: SURU_IDENTITY_STORE=file keeps it there";
+                  directory: SHAMAN_IDENTITY_STORE=file keeps it there";
     timeout(PROGRESS_DEADLINE, async {
         loop {
             let logged = std::fs::read_dir(&logs)
@@ -957,7 +957,7 @@ async fn suru_identity_store_chooses_where_a_launched_server_keeps_its_key() {
         }
     })
     .await
-    .expect("the server logs that SURU_IDENTITY_STORE chose the file");
+    .expect("the server logs that SHAMAN_IDENTITY_STORE chose the file");
 
     let stopped = run_server_cli(&servers, channel, "stop").await;
     assert!(
@@ -1158,7 +1158,7 @@ async fn wait_for_servers_running(servers: &DetachedServers, count: usize, why: 
 }
 
 /// Records a Manual stop of `instance_id` as `channel`'s last, as an
-/// election's winner stopped with `suru server stop` does before it lets the
+/// election's winner stopped with `shaman server stop` does before it lets the
 /// channel go — for a test standing in for that winner by holding the lock.
 fn record_manual_stop(state_dir: &std::path::Path, channel: &str, instance_id: Uuid) {
     std::fs::write(
@@ -1168,10 +1168,10 @@ fn record_manual_stop(state_dir: &std::path::Path, channel: &str, instance_id: U
     .expect("record a manual stop");
 }
 
-/// Eight `suru server start`s launched together each launch a server, and
+/// Eight `shaman server start`s launched together each launch a server, and
 /// the seven that lose the election wait out the winner's hold — here for as
 /// long as the test needs, so the stop certainly finds them waiting. A
-/// `suru server stop` of the winner is final for all seven: each ends as it
+/// `shaman server stop` of the winner is final for all seven: each ends as it
 /// takes the lock rather than serving the channel, and a start after the
 /// stop serves it again.
 #[tokio::test]
@@ -1304,7 +1304,7 @@ async fn a_recovering_client_a_manual_stop_overtakes_leaves_as_on_the_stop() {
         channel,
         LifecycleState::Ready,
         FixtureEventBehavior::DisconnectAfterConnected,
-        suru_binary_build_identity(),
+        shaman_binary_build_identity(),
     )
     .await;
     let mut client = ManagedClient::connect(
@@ -1366,7 +1366,7 @@ async fn a_recovering_client_whose_found_server_is_stopped_before_its_streams_op
         channel,
         LifecycleState::Ready,
         FixtureEventBehavior::DisconnectAfterConnected,
-        suru_binary_build_identity(),
+        shaman_binary_build_identity(),
     )
     .await;
     let mut client = ManagedClient::connect(
@@ -1415,7 +1415,7 @@ async fn a_recovering_client_stopped_between_attempts_leaves() {
         channel,
         LifecycleState::Ready,
         FixtureEventBehavior::DisconnectAfterConnected,
-        suru_binary_build_identity(),
+        shaman_binary_build_identity(),
     )
     .await;
     let mut client = ManagedClient::connect(
@@ -1467,7 +1467,7 @@ async fn a_client_awaiting_a_replacement_leaves_on_a_manual_stop() {
         channel,
         LifecycleState::Ready,
         FixtureEventBehavior::ReplacementAfterConnected,
-        suru_binary_build_identity(),
+        shaman_binary_build_identity(),
     )
     .await;
     let mut client = ManagedClient::connect(
@@ -1497,7 +1497,7 @@ async fn a_client_awaiting_a_replacement_leaves_on_a_manual_stop() {
         channel,
         LifecycleState::Ready,
         FixtureEventBehavior::StayConnected,
-        suru_binary_build_identity(),
+        shaman_binary_build_identity(),
     )
     .await;
 
@@ -1531,7 +1531,7 @@ async fn a_launch_overtaken_by_a_stop_leaves_a_restarted_build_alone() {
     let restarted = BuildReplacementFixture::spawn_with_lock(
         servers.state_dir(),
         channel,
-        "suru@restarted-build",
+        "shaman@restarted-build",
         PROTOCOL_VERSION,
         hold,
     )
@@ -1552,7 +1552,7 @@ async fn a_launch_overtaken_by_a_stop_leaves_a_restarted_build_alone() {
     );
 }
 
-/// `suru server stop` is bounded by its deadline even where the server
+/// `shaman server stop` is bounded by its deadline even where the server
 /// answers that the stop failed and then never finishes saying why.
 #[tokio::test]
 async fn a_failed_stop_whose_reason_stalls_ends_at_the_stop_deadline() {
@@ -1571,7 +1571,7 @@ async fn a_failed_stop_whose_reason_stalls_ends_at_the_stop_deadline() {
             instance_id: Uuid::new_v4(),
             pid: std::process::id(),
             protocol_version: PROTOCOL_VERSION,
-            build_identity: suru_binary_build_identity(),
+            build_identity: shaman_binary_build_identity(),
         },
     };
     let runtime_dir = state_dir.path().join(channel);
@@ -1704,7 +1704,7 @@ async fn crash_recovery_and_replacement_converge_after_a_manual_stop() {
     wait_for_servers_running(&servers, 0, "every server ends after the second stop").await;
 
     let fixture =
-        BuildReplacementFixture::spawn(servers.state_dir(), channel, "suru@old-build").await;
+        BuildReplacementFixture::spawn(servers.state_dir(), channel, "shaman@old-build").await;
     let config = config
         .with_startup_timeout(PROGRESS_DEADLINE)
         .with_health_check_timeout(Duration::from_millis(100));
@@ -1733,8 +1733,8 @@ async fn crash_recovery_and_replacement_converge_after_a_manual_stop() {
     );
 }
 
-const TERMINAL_MODE_RESTORED: &str = "__SURU_TERMINAL_MODE_RESTORED__";
-const TERMINAL_MODE_CHANGED: &str = "__SURU_TERMINAL_MODE_CHANGED__";
+const TERMINAL_MODE_RESTORED: &str = "__SHAMAN_TERMINAL_MODE_RESTORED__";
+const TERMINAL_MODE_CHANGED: &str = "__SHAMAN_TERMINAL_MODE_CHANGED__";
 
 /// Not a test of its own: [`AttachedTui`] re-executes this binary to reach this
 /// function from inside a pseudo-terminal. The mode a TUI puts a terminal into
@@ -1746,7 +1746,7 @@ const TERMINAL_MODE_CHANGED: &str = "__SURU_TERMINAL_MODE_CHANGED__";
 #[ignore = "re-executed inside a pseudo-terminal by the attached TUI tests"]
 fn attached_tui_terminal_mode_probe() {
     let before = read_terminal_mode();
-    let status = Command::new(env!("CARGO_BIN_EXE_suru"))
+    let status = Command::new(env!("CARGO_BIN_EXE_shaman"))
         .status()
         .expect("run the TUI inside the pseudo-terminal");
     let after = read_terminal_mode();
@@ -1904,10 +1904,10 @@ impl AttachedTui {
             module.split_once("::").map_or(module, |(_, path)| path)
         );
         command.args(["--exact", &probe, "--ignored", "--nocapture"]);
-        command.env("SURU_STATE_DIR", servers.state_dir());
-        command.env("SURU_DATA_DIR", servers.state_dir());
-        command.env("SURU_CONFIG_DIR", servers.state_dir());
-        command.env("SURU_CHANNEL", channel);
+        command.env("SHAMAN_STATE_DIR", servers.state_dir());
+        command.env("SHAMAN_DATA_DIR", servers.state_dir());
+        command.env("SHAMAN_CONFIG_DIR", servers.state_dir());
+        command.env("SHAMAN_CHANNEL", channel);
         // A TUI asks every Provider for its Models as it connects, so the
         // server it reaches must find none of the real ones.
         for (key, value) in servers.isolated_environment() {
@@ -2178,7 +2178,7 @@ async fn clean_tui_exit_restores_the_terminal() {
     let servers = DetachedServers::new();
     let channel = "clean-tui-exit-test";
     std::fs::write(
-        servers.state_dir().join("suru.jsonc"),
+        servers.state_dir().join("shaman.jsonc"),
         r#"{ "appearance": { "theme": "system" } }"#,
     )
     .expect("select System for the terminal-color repaint");
@@ -2253,7 +2253,7 @@ async fn clean_tui_exit_restores_the_terminal() {
     }
 }
 
-/// The longest a `suru server` command a test runs is waited on. Only a wedged
+/// The longest a `shaman server` command a test runs is waited on. Only a wedged
 /// subprocess reaches this; it sits beyond the deadlines [`server_cli`] hands
 /// the command so the CLI's own diagnosis wins whenever the CLI is still
 /// answering.
@@ -2262,13 +2262,13 @@ const SERVER_CLI_PROCESS_TIMEOUT: Duration =
 
 /// How long a test waits for launchers it began together to settle. Each is
 /// bounded by a deadline of its own — a managed client by its startup timeout
-/// of `PROGRESS_DEADLINE`, a `suru server start` by
+/// of `PROGRESS_DEADLINE`, a `shaman server start` by
 /// [`SERVER_CLI_PROCESS_TIMEOUT`] — so this sits beyond both, and a launcher
 /// that fails reports its own diagnosis rather than this deadline.
 const LAUNCHER_SETTLE_DEADLINE: Duration =
     SERVER_CLI_PROCESS_TIMEOUT.saturating_add(Duration::from_secs(5));
 
-/// `suru server <command>` against `channel` under `servers`, with the
+/// `shaman server <command>` against `channel` under `servers`, with the
 /// environment that keeps any server it launches from the real Providers.
 fn server_cli(servers: &DetachedServers, channel: &str, command: &str) -> tokio::process::Command {
     server_cli_with_home(
@@ -2280,7 +2280,7 @@ fn server_cli(servers: &DetachedServers, channel: &str, command: &str) -> tokio:
     )
 }
 
-/// `suru server <command>` as [`server_cli`] has it, keeping whatever registers a
+/// `shaman server <command>` as [`server_cli`] has it, keeping whatever registers a
 /// Login start under `home` and telling it to `service_manager`, a stand-in, so
 /// that the real user's service manager is left out of it. Every command that
 /// looks at a Login start goes through here.
@@ -2316,20 +2316,20 @@ pub(crate) fn server_cli_with_home(
         _ => vec![],
     };
     let mut process =
-        crate::support::detached_servers::isolated_command(env!("CARGO_BIN_EXE_suru"), home);
+        crate::support::detached_servers::isolated_command(env!("CARGO_BIN_EXE_shaman"), home);
     process
         .arg("server")
         .arg(command)
         .args(timing_args)
-        .env("SURU_STATE_DIR", servers.state_dir())
-        .env("SURU_DATA_DIR", servers.state_dir())
-        .env("SURU_CONFIG_DIR", servers.state_dir())
-        .env("SURU_CHANNEL", channel)
+        .env("SHAMAN_STATE_DIR", servers.state_dir())
+        .env("SHAMAN_DATA_DIR", servers.state_dir())
+        .env("SHAMAN_CONFIG_DIR", servers.state_dir())
+        .env("SHAMAN_CHANNEL", channel)
         .envs(servers.isolated_environment());
     process
 }
 
-/// Runs a `suru server` command, failing the test with the registration it
+/// Runs a `shaman server` command, failing the test with the registration it
 /// left behind should the command wedge rather than settle.
 async fn settle_server_cli(
     mut process: tokio::process::Command,
@@ -2346,7 +2346,7 @@ async fn settle_server_cli(
     }
 }
 
-/// Runs a `suru server` command as [`run_server_cli`] does, with `key` set
+/// Runs a `shaman server` command as [`run_server_cli`] does, with `key` set
 /// to `value` in its environment.
 async fn run_server_cli_with_env(
     servers: &DetachedServers,
@@ -2451,8 +2451,8 @@ async fn build_profile_selects_isolated_default_state_and_data_roots() {
     };
     let mut process = server_cli(&servers, expected_channel, "start");
     process
-        .env("SURU_DATA_DIR", data_dir.path())
-        .env_remove("SURU_CHANNEL");
+        .env("SHAMAN_DATA_DIR", data_dir.path())
+        .env_remove("SHAMAN_CHANNEL");
     let output = settle_server_cli(process, servers.state_dir(), expected_channel, "start").await;
 
     assert!(
@@ -2650,7 +2650,7 @@ async fn managed_client_reports_a_registered_failed_lifecycle() {
         Err(error) => error.to_string(),
     };
 
-    assert!(error.contains("registered Suru server reported failed startup"));
+    assert!(error.contains("registered Shaman server reported failed startup"));
     assert!(!fixture.events_opened.load(Ordering::SeqCst));
 }
 
@@ -2676,7 +2676,7 @@ async fn managed_client_reports_a_bounded_log_tail_when_startup_fails() {
         Err(error) => format!("{error:#}"),
     };
 
-    assert!(error.contains("detached Suru server exited before becoming ready"));
+    assert!(error.contains("detached Shaman server exited before becoming ready"));
     assert!(error.contains("Recent server log"));
     assert!(error.contains("open server election lock"));
     assert!(!error.contains("discarded-prefix"));
@@ -3193,7 +3193,7 @@ impl ReadinessFixture {
             channel,
             LifecycleState::Ready,
             FixtureEventBehavior::ProtocolViolation(violation),
-            suru_binary_build_identity(),
+            shaman_binary_build_identity(),
         )
         .await
     }
@@ -3460,8 +3460,8 @@ fn fixture_model_catalog_event() -> Event {
 /// fixture holds none.
 fn fixture_relays_event() -> Event {
     Event::default()
-        .event(suru::protocol::RELAYS_EVENT)
-        .json_data(suru::protocol::RelayListing {
+        .event(shaman::protocol::RELAYS_EVENT)
+        .json_data(shaman::protocol::RelayListing {
             instance: uuid::Uuid::from_u128(1),
             revision: 1,
             relays: Vec::new(),
@@ -3473,8 +3473,8 @@ fn fixture_relays_event() -> Event {
 /// every connect: a fixture is not Serving.
 fn fixture_serving_listener_event() -> Event {
     Event::default()
-        .event(suru::protocol::SERVING_LISTENER_EVENT)
-        .json_data(suru::protocol::ListenerState::Off)
+        .event(shaman::protocol::SERVING_LISTENER_EVENT)
+        .json_data(shaman::protocol::ListenerState::Off)
         .expect("serialize fixture serving listener state")
 }
 
@@ -3482,7 +3482,7 @@ fn fixture_serving_listener_event() -> Event {
 /// listener stands on every connect: a fixture has been.
 fn fixture_onboarded_event() -> Event {
     Event::default()
-        .event(suru::protocol::ONBOARDED_EVENT)
+        .event(shaman::protocol::ONBOARDED_EVENT)
         .json_data(true)
         .expect("serialize whether the fixture has been onboarded")
 }
@@ -3826,11 +3826,11 @@ fn test_runtime_root(base_dir: &std::path::Path, channel: &str) -> std::path::Pa
 }
 
 #[tokio::test]
-async fn suru_config_dir_steers_a_real_server_and_config_problems_reach_the_log() {
+async fn shaman_config_dir_steers_a_real_server_and_config_problems_reach_the_log() {
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let servers = DetachedServers::new();
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             "transcript": { "defaultFoldPosture": "expanded" },
             "mysteryKnob": 1
@@ -3839,7 +3839,7 @@ async fn suru_config_dir_steers_a_real_server_and_config_problems_reach_the_log(
     .expect("write config document");
     let channel = "config-env-test";
     let mut process = server_cli(&servers, channel, "start");
-    process.env("SURU_CONFIG_DIR", config_dir.path());
+    process.env("SHAMAN_CONFIG_DIR", config_dir.path());
     let started = settle_server_cli(process, servers.state_dir(), channel, "start").await;
     assert!(
         started.status.success(),
@@ -3871,7 +3871,7 @@ async fn suru_config_dir_steers_a_real_server_and_config_problems_reach_the_log(
     };
     assert_eq!(
         snapshot.settings.transcript.default_fold_posture,
-        suru::protocol::FoldPosture::Expanded,
+        shaman::protocol::FoldPosture::Expanded,
         "the override directory's pin reaches a connecting client"
     );
     assert!(
@@ -3912,11 +3912,14 @@ async fn suru_config_dir_steers_a_real_server_and_config_problems_reach_the_log(
 async fn a_syntax_broken_config_document_reaches_the_log_and_the_server_still_starts() {
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let servers = DetachedServers::new();
-    std::fs::write(config_dir.path().join("suru.jsonc"), r#"{ "transcript": "#)
-        .expect("write broken config document");
+    std::fs::write(
+        config_dir.path().join("shaman.jsonc"),
+        r#"{ "transcript": "#,
+    )
+    .expect("write broken config document");
     let channel = "config-broken-log-test";
     let mut process = server_cli(&servers, channel, "start");
-    process.env("SURU_CONFIG_DIR", config_dir.path());
+    process.env("SHAMAN_CONFIG_DIR", config_dir.path());
     let started = settle_server_cli(process, servers.state_dir(), channel, "start").await;
     assert!(
         started.status.success(),

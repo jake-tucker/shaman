@@ -1,11 +1,11 @@
 //! Codex app-server Provider runtime over its stable V2 stdio protocol.
 //!
 //! The integration is layered: [`wire`] holds every serde type Codex speaks and its conversions to
-//! Suru's protocol, the provider-neutral harness process machinery owns the app-server child
+//! Shaman's protocol, the provider-neutral harness process machinery owns the app-server child
 //! processes, [`transport`] carries JSON-RPC over one of those processes, [`projection`] turns
 //! native notifications into Provider events with the provider-neutral
 //! [`reasoning`](super::reasoning) splitter taking the title off a streamed Reasoning summary, and
-//! [`session`] composes them into the Provider runtime and Session the rest of Suru uses.
+//! [`session`] composes them into the Provider runtime and Session the rest of Shaman uses.
 
 mod approval;
 mod errand;
@@ -46,7 +46,7 @@ const DEFAULT_SERVICE_TIER_CHOICE_ID: &str = "default";
 /// What a Codex failure is called when Codex itself said nothing usable.
 const CODEX_FAILURE_FALLBACK: &str = "Codex Provider failed";
 
-/// What the user does outside Suru about each way Codex can be unavailable. The install page is
+/// What the user does outside Shaman about each way Codex can be unavailable. The install page is
 /// the one the Codex CLI itself sends a user to when it cannot update itself. Codex's check finds
 /// only a CLI that is not installed today; the others stand ready for when it learns them (#547).
 fn codex_fix(reason: ProviderUnavailability) -> &'static str {

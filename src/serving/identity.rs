@@ -2,9 +2,9 @@
 //! Relay by: where it is kept, and how it is got from there.
 //!
 //! The key is kept in the platform credential store where a release build,
-//! or `SURU_IDENTITY_STORE`, selects that store and it answers, and otherwise
+//! or `SHAMAN_IDENTITY_STORE`, selects that store and it answers, and otherwise
 //! in an owner-only file in the Server's data directory (ADR-0050). A key
-//! kept in the file — from before Suru kept keys in the store, or from a
+//! kept in the file — from before Shaman kept keys in the store, or from a
 //! time the store did not answer — is moved into the store, as it is, at the
 //! first load the store takes it. Either way the data directory keeps a
 //! marker, which holds nothing secret: where the key is kept — the store's
@@ -137,7 +137,7 @@ impl IdentityKey {
             store: BoundedStore::new(keeping.store, keeping.store_timeout),
             selection: keeping.selection,
             label: format!(
-                "Suru Server identity key ({} channel, {})",
+                "Shaman Server identity key ({} channel, {})",
                 keeping.channel,
                 data_dir.display()
             ),
@@ -907,9 +907,9 @@ mod tests {
         let identity = IdentityKey::new(directory.path());
         let public_key = identity.public_key().await.unwrap();
         assert_eq!(public_key, public_key_of(&kept));
-        let nonce = [7; suru_relay_protocol::NONCE_LEN];
+        let nonce = [7; shaman_relay_protocol::NONCE_LEN];
         let proof = identity
-            .sign(&suru_relay_protocol::proof_message(
+            .sign(&shaman_relay_protocol::proof_message(
                 "wss://relay.example",
                 &nonce,
                 &public_key,
@@ -917,7 +917,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            suru_relay_protocol::verify_proof("wss://relay.example", &public_key, &nonce, &proof),
+            shaman_relay_protocol::verify_proof("wss://relay.example", &public_key, &nonce, &proof),
             Ok(())
         );
         assert_eq!(fs::read(&path).unwrap(), kept, "the file is left as it was");
@@ -955,7 +955,7 @@ mod tests {
         assert_eq!(
             store.label(&item).unwrap(),
             format!(
-                "Suru Server identity key (test channel, {})",
+                "Shaman Server identity key (test channel, {})",
                 directory.display()
             )
         );
@@ -1204,7 +1204,7 @@ mod tests {
         }
     }
 
-    /// A debug build, and `SURU_IDENTITY_STORE=file`, leave a key file
+    /// A debug build, and `SHAMAN_IDENTITY_STORE=file`, leave a key file
     /// where it is, marked as kept there, though the platform credential
     /// store would take it, and the Log says why.
     #[tokio::test]
@@ -1213,7 +1213,7 @@ mod tests {
             (Selection::DebugBuild, "debug builds keep it there"),
             (
                 Selection::Chosen(IdentityStoreChoice::File),
-                "SURU_IDENTITY_STORE=file keeps it there",
+                "SHAMAN_IDENTITY_STORE=file keeps it there",
             ),
         ] {
             let kept = KeyPair::generate().unwrap().serialize_der();
@@ -1324,7 +1324,7 @@ mod tests {
         assert_eq!(
             store.label(&item).unwrap(),
             format!(
-                "Suru Server identity key (test channel, {})",
+                "Shaman Server identity key (test channel, {})",
                 directory.path().display()
             )
         );
@@ -1429,7 +1429,7 @@ mod tests {
             selection: Selection::CargoRun,
             ..kept_in(&store)
         };
-        let why = "builds Cargo runs keep it there unless SURU_IDENTITY_STORE=system";
+        let why = "builds Cargo runs keep it there unless SHAMAN_IDENTITY_STORE=system";
 
         let first = tempfile::tempdir().unwrap();
         let (public_key, log) =

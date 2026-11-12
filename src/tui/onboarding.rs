@@ -412,7 +412,7 @@ impl Recheck {
 }
 
 impl ProvidersStep {
-    const INTRODUCTION: &'static str = "Which providers should Suru use? Enable at least one.";
+    const INTRODUCTION: &'static str = "Which providers should Shaman use? Enable at least one.";
 
     /// The keys this step teaches before the ones every step shares, the
     /// most needed first, since a narrow screen gives up the last of them
@@ -855,7 +855,7 @@ enum Beneath<'a> {
 /// Model Catalog last heard from the Client's own Server has it.
 #[derive(Clone, Copy, Debug)]
 enum Standing<'a> {
-    /// Turned off, so Suru looks for nothing and the row claims nothing.
+    /// Turned off, so Shaman looks for nothing and the row claims nothing.
     Disabled,
     /// On, with nothing heard of it since: no catalog yet, or only one from
     /// before it was turned on, which the Server is reading anew.
@@ -865,10 +865,10 @@ enum Standing<'a> {
     Refreshing,
     /// Usable, with a compatibility condition worth fixing.
     Warning(&'a str),
-    /// The read itself failed, which is Suru's to report rather than a
+    /// The read itself failed, which is Shaman's to report rather than a
     /// condition of the Provider.
     Failed(&'a str),
-    /// Unusable until the reader does what `fix` says outside Suru.
+    /// Unusable until the reader does what `fix` says outside Shaman.
     Unavailable {
         reason: ProviderUnavailability,
         fix: &'a str,
@@ -1210,7 +1210,7 @@ pub(super) enum RootsEdit {
 }
 
 impl RootsStep {
-    const INTRODUCTION: &'static str = "Directories your work lives in. Suru lists each \
+    const INTRODUCTION: &'static str = "Directories your work lives in. Shaman lists each \
                                         repository directly inside one under /workspace. Sidekicks \
                                         will clone new repos here.";
 
@@ -1436,7 +1436,7 @@ impl RootsStep {
 
 /// The Icons step: a sample of Nerd Font glyphs, drawn whatever Show icons
 /// holds, and the reader's word on how this terminal draws them, which
-/// decides whether Suru shows Icons. On a first run neither answer is under
+/// decides whether Shaman shows Icons. On a first run neither answer is under
 /// Row Focus, so the reader looks before they answer; on a retake the answer
 /// Show icons holds is, following the Settings in force until the reader
 /// moves Row Focus or chooses. Finish pins the answer under Row Focus, and
@@ -1468,9 +1468,9 @@ struct IconsStep {
 /// How the reader says this terminal draws the Icons step's sample.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum IconsAnswer {
-    /// As icons, so Suru shows them.
+    /// As icons, so Shaman shows them.
     Icons,
-    /// As boxes or blanks, for want of a Nerd Font, so Suru does not.
+    /// As boxes or blanks, for want of a Nerd Font, so Shaman does not.
     Boxes,
 }
 

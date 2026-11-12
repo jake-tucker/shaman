@@ -1,7 +1,7 @@
 //! Copilot's three unavailability conditions: a CLI that isn't installed, one holding no
-//! credentials, and one speaking a protocol version Suru does not. Each reaches the catalog as its
+//! credentials, and one speaking a protocol version Shaman does not. Each reaches the catalog as its
 //! own typed reason with what fixes it beside, and each clears on the refresh after the user fixes
-//! it outside Suru. Beside
+//! it outside Shaman. Beside
 //! them, the one way a signed-in CLI must never read as unavailable: credentials it keeps to
 //! itself.
 
@@ -9,7 +9,7 @@ use crate::copilot_integration::support::{
     COPILOT_MODELS, ScriptedCopilot, connect_arm, copilot_catalog, gh_cli_signed_in_arm, hosting,
     models_arm, signed_in_arm, signed_out_arm, unknown_method_arm, upgradable_connect_arm,
 };
-use suru::{
+use shaman::{
     managed_client::ManagedClient,
     protocol::{ProviderCatalogStatus, ProviderUnavailability},
 };
@@ -28,10 +28,10 @@ fn condition(status: &ProviderCatalogStatus) -> (ProviderUnavailability, String,
     (*reason, message.clone(), fix.clone())
 }
 
-/// What Copilot says fixes a CLI that is too old or too new for Suru, however it gave itself away.
+/// What Copilot says fixes a CLI that is too old or too new for Shaman, however it gave itself away.
 const UPDATE_THE_CLI: &str = "update the Copilot CLI";
 
-/// Asserts the refresh after the user has fixed the condition outside Suru finds Copilot usable
+/// Asserts the refresh after the user has fixed the condition outside Shaman finds Copilot usable
 /// again, which is the recovery every one of these conditions shares.
 async fn assert_the_refresh_clears_the_condition(client: &ManagedClient) {
     let refreshed = client.refresh_models().await.expect("refresh the catalog");
@@ -62,7 +62,7 @@ async fn a_copilot_cli_that_is_not_installed_is_reported_as_such_until_it_is_ins
     assert_eq!(reason, ProviderUnavailability::NotInstalled);
     assert!(
         message.contains("copilot"),
-        "the condition names the CLI Suru could not launch, got: {message}"
+        "the condition names the CLI Shaman could not launch, got: {message}"
     );
     assert_eq!(
         fix,
@@ -128,7 +128,7 @@ async fn a_cli_holding_no_credentials_is_reported_as_not_signed_in_until_the_use
 }
 
 #[tokio::test]
-async fn a_cli_signed_in_through_the_gh_cli_serves_its_models_without_showing_suru_a_token() {
+async fn a_cli_signed_in_through_the_gh_cli_serves_its_models_without_showing_shaman_a_token() {
     let copilot = ScriptedCopilot::new(&format!(
         "{}{}{}",
         connect_arm(),
@@ -169,7 +169,7 @@ async fn a_cli_signed_in_through_the_gh_cli_serves_its_models_without_showing_su
 }
 
 #[tokio::test]
-async fn a_cli_speaking_a_protocol_suru_does_not_is_reported_as_an_incompatible_version() {
+async fn a_cli_speaking_a_protocol_shaman_does_not_is_reported_as_an_incompatible_version() {
     let copilot = ScriptedCopilot::new(&format!(
         "{}{}{}",
         upgradable_connect_arm(),
@@ -191,7 +191,7 @@ async fn a_cli_speaking_a_protocol_suru_does_not_is_reported_as_an_incompatible_
     );
     assert_eq!(
         fix, UPDATE_THE_CLI,
-        "Suru cannot name a version that would speak its protocol, so the fix is to update"
+        "Shaman cannot name a version that would speak its protocol, so the fix is to update"
     );
 
     copilot.upgrade();

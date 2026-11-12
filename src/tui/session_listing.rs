@@ -326,7 +326,7 @@ pub(super) fn present<'a>(
 
 /// Whether `session` is rooted at `workspace`, as a listing narrowed to it
 /// reads: at it rather than under it, since a Session in a directory beneath
-/// a Workspace belongs to its own. A Session whose Workspace Suru could not
+/// a Workspace belongs to its own. A Session whose Workspace Shaman could not
 /// read stands however narrow the listing, because that is the reading the
 /// server gives a listing it narrows, and a Client narrowing for itself must
 /// agree with it.
@@ -788,7 +788,7 @@ impl SessionListing {
     }
 
     /// The listed summary a catalog change names, for the changes that revise
-    /// one Session in place. A Session Suru could not read carries no summary
+    /// one Session in place. A Session Shaman could not read carries no summary
     /// to revise, so it is passed over rather than reported missing.
     fn readable_mut(
         &mut self,

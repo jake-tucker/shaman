@@ -7,11 +7,11 @@
 //! the crash net that catches output no in-process subscriber can (panics,
 //! pre-init failures). See ADR-0008.
 //!
-//! `SURU_LOG` decides how verbose the Log is, within one bound it cannot
+//! `SHAMAN_LOG` decides how verbose the Log is, within one bound it cannot
 //! lift: a dependency that logs the payloads it carries at its verbose levels
 //! is held to its warnings and errors. rmcp, which serves the Broker, logs
 //! every call it receives whole — a Sidekick's Answers among them, secret ones
-//! included — before Suru has read it, so no directive may let those lines
+//! included — before Shaman has read it, so no directive may let those lines
 //! through. Neither may the lines in which the WebSocket and HTTP clients a
 //! Server reaches its Relays with name the Relay or carry what it said — a
 //! login's code among them — nor those in which the TLS beneath them names
@@ -35,9 +35,9 @@ use tracing_subscriber::{
 use crate::runtime::{RuntimeConfig, protect_current_user_directory, protect_current_user_file};
 
 const LOG_DIR: &str = "log";
-const FILTER_ENV_VAR: &str = "SURU_LOG";
-/// Filter applied when `SURU_LOG` is unset or invalid.
-const DEFAULT_FILTER: &str = "warn,suru=info";
+const FILTER_ENV_VAR: &str = "SHAMAN_LOG";
+/// Filter applied when `SHAMAN_LOG` is unset or invalid.
+const DEFAULT_FILTER: &str = "warn,shaman=info";
 /// Per-run Log files kept before the oldest are pruned.
 const RETAINED_LOG_FILES: usize = 20;
 /// A Keeper's Log files kept, counted apart from the rest. A Keeper lasts the
@@ -47,7 +47,7 @@ const RETAINED_LOG_FILES: usize = 20;
 /// kind, since only another login starts another.
 const RETAINED_KEEPER_LOG_FILES: usize = 3;
 /// Dependencies that log the payloads they carry at their verbose levels, and
-/// the most verbose level each is let log at whatever `SURU_LOG` asks: rmcp
+/// the most verbose level each is let log at whatever `SHAMAN_LOG` asks: rmcp
 /// logs each Broker call whole, Answers included, at debug and trace and its
 /// notifications at info; tungstenite logs every frame and message a Relay
 /// sends whole at trace; reqwest and hyper-util name the address of every
@@ -92,13 +92,13 @@ pub struct LogGuard {
 }
 
 /// Routes this process's `tracing` output to a new per-run Log file,
-/// filtered by the `SURU_LOG` env var (`EnvFilter` directives).
+/// filtered by the `SHAMAN_LOG` env var (`EnvFilter` directives).
 pub fn init(config: &RuntimeConfig, role: Role) -> Result<LogGuard> {
     init_with_filter_directives(config, role, std::env::var(FILTER_ENV_VAR).ok())
 }
 
 /// Routes this process's `tracing` output to a new per-run Log file, filtered
-/// by `directives` as by `SURU_LOG` — injectable so tests need not touch
+/// by `directives` as by `SHAMAN_LOG` — injectable so tests need not touch
 /// process env vars.
 pub fn init_with_filter_directives(
     config: &RuntimeConfig,
@@ -171,7 +171,7 @@ fn filter_from(directives: Option<&str>) -> (EnvFilter, Option<String>) {
     }
 }
 
-/// The bound no `SURU_LOG` directive lifts: every target logs as its own
+/// The bound no `SHAMAN_LOG` directive lifts: every target logs as its own
 /// directives say, but [`PAYLOAD_BEARING_TARGETS`] never more verbosely than
 /// they allow. It stands beside the directives rather than among them, since
 /// among them a more specific directive — `rmcp::service=trace` — would win.
@@ -309,16 +309,16 @@ mod tests {
     fn invalid_filter_directives_fall_back_to_the_default() {
         let (_, invalid) = filter_from(Some("not a === filter"));
         assert_eq!(invalid.as_deref(), Some("not a === filter"));
-        let (_, invalid) = filter_from(Some("suru=debug"));
+        let (_, invalid) = filter_from(Some("shaman=debug"));
         assert_eq!(invalid, None);
         let (_, invalid) = filter_from(None);
         assert_eq!(invalid, None);
     }
 
-    /// However verbose `SURU_LOG` asks the Log to be — at any level, and naming
+    /// However verbose `SHAMAN_LOG` asks the Log to be — at any level, and naming
     /// the dependency outright — a dependency that logs the payloads it carries
     /// is held to its warnings and errors, or to nothing where even its errors
-    /// carry them, while Suru's own lines are written as verbosely as asked.
+    /// carry them, while Shaman's own lines are written as verbosely as asked.
     #[test]
     fn a_dependency_logging_payloads_is_held_to_warnings_whatever_the_filter_asks() {
         let dir = tempfile::tempdir().expect("create temp dir");
@@ -346,7 +346,7 @@ mod tests {
             target: "rustls_platform_verifier::verification::others",
             "failed to verify TLS certificate: not valid for name tok-relay-certificate"
         );
-        tracing::trace!(marker = "suru-trace", "Suru's own trace line");
+        tracing::trace!(marker = "shaman-trace", "Shaman's own trace line");
         drop(guard);
         let log_dir = config.state_dir().join(LOG_DIR);
         let contents = fs::read_dir(&log_dir)
@@ -368,7 +368,7 @@ mod tests {
             assert!(!contents.contains(payload), "{payload} reached the Log");
         }
         assert!(contents.contains("response error kept"), "{contents}");
-        assert!(contents.contains("Suru's own trace line"), "{contents}");
+        assert!(contents.contains("Shaman's own trace line"), "{contents}");
     }
 
     #[test]

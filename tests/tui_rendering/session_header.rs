@@ -5,7 +5,7 @@ use crate::tui_rendering::support::{
     rendered_application_buffer, rendered_application_rows_at, text_position, workspace_dir,
 };
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use suru::{
+use shaman::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
         CheckoutAssociation, CheckoutId, CheckoutKind, CheckoutRevision, CheckoutStateChanged,
@@ -19,7 +19,7 @@ use suru::{
 fn settings(application: &mut Application) {
     let mut settings = EffectiveSettings::default();
     settings.sidebar.initial_visibility = SidebarVisibility::Hidden;
-    settings.aside.initial_visibility = suru::protocol::AsideVisibility::Hidden;
+    settings.aside.initial_visibility = shaman::protocol::AsideVisibility::Hidden;
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
@@ -34,7 +34,7 @@ fn settings(application: &mut Application) {
 fn enable_icons(application: &mut Application) {
     let mut settings = EffectiveSettings::default();
     settings.sidebar.initial_visibility = SidebarVisibility::Hidden;
-    settings.aside.initial_visibility = suru::protocol::AsideVisibility::Hidden;
+    settings.aside.initial_visibility = shaman::protocol::AsideVisibility::Hidden;
     settings.appearance.show_icons = true;
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
@@ -114,7 +114,7 @@ fn session_on_checkout_branch(
     };
     snapshot.session.checkout = Some(association.clone());
     if child {
-        snapshot.session.id = suru::protocol::SessionId::new();
+        snapshot.session.id = shaman::protocol::SessionId::new();
         snapshot.session.parent = Some(parent);
         application
             .handle_event(ApplicationEvent::SessionAttached(snapshot.clone()))
@@ -403,7 +403,7 @@ fn remote_header_icons_preserve_the_centered_title_and_compact_remote_label() {
     enable_icons(&mut application);
     crate::tui_rendering::connecting::turn_to_studio(&mut application);
     let mut snapshot =
-        navigable_session_snapshot(suru::protocol::SessionId::new(), workspace.path(), 1);
+        navigable_session_snapshot(shaman::protocol::SessionId::new(), workspace.path(), 1);
     snapshot.title = "Alpha".into();
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
@@ -502,7 +502,10 @@ fn title_is_centered_in_the_view_and_updates_with_the_session() {
             ),
             "{row}"
         );
-        assert!(!row.contains("Workspace") && !row.contains("Suru"), "{row}");
+        assert!(
+            !row.contains("Workspace") && !row.contains("Shaman"),
+            "{row}"
+        );
     }
     application
         .handle_event(ApplicationEvent::Session(SessionEvent::Updated(
@@ -631,7 +634,7 @@ fn viewed_child_uses_its_own_title_and_empty_title_leaves_the_center_blank() {
     let mut application = connected_application(workspace.path());
     settings(&mut application);
     let (parent, mut snapshot) = enter_session(&mut application, workspace.path());
-    snapshot.session.id = suru::protocol::SessionId::new();
+    snapshot.session.id = shaman::protocol::SessionId::new();
     snapshot.session.parent = Some(parent);
     snapshot.title = "Child work".into();
     application

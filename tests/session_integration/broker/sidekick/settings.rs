@@ -19,7 +19,7 @@
 //! what the Tools answer it, on the Config Document, and on what a Client of
 //! the Session API observes.
 
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
     protocol::{
         AppearanceMode, ClaudePermissionMode, FoldPosture, SettingMutation,
@@ -35,16 +35,16 @@ use crate::session_integration::broker::sidekick_acts::{acted, refused};
 const SETTINGS_TOOLS: [&str; 3] = ["list_settings", "describe_setting", "set_setting"];
 
 /// A Config Document as a user writes one by hand: comments, tabs, a trailing
-/// comma, Settings in no order of Suru's, and a Serving port of their own.
+/// comma, Settings in no order of Shaman's, and a Serving port of their own.
 const HAND_WRITTEN: &str = "{\n\t// Codex should say as much about its thinking as it likes.\n\t\"provider\": {\n\t\t\"codex\": { \"reasoningSummary\":    \"detailed\" }\n\t},\n\n\t// I read my Sessions folded.\n\t\"transcript\": { \"defaultFoldPosture\": \"folded\" },\n\t\"serving\": { \"port\": 9443 },\n}\n";
 
 /// The Config Document under `config_dir`, or `None` where there is none.
 fn config_document(config_dir: &Path) -> Option<String> {
-    std::fs::read_to_string(config_dir.join("suru.jsonc")).ok()
+    std::fs::read_to_string(config_dir.join("shaman.jsonc")).ok()
 }
 
 fn write_config_document(config_dir: &Path, text: &str) {
-    std::fs::write(config_dir.join("suru.jsonc"), text).expect("write the Config Document");
+    std::fs::write(config_dir.join("shaman.jsonc"), text).expect("write the Config Document");
 }
 
 /// A Client attached to the Server of `channel`, past what it is told on
@@ -638,7 +638,7 @@ async fn an_unknown_key_is_answered_with_the_nearest_keys_or_how_to_list_them() 
             json!({ "key": "apperance.mode" })
         )
         .await,
-        "Suru has no Setting `apperance.mode`, so nothing was described; did you mean \
+        "Shaman has no Setting `apperance.mode`, so nothing was described; did you mean \
          `appearance.mode`? list_settings lists every key."
     );
     assert_eq!(
@@ -648,7 +648,7 @@ async fn an_unknown_key_is_answered_with_the_nearest_keys_or_how_to_list_them() 
             json!({ "key": "theme", "value": "dracula" })
         )
         .await,
-        "Suru has no Setting `theme`, so nothing was changed; did you mean `appearance.theme`? \
+        "Shaman has no Setting `theme`, so nothing was changed; did you mean `appearance.theme`? \
          list_settings lists every key."
     );
     assert_eq!(
@@ -658,7 +658,7 @@ async fn an_unknown_key_is_answered_with_the_nearest_keys_or_how_to_list_them() 
             json!({ "key": "colour", "value": "blue" })
         )
         .await,
-        "Suru has no Setting `colour`, so nothing was changed; list_settings lists every key, \
+        "Shaman has no Setting `colour`, so nothing was changed; list_settings lists every key, \
          and takes a `group` to narrow them."
     );
     let near_serving = refused(
@@ -722,7 +722,7 @@ async fn no_setting_governing_serving_or_pairing_is_listed_described_or_set() {
             let refusal = refused(&mut sidekick, tool, arguments.clone()).await;
             assert!(
                 refusal.contains("govern Serving and Pairing, which no Sidekick reads or changes")
-                    && refusal.contains("the user may change them in Suru's settings panel")
+                    && refusal.contains("the user may change them in Shaman's settings panel")
                     && !refusal.contains("9443"),
                 "{tool} refuses {arguments} saying why, and telling nothing of it: {refusal}"
             );
@@ -1083,7 +1083,7 @@ async fn a_setting_a_sidekick_may_only_read_is_listed_and_described_but_never_ch
                 refusal,
                 format!(
                     "`{key}` is a setting a sidekick may read but not change, since {why}, so it \
-                     was left as it is; tell the user, who may change it in Suru's settings \
+                     was left as it is; tell the user, who may change it in Shaman's settings \
                      panel."
                 ),
                 "{arguments}"
@@ -1179,7 +1179,7 @@ async fn a_sidekick_reads_the_workspace_roots_but_is_refused_changing_them() {
             refused(&mut sidekick, "set_setting", arguments.clone()).await,
             "`workspace.roots` is a setting a sidekick may read but not change, since the \
              workspace roots bound where a sidekick may write, so it was left as it is; tell the \
-             user, who may change it in Suru's settings panel.",
+             user, who may change it in Shaman's settings panel.",
             "{arguments}"
         );
     }
@@ -1192,7 +1192,7 @@ async fn a_sidekick_reads_the_workspace_roots_but_is_refused_changing_them() {
     server.shutdown().await.expect("shut down server");
 }
 
-/// One Setting governs everything Suru serves an Agent, so a Sidekick asked
+/// One Setting governs everything Shaman serves an Agent, so a Sidekick asked
 /// to turn the Broker off may — narrowing what every Agent is offered widens
 /// nothing — and is told it has switched its own Tools off, for the user, who
 /// alone can turn them back on.
@@ -1217,7 +1217,7 @@ async fn a_sidekick_turning_the_broker_off_switches_its_own_tools_off_and_is_tol
     );
     assert!(
         answer["note"].as_str().is_some_and(|note| note.contains(
-            "The Broker is off now, so Suru offers you and every other Agent none of its Tools"
+            "The Broker is off now, so Shaman offers you and every other Agent none of its Tools"
         ) && note.contains("tell the user")),
         "{answer}"
     );
@@ -1388,7 +1388,7 @@ async fn a_config_document_that_does_not_parse_is_refused_and_left_as_it_is() {
         let refusal = refused(&mut sidekick, "set_setting", arguments.clone()).await;
         assert!(
             refusal.starts_with("Nothing was changed: the user's Config Document at `")
-                && refusal.contains("suru.jsonc")
+                && refusal.contains("shaman.jsonc")
                 && refusal.contains("cannot be edited in place")
                 && refusal.contains("tell the user, who can mend it by hand"),
             "{arguments} is refused saying where the document is: {refusal}"
@@ -1502,7 +1502,7 @@ async fn a_serving_listener_that_cannot_start_tells_a_sidekick_nothing_of_where(
     );
     assert!(
         answer["note"].as_str().is_some_and(|note| {
-            note.contains("The change is saved and in force, but Suru could not start Serving")
+            note.contains("The change is saved and in force, but Shaman could not start Serving")
         }),
         "{answer}"
     );

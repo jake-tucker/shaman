@@ -7,7 +7,7 @@ use crate::tui_rendering::support::{
     rendered_application_rows_at, type_terminal_text,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         EffectiveSettings, InviteStanding, InviteState, IssueInviteRequest, IssuedInvite,
@@ -61,7 +61,7 @@ fn serving_shows_a_fresh_copyable_invite_and_removes_enrolled_peers() {
         panic!("Enter issues an invite");
     };
 
-    let invite = "suru-v1-example".to_owned();
+    let invite = "shaman-v1-example".to_owned();
     application
         .handle_event(ApplicationEvent::InviteIssued {
             request,
@@ -285,7 +285,7 @@ fn serve_lists_scroll_to_keep_the_focused_candidate_and_peer_fully_visible() {
             name: format!("machine-{index}"),
         })
         .collect::<Vec<_>>();
-    let long_invite = format!("suru-v1-{}", "a".repeat(150));
+    let long_invite = format!("shaman-v1-{}", "a".repeat(150));
     application
         .handle_event(ApplicationEvent::InviteIssued {
             request,
@@ -373,7 +373,7 @@ fn showing_a_code_beside(code: &str, serial: u64, peers: Vec<Peer>) -> Applicati
         .handle_event(ApplicationEvent::InviteIssued {
             request,
             invite: IssuedInvite {
-                invite: "suru-v1-long-string".into(),
+                invite: "shaman-v1-long-string".into(),
                 serial: 1,
                 ways: vec![Way::Relay("https://relay.example.com".to_owned())],
                 short_code: Some(IssuedShortCode {
@@ -401,7 +401,7 @@ fn an_invite_offering_a_relay_shows_its_code_in_two_groups_beside_the_long_strin
     let application = showing_a_code("K7QF-2MXP", 1);
     let text = rendered_application_rows(&application).join("\n");
     assert!(text.contains("K7QF-2MXP"), "{text}");
-    assert!(text.contains("suru-v1-long-string"), "{text}");
+    assert!(text.contains("shaman-v1-long-string"), "{text}");
     assert!(text.contains("/pair"), "where it is typed: {text}");
     assert!(text.contains("n new code"), "{text}");
 }
@@ -420,7 +420,7 @@ fn each_of_the_long_string_and_the_code_is_copied_by_its_own_key() {
     let mut application = showing_a_code("K7QF-2MXP", 1);
     assert_eq!(
         press_with(&mut application, KeyCode::Char('c'), KeyModifiers::CONTROL),
-        ApplicationTransition::CopyToClipboard("suru-v1-long-string".to_owned().into()),
+        ApplicationTransition::CopyToClipboard("shaman-v1-long-string".to_owned().into()),
         "the key it always was"
     );
     assert_eq!(
@@ -456,7 +456,7 @@ fn a_wrong_code_tried_is_told_where_it_is_shown_and_one_key_gets_a_new_one() {
     let text = rendered_application_rows(&application).join("\n");
     assert!(text.contains("H4RW-9TNB"), "{text}");
     assert!(
-        text.contains("suru-v1-long-string"),
+        text.contains("shaman-v1-long-string"),
         "the same invite: {text}"
     );
     assert!(!text.contains("wrong code was tried"), "{text}");
@@ -669,7 +669,7 @@ fn a_wrong_code_tried_reaches_a_reader_who_closed_serve_and_stands_there_when_th
         .handle_event(ApplicationEvent::InviteIssued {
             request,
             invite: IssuedInvite {
-                invite: "suru-v1-next".into(),
+                invite: "shaman-v1-next".into(),
                 serial: 1,
                 ways: vec![Way::Relay("https://relay.example.com".to_owned())],
                 short_code: Some(IssuedShortCode {
@@ -717,7 +717,7 @@ fn showing_a_direct_invite(serial: u64) -> Application {
         .handle_event(ApplicationEvent::InviteIssued {
             request,
             invite: IssuedInvite {
-                invite: "suru-v1-direct-string".into(),
+                invite: "shaman-v1-direct-string".into(),
                 serial,
                 ways: vec![way],
                 short_code: None,
@@ -753,13 +753,13 @@ fn an_invite_that_ended_is_said_to_and_can_be_neither_read_nor_copied() {
         let mut application = showing_a_direct_invite(7);
         let shown = rendered_application_rows(&application).join("\n");
         assert!(shown.contains("Fresh invite"), "{shown}");
-        assert!(shown.contains("suru-v1-direct-string"), "{shown}");
+        assert!(shown.contains("shaman-v1-direct-string"), "{shown}");
         assert!(shown.contains("Ctrl+C copy invite"), "{shown}");
 
         told_invite(&mut application, serial, state);
         let shown = rendered_application_rows(&application).join(" ");
         assert!(!shown.contains("Fresh invite"), "{state:?}: {shown}");
-        assert!(!shown.contains("suru-v1-direct-string"), "{shown}");
+        assert!(!shown.contains("shaman-v1-direct-string"), "{shown}");
         assert!(shown.contains("This invite no longer works"), "{shown}");
         assert!(shown.contains(why), "{shown}");
         assert!(shown.contains("/serve"), "how to get another: {shown}");
@@ -780,7 +780,7 @@ fn an_invite_is_ended_only_by_what_is_said_of_it_or_of_a_later_one() {
     told_invite(&mut application, 6, InviteState::Expired);
     told_invite(&mut application, 7, InviteState::Standing);
     let shown = rendered_application_rows(&application).join("\n");
-    assert!(shown.contains("suru-v1-direct-string"), "{shown}");
+    assert!(shown.contains("shaman-v1-direct-string"), "{shown}");
     assert!(matches!(
         press_with(&mut application, KeyCode::Char('c'), KeyModifiers::CONTROL),
         ApplicationTransition::CopyToClipboard(_)
@@ -819,7 +819,7 @@ fn an_invite_said_to_have_ended_before_it_was_shown_is_shown_ended() {
         .handle_event(ApplicationEvent::InviteIssued {
             request,
             invite: IssuedInvite {
-                invite: "suru-v1-direct-string".into(),
+                invite: "shaman-v1-direct-string".into(),
                 serial: 8,
                 ways: vec![way],
                 short_code: None,
@@ -829,7 +829,7 @@ fn an_invite_said_to_have_ended_before_it_was_shown_is_shown_ended() {
         .expect("show the invite");
     let shown = rendered_application_rows(&application).join(" ");
     assert!(shown.contains("This invite no longer works"), "{shown}");
-    assert!(!shown.contains("suru-v1-direct-string"), "{shown}");
+    assert!(!shown.contains("shaman-v1-direct-string"), "{shown}");
 }
 
 /// Reopening `/serve` says an Invite stands however it was issued, having no code
@@ -875,7 +875,7 @@ fn a_code_goes_with_its_invite_however_the_news_arrives() {
     told_invite(&mut application, 2, InviteState::Standing);
     let shown = rendered_application_rows(&application).join(" ");
     assert!(!shown.contains("K7QF-2MXP"), "{shown}");
-    assert!(!shown.contains("suru-v1-long-string"), "{shown}");
+    assert!(!shown.contains("shaman-v1-long-string"), "{shown}");
     assert!(shown.contains("This invite no longer works"), "{shown}");
     assert_eq!(
         press(&mut application, KeyCode::Char('c')),

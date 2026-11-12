@@ -18,7 +18,7 @@ pub(super) fn open(target: &str) -> io::Result<()> {
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     std::thread::Builder::new()
-        .name("suru-hyperlink-opener".to_owned())
+        .name("shaman-hyperlink-opener".to_owned())
         .spawn(move || {
             if let Err(error) = command.status() {
                 tracing::warn!("hyperlink opener failed: {error}");

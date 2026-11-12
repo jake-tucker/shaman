@@ -10,20 +10,20 @@
 //! a compaction Copilot begins while no Turn runs begins a Continuation its own completion
 //! settles. Stopping either — by interrupt, or by the next Prompt — cancels the compaction. A
 //! cancel that finds it already over stopped nothing of it: it ends as Copilot reports, even once
-//! Copilot's answer to the cancel has reached Suru ahead of that report.
+//! Copilot's answer to the cancel has reached Shaman ahead of that report.
 //!
 //! A Compaction the user asks for is Copilot's `session.history.compact`, triggered as manual and
 //! carrying the user's instructions for the summary as `customInstructions` where there are any,
-//! which reports no turn of its own: Suru opens its Turn, the same events report the compaction in
+//! which reports no turn of its own: Shaman opens its Turn, the same events report the compaction in
 //! it, the `compactionTokensUsed` its end carries is the Turn's Usage, and Copilot's answer to the
 //! request settles it. Interrupting it is `session.history.abortManualCompaction`, after which
-//! Copilot fails the compaction and the request as "Compaction Cancelled" — the stop Suru asked for.
+//! Copilot fails the compaction and the request as "Compaction Cancelled" — the stop Shaman asked for.
 //!
 //! The wire shapes follow github-copilot-sdk 1.0.15-preview.3's `SessionCompactionStartData`,
 //! `SessionCompactionCompleteData`, `HistoryCompactRequest`, `HistoryCompactResult` and
 //! `HistoryAbortManualCompactionResult`. Copilot writes a manual compaction's events before its
-//! answer to the request, as #457's live run saw, and under the manual trigger Suru asks with; an
-//! answer that reaches Suru ahead of them anyway — a failure included — waits for them, so their
+//! answer to the request, as #457's live run saw, and under the manual trigger Shaman asks with; an
+//! answer that reaches Shaman ahead of them anyway — a failure included — waits for them, so their
 //! counts and Usage land on the Compaction and its Turn, and only reports under that trigger
 //! decide anything of it. While Copilot still owes reports of a compaction it answered, the next
 //! request is turned away rather than begun.
@@ -33,14 +33,14 @@ use crate::copilot_integration::support::{
     opened_session, opened_session_on, permission_decision_arm, send_arm, session_where,
     settled_session,
 };
-use suru::managed_client::SessionSubscription;
-use suru::protocol::{
+use shaman::managed_client::SessionSubscription;
+use shaman::protocol::{
     Activity, ActivityStatus, AdmitPromptRequest, CompactSessionRequest, CompactionRequest,
     CompactionTrigger, ContextFill, Decision, InitialPrompt, MessageRole, PromptDelivery, PromptId,
     PromptStatus, SessionError, SessionErrorCode, SessionSnapshot, SessionStatus, TurnStatus,
     Usage,
 };
-use suru::provider::CopilotRuntime;
+use shaman::provider::CopilotRuntime;
 use tokio::time::Duration;
 
 /// Copilot starting to compact the main conversation once its context crossed the background
@@ -56,7 +56,7 @@ const COMPLETED: &str = r#"      event c-complete session.compaction_complete '{
 const FAILED: &str = r#"      event c-failed session.compaction_complete '{"success":false,"trigger":"threshold","error":"Compaction failed: the model returned an empty summary","statusCode":500}'
 "#;
 
-/// What Copilot answers once a background compaction Suru cancelled has stopped.
+/// What Copilot answers once a background compaction Shaman cancelled has stopped.
 const CANCELLED: &str = r#"      event c-cancelled session.compaction_complete '{"success":false,"trigger":"threshold","error":"Compaction cancelled"}'
 "#;
 
@@ -91,7 +91,7 @@ fn fill(occupied_tokens: u64) -> Option<ContextFill> {
 }
 
 /// `timeline` played in the background once the test lets the fixture holding at `gate` carry on,
-/// so the CLI keeps reading what Suru sends meanwhile.
+/// so the CLI keeps reading what Shaman sends meanwhile.
 fn after(gate: &str, timeline: &str) -> String {
     format!("      (\n        wait_for \"{gate}\"\n{timeline}      ) &\n")
 }
@@ -1018,7 +1018,7 @@ async fn a_prompt_delivered_while_copilot_compacts_in_late_output_cancels_the_co
     shutdown(opened).await;
 }
 
-/// The arms every Copilot conversation needs, with the CLI accepting whatever Decision Suru answers
+/// The arms every Copilot conversation needs, with the CLI accepting whatever Decision Shaman answers
 /// a permission request with.
 fn deciding_arms() -> String {
     conversation_arms().replace(
@@ -1039,7 +1039,7 @@ const COMPACTING_AND_ASKING: &str = r#"      event c-start session.compaction_st
 async fn asking_while_compacting(
     opened: &Opened,
     feed: &mut SessionSubscription,
-) -> suru::protocol::ApprovalId {
+) -> shaman::protocol::ApprovalId {
     session_where(
         &opened.client,
         feed,
@@ -1208,7 +1208,7 @@ async fn a_compaction_copilot_failed_to_cancel_is_still_followed_to_its_completi
     assert_eq!(
         *status,
         ActivityStatus::Completed,
-        "the compaction Suru failed to cancel is still followed"
+        "the compaction Shaman failed to cancel is still followed"
     );
     assert_eq!(
         (*before_tokens, *after_tokens),
@@ -1395,7 +1395,7 @@ const ABORTED_SUBAGENT: &str = r#"      agent_event s9 agent-1 subagent.complete
 async fn subagent_asking_while_held(
     opened: &Opened,
     feed: &mut SessionSubscription,
-) -> (suru::protocol::SessionId, suru::protocol::ApprovalId) {
+) -> (shaman::protocol::SessionId, shaman::protocol::ApprovalId) {
     let held = session_where(
         &opened.client,
         feed,
@@ -1438,7 +1438,7 @@ async fn an_abort_a_held_turns_subagents_need_settles_the_turn_on_its_own_idle()
         deciding_arms(),
         prompts_arm(HELD_WHILE_A_SUBAGENT_ASKS, QUEUED_TURN),
         cancel_compaction_arm(CANCELLED),
-        // The acknowledgement reaches Suru before the idle the abort ends in.
+        // The acknowledgement reaches Shaman before the idle the abort ends in.
         abort_arm(ABORTED_SUBAGENT),
     ));
     let opened = opened_session(&copilot, "copilot-compaction-held-subagent", "Scout").await;
@@ -1792,7 +1792,7 @@ async fn a_compaction_failing_while_its_cancel_finds_nothing_to_cancel_keeps_cop
 }
 
 /// `timeline` played a moment after what came before it, so that what Copilot reports next
-/// reaches Suru after its answer to the request in hand rather than racing it.
+/// reaches Shaman after its answer to the request in hand rather than racing it.
 fn a_moment_later(timeline: &str) -> String {
     format!("      sleep 0.1\n{timeline}")
 }
@@ -2242,7 +2242,7 @@ async fn a_held_turns_subagents_abort_settles_it_after_the_compaction_its_cancel
     shutdown(opened).await;
 }
 
-/// Copilot starting the manual compaction Suru asked for with `session.history.compact`.
+/// Copilot starting the manual compaction Shaman asked for with `session.history.compact`.
 const MANUAL_STARTED: &str = r#"      event m-start session.compaction_start '{"conversationTokens":150000,"currentTokens":182000,"systemTokens":12000,"toolDefinitionsTokens":20000,"tokenLimit":200000,"trigger":"manual"}'
 "#;
 
@@ -2458,7 +2458,7 @@ async fn a_requested_compaction_is_copilots_manual_compact_in_a_turn_settled_aro
     assert_eq!(
         user_messages(&settled),
         user_messages(&before),
-        "no user Message is drawn for a Suru command"
+        "no user Message is drawn for a Shaman command"
     );
     assert_eq!(settled.session.status, SessionStatus::Idle);
 
@@ -2554,9 +2554,9 @@ async fn a_requested_compaction_copilot_fails_settles_it_and_its_turn_failed_wit
             ),
             "Compaction failed: the model returned an empty summary",
         ),
-        // A cancellation Suru never asked for is Copilot's own failure.
+        // A cancellation Shaman never asked for is Copilot's own failure.
         (
-            "cancelled by no abort of Suru's",
+            "cancelled by no abort of Shaman's",
             format!(
                 "{MANUAL_STARTED}{MANUAL_CANCELLED}{}",
                 answer_compaction(CANCELLED_ERROR)
@@ -2643,7 +2643,7 @@ async fn interrupting_a_requested_compaction_aborts_it_and_settles_both_interrup
     assert_eq!(
         settled.turns[1].status,
         TurnStatus::Interrupted,
-        "the cancellation Suru asked for is a stop, not a failure"
+        "the cancellation Shaman asked for is a stop, not a failure"
     );
     let [Activity::Compaction { status, error, .. }] = compactions(&settled)[..] else {
         panic!("one Compaction is recorded: {:?}", settled.activities);
@@ -2779,7 +2779,7 @@ async fn a_requested_compaction_failing_while_its_abort_is_out_keeps_copilots_er
     shutdown(opened).await;
 }
 
-/// What Copilot reports, late, of a background compaction Suru cancelled — what its summarising
+/// What Copilot reports, late, of a background compaction Shaman cancelled — what its summarising
 /// call had spent included.
 const STALE_CANCELLED: &str = r#"      event c-stale session.compaction_complete '{"success":false,"trigger":"threshold","error":"Compaction cancelled","compactionTokensUsed":{"inputTokens":9000,"outputTokens":10,"model":"claude-fixture"}}'
 "#;
@@ -3016,7 +3016,7 @@ const LATE_COMPLETED: &str = r#"      event late-complete session.compaction_com
 #[tokio::test]
 async fn an_answered_compaction_whose_reports_never_come_settles_once_overdue_and_owes_them_nothing()
  {
-    // The first compaction is answered with nothing reported of it; its reports reach Suru only
+    // The first compaction is answered with nothing reported of it; its reports reach Shaman only
     // ahead of the Agent's next answer. Every compaction after it reports as it runs.
     let later = format!(
         "{MANUAL_STARTED}{MANUAL_COMPLETED}{}",
@@ -3096,7 +3096,7 @@ async fn an_answered_compaction_whose_reports_never_come_settles_once_overdue_an
         "Copilot was never asked"
     );
 
-    // The owed reports reach Suru at last, ahead of the Agent's next answer: they record nothing
+    // The owed reports reach Shaman at last, ahead of the Agent's next answer: they record nothing
     // in the Turn that answer stands in, and begin no Continuation.
     deliver(&opened, "Carry on", PromptDelivery::Queue).await;
     let answered = settled_session(&opened.client, opened.session_id, 3).await;
@@ -3333,28 +3333,28 @@ async fn a_scheduled_compaction_is_copilots_manual_compact_asked_ahead_of_its_re
     let config_dir = tempfile::tempdir().unwrap();
     let workspace = tempfile::tempdir().unwrap();
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "compaction": { "scheduled": { "enabled": true } } }"#,
     )
     .unwrap();
-    let (clock, hand) = suru::server::ServerClock::manual();
+    let (clock, hand) = shaman::server::ServerClock::manual();
     let channel = "copilot-scheduled-compaction";
-    let server = suru::server::spawn_with_provider_and_timings(
-        suru::server::ServerConfig::new(state_dir.path(), channel)
+    let server = shaman::server::spawn_with_provider_and_timings(
+        shaman::server::ServerConfig::new(state_dir.path(), channel)
             .unwrap()
             .with_config_dir(config_dir.path()),
         std::sync::Arc::new(CopilotRuntime::new(copilot.executable())),
-        suru::server::ServerTimings::default().with_clock(clock.clone()),
+        shaman::server::ServerTimings::default().with_clock(clock.clone()),
     )
     .await
     .unwrap();
     let client = crate::copilot_integration::support::connect(state_dir.path(), channel).await;
     let created = client
-        .create_session(suru::protocol::CreateSessionRequest {
+        .create_session(shaman::protocol::CreateSessionRequest {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

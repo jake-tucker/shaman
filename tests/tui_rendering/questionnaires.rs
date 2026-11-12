@@ -3,7 +3,7 @@ use crate::tui_rendering::support::{
     rendered_application_rows, type_terminal_text, workspace_dir,
 };
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         Activity, ActivityId, Answer, Outlook, Question, QuestionAnswer, QuestionChoice,
@@ -292,12 +292,12 @@ fn selected_answers_have_compact_expandable_history_and_panel_keeps_transcript_n
             required: true,
         }],
     };
-    let message_id = suru::protocol::MessageId::new();
-    snapshot.messages.push(suru::protocol::Message {
+    let message_id = shaman::protocol::MessageId::new();
+    snapshot.messages.push(shaman::protocol::Message {
         id: message_id,
         turn_id,
-        role: suru::protocol::MessageRole::Agent,
-        status: suru::protocol::MessageStatus::Completed,
+        role: shaman::protocol::MessageRole::Agent,
+        status: shaman::protocol::MessageStatus::Completed,
         content: (0..70).map(|i| format!("Context line {i}\n")).collect(),
         model: None,
         skill_invocations: vec![],
@@ -618,8 +618,8 @@ fn concurrent_questionnaires_keep_individual_drafts_across_navigation_and_sessio
     );
     app.handle_event(ApplicationEvent::QuestionnaireSubmissionReconciled {
         id: first,
-        session: suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        session: shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             snapshot.session.id,
         ),
         snapshot: Some(snapshot.clone()),
@@ -789,7 +789,7 @@ fn pending_transcript_activity_opens_its_own_request() {
 
 #[test]
 fn catalog_discards_only_unavailable_hidden_drafts_and_ignores_older_availability() {
-    use suru::{
+    use shaman::{
         managed_client::ManagedEvent,
         protocol::{SessionRevision, SessionStandingInputs, SessionStandingInputsChanged},
     };
@@ -880,7 +880,7 @@ fn catalog_discards_only_unavailable_hidden_drafts_and_ignores_older_availabilit
 
 #[test]
 fn another_clients_acceptance_disables_private_drafts_then_discards_them_on_settlement() {
-    use suru::protocol::{SessionChange, SessionRevision, SessionUpdate};
+    use shaman::protocol::{SessionChange, SessionRevision, SessionUpdate};
     let workspace = workspace_dir();
     let mut first = connected_application(workspace.path());
     let mut second = connected_application(workspace.path());
@@ -1067,8 +1067,8 @@ fn submission_reconciliation_preserves_rejected_drafts_and_disables_unconfirmed_
             invoke(&mut app, SemanticCommandId::QuestionnaireSubmit),
             ApplicationTransition::SubmitQuestionnaire { .. }
         ));
-        let session = suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        let session = shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             snapshot.session.id,
         );
         app.handle_event(ApplicationEvent::QuestionnaireSubmissionReconciled {
@@ -1258,7 +1258,7 @@ fn secret_questionnaire_masks_editing_and_review_but_submits_the_original_value_
 
 /// A Session presenting one open Questionnaire whose single question offers
 /// `count` choices, named `Choice 00` onward.
-fn open_on_choices(count: usize) -> suru::tui::Application {
+fn open_on_choices(count: usize) -> shaman::tui::Application {
     let workspace = workspace_dir();
     let mut app = connected_application(workspace.path());
     let (_, mut snapshot, turn_id) = enter_active_session(&mut app, workspace.path());
@@ -1303,7 +1303,7 @@ fn open_on_choices(count: usize) -> suru::tui::Application {
 }
 
 /// The choices the panel draws, by number.
-fn drawn_choices(app: &suru::tui::Application) -> Vec<usize> {
+fn drawn_choices(app: &shaman::tui::Application) -> Vec<usize> {
     rendered_application_rows(app)
         .iter()
         .filter_map(|row| {
@@ -1391,7 +1391,7 @@ fn scrolling_the_question_leaves_focus_to_the_next_key() {
 }
 
 /// Where the panel drew `label`, on the frame the test rows are read from.
-fn choice_cell(app: &suru::tui::Application, label: &str) -> (u16, u16) {
+fn choice_cell(app: &shaman::tui::Application, label: &str) -> (u16, u16) {
     let rows = rendered_application_rows(app);
     let y = rows
         .iter()

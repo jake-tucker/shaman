@@ -10,7 +10,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use axum::http::StatusCode;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent},
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, AgentId, AgentIdentity, AgentSelection,
@@ -93,7 +93,7 @@ async fn provider_session_receives_safe_skill_invocations_and_history_keeps_them
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -188,7 +188,7 @@ async fn provider_session_drives_initial_prompt_through_snapshot_first_sse_for_m
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -569,7 +569,7 @@ async fn provider_streams_store_only_printable_text_newlines_sgr_and_osc_8() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -810,7 +810,7 @@ async fn reasoning_streams_into_a_titled_transcript_activity_that_settles_with_a
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -943,7 +943,7 @@ async fn an_interrupted_command_stores_its_final_unterminated_output_line() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1066,7 +1066,7 @@ async fn a_provider_actor_ending_settles_the_command_it_left_in_flight() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1196,7 +1196,7 @@ async fn a_restart_settles_the_turn_it_cut_off_and_the_command_it_left_in_flight
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1352,7 +1352,7 @@ async fn provider_session_steers_the_active_turn_only_after_provider_acceptance(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1587,7 +1587,7 @@ async fn provider_failures_fail_only_the_affected_turn_and_leave_the_session_usa
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1779,7 +1779,7 @@ async fn turn_timing_spans_the_delivery_commit_and_every_settle_path() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1959,7 +1959,7 @@ async fn a_listed_summary_says_when_its_running_turn_began_and_stops_once_it_set
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -2101,7 +2101,7 @@ async fn turn_liveness_is_announced_on_the_session_catalog_stream() {
             // stream carries nothing but the creation and what the Turn puts
             // on it.
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -2172,11 +2172,11 @@ async fn turn_liveness_is_announced_on_the_session_catalog_stream() {
             inputs: SessionStandingInputs {
                 pending_questionnaires: Vec::new(),
                 submitting_questionnaires: Vec::new(),
-                pending_questionnaires_revision: suru::protocol::SessionRevision(0),
+                pending_questionnaires_revision: shaman::protocol::SessionRevision(0),
                 subagent_interventions: Vec::new(),
                 pending_approvals: Vec::new(),
                 submitting_approvals: Vec::new(),
-                pending_approvals_revision: suru::protocol::SessionRevision(0),
+                pending_approvals_revision: shaman::protocol::SessionRevision(0),
                 latest_turn: Some(LatestTurnStatus {
                     status: TurnStatus::Completed,
                     settled_at: Some(settled_at),
@@ -2223,7 +2223,7 @@ async fn events_attributed_to_an_unknown_subagent_leave_the_session_untouched() 
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -2360,7 +2360,7 @@ async fn each_prompt_names_the_turn_that_took_it_and_one_never_taken_names_none(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: asking("Run the auth suite."),

@@ -1,4 +1,4 @@
-//! The composer's caret, drawn by Suru rather than by the terminal (ADR 0075).
+//! The composer's caret, drawn by Shaman rather than by the terminal (ADR 0075).
 //!
 //! The terminal's own cursor stays hidden for the whole run. Every frame that
 //! repaints a cell moves it, and terminals restart its blink phase whenever it

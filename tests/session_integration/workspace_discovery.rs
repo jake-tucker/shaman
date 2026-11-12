@@ -4,7 +4,7 @@
 //! a linked Worktree there counts for its Repository's Workspace, wherever
 //! that is presented. Plain directories, hidden ones, anything deeper, the
 //! Sidekick Workspace, the Root itself and any Root within it are left
-//! alone, and so is everything within Suru's own data directory named as a
+//! alone, and so is everything within Shaman's own data directory named as a
 //! Root. Discovery runs at start, when the Roots change, and behind every
 //! listing of Workspaces (ADR 0052), reusing a scan only as old as the
 //! Server's memo allows, which these Servers shorten to nothing or lengthen
@@ -26,7 +26,7 @@ use std::{
 };
 
 use serde_json::json;
-use suru::{
+use shaman::{
     protocol::{
         ProviderId, RepositoryId, ResolvedWorkspace, SettingMutation, Workspace,
         WorkspaceDescription, WorkspaceId,
@@ -65,7 +65,7 @@ pub(crate) const AS_LONG_AS_IT_TAKES: Duration = Duration::from_secs(60 * 60);
 pub(super) fn name_roots(config_dir: &Path, roots: &[&str]) {
     std::fs::create_dir_all(config_dir).expect("create the config root");
     let document = json!({ "workspace": { "roots": roots } });
-    std::fs::write(config_dir.join("suru.jsonc"), document.to_string())
+    std::fs::write(config_dir.join("shaman.jsonc"), document.to_string())
         .expect("write the Config Document");
 }
 
@@ -393,14 +393,14 @@ async fn a_repository_cloned_by_hand_after_start_is_listed_once_a_listing_discov
     server.shutdown().await.expect("shut down server");
 }
 
-/// Suru's own data directory named as a Workspace Root is ignored, so the
+/// Shaman's own data directory named as a Workspace Root is ignored, so the
 /// Sidekick Workspace, kept directly within it, is never within a Root:
 /// neither it, though made a Repository, nor a Repository put directly
 /// beside it is discovered, and nothing but the Sidekick Workspace is
 /// presented within the data directory. The Root named beside it is
 /// discovered all the same.
 #[tokio::test]
-async fn a_root_naming_suru_s_own_data_directory_is_ignored() {
+async fn a_root_naming_shaman_s_own_data_directory_is_ignored() {
     const CHANNEL: &str = "workspace-discovery-data-directory";
     let home = tempfile::tempdir().expect("create a home");
     let home = canonical(home.path());
@@ -448,7 +448,7 @@ async fn a_root_naming_suru_s_own_data_directory_is_ignored() {
     server.shutdown().await.expect("shut down server");
 }
 
-/// A Root ignored as Suru's own data directory holds nothing from another
+/// A Root ignored as Shaman's own data directory holds nothing from another
 /// Root: a linked Worktree directly within the Root beside it, of a
 /// Repository whose main root stands directly within the data directory,
 /// counts for that Repository's Workspace under the Root it is in, as it
@@ -677,7 +677,7 @@ async fn a_root_within_a_root_spelled_anew_is_dropped_by_the_root_it_was_discove
     server.shutdown().await.expect("shut down server");
 
     std::fs::write(
-        home.join("config").join("suru.jsonc"),
+        home.join("config").join("shaman.jsonc"),
         json!({
             "workspace": {
                 "roots": [spelled(&projects), spelled(&atlas)],
@@ -1012,7 +1012,7 @@ struct StallsWithin {
 
 #[async_trait::async_trait]
 impl SourceControl for StallsWithin {
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -1021,8 +1021,8 @@ impl SourceControl for StallsWithin {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -1030,7 +1030,7 @@ impl SourceControl for StallsWithin {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
     async fn discover(&self, directory: &Path) -> ResolvedWorkspace {
@@ -1345,7 +1345,7 @@ struct HoldsFirstReading {
 
 #[async_trait::async_trait]
 impl SourceControl for HoldsFirstReading {
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -1354,8 +1354,8 @@ impl SourceControl for HoldsFirstReading {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -1363,7 +1363,7 @@ impl SourceControl for HoldsFirstReading {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
     async fn discover(&self, directory: &Path) -> ResolvedWorkspace {

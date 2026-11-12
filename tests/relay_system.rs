@@ -14,7 +14,7 @@ use std::{
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rcgen::PublicKeyData as _;
-use suru::{
+use shaman::{
     logging::{self, Role},
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
@@ -23,7 +23,7 @@ use suru::{
     },
     server::{self, ServerConfig, ServerTimings},
 };
-use suru_relay::{Admission, AdmissionRule, Identity, RelayConfig, ScriptedProvider};
+use shaman_relay::{Admission, AdmissionRule, Identity, RelayConfig, ScriptedProvider};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -134,7 +134,7 @@ impl TrustedCertificate {
 
     /// Writes the certificate's chain and its key to `directory`, in PEM, as
     /// a Relay serving HTTPS itself reads them: the files they are in.
-    fn write(&self, directory: &std::path::Path) -> suru_relay::TlsFiles {
+    fn write(&self, directory: &std::path::Path) -> shaman_relay::TlsFiles {
         let (chain, key) = (directory.join("chain.pem"), directory.join("key.pem"));
         std::fs::write(
             &chain,
@@ -145,7 +145,7 @@ impl TrustedCertificate {
         )
         .unwrap();
         std::fs::write(&key, pem("PRIVATE KEY", &self.key)).unwrap();
-        suru_relay::TlsFiles::new(chain, key)
+        shaman_relay::TlsFiles::new(chain, key)
     }
 }
 
@@ -171,7 +171,7 @@ fn admitting(provider: &Arc<ScriptedProvider>) -> Admission {
 async fn reach_the_relays(proxy: std::net::TcpListener, trust: TrustedCertificate) {
     let relay_directory = tempfile::tempdir().unwrap();
     let provider = Arc::new(ScriptedProvider::new());
-    let relay = suru_relay::start(
+    let relay = shaman_relay::start(
         RelayConfig::new(
             (std::net::Ipv4Addr::LOCALHOST, 0).into(),
             relay_directory.path().join("relay.db"),
@@ -357,7 +357,7 @@ async fn reach_the_relays(proxy: std::net::TcpListener, trust: TrustedCertificat
         .expect_err("a wrong code delivers nothing");
     assert_eq!(
         refused
-            .downcast_ref::<suru::protocol::SessionError>()
+            .downcast_ref::<shaman::protocol::SessionError>()
             .map(|error| error.code),
         Some(SessionErrorCode::ShortCodeDead),
         "{refused:#}"
@@ -370,7 +370,7 @@ async fn reach_the_relays(proxy: std::net::TcpListener, trust: TrustedCertificat
     let loopback_route = ObservedTcpProxy::start((std::net::Ipv4Addr::LOCALHOST, 9).into()).await;
     let loopback_address = format!("http://{}", loopback_route.address);
     let loopback_relay_directory = tempfile::tempdir().unwrap();
-    let loopback_relay = suru_relay::start(
+    let loopback_relay = shaman_relay::start(
         RelayConfig::new(
             (std::net::Ipv4Addr::LOCALHOST, 0).into(),
             loopback_relay_directory.path().join("relay.db"),
@@ -423,7 +423,7 @@ async fn reach_the_relays(proxy: std::net::TcpListener, trust: TrustedCertificat
         let route = ObservedTcpProxy::start((std::net::Ipv4Addr::LOCALHOST, 9).into()).await;
         let https_address = format!("https://{}", route.address);
         let https_relay_directory = tempfile::tempdir().unwrap();
-        let https_relay = suru_relay::start(
+        let https_relay = shaman_relay::start(
             RelayConfig::new(
                 (std::net::Ipv4Addr::LOCALHOST, 0).into(),
                 https_relay_directory.path().join("relay.db"),
@@ -465,7 +465,7 @@ async fn reach_the_relays(proxy: std::net::TcpListener, trust: TrustedCertificat
     // Server knows it by, through the proxy, which tunnels to it. However
     // the check fails, nothing of that name reaches the Log.
     let misnamed_relay_directory = tempfile::tempdir().unwrap();
-    let misnamed_relay = suru_relay::start(
+    let misnamed_relay = shaman_relay::start(
         RelayConfig::new(
             (std::net::Ipv4Addr::LOCALHOST, 0).into(),
             misnamed_relay_directory.path().join("relay.db"),

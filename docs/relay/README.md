@@ -1,15 +1,15 @@
 # Running a Relay
 
-A **Relay** lets Suru Servers that cannot reach each other directly — behind a company firewall, across NAT, on a
+A **Relay** lets Shaman Servers that cannot reach each other directly — behind a company firewall, across NAT, on a
 network that lets only ordinary web traffic out — carry a Pairing between them. Every Server connects outward to
 the Relay over HTTPS, and the Relay joins two such connections and passes bytes between them. It cannot read or
 alter what the Servers say to each other: the Pairing's own mutual-key TLS runs end to end through it. It admits
 users by GitHub login, and joins only Servers logged in under the same Account.
 
 This guide is for whoever runs one: yourself, for your own machines, or a company, for its people. You run your
-own Relay; the Suru project runs none, there is no default Relay address in Suru, and a running Relay depends on
-nothing the Suru project operates — only on its own machine and GitHub. [The configuration
-reference](configuration.md) describes every setting, and [`suru-relay.toml`](suru-relay.toml) is a complete,
+own Relay; the Shaman project runs none, there is no default Relay address in Shaman, and a running Relay depends on
+nothing the Shaman project operates — only on its own machine and GitHub. [The configuration
+reference](configuration.md) describes every setting, and [`shaman-relay.toml`](shaman-relay.toml) is a complete,
 commented example.
 
 - [What you need](#what-you-need)
@@ -31,7 +31,7 @@ commented example.
 - [Backups](#backups)
 - [When its records cannot be written](#when-its-records-cannot-be-written)
 - [Versions and upgrades](#versions-and-upgrades)
-- [Using the Relay from Suru](#using-the-relay-from-suru)
+- [Using the Relay from Shaman](#using-the-relay-from-shaman)
 
 ## What you need
 
@@ -47,31 +47,31 @@ commented example.
 
 ## Installing the Relay
 
-The Relay is released apart from Suru, with a version of its own (see [Versions and upgrades](#versions-and-upgrades)).
+The Relay is released apart from Shaman, with a version of its own (see [Versions and upgrades](#versions-and-upgrades)).
 **No Relay has been released yet.** Until one is, build it from source, from a checkout of the repository:
 
 ```sh
-cargo build --locked --profile dist --package suru-relay
-# target/dist/suru-relay
+cargo build --locked --profile dist --package shaman-relay
+# target/dist/shaman-relay
 ```
 
-Each Relay release will be published as one of the repository's GitHub releases, tagged `suru-relay-vX.Y.Z` — never
-marked the repository's latest release, which stays Suru's — with:
+Each Relay release will be published as one of the repository's GitHub releases, tagged `shaman-relay-vX.Y.Z` — never
+marked the repository's latest release, which stays Shaman's — with:
 
-- an archive for each platform — `suru-relay-vX.Y.Z-<target>.tar.gz`, or `.zip` on Windows — holding the
-  `suru-relay` binary, this guide, the configuration reference and the example configuration, for
+- an archive for each platform — `shaman-relay-vX.Y.Z-<target>.tar.gz`, or `.zip` on Windows — holding the
+  `shaman-relay` binary, this guide, the configuration reference and the example configuration, for
   `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc` and
   `aarch64-pc-windows-msvc`;
-- a Linux container image for `amd64` and `arm64`, `ghcr.io/suru-ai/suru-relay:X.Y.Z`.
+- a Linux container image for `amd64` and `arm64`, `ghcr.io/jake-tucker/shaman-relay:X.Y.Z`.
 
 Once there is a release, build from its tag, or take its archive for your platform. Either way, put the binary
-somewhere on the machine's `PATH`, such as `/usr/local/bin/suru-relay`.
+somewhere on the machine's `PATH`, such as `/usr/local/bin/shaman-relay`.
 
-`suru-relay --version` says the Relay's version and the versions of the Relay protocol it speaks:
+`shaman-relay --version` says the Relay's version and the versions of the Relay protocol it speaks:
 
 ```console
-$ suru-relay --version
-suru-relay 0.1.0 (Relay protocol unstable-1)
+$ shaman-relay --version
+shaman-relay 0.1.0 (Relay protocol unstable-1)
 ```
 
 ## Registering a GitHub App
@@ -79,9 +79,9 @@ suru-relay 0.1.0 (Relay protocol unstable-1)
 Users log in to the Relay with GitHub, through a GitHub App that you register for your Relay. The app is how GitHub
 knows your Relay: it is what users see when they log in, and what an organization installs to let the Relay check
 who its members are. It needs no server of its own and receives nothing from GitHub. Every Relay has its own app:
-the Suru project publishes none.
+the Shaman project publishes none.
 
-Logging in uses GitHub's *device flow*: Suru shows its user an address and a short code, and they enter the code at
+Logging in uses GitHub's *device flow*: Shaman shows its user an address and a short code, and they enter the code at
 that address on any device. The Relay never sees anyone's password, keeps no GitHub token of anyone's, and needs no
 client secret.
 
@@ -92,7 +92,7 @@ client secret.
    - Under your account: *Settings → Developer settings → GitHub Apps → New GitHub App*, or
      `https://github.com/settings/apps/new`.
 2. Fill in the form:
-   - **GitHub App name**: whatever users should see as they log in, such as `Example Corp Suru Relay`. GitHub
+   - **GitHub App name**: whatever users should see as they log in, such as `Example Corp Shaman Relay`. GitHub
      requires it to be unique across GitHub.
    - **Homepage URL**: required by GitHub but unused by the Relay; your company's site, or the Relay's address.
    - **Callback URL**: leave empty. The device flow uses none.
@@ -100,7 +100,7 @@ client secret.
      gives it and then discards it, but cannot revoke it without a client secret, so an expiring token is one
      that soon stops being anyone's.
    - **Request user authorization (OAuth) during installation**: leave **unticked**.
-   - **Enable Device Flow**: **tick it**. Without it, every login is refused, and Suru says device login is not
+   - **Enable Device Flow**: **tick it**. Without it, every login is refused, and Shaman says device login is not
      enabled for the Relay's app.
    - **Setup URL**: leave empty.
    - **Webhook**: untick **Active**. The Relay receives nothing from GitHub; it asks GitHub on its own schedule.
@@ -118,7 +118,7 @@ client secret.
    Relay is given as `github_client_id`.
 7. Under *Private keys*, *Generate a private key*. GitHub downloads a `.pem` file. Put it on the Relay's machine
    where only the Relay's user can read it — owned by that user, mode `0600` — such as
-   `/etc/suru-relay/github-app.pem`, and give its path as
+   `/etc/shaman-relay/github-app.pem`, and give its path as
    `github_private_key_file`. The Relay signs as the app with it to check organizations' members; it is not needed
    to admit named users alone. Anyone holding it can act as the app, so keep it as you would a password, and delete
    it from GitHub if it leaks, generating another. Do not generate a client secret: the Relay takes none.
@@ -178,20 +178,20 @@ admit_organizations = ["example-corp"]
 
 ## Configuring the Relay
 
-Start from [`suru-relay.toml`](suru-relay.toml) and save it as `/etc/suru-relay/suru-relay.toml` (or wherever you
+Start from [`shaman-relay.toml`](shaman-relay.toml) and save it as `/etc/shaman-relay/shaman-relay.toml` (or wherever you
 like). At the least it says:
 
 ```toml
-database = "/var/lib/suru-relay/suru-relay.db"
+database = "/var/lib/shaman-relay/shaman-relay.db"
 public_address = "https://relay.example.com"
 listen_http = "127.0.0.1:8080"              # or listen_https and the certificate files
 trusted_proxies = ["127.0.0.1", "::1"]
 github_client_id = "Iv23li..."
-github_private_key_file = "/etc/suru-relay/github-app.pem"
+github_private_key_file = "/etc/shaman-relay/github-app.pem"
 admit_organizations = ["example-corp"]
 ```
 
-**`public_address` must be exactly the address your users add to Suru** — scheme, host, port and path. Each Server
+**`public_address` must be exactly the address your users add to Shaman** — scheme, host, port and path. Each Server
 proves itself to the Relay for the address it knows the Relay by, and the Relay refuses a proof made for any other.
 Behind a reverse proxy, it is the proxy's address. A Relay is known by its address: moving it to another means
 every user adding it again and logging in again.
@@ -199,11 +199,11 @@ every user adding it again and logging in again.
 Run it:
 
 ```sh
-suru-relay --config /etc/suru-relay/suru-relay.toml run
+shaman-relay --config /etc/shaman-relay/shaman-relay.toml run
 ```
 
 Every setting can be given as a flag as well, which overrides the file — `--public-address`, `--listen-http`, and so
-on — and the file can be named by `SURU_RELAY_CONFIG` instead of `--config`. The Relay refuses a configuration it
+on — and the file can be named by `SHAMAN_RELAY_CONFIG` instead of `--config`. The Relay refuses a configuration it
 cannot use, saying what is wrong and where — a misspelled key among them, so a typo cannot quietly admit nobody, or
 everybody — and exits with status 1. It refuses settings, and files they name, before it opens its database; a name
 in the admission rules that GitHub cannot look up only once it has. [The configuration reference](configuration.md)
@@ -212,7 +212,7 @@ has every setting, its default, and everything the Relay refuses.
 The Relay says on standard error when it is ready, and where it listens:
 
 ```text
-2026-10-05T09:00:00.000000Z  INFO suru_relay: Relay ready address=127.0.0.1:8080
+2026-10-05T09:00:00.000000Z  INFO shaman_relay: Relay ready address=127.0.0.1:8080
 ```
 
 It stops on Ctrl-C, and on Unix on `SIGTERM`, ending every connection it carries and writing the connection log's
@@ -292,8 +292,8 @@ With `listen_https`, the Relay serves HTTPS itself from a certificate chain and 
 ```toml
 public_address = "https://relay.example.com"
 listen_https = "0.0.0.0:443"
-tls_certificate_chain_file = "/etc/suru-relay/fullchain.pem"
-tls_private_key_file = "/etc/suru-relay/privkey.pem"
+tls_certificate_chain_file = "/etc/shaman-relay/fullchain.pem"
+tls_private_key_file = "/etc/shaman-relay/privkey.pem"
 ```
 
 TLS versions and cipher suites are rustls's defaults, TLS 1.3 and TLS 1.2. The Relay reads the files as it starts,
@@ -305,15 +305,15 @@ saying why on standard error. Connections already open keep the certificate they
 So renewing is replacing the files — whole. The Relay cannot tell a file still being written from a finished one: a
 chain caught after its first certificate but before the certificates that issued it would be served as it stands,
 where the key has not changed. So write each new file beside the old one and rename it into place, which replaces it
-at once. With certbot, a deploy hook such as `/etc/letsencrypt/renewal-hooks/deploy/suru-relay` does that, leaving
+at once. With certbot, a deploy hook such as `/etc/letsencrypt/renewal-hooks/deploy/shaman-relay` does that, leaving
 the key readable by the Relay's user alone:
 
 ```sh
 #!/bin/sh
 set -e
-cd /etc/suru-relay
+cd /etc/shaman-relay
 install -m 0644 "$RENEWED_LINEAGE/fullchain.pem" fullchain.pem.new
-install -m 0600 -o suru-relay "$RENEWED_LINEAGE/privkey.pem" privkey.pem.new
+install -m 0600 -o shaman-relay "$RENEWED_LINEAGE/privkey.pem" privkey.pem.new
 mv -f fullchain.pem.new fullchain.pem
 mv -f privkey.pem.new privkey.pem
 ```
@@ -342,33 +342,33 @@ What a network must allow, and nothing more:
 On Linux, with systemd. Make a user for it, its configuration directory, and the unit:
 
 ```sh
-sudo useradd --system --home-dir /var/lib/suru-relay --shell /usr/sbin/nologin suru-relay
-sudo install -d -m 0750 -g suru-relay /etc/suru-relay
+sudo useradd --system --home-dir /var/lib/shaman-relay --shell /usr/sbin/nologin shaman-relay
+sudo install -d -m 0750 -g shaman-relay /etc/shaman-relay
 # The configuration, readable by the Relay's group:
-sudo install -m 0640 -g suru-relay suru-relay.toml /etc/suru-relay/
+sudo install -m 0640 -g shaman-relay shaman-relay.toml /etc/shaman-relay/
 # The GitHub App's private key — and the certificate's, where the Relay serves HTTPS itself — readable by the
 # Relay's user alone:
-sudo install -m 0600 -o suru-relay github-app.pem /etc/suru-relay/
+sudo install -m 0600 -o shaman-relay github-app.pem /etc/shaman-relay/
 ```
 
 A private key file its group or anyone else may read or change is warned of as the Relay starts.
 
-`/etc/systemd/system/suru-relay.service`:
+`/etc/systemd/system/shaman-relay.service`:
 
 ```ini
 [Unit]
-Description=Suru Relay
+Description=Shaman Relay
 Wants=network-online.target
 After=network-online.target
 
 [Service]
-User=suru-relay
-Group=suru-relay
-ExecStart=/usr/local/bin/suru-relay --config /etc/suru-relay/suru-relay.toml run
+User=shaman-relay
+Group=shaman-relay
+ExecStart=/usr/local/bin/shaman-relay --config /etc/shaman-relay/shaman-relay.toml run
 Restart=on-failure
 RestartSec=5s
-# /var/lib/suru-relay, where the database lives, made and kept writable for the Relay.
-StateDirectory=suru-relay
+# /var/lib/shaman-relay, where the database lives, made and kept writable for the Relay.
+StateDirectory=shaman-relay
 StateDirectoryMode=0700
 # Serving HTTPS itself on port 443:
 #AmbientCapabilities=CAP_NET_BIND_SERVICE
@@ -383,49 +383,49 @@ WantedBy=multi-user.target
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable --now suru-relay
-journalctl -u suru-relay -f
+sudo systemctl enable --now shaman-relay
+journalctl -u shaman-relay -f
 ```
 
 Every way of running the Relay names the `run` command. The connection log, on standard output, and the Relay's
 diagnostics, on standard error, both go to the journal. To keep the connection log in a file of its own instead, add
-`LogsDirectory=suru-relay` and `StandardOutput=append:/var/log/suru-relay/connections.log`.
+`LogsDirectory=shaman-relay` and `StandardOutput=append:/var/log/shaman-relay/connections.log`.
 
 A Relay that cannot start — GitHub not answering as it checks an organization, say — exits with status 1, and
 systemd starts it again after `RestartSec`.
 
 ## Running it in a container
 
-The image runs `suru-relay run` as an unprivileged user, reads its configuration from
-`/etc/suru-relay/suru-relay.toml` (`SURU_RELAY_CONFIG` names it), and keeps its records in the volume at
-`/var/lib/suru-relay`. Until a Relay release publishes the image at `ghcr.io/suru-ai/suru-relay`, build it yourself
-from the root of a checkout of the repository with the Dockerfile beside the Relay's code, and use `suru-relay` in
+The image runs `shaman-relay run` as an unprivileged user, reads its configuration from
+`/etc/shaman-relay/shaman-relay.toml` (`SHAMAN_RELAY_CONFIG` names it), and keeps its records in the volume at
+`/var/lib/shaman-relay`. Until a Relay release publishes the image at `ghcr.io/jake-tucker/shaman-relay`, build it yourself
+from the root of a checkout of the repository with the Dockerfile beside the Relay's code, and use `shaman-relay` in
 place of the image's name below:
 
 ```sh
-docker build --file crates/suru-relay/Dockerfile --tag suru-relay .
+docker build --file crates/shaman-relay/Dockerfile --tag shaman-relay .
 ```
 
 Inside the container, the Relay listens on every address, so Docker can reach it:
 
 ```toml
-database = "/var/lib/suru-relay/suru-relay.db"
+database = "/var/lib/shaman-relay/shaman-relay.db"
 public_address = "https://relay.example.com"
 listen_http = "0.0.0.0:8080"
 # The network Docker connects the proxy on the host through.
 trusted_proxies = ["172.16.0.0/12"]
 github_client_id = "Iv23li..."
-github_private_key_file = "/etc/suru-relay/github-app.pem"
+github_private_key_file = "/etc/shaman-relay/github-app.pem"
 admit_organizations = ["example-corp"]
 ```
 
 ```sh
-docker volume create suru-relay
-docker run --detach --name suru-relay --restart unless-stopped \
+docker volume create shaman-relay
+docker run --detach --name shaman-relay --restart unless-stopped \
     --publish 127.0.0.1:8080:8080 \
-    --volume suru-relay:/var/lib/suru-relay \
-    --volume /etc/suru-relay:/etc/suru-relay:ro \
-    ghcr.io/suru-ai/suru-relay:0.1.0
+    --volume shaman-relay:/var/lib/shaman-relay \
+    --volume /etc/shaman-relay:/etc/shaman-relay:ro \
+    ghcr.io/jake-tucker/shaman-relay:0.1.0
 ```
 
 Or with Compose:
@@ -433,39 +433,39 @@ Or with Compose:
 ```yaml
 services:
   relay:
-    image: ghcr.io/suru-ai/suru-relay:0.1.0
+    image: ghcr.io/jake-tucker/shaman-relay:0.1.0
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
-      - relay-records:/var/lib/suru-relay
-      - /etc/suru-relay:/etc/suru-relay:ro
+      - relay-records:/var/lib/shaman-relay
+      - /etc/shaman-relay:/etc/shaman-relay:ro
 volumes:
   relay-records:
 ```
 
-The files in `/etc/suru-relay` must be readable by the container's user, UID 65532 — the private keys by it alone:
-`sudo chown 65532 /etc/suru-relay/github-app.pem && sudo chmod 0600 /etc/suru-relay/github-app.pem`. To serve HTTPS
+The files in `/etc/shaman-relay` must be readable by the container's user, UID 65532 — the private keys by it alone:
+`sudo chown 65532 /etc/shaman-relay/github-app.pem && sudo chmod 0600 /etc/shaman-relay/github-app.pem`. To serve HTTPS
 from the container itself, mount the certificate files there too, listen at `0.0.0.0:8443`, and publish
 `443:8443`.
 
-`docker logs suru-relay` shows both logs; `docker logs suru-relay 2>/dev/null` shows the connection log alone.
+`docker logs shaman-relay` shows both logs; `docker logs shaman-relay 2>/dev/null` shows the connection log alone.
 `docker stop` sends `SIGTERM`, on which the Relay stops as it does on Ctrl-C.
 
 The operator's commands run inside the container, as its user, on the same records:
 
 ```sh
-docker exec suru-relay suru-relay logins list
+docker exec shaman-relay shaman-relay logins list
 ```
 
 ## The operator's commands
 
 Beside its configuration file, the Relay's command line is its only administrative interface. Give the commands the
-same configuration as `run` — `--config`, or `SURU_RELAY_CONFIG` — so they work on the same database, and run them
+same configuration as `run` — `--config`, or `SHAMAN_RELAY_CONFIG` — so they work on the same database, and run them
 as the Relay's user, which must be able to write the database and the files beside it:
 
 ```sh
-sudo -u suru-relay suru-relay --config /etc/suru-relay/suru-relay.toml accounts list
+sudo -u shaman-relay shaman-relay --config /etc/shaman-relay/shaman-relay.toml accounts list
 ```
 
 They work whether or not the Relay is running; they never carry the database forward to a newer version, which only
@@ -483,7 +483,7 @@ They work whether or not the Relay is running; they never carry the database for
 `--json` prints a list as JSON for a script. A removal is refused from the moment it is made, and the command returns
 once the running Relay has cut every connection that stood on what was removed. It waits for that 10 seconds unless
 `--wait <seconds>` says otherwise; past it, the removal stands but the command exits with status 3. A Server whose
-Login is removed reads **login needed** in Suru, and logs in again to come back. Nothing the Relay does ends a
+Login is removed reads **login needed** in Shaman, and logs in again to come back. Nothing the Relay does ends a
 Pairing: a Remote with a direct way goes on working.
 
 Removing an Account does not keep anyone out: anyone the admission rules admit may log in again, as a new Account.
@@ -518,7 +518,7 @@ and joins nothing more until it is restarted.
 
 Each Account may have at most 64 Servers logged in (`logins_per_account`) and 256 connections joined at once
 (`joined_connections_per_account`), so no one Account can exhaust the Relay. A Server keeping a Remote in view
-through the Relay holds one joined connection. Past a cap, a login or a join is refused, and Suru tells its user
+through the Relay holds one joined connection. Past a cap, a login or a join is refused, and Shaman tells its user
 which cap was reached, to ask you to raise it or to remove a Login. Raise either in the configuration. Raising
 `logins_per_account` far enough has the list of [an Account's machines](#finding-your-machines) cut short, since it
 stays within one message of the protocol, which says so to its user: at the default cap it is always whole, and it
@@ -573,7 +573,7 @@ again. SQLite keeps it in write-ahead mode, in the database file and a `-wal` fi
 
 - stop the Relay and copy the database file, with the `-wal` file beside it if there is one; or
 - while it runs, with SQLite's own tool, as the Relay's user:
-  `sudo -u suru-relay sqlite3 /var/lib/suru-relay/suru-relay.db ".backup '/var/lib/suru-relay/backup.db'"`, and
+  `sudo -u shaman-relay sqlite3 /var/lib/shaman-relay/shaman-relay.db ".backup '/var/lib/shaman-relay/backup.db'"`, and
   then move the copy wherever backups go.
 
 To restore, stop the Relay, put the copy in the database's place — removing any `-wal` and `-shm` files there — and
@@ -602,11 +602,11 @@ Account its records would still say stands.
 
 ## Versions and upgrades
 
-The Relay carries a version of its own, apart from Suru's, and is released only when it changes: a Suru release is
-not a Relay release you need to install. Once released, a Relay is held to a compatibility promise: a newer Suru
-works with an older Relay and an upgraded Relay with an older Suru, so upgrading the Relay needs no coordinating
-with its users' Suru installs, nor theirs with you. A build whose `--version` says it speaks an `unstable-` Relay
-protocol is from before that promise: until version 1 of the protocol is frozen, a Relay and a Suru must speak the
+The Relay carries a version of its own, apart from Shaman's, and is released only when it changes: a Shaman release is
+not a Relay release you need to install. Once released, a Relay is held to a compatibility promise: a newer Shaman
+works with an older Relay and an upgraded Relay with an older Shaman, so upgrading the Relay needs no coordinating
+with its users' Shaman installs, nor theirs with you. A build whose `--version` says it speaks an `unstable-` Relay
+protocol is from before that promise: until version 1 of the protocol is frozen, a Relay and a Shaman must speak the
 same unstable version, which builds from around the same time of the repository do. A Server and a Relay that speak
 different versions are refused, and `/relay` says which side is behind and must be upgraded.
 
@@ -620,9 +620,9 @@ Relay carries the database forward before it looks up the names in its admission
 GitHub not answering as it checks an organization, say — has carried it forward already, and the older Relay will
 not start on it again.
 
-## Using the Relay from Suru
+## Using the Relay from Shaman
 
-Give your users the Relay's public address. In Suru, each of them logs in to it from every Server they want to reach,
+Give your users the Relay's public address. In Shaman, each of them logs in to it from every Server they want to reach,
 or reach others from, and then makes the Servers they want reachable Serve through it. That Server issues an Invite, and
 the other machine pairs by it: choosing the machine from a list and typing its short code, or pasting the long string.
 All of it can be done in `/serve` as you go, and with no one at a screen [from the command line](#from-the-command-line).
@@ -631,7 +631,7 @@ All of it can be done in `/serve` as you go, and with no one at a screen [from t
 
 1. Run `/relay` to open the list of the Server's Relays.
 2. Press `a`, type the address — exactly the public address — and press Enter.
-3. Choose the Relay, which reads **Login needed**, and press Enter to log in. Suru shows an address and a code,
+3. Choose the Relay, which reads **Login needed**, and press Enter to log in. Shaman shows an address and a code,
    each of which `a` and `c` copy; visit the address on any device, enter the code, and authorize the app.
 
 The Relay then reads **Logged in as** the GitHub user. Each Server logs in on its own, and stays logged in until its
@@ -649,7 +649,7 @@ To make a Server reachable through the Relay, choose the Relay in its `/relay` l
 its row in `/serve`. Serving through a Relay is chosen for each Relay, and is off until chosen. The Server waits at the
 Relay only while it is logged in there and Serving is on, so the Relay's row says what it waits on: **Serving
 through**, or **Serves through once logged in**, or **Serves through once Serving is on** — `/serve` turns Serving on, as
-does `suru serve invite`. Press `s` again to stop.
+does `shaman serve invite`. Press `s` again to stop.
 
 A Server waits at the Relay only while it runs, and nothing starts one after a reboot unless
 [a Login start](#starting-a-server-at-login) does.
@@ -670,7 +670,7 @@ lives and dies with its Invite: it expires with it after ten minutes, the next I
 the Invite is spent. Restarting the Server ends both.
 
 A code gets one try. If a wrong one is tried, or an attempt never finishes, it is dead, and `/serve` says so in its
-place, since an attempt you did not make is worth seeing. Any Suru attached to this Server raises a Notice too, wherever
+place, since an attempt you did not make is worth seeing. Any Shaman attached to this Server raises a Notice too, wherever
 you are in it, and `/serve` says it again when you reopen it, until another code replaces it or the Invite ends. The long
 string stays good, because a wrong guess says nothing about it, and `n` gets a new code for the same Invite, with no more
 time on it. Anyone logged in under your Account, or the Relay itself, can spoil a code this way, which costs a new one
@@ -679,7 +679,7 @@ and gains them nothing else.
 Reopening `/serve` while an Invite stands says so, since Enter replaces it and its code, and the code cannot be shown
 again: it is held to be typed, not looked up.
 
-The Invite on screen can end from elsewhere: `suru serve invite` or another Suru attached to this Server replaces it,
+The Invite on screen can end from elsewhere: `shaman serve invite` or another Shaman attached to this Server replaces it,
 someone redeems it, it runs out, or Serving stops. `/serve` then says it no longer works, and why, in its place. Neither it
 nor its code is shown any more, `Ctrl+C` copies nothing, and closing this and running `/serve` issues another.
 
@@ -749,7 +749,7 @@ output is the same Invite, encrypted to this Server. It adds nothing to what eit
 neither read it nor search for the code afterwards. This Server tries once for each time you ask: where a machine waits
 at two Relays it goes on to the second only if the first would not join them, or if the machine answered at once that it
 took no guess there, as it does for a Relay its Invite does not offer. While it tries, Esc only says so: the code's one
-try is under way, and Suru stays to show how it went. Where the code fails it is dead: Suru says to get a new one, takes
+try is under way, and Shaman stays to show how it went. Where the code fails it is dead: Shaman says to get a new one, takes
 it out of the field, and tries nothing again for you. Do not type it again. Whatever answered in the other machine's
 place, a Relay or a machine you chose by mistake, gets one guess at the code each time you do, and the other machine
 never sees those.
@@ -760,26 +760,26 @@ nothing either way, since whatever stood in can burn the code there too. A Relay
 five hundred billion each time you try of guessing the code, which would get it the Invite (see
 [ADR-0065](../adr/0065-deliver-an-invite-by-a-short-code-through-a-pake-with-one-guess-per-code.md)).
 
-Where no code is live on the other machine, Suru says to issue an Invite there, and takes what you typed away, since
+Where no code is live on the other machine, Shaman says to issue an Invite there, and takes what you typed away, since
 whatever gets one live gives a different code. If that machine does show a code, its Invite does not offer this Relay: a code
 works only over a Relay its Invite offers, so issue one that does there, or log in here at one it does. If the Invite
-delivered names another key than the one listed for the machine, Suru refuses it and says so: the Relay's list was wrong or
+delivered names another key than the one listed for the machine, Shaman refuses it and says so: the Relay's list was wrong or
 was lying. Esc at the preview pairs nothing: the code is used, the Invite stands until it
 expires, and `n` in `/serve` there gets another code for it.
 
-Either way, before anything is trusted, Suru shows the Serving Server's
+Either way, before anything is trusted, Shaman shows the Serving Server's
 fingerprint and, under **Reached by**, every way the Invite offers: each Relay whole, saying how this Server stands
 there — **logged in**, **login needed** or **Unreachable**. Enter trusts it, opening **Configure Remote**, where you
 name the Remote and may reorder the ways it is reached by; another Enter pairs. Esc at either step pairs nothing.
 
 Pairing tries the direct ways the Invite offers first, and its Relays only once no direct way has answered within a
 moment, so it needs a Relay only where no direct way answers. Where it needs one this Server has yet to log in at, it
-logs in there first: Suru adds the Relay to this Server where it holds no entry for it, shows the login's address and
+logs in there first: Shaman adds the Relay to this Server where it holds no entry for it, shows the login's address and
 code, and carries on pairing once the login is done — one login, and one paste. An Invite offering both kinds that
 pairs directly — on the same network, say — neither adds the Relay it also offers nor logs in there, so reaching the
 Remote through it from elsewhere later needs that Relay added and logged in at in `/relay` first. A Relay joins only
 Servers logged in under the same Account, so both Servers must be logged in there as the same GitHub user; where they
-are not, Suru says so, and to log in as that user, by Enter on its row in `/relay`, or pair the two directly.
+are not, Shaman says so, and to log in as that user, by Enter on its row in `/relay`, or pair the two directly.
 
 A Pairing is one-way, so **Configure Remote** also offers *Also let* the Remote *reach this machine*, off by default, for
 two machines that should reach each other: it asks that other machine's user to pair back in one step. Off, you have the
@@ -806,22 +806,22 @@ connects; nothing is issued for it from then on. Ending the Pairing from either 
 
 ### Reaching a Remote
 
-Suru reaches a paired Remote directly where it can, and through a Relay where it cannot, trying the direct ways first.
+Shaman reaches a paired Remote directly where it can, and through a Relay where it cannot, trying the direct ways first.
 `/connect` lists the Remotes, and the one chosen lists the **Relays it Serves through**, saying how this Server
 stands at each — **logged in**, **login needed**, **Unreachable**, or **not added here, so not used**. A Relay this
 Server holds no entry for is never used to reach the Remote until it is added in `/relay` and logged in at.
 
 ### When a Login stops standing
 
-Should a Login come to be refused — its Account lapsed, or you removed it — Suru raises a Notice once, *Login needed
+Should a Login come to be refused — its Account lapsed, or you removed it — Shaman raises a Notice once, *Login needed
 at* the Relay's address, pointing to `/relay` to log in, and the Relay reads **Login needed** there, where Enter logs
 in again, as Space does on its row in `/serve`. A Remote that nothing but that Relay reaches reads Unreachable, offering *Log in to try again*, which leads
 to the same login. Where the Account lapsed, one fresh login from any of its Servers restores every Login under it. A
-Relay that has merely stopped answering reads Unreachable instead, and Suru keeps trying it on its own.
+Relay that has merely stopped answering reads Unreachable instead, and Shaman keeps trying it on its own.
 
 A Relay that has just started and cannot yet tell whether its rules still admit an Account — GitHub not answering
 for its membership — reads Unreachable as well to that Account's Servers, saying it could not tell as it started,
-and raises no Notice and asks for no login: Suru tries it again on its own, and it stands again, or reads **Login
+and raises no Notice and asks for no login: Shaman tries it again on its own, and it stands again, or reads **Login
 needed**, once GitHub says.
 
 ### Serving with no port open
@@ -833,23 +833,23 @@ addresses.
 
 ### Starting a Server at login
 
-To have a Server come back with nobody at the machine, run `suru server install` there, which sets up a Login start: this
-Channel's Server starts whenever you log in, with no elevation. `suru server status` says whether one is set up, reading
+To have a Server come back with nobody at the machine, run `shaman server install` there, which sets up a Login start: this
+Channel's Server starts whenever you log in, with no elevation. `shaman server status` says whether one is set up, reading
 only what install wrote, so it cannot see one turned off in the service manager itself: a Login Items toggle,
-`launchctl disable`, a disabled Task or a masked unit. `suru server uninstall` removes it. Neither touches a Server running
-now: it comes into force at the next login, and `suru server start` starts one before then.
+`launchctl disable`, a disabled Task or a masked unit. `shaman server uninstall` removes it. Neither touches a Server running
+now: it comes into force at the next login, and `shaman server start` starts one before then.
 
-From then on a Server that crashes is restarted, within about ten seconds. One stopped by `suru server stop` stays stopped
-until the next login or `suru server start`, or until something starts one as a Client does: opening Suru, or running a
-[`suru relay` or `suru serve` command](#from-the-command-line). That holds for a stop issued just after a crash, when
-there is nothing to stop and `suru server stop` says so. A plain `kill` is taken as a stop too; only something like `kill -9` reads as a
-crash. A Server that hangs is neither restarted nor stoppable this way: `suru server stop` reports it unreachable.
+From then on a Server that crashes is restarted, within about ten seconds. One stopped by `shaman server stop` stays stopped
+until the next login or `shaman server start`, or until something starts one as a Client does: opening Shaman, or running a
+[`shaman relay` or `shaman serve` command](#from-the-command-line). That holds for a stop issued just after a crash, when
+there is nothing to stop and `shaman server stop` says so. A plain `kill` is taken as a stop too; only something like `kill -9` reads as a
+crash. A Server that hangs is neither restarted nor stoppable this way: `shaman server stop` reports it unreachable.
 
 Whatever starts a Server chooses its Config Document, and the Keeper leaves one that is running be. So a command run after
-`suru server stop` under another `SURU_CONFIG_DIR` or `XDG_CONFIG_HOME` has a Server running on that document, pins and all,
+`shaman server stop` under another `SHAMAN_CONFIG_DIR` or `XDG_CONFIG_HOME` has a Server running on that document, pins and all,
 that the Login start then adopts until it next stops. Run such commands with the environment you installed from.
 
-Install again after moving Suru or changing your `PATH`, since a Server started this way finds its Providers on the `PATH`
+Install again after moving Shaman or changing your `PATH`, since a Server started this way finds its Providers on the `PATH`
 kept when you installed. Install warns of a binary path that may not survive an upgrade, of `PATH` entries a reboot takes
 away, and of variables it will not carry because they may hold secrets or belong to that shell: API keys, tokens, proxy
 settings and a Provider's own settings. It names them and never keeps their values, so a Provider or Relay relying on one
@@ -865,18 +865,18 @@ What each platform covers:
 - **Linux**: a systemd user unit, run from the user's first login. At the last logout the Server is ended outright, as a
   crash would, and the next login starts another. To run with no session at all, run `loginctl enable-linger $USER`; a
   key kept in a keyring nothing has unlocked then fails Serving where you can see it. A machine with no systemd user
-  instance, such as a container, is told so, and has whatever starts things there run `suru server start`.
+  instance, such as a container, is told so, and has whatever starts things there run `shaman server start`.
 - **Windows**: a Scheduled Task at this user's logon. A machine that nobody has logged on to stays Unreachable. The Task's
-  name holds the machine's, so after renaming the machine `suru server status` and `uninstall` no longer find it: delete
-  the old `suru-server-…` Task in Task Scheduler, and install again.
+  name holds the machine's, so after renaming the machine `shaman server status` and `uninstall` no longer find it: delete
+  the old `shaman-server-…` Task in Task Scheduler, and install again.
 
 A Server that cannot read its identity key never makes a new one: it goes on serving its own machine, and fails Serving
 where you can see it until the store answers.
 
 ### Pinning a Relay in a Config Document
 
-So that nobody types the address on each machine, your dotfiles or your company's rollout can pin it in Suru's Config
-Document: `suru.jsonc` in `~/.config/suru/`, on every platform (`$XDG_CONFIG_HOME/suru/` or `$SURU_CONFIG_DIR` where
+So that nobody types the address on each machine, your dotfiles or your company's rollout can pin it in Shaman's Config
+Document: `shaman.jsonc` in `~/.config/shaman/`, on every platform (`$XDG_CONFIG_HOME/shaman/` or `$SHAMAN_CONFIG_DIR` where
 those are set). Pinned Settings live side by side in that one document, so a rollout merges this in rather than
 replacing the file.
 
@@ -898,7 +898,7 @@ at all until a user logs in there. Each machine's Login is still formed by its o
 rollout to a thousand machines costs the Relay nothing, and admits nobody the admission rules do not.
 
 A running Server follows a change to this list within a couple of seconds, with no restart. That goes for this list
-alone, since a pin opens nothing: anything else changed in the file takes effect at the next start, and until then Suru
+alone, since a pin opens nothing: anything else changed in the file takes effect at the next start, and until then Shaman
 names each key that differs, in a Notice and in `/settings`. An address written two ways (`relay.example.com` and
 `https://RELAY.example.com/`) is one entry, though a host name's trailing dot makes it another address, and an entry a
 user already holds is pinned as it stands, keeping its Login and its choice to Serve through it. An address no Relay is
@@ -916,33 +916,33 @@ A machine with no one at its screen, a container or a provisioning script drives
 do what `/relay` and `/serve` do and differ only in how they say it:
 
 ```
-suru relay list [--json]
-suru relay add <address>
-suru relay login <address>
-suru relay serve-through <address> on|off
-suru relay remove <address>
-suru serve invite [--no-addresses] [--no-relays] [--relay <address>]... [--json]
+shaman relay list [--json]
+shaman relay add <address>
+shaman relay login <address>
+shaman relay serve-through <address> on|off
+shaman relay remove <address>
+shaman serve invite [--no-addresses] [--no-relays] [--relay <address>]... [--json]
 ```
 
 A headless set-up, from nothing to an issued Invite:
 
 ```sh
-suru relay add https://relay.example.com
-suru relay login https://relay.example.com
+shaman relay add https://relay.example.com
+shaman relay login https://relay.example.com
 #   Visit https://github.com/login/device and enter the code WDJB-MJHT
 #   ... someone does, on any device, and the command ends
-suru relay serve-through https://relay.example.com on
-INVITE=$(suru serve invite --no-addresses)
+shaman relay serve-through https://relay.example.com on
+INVITE=$(shaman serve invite --no-addresses)
 ```
 
 The Invite is redeemed in `/pair` on the other machine. Redeeming from the command line is left out on purpose: it
 involves a trust decision the preview exists for.
 
-Each command runs against this Channel's Server, chosen as Suru itself chooses it (`SURU_CHANNEL` and the state
+Each command runs against this Channel's Server, chosen as Shaman itself chooses it (`SHAMAN_CHANNEL` and the state
 directory), with the same token, so it works for the same user and nobody else. Where none runs, it starts one as a
-Client would and says so on standard error, even one stopped by `suru server stop`: a stop holds a Keeper back, not a
+Client would and says so on standard error, even one stopped by `shaman server stop`: a stop holds a Keeper back, not a
 person running a command. A command from a build other than the running Server's replaces that Server, as any Client
-does, so keep to one install. `SURU_CONFIG_DIR` matters only where a command starts a Server.
+does, so keep to one install. `SHAMAN_CONFIG_DIR` matters only where a command starts a Server.
 
 **What goes where.** What was asked for goes to standard output, and only that: the listing, the Invite, or the line
 saying where to log in. Everything else goes to standard error, including that Serving was turned on, what Serving
@@ -996,7 +996,7 @@ since it can have left nothing there.
 
 #### JSON
 
-`suru relay list --json` prints one line:
+`shaman relay list --json` prints one line:
 
 ```json
 {
@@ -1019,11 +1019,11 @@ since it can have left nothing there.
 until the Relay has named one, `unreachable_reason` says why it reads `unreachable`, and `pinned_in` names the Config
 Document pinning it. A login's code is never listed: `login_under_way` says there is one, and `relay login` shows it.
 
-`suru serve invite --json` prints one line, its secrets on standard output as the plain form's Invite is:
+`shaman serve invite --json` prints one line, its secrets on standard output as the plain form's Invite is:
 
 ```json
 {
-  "invite": "suru-v1-...",
+  "invite": "shaman-v1-...",
   "ways": [
     { "kind": "direct", "address": "192.0.2.8:7777" },
     { "kind": "relay", "address": "https://relay.example.com" }
@@ -1039,7 +1039,7 @@ the command line and do not follow the Server's own API.
 
 These commands are bound by what any process of your user can do, and an Agent's shell is one: it can read the same token,
 so it could already issue an Invite by asking the Server directly, and now has one obvious command for it. An Agent that runs
-`suru serve invite` gets an Invite it can send anywhere, and whoever redeems it can run commands here. It also lands in the
-Agent's Transcript and goes to its Provider. Suru's Tools withhold all this from a Sidekick, and that bound stops at the
-shell: what stands in the way is the Provider's own gate on the command. Suru cannot tell an Agent's shell from yours. ADR-0068
+`shaman serve invite` gets an Invite it can send anywhere, and whoever redeems it can run commands here. It also lands in the
+Agent's Transcript and goes to its Provider. Shaman's Tools withhold all this from a Sidekick, and that bound stops at the
+shell: what stands in the way is the Provider's own gate on the command. Shaman cannot tell an Agent's shell from yours. ADR-0068
 says what is known and what is not.

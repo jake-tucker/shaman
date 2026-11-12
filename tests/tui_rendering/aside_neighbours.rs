@@ -8,8 +8,7 @@ use crate::tui_rendering::support::{
     workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use std::time::Duration;
-use suru::{
+use shaman::{
     managed_client::{SessionEvent, SubagentTreeEvent},
     protocol::{
         ActivityStatus, ApprovalOutcome, ApprovalSubject, AsideSettings, AsideVisibility,
@@ -19,6 +18,7 @@ use suru::{
     },
     tui::{Application, ApplicationEvent, ApplicationTransition, SemanticCommandId},
 };
+use std::time::Duration;
 
 const WIDTH: u16 = 120;
 const HEIGHT: u16 = 24;
@@ -137,11 +137,11 @@ fn an_approval_arrives(
         ApprovalOutcome::Pending,
         None,
     );
-    let suru::protocol::Activity::Approval { approval, .. } = &activity else {
+    let shaman::protocol::Activity::Approval { approval, .. } = &activity else {
         unreachable!("an approval activity carries an approval")
     };
     snapshot.pending_approvals.push(approval.id);
-    snapshot.revision = suru::protocol::SessionRevision(snapshot.revision.0 + 1);
+    snapshot.revision = shaman::protocol::SessionRevision(snapshot.revision.0 + 1);
     snapshot.pending_approvals_revision = snapshot.revision;
     add_activity(snapshot, activity);
     application

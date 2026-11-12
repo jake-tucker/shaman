@@ -26,9 +26,9 @@ fn budgeted_timings() -> ServerTimings {
 /// Message, as the Sidekick reads it untimed.
 fn settled_past_budget_there(session_id: SessionId, title: &str, settled: &str) -> String {
     format!(
-        "Sidekick Report from Suru: the Session \"{title}\" you set to work on the Remote \
+        "Sidekick Report from Shaman: the Session \"{title}\" you set to work on the Remote \
          \"{REMOTE}\" has settled its Turn, which {settled}. Its session_id is {session_id} and \
-         its origin \"{REMOTE}\", which read_session takes.\n\nIt holds more than Suru reads \
+         its origin \"{REMOTE}\", which read_session takes.\n\nIt holds more than Shaman reads \
          of a Remote at once, so its Agent's final Message is not given here; read_session reads \
          it from here, as it reads any part of that Session."
     )
@@ -38,8 +38,8 @@ fn settled_past_budget_there(session_id: SessionId, title: &str, settled: &str) 
 /// than this Server reads of it to follow its work.
 fn past_following_there(session_id: SessionId, title: &str) -> String {
     format!(
-        "Sidekick Report from Suru: the Session \"{title}\" you set to work on the Remote \
-         \"{REMOTE}\" has grown, with all beneath it, past what Suru reads of a Remote at once, \
+        "Sidekick Report from Shaman: the Session \"{title}\" you set to work on the Remote \
+         \"{REMOTE}\" has grown, with all beneath it, past what Shaman reads of a Remote at once, \
          so its work cannot be followed for Reports while it stays so. Its session_id is \
          {session_id} and its origin \"{REMOTE}\": read_session reads it from here all the same, \
          however large it grows."

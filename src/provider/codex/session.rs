@@ -1,6 +1,6 @@
 //! The Codex Provider runtime and the per-Session Turn lifecycle it hands back.
 //!
-//! [`CodexRuntime`] launches one app-server process per Suru Session, and [`CodexSession`] drives
+//! [`CodexRuntime`] launches one app-server process per Shaman Session, and [`CodexSession`] drives
 //! that process's single native Turn slot: starting a Turn, steering it, interrupting it, and
 //! stopping the process once the Session is done with it. A Session handed the Broker hands it on
 //! to its thread through the per-thread `config` map, on `thread/start` and on every
@@ -55,7 +55,7 @@ use crate::{
     },
 };
 
-const CODEX_PATH_ENV: &str = "SURU_CODEX_PATH";
+const CODEX_PATH_ENV: &str = "SHAMAN_CODEX_PATH";
 const CODEX_EXECUTABLE_NAME: &str = "codex";
 const INTERRUPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const SHUTDOWN_INTERRUPT_REQUEST_TIMEOUT: Duration = Duration::from_millis(250);
@@ -64,7 +64,7 @@ const PENDING_TURN_START_GRACE_PERIOD: Duration = Duration::from_millis(250);
 /// is waited for.
 const COMPACTION_START_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Launches one Codex app-server process for each Suru Session.
+/// Launches one Codex app-server process for each Shaman Session.
 #[derive(Clone, Debug)]
 pub struct CodexRuntime {
     executable: OsString,
@@ -844,11 +844,11 @@ impl ProviderSession for CodexSession {
 
     /// Codex compacts a thread on request with `thread/compact/start`, which it runs as a native
     /// turn of its own: that turn's `turn/started`, its `contextCompaction` item and its
-    /// `turn/completed` are the Turn Suru opened for the request, never a Continuation. So the
+    /// `turn/completed` are the Turn Shaman opened for the request, never a Continuation. So the
     /// request claims the Session's one native Turn slot as `turn/start` does, and the turn Codex
     /// names fills it ([`follow_compaction_start`]). The request takes no Agent Selection: Codex
     /// compacts under the one it has in force, which is what this answers. Codex would abort a
-    /// running turn to compact; Suru asks only while the Session is idle. Interrupting it is the
+    /// running turn to compact; Shaman asks only while the Session is idle. Interrupting it is the
     /// ordinary `turn/interrupt` of that turn.
     fn compact(&self, input: ProviderCompactionInput) -> ProviderFuture<'_, AgentSelection> {
         Box::pin(async move {
@@ -1020,7 +1020,7 @@ impl ProviderSession for CodexSession {
     /// the thread's own input: a `turn/start` on that thread, which Codex
     /// takes on a collab (v1) child's thread and refuses a multi-agent v2
     /// sub-agent's. A settled child begins a native turn with it, which the
-    /// projection routes into the stretch Suru wakes the child into, and a
+    /// projection routes into the stretch Shaman wakes the child into, and a
     /// working one's running turn is steered with it — or, where that turn
     /// ended as the input arrived, the child begins another with it, which it
     /// is woken into once its stretch settles. Either way the input — a
@@ -1135,9 +1135,9 @@ struct CompactionStart {
 }
 
 /// Follows the native turn Codex runs a compaction it accepted as, which only its `turn/started`
-/// names: installs it in the Session's one native Turn slot, and sends it the interrupt Suru took
+/// names: installs it in the Session's one native Turn slot, and sends it the interrupt Shaman took
 /// while it had no identity yet. A Codex that begins no turn within the bound may still run the
-/// compaction, which could then read as a turn of its own after the Turn Suru opened has failed,
+/// compaction, which could then read as a turn of its own after the Turn Shaman opened has failed,
 /// so the connection is given up instead, and the next Prompt begins another.
 async fn follow_compaction_start(start: CompactionStart) {
     let CompactionStart {
@@ -1192,7 +1192,7 @@ async fn follow_compaction_start(start: CompactionStart) {
         )
         .await
     {
-        // An interrupt Suru already answered for that Codex refused leaves the compaction
+        // An interrupt Shaman already answered for that Codex refused leaves the compaction
         // running past the stop, so the connection goes with it.
         transport.terminate(codex_error_context("Codex Turn interruption failed", error));
     }

@@ -1,4 +1,4 @@
-//! The Sidekick Workspace: the one Workspace on a Server that Suru itself
+//! The Sidekick Workspace: the one Workspace on a Server that Shaman itself
 //! owns, a `sidekick` directory beside the Server's own data (ADR 0042).
 //!
 //! It lives under the data root, so each Channel has its own as surely as it
@@ -63,7 +63,7 @@ impl SidekickWorkspace {
         })
     }
 
-    /// Suru's own data directory, read canonically, which the Sidekick
+    /// Shaman's own data directory, read canonically, which the Sidekick
     /// Workspace is made directly within.
     pub(crate) fn data_root(&self) -> &Path {
         &self.data_root

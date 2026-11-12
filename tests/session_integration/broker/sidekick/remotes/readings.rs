@@ -39,7 +39,7 @@ fn words(reading: &Value) -> String {
 async fn a_server_answers_a_reading_of_its_session_with_only_the_slice_asked_for() {
     const {
         assert!(
-            suru::protocol::PROTOCOL_VERSION >= 85,
+            shaman::protocol::PROTOCOL_VERSION >= 85,
             "a reading taken where its Session lives changes what Servers say to each other"
         );
     }

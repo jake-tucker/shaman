@@ -314,7 +314,7 @@ pub(super) fn brokered_subagent_posture(
 /// spawner's value, still carrying the spawner's pin, so the reading says of
 /// the whole tree whether it runs under an override or follows the Settings.
 ///
-/// A spawner with no posture Suru can name — its Provider has none — or a
+/// A spawner with no posture Shaman can name — its Provider has none — or a
 /// Provider the table has no column for leaves the child its own Provider's
 /// Setting, as a top-level Session on that Provider reads it.
 fn derived_posture(

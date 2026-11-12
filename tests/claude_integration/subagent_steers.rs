@@ -11,7 +11,7 @@ use crate::claude_integration::support::{
     CLAUDE_MODELS, ScriptedClaude, conversation_fixture, discovery_arms, opened_session,
     session_where, settled_session, user_turn_arm,
 };
-use suru::protocol::{
+use shaman::protocol::{
     Activity, ActivityStatus, Delegator, MessageRole, SessionId, SessionSnapshot, TranscriptItem,
     TurnStatus,
 };

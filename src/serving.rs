@@ -125,7 +125,7 @@ pub(crate) use identity_store::{Selection, platform_identity_store};
 const PEERS_FILE: &str = "peers.json";
 const REVOKED_PEERS_FILE: &str = "revoked-peers.json";
 const REMOTES_FILE: &str = "remotes.json";
-const PAIRING_PROTOCOL_HEADER: &str = "x-suru-protocol-version";
+const PAIRING_PROTOCOL_HEADER: &str = "x-shaman-protocol-version";
 /// The longest key an Invite, or a Relay's list, is believed to name.
 const MAX_INVITE_KEY: usize = 4096;
 const PEER_API_PREFIX: &str = "/v1/pairing/proxy";
@@ -133,7 +133,7 @@ const PEER_API_PREFIX: &str = "/v1/pairing/proxy";
 /// that it set the [`AUTHOR_HEADER`] beside it — naming the Peer it
 /// authenticated — rather than a Client or a Peer: its value is a secret this
 /// process mints and never shows anyone.
-const FORWARDED_AUTHOR_PROOF_HEADER: &str = "x-suru-forwarded-author-proof";
+const FORWARDED_AUTHOR_PROOF_HEADER: &str = "x-shaman-forwarded-author-proof";
 /// Where a Peer says it is withdrawing, so removing a Remote can end the
 /// Pairing on the Serving side as well as this one.
 const PAIRING_WITHDRAWAL_PATH: &str = "/v1/pairing/withdrawal";
@@ -233,7 +233,7 @@ pub(crate) struct JoinedKeepalive {
 /// is wanted: the name its identity certificate is minted for. A Serving
 /// Server is known by its pinned key alone, so this tells no one apart, and
 /// it is never sent in the clear.
-const SERVING_IDENTITY_NAME: &str = "suru-server";
+const SERVING_IDENTITY_NAME: &str = "shaman-server";
 /// How long a socket a Pairing is carried over — dialled to a direct way, or
 /// to the Relay a join is made at — may sit idle before it is probed, and how
 /// long between probes, so a Serving Server or a Relay that vanished is found
@@ -3050,7 +3050,7 @@ fn code_dead(why: Dead) -> PairingFailure {
     PairingFailure::new(
         SessionErrorCode::ShortCodeDead,
         format!(
-            "{said}. Do not type it again: get a new one from /serve there, or `suru serve \
+            "{said}. Do not type it again: get a new one from /serve there, or `shaman serve \
              invite`. {AFTER}"
         ),
     )
@@ -3062,13 +3062,13 @@ fn code_refused(refused: RefusedAtOnce) -> PairingFailure {
         RefusedAtOnce::NoCode => PairingFailure::new(
             SessionErrorCode::ShortCodeNotLive,
             "No code is live on that machine for this Relay. Issue an Invite there offering it, \
-             with /serve or `suru serve invite`. If that machine shows a code all the same, its \
+             with /serve or `shaman serve invite`. If that machine shows a code all the same, its \
              Invite does not offer this Relay, and a code works only over a Relay its Invite \
              offers: issue one that does, or log in here at one it does",
         ),
         RefusedAtOnce::Version | RefusedAtOnce::Malformed => PairingFailure::new(
             SessionErrorCode::PairingProtocolMismatch,
-            "That machine runs another version of Suru that does not take this code, which is \
+            "That machine runs another version of Shaman that does not take this code, which is \
              not used. Pair by pasting an Invite instead",
         ),
     }
@@ -3711,7 +3711,7 @@ async fn forward_peer_api(
 }
 
 fn canonical_forward_path(uri: &axum::http::Uri) -> Option<String> {
-    reqwest::Url::parse(&format!("http://suru.invalid{uri}"))
+    reqwest::Url::parse(&format!("http://shaman.invalid{uri}"))
         .ok()
         .map(|url| url.path().to_owned())
 }
@@ -6190,7 +6190,7 @@ fn enrollment_certificate(identity: &IdentityMaterial, token: &str) -> Result<Ve
     params.distinguished_name = CertificateDistinguishedName::new();
     params
         .distinguished_name
-        .push(DnType::CommonName, format!("suru-invite-{token}"));
+        .push(DnType::CommonName, format!("shaman-invite-{token}"));
     Ok(params
         .self_signed(&signing_key)
         .context("mint enrollment identity certificate")?
@@ -6229,10 +6229,10 @@ fn invite_text(
 }
 
 fn parse_invite(invite: &str) -> std::result::Result<ParsedInvite, PairingFailure> {
-    let Some(rest) = invite.strip_prefix("suru-") else {
+    let Some(rest) = invite.strip_prefix("shaman-") else {
         return Err(PairingFailure::new(
             SessionErrorCode::InvalidInvite,
-            "Invite must start with `suru-`; was all of it copied?",
+            "Invite must start with `shaman-`; was all of it copied?",
         ));
     };
     let Some((version, encoded)) = rest.split_once('-') else {
@@ -6305,7 +6305,7 @@ fn well_formed(way: &Way) -> bool {
 
 /// Whether `relay` is a Relay's address written the one way one is.
 fn canonical_relay(relay: &str) -> bool {
-    suru_relay_protocol::canonical_address(relay).as_deref() == Some(relay)
+    shaman_relay_protocol::canonical_address(relay).as_deref() == Some(relay)
 }
 
 fn decode_token(encoded: &str) -> std::result::Result<[u8; 32], PairingFailure> {
@@ -6435,7 +6435,7 @@ fn enrollment_token_from_certificate(certificate: &CertificateDer<'_>) -> Option
         .next()?
         .as_str()
         .ok()?
-        .strip_prefix("suru-invite-")?;
+        .strip_prefix("shaman-invite-")?;
     URL_SAFE_NO_PAD.decode(encoded).ok()?.try_into().ok()
 }
 
@@ -6747,7 +6747,7 @@ mod tests {
         tokio::spawn(connection);
         let fetching = sender
             .send_request(
-                Request::get("https://suru-server/attachment")
+                Request::get("https://shaman-server/attachment")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -6888,7 +6888,7 @@ mod tests {
         shut.store(true, Ordering::Release);
         let _uploading = tokio::spawn(
             sender.send_request(
-                Request::post("https://suru-server/v1/attachments")
+                Request::post("https://shaman-server/v1/attachments")
                     .body(Body::from(vec![7_u8; 8 * 1024 * 1024]))
                     .unwrap(),
             ),
@@ -7590,7 +7590,7 @@ mod tests {
             refused,
             Some((
                 SessionErrorCode::InvalidInvite,
-                "Invite must start with `suru-`; was all of it copied?".to_owned()
+                "Invite must start with `shaman-`; was all of it copied?".to_owned()
             ))
         );
     }
@@ -7608,7 +7608,7 @@ mod tests {
                 hostname: "workstation".to_owned(),
             };
             format!(
-                "suru-v1-{}",
+                "shaman-v1-{}",
                 URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap())
             )
         };
@@ -7922,9 +7922,9 @@ mod tests {
         });
         let path = "/v1/sessions/0198b27e-26ec-7c4c-a83b-a83a4787453f/prompts";
         for connection in [
-            "x-suru-author",
-            "X-Suru-Author, x-suru-forwarded-author-proof",
-            "keep-alive, X-SURU-FORWARDED-AUTHOR-PROOF",
+            "x-shaman-author",
+            "X-Shaman-Author, x-shaman-forwarded-author-proof",
+            "keep-alive, X-SHAMAN-FORWARDED-AUTHOR-PROOF",
         ] {
             let request = Request::builder()
                 .method(Method::POST)
@@ -7932,7 +7932,7 @@ mod tests {
                 .header(PAIRING_PROTOCOL_HEADER, crate::protocol::PROTOCOL_VERSION)
                 .header(header::CONNECTION, connection)
                 .header(AUTHOR_HEADER, claimed.clone())
-                .header("X-Suru-Author", claimed.clone())
+                .header("X-Shaman-Author", claimed.clone())
                 .header(FORWARDED_AUTHOR_PROOF_HEADER, "a proof of the Peer's own")
                 .body(Body::empty())
                 .expect("a Peer's request");
@@ -8087,7 +8087,10 @@ mod tests {
         let way = Way::Direct(SocketAddr::from(([127, 0, 0, 1], 9)));
         for scheme in ["https", "socks4", "socks4a", "socks5", "socks5h"] {
             let dialer = WayDialer {
-                proxies: DirectProxies::given(&format!("{scheme}://suru:proxy-secret@{proxy}"), ""),
+                proxies: DirectProxies::given(
+                    &format!("{scheme}://shaman:proxy-secret@{proxy}"),
+                    "",
+                ),
                 relays: GivenRelays::default(),
                 server: Arc::from(Vec::new()),
                 handshake_timeout: tokio::time::Duration::from_secs(10),
@@ -8112,7 +8115,7 @@ mod tests {
             let said = refusal.to_string();
             assert!(said.contains(&format!("`{scheme}`")), "{said}");
             assert!(
-                !said.contains("proxy-secret") && !said.contains("suru:"),
+                !said.contains("proxy-secret") && !said.contains("shaman:"),
                 "{said}"
             );
         }

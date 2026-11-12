@@ -12,7 +12,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::json;
-use suru::{
+use shaman::{
     protocol::{
         CreateSessionRequest, InitialPrompt, PromptId, ProviderId, SessionError, SessionErrorCode,
         SetWorkspaceIconRequest, WorkspaceId,
@@ -31,7 +31,7 @@ fn create_request(workspace: &std::path::Path, prompt: &str) -> CreateSessionReq
         // No Agent Selection, so no Errand runs and the only Icon the
         // Workspace carries is whichever this test chooses for it.
         agent_selection: None,
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -48,7 +48,7 @@ fn errand_request(workspace: &std::path::Path, prompt: &str) -> CreateSessionReq
         session_id: None,
         preparation_id: None,
         agent_selection: Some(hosted_selection(PROVIDER, MODEL)),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -73,9 +73,9 @@ fn workspace_icon_provider() -> (
 async fn connected_client(
     state_dir: &std::path::Path,
     channel: &str,
-) -> suru::managed_client::ManagedClient {
-    let mut client = suru::managed_client::ManagedClient::connect(
-        suru::managed_client::ManagedClientConfig::new(state_dir, channel)
+) -> shaman::managed_client::ManagedClient {
+    let mut client = shaman::managed_client::ManagedClient::connect(
+        shaman::managed_client::ManagedClientConfig::new(state_dir, channel)
             .expect("configure client"),
     )
     .await
@@ -88,7 +88,7 @@ async fn connected_client(
 /// `None` where the listing carries no Icon for it — read off any Session the
 /// listing still holds rooted there.
 async fn listed_workspace_icon(
-    client: &suru::managed_client::ManagedClient,
+    client: &shaman::managed_client::ManagedClient,
     workspace_id: &WorkspaceId,
 ) -> Option<String> {
     client
@@ -137,7 +137,7 @@ async fn next_workspace_errand(
 }
 
 async fn set_workspace_icon_response(
-    descriptor: &suru::protocol::RuntimeDescriptor,
+    descriptor: &shaman::protocol::RuntimeDescriptor,
     workspace_id: &WorkspaceId,
     icon: &str,
 ) -> reqwest::Response {
@@ -178,7 +178,7 @@ async fn setting_a_workspace_icon_updates_the_catalog_and_the_listing() {
 
     assert_eq!(
         next_workspace_icon_changed(&mut client).await,
-        suru::protocol::WorkspaceIconChanged {
+        shaman::protocol::WorkspaceIconChanged {
             workspace_id: workspace_id.clone(),
             icon: Some("md-bug".to_owned()),
         }
@@ -295,7 +295,7 @@ async fn a_chosen_workspace_icon_stands_against_a_later_derivation() {
         .expect("set the Workspace's Icon while its Errand is outstanding");
     assert_eq!(
         next_workspace_icon_changed(&mut client).await,
-        suru::protocol::WorkspaceIconChanged {
+        shaman::protocol::WorkspaceIconChanged {
             workspace_id: workspace_id.clone(),
             icon: Some("md-bug".to_owned()),
         },

@@ -7,7 +7,7 @@
 //! Server launched after the stop serves.
 use super::*;
 use crate::support::PROGRESS_DEADLINE;
-use suru::{LastStop, server::RunningServer};
+use shaman::{LastStop, server::RunningServer};
 
 /// Timings for a Server that waits in the election for as long as a test
 /// needs it to, and stops without lingering.
@@ -64,7 +64,7 @@ fn assert_ended_by_the_stop(settled: anyhow::Result<RunningServer>) {
     );
 }
 
-/// A client's `suru server stop` of the winner, while another Server waits
+/// A client's `shaman server stop` of the winner, while another Server waits
 /// in the election, leaves no Server serving: the waiting one ends once it
 /// takes the lock, having published nothing.
 #[tokio::test]

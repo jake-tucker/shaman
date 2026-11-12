@@ -4,7 +4,7 @@
 //! snapshot and updates carry.
 
 use ratatui::{buffer::Buffer, style::Style};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent},
     protocol::{
         AttachmentBinding, AttachmentDescriptor, AttachmentId, AttachmentKind,

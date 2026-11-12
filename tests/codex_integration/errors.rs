@@ -3,8 +3,7 @@
 use crate::codex_integration::support::{ScriptedCodex, receive_initial_state};
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::Value;
-use std::sync::Arc;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         Activity, CreateSessionRequest, InitialPrompt, PromptId, PromptStatus, SessionStatus,
@@ -13,6 +12,7 @@ use suru::{
     provider::CodexRuntime,
     server::{self, ServerConfig, ServerTimings},
 };
+use std::sync::Arc;
 use tokio::time::{Duration, timeout};
 
 const INITIALIZE_REJECTION: &str = r#"#!/bin/sh
@@ -207,7 +207,7 @@ async fn unknown_server_request_gets_method_not_found_without_corrupting_respons
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -290,7 +290,7 @@ async fn unsupported_elicitation_and_dynamic_tools_are_rejected_without_ending_t
                 session_id: None,
                 preparation_id: None,
                 agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 prompt: InitialPrompt {
@@ -455,7 +455,7 @@ async fn assert_provider_failure(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

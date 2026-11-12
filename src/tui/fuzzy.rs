@@ -1,6 +1,6 @@
 //! The matching a picker narrows its rows by.
 //!
-//! It is not the only matching Suru does: the Command completion ranks its
+//! It is not the only matching Shaman does: the Command completion ranks its
 //! candidates with `commands::fuzzy_score`, and the Sidebar asks the stricter
 //! question of whether a Title plainly carries the query. This is the loose
 //! one the pickers share.

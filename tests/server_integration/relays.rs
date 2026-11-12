@@ -11,7 +11,7 @@ use std::{
 };
 
 use futures_util::{SinkExt, StreamExt};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
     protocol::{
         Relay, RelayAccount, RelayListing, RelayLogin, RelayLoginOutcome, RelayLoginRefusal,
@@ -19,11 +19,11 @@ use suru::{
     },
     server::{self, ServerConfig, ServerTimings},
 };
-use suru_relay::{
+use shaman_relay::{
     Admission, AdmissionRule, Clock, Identity, RelayConfig, RunningRelay,
     SCRIPTED_VERIFICATION_URI, ScriptedProvider,
 };
-use suru_relay_protocol::{Bytes, Refusal, RelayMessage, SPOKEN, ServerMessage, Version};
+use shaman_relay_protocol::{Bytes, Refusal, RelayMessage, SPOKEN, ServerMessage, Version};
 use tokio::{sync::Notify, time::timeout};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -241,7 +241,7 @@ async fn run_relay(
     configure: fn(RelayConfig) -> RelayConfig,
 ) -> RunningRelay {
     let clock_ahead = clock_ahead.clone();
-    suru_relay::start(
+    shaman_relay::start(
         configure(
             RelayConfig::new(
                 (std::net::Ipv4Addr::LOCALHOST, 0).into(),
@@ -438,7 +438,7 @@ impl TestServer {
         let key = std::fs::read(self.config.data_dir().join("server-identity.pk8"))
             .expect("read the Server's identity key");
         let key = rcgen::KeyPair::try_from(key.as_slice()).expect("decode the identity key");
-        suru_relay_protocol::fingerprint(&rcgen::PublicKeyData::subject_public_key_info(&key))
+        shaman_relay_protocol::fingerprint(&rcgen::PublicKeyData::subject_public_key_info(&key))
     }
 }
 
@@ -1730,7 +1730,7 @@ async fn a_relay_repeating_that_the_login_needs_renewing_is_heard_once_while_it_
                             expires_in_seconds: 900,
                         },
                         RelayMessage::LoginDone {
-                            account: suru_relay_protocol::Account {
+                            account: shaman_relay_protocol::Account {
                                 provider: "scripted".to_owned(),
                                 username: "octocat".to_owned(),
                             },
@@ -2020,7 +2020,7 @@ async fn greet(socket: &mut RelaySocket, relay: &str) -> bool {
     ) && tell(
         socket,
         &RelayMessage::Proven {
-            login: Some(suru_relay_protocol::Account {
+            login: Some(shaman_relay_protocol::Account {
                 provider: "scripted".to_owned(),
                 username: "octocat".to_owned(),
             }),
@@ -2098,7 +2098,7 @@ async fn a_relay_that_pings_without_reading_reads_unreachable() {
                     tell(
                         &mut socket,
                         &RelayMessage::LoginDone {
-                            account: suru_relay_protocol::Account {
+                            account: shaman_relay_protocol::Account {
                                 provider: "scripted".to_owned(),
                                 username: "octocat".to_owned(),
                             },

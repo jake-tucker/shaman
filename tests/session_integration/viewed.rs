@@ -7,7 +7,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use futures_util::StreamExt;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
     protocol::{
         CreateSessionRequest, InitialPrompt, PromptId, SessionCatalogChange, SessionError,
@@ -23,7 +23,7 @@ fn create_request(workspace: &std::path::Path) -> CreateSessionRequest {
         session_id: None,
         preparation_id: None,
         agent_selection: None,
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -60,14 +60,14 @@ async fn viewing_a_session_the_server_does_not_hold_is_rejected() {
 }
 
 async fn view(
-    descriptor: &suru::protocol::RuntimeDescriptor,
+    descriptor: &shaman::protocol::RuntimeDescriptor,
     session_id: SessionId,
 ) -> reqwest::Response {
     view_with_operation(descriptor, session_id, ViewSessionOperationId::new()).await
 }
 
 async fn view_with_operation(
-    descriptor: &suru::protocol::RuntimeDescriptor,
+    descriptor: &shaman::protocol::RuntimeDescriptor,
     session_id: SessionId,
     operation_id: ViewSessionOperationId,
 ) -> reqwest::Response {
@@ -163,7 +163,7 @@ async fn replaying_a_viewed_operation_does_not_move_viewed_or_announce_it_again(
 }
 
 async fn listed_summary(
-    descriptor: &suru::protocol::RuntimeDescriptor,
+    descriptor: &shaman::protocol::RuntimeDescriptor,
     session_id: SessionId,
 ) -> SessionSummary {
     crate::support::loopback_client()
@@ -186,7 +186,7 @@ async fn listed_summary(
         .expect("the readable Session remains listed")
 }
 
-async fn next_viewed(client: &mut ManagedClient, viewed_at: suru::protocol::SessionTimestamp) {
+async fn next_viewed(client: &mut ManagedClient, viewed_at: shaman::protocol::SessionTimestamp) {
     timeout(PROGRESS_DEADLINE, async {
         loop {
             let event = client
@@ -257,11 +257,11 @@ async fn viewing_a_session_stamps_its_summary_and_announces_the_reading() {
             inputs: SessionStandingInputs {
                 pending_questionnaires: Vec::new(),
                 submitting_questionnaires: Vec::new(),
-                pending_questionnaires_revision: suru::protocol::SessionRevision(0),
+                pending_questionnaires_revision: shaman::protocol::SessionRevision(0),
                 subagent_interventions: Vec::new(),
                 pending_approvals: Vec::new(),
                 submitting_approvals: Vec::new(),
-                pending_approvals_revision: suru::protocol::SessionRevision(0),
+                pending_approvals_revision: shaman::protocol::SessionRevision(0),
                 latest_turn: viewed.standing_inputs.latest_turn,
                 viewed_at: Some(viewed_at),
             },

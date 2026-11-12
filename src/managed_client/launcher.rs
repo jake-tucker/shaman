@@ -82,7 +82,7 @@ pub(super) async fn ensure_server(
         .map_err(|error| {
             startup_error(
                 config,
-                &format!("could not identify the Suru server executable: {error:#}"),
+                &format!("could not identify the Shaman server executable: {error:#}"),
             )
         })?;
     let mut spawned = None;
@@ -93,7 +93,7 @@ pub(super) async fn ensure_server(
         return Err(startup_error(
             config,
             &format!(
-                "detached Suru server did not become ready within {:?}",
+                "detached Shaman server did not become ready within {:?}",
                 config.startup_timeout
             ),
         ));
@@ -108,7 +108,7 @@ pub(super) async fn ensure_server(
                     return Err(startup_error(
                         config,
                         &format!(
-                            "detached Suru server did not become ready within {:?}",
+                            "detached Shaman server did not become ready within {:?}",
                             config.startup_timeout
                         ),
                     ));
@@ -135,7 +135,7 @@ pub(super) async fn ensure_server(
                         deadline,
                     )
                     .await?;
-                    anyhow!("registered Suru server is being replaced")
+                    anyhow!("registered Shaman server is being replaced")
                 }
                 LifecycleState::Ready
                     if registration.health.protocol_version != PROTOCOL_VERSION =>
@@ -143,20 +143,20 @@ pub(super) async fn ensure_server(
                     return Err(startup_error(
                         config,
                         &format!(
-                            "registered Suru server protocol version {} is incompatible with client protocol version {PROTOCOL_VERSION}",
+                            "registered Shaman server protocol version {} is incompatible with client protocol version {PROTOCOL_VERSION}",
                             registration.health.protocol_version
                         ),
                     ));
                 }
                 LifecycleState::Ready => return Ok(registration),
                 LifecycleState::Starting => {
-                    anyhow!("registered Suru server is still starting")
+                    anyhow!("registered Shaman server is still starting")
                 }
-                LifecycleState::Stopping => anyhow!("registered Suru server is stopping"),
+                LifecycleState::Stopping => anyhow!("registered Shaman server is stopping"),
                 LifecycleState::Failed => {
                     return Err(startup_error(
                         config,
-                        "registered Suru server reported failed startup",
+                        "registered Shaman server reported failed startup",
                     ));
                 }
             },
@@ -166,7 +166,9 @@ pub(super) async fn ensure_server(
                     spawned = Some(spawn_detached(config, baseline.0).map_err(|spawn_error| {
                         startup_error(
                             config,
-                            &format!("could not launch the detached Suru server: {spawn_error:#}"),
+                            &format!(
+                                "could not launch the detached Shaman server: {spawn_error:#}"
+                            ),
                         )
                     })?);
                 }
@@ -195,7 +197,7 @@ pub(super) async fn ensure_server(
                 return Err(startup_error(
                     config,
                     &format!(
-                        "detached Suru server exited before becoming ready ({})",
+                        "detached Shaman server exited before becoming ready ({})",
                         describe_exit(status)
                     ),
                 ));
@@ -208,7 +210,7 @@ pub(super) async fn ensure_server(
             return Err(startup_error(
                 config,
                 &format!(
-                    "detached Suru server did not become ready within {:?}: {error:#}",
+                    "detached Shaman server did not become ready within {:?}: {error:#}",
                     config.startup_timeout
                 ),
             ));
@@ -233,7 +235,7 @@ impl std::fmt::Display for StoppedDuringLaunch {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             formatter,
-            "Suru server {} was stopped while this launch was starting one, and a manual stop \
+            "Shaman server {} was stopped while this launch was starting one, and a manual stop \
              is final for every server launched before it; start the server again to run one",
             self.instance_id
         )
@@ -269,7 +271,7 @@ impl Drop for LaunchedServer {
             return;
         }
         let _ = std::thread::Builder::new()
-            .name("suru-server-reaper".to_owned())
+            .name("shaman-server-reaper".to_owned())
             .spawn(move || child.wait());
     }
 }
@@ -296,7 +298,7 @@ pub(super) fn spawn_detached(
 
     tracing::info!(
         executable = %config.server_executable.display(),
-        "launching detached Suru server"
+        "launching detached Shaman server"
     );
     let mut command = Command::new(&config.server_executable);
     command
@@ -330,7 +332,7 @@ pub(super) fn spawn_detached(
         .stderr(Stdio::from(stderr));
     launch_detached(&mut command)
         .map(|child| LaunchedServer(Some(child)))
-        .context("spawn detached Suru server")
+        .context("spawn detached Shaman server")
 }
 
 /// Launches `command` the way a managed client launches a server: in a

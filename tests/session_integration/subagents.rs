@@ -11,7 +11,7 @@ use crate::session_integration::{
     },
 };
 use axum::http::StatusCode;
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, Delegator, InitialPrompt, MessageRole,
         ModelId, PromptDelivery, PromptId, SessionCatalogChange, SessionChange, SessionError,
@@ -849,7 +849,7 @@ async fn a_restart_settles_the_turns_the_last_process_left_open() {
     {
         use diesel::{Connection, RunQueryDsl, SqliteConnection};
         let mut database =
-            SqliteConnection::establish(config.data_dir().join("suru.db").to_str().unwrap())
+            SqliteConnection::establish(config.data_dir().join("shaman.db").to_str().unwrap())
                 .unwrap();
         diesel::sql_query(
             "UPDATE turns SET payload = json_set(payload, '$.status', 'active', '$.settled_at', json('null'))",
@@ -2357,11 +2357,11 @@ async fn a_resume_a_settled_subagent_delegated_stands_in_a_continuation_of_its_s
     fixture.server.shutdown().await.expect("shut down server");
 }
 
-/// A resume Suru cannot place — no Session it holds carries the identity, as
+/// A resume Shaman cannot place — no Session it holds carries the identity, as
 /// for a Subagent spawned before identities were stored — is recorded as a
 /// new Subagent of its own rather than dropped or failing the Turn.
 #[tokio::test]
-async fn a_resume_naming_a_subagent_suru_holds_no_record_of_is_recorded_as_a_new_subagent() {
+async fn a_resume_naming_a_subagent_shaman_holds_no_record_of_is_recorded_as_a_new_subagent() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let fixture = working_turn(state_dir.path(), "subagent-unknown-resume-test").await;
     let subagent = ProviderSubagentId::new("never-spawned");
@@ -2403,7 +2403,7 @@ async fn a_resume_naming_a_subagent_suru_holds_no_record_of_is_recorded_as_a_new
     assert_eq!(
         parent.turns[0].status,
         TurnStatus::Active,
-        "a resume Suru cannot place does not fail the Turn that sent it"
+        "a resume Shaman cannot place does not fail the Turn that sent it"
     );
     let Activity::Subagent {
         turn_id,
@@ -2607,7 +2607,7 @@ async fn each_turn_a_delegation_begins_opens_with_it_as_a_message_from_the_deleg
             matches!(opening.role, MessageRole::Delegation(_)),
             "each Turn opens with its Delegation, ahead of the Subagent's own work: {opening:?}"
         );
-        assert_eq!(opening.status, suru::protocol::MessageStatus::Completed);
+        assert_eq!(opening.status, shaman::protocol::MessageStatus::Completed);
         assert!(!opening.truncated);
     }
     let Some(Activity::Subagent {
@@ -2992,7 +2992,7 @@ fn stored_subagent_identities(config: &ServerConfig) -> Vec<(String, String, Str
     }
 
     let mut database =
-        SqliteConnection::establish(config.data_dir().join("suru.db").to_str().unwrap())
+        SqliteConnection::establish(config.data_dir().join("shaman.db").to_str().unwrap())
             .expect("open the Session database");
     let mut rows = diesel::sql_query(
         "SELECT session_id, provider, subagent_id FROM provider_subagent_identities",
@@ -3139,7 +3139,7 @@ async fn a_subagents_identity_is_stored_with_its_session_and_deleted_along_with_
     );
 }
 
-/// The resume a Provider sends after Suru restarted and carried its
+/// The resume a Provider sends after Shaman restarted and carried its
 /// conversation on: the Subagent's identity was stored with its Session at
 /// the spawn, so the resume continues that Session as its next Turn rather
 /// than opening another.
@@ -3331,7 +3331,7 @@ async fn a_resume_state_revised_mid_connection_is_what_the_next_start_resumes_fr
         .provider_session
         .emit_and_wait_until_observed(ProviderEvent::TurnCompleted)
         .await;
-    let revised = suru::provider::ProviderResumeState::new(serde_json::json!({
+    let revised = shaman::provider::ProviderResumeState::new(serde_json::json!({
         "conversation": "revised",
     }));
     fixture
@@ -3390,9 +3390,9 @@ async fn a_resume_state_revised_mid_connection_is_what_the_next_start_resumes_fr
     restarted.shutdown().await.expect("shut down server");
 }
 
-fn provider_agent() -> suru::protocol::AgentIdentity {
-    suru::protocol::AgentIdentity {
-        agent: suru::protocol::AgentId::new("controlled-agent"),
+fn provider_agent() -> shaman::protocol::AgentIdentity {
+    shaman::protocol::AgentIdentity {
+        agent: shaman::protocol::AgentId::new("controlled-agent"),
         selection: crate::session_integration::support::controlled_selection(
             "gpt-subagent",
             "high",

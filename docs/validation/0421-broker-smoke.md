@@ -21,7 +21,7 @@ smokes, a Claude Session's Agent spawns a Codex Subagent through the Broker.
 ## Running it
 
 ```
-SURU_BROKER_SMOKE=1 cargo nextest run --test broker_smoke --run-ignored ignored-only --no-capture
+SHAMAN_BROKER_SMOKE=1 cargo nextest run --test broker_smoke --run-ignored ignored-only --no-capture
 ```
 
 `cargo test --test broker_smoke -- --ignored --nocapture` runs them too. The
@@ -38,7 +38,7 @@ binary holds two tests, each gated twice:
 Add `-E 'test(/answers_its_report/)'` or `-E 'test(/wait_on_a_codex/)'` to run
 one of them.
 
-- **Ignore attribute:** both carry `#[ignore = "set SURU_BROKER_SMOKE=1 to use the
+- **Ignore attribute:** both carry `#[ignore = "set SHAMAN_BROKER_SMOKE=1 to use the
   installed, signed-in Claude and Codex binaries"]`. `cargo nextest run` skips
   them (`0 tests run: 0 passed, 2 skipped` for this binary). Run alone,
   `cargo nextest run --test broker_smoke` then prints `error: no tests to run`
@@ -46,15 +46,15 @@ one of them.
   unaffected. `cargo nextest list --message-format json` reports both
   `ignored: true`, and they are listed only with `--run-ignored ignored-only`
   or `all`.
-- **Runtime check:** without `SURU_BROKER_SMOKE=1`, an ignored-only run prints
-  `skipping: set SURU_BROKER_SMOKE=1 to opt in` and returns.
+- **Runtime check:** without `SHAMAN_BROKER_SMOKE=1`, an ignored-only run prints
+  `skipping: set SHAMAN_BROKER_SMOKE=1 to opt in` and returns.
 
 Once opted in, each smoke refreshes the Model Catalog and skips, printing the
-reason, when Suru finds either CLI not installed or not signed in. It fails if a
+reason, when Shaman finds either CLI not installed or not signed in. It fails if a
 Provider's catalog fails or reports an incompatible version.
 
-`SURU_CLAUDE_PATH` and `SURU_CODEX_PATH` name other binaries, as they do for
-Suru itself. `SURU_LOG` (for example `warn,suru=info,rmcp=debug`) writes the
+`SHAMAN_CLAUDE_PATH` and `SHAMAN_CODEX_PATH` name other binaries, as they do for
+Shaman itself. `SHAMAN_LOG` (for example `warn,shaman=info,rmcp=debug`) writes the
 Server's tracing to stderr. Each smoke prints both CLIs' `--version` first,
 then the elapsed time at each milestone.
 
@@ -76,11 +76,11 @@ Report smoke costs about $0.03 of Claude usage. Its Codex Subagent used about
 
 The Report smoke's Prompt:
 
-> Using Suru's Broker, spawn one Subagent on the codex Provider, on that
+> Using Shaman's Broker, spawn one Subagent on the codex Provider, on that
 > Provider's default Model, named echo. Tell it to run the shell command
 > `sleep 8` and then reply with exactly the word PONG and nothing else. Do not
 > do its task yourself, and do not wait for it or check on it: once it is
-> spawned, end your turn straight away. Suru will bring you its Report as a new
+> spawned, end your turn straight away. Shaman will bring you its Report as a new
 > message; when it arrives, answer with the single word DONE followed by the
 > Subagent's reply.
 
@@ -90,7 +90,7 @@ that spawned it.
 
 The wait smoke's Prompt:
 
-> Using Suru's Broker, spawn one Subagent on the codex Provider, on that
+> Using Shaman's Broker, spawn one Subagent on the codex Provider, on that
 > Provider's default Model, named echo. Tell it to run the shell command
 > `sleep 330`, which takes over five minutes, to wait for that command to
 > finish, and only then to reply with exactly the word PONG and nothing else.
@@ -173,20 +173,20 @@ branch rebased onto #419's `send_to_subagent` and `wait_subagents` (`main` at
 launched from inside a Claude Code session, so every
 inherited `CLAUDE*` variable was removed first; a user's own terminal carries
 none. Runs 1–3 and 5 went through transparent capture wrappers, named by
-`SURU_CLAUDE_PATH` and `SURU_CODEX_PATH`. Each wrapper saved every launch's
+`SHAMAN_CLAUDE_PATH` and `SHAMAN_CODEX_PATH`. Each wrapper saved every launch's
 arguments, stdin and stdout. The Claude wrapper added `--debug-file`, and the
 Codex wrapper set `RUST_LOG` for Codex's stderr. Runs 4, 6 and 7 used the
 installed binaries directly.
 
 | Run | Smoke | Outcome |
 | --- | --- | --- |
-| 1 | Report | Failed at the spawn deadline, 304.9 s. Claude listed `suru` as `connected` but registered none of its Tools. The Agent searched with `ToolSearch` five times and called `mcp__suru__list_providers` once, getting "No such tool available". It gave up after 26 s. See the first finding below; fixed in the branch's `fix(broker)` commit. |
+| 1 | Report | Failed at the spawn deadline, 304.9 s. Claude listed `shaman` as `connected` but registered none of its Tools. The Agent searched with `ToolSearch` five times and called `mcp__shaman__list_providers` once, getting "No such tool available". It gave up after 26 s. See the first finding below; fixed in the branch's `fix(broker)` commit. |
 | 2 | Report | Failed at 4.4 s, before any Model call. The smoke's own check that the Agent had given up held before the first Turn was recorded. Fixed in the smoke. |
 | 3 | Report | Passed in 41.3 s, with capture. |
 | 4 | Report | Passed in 34.8 s, without capture. |
 | 5 | Wait | The wait call survived, but the smoke failed at its 600 s deadline, with capture. The Agent answered `DONE PONG` 335 s into its `wait_subagents` call, and the Subagent's row settled `Completed`. Then the Turn that waited never settled. See the second finding below. |
 | 6 | Both | Both passed without capture: the Report smoke in 46.0 s, the wait smoke in 359.4 s. The wait smoke asserted the answer rather than the Turn's settling. |
-| 7 | Both | Both passed without capture, on #407's fix: the Report smoke in 36.8 s, the wait smoke in 360.3 s. The answer came 343.1 s after the spawn, and the Turn that waited had settled `Completed` by the time the smoke read it. It was the parent's only Turn. Claude's transcript shows the Report folded in as in run 5, under the `uuid` Suru wrote it with. |
+| 7 | Both | Both passed without capture, on #407's fix: the Report smoke in 36.8 s, the wait smoke in 360.3 s. The answer came 343.1 s after the spawn, and the Turn that waited had settled `Completed` by the time the smoke read it. It was the parent's only Turn. Claude's transcript shows the Report folded in as in run 5, under the `uuid` Shaman wrote it with. |
 
 Run 4's milestones:
 
@@ -207,7 +207,7 @@ rmcp 3.4.1, implements discovery instead. It answers with supported versions
 log calls the "modern" era:
 
 ```
-MCP server "suru": Connection established with capabilities: {"hasTools":true, …,
+MCP server "shaman": Connection established with capabilities: {"hasTools":true, …,
   "protocolEra":"modern","negotiatedProtocolVersion":"2026-07-28"}
 ```
 
@@ -219,7 +219,7 @@ set them. Claude rejected all four `tools/list` answers (the first try and three
 retries, 250 ms to 1 s apart), then gave up:
 
 ```
-[ERROR] "MCP server \"suru\" Failed to fetch tools: Invalid result for tools/list:
+[ERROR] "MCP server \"shaman\" Failed to fetch tools: Invalid result for tools/list:
   [{"expected":"number","path":["ttlMs"], …},
    {"values":["public","private"],"path":["cacheScope"], …}]"
 ```
@@ -235,7 +235,7 @@ the Tools and reported the server `ready`. A protocol test now runs the
 ### The wait smoke: a 335 s Broker call at 2026-07-28 (runs 5–7)
 
 Claude negotiated 2026-07-28 with the Broker in run 5, as in run 3. The Agent
-loaded `mcp__suru__spawn_subagent` and `mcp__suru__wait_subagents` with
+loaded `mcp__shaman__spawn_subagent` and `mcp__shaman__wait_subagents` with
 `ToolSearch`, then called `list_providers` and spawned the Subagent. It then
 called `wait_subagents` with
 `{"ids": ["<child>"], "timeout_seconds": 400}` at 03:48:26:
@@ -264,7 +264,7 @@ Broker's configuration, a Broker call stays open past Claude's 60 s request
 timer and 300 s idle window. The per-server `timeout` is 900 s, and the
 Broker sends progress every 30 s while it waits. The run does not isolate
 which of the two keeps the idle window open. The `tool_progress` lines are
-marked `heartbeat: true`, and neither Claude's debug log nor Suru's trace shows
+marked `heartbeat: true`, and neither Claude's debug log nor Shaman's trace shows
 whether an MCP progress notification arrived. At 2025-11-25, #408's run 5 showed
 the per-server `timeout` alone raising the idle window.
 
@@ -279,7 +279,7 @@ builds the Report. Claude's own transcript
 ```
 03:54:01.899 queue-operation enqueue
 03:54:01.901 user: tool_result {"settled": … "PONG" …}
-03:54:01.899 attachment queued_command {"prompt": [{"type": "text", "text": "Subagent Report from Suru: …"}]}
+03:54:01.899 attachment queued_command {"prompt": [{"type": "text", "text": "Subagent Report from Shaman: …"}]}
 03:54:01.905 queue-operation remove
 03:54:04.070 assistant: DONE PONG
 ```
@@ -288,7 +288,7 @@ The CLI folded the queued Report into the loop's next request as a
 `queued_command` attachment, and answered both with one `result`
 (`num_turns: 6`). Its stdout carries nothing to say a queued message was taken
 in: no user echo, and only `status: requesting` between the tool result and
-the next message. Suru's Claude steer accounting
+the next message. Shaman's Claude steer accounting
 (`src/provider/claude/turn_in_flight.rs`, from #129) assumes "the CLI answers
 every user message queued into a running loop with a `result` of its own". It
 counted two `result`s owed and received one, so the Turn stayed `Active`. The
@@ -304,7 +304,7 @@ way (`0407-claude-folded-steer.md`, case A). A Report to an idle Claude Agent
 
 - **The CLI's account:** Claude reports a queued message's fate as a
   `command_lifecycle` frame, but only for a message sent with a `uuid`, and
-  Suru sent none. Suru now writes every Prompt and steer with a `uuid` of its
+  Shaman sent none. Shaman now writes every Prompt and steer with a `uuid` of its
   own. The frame says `started` when a loop takes the message up, whether
   folded in at a tool round or as a loop of its own.
 - **The accounting:** `src/provider/claude/turn_in_flight.rs` no longer counts
@@ -319,7 +319,7 @@ shows the same fold as in run 5:
 ```
 04:59:33.467 queue-operation enqueue
 04:59:33.474 user: tool_result {"settled": … "PONG" …}
-04:59:33.467 attachment queued_command {"prompt": [… "Subagent Report from Suru: …"], "source_uuid": "<the uuid Suru wrote>"}
+04:59:33.467 attachment queued_command {"prompt": [… "Subagent Report from Shaman: …"], "source_uuid": "<the uuid Shaman wrote>"}
 04:59:33.483 queue-operation remove
 04:59:36.059 assistant: DONE PONG
 ```
@@ -327,16 +327,16 @@ shows the same fold as in run 5:
 ### The Claude side (run 3)
 
 - **Launch:** one CLI process served the whole Session, with `--mcp-config
-  /tmp/suru-claude-broker-<id>.json --allowedTools mcp__suru__*
+  /tmp/shaman-claude-broker-<id>.json --allowedTools mcp__shaman__*
   --append-system-prompt <note> --permission-mode bypassPermissions`.
-- **`system` `init`:** it listed `{"name": "suru", "status": "connected",
+- **`system` `init`:** it listed `{"name": "shaman", "status": "connected",
   "source": "dynamic"}` beside `{"name": "claude.ai Claude Docs", "status":
   "connected", "source": "claudeai"}`. It also listed the four
-  `mcp__suru__*` Tools and `ToolSearch`.
+  `mcp__shaman__*` Tools and `ToolSearch`.
 - **Tool calls:**
-  1. `ToolSearch` with `select:mcp__suru__list_providers,mcp__suru__spawn_subagent`.
-  2. `mcp__suru__list_providers`, which completed in 10 ms.
-  3. `mcp__suru__spawn_subagent` with
+  1. `ToolSearch` with `select:mcp__shaman__list_providers,mcp__shaman__spawn_subagent`.
+  2. `mcp__shaman__list_providers`, which completed in 10 ms.
+  3. `mcp__shaman__spawn_subagent` with
      `{"provider": "codex", "model": "gpt-6-astra", "name": "echo", "description": "Run sleep 8 then reply PONG", "prompt": "Run the shell command `sleep 8` and then reply with exactly the word PONG and nothing else."}`.
      It answered the child's `session_id` in 433 ms.
 - **First Turn:** the Agent wrote "Subagent spawned … Standing by for its
@@ -344,7 +344,7 @@ shows the same fold as in run 5:
 - **The Report:** it reached Claude on stdin as one user message:
 
   ```
-  Subagent Report from Suru: the Subagent "echo" you delegated to through the Broker
+  Subagent Report from Shaman: the Subagent "echo" you delegated to through the Broker
   completed after 19.9s. Its session_id is <id>, which read_subagent takes.
 
   Its final Message:
@@ -353,10 +353,10 @@ shows the same fold as in run 5:
   ```
 
   Claude answered on the same process with a fresh `system` `init`, the text
-  `DONE PONG`, and a second `result` (`num_turns: 1`). Suru recorded that as
+  `DONE PONG`, and a second `result` (`num_turns: 1`). Shaman recorded that as
   the Continuation.
 - **Approvals:** no `can_use_tool` request came at any point.
-- **Shutdown:** Claude logged `MCP server "suru": HTTP connection closed after
+- **Shutdown:** Claude logged `MCP server "shaman": HTTP connection closed after
   34s (cleanly)`.
 
 ### The Codex side (run 3)
@@ -366,19 +366,19 @@ shows the same fold as in run 5:
 
   ```json
   {"cwd": "<scratch repository>", "approvalPolicy": "never", "sandbox": "danger-full-access",
-   "ephemeral": false, "developerInstructions": "Suru, the app hosting this session, …",
-   "config": {"mcp_servers.suru": {"url": "http://127.0.0.1:<port>/broker",
+   "ephemeral": false, "developerInstructions": "Shaman, the app hosting this session, …",
+   "config": {"mcp_servers.shaman": {"url": "http://127.0.0.1:<port>/broker",
      "http_headers": {"Authorization": "Bearer <token>"},
      "tool_timeout_sec": 900.0, "default_tools_approval_mode": "approve"}}}
   ```
 
-- **MCP startup:** `mcpServer/startupStatus/updated` reported `suru` `starting`,
+- **MCP startup:** `mcpServer/startupStatus/updated` reported `shaman` `starting`,
   then `ready`.
 - **Delegation:** `turn/start` carried `model: gpt-6-astra` and `effort: medium`
   with the Delegation:
 
   ```
-  Delegated to you through Suru by the Agent working on "Using Suru's Broker, spawn one
+  Delegated to you through Shaman by the Agent working on "Using Shaman's Broker, spawn one
   Subagent on the codex Provider, on that Provider…".
 
   Run the shell command `sleep 8` and then reply with exactly the word PONG and nothing else.
@@ -387,7 +387,7 @@ shows the same fold as in run 5:
   With Title derivation off, the parent's Title is its Prompt, cut short.
 - **Work:** the Subagent ran `/usr/bin/zsh -lc 'sleep 8'` without asking
   (exit 0, 7.9 s), wrote `PONG`, and its turn completed in 18.2 s. No approval,
-  elicitation or user-input request reached Suru.
+  elicitation or user-input request reached Shaman.
 - **Developer instructions:** the thread's rollout
   (`~/.codex/sessions/…/rollout-…-<thread>.jsonl`) holds a `developer` message
   carrying the Broker's note.
@@ -402,16 +402,16 @@ shows the same fold as in run 5:
 | `server/discover` before `initialize` gets `-32601` and the client falls back (#410) | **Contradicted for the Broker.** rmcp answers the probe and Claude speaks 2026-07-28, which caused the finding above. The `-32601` came from #408's hand-written capture endpoint. |
 | A GET on the endpoint (405) is tolerated (#410) | **Not exercised.** Neither client opened a GET stream. On a 2026-07-28 connection Claude opens none when the server advertises no `listChanged` ("no auto-opened subscriptions/listen on a modern connection"). Codex opened none against the stateless Broker. |
 | A DELETE at shutdown is tolerated (#410) | **Not exercised.** Neither client sent one. The stateless Broker issues no `mcp-session-id`, so a client has no session to end. |
-| Claude reads `--mcp-config` from a file path (#411) | **Confirmed.** Its debug log shows the `suru` HTTP transport with `timeoutMs: 900000`, read from the file. |
-| The user's own MCP servers still load beside `suru` (#411) | **Confirmed.** The claude.ai connector `claude.ai Claude Docs` connected beside `suru`. This machine has no user-scoped servers in `~/.claude.json`, so that connector is the only user server on record. |
-| Claude honours `--append-system-prompt` in stream-json print mode (#414) | **Confirmed.** The Prompt names no Tool, yet the Agent's first call selected `mcp__suru__list_providers` and `mcp__suru__spawn_subagent` by name, which only the note gives. |
+| Claude reads `--mcp-config` from a file path (#411) | **Confirmed.** Its debug log shows the `shaman` HTTP transport with `timeoutMs: 900000`, read from the file. |
+| The user's own MCP servers still load beside `shaman` (#411) | **Confirmed.** The claude.ai connector `claude.ai Claude Docs` connected beside `shaman`. This machine has no user-scoped servers in `~/.claude.json`, so that connector is the only user server on record. |
+| Claude honours `--append-system-prompt` in stream-json print mode (#414) | **Confirmed.** The Prompt names no Tool, yet the Agent's first call selected `mcp__shaman__list_providers` and `mcp__shaman__spawn_subagent` by name, which only the note gives. |
 | The Agent finds the Broker's Tools through `ToolSearch` (#414) | **Confirmed once the Tool list is valid.** Run 1's searches found none. |
-| `--allowedTools mcp__suru__*` keeps Broker calls from asking (#411) | **Consistent, not isolated.** No `can_use_tool` came, but `bypassPermissions` would allow the calls anyway. |
+| `--allowedTools mcp__shaman__*` keeps Broker calls from asking (#411) | **Consistent, not isolated.** No `can_use_tool` came, but `bypassPermissions` would allow the calls anyway. |
 | Codex accepts `tool_timeout_sec: 900.0` as a float (#411) | **Confirmed.** `thread/start` was answered and the server reported `ready`. |
 | Codex honours `developer_instructions` on `thread/start` (#414) | **Confirmed** by the rollout's `developer` message. The same on `thread/resume` is **not exercised**. |
-| A Report to an idle Claude Agent, sent as a stdin user message, starts a Turn with an extra `result` (#418) | **Confirmed.** A new `init`, the answer, and a second `result` came on the same process, and Suru recorded a `Completed` Continuation. |
+| A Report to an idle Claude Agent, sent as a stdin user message, starts a Turn with an extra `result` (#418) | **Confirmed.** A new `init`, the answer, and a second `result` came on the same process, and Shaman recorded a `Completed` Continuation. |
 | Claude's 60 s request timer and 300 s idle window do not cut a long Broker call short (#408, #419) | **Confirmed at 2026-07-28** for a 335 s `wait_subagents` (runs 5–7). The per-server `timeout` and the Broker's progress are not told apart. |
-| The CLI answers every message queued into a running loop with a `result` of its own (#129, relied on by #418's steers) | **Contradicted** for a message queued while a tool call is running. The CLI folds it into the loop's next request as a `queued_command` and answers both with one `result` (run 5). It holds only for a message still queued when the loop ends (`0407-claude-folded-steer.md`). Suru now settles by the message's `command_lifecycle` instead (run 7). |
+| The CLI answers every message queued into a running loop with a `result` of its own (#129, relied on by #418's steers) | **Contradicted** for a message queued while a tool call is running. The CLI folds it into the loop's next request as a `queued_command` and answers both with one `result` (run 5). It holds only for a message still queued when the loop ends (`0407-claude-folded-steer.md`). Shaman now settles by the message's `command_lifecycle` instead (run 7). |
 | A Codex child under a Claude `default` parent runs `untrusted` and may raise Approvals (#417) | **Not exercised.** The smoke pins `bypassPermissions`, and the child ran `never` with `danger-full-access`, unasked. |
 | Windows: the owner-only ACL on the MCP config file (#411) | Out of reach on this Linux machine. |
 
@@ -419,7 +419,7 @@ shows the same fold as in run 5:
 
 The Report smoke proves the Claude→Codex path end to end against the real
 CLIs. A Claude Agent finds the Broker's Tools from the appended note and calls
-them without an Approval. Suru spawns a brokered Codex Subagent in its own
+them without an Approval. Shaman spawns a brokered Codex Subagent in its own
 Session, in the parent's Execution Directory, at the posture derived for it,
 and opens its Transcript with the Delegation. The Subagent's row settles with
 its Turn. The Report wakes the settled Claude Agent into a Continuation on the

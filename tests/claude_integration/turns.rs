@@ -9,7 +9,7 @@ use crate::claude_integration::support::{
     silent_user_turn_arm,
 };
 use serde_json::Value;
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AgentSelection, Cost, CostBasis, CreateSessionRequest,
         InitialPrompt, MessageStatus, ModelId, ModelOptionChoiceId, ModelOptionId,
@@ -78,7 +78,7 @@ async fn a_terminal_result_records_claudes_usage_and_reported_cost_on_the_turn()
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -128,7 +128,7 @@ async fn a_terminal_result_without_cost_records_tokens_without_fabricating_zero_
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -176,7 +176,7 @@ async fn a_terminal_result_reporting_zero_cost_keeps_it_distinct_from_unknown() 
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -216,7 +216,7 @@ async fn a_prompt_streams_a_claude_message_into_the_transcript_and_settles_the_t
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -282,7 +282,7 @@ async fn a_prompt_streams_a_claude_message_into_the_transcript_and_settles_the_t
         arguments[position + 1].clone()
     };
     uuid::Uuid::parse_str(&flag_value("--session-id"))
-        .expect("the provider-session identifier is the UUID Suru minted");
+        .expect("the provider-session identifier is the UUID Shaman minted");
     assert_eq!(flag_value("--permission-mode"), "auto");
     assert_eq!(
         flag_value("--model"),
@@ -332,7 +332,7 @@ async fn a_turn_under_a_chosen_selection_spawns_the_child_with_its_model_and_eff
             session_id: None,
             preparation_id: None,
             agent_selection: Some(selection("middling", "low")),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -389,7 +389,7 @@ async fn a_failed_result_settles_the_turn_as_failed_with_the_clis_own_reason() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -448,7 +448,7 @@ async fn an_errored_success_result_settles_the_turn_as_failed_with_its_text() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -513,7 +513,7 @@ async fn a_second_prompt_runs_its_turn_on_the_same_long_lived_child() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -530,14 +530,14 @@ async fn a_second_prompt_runs_its_turn_on_the_same_long_lived_child() {
     client
         .admit_prompt(
             created.session.id,
-            suru::protocol::AdmitPromptRequest {
+            shaman::protocol::AdmitPromptRequest {
                 prompt: InitialPrompt {
                     id: PromptId::new(),
                     text: "Second".to_owned(),
                     skill_invocations: Vec::new(),
                     attachments: Vec::new(),
                 },
-                delivery: suru::protocol::PromptDelivery::Queue,
+                delivery: shaman::protocol::PromptDelivery::Queue,
             },
         )
         .await
@@ -597,7 +597,7 @@ async fn deleting_the_session_terminates_the_child_and_shutdown_stays_clean() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -651,7 +651,7 @@ async fn a_child_crash_mid_turn_fails_the_turn_and_keeps_what_streamed() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -719,7 +719,7 @@ async fn a_prompt_to_a_session_whose_discovery_fails_settles_its_turn_as_failed(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

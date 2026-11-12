@@ -1,5 +1,5 @@
 //! Codex collab threads as Subagents: a spawn item on the parent thread opens the inline row and
-//! a child Session, Suru attaches the child thread so its own items stream into that Session, a
+//! a child Session, Shaman attaches the child thread so its own items stream into that Session, a
 //! child completion arriving after the parent's turn completed settles the row rather than
 //! erroring, a child's own spawns recurse one level down, a delegation that starts another turn on
 //! a settled child's thread resumes it in its own Session — across a restart too — and one a
@@ -11,8 +11,7 @@ use crate::codex_integration::support::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::{Value, json};
-use std::sync::Arc;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SubagentTreeEvent},
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, ApprovalOutcome, CreateSessionRequest,
@@ -22,6 +21,7 @@ use suru::{
     provider::CodexRuntime,
     server::{self, ServerConfig},
 };
+use std::sync::Arc;
 use tokio::time::timeout;
 
 const CHILD_APPROVAL_IMMEDIATE_TERMINAL_CODEX: &str = r#"
@@ -144,7 +144,7 @@ async fn immediate_native_child_terminal_notifications_wait_for_decision_history
             .requests()
             .into_iter()
             .find(|message| message["id"] == "child-approval" && message.get("result").is_some())
-            .expect("Suru answers the child's native callback");
+            .expect("Shaman answers the child's native callback");
         assert_eq!(callback["result"], json!({"decision":"accept"}));
 
         opened.server.shutdown().await.expect("shut down server");
@@ -183,7 +183,7 @@ fn the_subagent_row(snapshot: &SessionSnapshot) -> &Activity {
 
 /// A collab spawn running in the foreground of the Turn, on the multi-agent wire shape whose
 /// items are `collabAgentToolCall`s: the spawn call completes naming the child thread and the
-/// prompt it was handed, Suru attaches the child, the child streams its own Message, the parent's
+/// prompt it was handed, Shaman attaches the child, the child streams its own Message, the parent's
 /// wait call reports the child settling, and the parent answers before its Turn completes.
 const COLLAB_SPAWN_CODEX: &str = r#"
     *'"method":"initialize"'*)
@@ -329,7 +329,7 @@ async fn a_collab_spawn_opens_the_row_and_the_child_session_fed_by_the_childs_ow
         .requests()
         .into_iter()
         .find(|request| request.get("method").and_then(Value::as_str) == Some("thread/resume"))
-        .expect("Suru attaches the child thread");
+        .expect("Shaman attaches the child thread");
     assert_eq!(
         resumed["params"]["threadId"], "child-thread",
         "the attach names the spawned child thread"
@@ -340,9 +340,9 @@ async fn a_collab_spawn_opens_the_row_and_the_child_session_fed_by_the_childs_ow
         .requests()
         .into_iter()
         .find(|request| request.get("method").and_then(Value::as_str) == Some("thread/start"))
-        .expect("Suru starts the parent's thread");
+        .expect("Shaman starts the parent's thread");
     assert!(
-        started["params"]["config"]["mcp_servers.suru"].is_object(),
+        started["params"]["config"]["mcp_servers.shaman"].is_object(),
         "the parent's thread is handed the Broker: {started}"
     );
     assert!(
@@ -453,10 +453,10 @@ const CHILD_TOOL_CALLS_CODEX: &str = r#"
       printf '%s\n' '{"method":"item/completed","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"mcpToolCall","id":"child-search","server":"github","tool":"search_code","status":"completed","arguments":{"query":"ProviderEvent"},"result":{"content":[{"type":"text","text":"src/provider.rs"}],"structuredContent":null},"error":null,"durationMs":8}}}'
       printf '%s\n' '{"method":"item/started","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"webSearch","id":"child-web","query":"","action":null}}}'
       printf '%s\n' '{"method":"item/completed","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"webSearch","id":"child-web","query":"codex app-server","action":{"type":"search","query":"codex app-server","queries":null}}}}'
-      printf '%s\n' '{"method":"item/started","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"mcpToolCall","id":"child-list","server":"suru","tool":"list_providers","status":"inProgress","arguments":{},"result":null,"error":null,"durationMs":null}}}'
-      printf '%s\n' '{"method":"item/completed","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"mcpToolCall","id":"child-list","server":"suru","tool":"list_providers","status":"completed","arguments":{},"result":{"content":[{"type":"text","text":"claude, codex"}],"structuredContent":null},"error":null,"durationMs":3}}}'
-      printf '%s\n' '{"method":"item/started","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"mcpToolCall","id":"child-spawn","server":"suru","tool":"spawn_subagent","status":"inProgress","arguments":{"provider":"claude","model":"opus","prompt":"Help."},"result":null,"error":null,"durationMs":null}}}'
-      printf '%s\n' '{"method":"item/completed","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"mcpToolCall","id":"child-spawn","server":"suru","tool":"spawn_subagent","status":"completed","arguments":{"provider":"claude","model":"opus","prompt":"Help."},"result":{"content":[{"type":"text","text":"spawned"}],"structuredContent":null},"error":null,"durationMs":6}}}'
+      printf '%s\n' '{"method":"item/started","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"mcpToolCall","id":"child-list","server":"shaman","tool":"list_providers","status":"inProgress","arguments":{},"result":null,"error":null,"durationMs":null}}}'
+      printf '%s\n' '{"method":"item/completed","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"mcpToolCall","id":"child-list","server":"shaman","tool":"list_providers","status":"completed","arguments":{},"result":{"content":[{"type":"text","text":"claude, codex"}],"structuredContent":null},"error":null,"durationMs":3}}}'
+      printf '%s\n' '{"method":"item/started","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"mcpToolCall","id":"child-spawn","server":"shaman","tool":"spawn_subagent","status":"inProgress","arguments":{"provider":"claude","model":"opus","prompt":"Help."},"result":null,"error":null,"durationMs":null}}}'
+      printf '%s\n' '{"method":"item/completed","params":{"threadId":"child-thread","turnId":"child-turn","item":{"type":"mcpToolCall","id":"child-spawn","server":"shaman","tool":"spawn_subagent","status":"completed","arguments":{"provider":"claude","model":"opus","prompt":"Help."},"result":{"content":[{"type":"text","text":"spawned"}],"structuredContent":null},"error":null,"durationMs":6}}}'
       printf '%s\n' '{"method":"turn/completed","params":{"threadId":"child-thread","turn":{"id":"child-turn","status":"completed","items":[]}}}'
       printf '%s\n' '{"method":"item/completed","params":{"threadId":"root-thread","turnId":"root-turn","item":{"type":"subAgentActivity","id":"activity-completed","kind":"completed","agentThreadId":"child-thread","agentPath":"/root/scout"}}}'
       printf '%s\n' '{"method":"turn/completed","params":{"threadId":"root-thread","turn":{"id":"root-turn","status":"completed","items":[]}}}'
@@ -524,7 +524,7 @@ async fn a_subagents_tool_calls_are_recorded_in_its_own_session() {
                 ActivityStatus::Completed,
             ),
             (
-                Some("suru"),
+                Some("shaman"),
                 "list_providers",
                 "",
                 "claude, codex",
@@ -1403,7 +1403,7 @@ fn notify(method: &str, params: Value) -> String {
     )
 }
 
-/// One scripted line sending Suru the server request `method`, under `id`.
+/// One scripted line sending Shaman the server request `method`, under `id`.
 fn server_request(id: &str, method: &str, params: Value) -> String {
     format!(
         "      printf '%s\\n' '{}'\n",
@@ -1412,7 +1412,7 @@ fn server_request(id: &str, method: &str, params: Value) -> String {
 }
 
 /// The scripted lines answering the request just read with `result`, under the id it carried —
-/// which depends on how many requests Suru made before it, attaches included.
+/// which depends on how many requests Shaman made before it, attaches included.
 fn answer(result: Value) -> String {
     format!(
         "      id=$(printf '%s' \"$line\" | sed -n 's/.*\"id\":\\([0-9]*\\).*/\\1/p')\n      printf '%s\\n' '{{\"id\":'\"$id\"',\"result\":{result}}}'\n"
@@ -1604,7 +1604,7 @@ fn fresh_input(turn: &Turn) -> Option<u64> {
         .and_then(|usage| usage.fresh_input_tokens)
 }
 
-/// How many times Suru attached the child's thread.
+/// How many times Shaman attached the child's thread.
 fn child_attaches(codex: &ScriptedCodex) -> usize {
     codex
         .requests()
@@ -1700,7 +1700,7 @@ fn resumed_by_send_script() -> String {
                 "command": "cargo metadata",
                 "cwd": "/fixture/work",
                 "status": "completed",
-                "aggregatedOutput": "suru\n",
+                "aggregatedOutput": "shaman\n",
                 "exitCode": 0,
             }),
         ),
@@ -1708,7 +1708,7 @@ fn resumed_by_send_script() -> String {
             "child-thread",
             "child-turn-2",
             "child-message-2",
-            "One binary: suru.",
+            "One binary: shaman.",
         ),
         child_reading("child-turn-2", 160),
         turn_completed("child-thread", "child-turn-2"),
@@ -1895,7 +1895,7 @@ async fn a_send_to_a_completed_child_resumes_it_in_its_own_session_as_a_second_t
                 "List the binaries.\nKeep it short.",
                 second.id,
             ),
-            (MessageRole::Agent, "One binary: suru.", second.id),
+            (MessageRole::Agent, "One binary: shaman.", second.id),
         ],
         "the second Turn opens with the send's prompt as a Delegation, and the child's Messages \
          land in the Turn they were said in"
@@ -1922,7 +1922,7 @@ async fn a_send_to_a_completed_child_resumes_it_in_its_own_session_as_a_second_t
     };
     assert_eq!([*command_turn, *approval_turn], [second.id; 2]);
     assert_eq!(*command_status, ActivityStatus::Completed);
-    assert_eq!(output, "suru\n");
+    assert_eq!(output, "shaman\n");
     assert_eq!(*outcome, ApprovalOutcome::Decided);
     assert_eq!(*decision, Some(Decision::Accept));
     assert_eq!(fresh_input(first), Some(100));
@@ -2613,7 +2613,7 @@ async fn a_send_after_a_restart_resumes_the_child_in_the_session_it_spawned_into
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

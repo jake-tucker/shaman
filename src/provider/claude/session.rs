@@ -6,14 +6,14 @@
 //! flags therefore runs on a child of its own — the running one is torn down and its replacement
 //! resumes the same conversation, so the change takes effect while the conversation continues.
 //!
-//! Suru mints the provider-session UUID and passes it at spawn, and that identifier is the whole
+//! Shaman mints the provider-session UUID and passes it at spawn, and that identifier is the whole
 //! of the Resume State: the CLI keeps the conversation on disk behind it, so a restored Session
 //! asks the CLI to resume it rather than to mint another. A resume the CLI cannot honor is fatal,
-//! as is Resume State Suru cannot read — a Session that quietly opened an empty conversation would
+//! as is Resume State Shaman cannot read — a Session that quietly opened an empty conversation would
 //! read as continuous while having forgotten everything.
 //!
 //! The child is launched under the Session's effective native permission mode, which later changes
-//! reach the same process over its control channel. Suru's stdio permission-prompt channel and the
+//! reach the same process over its control channel. Shaman's stdio permission-prompt channel and the
 //! Session's Workspace are carried with it, and so is the Broker, when the Session was handed it:
 //! each launch is pointed at an MCP config file of its own carrying the token this Session's
 //! Provider connection was handed, and allowlists the Broker's Tools ([`super::broker`]). A
@@ -31,7 +31,7 @@
 //! which also decides which result Settles a steered Turn.
 //!
 //! The background work an interrupt stops first is the running child's own: the CLI keeps its task
-//! roster per process, runs that work in the process group Suru stops as a whole, and announces
+//! roster per process, runs that work in the process group Shaman stops as a whole, and announces
 //! nothing it did not start itself. So the Session forgets the roster whenever it stops a child —
 //! for a Selection change as much as at shutdown — and an interrupt afterwards asks the new child
 //! to stop only the work it has reported. The child's output ends behind everything it wrote, and
@@ -79,17 +79,17 @@ use crate::{
     },
 };
 
-/// Everything Suru must remember about a Claude Session to continue it after a restart: the
-/// provider-session UUID Suru minted and spawned the CLI under, and the conversation every agent
+/// Everything Shaman must remember about a Claude Session to continue it after a restart: the
+/// provider-session UUID Shaman minted and spawned the CLI under, and the conversation every agent
 /// the Session spawned rides under. The CLI keeps the conversation on disk behind the UUID, which
 /// is all it needs; the agents are what the projection needs, since a resumed agent's start names
 /// only its task and the SendMessage that resumed it, never the spawn its conversation rides under.
 ///
-/// Suru reports this the moment the Session connects, while the CLI writes the conversation only
+/// Shaman reports this the moment the Session connects, while the CLI writes the conversation only
 /// once a Turn has run under the identifier. A Session whose every Turn failed before the CLI
 /// recorded anything therefore carries Resume State for a conversation that does not exist, and
 /// a later restart fails it the way any unhonorable resume is failed. That is the conservative
-/// end of the rule rather than an oversight: Suru cannot tell a conversation that was never
+/// end of the rule rather than an oversight: Shaman cannot tell a conversation that was never
 /// written from one the CLI has lost, and quietly minting a new one is what this Provider must
 /// never do. The agents are reported as each one spawns, through a Resume State revision.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -114,7 +114,7 @@ impl ClaudeResumeState {
     }
 }
 
-/// How a child addresses the provider session: minting the conversation under the identifier Suru
+/// How a child addresses the provider session: minting the conversation under the identifier Shaman
 /// generated, or continuing the one the CLI already keeps under it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ProviderSessionSpawn {
@@ -124,7 +124,7 @@ enum ProviderSessionSpawn {
 
 impl ProviderSessionSpawn {
     /// The CLI flag that names the provider session for this kind of spawn. Resuming is asked for
-    /// without `--fork-session`, which is what keeps the conversation under the identifier Suru
+    /// without `--fork-session`, which is what keeps the conversation under the identifier Shaman
     /// minted and so keeps the Resume State good for every later child.
     fn identity_flag(self) -> &'static str {
         match self {
@@ -161,7 +161,7 @@ pub(super) async fn start_claude_session(
         Some(crate::protocol::ApprovalPosture::Claude { permission_mode }) => *permission_mode,
         _ => permission_mode,
     };
-    // Read before anything is launched: Resume State Suru cannot read fails the startup outright
+    // Read before anything is launched: Resume State Shaman cannot read fails the startup outright
     // rather than after a discovery the Session will never use.
     let restored = restored_state(request.resume_state)?;
     // The Selection the Session reports before the user chooses one: the catalog default, which is
@@ -240,7 +240,7 @@ pub(super) async fn start_claude_session(
 }
 
 /// What `resume_state` restores — the provider session it names and the agents spawned in it — or
-/// nothing when the Suru Session has never reached Claude. Resume State Suru cannot read is a
+/// nothing when the Shaman Session has never reached Claude. Resume State Shaman cannot read is a
 /// failure rather than a reason to start over: the Session it belongs to has a conversation behind
 /// it that minting a fresh identifier would abandon while looking as though nothing was lost.
 fn restored_state(
@@ -289,7 +289,7 @@ struct ClaudeSession {
     executable: OsString,
     processes: ProcessRegistry,
     execution_directory: PathBuf,
-    /// The provider-session UUID Suru minted, which the child is spawned under.
+    /// The provider-session UUID Shaman minted, which the child is spawned under.
     provider_session_id: String,
     /// The Broker this Session's Provider connection was handed, which every child it launches is
     /// handed in turn. None while the Broker is off.
@@ -398,7 +398,7 @@ impl ClaudeSession {
 
     /// Stops every background task the CLI has reported running, so nothing the Turn spawned
     /// outlives the interrupt that follows it. One the CLI refuses or never answers is passed
-    /// over, because stopping the loop matters more than any single task and a task Suru could not
+    /// over, because stopping the loop matters more than any single task and a task Shaman could not
     /// stop is one the CLI still has on its roster.
     async fn stop_background_tasks(&self, transport: &StreamJsonTransport) {
         let _ = self.stop_tasks(transport, self.turn.live_tasks()).await;
@@ -408,7 +408,7 @@ impl ClaudeSession {
     /// timeout, and answers whether every one was acknowledged.
     ///
     /// A task the CLI acknowledges stopping is off its roster now: its own notification can lose
-    /// the race with whatever the caller does next, or never come at all. So it leaves Suru's
+    /// the race with whatever the caller does next, or never come at all. So it leaves Shaman's
     /// roster at once, and the conversation hears of it too, where a Watch among them settles as
     /// stopped — a Session must not stay Monitoring on a Watch the CLI has already let go of.
     async fn stop_tasks(
@@ -451,7 +451,7 @@ impl ClaudeSession {
     }
 }
 
-/// What a loop Suru begins on the CLI opens with: a Turn's Prompt — or whatever else begins a Turn
+/// What a loop Shaman begins on the CLI opens with: a Turn's Prompt — or whatever else begins a Turn
 /// in its place — or Claude's own `/compact`, run for a Compaction request.
 #[derive(Clone, Copy)]
 enum LoopOpening {
@@ -705,7 +705,7 @@ impl ProviderSession for ClaudeSession {
                 .await?;
             // A steer is another user message on the running loop's stdin, and nothing about one
             // says which Turn it joins: delivered to a Session running no Turn, the CLI would
-            // answer it as a Turn of its own that Suru never began. A Turn only ever runs on a
+            // answer it as a Turn of its own that Shaman never began. A Turn only ever runs on a
             // spawned child, so a Session without one is running none either. Whether the loop
             // folds the steer in at its next tool round or answers it with a loop of its own is
             // the CLI's to report, under the uuid the steer is written with.
@@ -757,9 +757,9 @@ impl ProviderSession for ClaudeSession {
                 .await
                 .map(|_receipt| ProviderInterruption::Stopped)
                 .map_err(|failure| {
-                    // An interrupt Suru could not deliver fails the Turn, so the Turn is over
+                    // An interrupt Shaman could not deliver fails the Turn, so the Turn is over
                     // whatever the loop does next: nothing the CLI still owes it is its to settle,
-                    // and a later steer must not join a Turn Suru has already closed.
+                    // and a later steer must not join a Turn Shaman has already closed.
                     self.turn.abandon_turn();
                     claude_error_context(CONTEXT, failure.into_error())
                 })
@@ -1262,7 +1262,7 @@ mod tests {
     }
 
     /// The highest metering totals only keep a later Turn from counting what an earlier one did,
-    /// so totals Suru cannot read cost the Session nothing it cannot do without (ADR 0022).
+    /// so totals Shaman cannot read cost the Session nothing it cannot do without (ADR 0022).
     #[test]
     fn resume_state_whose_metering_totals_are_unreadable_still_restores_the_conversation() {
         let state = ProviderResumeState::new(serde_json::json!({
@@ -1280,7 +1280,7 @@ mod tests {
     }
 
     #[test]
-    fn resume_state_suru_cannot_read_fails_rather_than_opening_a_new_conversation() {
+    fn resume_state_shaman_cannot_read_fails_rather_than_opening_a_new_conversation() {
         for unusable in [
             json!({}),
             json!({ "session_id": "" }),

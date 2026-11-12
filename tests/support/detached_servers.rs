@@ -1,4 +1,4 @@
-//! The detached Suru servers a test causes to launch through the real binary,
+//! The detached Shaman servers a test causes to launch through the real binary,
 //! owned so that they are gone when the test is, however it ends.
 //!
 //! A managed client launches its server in a process group of its own, on
@@ -22,7 +22,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use suru::{
+use shaman::{
     managed_client::ManagedClientConfig,
     protocol::{RuntimeDescriptor, ServerShutdown, ShutdownReason},
 };
@@ -32,8 +32,11 @@ use super::PROGRESS_DEADLINE;
 
 /// The variables that name each Provider's executable, every one of which a
 /// server launched under a [`DetachedServers`] finds pointed at nothing.
-const PROVIDER_PATH_VARIABLES: [&str; 3] =
-    ["SURU_CODEX_PATH", "SURU_COPILOT_PATH", "SURU_CLAUDE_PATH"];
+const PROVIDER_PATH_VARIABLES: [&str; 3] = [
+    "SHAMAN_CODEX_PATH",
+    "SHAMAN_COPILOT_PATH",
+    "SHAMAN_CLAUDE_PATH",
+];
 
 /// How long a server asked to stop is given to finish before it is killed. A
 /// test's server runs no real Provider, so one that has not finished well
@@ -45,22 +48,22 @@ const GRACEFUL_STOP: Duration = Duration::from_secs(2);
 /// directory that does not carry the token it was told.
 const MARKER_FILE: &str = ".detached-servers";
 
-/// An isolated state directory for the real `suru` binary, and everything a
+/// An isolated state directory for the real `shaman` binary, and everything a
 /// test launches against it. Dropped — at the end of the test, or while it
 /// unwinds from a panic — it takes all of it down before the directory goes:
 ///
-/// 1. Every Suru CLI or TUI process launched against the directory is killed
+/// 1. Every Shaman CLI or TUI process launched against the directory is killed
 ///    first, since either may launch a server of its own at any moment.
-/// 2. Every registered server is asked to stop, as `suru server stop` would
+/// 2. Every registered server is asked to stop, as `shaman server stop` would
 ///    ask it, so it takes its Providers down the way it always does, and is
 ///    given [`GRACEFUL_STOP`] to finish.
-/// 3. Every `suru __server` process launched against the directory that is
+/// 3. Every `shaman __server` process launched against the directory that is
 ///    still running is killed: the winner if it ignored the request, but also
 ///    whichever servers lost an election, replaced another, or never got as
 ///    far as registering, none of which the runtime descriptor names.
 ///
 /// Processes are identified by the directory itself — named in a server's
-/// arguments, or in `SURU_STATE_DIR` for a CLI or TUI — which every test
+/// arguments, or in `SHAMAN_STATE_DIR` for a CLI or TUI — which every test
 /// owns alone, so nothing another test or the user is running is touched.
 ///
 /// Nothing can launch a server once that is done. A managed client launches
@@ -95,7 +98,7 @@ impl Default for DetachedServers {
 
 /// What a Windows process needs to run at all, and that a test's temporary
 /// directories be where they are; nothing a shell adds, and none of it a way to
-/// the real user's Suru.
+/// the real user's Shaman.
 const CARRIED_THROUGH: &[&str] = if cfg!(windows) {
     &[
         "SystemRoot",
@@ -114,13 +117,13 @@ const CARRIED_THROUGH: &[&str] = if cfg!(windows) {
 };
 
 /// `program` isolated to `home`, with the whole environment cleared but for what
-/// [`CARRIED_THROUGH`] carries: whatever Suru comes to read from it is then what
+/// [`CARRIED_THROUGH`] carries: whatever Shaman comes to read from it is then what
 /// a test gave it, and never the real user's. This is what keeps every test's
 /// command from the real home and the Server on the machine, so each goes through
 /// here and adds what its own needs.
 ///
 /// Windows reads a user's home from the system, whatever `HOME` says, so there a
-/// command still knows the real one. What Suru does with it: `suru server install`
+/// command still knows the real one. What Shaman does with it: `shaman server install`
 /// writes it as text into a Task's definition, in a temporary file handed to the
 /// stand-in; a Workspace Root beginning with `~` expands beneath it, and these
 /// commands' Config Documents name none; and paths are spelled from it. Nothing
@@ -132,7 +135,7 @@ pub fn isolated_command(program: impl AsRef<OsStr>, home: &Path) -> tokio::proce
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join(".config"))
         // With no session's bus to reach, and never the real user's keyring.
-        .env("SURU_IDENTITY_STORE", "file")
+        .env("SHAMAN_IDENTITY_STORE", "file")
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
     for name in CARRIED_THROUGH {
@@ -160,12 +163,12 @@ impl DetachedServers {
     }
 
     /// A managed client for `channel` under [`Self::state_dir`] that launches
-    /// the tested `suru` binary, isolated as [`Self::isolate`] isolates one.
+    /// the tested `shaman` binary, isolated as [`Self::isolate`] isolates one.
     pub fn client_config(&self, channel: &str) -> ManagedClientConfig {
         self.isolate(
             ManagedClientConfig::new(self.state_dir(), channel)
                 .expect("configure managed client")
-                .with_server_executable(env!("CARGO_BIN_EXE_suru")),
+                .with_server_executable(env!("CARGO_BIN_EXE_shaman")),
         )
     }
 
@@ -190,15 +193,15 @@ impl DetachedServers {
         let state_dir = self.state_dir();
         let mut command = isolated_command(program, state_dir);
         command
-            .env("SURU_STATE_DIR", state_dir)
-            .env("SURU_DATA_DIR", state_dir)
-            .env("SURU_CONFIG_DIR", config_root)
-            .env("SURU_CHANNEL", channel)
+            .env("SHAMAN_STATE_DIR", state_dir)
+            .env("SHAMAN_DATA_DIR", state_dir)
+            .env("SHAMAN_CONFIG_DIR", config_root)
+            .env("SHAMAN_CHANNEL", channel)
             .envs(self.isolated_environment());
         command
     }
 
-    /// How many `suru __server` processes launched against the state
+    /// How many `shaman __server` processes launched against the state
     /// directory are running now: an election's winner, and every server
     /// still waiting in one or starting towards it.
     pub fn servers_running(&self) -> usize {
@@ -253,7 +256,7 @@ fn stop_launched_against(state_dir: &Path) -> Vec<Pid> {
     let mut processes = Processes::new();
 
     let clients =
-        processes.kill(|process| launched_against(process, directory) && is_suru_client(process));
+        processes.kill(|process| launched_against(process, directory) && is_shaman_client(process));
 
     let servers =
         processes.pids(|process| launched_against(process, directory) && is_server(process));
@@ -365,13 +368,13 @@ fn is_uncollected_group_leader(pid: libc::pid_t) -> bool {
 mod watcher;
 
 /// Whether `process` was launched against `state_dir`: a server is handed it
-/// as an argument, and a CLI or TUI finds it in `SURU_STATE_DIR`, which the
+/// as an argument, and a CLI or TUI finds it in `SHAMAN_STATE_DIR`, which the
 /// servers they launch inherit as well.
 fn launched_against(process: &sysinfo::Process, state_dir: &OsStr) -> bool {
     if process.pid() == Pid::from_u32(std::process::id()) {
         return false;
     }
-    let mut variable = OsString::from("SURU_STATE_DIR=");
+    let mut variable = OsString::from("SHAMAN_STATE_DIR=");
     variable.push(state_dir);
     process.cmd().iter().any(|argument| argument == state_dir)
         || process.environ().contains(&variable)
@@ -381,10 +384,10 @@ fn is_server(process: &sysinfo::Process) -> bool {
     process.cmd().iter().any(|argument| argument == "__server")
 }
 
-/// A Suru CLI or TUI: the tested binary run as anything but a server.
-fn is_suru_client(process: &sysinfo::Process) -> bool {
-    let suru = Path::new(env!("CARGO_BIN_EXE_suru")).file_name();
-    !is_server(process) && process.exe().and_then(Path::file_name) == suru
+/// A Shaman CLI or TUI: the tested binary run as anything but a server.
+fn is_shaman_client(process: &sysinfo::Process) -> bool {
+    let shaman = Path::new(env!("CARGO_BIN_EXE_shaman")).file_name();
+    !is_server(process) && process.exe().and_then(Path::file_name) == shaman
 }
 
 /// The runtime descriptors under `state_dir` — the `release` channel's at its
@@ -405,7 +408,7 @@ fn registered_servers(state_dir: &Path, servers: &[Pid]) -> Vec<RuntimeDescripto
         .collect()
 }
 
-/// Asks each of `servers` to stop, as `suru server stop` does, without
+/// Asks each of `servers` to stop, as `shaman server stop` does, without
 /// waiting to hear whether it will. The requests go out on a thread of their
 /// own: this runs on the test's runtime thread, which can neither block on a
 /// future nor start a runtime of its own.

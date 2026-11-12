@@ -956,10 +956,10 @@ mod tests {
             command
                 .env("GIT_CONFIG_NOSYSTEM", "1")
                 .env("GIT_CONFIG_GLOBAL", &self.configuration)
-                .env("GIT_AUTHOR_NAME", "Suru Test")
-                .env("GIT_AUTHOR_EMAIL", "suru@example.invalid")
-                .env("GIT_COMMITTER_NAME", "Suru Test")
-                .env("GIT_COMMITTER_EMAIL", "suru@example.invalid")
+                .env("GIT_AUTHOR_NAME", "Shaman Test")
+                .env("GIT_AUTHOR_EMAIL", "shaman@example.invalid")
+                .env("GIT_COMMITTER_NAME", "Shaman Test")
+                .env("GIT_COMMITTER_EMAIL", "shaman@example.invalid")
                 .output()
                 .unwrap()
         }

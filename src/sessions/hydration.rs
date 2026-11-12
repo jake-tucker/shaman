@@ -434,7 +434,7 @@ impl SessionStoreState {
 
 /// How the Activity of a Move a stop left standing with nothing pending says
 /// so.
-const MOVE_LOST_TO_A_STOP: &str = "Suru stopped before it could apply";
+const MOVE_LOST_TO_A_STOP: &str = "Shaman stopped before it could apply";
 
 /// Both eager in-memory fixtures and durable hydration use the same recovery
 /// rules for Prompt identity/order and historical Questionnaire availability.

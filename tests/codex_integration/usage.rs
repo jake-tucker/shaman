@@ -4,8 +4,7 @@ use crate::codex_integration::support::{ScriptedCodex, receive_initial_state};
 use crate::support::PROGRESS_DEADLINE;
 use axum::{Json, Router, routing::get};
 use serde_json::json;
-use std::sync::Arc;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     pricing::PricingSource,
     protocol::{
@@ -17,6 +16,7 @@ use suru::{
     provider::CodexRuntime,
     server::{self, ServerConfig},
 };
+use std::sync::Arc;
 use tokio::{
     net::TcpListener,
     time::{Duration, timeout},
@@ -288,7 +288,7 @@ fn first_turn_usage() -> Usage {
     }
 }
 
-/// A models.dev catalog serving one priced Model, and the Suru rate lookup
+/// A models.dev catalog serving one priced Model, and the Shaman rate lookup
 /// pointed at it. Tests asserting exact Costs begin with warm rates; cold and
 /// refreshing rates have separate fixtures. Each cache has its own directory.
 pub(super) async fn priced_lookup() -> (Arc<PricingSource>, tempfile::TempDir) {
@@ -408,7 +408,7 @@ async fn metered_session_with_pricing(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -490,7 +490,7 @@ async fn codex_cumulative_readings_become_per_turn_deltas_priced_from_the_rate_t
     assert_eq!(first.turns[0].status, TurnStatus::Completed);
     assert_eq!(
         first.session.context_fill,
-        Some(suru::protocol::ContextFill {
+        Some(shaman::protocol::ContextFill {
             occupied_tokens: 1350,
             capacity_tokens: Some(272_000)
         })
@@ -544,7 +544,7 @@ async fn codex_cumulative_readings_become_per_turn_deltas_priced_from_the_rate_t
     );
     assert_eq!(
         second.session.context_fill,
-        Some(suru::protocol::ContextFill {
+        Some(shaman::protocol::ContextFill {
             occupied_tokens: 2450,
             capacity_tokens: Some(272_000)
         })
@@ -1192,9 +1192,9 @@ async fn pricing_recovers_during_turn(refresh: bool) {
         loop {
             if pricing
                 .estimate_cached(
-                    &suru::pricing::ModelsDevModel::new(
+                    &shaman::pricing::ModelsDevModel::new(
                         "openai",
-                        suru::protocol::ModelId::new("priced-fixture"),
+                        shaman::protocol::ModelId::new("priced-fixture"),
                     ),
                     &first_turn_usage(),
                 )
@@ -1406,7 +1406,7 @@ async fn a_requested_compaction_is_recorded_and_priced_under_the_model_codex_com
     let turn = &compacted.turns[1];
     assert_eq!(
         turn.compaction_requested,
-        Some(suru::protocol::CompactionRequest::Manual)
+        Some(shaman::protocol::CompactionRequest::Manual)
     );
     assert_eq!(turn.status, TurnStatus::Completed);
     assert_eq!(
@@ -1446,7 +1446,7 @@ async fn a_requested_compaction_is_recorded_and_priced_under_the_model_codex_com
 
 #[tokio::test]
 async fn codex_states_its_models_cache_rates_from_the_rate_table_it_estimates_costs_from() {
-    use suru::{pricing::CacheRates, provider::ProviderRuntime};
+    use shaman::{pricing::CacheRates, provider::ProviderRuntime};
 
     let (pricing, _cache) = priced_lookup().await;
     let codex = CodexRuntime::new("codex").with_pricing_source(pricing);

@@ -9,7 +9,7 @@ use blake3::Hasher;
 
 const HASH_BUFFER_SIZE: usize = 64 * 1024;
 
-/// Read the compilation marker from the configured executable's small Suru section.
+/// Read the compilation marker from the configured executable's small Shaman section.
 ///
 /// Every compilation of the binary mints a new marker; copying, signing or
 /// stripping debug information preserves it. This is build compatibility metadata,
@@ -19,7 +19,7 @@ const HASH_BUFFER_SIZE: usize = 64 * 1024;
 pub fn for_executable(path: impl AsRef<Path>) -> Result<String> {
     let path = path.as_ref();
     let mut executable = File::open(path)
-        .with_context(|| format!("open Suru executable for build identity: {path:?}"))?;
+        .with_context(|| format!("open Shaman executable for build identity: {path:?}"))?;
     if let Some(identity) = embedded_identity(&mut executable) {
         return Ok(identity);
     }
@@ -31,7 +31,7 @@ pub fn for_executable(path: impl AsRef<Path>) -> Result<String> {
     loop {
         let bytes_read = executable
             .read(&mut buffer)
-            .with_context(|| format!("read Suru executable for build identity: {path:?}"))?;
+            .with_context(|| format!("read Shaman executable for build identity: {path:?}"))?;
         if bytes_read == 0 {
             break;
         }
@@ -41,7 +41,7 @@ pub fn for_executable(path: impl AsRef<Path>) -> Result<String> {
 }
 
 pub fn for_current_executable() -> Result<String> {
-    let executable = std::env::current_exe().context("find current Suru executable")?;
+    let executable = std::env::current_exe().context("find current Shaman executable")?;
     for_executable(executable)
 }
 
@@ -78,11 +78,11 @@ fn section_identity<'a>(
         return None;
     }
     let record = data.read_bytes_at(offset, 32).ok()?;
-    if &record[..16] != b"SURU_BUILD_ID_V1" || record[16..].iter().all(|byte| *byte == 0) {
+    if &record[..16] != b"SHAMAN_BUILD_ID1" || record[16..].iter().all(|byte| *byte == 0) {
         return None;
     }
     let id = uuid::Uuid::from_slice(&record[16..]).ok()?;
-    Some(format!("suru-build-v1:{}", id.simple()))
+    Some(format!("shaman-build-v1:{}", id.simple()))
 }
 
 fn elf_identity<'a, Elf: object::read::elf::FileHeader>(
@@ -92,7 +92,7 @@ fn elf_identity<'a, Elf: object::read::elf::FileHeader>(
     let header = Elf::parse(data).ok()?;
     let endian = header.endian().ok()?;
     let sections = header.sections(endian, data).ok()?;
-    let (_, section) = sections.section_by_name(endian, b".suru")?;
+    let (_, section) = sections.section_by_name(endian, b".shaman")?;
     section_identity(data, section.file_range(endian)?)
 }
 
@@ -106,7 +106,7 @@ fn macho_identity<'a, Mach: object::read::macho::MachHeader>(
     while let Some(command) = commands.next().ok()? {
         if let Some((segment, bytes)) = Mach::Segment::from_command(command).ok()? {
             for section in segment.sections(endian, bytes).ok()? {
-                if section.name() == b"__suru" {
+                if section.name() == b"__shaman" {
                     return section_identity(data, section.file_range(endian)?);
                 }
             }
@@ -123,7 +123,7 @@ fn pe_identity<'a, Pe: object::read::pe::ImageNtHeaders>(
     let mut offset = dos.nt_headers_offset().into();
     let (header, _) = Pe::parse(data, &mut offset).ok()?;
     for section in header.sections(data, offset).ok()?.iter() {
-        if &section.name == b".suru\0\0\0" {
+        if &section.name == b".shaman\0" {
             return section_identity(
                 data,
                 (

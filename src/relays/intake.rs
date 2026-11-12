@@ -9,7 +9,9 @@
 //! thing not cleaned: an address that needed cleaning is not where they should
 //! go, so the login offering it is refused.
 
-use suru_relay_protocol::{Account, ListedLogin, MAX_LISTED_HOSTNAME_CHARS, Refusal, RelayMessage};
+use shaman_relay_protocol::{
+    Account, ListedLogin, MAX_LISTED_HOSTNAME_CHARS, Refusal, RelayMessage,
+};
 
 use crate::shown_text::{shown, unseen};
 
@@ -135,7 +137,7 @@ fn login_address(address: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use suru_relay_protocol::Bytes;
+    use shaman_relay_protocol::Bytes;
 
     use super::*;
 
@@ -147,7 +149,7 @@ mod tests {
     fn every_refusal_is_held_to_the_rule_keeping_why_it_was_refused() {
         let wire = serde_json::to_string(&RelayMessage::Refused {
             refusal: Refusal::CapReached {
-                cap: suru_relay_protocol::Cap::JoinedConnections,
+                cap: shaman_relay_protocol::Cap::JoinedConnections,
                 limit: 3,
             },
             message: format!("{HOSTILE}at its cap\n\tof three{HOSTILE}"),
@@ -157,7 +159,7 @@ mod tests {
             told(&wire),
             Some(RelayMessage::Refused {
                 refusal: Refusal::CapReached {
-                    cap: suru_relay_protocol::Cap::JoinedConnections,
+                    cap: shaman_relay_protocol::Cap::JoinedConnections,
                     limit: 3,
                 },
                 message: "at its cap of three".to_owned(),

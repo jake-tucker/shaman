@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use suru::{
+use shaman::{
     protocol::{
         AgentSelection, ProviderId, SkillCatalog, SkillCatalogCapabilities, SkillCatalogStatus,
         SkillDescriptor, SkillId, SkillPromptDelivery,
@@ -42,7 +42,7 @@ impl ProviderRuntime for FailingProviderRuntime {
         .collect();
         let catalog = SkillCatalog {
             provider: self.provider_id(),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             skills,

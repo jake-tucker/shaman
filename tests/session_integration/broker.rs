@@ -1,4 +1,4 @@
-//! The Broker: Suru's own Tools, served as a streamable-HTTP MCP endpoint on
+//! The Broker: Shaman's own Tools, served as a streamable-HTTP MCP endpoint on
 //! the Server's loopback listener and reached with the bearer token a Session's
 //! Provider start request carried (ADR 0034).
 //!
@@ -13,7 +13,7 @@ use std::{path::Path, sync::Arc};
 
 use reqwest::StatusCode;
 use serde_json::{Value, json};
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, AgentId, AgentIdentity, AgentSelection,
         ApprovalPosture, ContextFill, Cost, CostBasis, CreateSessionRequest, Delegator,
@@ -307,7 +307,7 @@ async fn host_providers_with_timings(
         channel,
         config_dir,
         timings,
-        Arc::new(suru::source_control::GitSourceControl::default()),
+        Arc::new(shaman::source_control::GitSourceControl::default()),
     )
     .await
 }
@@ -319,7 +319,7 @@ async fn host_providers_with_source_control(
     channel: &str,
     config_dir: Option<&Path>,
     timings: ServerTimings,
-    source_control: Arc<dyn suru::source_control::SourceControl>,
+    source_control: Arc<dyn shaman::source_control::SourceControl>,
 ) -> HostedProviders {
     let (claude_runtime, claude) =
         ControlledProvider::with_provider(ProviderId::new("claude"), claude_models());
@@ -394,7 +394,7 @@ fn session_request(
         session_id: None,
         preparation_id: None,
         agent_selection: Some(selection),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -523,7 +523,7 @@ async fn a_session_lists_every_hosted_provider_through_the_broker_with_the_token
     let mut client = McpClient::handed(&claude_handoff);
     let initialized = client.initialize().await;
     assert_eq!(initialized["protocolVersion"], json!(MCP_PROTOCOL_VERSION));
-    assert_eq!(initialized["serverInfo"]["name"], json!("suru"));
+    assert_eq!(initialized["serverInfo"]["name"], json!("shaman"));
     assert!(
         initialized["capabilities"]["tools"].is_object(),
         "the Broker offers Tools: {initialized}"
@@ -642,7 +642,7 @@ async fn a_session_lists_every_hosted_provider_through_the_broker_with_the_token
         "in words the Agent reads: {refused}"
     );
 
-    // Availability is reported as Suru last found it: a second call, from the
+    // Availability is reported as Shaman last found it: a second call, from the
     // other Session, asks no Provider for its Models again.
     let asked = model_discoveries(&hosted);
     let mut codex_client = McpClient::handed(&codex_handoff);
@@ -734,7 +734,7 @@ async fn a_disabled_provider_is_listed_as_turned_off_and_never_asked_for_its_mod
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         "{ \"provider\": { \"codex\": { \"enabled\": false } } }\n",
     )
     .expect("write Config Document");
@@ -767,7 +767,7 @@ async fn a_disabled_provider_is_listed_as_turned_off_and_never_asked_for_its_mod
             "models": [],
         }),
         "a Provider the user turned off is listed as their choice, with no \
-         Availability because Suru never looked"
+         Availability because Shaman never looked"
     );
     assert_eq!(listing["providers"][0], listed_claude());
     assert_eq!(
@@ -1064,12 +1064,12 @@ async fn nothing_about_the_broker_is_written_into_the_runtime_descriptor() {
 
 /// What every spawn below asks its Subagent to do.
 const DELEGATION: &str =
-    "Find every seam where a Provider plugs into Suru, and say which file holds each.";
+    "Find every seam where a Provider plugs into Shaman, and say which file holds each.";
 
 /// The Delegation as the Subagent's Provider receives it: one leading line
 /// naming the delegating Agent, then what it asked.
 fn delegated_by(delegator: &str) -> String {
-    format!("Delegated to you through Suru by {delegator}.\n\n{DELEGATION}")
+    format!("Delegated to you through Shaman by {delegator}.\n\n{DELEGATION}")
 }
 
 /// `spawn_subagent`'s arguments for a Subagent named Researcher on
@@ -1226,8 +1226,8 @@ async fn read_until(
 async fn a_spawned_brokered_subagent_is_a_child_session_on_the_agent_selection_it_named() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let mut delegating = delegating(state_dir.path(), "broker-spawn-child", None).await;
-    let workspace =
-        suru::paths::canonical(delegating.hosted.workspace.path()).expect("canonicalize Workspace");
+    let workspace = shaman::paths::canonical(delegating.hosted.workspace.path())
+        .expect("canonicalize Workspace");
 
     let child_id = delegating
         .client
@@ -1686,7 +1686,7 @@ async fn a_spawn_on_a_provider_or_model_that_cannot_be_chosen_is_refused_in_word
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         "{ \"provider\": { \"codex\": { \"enabled\": false } } }\n",
     )
     .expect("write Config Document");
@@ -1700,7 +1700,7 @@ async fn a_spawn_on_a_provider_or_model_that_cannot_be_chosen_is_refused_in_word
     for (arguments, says) in [
         (
             researcher("codex", "gpt-5.5", json!({})),
-            "Provider `codex` is turned off in Suru",
+            "Provider `codex` is turned off in Shaman",
         ),
         (
             researcher("copilot", "gpt-4.1", json!({})),
@@ -1709,7 +1709,7 @@ async fn a_spawn_on_a_provider_or_model_that_cannot_be_chosen_is_refused_in_word
         ),
         (
             researcher("gemini", "pro", json!({})),
-            "Suru hosts no Provider `gemini`; the Providers it hosts are `claude`, `codex`, \
+            "Shaman hosts no Provider `gemini`; the Providers it hosts are `claude`, `codex`, \
              `copilot`",
         ),
         (
@@ -2213,7 +2213,7 @@ async fn a_stopping_server_settles_a_brokered_subagents_turn_and_its_row_with_it
     assert!(child.activities.iter().any(|activity| matches!(
         activity,
         Activity::Error { text, .. }
-            if text == "Provider execution failed: Suru stopped the Provider Session before the Turn completed."
+            if text == "Provider execution failed: Shaman stopped the Provider Session before the Turn completed."
     )));
     let caller = read_session(&descriptor, caller_id).await;
     let (status, duration_ms) = row_status(&caller, child_id);
@@ -2260,7 +2260,7 @@ async fn a_restart_settles_a_brokered_subagents_open_turn_failed_and_its_row_wit
     };
     assert!(
         *brokered,
-        "the row read back from storage still says Suru spawned the Subagent through the Broker"
+        "the row read back from storage still says Shaman spawned the Subagent through the Broker"
     );
     assert_eq!(caller.working_since(), None);
     assert_eq!(caller.session.status, SessionStatus::Idle);
@@ -2284,7 +2284,7 @@ fn reopen_every_turn(state_dir: &Path, channel: &str, caller_id: SessionId) {
     use diesel::{Connection, RunQueryDsl, SqliteConnection};
     let config = ServerConfig::new(state_dir, channel).expect("configure server");
     let mut database =
-        SqliteConnection::establish(config.data_dir().join("suru.db").to_str().unwrap()).unwrap();
+        SqliteConnection::establish(config.data_dir().join("shaman.db").to_str().unwrap()).unwrap();
     diesel::sql_query(
         "UPDATE turns SET payload = json_set(payload, '$.status', 'active', '$.settled_at', json('null'))",
     )
@@ -2922,7 +2922,7 @@ async fn reading_an_id_that_is_not_a_brokered_subagent_beneath_the_caller_is_ref
         (json!({ "id": strangers }), beneath),
         (json!({ "id": native_id }), beneath),
         (json!({ "id": delegating.caller }), beneath),
-        (json!({ "id": SessionId::new() }), "Suru holds no Session"),
+        (json!({ "id": SessionId::new() }), "Shaman holds no Session"),
         (
             json!({ "id": "the Researcher" }),
             "`id` must be the session_id spawn_subagent answered with",

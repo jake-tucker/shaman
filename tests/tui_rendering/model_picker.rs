@@ -8,7 +8,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use suru::{
+use shaman::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
         AgentSelection, AppearanceSettings, EffectiveSettings, ModelAdvisory,
@@ -57,7 +57,7 @@ fn provider_icons_decorate_agent_summaries_on_the_landing_and_in_sessions() {
         deliver_settings(&mut landing, settings.clone());
         let ApplicationTransition::ListModels(request) = landing
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::ModelList,
+                shaman::tui::SemanticCommandId::ModelList,
             )))
             .expect("open the landing model picker")
         else {
@@ -78,7 +78,7 @@ fn provider_icons_decorate_agent_summaries_on_the_landing_and_in_sessions() {
                 .expect("select the provider's model"),
             ApplicationTransition::ConfirmLandingAgentSelection(_)
         ));
-        let landing_frame = rendered_application_rows_at(&landing, 100, 16).join("\n");
+        let landing_frame = rendered_application_rows_at(&landing, 104, 16).join("\n");
         assert!(
             landing_frame.contains(&format!("{icon} {display_name} · Fixture model")),
             "the landing summary identifies {display_name}: {landing_frame}"
@@ -111,7 +111,7 @@ fn provider_icons_decorate_agent_summaries_on_the_landing_and_in_sessions() {
 
 #[test]
 fn remote_session_names_follow_its_pushed_catalog_without_opening_models() {
-    use suru::protocol::Outlook;
+    use shaman::protocol::Outlook;
 
     let workspace = workspace_dir();
     let mut application = Application::new(workspace.path(), Default::default());
@@ -196,7 +196,7 @@ fn restored_selection_label_takes_the_name_its_catalog_gives_it() {
 
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {
@@ -258,7 +258,7 @@ fn reselected_model_adopts_catalog_presentation_after_an_interval_without_an_age
 
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {
@@ -304,7 +304,7 @@ fn model_picker_hands_off_to_ordered_options_and_applies_complete_landing_select
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {
@@ -466,13 +466,13 @@ fn model_picker_hands_off_to_ordered_options_and_applies_complete_landing_select
             provider: ProviderId::new("codex"),
             model: ModelId::new("gpt-configurable"),
             options: vec![
-                suru::protocol::ModelOptionSelection {
+                shaman::protocol::ModelOptionSelection {
                     id: ModelOptionId::new("reasoning_effort"),
                     value: ModelOptionValue::Select {
                         choice: ModelOptionChoiceId::new("high"),
                     },
                 },
-                suru::protocol::ModelOptionSelection {
+                shaman::protocol::ModelOptionSelection {
                     id: ModelOptionId::new("fast"),
                     value: ModelOptionValue::Toggle { enabled: true },
                 },
@@ -486,7 +486,7 @@ fn landing_model_picker_groups_sorts_focuses_and_searches_models() {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {
@@ -584,7 +584,7 @@ fn landing_model_picker_groups_sorts_focuses_and_searches_models() {
     assert!(matches!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::ModelList,
+                shaman::tui::SemanticCommandId::ModelList,
             )))
             .expect("reopen cached picker and request background refresh"),
         ApplicationTransition::ListModels(_)
@@ -599,7 +599,7 @@ fn open_model_picker_merges_refreshes_stably_and_isolates_provider_failures() {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {
@@ -729,7 +729,7 @@ fn open_model_picker_merges_refreshes_stably_and_isolates_provider_failures() {
     assert!(matches!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::ModelList,
+                shaman::tui::SemanticCommandId::ModelList,
             )))
             .expect("reopen from the latest normalized cache"),
         ApplicationTransition::ListModels(_)
@@ -744,7 +744,7 @@ fn model_picker_refresh_failure_preserves_the_visible_selection() {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {
@@ -811,7 +811,7 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
         .expect("attach selected session");
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open session model picker")
     else {
@@ -940,19 +940,19 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
     else {
         panic!("applying a session model's options should update agent selection");
     };
-    assert_eq!(updated_session.origin, suru::protocol::Outlook::Local);
+    assert_eq!(updated_session.origin, shaman::protocol::Outlook::Local);
     assert_eq!(updated_session.session_id, session_id);
     assert_eq!(request.selection.model, ModelId::new("new"));
     assert_eq!(
         request.selection.options,
         vec![
-            suru::protocol::ModelOptionSelection {
+            shaman::protocol::ModelOptionSelection {
                 id: ModelOptionId::new("reasoning_effort"),
                 value: ModelOptionValue::Select {
                     choice: ModelOptionChoiceId::new("high"),
                 },
             },
-            suru::protocol::ModelOptionSelection {
+            shaman::protocol::ModelOptionSelection {
                 id: ModelOptionId::new("fast"),
                 value: ModelOptionValue::Toggle { enabled: true },
             },
@@ -966,7 +966,7 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
     assert!(matches!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::ModelList,
+                shaman::tui::SemanticCommandId::ModelList,
             )))
             .expect("reopen picker around optimistic model"),
         ApplicationTransition::ListModels(_)
@@ -1004,7 +1004,7 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionList,
+                shaman::tui::SemanticCommandId::SessionList,
             )))
             .expect("block navigation during optimistic selection"),
         ApplicationTransition::Continue
@@ -1012,7 +1012,7 @@ fn session_model_selection_is_provider_scoped_optimistic_and_rolls_back_locally(
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionNew,
+                shaman::tui::SemanticCommandId::SessionNew,
             )))
             .expect("block /new during optimistic selection"),
         ApplicationTransition::Continue
@@ -1056,7 +1056,7 @@ fn landing_model_selection_and_new_session_inherit_complete_agent_selection() {
     let mut application = Application::new(workspace.path(), Default::default());
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open landing model picker")
     else {
@@ -1140,7 +1140,7 @@ fn landing_model_selection_and_new_session_inherit_complete_agent_selection() {
     let inherited = AgentSelection {
         provider: ProviderId::new("codex"),
         model: ModelId::new("inherited"),
-        options: vec![suru::protocol::ModelOptionSelection {
+        options: vec![shaman::protocol::ModelOptionSelection {
             id: ModelOptionId::new("reasoning_effort"),
             value: ModelOptionValue::Select {
                 choice: ModelOptionChoiceId::new("medium"),
@@ -1156,7 +1156,7 @@ fn landing_model_selection_and_new_session_inherit_complete_agent_selection() {
     assert_eq!(
         attached
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionNew,
+                shaman::tui::SemanticCommandId::SessionNew,
             )))
             .expect("start inherited /new flow"),
         ApplicationTransition::DetachSession
@@ -1193,7 +1193,7 @@ fn open_model_picker_refocuses_on_an_authoritative_multi_client_update() {
         .expect("attach observing client");
     let ApplicationTransition::ListModels(request) = observer
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open observer model picker")
     else {
@@ -1316,7 +1316,7 @@ fn model_picker_shows_an_unavailable_provider_with_its_reason_and_refuses_select
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {
@@ -1433,7 +1433,7 @@ fn model_picker_shows_an_unavailable_provider_with_its_reason_and_refuses_select
 }
 
 /// A disabled Provider is the opposite of an unavailable one here: it draws no
-/// row at all rather than keeping its place with a retry row, because Suru
+/// row at all rather than keeping its place with a retry row, because Shaman
 /// never consulted it and decluttering the list is half of what the Setting is
 /// for.
 #[test]
@@ -1441,7 +1441,7 @@ fn model_picker_draws_no_row_at_all_for_a_provider_the_user_turned_off() {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {
@@ -1541,7 +1541,7 @@ fn model_picker_keeps_an_unavailable_provider_with_no_models_in_the_list() {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {
@@ -1614,7 +1614,7 @@ fn model_picker_names_what_fixes_an_unavailable_provider_beneath_its_retry_row()
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {
@@ -1682,7 +1682,7 @@ fn picker_over_three_uninstalled_providers() -> Application {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {
@@ -1769,7 +1769,7 @@ fn narrowing_the_terminal_keeps_the_focused_retry_row_and_its_fix_in_view() {
 fn a_retry_row_taller_than_the_picker_keeps_the_end_of_its_fix_in_view() {
     let mut application = picker_over_three_uninstalled_providers();
     let mut settings = EffectiveSettings::default();
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
     deliver_settings(&mut application, settings);
     key(&mut application, KeyCode::Down);
     key(&mut application, KeyCode::Down);
@@ -1799,7 +1799,7 @@ fn model_picker_shows_provider_display_names_from_the_catalog() {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {
@@ -1897,7 +1897,7 @@ fn open_on_thirty_models() -> Application {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {
@@ -2118,7 +2118,7 @@ fn picker_on(catalog: ModelCatalog) -> Application {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker")
     else {

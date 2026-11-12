@@ -1,6 +1,6 @@
 //! Starting a Channel's Server when its user logs in (ADR 0063).
 //!
-//! `suru server install` registers, for one Channel, a Login start with the
+//! `shaman server install` registers, for one Channel, a Login start with the
 //! machine's own service manager: a LaunchAgent on macOS, a systemd user unit
 //! on Linux, a Scheduled Task at logon on Windows. What each is told to run is
 //! the same command, the Channel's Keeper (`managed_client::keep_server`), and
@@ -152,11 +152,11 @@ impl LoginStart {
     }
 }
 
-/// `suru server install`: registers the Login start of `config`'s Channel, and
+/// `shaman server install`: registers the Login start of `config`'s Channel, and
 /// answers what to tell the user.
 pub fn install(config: &ManagedClientConfig, stand_in: ServiceManagerStandIn) -> Result<String> {
     let login_start = LoginStart::for_this_user(config.channel(), stand_in.clone())?;
-    let current = std::env::current_exe().context("find current Suru executable")?;
+    let current = std::env::current_exe().context("find current Shaman executable")?;
     let path_variable = std::env::var_os("PATH");
     let (executable, short_lived) =
         registered_executable(&current, path_variable.as_deref(), &std::env::temp_dir());
@@ -188,7 +188,7 @@ pub fn install(config: &ManagedClientConfig, stand_in: ServiceManagerStandIn) ->
     ))
 }
 
-/// `suru server uninstall`: removes the Login start of `channel`, and answers
+/// `shaman server uninstall`: removes the Login start of `channel`, and answers
 /// what to tell the user.
 pub fn uninstall(channel: &str, stand_in: ServiceManagerStandIn) -> Result<String> {
     let login_start = LoginStart::for_this_user(channel, stand_in)?;
@@ -269,7 +269,7 @@ mod test_support {
     /// A Keeper command with the awkward spellings every format must carry.
     pub(super) fn awkward_keep() -> KeepCommand {
         KeepCommand {
-            program: "/Users/jo smith/R&D <x>/suru".to_owned(),
+            program: "/Users/jo smith/R&D <x>/shaman".to_owned(),
             arguments: vec![
                 KEEPER_COMMAND.to_owned(),
                 "--state-dir".to_owned(),

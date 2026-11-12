@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use rcgen::{KeyPair, PublicKeyData, SigningKey};
-use suru_relay::{Identity, ScriptedProvider};
-use suru_relay_protocol::{Bytes, Refusal, RelayMessage, SPOKEN, ServerMessage, proof_message};
+use shaman_relay::{Identity, ScriptedProvider};
+use shaman_relay_protocol::{Bytes, Refusal, RelayMessage, SPOKEN, ServerMessage, proof_message};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, DuplexStream},
     net::TcpStream,

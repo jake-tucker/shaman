@@ -36,7 +36,7 @@ use super::{MARKER_FILE, Processes, launched_against, stop_launched_against};
 
 /// Set, to the test process's identity, in the environment of the test
 /// binary re-executed as the watcher.
-const WATCHER_VARIABLE: &str = "SURU_DETACHED_SERVERS_WATCHER";
+const WATCHER_VARIABLE: &str = "SHAMAN_DETACHED_SERVERS_WATCHER";
 
 /// How often the watcher looks to see whether the test process is still
 /// running, while it waits to be told anything more.
@@ -111,7 +111,7 @@ fn launch() -> Watcher {
         .stderr(Stdio::null());
     // Launched as a managed client launches a server, so it inherits none of
     // a runner's output handles to hold open through its sweep.
-    let mut process = suru::managed_client::launch_detached(&mut command)
+    let mut process = shaman::managed_client::launch_detached(&mut command)
         .expect("launch the detached server watcher");
     let told = process.stdin.take().expect("the watcher's stdin is piped");
     Watcher {

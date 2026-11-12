@@ -3,7 +3,7 @@
 //! Print mode is the CLI's native one-shot, and so the path ADR 0011 prefers: one Prompt on stdin,
 //! one result object on stdout, and a process that ends. It takes the schema natively — the CLI
 //! enforces it and hands back the answer already parsed — so Claude never falls back to starting a
-//! Provider-side session and discarding it, and never leaves a Suru Session behind either way.
+//! Provider-side session and discarding it, and never leaves a Shaman Session behind either way.
 //! Nothing here goes near the stream-json transport every Session is driven over; the run is the
 //! provider-neutral one-shot the harness machinery offers, so abandoning the wait — at the Errand's
 //! deadline or on shutdown — takes the process tree down with it.
@@ -11,15 +11,15 @@
 //! An Errand is not a Turn, and the launch says so in every flag it carries. It disables the
 //! built-in Tools outright and starts no MCP servers, so a call made to name a Session cannot read
 //! a file, run a command, or change the Workspace; and it persists no conversation, so nothing it
-//! touches can be resumed — by Suru, by the user's own CLI, or by anything else. It also leaves the
-//! user's personal and project settings unloaded: an Errand is Suru's own work, not an ordinary
+//! touches can be resumed — by Shaman, by the user's own CLI, or by anything else. It also leaves the
+//! user's personal and project settings unloaded: an Errand is Shaman's own work, not an ordinary
 //! user Session (ADR 0013). What it deliberately does *not* carry is permission bypass: with no
 //! Tools there is nothing to permit, and an Errand that skips permissions would be a call the user
 //! never asked for running with more authority than the work they did ask for.
 //!
 //! What the launch does take from the Session is its Workspace, as the working directory, so a
 //! Workspace still scopes whatever repository content the toolless Prompt itself carries, without
-//! giving Suru's own call the hooks, MCP servers, plugins, and overrides configured for user work.
+//! giving Shaman's own call the hooks, MCP servers, plugins, and overrides configured for user work.
 
 use std::ffi::OsString;
 
@@ -188,7 +188,7 @@ mod tests {
         );
     }
 
-    /// Errands are Suru-owned, toolless work and therefore load no personal or project settings.
+    /// Errands are Shaman-owned, toolless work and therefore load no personal or project settings.
     #[test]
     fn print_mode_isolated_from_personal_and_project_settings() {
         let setting_sources = CLAUDE_PRINT_MODE_ARGS
@@ -311,7 +311,7 @@ mod tests {
             "is_error": false,
             "result": "Here is a title for you!",
         }));
-        let failed = errand_answer(&printed).expect_err("prose is not the shape Suru asked for");
+        let failed = errand_answer(&printed).expect_err("prose is not the shape Shaman asked for");
         assert!(
             failed.to_string().contains("outside the schema"),
             "{failed}"
@@ -342,7 +342,7 @@ mod tests {
             "result": "Here is a title for you!",
         })
         .to_string();
-        let error = errand_answer(&printed).expect_err("prose is not the shape Suru asked for");
+        let error = errand_answer(&printed).expect_err("prose is not the shape Shaman asked for");
         assert!(error.to_string().contains("outside the schema"), "{error}");
     }
 

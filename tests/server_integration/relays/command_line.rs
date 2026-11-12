@@ -1,4 +1,4 @@
-//! `suru relay` and `suru serve`, through the real binary, against a real
+//! `shaman relay` and `shaman serve`, through the real binary, against a real
 //! Server it starts as a Client would and a real Relay whose identity provider
 //! the test scripts.
 //!
@@ -13,15 +13,15 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use suru::cli;
-use suru::managed_client::ManagedEvent;
-use suru::protocol::{
+use shaman::cli;
+use shaman::managed_client::ManagedEvent;
+use shaman::protocol::{
     InviteOfferAnswer, InviteRelays, InviteStanding, InviteState, IssueInviteRequest,
     OfferInviteRequest, RedeemInviteRequest, RelayLoginLead, RelayLoginOutcome, RelayLoginStanding,
     RelayMachinesAnswer, ServingChange, SettingMutation, Way, WayLeftOut,
 };
-use suru::server::ServerTimings;
-use suru_relay::{SCRIPTED_VERIFICATION_URI, ScriptedProvider};
+use shaman::server::ServerTimings;
+use shaman_relay::{SCRIPTED_VERIFICATION_URI, ScriptedProvider};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::{Child, ChildStdout, Command},
@@ -66,7 +66,7 @@ impl Machine {
     }
 
     fn document(&self) -> PathBuf {
-        self.config_root().join("suru.jsonc")
+        self.config_root().join("shaman.jsonc")
     }
 
     /// Has the Config Document say `settings`, as a hand or a rollout would.
@@ -85,46 +85,46 @@ impl Machine {
         command
     }
 
-    /// `suru <arguments>` on this machine, as a script there would run it.
-    fn suru(&self, arguments: &[&str]) -> Command {
-        let mut command = self.isolated(env!("CARGO_BIN_EXE_suru"));
+    /// `shaman <arguments>` on this machine, as a script there would run it.
+    fn shaman(&self, arguments: &[&str]) -> Command {
+        let mut command = self.isolated(env!("CARGO_BIN_EXE_shaman"));
         command.args(arguments);
         command
     }
 
     async fn run(&self, arguments: &[&str]) -> Output {
-        timeout(PROGRESS_DEADLINE * 2, self.suru(arguments).output())
+        timeout(PROGRESS_DEADLINE * 2, self.shaman(arguments).output())
             .await
-            .unwrap_or_else(|_| panic!("`suru {arguments:?}` did not settle"))
-            .expect("run suru")
+            .unwrap_or_else(|_| panic!("`shaman {arguments:?}` did not settle"))
+            .expect("run shaman")
     }
 
-    /// Runs `suru <arguments>`, failing the test should it not succeed.
+    /// Runs `shaman <arguments>`, failing the test should it not succeed.
     async fn succeed(&self, arguments: &[&str]) -> Output {
         let output = self.run(arguments).await;
         assert_eq!(
             output.status.code(),
             Some(SUCCESS),
-            "`suru {arguments:?}` failed: {}",
+            "`shaman {arguments:?}` failed: {}",
             said(&output.stderr)
         );
         output
     }
 
-    /// Runs `suru <arguments>`, failing the test should it not exit `code`.
+    /// Runs `shaman <arguments>`, failing the test should it not exit `code`.
     async fn exits(&self, code: i32, arguments: &[&str]) -> Output {
         let output = self.run(arguments).await;
         assert_eq!(
             output.status.code(),
             Some(code),
-            "`suru {arguments:?}` exited otherwise: {}{}",
+            "`shaman {arguments:?}` exited otherwise: {}{}",
             said(&output.stdout),
             said(&output.stderr)
         );
         output
     }
 
-    /// `suru relay list --json`, parsed.
+    /// `shaman relay list --json`, parsed.
     async fn listing(&self) -> Value {
         let output = self.succeed(&["relay", "list", "--json"]).await;
         serde_json::from_slice(&output.stdout).expect("the listing is JSON")
@@ -151,13 +151,13 @@ impl Machine {
             .unwrap_or_else(|_| panic!("the Relay at {address} never read {state}"));
     }
 
-    /// `suru relay login <address>`, under way, its streams piped.
+    /// `shaman relay login <address>`, under way, its streams piped.
     fn begin_login(&self, address: &str) -> Child {
-        self.suru(&["relay", "login", address])
+        self.shaman(&["relay", "login", address])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .expect("run suru relay login")
+            .expect("run shaman relay login")
     }
 
     /// Adds the Relay at `address` and logs in there through the command line,
@@ -201,7 +201,7 @@ fn said(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
-/// Reads the line `suru relay login` printed on standard output, answering the
+/// Reads the line `shaman relay login` printed on standard output, answering the
 /// address and the code it says.
 async fn shown_login(login: &mut Child) -> (String, String) {
     let stdout = login.stdout.as_mut().expect("standard output is piped");
@@ -223,12 +223,12 @@ fn parsed_login(line: &str) -> (String, String) {
     (address.to_owned(), code.to_owned())
 }
 
-/// Waits for `suru relay login` to end.
+/// Waits for `shaman relay login` to end.
 async fn settled(login: Child) -> Output {
     timeout(PROGRESS_DEADLINE * 2, login.wait_with_output())
         .await
         .expect("the login's command ends with the login")
-        .expect("wait for suru relay login")
+        .expect("wait for shaman relay login")
 }
 
 /// The ways of an Invite as `--json` lists them, each as `kind address`.
@@ -316,7 +316,7 @@ async fn a_headless_machine_goes_from_nothing_to_an_invite_that_redeems() {
     let invite = invite
         .strip_suffix('\n')
         .expect("the Invite is one line, newline-terminated");
-    assert!(invite.starts_with("suru-v"), "{invite}");
+    assert!(invite.starts_with("shaman-v"), "{invite}");
     assert!(!invite.contains('\n'), "only the Invite: {invite}");
     assert!(!invite.contains('\u{1b}'), "no colour: {invite}");
 
@@ -349,7 +349,7 @@ async fn a_headless_machine_goes_from_nothing_to_an_invite_that_redeems() {
 }
 
 /// This is what keeps these commands from the real home and the Server on this
-/// machine: a command here has exactly what it was given, so a variable Suru
+/// machine: a command here has exactly what it was given, so a variable Shaman
 /// comes to read cannot reach the real user's by being forgotten.
 #[cfg(unix)]
 #[tokio::test]
@@ -372,21 +372,26 @@ async fn a_machines_commands_carry_nothing_of_the_shell_that_ran_the_test() {
         vec![
             "HOME",
             "NO_PROXY",
-            "SURU_CHANNEL",
-            "SURU_CLAUDE_PATH",
-            "SURU_CODEX_PATH",
-            "SURU_CONFIG_DIR",
-            "SURU_COPILOT_PATH",
-            "SURU_DATA_DIR",
-            "SURU_IDENTITY_STORE",
-            "SURU_STATE_DIR",
+            "SHAMAN_CHANNEL",
+            "SHAMAN_CLAUDE_PATH",
+            "SHAMAN_CODEX_PATH",
+            "SHAMAN_CONFIG_DIR",
+            "SHAMAN_COPILOT_PATH",
+            "SHAMAN_DATA_DIR",
+            "SHAMAN_IDENTITY_STORE",
+            "SHAMAN_STATE_DIR",
             "USERPROFILE",
             "XDG_CONFIG_HOME",
         ],
         "{printed}"
     );
     let state_dir = machine.servers.state_dir().to_string_lossy().into_owned();
-    for name in ["HOME", "SURU_STATE_DIR", "SURU_DATA_DIR", "SURU_CONFIG_DIR"] {
+    for name in [
+        "HOME",
+        "SHAMAN_STATE_DIR",
+        "SHAMAN_DATA_DIR",
+        "SHAMAN_CONFIG_DIR",
+    ] {
         assert!(
             printed.contains(&format!("{name}={state_dir}")),
             "{name} is this machine's: {printed}"
@@ -400,11 +405,11 @@ async fn a_machines_commands_carry_nothing_of_the_shell_that_ran_the_test() {
 fn the_docs_show_the_commands_and_the_statuses_that_are_tested() {
     let docs = include_str!("../../../docs/relay/README.md");
     for line in [
-        "suru relay add https://relay.example.com",
-        "suru relay login https://relay.example.com",
+        "shaman relay add https://relay.example.com",
+        "shaman relay login https://relay.example.com",
         "#   Visit https://github.com/login/device and enter the code WDJB-MJHT",
-        "suru relay serve-through https://relay.example.com on",
-        "INVITE=$(suru serve invite --no-addresses)",
+        "shaman relay serve-through https://relay.example.com on",
+        "INVITE=$(shaman serve invite --no-addresses)",
     ] {
         assert!(docs.lines().any(|shown| shown == line), "{line}");
     }
@@ -675,11 +680,11 @@ async fn a_login_nobody_finishes_lapses_by_its_own_exit_status() {
 
     let output = timeout(
         PROGRESS_DEADLINE * 2,
-        machine.suru(&["relay", "login", &address]).output(),
+        machine.shaman(&["relay", "login", &address]).output(),
     )
     .await
     .expect("a login that expires ends")
-    .expect("run suru relay login");
+    .expect("run shaman relay login");
     assert_eq!(
         output.status.code(),
         Some(LOGIN_LAPSED),
@@ -724,11 +729,11 @@ async fn killing_the_command_leaves_the_login_under_way_where_a_client_finds_it(
     assert_eq!(found_code, code, "the same login, still under way");
 
     // A Client attached to the same Server finds it, by the Server's own list.
-    let client = suru::managed_client::ManagedClient::connect(
+    let client = shaman::managed_client::ManagedClient::connect(
         machine
             .servers
             .client_config(machine.channel)
-            .with_identity_store(suru::IdentityStoreChoice::File),
+            .with_identity_store(shaman::IdentityStoreChoice::File),
     )
     .await
     .expect("attach a Client");
@@ -771,7 +776,7 @@ async fn interrupting_the_command_says_the_login_goes_on_and_exits_as_interrupte
     assert_eq!(settled(found).await.status.code(), Some(SUCCESS));
 }
 
-/// `suru relay login | head -1`: whatever reads the line goes, and the command
+/// `shaman relay login | head -1`: whatever reads the line goes, and the command
 /// follows the login to its end all the same. The address and the code share
 /// that one line, so whoever read it has both.
 #[tokio::test]
@@ -826,7 +831,7 @@ async fn a_standard_output_closed_before_the_line_leaves_it_on_standard_error() 
     let status = timeout(PROGRESS_DEADLINE * 2, login.wait())
         .await
         .expect("the command ends with the login")
-        .expect("wait for suru relay login");
+        .expect("wait for shaman relay login");
     assert_eq!(status.code(), Some(SUCCESS));
 }
 
@@ -1014,17 +1019,17 @@ async fn an_invite_no_reader_takes_is_a_failure_and_goes_nowhere_else() {
         .await;
 
     let mut issuing = machine
-        .suru(&["serve", "invite", "--no-addresses"])
+        .shaman(&["serve", "invite", "--no-addresses"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("run suru serve invite");
+        .expect("run shaman serve invite");
     drop(issuing.stdout.take());
     let output = settled(issuing).await;
     assert_eq!(output.status.code(), Some(FAILED));
     let told = said(&output.stderr);
     assert!(told.contains("could not print the invite"), "{told}");
-    assert!(!told.contains("suru-v"), "{told}");
+    assert!(!told.contains("shaman-v"), "{told}");
 }
 
 #[tokio::test]
@@ -1043,7 +1048,7 @@ async fn a_pinned_relay_is_listed_as_pinned_and_refuses_its_removal() {
         .as_str()
         .expect("the document is named")
         .to_owned();
-    assert!(pinned_in.ends_with("suru.jsonc"), "{pinned_in}");
+    assert!(pinned_in.ends_with("shaman.jsonc"), "{pinned_in}");
     let shown = said(&machine.succeed(&["relay", "list"]).await.stdout);
     assert!(shown.contains(&pinned_in), "{shown}");
 
@@ -1169,7 +1174,7 @@ async fn an_invite_issued_again_replaces_the_one_before_it() {
         .expect_err("the earlier Invite is replaced");
     assert_eq!(
         super::error_code(&refused),
-        suru::protocol::SessionErrorCode::InviteSuperseded
+        shaman::protocol::SessionErrorCode::InviteSuperseded
     );
     laptop.shutdown().await;
 }
@@ -1411,7 +1416,7 @@ async fn each_command_starts_a_server_as_a_client_would_and_says_so_on_standard_
 
     let started = machine.succeed(&["relay", "list", "--json"]).await;
     let told = said(&started.stderr);
-    assert!(told.contains("Started a Suru server"), "{told}");
+    assert!(told.contains("Started a Shaman server"), "{told}");
     assert!(
         serde_json::from_slice::<Value>(&started.stdout).is_ok(),
         "standard output is the listing alone"
@@ -1423,7 +1428,7 @@ async fn each_command_starts_a_server_as_a_client_would_and_says_so_on_standard_
     // A stop holds a Keeper back, and no Client: one starts a Server again.
     machine.succeed(&["server", "stop"]).await;
     let after_stop = machine.succeed(&["relay", "list"]).await;
-    assert!(said(&after_stop.stderr).contains("Started a Suru server"));
+    assert!(said(&after_stop.stderr).contains("Started a Shaman server"));
 }
 
 #[tokio::test]
@@ -1556,7 +1561,7 @@ async fn the_server_says_why_an_invite_cannot_be_issued_in_no_clients_words() {
             WayLeftOut::NoRelayHeld,
         ]
     );
-    assert!(!format!("{nothing:?}").contains("suru "), "{nothing:?}");
+    assert!(!format!("{nothing:?}").contains("shaman "), "{nothing:?}");
 
     let not_held = server
         .client
@@ -1766,7 +1771,7 @@ async fn a_client_is_told_of_an_invite_replaced_or_expired_by_any_hand() {
         "no token and no code"
     );
 
-    // By whichever hand: this one is the route `suru serve invite` comes to.
+    // By whichever hand: this one is the route `shaman serve invite` comes to.
     let second = server.client.issue_invite(issue(vec![at])).await.unwrap();
     assert!(second.serial > first.serial);
     told_invite(&mut server, |told| told.serial == second.serial).await;

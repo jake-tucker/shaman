@@ -13,5 +13,5 @@ A Sidekick may answer a Questionnaire, because an Answer is input rather than co
 
 - Adding delete, Approvals, or posture to a Sidekick later reopens this decision rather than extending a list.
 - The exclusions are enforced where the Tools are served, and for a Remote's Sidekick Workspace by the Remote, not by instructions to the Agent.
-- The bound is on Tools and stops at the file. An Agent able to write Suru's Config Document reaches the Settings its Tools withhold at the next start, though no sooner: neither a running Server nor a change it makes adopts that edit (ADR-0067, which says what stands in the way and what remains).
-- It stops at the shell too. An Agent able to run commands as the user can run `suru serve invite` and `suru relay`, which reach what its Tools withhold, by the same loopback token any process of that user can read (ADR-0068, which says what stands in the way and what remains).
+- The bound is on Tools and stops at the file. An Agent able to write Shaman's Config Document reaches the Settings its Tools withhold at the next start, though no sooner: neither a running Server nor a change it makes adopts that edit (ADR-0067, which says what stands in the way and what remains).
+- It stops at the shell too. An Agent able to run commands as the user can run `shaman serve invite` and `shaman relay`, which reach what its Tools withhold, by the same loopback token any process of that user can read (ADR-0068, which says what stands in the way and what remains).

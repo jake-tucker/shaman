@@ -1,4 +1,4 @@
-//! `suru relay` and `suru serve`: a thin Client over the routes `/relay` and
+//! `shaman relay` and `shaman serve`: a thin Client over the routes `/relay` and
 //! `/serve` use, for a machine with no one at its screen. Whatever would make
 //! them differ from those surfaces is the Server's to decide: what an Invite
 //! offers, what is turned on for it, and whether a login begins.
@@ -78,7 +78,7 @@ pub fn exit_status_help() -> String {
 }
 
 /// What turns Serving on, for a reader at a command line.
-const TURNS_SERVING_ON: &str = "`suru serve invite`";
+const TURNS_SERVING_ON: &str = "`shaman serve invite`";
 
 /// The Server's Relays, as `/relay` manages them.
 #[derive(Debug, Subcommand)]
@@ -234,27 +234,27 @@ fn way_left_out_said(way: &WayLeftOut) -> String {
                 format!("it holds {}", held.join(", "))
             };
             format!(
-                "This server holds no relay at {address}: {holds}. `suru relay add {address}` \
+                "This server holds no relay at {address}: {holds}. `shaman relay add {address}` \
                  adds it"
             )
         }
         WayLeftOut::NoRelayHeld => {
-            "This server holds no relay; `suru relay add <address>` adds one".to_owned()
+            "This server holds no relay; `shaman relay add <address>` adds one".to_owned()
         }
         WayLeftOut::RelayLoginNeeded { relay } if pending(relay) => format!(
-            "The relay at {address} needs a login, and one is under way: `suru relay login \
+            "The relay at {address} needs a login, and one is under way: `shaman relay login \
              {address}` shows it",
             address = relay.address
         ),
         WayLeftOut::RelayLoginNeeded { relay } => format!(
-            "The relay at {address} cannot be offered: {standing}. `suru relay login {address}` \
+            "The relay at {address} cannot be offered: {standing}. `shaman relay login {address}` \
              logs in there",
             address = relay.address,
             standing = relay_said::relay_standing(relay)
         ),
         WayLeftOut::RelayNotServedThrough { address } => format!(
             "This server does not serve through the relay at {address}, so an invite cannot \
-             offer it. `suru relay serve-through {address} on` makes this machine reachable \
+             offer it. `shaman relay serve-through {address} on` makes this machine reachable \
              through it"
         ),
         WayLeftOut::ListenerOff => "The serving listener is off (serving.listener), so this \
@@ -341,7 +341,7 @@ async fn reach_server(config: ManagedClientConfig, err: &mut dyn Write) -> Optio
                 say(
                     err,
                     &format!(
-                        "Started a Suru server on the `{channel}` channel (pid {})",
+                        "Started a Shaman server on the `{channel}` channel (pid {})",
                         health.identity.pid
                     ),
                 );
@@ -355,7 +355,7 @@ async fn reach_server(config: ManagedClientConfig, err: &mut dyn Write) -> Optio
     }
 }
 
-/// A Relay as `suru relay list --json` says it: the command line's own shape,
+/// A Relay as `shaman relay list --json` says it: the command line's own shape,
 /// which `docs/relay/README.md` documents, so that nothing renamed on the Server's
 /// own API changes what a script reads. It holds nothing secret: no login's code.
 #[derive(Debug, Serialize)]
@@ -412,11 +412,11 @@ fn listed(relay: &Relay) -> ListedRelay<'_> {
 
 /// What the plain listing says of `relay`: its address, how it stands and is
 /// Served through, and what pins it. A login under way is said to be, and its
-/// code left to `suru relay login`, since a listing is what lands in a log.
+/// code left to `shaman relay login`, since a listing is what lands in a log.
 fn listing_lines(relay: &Relay, serving: bool) -> String {
     let standing = if pending(relay) {
         format!(
-            "Login under way; `suru relay login {}` shows its code",
+            "Login under way; `shaman relay login {}` shows its code",
             relay.address
         )
     } else {
@@ -443,7 +443,7 @@ async fn list(
     if listing.relays.is_empty() && !json {
         say(
             err,
-            "This server holds no relay; `suru relay add <address>` adds one",
+            "This server holds no relay; `shaman relay add <address>` adds one",
         );
         return Ok(SUCCESS);
     }
@@ -475,7 +475,7 @@ async fn add(client: &ManagedClient, address: &str, err: &mut dyn Write) -> Resu
             say(
                 err,
                 &format!(
-                    "Nothing connects there until `suru relay login {}`",
+                    "Nothing connects there until `shaman relay login {}`",
                     relay.address
                 ),
             );
@@ -555,14 +555,14 @@ async fn log_in(
             Err(error) => {
                 say(err, &format!(
                     "Error: Stopped following the login at {address}: {error:#}. A login ends \
-                     with its server; `suru relay login {address}` says where it stands"
+                     with its server; `shaman relay login {address}` says where it stands"
                 ));
                 FAILED
             }
         }),
         () = interrupt.arrives() => {
             say(err, &format!(
-                "Left the login at {address} under way: it goes on at the server, where `suru \
+                "Left the login at {address} under way: it goes on at the server, where `shaman \
                  relay login {address}` and /relay find it"
             ));
             Ok(INTERRUPTED)
@@ -627,7 +627,7 @@ fn login_not_begun(error: &anyhow::Error, address: &str, err: &mut dyn Write) ->
 
 /// What is said of an address the Server holds no Relay at.
 fn not_held(address: &str) -> String {
-    format!("Error: This server holds no relay at {address}; `suru relay add {address}` adds it")
+    format!("Error: This server holds no relay at {address}; `shaman relay add {address}` adds it")
 }
 
 /// Says how a followed login ended, answering the status.
@@ -640,7 +640,7 @@ fn login_ended(address: &str, login: &RelayLogin, err: &mut dyn Write) -> u8 {
             say(
                 err,
                 &format!(
-                    "Logging in opens nothing: `suru relay serve-through {address} on` makes \
+                    "Logging in opens nothing: `shaman relay serve-through {address} on` makes \
                      this machine reachable through this relay"
                 ),
             );
@@ -679,7 +679,7 @@ async fn serve_through(
         say(
             err,
             &format!(
-                "It stops waiting there, and its login stands: `suru relay remove {}` forgets it",
+                "It stops waiting there, and its login stands: `shaman relay remove {}` forgets it",
                 relay.address
             ),
         );
@@ -731,7 +731,7 @@ async fn remove(client: &ManagedClient, address: &str, err: &mut dyn Write) -> R
     }
 }
 
-/// An Invite as `suru serve invite --json` says it: the command line's own
+/// An Invite as `shaman serve invite --json` says it: the command line's own
 /// shape, as [`ListedRelay`] is.
 #[derive(Debug, Serialize)]
 struct PrintedInvite<'a> {
@@ -890,7 +890,7 @@ mod tests {
                 username: "octocat".to_owned(),
             }),
             serve_through: true,
-            pinned_in: Some("~/.config/suru/suru.jsonc".to_owned()),
+            pinned_in: Some("~/.config/shaman/shaman.jsonc".to_owned()),
             ..relay("https://b.example")
         };
         let printed = serde_json::to_value(Listing {
@@ -919,7 +919,7 @@ mod tests {
                         "unreachable_reason": "the relay stopped answering",
                         "serve_through": true,
                         "login_under_way": false,
-                        "pinned_in": "~/.config/suru/suru.jsonc",
+                        "pinned_in": "~/.config/shaman/shaman.jsonc",
                     },
                 ],
             })
@@ -935,7 +935,7 @@ mod tests {
             lines.contains("Serves through once serving is on"),
             "{lines}"
         );
-        assert!(lines.contains("~/.config/suru/suru.jsonc"), "{lines}");
+        assert!(lines.contains("~/.config/shaman/shaman.jsonc"), "{lines}");
     }
 
     #[test]
@@ -970,7 +970,7 @@ mod tests {
     fn offered(short_code: Option<ShortCode>) -> OfferedInvite {
         OfferedInvite {
             issued: IssuedInvite {
-                invite: "suru-v1-secret".into(),
+                invite: "shaman-v1-secret".into(),
                 serial: 1,
                 ways: vec![Way::Relay("https://a.example".to_owned())],
                 short_code: short_code.map(|code| IssuedShortCode { code, serial: 1 }),
@@ -997,9 +997,9 @@ mod tests {
             &mut err,
         );
         assert_eq!(status, SUCCESS);
-        assert_eq!(said(&out), "suru-v1-secret\n", "the invite alone");
+        assert_eq!(said(&out), "shaman-v1-secret\n", "the invite alone");
         assert!(said(&err).contains("K7QF-2MXP"), "{}", said(&err));
-        assert!(!said(&err).contains("suru-v1-secret"));
+        assert!(!said(&err).contains("shaman-v1-secret"));
 
         let (mut out, mut err) = (Vec::new(), Vec::new());
         print_invite(
@@ -1009,7 +1009,7 @@ mod tests {
             &mut out,
             &mut err,
         );
-        assert_eq!(said(&out), "suru-v1-secret\n");
+        assert_eq!(said(&out), "shaman-v1-secret\n");
         assert!(!said(&err).contains("K7QF-2MXP"), "{}", said(&err));
         assert!(said(&err).contains("--json"), "{}", said(&err));
     }
@@ -1027,7 +1027,7 @@ mod tests {
         assert_eq!(
             serde_json::from_slice::<serde_json::Value>(&out).unwrap(),
             json!({
-                "invite": "suru-v1-secret",
+                "invite": "shaman-v1-secret",
                 "ways": [{ "kind": "relay", "address": "https://a.example" }],
                 "short_code": "K7QF-2MXP",
             })
@@ -1061,7 +1061,7 @@ mod tests {
         );
         assert_eq!(status, FAILED);
         assert!(said(&err).contains("could not print the invite"));
-        assert!(!said(&err).contains("suru-v1-secret"));
+        assert!(!said(&err).contains("shaman-v1-secret"));
     }
 
     #[test]

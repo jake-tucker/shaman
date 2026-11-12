@@ -89,7 +89,7 @@ mod tests {
     use super::*;
 
     const CODEX_LIKE: ProviderEnvironment = ProviderEnvironment {
-        carried: &["SURU_CODEX_PATH", "CODEX_HOME"],
+        carried: &["SHAMAN_CODEX_PATH", "CODEX_HOME"],
         uncarried_prefixes: &["OPENAI_"],
     };
 
@@ -100,7 +100,7 @@ mod tests {
         let shell = |name: &str| {
             let value = match name {
                 "PATH" => "/opt/bin",
-                "SURU_CODEX_PATH" => "/opt/codex",
+                "SHAMAN_CODEX_PATH" => "/opt/codex",
                 "CODEX_HOME" => "",
                 "ANTHROPIC_API_KEY" => "secret",
                 "AWS_SECRET_ACCESS_KEY" => "secret",
@@ -113,7 +113,7 @@ mod tests {
             carried_environment(&[CODEX_LIKE], shell).unwrap(),
             [
                 ("PATH".to_owned(), "/opt/bin".to_owned()),
-                ("SURU_CODEX_PATH".to_owned(), "/opt/codex".to_owned()),
+                ("SHAMAN_CODEX_PATH".to_owned(), "/opt/codex".to_owned()),
             ],
         );
     }
@@ -122,7 +122,7 @@ mod tests {
     /// variables go no further than the shell.
     #[test]
     fn what_each_provider_declares_is_what_is_carried_for_it() {
-        let shell = |name: &str| (name == "SURU_CODEX_PATH").then(|| OsString::from("/codex"));
+        let shell = |name: &str| (name == "SHAMAN_CODEX_PATH").then(|| OsString::from("/codex"));
         assert!(carried_environment(&[], shell).unwrap().is_empty());
         assert_eq!(carried_environment(&[CODEX_LIKE], shell).unwrap().len(), 1);
     }
@@ -139,7 +139,7 @@ mod tests {
             "SSH_AUTH_SOCK",
             "XDG_CONFIG_HOME",
             "CODEX_HOME",
-            "SURU_CODEX_PATH",
+            "SHAMAN_CODEX_PATH",
             "OPENAI_API_KEY",
             "OPENAI_BASE_URL",
             "CODEX_API_KEY",
@@ -189,7 +189,7 @@ mod tests {
             );
         }
         for carried in [
-            "SURU_CLAUDE_PATH",
+            "SHAMAN_CLAUDE_PATH",
             "CLAUDE_CONFIG_DIR",
             "COPILOT_HOME",
             "CODEX_HOME",

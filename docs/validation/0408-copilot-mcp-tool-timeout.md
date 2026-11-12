@@ -4,7 +4,7 @@ Captured 2026-09-27 against GitHub Copilot CLI **1.0.88** (`/usr/bin/copilot`,
 signed in), through the pinned `github-copilot-sdk` **1.0.15-preview.3**, with
 Model `gpt-5-mini`. The official SDK checkout was at
 `d106d29dc6c5112da2abdae59008571b6692f12b`. `examples/broker_harness_capture.rs
-copilot slow` started a CLI through the SDK, as Suru's Copilot Provider does,
+copilot slow` started a CLI through the SDK, as Shaman's Copilot Provider does,
 and created one Session:
 
 ```rust
@@ -80,7 +80,7 @@ id. The `data` it received, trimmed:
 
 An approve-once answer produced `permission.completed` with
 `{"result": {"kind": "approved"}}`, and the call went out about 2 ms later.
-Suru's handler reads `permissionRequest`. Under the ask posture it would raise
+Shaman's handler reads `permissionRequest`. Under the ask posture it would raise
 an Approval with the subject `MCP capture/capture-echo_context`; under allowAll
 it approves without asking.
 
@@ -100,14 +100,14 @@ it approves without asking.
 
 ## Decision
 
-The Broker relies on the per-server `timeout` in `mcp_servers.suru` on
+The Broker relies on the per-server `timeout` in `mcp_servers.shaman` on
 `create_session` and every `resume_session`, set to 900000, together with a
 progress notification every 30 s while a call waits. Progress keeps resetting
 the deadline, and the `timeout` gives any stretch without progress 900 s rather
 than 180 s, which is above the 600 s ceiling of `wait_subagents`.
 
-Suru's own permission handler approves, before any posture check, a request
-whose `permissionRequest` has `kind: "mcp"` and `serverName: "suru"`. Copilot
+Shaman's own permission handler approves, before any posture check, a request
+whose `permissionRequest` has `kind: "mcp"` and `serverName: "shaman"`. Copilot
 asks it for every Broker call, a Subagent's included.
 
 **Fallback:** progress alone carries a call past the 180 s default (run 4), so

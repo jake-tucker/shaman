@@ -1,6 +1,6 @@
 //! Native ephemeral context snapshots through Server updates and durable Session state.
 use crate::copilot_integration::support::{conversation_fixture, hosting, session_where};
-use suru::protocol::{
+use shaman::protocol::{
     Activity, ContextFill, CreateSessionRequest, InitialPrompt, PromptId, TurnStatus,
 };
 
@@ -36,7 +36,7 @@ async fn ephemeral_context_is_live_independent_replaceable_and_durable() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -171,7 +171,7 @@ async fn context_tracks_a_continuation_and_its_post_idle_snapshot() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -226,7 +226,7 @@ async fn failed_start_keeps_context_invalidated(reject_send: bool) {
     use crate::copilot_integration::support::{
         ScriptedCopilot, connect, conversation_arms, send_arm, titling_turned_off,
     };
-    use suru::{
+    use shaman::{
         protocol::{
             AdmitPromptRequest, AgentSelection, AgentSelectionOperationId, ModelId, PromptDelivery,
             ProviderId, UpdateAgentSelectionRequest,
@@ -283,7 +283,7 @@ async fn failed_start_keeps_context_invalidated(reject_send: bool) {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

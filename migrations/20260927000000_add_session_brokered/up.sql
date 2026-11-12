@@ -1,4 +1,4 @@
--- Whether this Session is a brokered Subagent's: one Suru spawned through the
+-- Whether this Session is a brokered Subagent's: one Shaman spawned through the
 -- Broker, on a Provider the delegating Agent chose, rather than one the
 -- delegating Agent's own Provider spawned. A brokered Subagent's conversation
 -- runs on a Provider actor of its own instead of riding its spawner's (ADR

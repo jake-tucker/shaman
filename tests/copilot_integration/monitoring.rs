@@ -12,11 +12,11 @@ use crate::copilot_integration::support::{
     Opened, ScriptedCopilot, agent_messages, conversation_arms, opened_session, opened_session_on,
     send_arm, session_where, settled_session,
 };
-use suru::protocol::{
+use shaman::protocol::{
     Activity, AdmitPromptRequest, InitialPrompt, InterruptOutcome, PromptDelivery, PromptId,
     SessionSnapshot, SessionStatus, TranscriptItem, TurnStatus, WatchOutcomeStatus,
 };
-use suru::provider::CopilotRuntime;
+use shaman::provider::CopilotRuntime;
 use tokio::time::Duration;
 
 /// A Turn that starts a docs server as a detached shell and ends its loop, the way a live CLI
@@ -104,7 +104,7 @@ fn heading_activity(snapshot: &SessionSnapshot, turn_index: usize) -> &Activity 
 }
 
 /// The detached shell's completion, played without waiting: the shell ran shorter than it took
-/// Suru to read the roster, or the read never came back.
+/// Shaman to read the roster, or the read never came back.
 const DETACHED_SHELL_COMPLETES_AT_ONCE: &str = r#"      event e6 system.notification '{"content":"<system_notification>\nDetached shell \"Serve the docs\" (shellId: shell-1) has completed.\n</system_notification>","kind":{"type":"shell_detached_completed","shellId":"shell-1","description":"Serve the docs"}}'
       event e7 assistant.message '{"messageId":"m2","content":"The docs server exited."}'
       event e8 session.idle '{}'
@@ -260,7 +260,7 @@ const ATTACHED_SHELL_COMPLETES: &str = r#"      wait_for "$COPILOT_FIXTURE_RELEA
 
 /// The roster as the live CLI lists `ATTACHED_SHELL_LEFT_RUNNING`'s shell: running at the first
 /// read, which plays `ATTACHED_SHELL_COMPLETES` once answered, and completed at every read after —
-/// including the one the shell's own ending sends Suru to make just ahead of its notification.
+/// including the one the shell's own ending sends Shaman to make just ahead of its notification.
 fn attached_shell_roster_arm() -> String {
     let completed =
         ATTACHED_SHELL_ROSTER.replace(r#""status":"running""#, r#""status":"completed""#);
@@ -358,7 +358,7 @@ async fn a_synchronous_shell_on_the_roster_is_the_running_command_rather_than_a_
         .await
         .expect("subscribe to the Session");
     // The Message follows the roster change on the timeline, so once it is in, the roster the
-    // change sent Suru to read has been read.
+    // change sent Shaman to read has been read.
     let running = session_where(
         &opened.client,
         &mut feed,

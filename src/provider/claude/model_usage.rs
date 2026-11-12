@@ -97,7 +97,7 @@ impl ModelTotals {
     }
 
     /// What `self` adds to `before` — all of it where the entry reported nothing before — in
-    /// Suru's disjoint parts: thinking taken back out of output, as for a result's own usage. A
+    /// Shaman's disjoint parts: thinking taken back out of output, as for a result's own usage. A
     /// thinking figure missing from either leaves the reasoning unknown and the output as stated.
     fn increase_over(&self, before: Option<&Self>) -> Usage {
         let (thinking, before) = match before {
@@ -133,7 +133,7 @@ pub(super) struct ReportedEntry {
 }
 
 /// A result's `modelUsage` by the raw model string each entry is keyed by, or nothing where the
-/// result carries none or carries one Suru cannot read whole: a total read only in part would make
+/// result carries none or carries one Shaman cannot read whole: a total read only in part would make
 /// the part read look like everything.
 ///
 /// Each entry names its Model by its `canonicalModel`, which can differ from its key — a
@@ -222,12 +222,12 @@ pub(super) struct Recorded {
 
 /// The highest running totals each reporting lifetime's results have reported, by the raw model
 /// string each entry is keyed by. It rides in the Resume State, so a process resuming the
-/// conversation — after a Selection change, an idle stop, or a Suru restart — counts only what it
+/// conversation — after a Selection change, an idle stop, or a Shaman restart — counts only what it
 /// adds to the totals the conversation saved. Only the lifetimes a result can still report into
 /// are kept: the conversation the Session is filed under, which every process it spawns resumes,
 /// and the one its process last reported in, which a `/clear` may have moved it onto.
 ///
-/// Totals Suru cannot read are kept as none, so a Session whose Resume State holds them still
+/// Totals Shaman cannot read are kept as none, so a Session whose Resume State holds them still
 /// opens: its next result is measured against nothing and so believed whole.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
@@ -257,7 +257,7 @@ impl HighestModelUsage {
     /// Reads `reported`, one result's `modelUsage` in `lifetime`, against the highest totals
     /// reported there before it, raises those to it, and forgets every lifetime but `lifetime`
     /// and `filed`, the one the Session is filed under. The result's totals are believed unless
-    /// Suru could not read them, or any entry — one this lifetime reported before and the result
+    /// Shaman could not read them, or any entry — one this lifetime reported before and the result
     /// leaves out among them — falls below the highest reported before. Where they are, each
     /// canonical Model whose entries moved holds a Share: what those entries added, at the running
     /// Cost of every entry naming it.
@@ -356,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn an_entry_suru_cannot_read_leaves_the_whole_result_unbelieved() {
+    fn an_entry_shaman_cannot_read_leaves_the_whole_result_unbelieved() {
         let mut highest = HighestModelUsage::default();
         let unreadable = json!({
             "claude-a": entry(10, 2),
@@ -407,7 +407,7 @@ mod tests {
     }
 
     #[test]
-    fn highest_totals_suru_cannot_read_are_read_as_none() {
+    fn highest_totals_shaman_cannot_read_are_read_as_none() {
         let highest: HighestModelUsage = serde_json::from_value(json!({"claude:conversation": 7}))
             .expect("unreadable totals still read");
 

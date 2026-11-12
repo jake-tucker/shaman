@@ -1,6 +1,6 @@
 //! Records a live Copilot timeline in which the main agent runs a shell in the background.
 //!
-//! Drives the installed Copilot CLI through the SDK the way Suru's Copilot Provider does and
+//! Drives the installed Copilot CLI through the SDK the way Shaman's Copilot Provider does and
 //! writes every `session.event` but the deltas to stdout as one JSON line, in stream order, each
 //! stamped with `_elapsed_ms`. Each `session.background_tasks_changed` is followed by a
 //! `_tasks_list` line holding what `session.tasks.list` answered at that point. The capture ends at
@@ -15,8 +15,8 @@
 //! cargo run --example copilot_background_shell_capture -- abort    > abort.jsonl    # session.abort
 //! ```
 //!
-//! The `cancel` mode cancels the shell through the task roster once the loop is idle, the way Suru
-//! stops a Watch; `abort` aborts a loop waiting on a synchronous shell. `SURU_COPILOT_PATH` names
+//! The `cancel` mode cancels the shell through the task roster once the loop is idle, the way Shaman
+//! stops a Watch; `abort` aborts a loop waiting on a synchronous shell. `SHAMAN_COPILOT_PATH` names
 //! the CLI (default `copilot`), `CAPTURE_MODEL` the Model (default `gpt-5-mini`). On 1.0.91 these
 //! showed what ADR 0030 records of Copilot's attached background shells (#379).
 #[path = "support/copilot_cli.rs"]

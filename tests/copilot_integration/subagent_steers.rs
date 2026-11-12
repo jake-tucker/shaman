@@ -13,7 +13,7 @@ use crate::copilot_integration::support::{
     conversation_fixture, opened_session, settled_session, subagent_children as children,
     transcript_outline as outline,
 };
-use suru::protocol::TurnStatus;
+use shaman::protocol::TurnStatus;
 
 /// The shape a steer takes on Copilot's timeline, as the SDK's schema documents it — no live CLI
 /// has been seen to emit one. The main agent spawns a worker and a helper, sends the worker a

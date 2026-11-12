@@ -4,7 +4,7 @@
 //! the managed container and, behind [`BRANCH_PREFIX`], the branch.
 use crate::protocol::{AttachmentBinding, SkillInvocation, skill_marker_matches};
 
-/// The fixed prefix of every branch Suru creates for a Managed Worktree.
+/// The fixed prefix of every branch Shaman creates for a Managed Worktree.
 pub const BRANCH_PREFIX: &str = "feature/";
 /// How many names uniqueness tries — the fragment, then `-2` onwards — before
 /// giving up rather than displacing whatever holds them.
@@ -251,7 +251,7 @@ mod tests {
                 Some("fix-reasoning-flicker"),
             ),
             ("  refs/heads/ship picker  ", Some("ship-picker")),
-            // Only a leading prefix is Suru's own; one further in is words.
+            // Only a leading prefix is Shaman's own; one further in is words.
             ("fix feature/prefix", Some("fix-feature-prefix")),
             (
                 "one two three four five six seven",

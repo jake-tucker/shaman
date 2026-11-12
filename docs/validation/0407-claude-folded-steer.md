@@ -4,7 +4,7 @@ Captured 2026-09-28 against Claude Code **2.1.283** (`/usr/bin/claude`, a
 wrapper that sets `DISABLE_UPDATES=1` and runs `/opt/claude-code/bin/claude`,
 signed in with a claude.ai account). The Model was `haiku`
 (`claude-haiku-4-5-20251001`). Each case launched one stream-json process, as
-Suru's Claude Provider does, from an empty scratch directory:
+Shaman's Claude Provider does, from an empty scratch directory:
 
 ```
 claude -p --input-format stream-json --output-format stream-json --verbose
@@ -17,7 +17,7 @@ claude -p --input-format stream-json --output-format stream-json --verbose
 `0421-broker-smoke.md`.
 
 **Driver:** a throwaway Python script, not committed. It wrote each user message
-to stdin in Suru's envelope, plus a fresh v4 `uuid`:
+to stdin in Shaman's envelope, plus a fresh v4 `uuid`:
 
 ```json
 {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "…"}]},
@@ -132,7 +132,7 @@ At a `result`, then, every message a loop has `started` is answered. A message
 not yet `started` will begin a loop of its own.
 
 **Sent without a `uuid`,** no `command_lifecycle` comes at all. That is what
-Suru sent until now, and why #421's run 5 saw nothing.
+Shaman sent until now, and why #421's run 5 saw nothing.
 
 **`--replay-user-messages`** echoes each message as a `user` line with
 `isReplay: true`, at the moment of `started`. It carries the client's `uuid`
@@ -155,12 +155,12 @@ when one was sent, and a fresh one when not. It gives no terminal states.
 - Commands enqueued without a uuid … emit no lifecycle events.
 
 The same schema, with those sentences, is in the 2.1.280 binary (the npm
-`@anthropic-ai/claude-code-linux-x64@2.1.280` package), the version Suru
+`@anthropic-ai/claude-code-linux-x64@2.1.280` package), the version Shaman
 suggests.
 
 ## Decision
 
-**Suru writes every Prompt and steer with a fresh v4 `uuid`, and reads
+**Shaman writes every Prompt and steer with a fresh v4 `uuid`, and reads
 `command_lifecycle`.** It does not adopt `--replay-user-messages`. The frame
 gives the same moment without a flag, and adds the terminal states
 (`src/provider/claude/turn_in_flight.rs`).
@@ -179,7 +179,7 @@ gives the same moment without a flag, and adds the terminal states
   instead, `cancelled`, `discarded` or `refused`, after the `result` of the
   Turn's last loop has left the Turn waiting on it. Then the Turn Settles at
   that frame, since nothing else will Settle it.
-  - `cancelled` there means the user's interrupt swept the message: Suru
+  - `cancelled` there means the user's interrupt swept the message: Shaman
     withdraws none itself, and with no loop running no aborted `result`
     follows. So the Turn Settles interrupted.
   - `discarded` and `refused` leave it completed, as the loop it last ran.
@@ -191,7 +191,7 @@ gives the same moment without a flag, and adds the terminal states
   dropped. This is what makes relying on an internal frame safe: losing it
   costs the grouping of a case D steer, not a hung Session.
 - **Interrupts are unchanged.** The aborted `result` settles the Turn, and the
-  `cancelled` frames that follow name messages Suru has stopped waiting on.
+  `cancelled` frames that follow name messages Shaman has stopped waiting on.
 
 The scripted suite models both outcomes:
 
@@ -213,5 +213,5 @@ Not verified live:
   (`an_interrupt_between_a_steered_turns_loops_settles_it_interrupted`); the
   other two by unit tests only.
 - **Versions before 2.1.280.** When the frame first shipped was not checked.
-- **A user's steer Prompt through Suru end to end.** It was not driven against
+- **A user's steer Prompt through Shaman end to end.** It was not driven against
   the live CLI; case A drove the same message against the raw CLI.

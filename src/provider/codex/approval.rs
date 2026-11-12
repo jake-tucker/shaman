@@ -1,4 +1,4 @@
-//! Correlation between Suru Approval identities and Codex JSON-RPC callbacks.
+//! Correlation between Shaman Approval identities and Codex JSON-RPC callbacks.
 
 use std::{
     collections::HashMap,
@@ -111,7 +111,7 @@ impl CodexApprovals {
                         json!({})
                     },
                     // Codex's permission callback offers a scope rather than the
-                    // command/file decision enum. Suru grants only this Turn.
+                    // command/file decision enum. Shaman grants only this Turn.
                     "scope": "turn",
                 }),
                 matches!(decision, Decision::DeclineAndInterrupt).then(|| NativeInterruptTarget {

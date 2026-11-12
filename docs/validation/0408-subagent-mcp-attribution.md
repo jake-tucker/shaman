@@ -3,7 +3,7 @@
 Captured 2026-09-27 with `examples/broker_harness_capture.rs`. In each run the
 main agent called the loopback MCP endpoint's `echo_context` itself, then had
 one native Subagent call it. The endpoint recorded every header and the whole
-JSON-RPC request. Each harness was driven the way Suru drives it:
+JSON-RPC request. Each harness was driven the way Shaman drives it:
 
 - **Claude Code 2.1.283**, Model `haiku` (`claude-haiku-4-5-20251001`). One
   stream-json process with `--mcp-config` naming an HTTP server `capture`
@@ -78,7 +78,7 @@ Each call's `_meta` held only a counter, `{"progressToken": 1}` and then
 - `tool.execution_start` for the Subagent's call carries its instance id in the
   envelope's `agentId` (`6d14c337-…`), the `toolCallId` (`call_7JUr…`), and
   `parentToolCallId` naming the `task` call.
-- The permission request Suru's handler receives names the root Session's
+- The permission request Shaman's handler receives names the root Session's
   `sessionId`, `kind: "mcp"`, `serverName: "capture"`, `toolName:
   "capture-echo_context"` and the same `toolCallId`, but no agent. The
   `permission.requested` event that mirrors it carries the `agentId` in its
@@ -97,7 +97,7 @@ arguments.
 | native child | child thread `01a0e25a-8213…` | parent thread | `parent_thread_id` (parent thread), `subagent_kind: "thread_spawn"`, `thread_source: "subagent"`, the child's `turn_id` | `capture-session-2` |
 
 The child thread id is the `receiverThreadIds[0]` of the `collabAgentToolCall`
-item (`tool: "spawnAgent"`) that Suru's Codex projection already reads. Both
+item (`tool: "spawnAgent"`) that Shaman's Codex projection already reads. Both
 calls carried the parent's token. Every call's `_meta` also had `callId`,
 `itemId`, `windowId` and `progressToken`.
 
@@ -113,7 +113,7 @@ calls carried the parent's token. Every call's `_meta` also had `callId`,
   decide. Fallback: none needed; the token's Session is the path.
 
   The capture does leave a candidate for a later spec.
-  `_meta["claudecode/toolUseId"]` names the calling `tool_use`, which Suru's
+  `_meta["claudecode/toolUseId"]` names the calling `tool_use`, which Shaman's
   Claude projection already places under a native Subagent through
   `parent_tool_use_id`. Joining the two would attribute by identity rather than
   by timing and arguments. But the join runs through the projection's tool_use

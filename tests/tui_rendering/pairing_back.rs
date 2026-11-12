@@ -8,7 +8,7 @@ use crate::tui_rendering::support::{
     type_terminal_text,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         AnswerOfferRequest, EffectiveSettings, HeldOffer, InvitePreview, ListenerState, MadeOffer,
@@ -96,7 +96,7 @@ fn configure_remote(application: &mut Application, reaches_here: bool) {
         .handle_event(ApplicationEvent::RemotesListed(Vec::new()))
         .unwrap();
     application
-        .handle_terminal_event(InputEvent::Paste("suru-v1-example".to_owned()))
+        .handle_terminal_event(InputEvent::Paste("shaman-v1-example".to_owned()))
         .unwrap();
     let ApplicationTransition::PreviewInvite { request, .. } = press(application, KeyCode::Enter)
     else {
@@ -105,7 +105,7 @@ fn configure_remote(application: &mut Application, reaches_here: bool) {
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: "suru-v1-example".to_owned().into(),
+            invite: "shaman-v1-example".to_owned().into(),
             preview: InvitePreview {
                 hostname: "studio".to_owned(),
                 fingerprint: "fingerprint".to_owned(),

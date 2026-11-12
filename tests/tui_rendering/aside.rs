@@ -11,7 +11,7 @@ use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use ratatui::style::Color;
-use suru::{
+use shaman::{
     managed_client::SubagentTreeEvent,
     protocol::{
         Activity, ActivityStatus, AsideSettings, AsideVisibility, EffectiveSettings, ModelId,

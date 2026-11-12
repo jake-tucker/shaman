@@ -3,7 +3,7 @@
 use crate::support::PROGRESS_DEADLINE;
 use std::time::Duration;
 
-use suru::{
+use shaman::{
     managed_client::ManagedClient,
     protocol::{
         AdmitPromptRequest, AgentSelection, AgentSelectionOperationId, ContextFill,
@@ -69,7 +69,7 @@ impl Session {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 prompt: prompt(),
@@ -182,7 +182,10 @@ async fn compaction_and_settlement_refresh_raw_context_and_reopening_restores_it
         settled.turns[0].usage.as_ref().unwrap().fresh_input_tokens,
         Some(900000)
     );
-    assert_eq!(settled.turns[0].cost, suru::protocol::Cost::from_usd(0.03));
+    assert_eq!(
+        settled.turns[0].cost,
+        shaman::protocol::Cost::from_usd(0.03)
+    );
     assert_eq!(
         claude
             .control_subtypes()
@@ -461,7 +464,7 @@ async fn late_child_outcome_continuation_refreshes_only_the_owning_session() {
         .activities
         .iter()
         .find_map(|activity| {
-            if let suru::protocol::Activity::Subagent { session_id, .. } = activity {
+            if let shaman::protocol::Activity::Subagent { session_id, .. } = activity {
                 Some(*session_id)
             } else {
                 None
@@ -575,7 +578,7 @@ async fn an_old_query_cannot_replace_a_newer_reading_when_a_continuation_begins(
 #[tokio::test]
 async fn failed_new_model_setup_cannot_query_old_native_context_as_the_failed_turn() {
     use futures_util::StreamExt;
-    use suru::{
+    use shaman::{
         protocol::{
             ModelOptionChoiceId, ModelOptionId, ModelOptionSelection, ModelOptionValue, TurnId,
         },

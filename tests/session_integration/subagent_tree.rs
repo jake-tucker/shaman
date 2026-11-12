@@ -16,7 +16,7 @@ use crate::session_integration::{
 use eventsource_stream::Eventsource;
 use futures_util::{Stream, StreamExt};
 use serde_json::json;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SubagentTreeEvent},
     protocol::{
         ActivityStatus, AdmitPromptRequest, Approval, ApprovalId, ApprovalSubject,
@@ -84,7 +84,7 @@ pub(crate) async fn open_tree(
 /// The next change, checked to follow the revision before it without a gap.
 pub(crate) async fn next_change(
     updates: &mut TreeUpdates,
-    revision: &mut suru::protocol::SubagentTreeRevision,
+    revision: &mut shaman::protocol::SubagentTreeRevision,
 ) -> SubagentTreeChange {
     let update = timeout(PROGRESS_DEADLINE, updates.next())
         .await
@@ -503,7 +503,7 @@ async fn a_derived_title_retitles_the_top_level_entry() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let (runtime, mut provider) = ControlledProvider::with_provider(
-        suru::protocol::ProviderId::new("controlled"),
+        shaman::protocol::ProviderId::new("controlled"),
         vec![hosted_model("controlled", "controlled-default")],
     );
     let server = server::spawn_with_provider(
@@ -518,7 +518,7 @@ async fn a_derived_title_retitles_the_top_level_entry() {
             session_id: None,
             preparation_id: None,
             agent_selection: Some(hosted_selection("controlled", "controlled-default")),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -672,7 +672,7 @@ async fn the_tree_stream_keeps_alive_at_the_servers_interval() {
 }
 
 async fn next_tree_event(
-    subscription: &mut suru::managed_client::SubagentTreeSubscription,
+    subscription: &mut shaman::managed_client::SubagentTreeSubscription,
 ) -> SubagentTreeEvent {
     timeout(PROGRESS_DEADLINE, subscription.next())
         .await
@@ -968,7 +968,7 @@ async fn a_restart_restores_the_tree_and_its_entries() {
 /// checked to follow the one before it without a gap.
 pub(crate) async fn changes_until(
     updates: &mut TreeUpdates,
-    revision: &mut suru::protocol::SubagentTreeRevision,
+    revision: &mut shaman::protocol::SubagentTreeRevision,
     wanted: impl Fn(&SubagentTreeChange) -> bool,
 ) -> Vec<SubagentTreeChange> {
     let mut changes = Vec::new();
@@ -1428,7 +1428,7 @@ fn flags(expected: &[(&str, bool)]) -> Vec<(String, bool)> {
 }
 
 async fn next_managed_change(
-    subscription: &mut suru::managed_client::SubagentTreeSubscription,
+    subscription: &mut shaman::managed_client::SubagentTreeSubscription,
 ) -> SubagentTreeChange {
     loop {
         match next_tree_event(subscription).await {
@@ -1661,7 +1661,7 @@ async fn a_resumed_subagent_is_one_entry_standing_where_it_first_spawned() {
     assert!(
         reviewer.activities.iter().any(|activity| matches!(
             activity,
-            suru::protocol::Activity::Subagent { session_id, .. } if *session_id == explore.session_id
+            shaman::protocol::Activity::Subagent { session_id, .. } if *session_id == explore.session_id
         )),
         "the reviewer's Transcript holds the row of the resume it sent"
     );
@@ -1677,7 +1677,7 @@ async fn a_resumed_subagent_is_one_entry_standing_where_it_first_spawned() {
                 .filter(|activity| {
                     matches!(
                         activity,
-                        suru::protocol::Activity::Subagent { session_id, .. }
+                        shaman::protocol::Activity::Subagent { session_id, .. }
                             if *session_id == explore.session_id
                     )
                 })
@@ -1810,7 +1810,7 @@ async fn a_resumed_subagent_works_again_counting_up_from_its_earlier_turns_then_
         .activities
         .iter()
         .filter_map(|activity| match activity {
-            suru::protocol::Activity::Subagent {
+            shaman::protocol::Activity::Subagent {
                 status,
                 duration_ms,
                 ..
@@ -1872,7 +1872,7 @@ async fn a_subagent_whose_resume_completed_after_its_first_turn_failed_shows_com
 }
 
 #[tokio::test]
-async fn a_subagent_settled_without_suru_learning_when_its_work_ended_leaves_its_time_blank() {
+async fn a_subagent_settled_without_shaman_learning_when_its_work_ended_leaves_its_time_blank() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let channel = "subagent-tree-unlearned-end-test";
     let config = ServerConfig::new(state_dir.path(), channel).expect("configure server");
@@ -1890,7 +1890,7 @@ async fn a_subagent_settled_without_suru_learning_when_its_work_ended_leaves_its
         .activities
         .iter()
         .find_map(|activity| match activity {
-            suru::protocol::Activity::Subagent { id, .. } => Some(*id),
+            shaman::protocol::Activity::Subagent { id, .. } => Some(*id),
             _ => None,
         })
         .expect("the spawn stands as a row");
@@ -1902,7 +1902,7 @@ async fn a_subagent_settled_without_suru_learning_when_its_work_ended_leaves_its
     {
         use diesel::{Connection, RunQueryDsl, SqliteConnection};
         let mut database =
-            SqliteConnection::establish(config.data_dir().join("suru.db").to_str().unwrap())
+            SqliteConnection::establish(config.data_dir().join("shaman.db").to_str().unwrap())
                 .unwrap();
         diesel::sql_query(
             "UPDATE turns SET payload = json_set(payload, '$.status', 'active', '$.settled_at', json('null'))",

@@ -189,7 +189,7 @@ fn carries_graphics(cell: &Cell) -> bool {
 /// a cell moves it, and the run loop redraws every 32 ms while anything
 /// animates; terminals restart the cursor's blink phase when it is shown or
 /// moved, and one that ignores mode 2026 presents it riding along the diff.
-/// So the composer's caret is a cell Suru draws itself, in
+/// So the composer's caret is a cell Shaman draws itself, in
 /// [`crate::tui::caret`], and the cursor the terminal owns stays hidden. It is
 /// still parked at the caret after each frame, since that is where a terminal
 /// places an input method's composition, and remembering where it was last

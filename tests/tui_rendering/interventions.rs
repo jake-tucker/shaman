@@ -7,12 +7,7 @@ use crate::tui_rendering::support::{
 };
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::layout::Position;
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
-use std::time::{Duration, Instant};
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         Activity, ApprovalId, ApprovalOutcome, ApprovalSubject, Decision, QuestionnaireId,
@@ -23,6 +18,11 @@ use suru::{
         SemanticCommandId,
     },
 };
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+use std::time::{Duration, Instant};
 
 const ARMING: Duration = Duration::from_millis(250);
 
@@ -320,7 +320,7 @@ fn escape_dismisses_every_pending_intervention_until_a_new_one_arrives() {
 
 #[test]
 fn a_subagents_intervention_marks_the_parent_and_presents_in_its_own_session() {
-    use suru::protocol::{SessionId, SubagentInterventions};
+    use shaman::protocol::{SessionId, SubagentInterventions};
 
     let workspace = workspace_dir();
     let (mut app, _clock) = armed_application(workspace.path());
@@ -485,7 +485,7 @@ fn the_pointer_moves_no_choice_while_a_presented_questionnaire_arms() {
     };
     questionnaire.questions[0].choices = ["Locally", "Remotely"]
         .into_iter()
-        .map(|label| suru::protocol::QuestionChoice {
+        .map(|label| shaman::protocol::QuestionChoice {
             id: label.to_lowercase(),
             label: label.to_owned(),
             description: None,

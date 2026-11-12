@@ -61,7 +61,7 @@ pub struct RuntimeConfig {
     /// [`RuntimeConfig::launched_after`].
     launched_after: Option<LastStop>,
     /// The store a new identity key is kept in whatever the build, where
-    /// `SURU_IDENTITY_STORE` names one. See
+    /// `SHAMAN_IDENTITY_STORE` names one. See
     /// [`RuntimeConfig::with_identity_store`].
     identity_store: Option<IdentityStoreChoice>,
     /// The home this Server reads `~` from and abbreviates paths to, where it
@@ -148,7 +148,7 @@ impl RuntimeConfig {
     }
 
     /// Configures a Server to keep a new identity key in `store`, as
-    /// `SURU_IDENTITY_STORE` names one, whatever the build. Without this, a
+    /// `SHAMAN_IDENTITY_STORE` names one, whatever the build. Without this, a
     /// release build keeps it in the platform credential store, and a debug
     /// build, or any build Cargo runs, in an owner-only file in the data
     /// directory.
@@ -256,7 +256,7 @@ impl RuntimeConfig {
     }
 }
 
-/// The Manual stop last recorded on a Channel — a `suru server stop`, or
+/// The Manual stop last recorded on a Channel — a `shaman server stop`, or
 /// the operating system's signal answered as one — naming the Server it
 /// stopped, or none where the Channel has never been stopped so.
 ///
@@ -307,7 +307,7 @@ impl LastStop {
 
     /// The stop recorded in `now` that a launch that saw `self` must yield
     /// to: the instance it stopped, where `now` names a stop other than the
-    /// one seen. A record gone missing since names nothing — Suru never
+    /// one seen. A record gone missing since names nothing — Shaman never
     /// removes one, so it was cleared from outside along with whatever else
     /// was — and is no reason to end a launch.
     pub fn superseded_by(&self, now: LastStop) -> Option<Uuid> {

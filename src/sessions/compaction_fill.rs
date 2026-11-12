@@ -7,7 +7,7 @@
 //!
 //! Every Compaction and every Context Fill reading reaches a Session through
 //! its commits, so this fills the fallback in there, the same for every
-//! Provider and whichever path recorded the Compaction. Only a Compaction Suru
+//! Provider and whichever path recorded the Compaction. Only a Compaction Shaman
 //! saw begin takes a `before`: one reported only ending gives no moment to read
 //! from. Only a completed one awaits an `after`: one that failed or was stopped
 //! freed nothing a reading could measure, and it leaves the reading before it

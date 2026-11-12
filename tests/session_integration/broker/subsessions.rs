@@ -21,7 +21,7 @@
 use std::path::{Path, PathBuf};
 
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
-use suru::protocol::{
+use shaman::protocol::{
     Author, CheckoutKind, CostTotal, ProviderUnavailability, ResolveWorkspaceRequest,
     ResolvedWorkspace, SessionChange, SessionListItem, SessionTimestamp, TurnId,
 };
@@ -99,7 +99,7 @@ async fn refused(client: &mut McpClient, arguments: Value) -> String {
 
 /// `path` as the Server reads every directory: canonically.
 fn canonical(path: &Path) -> PathBuf {
-    suru::paths::canonical(path).expect("read the directory")
+    shaman::paths::canonical(path).expect("read the directory")
 }
 
 /// The Server's listing, as every Client is sent it.
@@ -210,7 +210,7 @@ pub(super) async fn resolve(descriptor: &RuntimeDescriptor, path: &Path) -> Reso
 }
 
 /// The directories a Repository's managed container holds: one for each
-/// Managed Worktree Suru made there.
+/// Managed Worktree Shaman made there.
 fn managed_worktrees(repository: &Path) -> Vec<PathBuf> {
     let mut worktrees = std::fs::read_dir(repository.join(".worktrees"))
         .map(|entries| {
@@ -230,7 +230,7 @@ fn alter_stored(state_dir: &Path, config_dir: &Path, channel: &str, sql: &str) {
     let config = ServerConfig::new(state_dir, channel)
         .expect("configure server")
         .with_config_dir(config_dir);
-    let database = config.data_dir().join("suru.db");
+    let database = config.data_dir().join("shaman.db");
     let mut connection =
         SqliteConnection::establish(database.to_str().expect("the database's path is UTF-8"))
             .expect("open the stopped Server's database");
@@ -243,7 +243,7 @@ fn alter_stored(state_dir: &Path, config_dir: &Path, channel: &str, sql: &str) {
 async fn a_sidekick_is_offered_begin_session_and_any_other_agent_is_not() {
     const {
         assert!(
-            suru::protocol::PROTOCOL_VERSION >= 74,
+            shaman::protocol::PROTOCOL_VERSION >= 74,
             "a Subsession's beginning author and its row change the wire, a Remote's included"
         );
     }
@@ -273,7 +273,7 @@ async fn a_sidekick_is_offered_begin_session_and_any_other_agent_is_not() {
     assert_eq!(
         described["annotations"]["readOnlyHint"],
         json!(false),
-        "begin_session changes what Suru holds: {described}"
+        "begin_session changes what Shaman holds: {described}"
     );
     assert_eq!(
         described["inputSchema"]["required"],
@@ -553,7 +553,7 @@ async fn a_subsession_works_apart_from_the_sidekick_that_began_it() {
         run_first_turn(&mut hosted.claude, default_selection(&claude_models())).await;
 
     // Each reports what it consumed, and each keeps its own.
-    let usd = |usd: f64| suru::protocol::Cost::from_usd(usd).expect("a representable Cost");
+    let usd = |usd: f64| shaman::protocol::Cost::from_usd(usd).expect("a representable Cost");
     let measured = |output: u64| Usage {
         fresh_input_tokens: Some(1_000),
         output_tokens: Some(output),
@@ -759,7 +759,7 @@ async fn a_new_worktree_is_prepared_for_a_subsession_and_a_bare_root_takes_one_o
         .expect("read the Worktree's branch");
     assert!(
         String::from_utf8_lossy(&branch.stdout).starts_with("feature/"),
-        "on a branch Suru named: {}",
+        "on a branch Shaman named: {}",
         String::from_utf8_lossy(&branch.stdout)
     );
 
@@ -832,7 +832,7 @@ async fn no_sidekick_begins_a_session_in_the_sidekick_workspace_or_where_none_ca
     assert_eq!(
         refused(&mut sidekick, json!({ "directory": gone, "prompt": ASKED }),).await,
         format!(
-            "There is no directory {} on this Suru server for a Session to work in.",
+            "There is no directory {} on this Shaman server for a Session to work in.",
             gone.display()
         )
     );
@@ -875,7 +875,7 @@ async fn no_sidekick_begins_a_session_in_the_sidekick_workspace_or_where_none_ca
             }),
         )
         .await,
-        "Suru hosts no Provider `elsewhere`; the Providers it hosts are `claude`, `codex`, \
+        "Shaman hosts no Provider `elsewhere`; the Providers it hosts are `claude`, `codex`, \
          `copilot`. Call list_providers to see which may be chosen."
     );
 
@@ -979,7 +979,7 @@ async fn a_landing_agent_that_cannot_be_used_is_refused_before_anything_is_begun
         start_sidekick(&descriptor, &mut hosted.claude).await;
     choose_landing_agent(&descriptor, &default_selection(&codex_models())).await;
     // The user signs out of the Landing's Provider after choosing it; the
-    // Landing remembers the choice, which the user can fix outside Suru.
+    // Landing remembers the choice, which the user can fix outside Shaman.
     hosted.runtimes[1].set_unavailable(Some(ProviderUnavailability::NotSignedIn));
     refresh_catalog(&descriptor).await;
 
@@ -1023,7 +1023,7 @@ async fn a_landing_agent_that_cannot_be_used_is_refused_before_anything_is_begun
             json!({ "directory": workspace, "prompt": ASKED }),
         )
         .await,
-        "No Provider Suru hosts can begin a Session now: each is turned off or cannot be used. \
+        "No Provider Shaman hosts can begin a Session now: each is turned off or cannot be used. \
          Ask the user to turn one on, or call list_providers to see why.",
         "with every Provider off or unusable, the Landing has no Agent to begin with"
     );
@@ -1037,7 +1037,7 @@ async fn a_landing_agent_that_cannot_be_used_is_refused_before_anything_is_begun
             }),
         )
         .await,
-        "Provider `claude` is turned off in Suru; ask the user to turn it back on, or choose \
+        "Provider `claude` is turned off in Shaman; ask the user to turn it back on, or choose \
          another Provider."
     );
     assert_eq!(
@@ -1317,7 +1317,7 @@ fn subsession_item(transcript: &str, subsession: SessionId) -> String {
 async fn listed_as(
     descriptor: &RuntimeDescriptor,
     session_id: SessionId,
-) -> (Option<suru::protocol::SessionStanding>, SessionTimestamp) {
+) -> (Option<shaman::protocol::SessionStanding>, SessionTimestamp) {
     listing(descriptor)
         .await
         .into_iter()

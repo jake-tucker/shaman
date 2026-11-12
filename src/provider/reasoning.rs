@@ -3,7 +3,7 @@
 //! OpenAI's models open each reasoning summary section with a bolded title
 //! block — `**Inspecting the provider seam**`, a blank line, then the prose —
 //! and every Provider that fronts them reports it that way, which is why this
-//! lives beside the Providers rather than inside one of them. Suru stores that
+//! lives beside the Providers rather than inside one of them. Shaman stores that
 //! title as a typed property of the Reasoning Activity the section becomes,
 //! rather than leaving it in the content, so a client can head a folded block
 //! with it instead of parsing it back out. The split happens as the section
@@ -18,7 +18,7 @@ const MAX_TITLE_BLOCK_CHARS: usize = 256;
 /// What separates a title block from the body beneath it.
 const TITLE_SEPARATORS: [&str; 2] = ["\n\n", "\r\n\r\n"];
 
-/// One step of a Reasoning summary, split into the parts Suru stores apart from
+/// One step of a Reasoning summary, split into the parts Shaman stores apart from
 /// one another. A step that resolved no title and withheld its content yields
 /// both empty, which the caller projects as no Provider event at all.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

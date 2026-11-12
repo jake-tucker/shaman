@@ -3,7 +3,7 @@
 //! many Turns each cell holds of the busiest's, a cell of which a reader
 //! can select to read its Turns, tokens, and Cost.
 //!
-//! The panel is about the user's own work, so it holds Turns alone: Suru's
+//! The panel is about the user's own work, so it holds Turns alone: Shaman's
 //! Errands are no Turns, and the cells' Costs add up to the range's Cost
 //! less its Errands', which Delegation states beside its roles.
 //!

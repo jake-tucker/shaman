@@ -15,5 +15,5 @@ Plain-text copies still reach both routes, as #274 decided. A formatted copy is 
 
 - The terminal is asked a few milliseconds later than before, and up to 250 milliseconds later if the native write stalls.
 - A copy replaced while it waits never reaches the terminal, where each plain-text copy used to. The one that replaced it is delivered as its own kind is, so a formatted one that delivers natively leaves the terminal unasked.
-- A native write that outlasts the wait can still overlap the terminal's; ADR-0021 already accepted that a call in flight cannot be cancelled. So can the native write of a copy made while the terminal is still acting on the one before: Suru cannot see when a terminal has finished.
+- A native write that outlasts the wait can still overlap the terminal's; ADR-0021 already accepted that a call in flight cannot be cancelled. So can the native write of a copy made while the terminal is still acting on the one before: Shaman cannot see when a terminal has finished.
 - A run that ends on an error rather than an exit does not ask the terminal for a copy still waiting.

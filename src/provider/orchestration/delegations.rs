@@ -12,7 +12,7 @@
 //! A Delegation that cannot be delivered yet is held, not refused: behind a
 //! Continuation being settled, or behind a Turn whose Provider would not take
 //! it as a steer — most likely because that Turn ended as it arrived, which
-//! Suru hears of only afterwards. Sent while the Subagent worked, it begins a
+//! Shaman hears of only afterwards. Sent while the Subagent worked, it begins a
 //! Turn when that work has finished before it arrives (CONTEXT.md:
 //! Delegation), so a held Delegation is delivered into the next Turn that can
 //! take it — the first begins a resume once the Subagent is idle, and those
@@ -98,8 +98,8 @@ impl PendingDelegation {
     }
 }
 
-/// What a Delegation still waiting when Suru stops is refused with.
-const STOPPING: &str = "Suru is stopping, so the message was not delivered to the Subagent.";
+/// What a Delegation still waiting when Shaman stops is refused with.
+const STOPPING: &str = "Shaman is stopping, so the message was not delivered to the Subagent.";
 
 impl ProviderOrchestrator {
     /// Delivers `message` to the brokered Subagent `subagent` for the Agent
@@ -151,13 +151,13 @@ impl ProviderOrchestrator {
                 }
                 if !self.sessions.holds(subagent) {
                     return Err(BrokeredSendRefusal::Refused(
-                        "The Subagent's Session no longer exists on this Suru server.".to_owned(),
+                        "The Subagent's Session no longer exists on this Shaman server.".to_owned(),
                     ));
                 }
                 self.get_or_spawn_actor_commands(subagent, runtime)
                     .map_err(|error| {
                         BrokeredSendRefusal::Refused(format!(
-                            "Suru could not reach the Subagent's Provider: {error}."
+                            "Shaman could not reach the Subagent's Provider: {error}."
                         ))
                     })?
             }
@@ -181,10 +181,10 @@ impl ProviderOrchestrator {
 }
 
 /// Why a resume on `provider` is refused while the user has it turned off:
-/// Enablement governs what Suru begins next, and a resume begins a Turn.
+/// Enablement governs what Shaman begins next, and a resume begins a Turn.
 fn turned_off(provider: &ProviderId) -> String {
     format!(
-        "Provider `{provider}` is turned off in Suru's Settings, so the Subagent cannot be \
+        "Provider `{provider}` is turned off in Shaman's Settings, so the Subagent cannot be \
          resumed; ask the user to turn `provider.{provider}.enabled` back on."
     )
 }
@@ -218,9 +218,9 @@ fn refused_resume(error: BrokeredResumeError) -> BrokeredSendRefusal {
     match error {
         BrokeredResumeError::Unreachable(error) => BrokeredSendRefusal::Unreachable(error),
         BrokeredResumeError::Capped(cap) => BrokeredSendRefusal::Capped(cap),
-        BrokeredResumeError::Storage(message) => {
-            BrokeredSendRefusal::Refused(format!("Suru could not resume the Subagent: {message}."))
-        }
+        BrokeredResumeError::Storage(message) => BrokeredSendRefusal::Refused(format!(
+            "Shaman could not resume the Subagent: {message}."
+        )),
     }
 }
 
@@ -275,7 +275,7 @@ pub(super) fn open_resume(
 
 /// Begins the Turn a Delegation opened in the brokered Subagent's Session the
 /// actor behind `connector` owns (see [`begin_delegated_turn`]), and makes it
-/// the actor's active Turn once its Provider takes it. Breaks when Suru is
+/// the actor's active Turn once its Provider takes it. Breaks when Shaman is
 /// stopping, as the actor does with it.
 pub(super) async fn run_delegated_turn(
     connector: &ProviderConnector<'_>,
@@ -314,7 +314,7 @@ pub(super) enum SteerOutcome {
     /// because the Turn ended as it arrived — so it is to be held until that
     /// Turn has settled, and delivered then.
     Held(PendingDelegation),
-    /// Suru is stopping, and the actor stops with it.
+    /// Shaman is stopping, and the actor stops with it.
     Stopping,
 }
 

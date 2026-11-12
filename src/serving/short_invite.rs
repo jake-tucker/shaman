@@ -6,7 +6,7 @@
 //! Serving one:
 //!
 //! ```text
-//! R → S  "suru-short-invite", version, R's identity key, pA     no secret
+//! R → S  "shaman-short-invite", version, R's identity key, pA     no secret
 //! S → R  refused at once (no code live, ...), and it ends       no guess was made
 //! S → R  pB                                                     no secret
 //! R → S  MAC(R's key, transcript)                               R's proof
@@ -89,7 +89,7 @@ use crate::protocol::{
 /// How a redeeming Server says it is about to speak the exchange rather than
 /// TLS. A TLS record's first byte says what kind it is, and a ClientHello's
 /// says handshake, `0x16`, so one cannot open as this does.
-const PREAMBLE: &[u8; 17] = b"suru-short-invite";
+const PREAMBLE: &[u8; 19] = b"shaman-short-invite";
 /// The exchange this Server speaks, said right after the preamble so another
 /// can be told from it and refused without spending anything.
 const VERSION: u8 = 1;
@@ -155,10 +155,10 @@ const SAYS_REFUSED: u8 = 4;
 
 /// What each key below the exchange is derived for. Distinct, so the two
 /// sides' proofs can never be taken for one another.
-const TRANSCRIPT_LABEL: &[u8] = b"suru short invite v1";
-const REDEEMER_PROOF_LABEL: &[u8] = b"suru short invite v1 redeemer proof";
-const SERVING_PROOF_LABEL: &[u8] = b"suru short invite v1 serving proof";
-const INVITE_LABEL: &[u8] = b"suru short invite v1 invite";
+const TRANSCRIPT_LABEL: &[u8] = b"shaman short invite v1";
+const REDEEMER_PROOF_LABEL: &[u8] = b"shaman short invite v1 redeemer proof";
+const SERVING_PROOF_LABEL: &[u8] = b"shaman short invite v1 serving proof";
+const INVITE_LABEL: &[u8] = b"shaman short invite v1 invite";
 
 /// Why a Serving Server turned an exchange down at once, with no guess made:
 /// so a redeemer may try another way.
@@ -1006,7 +1006,7 @@ mod tests {
 
     const WAY: &str = "https://relay.example.com";
     const OTHER_WAY: &str = "https://other.example.com";
-    const INVITE: &str = "suru-v1-the-long-string";
+    const INVITE: &str = "shaman-v1-the-long-string";
     const BOUND: Duration = Duration::from_secs(30);
     const TOKEN: [u8; 32] = [7; 32];
     const SERVING: &[u8] = b"the Serving Server's key";

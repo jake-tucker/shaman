@@ -4,7 +4,7 @@
 //! for: a Prompt on stdin, a JSON Schema it constrains its final message to, and
 //! `--ephemeral`, which leaves no rollout file behind for anything to resume.
 //! That is why ADR 0011 prefers a native one-shot mode over the session-shaped
-//! fallback — the guarantee is the harness's rather than a rule Suru has to keep
+//! fallback — the guarantee is the harness's rather than a rule Shaman has to keep
 //! — and why nothing here goes near the app-server every Session is driven over.
 //!
 //! The run is given the least the harness can be left with: a read-only sandbox,

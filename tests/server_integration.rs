@@ -7,7 +7,7 @@ use diesel::{
 use eventsource_stream::Eventsource;
 use fs2::FileExt;
 use futures_util::StreamExt;
-use suru::{
+use shaman::{
     build_identity,
     logging::{self, Role},
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent, stop_server},
@@ -70,14 +70,14 @@ struct SqliteCount {
 
 #[test]
 fn workspace_display_data_resolves_the_servers_home_and_handles_unknown_homes() {
-    use suru::protocol::{PathStyle, WorkspacePaths};
+    use shaman::protocol::{PathStyle, WorkspacePaths};
 
     let home = tempfile::tempdir().unwrap();
     std::fs::create_dir(home.path().join("child")).unwrap();
     let paths = WorkspacePaths::from_home(Some(&home.path().join("child").join("..")));
     assert_eq!(
         paths.home.as_deref(),
-        suru::paths::canonical(home.path()).unwrap().to_str()
+        shaman::paths::canonical(home.path()).unwrap().to_str()
     );
     assert_eq!(
         paths.style,
@@ -390,7 +390,7 @@ where
     stream
         .write_all(
             format!(
-                "GET /v1/pairing/proxy/v1/session-events HTTP/1.1\r\nHost: localhost\r\nx-suru-protocol-version: {PROTOCOL_VERSION}\r\n\r\n"
+                "GET /v1/pairing/proxy/v1/session-events HTTP/1.1\r\nHost: localhost\r\nx-shaman-protocol-version: {PROTOCOL_VERSION}\r\n\r\n"
             )
             .as_bytes(),
         )
@@ -432,7 +432,7 @@ async fn open_invited_enrollment_connection(
     String,
 ) {
     let encoded = invite
-        .strip_prefix("suru-v1-")
+        .strip_prefix("shaman-v1-")
         .expect("test Invite uses the supported version");
     let payload: serde_json::Value = serde_json::from_slice(
         &base64::engine::general_purpose::URL_SAFE_NO_PAD
@@ -452,7 +452,7 @@ async fn open_invited_enrollment_connection(
     certificate_params.distinguished_name = rcgen::DistinguishedName::new();
     certificate_params
         .distinguished_name
-        .push(rcgen::DnType::CommonName, format!("suru-invite-{token}"));
+        .push(rcgen::DnType::CommonName, format!("shaman-invite-{token}"));
     let certificate = certificate_params.self_signed(&signing_key).unwrap();
     let tls = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
         rustls::crypto::ring::default_provider(),
@@ -551,7 +551,7 @@ fn assert_logs_omit_key_material(log_dir: &std::path::Path, public_key: &[u8]) {
 
 fn assert_logs_omit_invite_material(log_dir: &std::path::Path, invite: &str) {
     let logs = read_logs(log_dir);
-    let payload = invite.strip_prefix("suru-v1-").unwrap();
+    let payload = invite.strip_prefix("shaman-v1-").unwrap();
     let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(payload)
         .unwrap();
@@ -819,7 +819,7 @@ async fn a_serving_server_issues_a_one_line_invite_with_its_chosen_ways() {
         .await
         .expect("issue Invite through the Server's local interface");
 
-    assert!(invite.invite.starts_with("suru-v1-"));
+    assert!(invite.invite.starts_with("shaman-v1-"));
     assert!(!invite.invite.contains(['\r', '\n']));
     assert_eq!(invite.ways, vec![Way::Direct(address)]);
 
@@ -1068,7 +1068,7 @@ async fn paired_servers_with_alternate_route(name: &str, alternate: bool) -> Pai
 async fn paired_servers_with_runtime(
     name: &str,
     alternate: bool,
-    runtime: Option<std::sync::Arc<dyn suru::provider::ProviderRuntime>>,
+    runtime: Option<std::sync::Arc<dyn shaman::provider::ProviderRuntime>>,
 ) -> PairedServers {
     paired_servers_with(
         name,
@@ -1127,9 +1127,9 @@ struct PairOptions<'a> {
     /// first.
     alternate: bool,
     /// The Serving Server's Provider, in place of the built-in runtimes.
-    runtime: Option<std::sync::Arc<dyn suru::provider::ProviderRuntime>>,
+    runtime: Option<std::sync::Arc<dyn shaman::provider::ProviderRuntime>>,
     /// The Serving Server's source control, which needs `runtime` given too.
-    source_control: Option<std::sync::Arc<dyn suru::source_control::SourceControl>>,
+    source_control: Option<std::sync::Arc<dyn shaman::source_control::SourceControl>>,
     /// How long the redeeming side waits on a Remote to acknowledge its own
     /// removal.
     withdrawal_timeout: Option<Duration>,
@@ -1316,7 +1316,7 @@ async fn remote_proxy_creates_prompts_and_streams_a_session_on_the_serving_serve
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1396,7 +1396,7 @@ async fn remote_proxy_creates_prompts_and_streams_a_session_on_the_serving_serve
         .expect("admit Remote Prompt through local proxy")
         .error_for_status()
         .expect("Remote Prompt admission succeeds")
-        .json::<suru::protocol::Prompt>()
+        .json::<shaman::protocol::Prompt>()
         .await
         .expect("decode admitted Remote Prompt");
     let update = timeout(PROGRESS_DEADLINE, async {
@@ -1412,7 +1412,7 @@ async fn remote_proxy_creates_prompts_and_streams_a_session_on_the_serving_serve
                 if update.changes.iter().any(|change| {
                     matches!(
                         change,
-                        suru::protocol::SessionChange::PromptAdded { prompt }
+                        shaman::protocol::SessionChange::PromptAdded { prompt }
                             if prompt.id == admitted.id
                     )
                 }) {
@@ -1529,7 +1529,7 @@ async fn remote_proxy_uploads_fetches_and_binds_attachments_on_the_serving_serve
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1606,7 +1606,7 @@ async fn disabling_serving_ends_a_live_peer_stream_without_disturbing_local_clie
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1651,7 +1651,7 @@ async fn disabling_serving_ends_a_live_peer_stream_without_disturbing_local_clie
     in_flight_request
         .write_all(
             format!(
-                "POST /v1/pairing/proxy/v1/sessions HTTP/1.1\r\nHost: localhost\r\nx-suru-protocol-version: {PROTOCOL_VERSION}\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{{"
+                "POST /v1/pairing/proxy/v1/sessions HTTP/1.1\r\nHost: localhost\r\nx-shaman-protocol-version: {PROTOCOL_VERSION}\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{{"
             )
             .as_bytes(),
         )
@@ -1877,7 +1877,7 @@ async fn outlook_client_runs_session_commands_and_streams_against_its_remote() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1914,7 +1914,7 @@ async fn outlook_client_runs_session_commands_and_streams_against_its_remote() {
     let start = provider.next_start().await;
     let mut native = start.succeed(AgentIdentity {
         agent: AgentId::new("codex"),
-        selection: suru::protocol::AgentSelection {
+        selection: shaman::protocol::AgentSelection {
             provider: ProviderId::new("codex"),
             model: ModelId::new("gpt-test"),
             options: Vec::new(),
@@ -1949,7 +1949,7 @@ async fn outlook_client_runs_session_commands_and_streams_against_its_remote() {
         .expect("decode Remote Session snapshot");
     assert!(matches!(
         snapshot,
-        suru::managed_client::SessionEvent::Snapshot(snapshot)
+        shaman::managed_client::SessionEvent::Snapshot(snapshot)
             if snapshot.session.id == created.session.id
     ));
 
@@ -1979,7 +1979,7 @@ async fn a_remote_session_is_moved_by_its_owning_server() {
     let origin = home.path().join("origin");
     std::fs::create_dir(&origin).expect("create the origin");
     std::fs::create_dir(home.path().join("destination")).expect("create the destination");
-    let destination = suru::paths::canonical(home.path().join("destination")).unwrap();
+    let destination = shaman::paths::canonical(home.path().join("destination")).unwrap();
     let pair = paired_servers_with(
         "remote-session-move",
         PairOptions {
@@ -1997,7 +1997,7 @@ async fn a_remote_session_is_moved_by_its_owning_server() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory { path: origin },
+            execution_directory: shaman::protocol::ExecutionDirectory { path: origin },
             prompt: InitialPrompt {
                 id: PromptId::new(),
                 text: "Begin on the Remote".to_owned(),
@@ -2012,7 +2012,7 @@ async fn a_remote_session_is_moved_by_its_owning_server() {
         .expect("the Remote's Provider starts");
     let mut native = start.succeed(AgentIdentity {
         agent: AgentId::new("codex"),
-        selection: suru::protocol::AgentSelection {
+        selection: shaman::protocol::AgentSelection {
             provider: ProviderId::new("codex"),
             model: ModelId::new("gpt-test"),
             options: Vec::new(),
@@ -2037,11 +2037,11 @@ async fn a_remote_session_is_moved_by_its_owning_server() {
     .await
     .expect("the Remote's Session settles its first Turn");
 
-    let suru::protocol::MoveOutcome::Moved { session } = remote
+    let shaman::protocol::MoveOutcome::Moved { session } = remote
         .move_session(
             created.session.id,
-            &suru::protocol::MoveSessionRequest {
-                destination: suru::protocol::MoveDestination::Directory {
+            &shaman::protocol::MoveSessionRequest {
+                destination: shaman::protocol::MoveDestination::Directory {
                     path: "~/destination".into(),
                 },
             },
@@ -2076,7 +2076,7 @@ async fn a_remote_session_is_moved_by_its_owning_server() {
         vec!["init", "-b", "main"],
         vec![
             "-c",
-            "user.name=Suru Test",
+            "user.name=Shaman Test",
             "-c",
             "user.email=test@example.invalid",
             "-c",
@@ -2099,11 +2099,11 @@ async fn a_remote_session_is_moved_by_its_owning_server() {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    let suru::protocol::MoveOutcome::Moved { session } = remote
+    let shaman::protocol::MoveOutcome::Moved { session } = remote
         .move_session(
             created.session.id,
-            &suru::protocol::MoveSessionRequest {
-                destination: suru::protocol::MoveDestination::NewWorktree {
+            &shaman::protocol::MoveSessionRequest {
+                destination: shaman::protocol::MoveDestination::NewWorktree {
                     directory: "~/repository".into(),
                 },
             },
@@ -2113,9 +2113,9 @@ async fn a_remote_session_is_moved_by_its_owning_server() {
     else {
         panic!("the Remote's idle Session Moves at once");
     };
-    let worktree = suru::paths::canonical(&repository)
+    let worktree = shaman::paths::canonical(&repository)
         .unwrap()
-        .join(suru::protocol::MANAGED_WORKTREE_DIRECTORY)
+        .join(shaman::protocol::MANAGED_WORKTREE_DIRECTORY)
         .join("begin-remote");
     assert_eq!(session.session.execution_directory.path, worktree);
     assert!(worktree.is_dir(), "it stands on the Remote's own disk");
@@ -2342,7 +2342,7 @@ async fn catalog_subscriptions_hold_independent_interest_in_two_remotes() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -2486,7 +2486,7 @@ async fn a_remote_catalog_interest_retries_a_transient_drop_with_injected_backof
             .await
             .expect("transient drop announces recovery")
             .expect("Remote catalog interest remains live"),
-        ManagedEvent::Recovering(suru::managed_client::RecoveryStatus {
+        ManagedEvent::Recovering(shaman::managed_client::RecoveryStatus {
             attempt: 1,
             retry_in: Duration::from_millis(5),
             unreachable: None,
@@ -2626,7 +2626,7 @@ async fn revocation_stops_retries_when_a_remote_session_is_the_only_interest() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -2648,7 +2648,7 @@ async fn revocation_stops_retries_when_a_remote_session_is_the_only_interest() {
             .expect("Remote Session snapshot arrives")
             .expect("Remote Session interest remains live")
             .expect("decode Remote Session snapshot"),
-        suru::managed_client::SessionEvent::Snapshot(_)
+        shaman::managed_client::SessionEvent::Snapshot(_)
     ));
     // The Session's stream, and the one the Remote tells its Relays over.
     pair.wire.wait_for_connections(2).await;
@@ -2687,7 +2687,7 @@ async fn a_remote_session_as_the_only_interest_recovers_with_the_injected_backof
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -2723,7 +2723,7 @@ async fn a_remote_session_as_the_only_interest_recovers_with_the_injected_backof
             .expect("Remote Session reconnects when its route returns")
             .expect("Remote Session interest remains live")
             .expect("decode rehydrated Remote Session snapshot"),
-        suru::managed_client::SessionEvent::Snapshot(_)
+        shaman::managed_client::SessionEvent::Snapshot(_)
     ));
     pair.wire.wait_for_connections(2).await;
 
@@ -2769,16 +2769,16 @@ async fn outlook_client_resolves_workspace_paths_on_its_remote() {
 
     assert_eq!(
         resolved.workspace.path,
-        suru::paths::canonical(root.path()).expect("read canonical Repository root")
+        shaman::paths::canonical(root.path()).expect("read canonical Repository root")
     );
     assert_eq!(
         resolved.execution_directory.unwrap().path,
-        suru::paths::canonical(nested).unwrap()
+        shaman::paths::canonical(nested).unwrap()
     );
     assert!(resolved.workspace.repository.is_some());
     assert!(matches!(
         resolved.checkouts[0].revision,
-        Some(suru::protocol::CheckoutRevision::Branch { commit: None, .. })
+        Some(shaman::protocol::CheckoutRevision::Branch { commit: None, .. })
     ));
     let selected = remote
         .resolve_workspace(ResolveWorkspaceRequest {
@@ -2828,8 +2828,8 @@ async fn outlook_client_resolves_workspace_paths_on_its_remote() {
 /// The next Description change a catalog stream announces, past whatever
 /// else it announced first.
 async fn next_description_change(
-    catalog: &mut suru::managed_client::SessionCatalogSubscription,
-) -> suru::protocol::WorkspaceDescriptionChanged {
+    catalog: &mut shaman::managed_client::SessionCatalogSubscription,
+) -> shaman::protocol::WorkspaceDescriptionChanged {
     timeout(PROGRESS_DEADLINE, async {
         loop {
             match next_session_catalog_event(catalog).await {
@@ -2882,12 +2882,12 @@ async fn a_remote_workspace_s_description_is_set_at_its_origin() {
         .create_session(CreateSessionRequest {
             session_id: None,
             preparation_id: None,
-            agent_selection: Some(suru::protocol::AgentSelection {
+            agent_selection: Some(shaman::protocol::AgentSelection {
                 provider: ProviderId::new("codex"),
                 model: ModelId::new("gpt-test"),
                 options: Vec::new(),
             }),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -2916,7 +2916,7 @@ async fn a_remote_workspace_s_description_is_set_at_its_origin() {
         }));
     assert_eq!(
         next_description_change(&mut catalog).await,
-        suru::protocol::WorkspaceDescriptionChanged {
+        shaman::protocol::WorkspaceDescriptionChanged {
             workspace_id: workspace_id.clone(),
             description: Some(WorkspaceDescription {
                 text: "Derived on the workstation.".to_owned(),
@@ -3462,7 +3462,7 @@ async fn malformed_foreign_superseded_spent_and_expired_invites_have_precise_err
 
     for (invite, expected) in [
         ("not-an-invite", SessionErrorCode::InvalidInvite),
-        ("suru-v2-e30", SessionErrorCode::UnsupportedInviteVersion),
+        ("shaman-v2-e30", SessionErrorCode::UnsupportedInviteVersion),
     ] {
         let preview_error = connecting_client
             .preview_invite(invite)
@@ -3673,7 +3673,7 @@ fn pairing_error_message(error: &anyhow::Error) -> &str {
 fn with_offered_ways(invite: &str, edit: impl FnOnce(&mut Vec<serde_json::Value>)) -> String {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     let encoded = invite
-        .strip_prefix("suru-v1-")
+        .strip_prefix("shaman-v1-")
         .expect("an Invite of this version");
     let mut payload: serde_json::Value = serde_json::from_slice(
         &URL_SAFE_NO_PAD
@@ -3689,7 +3689,7 @@ fn with_offered_ways(invite: &str, edit: impl FnOnce(&mut Vec<serde_json::Value>
         .expect("an Invite offers its ways as a list");
     edit(ways);
     format!(
-        "suru-v1-{}",
+        "shaman-v1-{}",
         URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).expect("encode the payload"))
     )
 }
@@ -4503,11 +4503,11 @@ async fn an_attachment_check_through_the_proxy_keeps_the_reason_for_a_not_found(
         .upload_attachment(support::attachments::png(16, 16))
         .await
         .expect("upload an Attachment to the Serving Server");
-    let unknown = suru::protocol::AttachmentId::new("0".repeat(64));
+    let unknown = shaman::protocol::AttachmentId::new("0".repeat(64));
 
     let remote = pair
         .connecting_client
-        .outlook(suru::protocol::Outlook::Remote("workstation".to_owned()));
+        .outlook(shaman::protocol::Outlook::Remote("workstation".to_owned()));
     assert!(
         remote
             .attachment_exists(&stored.id)
@@ -4522,7 +4522,7 @@ async fn an_attachment_check_through_the_proxy_keeps_the_reason_for_a_not_found(
     );
 
     let descriptor = pair.connecting.descriptor();
-    let head = |remote: &str, id: &suru::protocol::AttachmentId| {
+    let head = |remote: &str, id: &shaman::protocol::AttachmentId| {
         crate::support::loopback_client()
             .head(format!(
                 "{}/v1/remotes/{remote}/v1/attachments/{id}",
@@ -4534,7 +4534,7 @@ async fn an_attachment_check_through_the_proxy_keeps_the_reason_for_a_not_found(
     let missing = head("workstation", &unknown).await.expect("send HEAD");
     assert_eq!(missing.status(), reqwest::StatusCode::NOT_FOUND);
     assert_eq!(
-        missing.headers()[suru::protocol::SESSION_ERROR_CODE_HEADER],
+        missing.headers()[shaman::protocol::SESSION_ERROR_CODE_HEADER],
         "attachment_not_found",
         "the Remote's reason comes back through the proxy"
     );
@@ -4543,11 +4543,11 @@ async fn an_attachment_check_through_the_proxy_keeps_the_reason_for_a_not_found(
         .expect("send HEAD");
     assert_eq!(unpaired.status(), reqwest::StatusCode::NOT_FOUND);
     assert_eq!(
-        unpaired.headers()[suru::protocol::SESSION_ERROR_CODE_HEADER],
+        unpaired.headers()[shaman::protocol::SESSION_ERROR_CODE_HEADER],
         "remote_not_found"
     );
     pair.connecting_client
-        .outlook(suru::protocol::Outlook::Remote(
+        .outlook(shaman::protocol::Outlook::Remote(
             "no-such-machine".to_owned(),
         ))
         .attachment_exists(&stored.id)
@@ -4744,7 +4744,7 @@ struct Tls12OnlyServer {
 impl Tls12OnlyServer {
     async fn start() -> Self {
         let rcgen::CertifiedKey { cert, signing_key } =
-            rcgen::generate_simple_self_signed(vec!["suru-server".to_owned()])
+            rcgen::generate_simple_self_signed(vec!["shaman-server".to_owned()])
                 .expect("generate the TLS 1.2 Server's identity");
         let shown = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let tls = rustls::ServerConfig::builder_with_provider(std::sync::Arc::new(
@@ -4806,7 +4806,7 @@ fn handmade_invite(way: Way, public_key: &[u8]) -> String {
         "h": "workstation",
     });
     format!(
-        "suru-v1-{}",
+        "shaman-v1-{}",
         URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).expect("encode the payload"))
     )
 }
@@ -4927,7 +4927,7 @@ async fn redeeming_an_invite_never_shows_its_token_over_tls_1_2() {
 /// the proxy's credentials.
 #[tokio::test]
 async fn a_remote_is_paired_and_reached_through_the_proxy_its_server_is_given() {
-    let proxy = connect_proxy::ConnectProxy::start("suru", "proxy-secret").await;
+    let proxy = connect_proxy::ConnectProxy::start("shaman", "proxy-secret").await;
     let pair =
         paired_servers_through("direct-way-proxied", DirectProxies::given(&proxy.url(), "")).await;
     let offered = pair.wire.address.to_string();
@@ -4961,7 +4961,7 @@ async fn a_remote_is_paired_and_reached_through_the_proxy_its_server_is_given() 
 /// proxy never asked.
 #[tokio::test]
 async fn a_remote_whose_address_no_proxy_exempts_is_reached_directly() {
-    let proxy = connect_proxy::ConnectProxy::start("suru", "proxy-secret").await;
+    let proxy = connect_proxy::ConnectProxy::start("shaman", "proxy-secret").await;
     let pair = paired_servers_through(
         "direct-way-exempted",
         DirectProxies::given(&proxy.url(), "127.0.0.1"),
@@ -5046,7 +5046,7 @@ async fn an_https_proxy_is_sent_nothing_and_its_way_fails() {
             ..ServerTimings::default()
         }
         .with_direct_proxies(DirectProxies::given(
-            &format!("https://suru:proxy-secret@{}", stand_in.address),
+            &format!("https://shaman:proxy-secret@{}", stand_in.address),
             "",
         )),
     )
@@ -5103,7 +5103,7 @@ async fn a_pinned_serving_setting_is_adopted_at_each_startup_with_the_same_ident
     let data_dir = tempfile::tempdir().expect("create isolated data directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             "serving": {
                 "enabled": true,
@@ -5231,7 +5231,7 @@ fn the_test_binary_carries_a_build_marker() {
     let identity =
         build_identity::for_current_executable().expect("identify current test executable");
     assert!(
-        identity.starts_with("suru-build-v1:"),
+        identity.starts_with("shaman-build-v1:"),
         "the linker kept the test binary's marker: {identity}"
     );
 }
@@ -5239,9 +5239,9 @@ fn the_test_binary_carries_a_build_marker() {
 #[test]
 fn build_identity_changes_with_executable_contents() {
     let directory = tempfile::tempdir().expect("create build identity fixture directory");
-    let executable = directory.path().join("suru-fixture");
+    let executable = directory.path().join("shaman-fixture");
     std::fs::write(&executable, b"first executable").expect("write first executable contents");
-    let first = suru::build_identity::for_executable(&executable)
+    let first = shaman::build_identity::for_executable(&executable)
         .expect("identify first executable contents");
 
     let modified = std::fs::metadata(&executable).unwrap().modified().unwrap();
@@ -5252,7 +5252,7 @@ fn build_identity_changes_with_executable_contents() {
         .unwrap()
         .set_modified(modified)
         .unwrap();
-    let rebuilt = suru::build_identity::for_executable(&executable)
+    let rebuilt = shaman::build_identity::for_executable(&executable)
         .expect("identify rebuilt executable contents");
 
     assert_ne!(first, rebuilt);
@@ -5316,7 +5316,7 @@ async fn server_refuses_a_database_schema_newer_than_the_binary() {
     let config = ServerConfig::new(state_dir.path(), "newer-schema-test")
         .expect("configure server")
         .with_data_dir(data_dir.path());
-    let database_path = config.data_dir().join("suru.db");
+    let database_path = config.data_dir().join("shaman.db");
     seed_database(
         &database_path,
         "
@@ -5334,7 +5334,7 @@ async fn server_refuses_a_database_schema_newer_than_the_binary() {
         .expect("newer database schema must stop server startup");
     let message = format!("{error:#}");
     assert!(
-        message.contains("schema 99999999999999 is newer than this Suru binary"),
+        message.contains("schema 99999999999999 is newer than this Shaman binary"),
         "startup error should explain the unsafe downgrade: {message}"
     );
 }
@@ -5346,7 +5346,7 @@ async fn a_failed_embedded_database_migration_leaves_no_partial_schema() {
     let config = ServerConfig::new(state_dir.path(), "migration-atomicity-test")
         .expect("configure server")
         .with_data_dir(data_dir.path());
-    let database_path = config.data_dir().join("suru.db");
+    let database_path = config.data_dir().join("shaman.db");
     seed_database(
         &database_path,
         "
@@ -5394,7 +5394,7 @@ async fn a_database_from_before_descriptions_keeps_its_workspaces_and_their_icon
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let config = ServerConfig::new(state_dir.path(), "workspace-description-migration")
         .expect("configure server");
-    let database_path = config.data_dir().join("suru.db");
+    let database_path = config.data_dir().join("shaman.db");
     let spawn = |config: ServerConfig| {
         server::spawn_with_provider(
             config,
@@ -5419,7 +5419,7 @@ async fn a_database_from_before_descriptions_keeps_its_workspaces_and_their_icon
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -5506,7 +5506,7 @@ async fn an_unreadable_landing_agent_selection_falls_back_without_blocking_start
     let config = ServerConfig::new(state_dir.path(), "unreadable-landing-selection-test")
         .expect("configure server")
         .with_data_dir(data_dir.path());
-    let database_path = config.data_dir().join("suru.db");
+    let database_path = config.data_dir().join("shaman.db");
     let original = server::spawn(config.clone())
         .await
         .expect("spawn server to migrate database");
@@ -6159,13 +6159,13 @@ async fn descriptor_replacement_never_exposes_a_partial_publication() {
     let runtime_dir = state_dir.path().join("atomic-publication-test");
     std::fs::create_dir_all(&runtime_dir).expect("create runtime directory");
     let descriptor_path = config.descriptor_path();
-    let stale = suru::protocol::RuntimeDescriptor {
+    let stale = shaman::protocol::RuntimeDescriptor {
         base_url: "http://127.0.0.1:9".to_owned(),
         token: "stale-token".to_owned(),
         identity: ServerIdentity {
             instance_id: uuid::Uuid::new_v4(),
             pid: 1,
-            protocol_version: suru::protocol::PROTOCOL_VERSION,
+            protocol_version: shaman::protocol::PROTOCOL_VERSION,
             build_identity: "stale-build".to_owned(),
         },
     };
@@ -6179,7 +6179,7 @@ async fn descriptor_replacement_never_exposes_a_partial_publication() {
         let stop = stop.clone();
         std::thread::spawn(move || -> Result<Vec<uuid::Uuid>, String> {
             let mut observed = Vec::new();
-            let first: suru::protocol::RuntimeDescriptor = serde_json::from_reader(
+            let first: shaman::protocol::RuntimeDescriptor = serde_json::from_reader(
                 std::fs::File::open(&descriptor_path)
                     .map_err(|error| format!("open initial descriptor: {error}"))?,
             )
@@ -6187,7 +6187,7 @@ async fn descriptor_replacement_never_exposes_a_partial_publication() {
             observed.push(first.instance_id);
             ready.wait();
             while !stop.load(Ordering::SeqCst) {
-                let descriptor: suru::protocol::RuntimeDescriptor = serde_json::from_reader(
+                let descriptor: shaman::protocol::RuntimeDescriptor = serde_json::from_reader(
                     std::fs::File::open(&descriptor_path)
                         .map_err(|error| format!("open descriptor during publication: {error}"))?,
                 )
@@ -6439,7 +6439,7 @@ async fn authenticated_replacement_stop_emits_replacement_intent() {
 // These tests assert Session movement and connection lifecycle; Models are
 // independently pushed on the same subscription and may arrive between them.
 async fn next_session_catalog_event(
-    subscription: &mut suru::managed_client::SessionCatalogSubscription,
+    subscription: &mut shaman::managed_client::SessionCatalogSubscription,
 ) -> Option<ManagedEvent> {
     loop {
         match subscription.next().await {
@@ -6451,7 +6451,7 @@ async fn next_session_catalog_event(
 
 #[tokio::test]
 async fn remote_catalog_delivers_model_names_and_updates_without_listing_models() {
-    use suru::protocol::{
+    use shaman::protocol::{
         ModelAvailability, ModelDescriptor, ModelId, ProviderCatalogStatus, ProviderId,
     };
 
@@ -6512,7 +6512,7 @@ async fn remote_catalog_delivers_model_names_and_updates_without_listing_models(
         "reconnecting does not rediscover Models"
     );
 
-    runtime.set_unavailable(Some(suru::protocol::ProviderUnavailability::NotSignedIn));
+    runtime.set_unavailable(Some(shaman::protocol::ProviderUnavailability::NotSignedIn));
     pair.serving_client.refresh_models().await.unwrap();
     timeout(PROGRESS_DEADLINE, async {
         loop {
@@ -6557,7 +6557,7 @@ async fn the_subagent_tree_streams_through_a_remote_outlook() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -6574,7 +6574,7 @@ async fn the_subagent_tree_streams_through_a_remote_outlook() {
         .expect("the Remote's Provider starts");
     let mut native = start.succeed(AgentIdentity {
         agent: AgentId::new("codex"),
-        selection: suru::protocol::AgentSelection {
+        selection: shaman::protocol::AgentSelection {
             provider: ProviderId::new("codex"),
             model: ModelId::new("gpt-test"),
             options: Vec::new(),
@@ -6586,7 +6586,7 @@ async fn the_subagent_tree_streams_through_a_remote_outlook() {
         .succeed();
 
     let mut tree = remote.subscribe_subagent_tree(created.session.id);
-    let suru::managed_client::SubagentTreeEvent::Snapshot(snapshot) =
+    let shaman::managed_client::SubagentTreeEvent::Snapshot(snapshot) =
         next_remote_tree_event(&mut tree).await
     else {
         panic!("the Remote tree opens with its snapshot");
@@ -6596,14 +6596,14 @@ async fn the_subagent_tree_streams_through_a_remote_outlook() {
 
     native
         .emit_and_wait_until_observed(ProviderEvent::SubagentStarted {
-            subagent_id: suru::provider::ProviderSubagentId::new("task-1"),
+            subagent_id: shaman::provider::ProviderSubagentId::new("task-1"),
             name: "Explore".to_owned(),
             description: "Map the Remote's seams".to_owned(),
             delegation: None,
         })
         .await;
-    let suru::managed_client::SubagentTreeEvent::Changed(
-        suru::protocol::SubagentTreeChange::SubagentSpawned { entry },
+    let shaman::managed_client::SubagentTreeEvent::Changed(
+        shaman::protocol::SubagentTreeChange::SubagentSpawned { entry },
     ) = next_remote_tree_event(&mut tree).await
     else {
         panic!("a spawn on the Remote arrives as a change through the proxy");
@@ -6617,8 +6617,8 @@ async fn the_subagent_tree_streams_through_a_remote_outlook() {
 }
 
 async fn next_remote_tree_event(
-    tree: &mut suru::managed_client::SubagentTreeSubscription,
-) -> suru::managed_client::SubagentTreeEvent {
+    tree: &mut shaman::managed_client::SubagentTreeSubscription,
+) -> shaman::managed_client::SubagentTreeEvent {
     timeout(PROGRESS_DEADLINE, tree.next())
         .await
         .expect("a tree event arrives through the Remote")

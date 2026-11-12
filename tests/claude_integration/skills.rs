@@ -13,7 +13,7 @@ use crate::claude_integration::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use suru::protocol::{
+use shaman::protocol::{
     Activity, AdmitPromptRequest, CreateSessionRequest, InitialPrompt, MessageRole, PromptDelivery,
     PromptId, PromptStatus, ProviderId, SkillCatalogRequest, SkillCatalogStatus, SkillDescriptor,
     SkillInvocation, SkillPromptDelivery, TextSpan, TurnStatus,
@@ -59,13 +59,13 @@ fn invocation(skill: &SkillDescriptor, start: u32, end: u32) -> SkillInvocation 
 }
 
 async fn fresh_catalog(
-    client: &mut suru::managed_client::ManagedClient,
+    client: &mut shaman::managed_client::ManagedClient,
     workspace: &std::path::Path,
-) -> suru::protocol::SkillCatalog {
+) -> shaman::protocol::SkillCatalog {
     let loading = client
         .list_skills(SkillCatalogRequest {
             provider: ProviderId::new("claude"),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
         })
@@ -81,13 +81,13 @@ async fn claude_discovers_native_skills_in_configured_short_lived_processes() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let canonical_workspace =
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
     let (server, mut client) = hosting(&claude, "claude-skill-catalog", state_dir.path()).await;
 
     let loading = client
         .list_skills(SkillCatalogRequest {
             provider: ProviderId::new("claude"),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
         })
@@ -202,7 +202,7 @@ async fn claude_rejects_seven_distinct_skills_before_starting_native_input() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -274,7 +274,7 @@ async fn claude_delivers_ordered_distinct_skills_for_initial_and_queued_prompts(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -428,7 +428,7 @@ async fn claude_receives_attachments_as_image_blocks_before_the_final_text_block
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -554,7 +554,7 @@ async fn claude_reports_native_skill_rejection_without_plain_text_retry() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -626,7 +626,7 @@ async fn claude_rejects_skill_steers_atomically_with_queue_guidance() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -723,7 +723,7 @@ async fn claude_skill_discovery_survives_a_cli_that_lingers_after_its_stdin_clos
     ));
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
-    let runtime = suru::provider::ClaudeRuntime::new(claude.executable())
+    let runtime = shaman::provider::ClaudeRuntime::new(claude.executable())
         .with_process_exit_grace(std::time::Duration::from_millis(50));
     let (server, mut client) = hosting_runtime(
         runtime,

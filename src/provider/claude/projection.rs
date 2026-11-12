@@ -51,7 +51,7 @@
 //! A `result` Settles the Turn as completed, interrupted, or failed — except where a steer's own
 //! result is still to come. The CLI folds a message queued into a running loop into that loop at
 //! its next tool round, and answers it with the loop's one result; a message still queued when
-//! the loop ends begins a loop of its own, with a result of its own, and Suru keeps them all
+//! the loop ends begins a loop of its own, with a result of its own, and Shaman keeps them all
 //! inside the Turn the steer joined. Which of the two befell a steer, the CLI reports in the
 //! lifecycle it gives the message under the uuid it was written with ([`super::turn_in_flight`]).
 //! The result speaks only for the loop's own conversation: a subagent's streams live past it,
@@ -242,7 +242,7 @@ fn mcp_tool(name: &str) -> Option<(&str, &str)> {
 /// its next tool round."
 const QUEUED_FOR_DELIVERY: &str = "queued for delivery";
 
-/// What one task the CLI reports is to Suru. Every task joins the roster an interrupt stops, but
+/// What one task the CLI reports is to Shaman. Every task joins the roster an interrupt stops, but
 /// only a Subagent has a conversation of its own, and only a Watch may wake the loop once it has
 /// ended its Turn.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -256,7 +256,7 @@ enum TaskKind {
     /// its tool result, not its settling, is what the agent reads — unless the CLI moves it to the
     /// background, which makes it a Watch from then on.
     Foreground,
-    /// Work that neither runs an agent Suru presents nor wakes this loop.
+    /// Work that neither runs an agent Shaman presents nor wakes this loop.
     Unwatched,
 }
 
@@ -270,7 +270,7 @@ impl TaskKind {
     /// `task_notification` inside the Turn; a backgrounded one emits `is_backgrounded: true`. A
     /// start that does not say keeps reading as a Watch, as a monitor's start does.
     /// `local_workflow`, `remote_agent`, `in_process_teammate`, `dream`, plan-mode tasks, and any
-    /// type this build has not heard of are none of Suru's to wait on, since the wire grows freely
+    /// type this build has not heard of are none of Shaman's to wait on, since the wire grows freely
     /// (ADR 0010) and a task wrongly read as a Watch would leave a Session Monitoring for nothing.
     fn of(task_type: Option<&str>, is_backgrounded: Option<bool>) -> Self {
         match (task_type, is_backgrounded) {
@@ -691,7 +691,7 @@ struct UnopenedEdit {
 /// What an Approval's `can_use_tool` request finds of the use it gates.
 #[derive(Default)]
 struct GatedUse {
-    /// The events opening the use's row, where the request's input is the first whole input Suru
+    /// The events opening the use's row, where the request's input is the first whole input Shaman
     /// has seen of the use.
     opened: Vec<AttributedProviderEvent>,
     /// The native identity of the row recording the use, which the Approval links to.
@@ -1072,7 +1072,7 @@ impl ClaudeProjection {
     /// that answers the Turn from one ending a loop the message never joined. A message a loop
     /// never took up and never will, once the result ending the Turn's last loop was left waiting
     /// on it, leaves nothing else to Settle the Turn, so it Settles here. One `cancelled` there was
-    /// swept by the interrupt the user asked for — Suru withdraws no message of its own, and with
+    /// swept by the interrupt the user asked for — Shaman withdraws no message of its own, and with
     /// no loop running that interrupt aborts none, so no aborted result will follow — and the Turn
     /// Settles as interrupted. One the CLI discarded or refused leaves the Turn as the completed
     /// loop it last ran.
@@ -1102,7 +1102,7 @@ impl ClaudeProjection {
     }
 
     /// The synthetic assistant message the CLI writes to carry a local slash command's output: its
-    /// plumbing, which no model wrote and which is no Agent Message. The one command Suru runs is
+    /// plumbing, which no model wrote and which is no Agent Message. The one command Shaman runs is
     /// `/compact`, for a Compaction request (ADR 0041), and a failed outcome there is the
     /// compaction failing: the CLI's refusal of a conversation with nothing to compact reports
     /// nothing else, and the `result` after it reads success. The command's output, past the CLI's
@@ -1685,7 +1685,7 @@ impl ClaudeProjection {
 
     /// A Watch's own notification that it settled, which the CLI delivers to the agent whose
     /// loop it wakes; the notification's summary is how the Watch settled in the CLI's words. A
-    /// stopped Watch wakes nothing: the agent stopped it itself mid-Turn, or Suru stopped it on
+    /// stopped Watch wakes nothing: the agent stopped it itself mid-Turn, or Shaman stopped it on
     /// the way to interrupting the loop, and neither begins a Continuation. Any status this build
     /// does not know reads as failed, as it does for a Subagent.
     fn project_watch_settled(
@@ -2260,7 +2260,7 @@ impl ClaudeProjection {
         })
     }
 
-    /// Opens the row of an edit still waiting on one, from `input`: the first whole input Suru
+    /// Opens the row of an edit still waiting on one, from `input`: the first whole input Shaman
     /// sees of the use, whichever brings it — the block's close, or the `can_use_tool` request of
     /// an Approval asking before the close. That input decides, once and for all, which row
     /// records the use — a File Change where it names the file the edit changes, and otherwise
@@ -2302,7 +2302,7 @@ impl ClaudeProjection {
 
     /// What the `can_use_tool` request `message` of an Approval finds of the use it gates. An
     /// edit whose block is still open has its row opened from the input the request carries, the
-    /// first whole input Suru has seen of it (see [`Self::open_edit_row`]): the Approval links to
+    /// first whole input Shaman has seen of it (see [`Self::open_edit_row`]): the Approval links to
     /// that row, so it must stand before the Approval does. The row the Approval links to is the
     /// one recording the use as the projection decided it — for any other use, the row its tool's
     /// name decides — never one recomputed from the request's own copy of the input. Any other
@@ -2714,7 +2714,7 @@ impl ClaudeProjection {
     /// The reporting lifetime a result's cumulative Cost belongs to: the conversation the CLI keeps
     /// the running total for. The CLI saves that total into the conversation when a process exits
     /// and a process resuming it carries on from there, so every process a Session spawns under
-    /// one conversation — across Selection changes and Suru restarts alike — continues one total,
+    /// one conversation — across Selection changes and Shaman restarts alike — continues one total,
     /// and reporting each process separately would count what came before it again. A `/clear`
     /// moves the process onto a new conversation whose total starts from zero, which is a new
     /// lifetime. A result naming no conversation belongs to the one the Session is filed under.
@@ -2964,7 +2964,7 @@ fn send_message_description(input: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// A result's usage in Suru's disjoint parts. The CLI counts thinking inside its output tokens, so
+/// A result's usage in Shaman's disjoint parts. The CLI counts thinking inside its output tokens, so
 /// the thinking it breaks out is taken back out of the output; a breakdown it does not give leaves
 /// the thinking unknown and the output as stated.
 pub(super) fn result_usage(usage: &ResultUsage) -> Usage {
@@ -3448,7 +3448,7 @@ mod tests {
     }
 
     /// A background agent spawned from the loop, whose conversation then runs a Bash tool use
-    /// that the CLI backgrounds as task `task-shell`, telling Suru a subagent owns it.
+    /// that the CLI backgrounds as task `task-shell`, telling Shaman a subagent owns it.
     fn subagent_backgrounds_a_shell() -> Vec<Value> {
         vec![
             json!({
@@ -4394,22 +4394,22 @@ mod tests {
             ("AskUserQuestion", json!({"questions": []}), None),
             ("ToolSearch", json!({"query": "select:Read"}), None),
             (
-                "mcp__suru__spawn_subagent",
+                "mcp__shaman__spawn_subagent",
                 json!({"prompt": "Look."}),
                 None,
             ),
             (
-                "mcp__suru__begin_session",
+                "mcp__shaman__begin_session",
                 json!({"directory": "/work", "prompt": "Look."}),
                 None,
             ),
             (
-                "mcp__suru__send_prompt",
+                "mcp__shaman__send_prompt",
                 json!({"session_id": "s", "prompt": "Look."}),
                 Some("tool_call"),
             ),
             (
-                "mcp__suru__move_session",
+                "mcp__shaman__move_session",
                 json!({"directory": "/work"}),
                 Some("tool_call"),
             ),
@@ -4501,7 +4501,7 @@ mod tests {
     }
 
     /// The CLI's copies of an edit's input need not agree — a PreToolUse hook may rewrite the one
-    /// its Approval carries — so the first whole copy Suru sees decides the edit's row, whichever
+    /// its Approval carries — so the first whole copy Shaman sees decides the edit's row, whichever
     /// brings it, and fills it in: a later copy that differs, naming a file where the first named
     /// none or the other way about, opens, refills and reclassifies nothing, the Approval links to
     /// the row as it was decided, and a decline settles that same row.
@@ -4580,7 +4580,7 @@ mod tests {
         }
     }
 
-    /// The Broker's Tools reach Claude as MCP tool uses named `mcp__suru__*`, and 2.1.283 defers
+    /// The Broker's Tools reach Claude as MCP tool uses named `mcp__shaman__*`, and 2.1.283 defers
     /// them behind a native `ToolSearch` the Agent calls before its first use of each
     /// (docs/validation/0408-claude-http-mcp-long-calls.md). Neither a Broker call affecting a
     /// Subagent nor the search is work a Transcript presents — the Broker's own rows are the
@@ -4589,7 +4589,7 @@ mod tests {
     /// them does.
     #[test]
     fn a_broker_call_affecting_a_subagent_and_the_tool_search_loading_it_project_nothing() {
-        let search = json!({"query": "select:mcp__suru__send_to_subagent", "max_results": 1});
+        let search = json!({"query": "select:mcp__shaman__send_to_subagent", "max_results": 1});
         let spawn = json!({
             "provider": "codex", "model": "gpt-5.5", "name": "Scout",
             "description": "Map the crates", "prompt": "Map the crates.",
@@ -4602,7 +4602,7 @@ mod tests {
             streamed_tool_use(
                 1,
                 "toolu_send",
-                "mcp__suru__send_to_subagent",
+                "mcp__shaman__send_to_subagent",
                 json!({"session_id": "child", "prompt": "More."}),
             )
             .to_vec(),
@@ -4619,7 +4619,7 @@ mod tests {
                 restated_tool_use(
                     "toolu_agent",
                     "toolu_sub_spawn",
-                    "mcp__suru__spawn_subagent",
+                    "mcp__shaman__spawn_subagent",
                     spawn,
                 ),
                 tool_result(Some("toolu_agent"), "toolu_sub_spawn"),

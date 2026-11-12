@@ -8,7 +8,7 @@ use crate::tui_rendering::support::{
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Position;
-use suru::{
+use shaman::{
     protocol::{
         AgentSelection, CompactSessionRequest, ModelId, MoveDestination, MoveSessionRequest,
         Outlook, PromptId, ProviderId, SessionId, SessionReference,
@@ -41,7 +41,7 @@ fn slash_autocomplete_invokes_new_session_from_a_description_match() {
         ApplicationTransition::DetachSession
     );
     let landing = rendered_application_rows(&application).join("\n");
-    assert!(!landing.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+    assert!(!landing.contains("▄█▄▀▀█"));
     assert!(landing.contains("Type a prompt"));
     assert!(!landing.contains("Long-running work"));
     assert!(!landing.contains("/new"));
@@ -67,8 +67,8 @@ fn slash_settle_sets_the_open_session_aside() {
             )))
             .expect("invoke the settle command"),
         ApplicationTransition::SettleSession {
-            session: suru::protocol::SessionReference::new(
-                suru::protocol::Outlook::Local,
+            session: shaman::protocol::SessionReference::new(
+                shaman::protocol::Outlook::Local,
                 session_id,
             ),
             settled: true,
@@ -144,7 +144,7 @@ fn exit_and_quit_commands_dispatch_one_semantic_exit_action() {
     type_terminal_text(&mut canonical, "/exit");
     let autocomplete = rendered_application_rows(&canonical).join("\n");
     assert!(autocomplete.contains("/exit"));
-    assert!(autocomplete.contains("Exit Suru"));
+    assert!(autocomplete.contains("Exit Shaman"));
     assert_eq!(
         canonical
             .handle_terminal_event(InputEvent::Key(KeyEvent::new(
@@ -173,7 +173,7 @@ fn exit_and_quit_commands_dispatch_one_semantic_exit_action() {
     );
 
     assert_eq!(
-        suru::tui::SemanticCommandId::ApplicationExit.as_str(),
+        shaman::tui::SemanticCommandId::ApplicationExit.as_str(),
         "application.exit"
     );
 }
@@ -301,7 +301,7 @@ fn themes_command_alias_and_keybinding_open_the_same_picker() {
     );
 
     assert_eq!(
-        suru::tui::SemanticCommandId::ThemeList.as_str(),
+        shaman::tui::SemanticCommandId::ThemeList.as_str(),
         "theme.list"
     );
 }
@@ -360,11 +360,11 @@ fn options_commands_dispatch_one_semantic_model_options_action() {
     ));
 
     assert_eq!(
-        suru::tui::SemanticCommandId::ModelOptions.as_str(),
+        shaman::tui::SemanticCommandId::ModelOptions.as_str(),
         "model.options"
     );
     assert_eq!(
-        suru::tui::SemanticCommandId::ModelOptionsApply.as_str(),
+        shaman::tui::SemanticCommandId::ModelOptionsApply.as_str(),
         "model.options.apply"
     );
 }

@@ -1,4 +1,4 @@
-//! Presentation of the Claude Code CLI's model rows as Suru's [`ModelDescriptor`]s.
+//! Presentation of the Claude Code CLI's model rows as Shaman's [`ModelDescriptor`]s.
 //!
 //! The CLI is the source of truth, so rows are presented verbatim: the alias `value` a spawn's
 //! model flag accepts is the Model ID, and the CLI's own display names and descriptions ride along
@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// The row the CLI's picker recommends. The wire marks no row as the default, but this alias is
-/// the CLI's own "Default (recommended)" entry, so when it is offered Suru defaults to it.
+/// the CLI's own "Default (recommended)" entry, so when it is offered Shaman defaults to it.
 const DEFAULT_MODEL_VALUE: &str = "default";
 
 /// The alias Claude runs its own Errands at: the cheapest and fastest row the CLI's picker offers,
@@ -25,7 +25,7 @@ const DEFAULT_MODEL_VALUE: &str = "default";
 const ERRAND_MODEL_VALUE: &str = "haiku";
 
 /// The effort the CLI itself runs with when the user has chosen none. The wire names no default
-/// effort per row, so Suru mirrors the CLI's default when the row offers it and falls back to the
+/// effort per row, so Shaman mirrors the CLI's default when the row offers it and falls back to the
 /// row's first level otherwise.
 const DEFAULT_EFFORT_LEVEL: &str = "high";
 
@@ -48,7 +48,7 @@ pub(super) fn errand_selection() -> AgentSelection {
     }
 }
 
-/// Turns the rows the CLI reports into Suru's catalog, marking exactly one of them the default.
+/// Turns the rows the CLI reports into Shaman's catalog, marking exactly one of them the default.
 pub(super) fn model_descriptors(models: Vec<NativeModel>) -> Vec<ModelDescriptor> {
     let mut descriptors = models.into_iter().map(model_descriptor).collect::<Vec<_>>();
     let default = descriptors
@@ -77,7 +77,7 @@ fn model_descriptor(model: NativeModel) -> ModelDescriptor {
         options: reasoning_effort_option(&model.supported_effort_levels)
             .into_iter()
             .collect(),
-        // The row's resolution names the Model as Suru names every Claude Model that ran.
+        // The row's resolution names the Model as Shaman names every Claude Model that ran.
         details: ModelDetails {
             resolved_model: model
                 .resolved_model

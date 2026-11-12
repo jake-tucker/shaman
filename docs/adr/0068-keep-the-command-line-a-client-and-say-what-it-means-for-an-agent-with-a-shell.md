@@ -2,7 +2,7 @@
 
 _Says where ADR-0043's bound ends for the Agent's shell, as ADR-0067 says it for the Agent's file writes._
 
-A machine with no one at its screen has to reach a Relay and issue an Invite without the TUI (#613). `suru relay` and `suru serve` do that as a **Client**: they reach the Channel's Server as any Client does, starting it as one would, and speak to it over its loopback API with its token. Nothing about what they may do is theirs.
+A machine with no one at its screen has to reach a Relay and issue an Invite without the TUI (#613). `shaman relay` and `shaman serve` do that as a **Client**: they reach the Channel's Server as any Client does, starting it as one would, and speak to it over its loopback API with its token. Nothing about what they may do is theirs.
 
 **The logic stays in the Server.** Anything that would make a command differ from `/relay` or `/serve` is behind a route they share. `/serve` used to decide for itself whether to turn Serving on and to list the machine's addresses from its own process, so those moved to `POST /v1/pairing/serving`. Which ways an Invite offers by default is decided by `POST /v1/pairing/invites/offered`, and whether a Relay can be offered at all by one rule, `RelayWithheld::of`, that the picker and the route both read. Only the Client's rendering of each differs, so the Server's answers carry no Client's words: why a way is left out is typed (`WayLeftOut`), and each Client says what would put it right, in its own commands. Moving this fixed a fault in passing: `/serve` listed every interface address even for a listener bound to loopback, so an Invite could offer ways that could not work. Now the Server lists only what another machine could reach.
 
@@ -31,15 +31,15 @@ The issue says "there is no new way in". That is true of authority and misleadin
 
 **True: the authority already existed.** An Agent's shell runs as the user. The runtime descriptor holding the loopback token is owner-only, which any process of that user passes, so an Agent could already read it and `POST /v1/pairing/invites`, add a Relay, or turn Serving on. ADR-0050 declined to put the token in the credential store for the reason that still holds: every Client reads it to attach. These commands add no route that token could not already reach except the ones above, each of which does what its surface does, and each is refused to Peers and offered by no Sidekick Tool.
 
-**Also true: it is now one obvious command.** `suru serve invite` prints a working Invite on standard output, and `--help` says so. An Agent no longer has to find the token and form a request. So:
+**Also true: it is now one obvious command.** `shaman serve invite` prints a working Invite on standard output, and `--help` says so. An Agent no longer has to find the token and form a request. So:
 
 - An Agent able to run commands and reach loopback can issue an Invite and send it anywhere. Whoever redeems it holds a Pairing, and a Peer can begin Sessions here, which run commands here. A Peer's user prompting an Agent here can have it do the same, though Peers cannot manage Peers by any route (ADR-0017): that bound is on routes, and this is the shell.
-- `suru relay serve-through` and `suru relay remove` are the same.
-- An Invite printed in an Agent's shell lands in its Transcript and goes to its Provider. An Agent's next `suru serve invite` also kills the user's outstanding Invite.
+- `shaman relay serve-through` and `shaman relay remove` are the same.
+- An Invite printed in an Agent's shell lands in its Transcript and goes to its Provider. An Agent's next `shaman serve invite` also kills the user's outstanding Invite.
 
 **What stands in the way** is the Provider's gate, as ADR-0067's table has it for a file write, and it is no more verified here than there: Claude's classifier and Copilot's judge decide on the command, what they do with it was not tested and may change, and Codex's `workspace-write` sandbox was not tested against a loopback connection. `danger-full-access`, `bypassPermissions` and `allowAll` stop nothing.
 
-**An Agent's shell cannot be told apart, and these commands do not try.** A Provider process inherits the Server's environment plus only what its harness sets. Suru sets no `SURU_*` variable naming a Session, and the Broker's per-Session token does not reach a shell's environment. One could be added, and the commands could refuse under it, but the Agent could unset it, or read the descriptor and use `curl` as before. It would look like a bound and be a speed bump, so it is not built. What would hold is what ADR-0067 names: running Agents under another operating system user or a real sandbox.
+**An Agent's shell cannot be told apart, and these commands do not try.** A Provider process inherits the Server's environment plus only what its harness sets. Shaman sets no `SHAMAN_*` variable naming a Session, and the Broker's per-Session token does not reach a shell's environment. One could be added, and the commands could refuse under it, but the Agent could unset it, or read the descriptor and use `curl` as before. It would look like a bound and be a speed bump, so it is not built. What would hold is what ADR-0067 names: running Agents under another operating system user or a real sandbox.
 
 ## Considered Options
 
@@ -50,9 +50,9 @@ The issue says "there is no new way in". That is true of authority and misleadin
 
 ## Consequences
 
-- A command run from a build other than the running Server's replaces that Server, as any Client does (ADR-0001), which ends what it was doing. A script using another install of `suru` should expect that.
-- A command after `suru server stop` starts a Server, as a Client does. A stop holds a Keeper back, not a person running a command, and a command that only reads, such as `relay list`, is no exception: the issue has every command start one. Whoever stopped a Server to keep it stopped must not run these.
-- A command attaches to a running Server whatever `SURU_CONFIG_DIR` it was given. That is read only where it launches one.
+- A command run from a build other than the running Server's replaces that Server, as any Client does (ADR-0001), which ends what it was doing. A script using another install of `shaman` should expect that.
+- A command after `shaman server stop` starts a Server, as a Client does. A stop holds a Keeper back, not a person running a command, and a command that only reads, such as `relay list`, is no exception: the issue has every command start one. Whoever stopped a Server to keep it stopped must not run these.
+- A command attaches to a running Server whatever `SHAMAN_CONFIG_DIR` it was given. That is read only where it launches one.
 
 ## Reconsider if
 

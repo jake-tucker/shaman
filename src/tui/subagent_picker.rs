@@ -19,7 +19,7 @@ use crate::protocol::{
 use super::list_window::ListWindow;
 
 /// One working Subagent on offer: the child Session its entry opens, the name
-/// and description its row is drawn from, and whether Suru spawned it through
+/// and description its row is drawn from, and whether Shaman spawned it through
 /// the Broker, which lets it be stopped whatever the open Session's Provider
 /// allows.
 #[derive(Clone, Copy, Debug)]

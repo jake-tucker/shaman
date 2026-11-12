@@ -1,17 +1,17 @@
-//! Walks one Session on a Routing Tier through a real Suru Server and the installed Copilot CLI: the
+//! Walks one Session on a Routing Tier through a real Shaman Server and the installed Copilot CLI: the
 //! catalog with the Setting on, a Turn on the tier, a tier Copilot refuses at once and one it
 //! refuses as a Turn claims it, a resume, going back to Copilot's default, and the Setting off. Each Turn is a one-word Prompt and
 //! spends real AI Credits, so it runs somewhere disposable:
 //!
 //! ```sh
-//! cd scratch-project && SURU_ROUTING_TIER_LIVE=1 copilot_routing_tier_live > report.txt
+//! cd scratch-project && SHAMAN_ROUTING_TIER_LIVE=1 copilot_routing_tier_live > report.txt
 //! ```
 //!
 //! The Sessions it leaves behind in Copilot's own state are listed at its end, for
 //! `copilot_fusion_capture delete` to clear.
 use std::{collections::BTreeSet, path::PathBuf, sync::Arc, time::Duration};
 
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
     protocol::{
         Activity, AdmitPromptRequest, AgentSelection, AgentSelectionOperationId,
@@ -27,7 +27,7 @@ use suru::{
 type Failure = Box<dyn std::error::Error>;
 
 /// Set to `1` to run: a bare `cargo run --example` spends nothing.
-const GATE: &str = "SURU_ROUTING_TIER_LIVE";
+const GATE: &str = "SHAMAN_ROUTING_TIER_LIVE";
 const CHANNEL: &str = "routing-tier-live";
 const PROMPT: &str = "Ping";
 

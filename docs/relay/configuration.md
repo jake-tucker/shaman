@@ -1,8 +1,8 @@
 # Relay configuration reference
 
-How a Relay is configured: its configuration file, the flags of `suru-relay run`, and what the Relay
+How a Relay is configured: its configuration file, the flags of `shaman-relay run`, and what the Relay
 refuses. [The setup guide](README.md) walks through putting a Relay up; this page is the reference for
-every setting. [`suru-relay.toml`](suru-relay.toml) is a complete, commented example, and the Relay's
+every setting. [`shaman-relay.toml`](shaman-relay.toml) is a complete, commented example, and the Relay's
 tests check that it is a configuration the Relay runs on.
 
 ## Where settings come from
@@ -10,9 +10,9 @@ tests check that it is a configuration the Relay runs on.
 A Relay reads its settings from two places:
 
 - **Its configuration file**, in [TOML](https://toml.io), named by `--config <path>` or, where that is
-  not given, by the `SURU_RELAY_CONFIG` environment variable. A Relay needs no file: everything can be
+  not given, by the `SHAMAN_RELAY_CONFIG` environment variable. A Relay needs no file: everything can be
   given as flags instead.
-- **The flags of `suru-relay run`**. Every key of the file is a flag as well, named for the key with
+- **The flags of `shaman-relay run`**. Every key of the file is a flag as well, named for the key with
   `-` for `_`: `public_address` is `--public-address`. A list is given one item to a flag, which is
   named in the singular: `trusted_proxies` is `--trusted-proxy`, `admit_users` is `--admit-user`, and
   `admit_organizations` is `--admit-organization`.
@@ -23,10 +23,10 @@ whole rather than adding to it. A setting given neither way takes its default. `
 
 A relative path in the file is read from the file's own directory; a relative path on the command line
 is read from the working directory. On Windows, write paths in the file between single quotes, which
-TOML takes literally: `database = 'C:\ProgramData\suru-relay\suru-relay.db'`.
+TOML takes literally: `database = 'C:\ProgramData\shaman-relay\shaman-relay.db'`.
 
-The operator's commands — `suru-relay accounts …` and `suru-relay logins …` — read the same file to find
-the database, so give them the same `--config` (or `SURU_RELAY_CONFIG`) as `run`. They use nothing in it
+The operator's commands — `shaman-relay accounts …` and `shaman-relay logins …` — read the same file to find
+the database, so give them the same `--config` (or `SHAMAN_RELAY_CONFIG`) as `run`. They use nothing in it
 but `database`, though they refuse a file that cannot be read, is not TOML, or holds a key or value the
 Relay does not know.
 
@@ -34,7 +34,7 @@ Relay does not know.
 
 | Key | Flag | Value | Default |
 | --- | --- | --- | --- |
-| `database` | `--database` | path | `suru-relay.db` in the working directory |
+| `database` | `--database` | path | `shaman-relay.db` in the working directory |
 | `public_address` | `--public-address` | address | none: required |
 | `listen_http` | `--listen-http` | socket address | none: this or `listen_https` is required |
 | `listen_https` | `--listen-https` | socket address | none: this or `listen_http` is required |
@@ -58,7 +58,7 @@ Relay does not know.
 ### `database`
 
 The SQLite database the Relay keeps its Accounts and Logins in, and nothing else: it keeps no history of
-connections. `suru-relay run` makes it if it is not there, and carries it forward to its own version as
+connections. `shaman-relay run` makes it if it is not there, and carries it forward to its own version as
 it starts. The Relay also keeps `-wal` and `-shm` files beside it while it runs, and holds a lock on a
 `.lock` file beside it, so the directory must be writable by the Relay's user. One Relay runs on a
 database at a time; a second is refused. The operator's commands refuse a database that is not there
@@ -66,7 +66,7 @@ rather than make one.
 
 ### `public_address`
 
-The address Servers reach this Relay at, exactly as its users add it in Suru — such as
+The address Servers reach this Relay at, exactly as its users add it in Shaman — such as
 `https://relay.example.com`. It is an `https://` or `http://` address naming a host, with a port and a
 path where they are needed, and no user, query or fragment; an address with no scheme is taken to be
 `https://`. Every Server proves its identity key for the address it knows the Relay by, so this must be
@@ -171,7 +171,7 @@ Servers may be logged in under one Account, a lapsed Account's included; a login
 until a Server forgets its Login or the operator removes one. `joined_connections_per_account` caps how
 many connections the Relay joins for one Account at once: a Server keeping a Remote in view through the
 Relay holds one, so an Account whose Servers each keep the others in view holds one for each ordered
-pair. A join past it is refused until one ends. Suru tells its user which cap was reached.
+pair. A join past it is refused until one ends. Shaman tells its user which cap was reached.
 
 An Account's Servers can ask which others stand under it, and that answer stays within one message of the
 protocol, however high `logins_per_account` goes. At the default it is always whole; raised past what one
@@ -190,7 +190,7 @@ to a cap.
   from the moment it is taken until it ends, however far it got: sending its request, making its TLS
   handshake, proving its Server's key, waiting to be reached, or carrying a join. A connection past it is
   let go as it comes — where the Relay serves HTTPS, before any TLS handshake — and nothing the Relay
-  holds is disturbed; a Server let go connects again with backoff, and Suru reads the Relay as
+  holds is disturbed; a Server let go connects again with backoff, and Shaman reads the Relay as
   Unreachable meanwhile. The Relay says once on standard error that it has reached the cap, and once that
   it takes connections again. Each connection costs the Relay a socket and its buffers — a little over a
   hundred kibibytes idle, up to twice that carrying a join — so the default bounds them to a gibibyte or
@@ -201,7 +201,7 @@ to a cap.
   as long as its user takes to finish it at GitHub — up to a quarter of an hour. A login past it is
   refused, saying the Relay has as many logins under way as it takes, and the Server may begin one again
   later on the same connection. Each Server logs in on one connection at a time: a login it begins takes
-  the place of the one it already has under way, which is given up, as Suru gives it up as it begins
+  the place of the one it already has under way, which is given up, as Shaman gives it up as it begins
   another.
 - `idle_connections_per_server` caps how many idle connections each Server whose Login stands may hold at
   once: connections on which it is doing nothing — not waiting to be reached, not joined nor asking to
@@ -230,7 +230,7 @@ ping in within the Relay's send timeout is let go, as for anything else the Rela
 
 ## What the Relay refuses
 
-`suru-relay run` refuses a configuration it cannot use, exiting with status 1 and saying on standard
+`shaman-relay run` refuses a configuration it cannot use, exiting with status 1 and saying on standard
 error what is wrong and where: naming a setting as `--flag` where the command line gave it, and as `key`
 in the file that holds it where the file did — and for a file a setting names, the file's path as well.
 All but the last are refused before the Relay opens its database:
@@ -265,7 +265,7 @@ line itself, with status 2.
 
 ## Environment
 
-- `SURU_RELAY_CONFIG` names the configuration file where `--config` does not.
+- `SHAMAN_RELAY_CONFIG` names the configuration file where `--config` does not.
 - `RUST_LOG` sets how much the Relay says on standard error, as
   [tracing's filter](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html)
   reads it; `info` unless set. Libraries that would log what they carry are held to warnings whatever it

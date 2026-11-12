@@ -8,7 +8,7 @@ use crate::tui_rendering::support::{
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::style::Color;
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         AgentSelection, InvitePreview, ModelAvailability, ModelCatalog, ModelId, Outlook,
@@ -41,7 +41,7 @@ fn choosing_a_remote_names_it_beside_the_workspace_on_landing_and_in_the_session
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
             result: Ok(RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                 status: RemoteStatus::Available,
                 unreachable: None,
             }),
@@ -94,7 +94,7 @@ fn choosing_a_remote_names_it_beside_the_workspace_on_landing_and_in_the_session
         session.lines().next().unwrap().contains("studio · ."),
         "{session}"
     );
-    assert!(!session.contains("Suru"), "{session}");
+    assert!(!session.contains("Shaman"), "{session}");
     assert!(!session.contains("Outlook "), "{session}");
     for width in [28, 43] {
         let narrow = rendered_application_rows_at(&application, width, 20);
@@ -102,9 +102,9 @@ fn choosing_a_remote_names_it_beside_the_workspace_on_landing_and_in_the_session
     }
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::ServerShutdown(
-            suru::protocol::ServerShutdown {
+            shaman::protocol::ServerShutdown {
                 instance_id: fixture_instance_id(),
-                reason: suru::protocol::ShutdownReason::Manual,
+                reason: shaman::protocol::ShutdownReason::Manual,
             },
         )))
         .unwrap();
@@ -136,7 +136,7 @@ fn a_transient_remote_drop_reconnects_over_the_existing_view_and_preserves_its_c
     application
         .handle_event(ApplicationEvent::OriginCatalog {
             outlook: Outlook::Remote("studio".to_owned()),
-            event: ManagedEvent::Recovering(suru::managed_client::RecoveryStatus {
+            event: ManagedEvent::Recovering(shaman::managed_client::RecoveryStatus {
                 attempt: 1,
                 retry_in: std::time::Duration::from_millis(5),
                 unreachable: None,
@@ -152,7 +152,7 @@ fn a_transient_remote_drop_reconnects_over_the_existing_view_and_preserves_its_c
     // The loss is the Remote's own: it is said above the composer and nowhere
     // else, and the whole frame goes on being the reader's.
     let dropped = rendered_application_rows(&application).join("\n");
-    assert!(!dropped.contains("Reconnecting to Suru…"), "{dropped}");
+    assert!(!dropped.contains("Reconnecting to Shaman…"), "{dropped}");
     assert!(dropped.contains("studio is unreachable"), "{dropped}");
 
     application
@@ -223,7 +223,7 @@ fn choosing_local_again_restores_the_local_outlook_and_workspace() {
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
             result: Ok(RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                 status: RemoteStatus::Available,
                 unreachable: None,
             }),
@@ -247,7 +247,7 @@ fn choosing_local_again_restores_the_local_outlook_and_workspace() {
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
             result: Ok(RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                 status: RemoteStatus::Available,
                 unreachable: None,
             }),
@@ -279,7 +279,7 @@ fn choosing_local_again_restores_the_local_outlook_and_workspace() {
     assert_eq!(request.outlook(), &Outlook::Local);
     assert_eq!(
         request.scope(),
-        &suru::tui::SessionListScope::CurrentWorkspace((local_workspace).into())
+        &shaman::tui::SessionListScope::CurrentWorkspace((local_workspace).into())
     );
 }
 
@@ -382,7 +382,7 @@ fn a_model_is_called_what_the_latest_catalog_calls_it_across_outlook_turns() {
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
             result: Ok(RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                 status: RemoteStatus::Available,
                 unreachable: None,
             }),
@@ -564,7 +564,7 @@ fn a_fresh_landing_lets_go_of_a_remote_workspace_still_resolving() {
                 outlook,
                 surface: WorkspaceResolutionSurface::WorkspacePicker,
                 request_id,
-                result: Ok(suru::protocol::ResolvedWorkspace::directory(
+                result: Ok(shaman::protocol::ResolvedWorkspace::directory(
                     remote_only.clone()
                 )),
             })
@@ -582,7 +582,7 @@ fn a_fresh_landing_lets_go_of_a_remote_workspace_still_resolving() {
     };
     assert_ne!(
         request.scope(),
-        &suru::tui::SessionListScope::CurrentWorkspace((remote_only).into())
+        &shaman::tui::SessionListScope::CurrentWorkspace((remote_only).into())
     );
 }
 
@@ -604,7 +604,7 @@ fn a_remote_session_row_carries_its_origin_into_its_attach() {
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
             result: Ok(RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                 status: RemoteStatus::Available,
                 unreachable: None,
             }),
@@ -634,7 +634,7 @@ fn a_remote_session_row_carries_its_origin_into_its_attach() {
                     context_fill: None,
                     prompt_cache: None,
                     id: session_id,
-                    execution_directory: suru::protocol::ExecutionDirectory { path: ".".into() },
+                    execution_directory: shaman::protocol::ExecutionDirectory { path: ".".into() },
                     workspace: Workspace::directory(".".into()),
                     agent_selection: None,
                     agent_selection_availability: ModelAvailability::Available,
@@ -685,7 +685,7 @@ fn a_remote_workspace_pick_is_validated_by_that_remote() {
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
             result: Ok(RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                 status: RemoteStatus::Available,
                 unreachable: None,
             }),
@@ -720,10 +720,10 @@ fn a_remote_workspace_pick_is_validated_by_that_remote() {
         ApplicationTransition::DetachSessionAndResolveWorkspace {
             outlook: Outlook::Remote("studio".to_owned()),
             request_id: 2,
-            request: suru::protocol::ResolveWorkspaceRequest {
+            request: shaman::protocol::ResolveWorkspaceRequest {
                 checkout_id: None,
                 remembered_execution_directory: None,
-                workspace_id: Some(suru::protocol::WorkspaceId::directory(&remote_only)),
+                workspace_id: Some(shaman::protocol::WorkspaceId::directory(&remote_only)),
                 base: None,
                 path: remote_only,
             },
@@ -746,7 +746,7 @@ fn application_looking_at_studio() -> Application {
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
             result: Ok(RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                 status: RemoteStatus::Available,
                 unreachable: None,
             }),
@@ -790,7 +790,7 @@ pub(super) fn turn_to_studio(application: &mut Application) {
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
             result: Ok(RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                 status: RemoteStatus::Available,
                 unreachable: None,
             }),
@@ -836,7 +836,7 @@ fn paired_remote_picker_shows_each_pairing_status() {
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
             result: Ok(RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                 status: RemoteStatus::Available,
                 unreachable: None,
             }),
@@ -965,7 +965,7 @@ fn a_remote_its_relay_joins_under_another_account_says_so_on_its_row_and_why_ben
                     status: RemoteStatus::Unavailable,
                     unreachable: Some(UnreachableReason::RelayDifferentAccounts {
                         relay: "https://relay.company.example".to_owned(),
-                        account: suru::protocol::RelayAccount {
+                        account: shaman::protocol::RelayAccount {
                             provider: "github".to_owned(),
                             username: "octocat".to_owned(),
                         },
@@ -1060,7 +1060,7 @@ fn the_selected_remote_lists_its_relays_whole_saying_which_this_server_uses() {
             .handle_event(ApplicationEvent::RemoteProbed {
                 name: "workstation".to_owned(),
                 result: Ok(RemoteHealth {
-                    protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                    protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                     status: RemoteStatus::Available,
                     unreachable: None,
                 }),
@@ -1153,13 +1153,13 @@ fn pairing_another_remote_refuses_a_duplicate_prefilled_name_in_the_draft() {
             .contains("Paste invite")
     );
     application
-        .handle_terminal_event(InputEvent::Paste("suru-v1-another".to_owned()))
+        .handle_terminal_event(InputEvent::Paste("shaman-v1-another".to_owned()))
         .unwrap();
     let request = previewing(press(&mut application, KeyCode::Enter));
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: "suru-v1-another".to_owned().into(),
+            invite: "shaman-v1-another".to_owned().into(),
             preview: InvitePreview {
                 hostname: "studio".to_owned(),
                 fingerprint: "new".to_owned(),
@@ -1231,7 +1231,7 @@ fn studio_picker() -> Application {
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
             result: Ok(RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                 status: RemoteStatus::Available,
                 unreachable: None,
             }),
@@ -1269,13 +1269,13 @@ fn removal_in_flight() -> Application {
 fn redemption_in_flight() -> (Application, ConnectRequest) {
     let mut application = invite_entry();
     application
-        .handle_terminal_event(InputEvent::Paste("suru-v1-example".to_owned()))
+        .handle_terminal_event(InputEvent::Paste("shaman-v1-example".to_owned()))
         .unwrap();
     let request = previewing(press(&mut application, KeyCode::Enter));
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: "suru-v1-example".to_owned().into(),
+            invite: "shaman-v1-example".to_owned().into(),
             preview: InvitePreview {
                 hostname: "studio".to_owned(),
                 fingerprint: "fingerprint".to_owned(),
@@ -1298,7 +1298,7 @@ fn an_invite_copied_across_wrapped_rows_is_inspected_whole() {
     let mut application = invite_entry();
     application
         .handle_terminal_event(InputEvent::Paste(
-            "  suru-v1-exa\nmple\r\n  wrap\tped \n".to_owned(),
+            "  shaman-v1-exa\nmple\r\n  wrap\tped \n".to_owned(),
         ))
         .unwrap();
 
@@ -1307,7 +1307,7 @@ fn an_invite_copied_across_wrapped_rows_is_inspected_whole() {
     else {
         panic!("Enter inspects the invite pasted");
     };
-    assert_eq!(invite, "suru-v1-examplewrapped");
+    assert_eq!(invite, "shaman-v1-examplewrapped");
 }
 
 #[test]
@@ -1315,9 +1315,9 @@ fn every_invite_refusal_is_precise_and_visible_on_the_step_that_failed() {
     for (invite, error) in [
         (
             "not-an-invite",
-            "Invite must start with `suru-`; was all of it copied?",
+            "Invite must start with `shaman-`; was all of it copied?",
         ),
-        ("suru-v2-e30", "Invite version `v2` is not supported"),
+        ("shaman-v2-e30", "Invite version `v2` is not supported"),
     ] {
         let mut application = invite_entry();
         application
@@ -1390,13 +1390,13 @@ fn pairing_another_remote_keeps_every_paired_remote_in_the_picker() {
         .unwrap();
     press(&mut application, KeyCode::Char('a'));
     application
-        .handle_terminal_event(InputEvent::Paste("suru-v1-another".to_owned()))
+        .handle_terminal_event(InputEvent::Paste("shaman-v1-another".to_owned()))
         .unwrap();
     let request = previewing(press(&mut application, KeyCode::Enter));
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: "suru-v1-another".to_owned().into(),
+            invite: "shaman-v1-another".to_owned().into(),
             preview: InvitePreview {
                 hostname: "laptop".to_owned(),
                 fingerprint: "laptop-fingerprint".to_owned(),
@@ -1435,7 +1435,7 @@ fn pasted_invite_shows_its_fingerprint_before_pairing_can_advance() {
 
     assert_eq!(
         application
-            .handle_terminal_event(InputEvent::Paste("suru-v1-example".to_owned()))
+            .handle_terminal_event(InputEvent::Paste("shaman-v1-example".to_owned()))
             .expect("paste invite"),
         ApplicationTransition::Continue
     );
@@ -1444,11 +1444,11 @@ fn pasted_invite_shows_its_fingerprint_before_pairing_can_advance() {
     else {
         panic!("Enter inspects the invite pasted");
     };
-    assert_eq!(invite, "suru-v1-example");
+    assert_eq!(invite, "shaman-v1-example");
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: "suru-v1-example".to_owned().into(),
+            invite: "shaman-v1-example".to_owned().into(),
             preview: InvitePreview {
                 hostname: "studio".to_owned(),
                 fingerprint: "0123456789abcdef".repeat(4),
@@ -1483,7 +1483,7 @@ fn remote_name_is_editable_and_ways_are_redeemed_in_the_visible_priority_order()
         .unwrap();
     press(&mut application, KeyCode::Char('a'));
     application
-        .handle_terminal_event(InputEvent::Paste("suru-v1-example".to_owned()))
+        .handle_terminal_event(InputEvent::Paste("shaman-v1-example".to_owned()))
         .unwrap();
     let request = previewing(press(&mut application, KeyCode::Enter));
     let first = Way::Direct("10.0.0.8:7777".parse().unwrap());
@@ -1491,7 +1491,7 @@ fn remote_name_is_editable_and_ways_are_redeemed_in_the_visible_priority_order()
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: "suru-v1-example".to_owned().into(),
+            invite: "shaman-v1-example".to_owned().into(),
             preview: InvitePreview {
                 hostname: "studio".to_owned(),
                 fingerprint: "fingerprint".to_owned(),
@@ -1519,7 +1519,7 @@ fn remote_name_is_editable_and_ways_are_redeemed_in_the_visible_priority_order()
     assert_eq!(
         redemption(press(&mut application, KeyCode::Enter)),
         RedeemInviteRequest {
-            invite: "suru-v1-example".into(),
+            invite: "shaman-v1-example".into(),
             name: Some("desktop".to_owned()),
             ways: vec![preferred, first],
             pair_back: false,
@@ -1864,7 +1864,7 @@ fn the_priority_order_is_reorderable_before_the_keys_reach_the_address_list() {
     assert_eq!(
         redemption(press(&mut application, KeyCode::Enter)),
         RedeemInviteRequest {
-            invite: "suru-v1-example".into(),
+            invite: "shaman-v1-example".into(),
             name: Some("studio!".to_owned()),
             ways: vec![
                 Way::Direct("10.0.0.8:7777".parse().unwrap()),
@@ -1887,13 +1887,13 @@ fn the_configure_remote_screen_teaches_the_keys_it_answers() {
 fn configure_remote_draft() -> Application {
     let mut application = invite_entry();
     application
-        .handle_terminal_event(InputEvent::Paste("suru-v1-example".to_owned()))
+        .handle_terminal_event(InputEvent::Paste("shaman-v1-example".to_owned()))
         .unwrap();
     let request = previewing(press(&mut application, KeyCode::Enter));
     application
         .handle_event(ApplicationEvent::InvitePreviewed {
             request,
-            invite: "suru-v1-example".to_owned().into(),
+            invite: "shaman-v1-example".to_owned().into(),
             preview: InvitePreview {
                 hostname: "studio".to_owned(),
                 fingerprint: "fingerprint".to_owned(),

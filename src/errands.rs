@@ -1,6 +1,6 @@
-//! Running Suru's own Provider work as Errands.
+//! Running Shaman's own Provider work as Errands.
 //!
-//! An Errand is one Provider call Suru makes for its own purposes rather than
+//! An Errand is one Provider call Shaman makes for its own purposes rather than
 //! the user's: one Prompt in, one reply shaped by a schema, carrying no Tools
 //! and belonging to no Session. This module owns everything true of *every*
 //! Errand — which runtime runs it, how long it may take, that a server
@@ -22,7 +22,7 @@ use crate::{
     provider::{ErrandConsumption, ErrandCost, ProviderErrand, ProviderRuntime, wait_for_shutdown},
 };
 
-/// How long an Errand may take before Suru stops waiting. Generous next to any
+/// How long an Errand may take before Shaman stops waiting. Generous next to any
 /// real one-shot call, and short enough that a wedged Provider cannot leave
 /// work outstanding indefinitely. Injectable through
 /// [`ErrandRunner::with_timeout`] so tests inject millisecond-scale values
@@ -42,7 +42,7 @@ pub(crate) enum ErrandFailure {
     /// The Errand named a Provider this server does not host.
     ProviderNotHosted,
     /// The Errand named a Provider the user has turned off. A disabled Provider
-    /// is one Suru leaves entirely alone, so it is not asked and Suru does not
+    /// is one Shaman leaves entirely alone, so it is not asked and Shaman does not
     /// walk to another in its place.
     ProviderDisabled,
     /// The Provider did not answer within the Errand's timeout.
@@ -70,7 +70,7 @@ impl std::fmt::Display for ErrandFailure {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ErrandPurpose {
-    /// A Session's Title, derived of Suru's own accord with its Icon.
+    /// A Session's Title, derived of Shaman's own accord with its Icon.
     SessionTitle,
     /// A Title proposed at the user's asking.
     TitleProposal,
@@ -94,18 +94,18 @@ pub(crate) enum ErrandOutcome {
     /// The Provider said it could not answer, or answered in a shape it
     /// could tell was not the one asked for.
     Failed,
-    /// Suru stopped waiting at the Errand's deadline.
+    /// Shaman stopped waiting at the Errand's deadline.
     TimedOut,
-    /// Suru stopped waiting before the deadline: the server began shutting
+    /// Shaman stopped waiting before the deadline: the server began shutting
     /// down, or whoever asked for the Errand stopped waiting for it.
     Abandoned,
 }
 
-/// What Suru keeps of one Errand that reached a Provider beside its answer
+/// What Shaman keeps of one Errand that reached a Provider beside its answer
 /// (ADR 0057): what it was for, where it ran, when, how it ended, and what it
 /// consumed. Its Usage, and its Cost with the Basis that computed it, are each
 /// absent where unknown — always so for an Errand that timed out or was
-/// abandoned, since Suru stopped listening before the Provider could say. A
+/// abandoned, since Shaman stopped listening before the Provider could say. A
 /// failed Errand keeps whatever its Provider could still say it consumed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ErrandRecord {
@@ -139,14 +139,14 @@ impl std::fmt::Display for RecordRefused {
 #[derive(Clone)]
 pub(crate) struct ErrandRunner {
     /// Every Provider runtime this server hosts. An Errand routes to the
-    /// runtime its Agent Selection names and to no other: Suru never walks to
+    /// runtime its Agent Selection names and to no other: Shaman never walks to
     /// another Provider to get its own work done.
     runtimes: Arc<Vec<Arc<dyn ProviderRuntime>>>,
     timeout: Duration,
     shutdown: watch::Receiver<bool>,
     /// The effective Settings in force, read when an Errand is about to run
     /// rather than when the Errand was asked for, so a Provider turned off
-    /// mid-derivation is one Suru still does not call.
+    /// mid-derivation is one Shaman still does not call.
     settings: watch::Receiver<SettingsSnapshot>,
     /// Where each Errand that reached a Provider is recorded.
     ledger: Arc<dyn ErrandLedger>,
@@ -600,7 +600,7 @@ mod tests {
         );
     }
 
-    /// Suru stopped listening before the Provider could say what the Errand
+    /// Shaman stopped listening before the Provider could say what the Errand
     /// consumed, so its Usage is unknown.
     #[tokio::test]
     async fn a_timed_out_errand_is_recorded_with_its_usage_unknown() {
@@ -684,8 +684,8 @@ mod tests {
         assert_eq!((record.usage, record.cost), (None, None));
     }
 
-    /// Enablement is the user's own choice, and a disabled Provider is one Suru
-    /// leaves entirely alone — so no Errand is made of it, Suru does not walk
+    /// Enablement is the user's own choice, and a disabled Provider is one Shaman
+    /// leaves entirely alone — so no Errand is made of it, Shaman does not walk
     /// to another Provider in its place, and there is nothing to record.
     #[tokio::test]
     async fn a_disabled_provider_is_never_asked_to_run_an_errand() {

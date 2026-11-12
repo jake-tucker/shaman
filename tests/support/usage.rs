@@ -1,7 +1,7 @@
 //! Usage, Cost and Model Share figures, and the Usage Metrics reads, that the Model Share tests of
 //! every Provider state their expectations in.
 
-use suru::protocol::{
+use shaman::protocol::{
     Cost, ModelId, ModelShare, ProviderId, SessionTimestamp, Usage, UsageMetricsBreakdown,
     UsageMetricsInterval, UsageMetricsKey, UsageMetricsModelView, UsageMetricsQuery,
 };

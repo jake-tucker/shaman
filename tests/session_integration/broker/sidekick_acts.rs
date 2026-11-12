@@ -13,7 +13,7 @@
 //! Broker suite does, and asserts on what that client and the Session API
 //! observe.
 
-use suru::protocol::{Author, PromptStatus, SessionChange, SessionError, SettleSessionRequest};
+use shaman::protocol::{Author, PromptStatus, SessionChange, SessionError, SettleSessionRequest};
 
 use super::{
     sidekick::{
@@ -147,7 +147,7 @@ async fn client_settles(
 fn messages_saying<'a>(
     snapshot: &'a SessionSnapshot,
     content: &str,
-) -> Vec<&'a suru::protocol::Message> {
+) -> Vec<&'a shaman::protocol::Message> {
     snapshot
         .messages
         .iter()
@@ -156,7 +156,7 @@ fn messages_saying<'a>(
 }
 
 /// The Prompt a Session holds with `text`.
-fn prompt_saying<'a>(snapshot: &'a SessionSnapshot, text: &str) -> &'a suru::protocol::Prompt {
+fn prompt_saying<'a>(snapshot: &'a SessionSnapshot, text: &str) -> &'a shaman::protocol::Prompt {
     snapshot
         .prompts
         .iter()
@@ -193,7 +193,7 @@ async fn a_sidekick_is_offered_the_acting_tools_and_any_other_agent_is_not() {
         assert_eq!(
             described["annotations"]["readOnlyHint"],
             json!(false),
-            "{tool} changes what Suru holds: {described}"
+            "{tool} changes what Shaman holds: {described}"
         );
         assert_eq!(
             described["inputSchema"]["required"][0],
@@ -633,7 +633,7 @@ async fn every_refusal_is_a_tool_error_in_words_the_sidekick_can_relay() {
     .await;
     let missing = SessionId::new();
 
-    let not_found = "The Session does not exist on this Suru server.";
+    let not_found = "The Session does not exist on this Shaman server.";
     for (tool, arguments, client) in [
         (
             "send_prompt",
@@ -709,7 +709,7 @@ async fn every_refusal_is_a_tool_error_in_words_the_sidekick_can_relay() {
     hosted.server.shutdown().await.expect("shut down server");
 }
 
-/// The author is part of what Suru keeps of a Prompt and its Message, so a
+/// The author is part of what Shaman keeps of a Prompt and its Message, so a
 /// Session read after a restart still says which words were the Sidekick's.
 #[tokio::test]
 async fn a_sidekicks_prompt_and_its_message_keep_their_author_across_a_restart() {
@@ -1077,7 +1077,7 @@ async fn a_client_cannot_name_an_author_through_the_session_api() {
             .expect("decode the refusal");
         assert_eq!(
             refused.code,
-            suru::protocol::SessionErrorCode::InvalidCommand
+            shaman::protocol::SessionErrorCode::InvalidCommand
         );
     }
     let response = crate::support::loopback_client()

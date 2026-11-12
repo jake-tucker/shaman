@@ -12,7 +12,7 @@ use crossterm::event::{
 };
 use jiff::{ToSpan, civil::date, tz::TimeZone};
 use ratatui::style::Color;
-use suru::{
+use shaman::{
     managed_client::{ManagedEvent, RecoveryStatus},
     protocol::{
         Cost, CostTotal, CountedCost, EffectiveSettings, KeyedUsageMetrics, ModelId, Outlook,
@@ -650,7 +650,7 @@ fn a_wide_label_leaves_the_legend_s_figures_aligned() {
 }
 
 #[test]
-fn ctrl_c_leaves_suru_from_the_view_without_touching_the_draft_it_covers() {
+fn ctrl_c_leaves_shaman_from_the_view_without_touching_the_draft_it_covers() {
     let (mut application, _workspace) = beside_a_session();
     type_terminal_text(&mut application, "half a thought");
     invoke(&mut application, SemanticCommandId::MetricsShow);
@@ -681,7 +681,7 @@ fn the_reader_can_leave_while_the_reconnect_modal_stands_over_the_view() {
         .expect("begin recovery");
     grace_elapses(&mut application, Outlook::Local);
     let rows = screen(&application).join("\n");
-    assert!(rows.contains("Reconnecting to Suru"), "{rows}");
+    assert!(rows.contains("Reconnecting to Shaman"), "{rows}");
 
     assert_eq!(
         key(&mut application, KeyCode::Esc),
@@ -1984,7 +1984,7 @@ fn a_provider_breakdown_names_each_provider_and_notes_sessions_counted_under_sev
 /// one Session alone.
 fn many_workspaces(query: &UsageMetricsQuery, keys: u64) -> UsageMetricsReport {
     let workspace = |index: u64| UsageMetricsKey::Workspace {
-        workspace: suru::protocol::WorkspaceId(format!("directory:{index}")),
+        workspace: shaman::protocol::WorkspaceId(format!("directory:{index}")),
     };
     let daily = |index: u64| 1_000_000 - index * 100_000;
     let keyed = |index: u64| KeyedUsageMetrics {
@@ -2037,7 +2037,7 @@ fn many_workspaces(query: &UsageMetricsQuery, keys: u64) -> UsageMetricsReport {
     report
 }
 
-/// `report` with Suru's Errands beside its keys, as the Server adds them:
+/// `report` with Shaman's Errands beside its keys, as the Server adds them:
 /// each day `fresh` tokens of fresh input and `cached` read from cache,
 /// costing `nano_usd`, in every bucket's whole and under the Errands key —
 /// never as a Session or a Turn.
@@ -3378,7 +3378,7 @@ fn the_comparison_is_left_out_where_the_period_before_had_no_usage() {
 fn a_figure_the_period_before_held_none_of_has_no_comparison() {
     let mut application = reader_in(NEW_YORK, afternoon());
     let (_, request_id, query) = ask(&mut application);
-    // Usage, but no Cost and no Turn that Suru counted.
+    // Usage, but no Cost and no Turn that Shaman counted.
     let before = UsageMetricsAggregate {
         fresh_input_tokens: Some(54_000_000),
         ..UsageMetricsAggregate::default()
@@ -3672,7 +3672,7 @@ fn with_top_sessions(query: &UsageMetricsQuery) -> UsageMetricsReport {
         "Introduce relay pairing",
         28.40,
         Some("Claude Opus 5.5"),
-        "suru",
+        "shaman",
     );
     unpriced.cost.is_partial = true;
     report.top_sessions = vec![
@@ -3681,7 +3681,7 @@ fn with_top_sessions(query: &UsageMetricsQuery) -> UsageMetricsReport {
             "Fix Windows path fixtures",
             19.12,
             Some("GPT-5.5 Codex"),
-            "suru",
+            "shaman",
         ),
         top_session("Untangle the theme", 3.05, None, "atlas"),
     ];
@@ -3742,7 +3742,7 @@ fn the_most_expensive_sessions_are_listed_under_the_legend() {
                 "$28.40+",
                 "Introduce relay pairing",
                 "Claude Opus 5.5",
-                "suru",
+                "shaman",
             ][..],
         ),
         (
@@ -3751,7 +3751,7 @@ fn the_most_expensive_sessions_are_listed_under_the_legend() {
                 "$19.12",
                 "Fix Windows path fixtures",
                 "GPT-5.5 Codex",
-                "suru",
+                "shaman",
             ],
         ),
         (3, &["$3.05", "Untangle the theme", "atlas"]),
@@ -3941,7 +3941,7 @@ pub(super) fn remove_studio(application: &mut Application) -> ApplicationTransit
     let turned = application
         .handle_event(ApplicationEvent::RemoteRemoved {
             name: "studio".to_owned(),
-            result: Ok(suru::protocol::RemoteRemoval {
+            result: Ok(shaman::protocol::RemoteRemoval {
                 name: "studio".to_owned(),
                 acknowledged: true,
             }),

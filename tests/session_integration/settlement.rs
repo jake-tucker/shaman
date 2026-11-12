@@ -8,7 +8,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use diesel::{Connection, SqliteConnection, connection::SimpleConnection};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
     protocol::{
         AdmitPromptRequest, CreateSessionRequest, InitialPrompt, PromptDelivery, PromptId,
@@ -27,7 +27,7 @@ fn create_request(workspace: &std::path::Path, prompt: &str) -> CreateSessionReq
         // No Agent Selection, so no Title Errand runs and the catalog stream
         // carries nothing but what settling puts on it.
         agent_selection: None,
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -420,7 +420,7 @@ async fn a_restored_marker_carries_the_store_clock_past_it() {
 
     // Stand the stored marker beyond any moment the replacement's own clock
     // could reach, so what it stamps next can only have come from reading it.
-    let database_path = config.data_dir().join("suru.db");
+    let database_path = config.data_dir().join("shaman.db");
     let mut database = SqliteConnection::establish(
         database_path
             .to_str()

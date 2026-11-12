@@ -453,7 +453,7 @@ impl SubagentWork {
     /// Marker — Working while it works, and otherwise the outcome it settled
     /// with — and the time every settled one worked, summed. While the latest
     /// works, that sum is what its time counts up from, from the moment it
-    /// began. Once it settles, the sum takes it in too, unless Suru never
+    /// began. Once it settles, the sum takes it in too, unless Shaman never
     /// learned when its work ended, which leaves the time unsaid rather than
     /// understated; an earlier one whose end went unlearned adds nothing.
     /// `None` for a Session with no Turn at all, which says nothing.
@@ -588,7 +588,7 @@ fn session_work(
     }
 }
 
-/// How long one settled Turn worked, where Suru learned when its work ended:
+/// How long one settled Turn worked, where Shaman learned when its work ended:
 /// from the commit that began it to the one that settled it. A Turn missing
 /// either moment has no span to give, and neither has one settled no later
 /// than it began: a restart settles a Turn that never showed any work where
@@ -1029,7 +1029,7 @@ mod tests {
             sessions: Vec::new(),
         };
         let mut moved = top_level(top, "Delegate the mapping");
-        moved.workspace_path = std::path::PathBuf::from("suru-move");
+        moved.workspace_path = std::path::PathBuf::from("shaman-move");
         moved.workspace_icon = Some("md-bug".to_owned());
         moved.provider = Some(crate::protocol::ProviderId::new("claude"));
         moved.model = Some(ModelId::new("opus"));
@@ -1043,7 +1043,7 @@ mod tests {
             tree_changes(&before, &after),
             Some(vec![
                 SubagentTreeChange::TopLevelWorkspaceChanged {
-                    workspace_path: std::path::PathBuf::from("suru-move"),
+                    workspace_path: std::path::PathBuf::from("shaman-move"),
                     workspace_icon: Some("md-bug".to_owned()),
                 },
                 SubagentTreeChange::TopLevelAgentSelectionChanged {
@@ -1363,7 +1363,7 @@ mod tests {
         assert_eq!(
             SubagentWork::read(&[turn(TurnStatus::Completed, None, Some(3_000))]),
             work(ActivityStatus::Completed, None, None),
-            "a Turn stored before Suru timed Turns has no span"
+            "a Turn stored before Shaman timed Turns has no span"
         );
         let unlearned = turn(TurnStatus::Failed, Some(1_000), Some(1_000));
         assert_eq!(

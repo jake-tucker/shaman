@@ -1,4 +1,4 @@
-//! The one reading of a directory Suru stores, compares, and hands to tools.
+//! The one reading of a directory Shaman stores, compares, and hands to tools.
 
 use std::{
     io,
@@ -14,10 +14,10 @@ use std::{
 /// more than the display noise it resembles. Git accepts such a path to read
 /// at, so Repository discovery succeeds against one, but refuses it as a
 /// creation target: `git init` and `git worktree add` both fail with
-/// `Invalid argument` on a path Suru had just discovered a Repository
+/// `Invalid argument` on a path Shaman had just discovered a Repository
 /// through, which is enough to break Worktree preparation outright. A
 /// [`WorkspaceId`](crate::protocol::WorkspaceId) is also hashed from the
-/// path, so `\\?\C:\src\suru` and `C:\src\suru` would be two identities for
+/// path, so `\\?\C:\src\shaman` and `C:\src\shaman` would be two identities for
 /// one directory, and every association keyed by one would be invisible to
 /// the other.
 ///

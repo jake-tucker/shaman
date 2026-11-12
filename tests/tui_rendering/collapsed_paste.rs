@@ -3,7 +3,7 @@
 //! stood when the Prompt is submitted, copied, cut, or expanded by the reader.
 
 use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use suru::{
+use shaman::{
     protocol::{
         CompactSessionRequest, EffectiveSettings, Outlook, SessionId, SessionReference,
         SessionTimestamp, SkillDescriptor, SkillId,

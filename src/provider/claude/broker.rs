@@ -4,21 +4,21 @@
 //! itself. Carried inline, the Broker's token would ride the command line, which any local user can
 //! read from the process table, so every launch is pointed at a file of its own instead: written to
 //! the temporary directory under a name no one can guess, created exclusively so nothing already
-//! there is written through, and readable by the user Suru runs as alone — `0600` on Unix, set as
+//! there is written through, and readable by the user Shaman runs as alone — `0600` on Unix, set as
 //! the file is created, and on Windows a protected ACL granting that user alone, set before the
-//! token is written. The file names one MCP server, `suru`, over HTTP, presenting the token as its
+//! token is written. The file names one MCP server, `shaman`, over HTTP, presenting the token as its
 //! `Authorization` header, with a per-server `timeout` above the Broker's longest call, since
 //! Claude's default would abort a call at 60 seconds. Beside it the launch allowlists
-//! `mcp__suru__*`, so no Broker call raises an Approval, a native Subagent's included
+//! `mcp__shaman__*`, so no Broker call raises an Approval, a native Subagent's included
 //! (`docs/validation/0408-claude-http-mcp-long-calls.md`), and appends the Broker's note to the
 //! Agent's system prompt with `--append-system-prompt`, as the handoff writes it for its Agent,
-//! naming each Tool as Claude does — `mcp__suru__spawn_subagent` — which is what the Agent selects
+//! naming each Tool as Claude does — `mcp__shaman__spawn_subagent` — which is what the Agent selects
 //! a deferred MCP Tool by. A system prompt lives as long as the process it was given to, so every
 //! launch, a `--resume` included, appends it again.
 //!
 //! A file lives as long as the process it was written for: it is removed once that process has
 //! stopped, and in any case when the child holding it is dropped — replaced by the next launch, or
-//! gone with its Session. A Suru killed outright leaves its files behind, but the tokens in them
+//! gone with its Session. A Shaman killed outright leaves its files behind, but the tokens in them
 //! died with it, since the Server holds its tokens in memory alone.
 //!
 //! None of this touches `--strict-mcp-config`: a Session loads the user's own MCP servers beside
@@ -58,7 +58,7 @@ impl BrokerMcpConfig {
         handoff: &BrokerHandoff,
     ) -> Result<Self, ProviderError> {
         let path = directory.join(format!(
-            "suru-claude-broker-{}.json",
+            "shaman-claude-broker-{}.json",
             uuid::Uuid::new_v4().simple()
         ));
         let mut options = OpenOptions::new();
@@ -123,7 +123,7 @@ fn unwritable(path: &Path, error: &dyn std::fmt::Display) -> ProviderError {
     ))
 }
 
-/// What the file says: the Broker as the one MCP server `suru`, reached over HTTP with the token
+/// What the file says: the Broker as the one MCP server `shaman`, reached over HTTP with the token
 /// as its `Authorization` header.
 fn mcp_config(handoff: &BrokerHandoff) -> Value {
     let (header, value) = handoff.authorization_header();
@@ -157,7 +157,7 @@ mod tests {
             mcp_config(&handoff),
             json!({
                 "mcpServers": {
-                    "suru": {
+                    "shaman": {
                         "type": "http",
                         "url": ENDPOINT,
                         "headers": {"Authorization": handoff.token().bearer()},
@@ -181,9 +181,9 @@ mod tests {
                     OsString::from("--mcp-config"),
                     config.path.clone().into_os_string(),
                     OsString::from("--allowedTools"),
-                    OsString::from("mcp__suru__*"),
+                    OsString::from("mcp__shaman__*"),
                     OsString::from("--append-system-prompt"),
-                    OsString::from(handoff.instruction_note(|tool| format!("mcp__suru__{tool}"))),
+                    OsString::from(handoff.instruction_note(|tool| format!("mcp__shaman__{tool}"))),
                 ],
                 "the note is the one the handoff writes for its Agent, as Claude names the Tools"
             );

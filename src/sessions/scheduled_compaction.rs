@@ -1,7 +1,7 @@
 //! Whether, and when, a Session's scheduled Compaction falls due, and whether
 //! it may begin (ADR 0073).
 //!
-//! An idle Session whose Prompt Cache will lapse may be compacted by Suru of
+//! An idle Session whose Prompt Cache will lapse may be compacted by Shaman of
 //! its own accord a lead before the lapse, so it goes cold small. Each idle
 //! stretch is owed at most one attempt, and only a stretch a Turn began by
 //! writing the cache is owed one at all: a Turn that wrote nothing — stopped

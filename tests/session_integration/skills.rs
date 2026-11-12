@@ -9,7 +9,7 @@ use crate::session_integration::{
     support::{hosted_model, hosted_selection, read_session_at_least_revision},
 };
 use serde_json::json;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         Activity, AdmitPromptRequest, AgentId, AgentIdentity, CreateSessionRequest, InitialPrompt,
@@ -24,7 +24,7 @@ use tokio::time::{Duration, timeout};
 
 async fn list_skills_until(
     client: &reqwest::Client,
-    descriptor: &suru::protocol::RuntimeDescriptor,
+    descriptor: &shaman::protocol::RuntimeDescriptor,
     request: &SkillCatalogRequest,
     ready: impl Fn(&SkillCatalogStatus) -> bool,
 ) -> SkillCatalog {
@@ -67,7 +67,7 @@ async fn every_provider_revalidates_queued_skills_before_native_delivery() {
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
         let workspace = tempfile::tempdir().expect("create Workspace");
         let canonical_workspace =
-            suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+            shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
         let provider_id = ProviderId::new(provider_name);
         let model_id = format!("{provider_name}-model");
         let (runtime, mut provider) = ControlledProvider::with_provider(
@@ -82,7 +82,7 @@ async fn every_provider_revalidates_queued_skills_before_native_delivery() {
         };
         let catalog = |skill: SkillDescriptor| SkillCatalog {
             provider: provider_id.clone(),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: canonical_workspace.clone(),
             },
             skills: vec![skill],
@@ -115,7 +115,7 @@ async fn every_provider_revalidates_queued_skills_before_native_delivery() {
             .await;
         let catalog_request = SkillCatalogRequest {
             provider: provider_id.clone(),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
         };
@@ -138,7 +138,7 @@ async fn every_provider_revalidates_queued_skills_before_native_delivery() {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: Some(hosted_selection(provider_name, &model_id)),
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 prompt: InitialPrompt {
@@ -192,7 +192,7 @@ async fn every_provider_revalidates_queued_skills_before_native_delivery() {
         );
         assert_eq!(next_fresh_catalog(&mut second).await.skills, [replacement]);
 
-        provider_session.emit(suru::provider::ProviderEvent::TurnCompleted);
+        provider_session.emit(shaman::provider::ProviderEvent::TurnCompleted);
         let failed = timeout(PROGRESS_DEADLINE, async {
             loop {
                 let snapshot = first
@@ -266,7 +266,7 @@ async fn every_provider_revalidates_initial_skills_after_session_startup() {
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
         let workspace = tempfile::tempdir().expect("create Workspace");
         let canonical_workspace =
-            suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+            shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
         let provider_id = ProviderId::new(provider_name);
         let model_id = format!("{provider_name}-model");
         let (runtime, mut provider) = ControlledProvider::with_provider(
@@ -281,7 +281,7 @@ async fn every_provider_revalidates_initial_skills_after_session_startup() {
         };
         let catalog = |skill: SkillDescriptor| SkillCatalog {
             provider: provider_id.clone(),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: canonical_workspace.clone(),
             },
             skills: vec![skill],
@@ -309,7 +309,7 @@ async fn every_provider_revalidates_initial_skills_after_session_startup() {
         let loading = client
             .list_skills(SkillCatalogRequest {
                 provider: provider_id.clone(),
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
             })
@@ -332,7 +332,7 @@ async fn every_provider_revalidates_initial_skills_after_session_startup() {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: Some(hosted_selection(provider_name, &model_id)),
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 prompt: InitialPrompt {
@@ -396,7 +396,7 @@ async fn steer_capable_providers_revalidate_skills_before_native_delivery() {
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
         let workspace = tempfile::tempdir().expect("create Workspace");
         let canonical_workspace =
-            suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+            shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
         let provider_id = ProviderId::new(provider_name);
         let model_id = format!("{provider_name}-model");
         let (runtime, mut provider) = ControlledProvider::with_provider(
@@ -411,7 +411,7 @@ async fn steer_capable_providers_revalidate_skills_before_native_delivery() {
         };
         let catalog = |skill: SkillDescriptor| SkillCatalog {
             provider: provider_id.clone(),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: canonical_workspace.clone(),
             },
             skills: vec![skill],
@@ -439,7 +439,7 @@ async fn steer_capable_providers_revalidate_skills_before_native_delivery() {
         let loading = client
             .list_skills(SkillCatalogRequest {
                 provider: provider_id.clone(),
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
             })
@@ -456,7 +456,7 @@ async fn steer_capable_providers_revalidate_skills_before_native_delivery() {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: Some(hosted_selection(provider_name, &model_id)),
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 prompt: InitialPrompt {
@@ -549,7 +549,7 @@ async fn steer_capable_providers_revalidate_skills_before_native_delivery() {
             "{provider_name} receives no native steer call"
         );
 
-        provider_session.emit(suru::provider::ProviderEvent::TurnCompleted);
+        provider_session.emit(shaman::provider::ProviderEvent::TurnCompleted);
         drop(provider_session);
         drop(client);
         server.shutdown().await.expect("shut down server");
@@ -570,7 +570,7 @@ async fn cancelled_validation_leaves_the_following_prompt_deliverable(replace_sk
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create Workspace");
     let canonical_workspace =
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
     let (runtime, mut provider) = ControlledProvider::with_provider(
         ProviderId::new("codex"),
         vec![hosted_model("codex", "codex-model")],
@@ -583,7 +583,7 @@ async fn cancelled_validation_leaves_the_following_prompt_deliverable(replace_sk
     };
     let catalog = |skill: SkillDescriptor| SkillCatalog {
         provider: ProviderId::new("codex"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: canonical_workspace.clone(),
         },
         skills: vec![skill],
@@ -611,7 +611,7 @@ async fn cancelled_validation_leaves_the_following_prompt_deliverable(replace_sk
         client
             .list_skills(SkillCatalogRequest {
                 provider: ProviderId::new("codex"),
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
             })
@@ -627,7 +627,7 @@ async fn cancelled_validation_leaves_the_following_prompt_deliverable(replace_sk
             session_id: None,
             preparation_id: None,
             agent_selection: Some(hosted_selection("codex", "codex-model")),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -698,7 +698,7 @@ async fn cancelled_validation_leaves_the_following_prompt_deliverable(replace_sk
         SkillCatalogStatus::Refreshing
     ));
     provider_session
-        .emit_and_wait_until_observed(suru::provider::ProviderEvent::TurnCompleted)
+        .emit_and_wait_until_observed(shaman::provider::ProviderEvent::TurnCompleted)
         .await;
     let cancelled = client
         .cancel_prompt(created.session.id, stale.id)
@@ -746,7 +746,7 @@ async fn cached_catalog_invalidation_is_failure_isolated_and_pushed_to_every_cli
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create Workspace");
     let canonical_workspace =
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
     let (runtime, _provider) = ControlledProvider::with_provider(
         ProviderId::new("controlled"),
         vec![hosted_model("controlled", "controlled-model")],
@@ -759,7 +759,7 @@ async fn cached_catalog_invalidation_is_failure_isolated_and_pushed_to_every_cli
     };
     runtime.offer_skills(SkillCatalog {
         provider: ProviderId::new("controlled"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: canonical_workspace.clone(),
         },
         skills: vec![original.clone()],
@@ -790,7 +790,7 @@ async fn cached_catalog_invalidation_is_failure_isolated_and_pushed_to_every_cli
     crate::session_integration::support::receive_managed_client_initial_state(&mut second).await;
     let request = SkillCatalogRequest {
         provider: ProviderId::new("controlled"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.path().to_owned(),
         },
     };
@@ -845,7 +845,7 @@ async fn cached_catalog_invalidation_is_failure_isolated_and_pushed_to_every_cli
     runtime.clear_skill_discovery_failure();
     runtime.offer_skills(SkillCatalog {
         provider: ProviderId::new("controlled"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: canonical_workspace,
         },
         skills: vec![replacement.clone()],
@@ -895,9 +895,9 @@ async fn cached_catalog_invalidation_is_failure_isolated_and_pushed_to_every_cli
 
     runtime.offer_skills(SkillCatalog {
         provider: ProviderId::new("controlled"),
-        execution_directory: suru::protocol::ExecutionDirectory {
-            path: suru::paths::canonical(workspace.path())
-                .expect("canonicalize suru::protocol::ExecutionDirectory"),
+        execution_directory: shaman::protocol::ExecutionDirectory {
+            path: shaman::paths::canonical(workspace.path())
+                .expect("canonicalize shaman::protocol::ExecutionDirectory"),
         },
         skills: vec![SkillDescriptor {
             id: SkillId::new("valid-partial-id"),
@@ -916,7 +916,7 @@ async fn cached_catalog_invalidation_is_failure_isolated_and_pushed_to_every_cli
     first
         .refresh_skills(SkillCatalogRequest {
             provider: ProviderId::new("controlled"),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
         })
@@ -943,14 +943,14 @@ async fn force_refresh_during_discovery_discards_the_superseded_result() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create Workspace");
     let canonical_workspace =
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
     let (runtime, _provider) = ControlledProvider::with_provider(
         ProviderId::new("controlled"),
         vec![hosted_model("controlled", "controlled-model")],
     );
     let catalog = |id: &str| SkillCatalog {
         provider: ProviderId::new("controlled"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: canonical_workspace.clone(),
         },
         skills: vec![SkillDescriptor {
@@ -982,7 +982,7 @@ async fn force_refresh_during_discovery_discards_the_superseded_result() {
     crate::session_integration::support::receive_managed_client_initial_state(&mut client).await;
     let request = SkillCatalogRequest {
         provider: ProviderId::new("controlled"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.path().to_owned(),
         },
     };
@@ -1031,9 +1031,9 @@ async fn catalog_cache_is_scoped_by_provider_and_canonical_workspace() {
     std::fs::create_dir(&first_workspace).expect("create first Workspace");
     std::fs::create_dir(&second_workspace).expect("create second Workspace");
     let first_canonical =
-        suru::paths::canonical(&first_workspace).expect("canonicalize first Workspace");
+        shaman::paths::canonical(&first_workspace).expect("canonicalize first Workspace");
     let second_canonical =
-        suru::paths::canonical(&second_workspace).expect("canonicalize second Workspace");
+        shaman::paths::canonical(&second_workspace).expect("canonicalize second Workspace");
     let (alpha, _alpha_provider) = ControlledProvider::with_provider(
         ProviderId::new("alpha"),
         vec![hosted_model("alpha", "alpha-model")],
@@ -1044,7 +1044,7 @@ async fn catalog_cache_is_scoped_by_provider_and_canonical_workspace() {
     );
     let catalog = |provider: &str, workspace: std::path::PathBuf, id: &str| SkillCatalog {
         provider: ProviderId::new(provider),
-        execution_directory: suru::protocol::ExecutionDirectory { path: workspace },
+        execution_directory: shaman::protocol::ExecutionDirectory { path: workspace },
         skills: vec![SkillDescriptor {
             id: SkillId::new(id),
             name: "review".to_owned(),
@@ -1069,13 +1069,13 @@ async fn catalog_cache_is_scoped_by_provider_and_canonical_workspace() {
     let client = crate::support::loopback_client();
     let alpha_first = SkillCatalogRequest {
         provider: ProviderId::new("alpha"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace_parent.path().join(".").join("first"),
         },
     };
     let beta_first = SkillCatalogRequest {
         provider: ProviderId::new("beta"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: first_workspace.clone(),
         },
     };
@@ -1092,7 +1092,7 @@ async fn catalog_cache_is_scoped_by_provider_and_canonical_workspace() {
     alpha.offer_skills(catalog("alpha", second_canonical, "alpha-second"));
     let alpha_second = SkillCatalogRequest {
         provider: ProviderId::new("alpha"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: second_workspace,
         },
     };
@@ -1119,7 +1119,7 @@ async fn server_lists_and_admits_only_the_current_workspace_skill() {
     let workspace_parent = tempfile::tempdir().expect("create Workspace parent");
     let workspace = workspace_parent.path().join("workspace");
     std::fs::create_dir(&workspace).expect("create Workspace");
-    let canonical_workspace = suru::paths::canonical(&workspace).expect("canonicalize Workspace");
+    let canonical_workspace = shaman::paths::canonical(&workspace).expect("canonicalize Workspace");
     let model = hosted_model("controlled", "controlled-model");
     let selection = hosted_selection("controlled", "controlled-model");
     let (runtime, mut provider) =
@@ -1132,7 +1132,7 @@ async fn server_lists_and_admits_only_the_current_workspace_skill() {
     };
     runtime.offer_skills(SkillCatalog {
         provider: ProviderId::new("controlled"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: canonical_workspace.clone(),
         },
         skills: vec![descriptor.clone()],
@@ -1169,7 +1169,7 @@ async fn server_lists_and_admits_only_the_current_workspace_skill() {
     assert!(matches!(loading.status, SkillCatalogStatus::Loading));
     let request = SkillCatalogRequest {
         provider: ProviderId::new("controlled"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.clone(),
         },
     };
@@ -1196,7 +1196,7 @@ async fn server_lists_and_admits_only_the_current_workspace_skill() {
             session_id: None,
             preparation_id: None,
             agent_selection: Some(selection.clone()),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.clone(),
             },
             prompt: InitialPrompt {
@@ -1211,7 +1211,7 @@ async fn server_lists_and_admits_only_the_current_workspace_skill() {
         .expect("create Skill-only Session");
     assert_eq!(created_response.status(), reqwest::StatusCode::CREATED);
     let created = created_response
-        .json::<suru::protocol::SessionSnapshot>()
+        .json::<shaman::protocol::SessionSnapshot>()
         .await
         .expect("decode created Session");
 
@@ -1243,7 +1243,7 @@ async fn server_lists_and_admits_only_the_current_workspace_skill() {
             session_id: None,
             preparation_id: None,
             agent_selection: Some(hosted_selection("controlled", "controlled-model")),
-            execution_directory: suru::protocol::ExecutionDirectory { path: workspace },
+            execution_directory: shaman::protocol::ExecutionDirectory { path: workspace },
             prompt: InitialPrompt {
                 id: PromptId::new(),
                 text: "$über".to_owned(),
@@ -1304,7 +1304,7 @@ async fn disabled_providers_are_not_discovered_and_native_discovery_errors_are_r
         .expect("Codex disablement succeeds");
     let request = SkillCatalogRequest {
         provider: ProviderId::new("codex"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.path().to_owned(),
         },
     };
@@ -1360,7 +1360,7 @@ async fn disabled_providers_are_not_discovered_and_native_discovery_errors_are_r
             session_id: None,
             preparation_id: None,
             agent_selection: Some(hosted_selection("codex", "controlled-model")),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1388,7 +1388,7 @@ async fn steer_skill_prompt_on_idle_session_starts_as_a_queued_delivery() {
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
         let workspace = tempfile::tempdir().expect("create Workspace");
         let canonical_workspace =
-            suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+            shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
         let provider_id = ProviderId::new(provider_name);
         let model_id = format!("{provider_name}-model");
         let (runtime, mut provider) = ControlledProvider::with_provider(
@@ -1404,7 +1404,7 @@ async fn steer_skill_prompt_on_idle_session_starts_as_a_queued_delivery() {
         // The Provider steers no Skills: only a queued delivery is offered.
         runtime.offer_skills(SkillCatalog {
             provider: provider_id.clone(),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: canonical_workspace.clone(),
             },
             skills: vec![skill.clone()],
@@ -1431,7 +1431,7 @@ async fn steer_skill_prompt_on_idle_session_starts_as_a_queued_delivery() {
         let loading = client
             .list_skills(SkillCatalogRequest {
                 provider: provider_id.clone(),
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
             })
@@ -1448,7 +1448,7 @@ async fn steer_skill_prompt_on_idle_session_starts_as_a_queued_delivery() {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: Some(hosted_selection(provider_name, &model_id)),
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 prompt: InitialPrompt {
@@ -1466,7 +1466,7 @@ async fn steer_skill_prompt_on_idle_session_starts_as_a_queued_delivery() {
             selection: hosted_selection(provider_name, &model_id),
         });
         provider_session.next_turn().await.succeed();
-        provider_session.emit(suru::provider::ProviderEvent::TurnCompleted);
+        provider_session.emit(shaman::provider::ProviderEvent::TurnCompleted);
         timeout(PROGRESS_DEADLINE, async {
             loop {
                 let snapshot = client
@@ -1523,7 +1523,7 @@ async fn steer_skill_prompt_on_idle_session_starts_as_a_queued_delivery() {
             "{provider_name} receives no native steer call"
         );
 
-        provider_session.emit(suru::provider::ProviderEvent::TurnCompleted);
+        provider_session.emit(shaman::provider::ProviderEvent::TurnCompleted);
         drop(provider_session);
         drop(client);
         server.shutdown().await.expect("shut down server");

@@ -5,21 +5,21 @@
 //! MCP server list on `create_session` and on `resume_session`, and each Session opens a connection
 //! of its own to a server named there, presenting the headers its own list gave
 //! (docs/validation/0408-copilot-mcp-tool-timeout.md). So each of those requests names the Broker
-//! as the HTTP server `suru`, with the token that Session's start was handed as its
+//! as the HTTP server `shaman`, with the token that Session's start was handed as its
 //! `Authorization` header and a per-server `timeout` in place of the 180 seconds of silence Copilot
-//! otherwise allows a call; every Tool the Broker serves is offered. Suru's list names that one
+//! otherwise allows a call; every Tool the Broker serves is offered. Shaman's list names that one
 //! server and nothing else. Whether Copilot merges it with the servers its own configuration
 //! discovers, or lets it replace them, no capture has established; the live smoke (#421) is to
 //! confirm it.
 //!
-//! Copilot asks Suru's permission handler before every MCP call, and the handler approves the
+//! Copilot asks Shaman's permission handler before every MCP call, and the handler approves the
 //! Broker's own ([`super::approval`]); the projection absorbs the Broker's tool executions, which
 //! the Broker's own rows answer for ([`super::projection`]).
 //!
 //! Beside the server list, each of those requests carries the Broker's note, as the handoff writes
 //! it for its Agent, as a system message in append mode, added to Copilot's own rather than
 //! replacing any of it, and naming each Tool as Copilot names an MCP server's Tools to its Agent —
-//! `suru-spawn_subagent`.
+//! `shaman-spawn_subagent`.
 
 use std::collections::HashMap;
 
@@ -69,7 +69,7 @@ mod tests {
         assert!(
             message["content"]
                 .as_str()
-                .is_some_and(|note| note.contains("suru-spawn_subagent")),
+                .is_some_and(|note| note.contains("shaman-spawn_subagent")),
             "{message}"
         );
     }
@@ -80,7 +80,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(broker_mcp_servers(&handoff)).expect("the list serializes"),
             json!({
-                "suru": {
+                "shaman": {
                     "type": "http",
                     "url": "http://127.0.0.1:1/broker",
                     "headers": {"Authorization": handoff.token().bearer()},

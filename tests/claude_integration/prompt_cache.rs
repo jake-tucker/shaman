@@ -1,4 +1,4 @@
-//! A Claude Session's Prompt Cache: Claude states no Cache Lifetime, so Suru infers it from what
+//! A Claude Session's Prompt Cache: Claude states no Cache Lifetime, so Shaman infers it from what
 //! each request of the loop's own conversation wrote to the cache, as the API's `message_start`
 //! usage breaks the writes out by lifetime. The moment the cache lapses is the shortest lifetime
 //! the latest request wrote at, counted from that request on the Server's clock; a request that
@@ -15,7 +15,7 @@ use crate::claude_integration::{
         CLAUDE_MODELS, DurableSession, ScriptedClaude, discovery_arms, session_where, user_turn_arm,
     },
 };
-use suru::{
+use shaman::{
     protocol::{LapsePenalty, ModelId, PromptCache, SessionSnapshot, SessionTimestamp},
     provider::{ClaudeCacheLifetimes, ClaudeRuntime},
     server::{ManualClock, ServerClock, ServerTimings},

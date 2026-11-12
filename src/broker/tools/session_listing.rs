@@ -43,7 +43,7 @@ use crate::{
 const DEFAULT_LIMIT: usize = 20;
 
 pub(super) const DESCRIPTION: &str = "\
-List the Sessions on this Suru server — the user's work in every Workspace — \
+List the Sessions on this Shaman server — the user's work in every Workspace — \
 as compact rows, most recently active first. Every argument is optional: \
 \"origin\", the name of a Remote, as list_remotes gives it, to list the \
 Sessions on that Remote instead, or \"everywhere\" to list this server's and \
@@ -71,7 +71,7 @@ Session only on its own server — left out for a Session on this server; \
 user, \"working\", \"failed\" or \"done\" when its latest Turn ended so and no \
 one has looked at it since, \"monitoring\" while something it left running \
 may wake it, or null; \"last_active\", the RFC 3339 moment it last moved; and \
-\"settled\", whether it is set aside. A row for a Session Suru could not read \
+\"settled\", whether it is set aside. A row for a Session Shaman could not read \
 also carries \"unreadable\": true. A Subagent's Session is never listed. A \
 listing \"everywhere\" lists only what each server answered with now: one \
 with a Remote that did not answer also has \"unanswered\", a list naming each \
@@ -390,12 +390,12 @@ struct ListedSession {
     origin: Option<String>,
     title: String,
     /// The path of the Workspace the Session works in — its presented root —
-    /// and `None` for a Session Suru could not read that no longer says.
+    /// and `None` for a Session Shaman could not read that no longer says.
     workspace: Option<String>,
     standing: Option<&'static str>,
     last_active: String,
     settled: bool,
-    /// Set only for a Session Suru could not read, which nothing but a
+    /// Set only for a Session Shaman could not read, which nothing but a
     /// listing can do anything with.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     unreadable: bool,
@@ -515,7 +515,7 @@ mod tests {
         }
     }
 
-    /// A Session Suru could not read, last active at `at` — the least a
+    /// A Session Shaman could not read, last active at `at` — the least a
     /// listing can hold, which is all a bound on last activity reads.
     fn last_active_at(at: u64) -> SessionListItem {
         SessionListItem::Unreadable(crate::protocol::UnreadableSessionSummary {

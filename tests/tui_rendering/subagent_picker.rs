@@ -13,7 +13,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         Activity, ActivityId, ActivityStatus, AgentSelection, Message, MessageId, MessageRole,
@@ -130,7 +130,7 @@ fn child_with_working_subagent(
             context_fill: None,
             prompt_cache: None,
             id: child_id,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             workspace: Workspace::directory(workspace.to_owned()),
@@ -187,7 +187,7 @@ fn child_with_working_subagent(
         subagent_interventions: Vec::new(),
         pending_approvals: Vec::new(),
         submitting_approvals: Vec::new(),
-        pending_approvals_revision: suru::protocol::SessionRevision(0),
+        pending_approvals_revision: shaman::protocol::SessionRevision(0),
         watches: Vec::new(),
         waiting_on_subagents: None,
         current_model: None,
@@ -368,7 +368,7 @@ fn down_moves_the_caret_before_it_opens_the_picker() {
     type_terminal_text(&mut application, "first line");
     application
         .handle_event(ApplicationEvent::Command(
-            suru::tui::CommandId::InsertNewline,
+            shaman::tui::CommandId::InsertNewline,
         ))
         .expect("break the draft onto a second line");
     type_terminal_text(&mut application, "second line");
@@ -561,8 +561,8 @@ fn arrows_choose_and_enter_opens_the_chosen_subagent() {
     press_key(&mut application, KeyCode::Down);
     assert_eq!(
         press_key(&mut application, KeyCode::Enter),
-        ApplicationTransition::AttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::AttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             spawned[1].child_id,
         )),
         "Enter opens the session of the subagent the arrows chose"
@@ -617,8 +617,8 @@ fn rows_answer_the_pointer_as_readily_as_the_keys() {
 
     assert_eq!(
         press_text(&mut application, 80, 22, "└ ⠋ Plan: Design the picker"),
-        ApplicationTransition::AttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::AttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             spawned[1].child_id,
         )),
         "pressing a picker row opens the subagent it names"
@@ -711,8 +711,8 @@ fn a_subagent_session_browses_its_own_working_subagents() {
     );
     assert_eq!(
         press_key(&mut application, KeyCode::Enter),
-        ApplicationTransition::AttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::AttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             grandchild_id,
         )),
         "Enter steps into the grandchild's session"
@@ -722,9 +722,9 @@ fn a_subagent_session_browses_its_own_working_subagents() {
 /// The fixture Session pinned to `provider`, whose declared capabilities are
 /// what the picker's stop affordance keys off.
 fn select_provider(snapshot: &mut SessionSnapshot, provider: &str) {
-    snapshot.session.agent_selection = Some(suru::protocol::AgentSelection {
-        provider: suru::protocol::ProviderId::new(provider),
-        model: suru::protocol::ModelId::new("fixture-model"),
+    snapshot.session.agent_selection = Some(shaman::protocol::AgentSelection {
+        provider: shaman::protocol::ProviderId::new(provider),
+        model: shaman::protocol::ModelId::new("fixture-model"),
         options: Vec::new(),
     });
 }
@@ -756,8 +756,8 @@ fn x_stops_the_chosen_subagent_at_once_where_the_provider_allows() {
     assert_eq!(
         press_key(&mut application, KeyCode::Char('x')),
         ApplicationTransition::InterruptSession {
-            session: suru::protocol::SessionReference::new(
-                suru::protocol::Outlook::Local,
+            session: shaman::protocol::SessionReference::new(
+                shaman::protocol::Outlook::Local,
                 spawned[0].child_id,
             )
         },
@@ -810,7 +810,7 @@ fn x_stops_a_brokered_subagent_whatever_its_parents_provider_offers() {
         ],
     );
     select_provider(&mut snapshot, "copilot");
-    // Suru spawned the second through the Broker, on an actor of its own, so
+    // Shaman spawned the second through the Broker, on an actor of its own, so
     // its stop never waits on what Copilot offers for Subagents of its own.
     let Some(Activity::Subagent { brokered, .. }) =
         snapshot.activities.iter_mut().find(|activity| {
@@ -846,12 +846,12 @@ fn x_stops_a_brokered_subagent_whatever_its_parents_provider_offers() {
     assert_eq!(
         press_key(&mut application, KeyCode::Char('x')),
         ApplicationTransition::InterruptSession {
-            session: suru::protocol::SessionReference::new(
-                suru::protocol::Outlook::Local,
+            session: shaman::protocol::SessionReference::new(
+                shaman::protocol::Outlook::Local,
                 spawned[1].child_id,
             )
         },
-        "the stop interrupts the brokered subagent's own session, which Suru runs itself"
+        "the stop interrupts the brokered subagent's own session, which Shaman runs itself"
     );
 }
 
@@ -888,8 +888,8 @@ fn escape_interrupts_the_session_when_only_subagents_keep_it_working() {
     assert_eq!(
         press_key(&mut application, KeyCode::Esc),
         ApplicationTransition::InterruptSession {
-            session: suru::protocol::SessionReference::new(
-                suru::protocol::Outlook::Local,
+            session: shaman::protocol::SessionReference::new(
+                shaman::protocol::Outlook::Local,
                 session_id,
             ),
         },
@@ -921,8 +921,8 @@ fn the_pointer_chooses_a_row_for_enter_as_the_arrows_do() {
     assert!(point_at(&mut application, plan));
     assert_eq!(
         press_key(&mut application, KeyCode::Enter),
-        ApplicationTransition::AttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::AttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             spawned[1].child_id,
         ))
     );

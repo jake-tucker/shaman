@@ -407,7 +407,7 @@ impl ProviderResumeStateRow {
 
 /// The Provider's own identity for the Subagent a child Session is, keyed by
 /// that Session. Plain columns rather than a payload: the identity is the
-/// Provider's opaque string, which Suru only ever compares.
+/// Provider's opaque string, which Shaman only ever compares.
 #[derive(AsChangeset, Insertable, Queryable, Selectable)]
 #[diesel(table_name = provider_subagent_identities)]
 pub(super) struct ProviderSubagentIdentityRow {
@@ -1485,7 +1485,7 @@ fn skill_invocations(invocations: Vec<StoredSkillInvocation>) -> Vec<SkillInvoca
 
 #[derive(Deserialize, Serialize)]
 struct StoredTurnPayload {
-    /// The Compaction request that began the Turn, the user's or Suru's,
+    /// The Compaction request that began the Turn, the user's or Shaman's,
     /// which a Continuation's absent Prompt alone would not say. Absent when
     /// no request began it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1499,7 +1499,7 @@ struct StoredTurnPayload {
     cost: Option<Cost>,
     cost_basis: Option<CostBasis>,
     cost_details: Option<crate::protocol::CostDetails>,
-    /// Absent on every Turn stored before Suru kept Model Shares, and on
+    /// Absent on every Turn stored before Shaman kept Model Shares, and on
     /// every Turn whose Provider stated none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     model_shares: Vec<crate::protocol::ModelShare>,
@@ -1537,7 +1537,7 @@ enum StoredActivityPayload<'a> {
         outcome: crate::protocol::ApprovalOutcome,
         decision: Option<crate::protocol::Decision>,
         follow_up_error: Option<Cow<'a, str>>,
-        /// Absent for one asked before Suru recorded when.
+        /// Absent for one asked before Shaman recorded when.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         asked_at: Option<SessionTimestamp>,
     },
@@ -1549,7 +1549,7 @@ enum StoredActivityPayload<'a> {
         /// themselves, and for one neither.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         author: Option<StoredAuthor>,
-        /// Absent for one asked, or settled, before Suru recorded when.
+        /// Absent for one asked, or settled, before Shaman recorded when.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         asked_at: Option<SessionTimestamp>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1601,7 +1601,7 @@ enum StoredActivityPayload<'a> {
         session_id: SessionId,
         brokered: bool,
         duration_ms: Option<u64>,
-        /// Absent for a row stood before Suru recorded when.
+        /// Absent for a row stood before Shaman recorded when.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         delegated_at: Option<SessionTimestamp>,
     },

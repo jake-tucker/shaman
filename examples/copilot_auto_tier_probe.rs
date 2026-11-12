@@ -17,7 +17,7 @@
 //! to enable on every Session (comma-separated, e.g. `HYDRAFUSION`), and `PROBE_EXPERIMENTAL=1`
 //! enables experimental mode, and `PROBE_EXP_ASSIGNMENTS` names a JSON file holding ExP assignments
 //! in the shape the CLI caches them (the `response` of an entry in its `exp-cache.json`).
-//! `SURU_COPILOT_PATH` names the CLI (default `copilot`).
+//! `SHAMAN_COPILOT_PATH` names the CLI (default `copilot`).
 #[path = "support/copilot_cli.rs"]
 mod copilot_cli;
 

@@ -1,7 +1,7 @@
 //! What the settings panel tells about the row focus stands on, beyond the row
 //! that lists it: whatever asks something of the reader first — an edit that
 //! never reached the Config Document, a Provider's condition and what fixes
-//! it, a pin Suru ignored — then what the Setting does, every value it accepts
+//! it, a pin Shaman ignored — then what the Setting does, every value it accepts
 //! with the one in force and the built-in default marked, and where it applies
 //! and what a Sidekick may do with it. A Provider's row stands for more than
 //! its Enablement, so on the Providers tab the pane accounts for the Provider
@@ -149,7 +149,7 @@ struct Lead<'a> {
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Tone {
-    /// Something went wrong: Suru's read of a Provider.
+    /// Something went wrong: Shaman's read of a Provider.
     Error,
     /// Something the reader would do well to fix.
     Warning,
@@ -362,7 +362,7 @@ impl ProviderAccount {
             enabled,
             disabled: (!enabled).then(|| {
                 format!(
-                    "Suru leaves {} entirely alone until you enable it.",
+                    "Shaman leaves {} entirely alone until you enable it.",
                     row.label
                 )
             }),

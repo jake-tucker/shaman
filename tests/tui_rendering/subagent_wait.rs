@@ -5,7 +5,7 @@
 use crate::tui_rendering::support::{
     connected_application, failed_session_snapshot, rendered_application_rows_at, workspace_dir,
 };
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         Activity, ActivityId, ActivityStatus, PromptId, SessionChange, SessionId, SessionRevision,
@@ -79,7 +79,7 @@ fn running_tool_call(
 /// open, as the Tool Call every Provider records it as.
 fn waiting_in_its_tool_call(workspace: &std::path::Path) -> SessionSnapshot {
     let mut snapshot = waiting_snapshot(workspace);
-    running_tool_call(&mut snapshot, Some("suru"), "wait_subagents", "");
+    running_tool_call(&mut snapshot, Some("shaman"), "wait_subagents", "");
     snapshot
 }
 

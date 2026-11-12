@@ -1,10 +1,10 @@
-//! A Provider the user turned off: never consulted, absent from what Suru
+//! A Provider the user turned off: never consulted, absent from what Shaman
 //! offers, and legible when a Session bound to it is prompted anyway.
 //!
 //! These tests sit beside the unavailability tests in `multi_provider`, because
 //! disabled behavior is defined largely by staying distinct from them: an
 //! unavailable Provider keeps its place with its reason on show, while a
-//! disabled one reports only that Suru never looked.
+//! disabled one reports only that Shaman never looked.
 //!
 //! The Provider doubles are hosted under the real Provider identities, because
 //! the `enabled` Settings are a compile-time table keyed by them — a Provider
@@ -19,7 +19,7 @@ use crate::session_integration::{
         create_session, hosted_model, hosted_selection, list_catalog, read_session, refresh_catalog,
     },
 };
-use suru::{
+use shaman::{
     protocol::{
         Activity, AdmitPromptRequest, AgentId, AgentIdentity, AgentSelection, CreateSessionRequest,
         InitialPrompt, ModelCatalog, PromptDelivery, PromptId, ProviderCatalogStatus, ProviderId,
@@ -41,7 +41,7 @@ fn provider(id: &str) -> (Arc<ControlledProviderRuntime>, ControlledProvider) {
 
 /// A config root whose Config Document turns `disabled` off before the server
 /// ever starts, which is how a user who never wants a Provider consulted
-/// configures Suru.
+/// configures Shaman.
 fn config_dir_disabling(disabled: &[&str]) -> tempfile::TempDir {
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let pins = disabled
@@ -50,7 +50,7 @@ fn config_dir_disabling(disabled: &[&str]) -> tempfile::TempDir {
         .collect::<Vec<_>>()
         .join(",\n");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         format!("{{\n  \"provider\": {{\n{pins}\n  }}\n}}\n"),
     )
     .expect("write Config Document");
@@ -59,7 +59,7 @@ fn config_dir_disabling(disabled: &[&str]) -> tempfile::TempDir {
 
 /// The catalog entry for one Provider, which stays present for every hosted
 /// Provider so a client is never left guessing whether one vanished.
-fn provider_catalog(catalog: &ModelCatalog, id: &str) -> suru::protocol::ProviderModelCatalog {
+fn provider_catalog(catalog: &ModelCatalog, id: &str) -> shaman::protocol::ProviderModelCatalog {
     catalog
         .providers
         .iter()
@@ -99,7 +99,7 @@ fn session_request(
         session_id: None,
         preparation_id: None,
         agent_selection: selection,
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -176,7 +176,7 @@ async fn spawn(
         config,
         runtimes
             .into_iter()
-            .map(|runtime| runtime as Arc<dyn suru::provider::ProviderRuntime>)
+            .map(|runtime| runtime as Arc<dyn shaman::provider::ProviderRuntime>)
             .collect(),
     )
     .await
@@ -208,12 +208,12 @@ async fn a_provider_pinned_disabled_is_never_consulted_and_reports_that_it_is_di
         assert_eq!(
             codex.status,
             ProviderCatalogStatus::Disabled,
-            "a Provider the user turned off says so rather than naming a condition Suru never looked for"
+            "a Provider the user turned off says so rather than naming a condition Shaman never looked for"
         );
         assert_eq!(
             codex.models,
             [],
-            "a Provider Suru never asked for Models offers none"
+            "a Provider Shaman never asked for Models offers none"
         );
         let copilot = provider_catalog(&catalog, "copilot");
         assert_ne!(
@@ -306,7 +306,7 @@ async fn a_fresh_landing_default_passes_over_a_disabled_provider() {
     );
     assert_eq!(
         copilot.next_start().await.execution_directory(),
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace"),
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace"),
         "the defaulted Session routes to the Provider the user left on"
     );
 
@@ -329,7 +329,7 @@ async fn a_persisted_landing_selection_naming_a_disabled_provider_yields_to_the_
     let original = server::spawn_with_providers(
         base.clone(),
         vec![
-            codex_runtime as Arc<dyn suru::provider::ProviderRuntime>,
+            codex_runtime as Arc<dyn shaman::provider::ProviderRuntime>,
             copilot_runtime,
         ],
     )
@@ -362,7 +362,7 @@ async fn a_persisted_landing_selection_naming_a_disabled_provider_yields_to_the_
     let replacement = server::spawn_with_providers(
         base,
         vec![
-            codex_runtime as Arc<dyn suru::provider::ProviderRuntime>,
+            codex_runtime as Arc<dyn shaman::provider::ProviderRuntime>,
             copilot_runtime,
         ],
     )
@@ -426,7 +426,7 @@ async fn a_session_with_no_agent_selection_routes_to_the_first_enabled_runtime()
     );
     assert_eq!(
         copilot.next_start().await.execution_directory(),
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace"),
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace"),
         "the Session takes the first enabled runtime, not the first hosted one"
     );
     assert!(
@@ -470,7 +470,7 @@ async fn prompting_a_session_bound_to_a_disabled_provider_fails_its_turn_naming_
     );
     assert!(
         error.contains("provider.codex.enabled"),
-        "the failure names the Setting, so the fix reads as one inside Suru, got {error:?}"
+        "the failure names the Setting, so the fix reads as one inside Shaman, got {error:?}"
     );
     assert!(
         codex.try_next_start().is_none(),
@@ -486,7 +486,7 @@ async fn prompting_a_session_bound_to_a_disabled_provider_fails_its_turn_naming_
     server.shutdown().await.expect("shut down server");
 }
 
-/// Disabling is prospective: it governs what Suru does next rather than what it
+/// Disabling is prospective: it governs what Shaman does next rather than what it
 /// is doing, so a settings toggle never destroys work in progress.
 #[tokio::test]
 async fn disabling_mid_turn_lets_the_running_turn_settle_and_the_next_prompt_is_what_fails() {

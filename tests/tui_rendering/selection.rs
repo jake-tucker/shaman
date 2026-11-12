@@ -4,7 +4,7 @@ use crossterm::event::{
     Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use ratatui::style::Modifier;
-use suru::{
+use shaman::{
     protocol::{EffectiveSettings, TextSelectionCopy},
     tui::{Application, ApplicationEvent, ApplicationTransition, CommandId, SemanticCommandId},
 };
@@ -12,7 +12,7 @@ use suru::{
 fn release_copy(application: &mut Application) {
     let mut settings = EffectiveSettings::default();
     settings.text_selection.copy = TextSelectionCopy::Release;
-    settings.sidebar.initial_visibility = suru::protocol::SidebarVisibility::Hidden;
+    settings.sidebar.initial_visibility = shaman::protocol::SidebarVisibility::Hidden;
     deliver_settings(application, settings);
 }
 
@@ -151,7 +151,7 @@ fn pickers_and_connection_overlays_copy_their_painted_rows() {
 /// rather than the text.
 #[test]
 fn a_wrapped_fix_in_the_model_picker_copies_as_one_unbroken_line() {
-    use suru::protocol::*;
+    use shaman::protocol::*;
     const INSTALL_PAGE: &str =
         "https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli";
     let workspace = workspace_dir();
@@ -221,7 +221,7 @@ fn a_wrapped_fix_in_the_model_picker_copies_as_one_unbroken_line() {
 
 #[test]
 fn a_wrapped_advisory_in_the_model_details_pane_copies_as_written_without_the_list() {
-    use suru::protocol::*;
+    use shaman::protocol::*;
     const ADVISORY: &str = "Prompts and outputs may be retained by the model provider for up to \
                             thirty days. Learn more (https://example.com/retention)";
     let workspace = workspace_dir();
@@ -308,7 +308,7 @@ fn composer_and_transcript_drags_stay_on_the_surface_they_started_on() {
 
 #[test]
 fn model_options_copy_multiple_painted_rows_and_manual_copy_clears_the_highlight() {
-    use suru::protocol::*;
+    use shaman::protocol::*;
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
     let mut settings = EffectiveSettings::default();

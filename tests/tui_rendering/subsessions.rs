@@ -11,7 +11,7 @@ use crate::tui_rendering::support::{
     rendered_application_rows_at, text_position, workspace_dir,
 };
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         Activity, ActivityId, Outlook, SessionDeleted, SessionId, SessionReference,
@@ -266,7 +266,7 @@ fn a_subsession_that_cannot_be_opened_leaves_the_reader_on_the_sidekick_saying_w
     application
         .handle_event(ApplicationEvent::OriginSessionAttachFailed {
             reference,
-            error: "The session does not exist on this Suru server.".to_owned(),
+            error: "The session does not exist on this Shaman server.".to_owned(),
         })
         .expect("deliver the failed attach");
 

@@ -1,0 +1,987 @@
+//! A Relay: a server through which Servers that cannot reach each other
+//! directly carry a Pairing (ADR-0045).
+//!
+//! Every Server connects outward to its Relay over a WebSocket and proves
+//! itself by its identity key. The Relay admits by login: a Server's user logs
+//! in through an identity provider only the Relay speaks to, and the Relay
+//! ties the Account that identity answers to to the Server's key as a Login,
+//! which stands until it is removed (ADR-0046, ADR-0048) — though it is
+//! refused while its Account has lapsed, no longer satisfying the operator's
+//! admission rules, until one fresh login from any of its Servers restores
+//! it. A Server that Serves through the Relay waits there to be reached, and
+//! the Relay joins it to another Server under the same Account that asks for
+//! it, carrying the bytes between them unread. Asked by a Server whose Login
+//! stands, it lists the other Logins under that Server's Account, as a hint
+//! to find them by that opens nothing (ADR-0064). Its operator caps how many
+//! Logins may stand under each Account and how many connections it joins for
+//! each at once, so no one Account can exhaust it. The Relay holds no
+//! Provider or Session of Shaman's, and none of the trust a Pairing holds. What
+//! it can tell is who connected what to what, which it writes to its
+//! connection log, one line for each connection it joins. Its operator lists
+//! and removes its Accounts and Logins from its command line ([`operate`]), a
+//! process apart that reaches a running Relay through its records alone, and
+//! runs it as its configuration file and command line say ([`config`]),
+//! listening for plain HTTP behind a reverse proxy that serves HTTPS for it,
+//! or serving HTTPS itself from certificate files it is given ([`TlsFiles`]).
+
+use std::{
+    io::Write,
+    net::SocketAddr,
+    num::NonZeroU32,
+    path::PathBuf,
+    sync::{Arc, Mutex, Weak},
+    time::Duration,
+};
+
+use anyhow::{Context, Result};
+use axum::{
+    Router,
+    extract::connect_info::Connected,
+    routing::get,
+    serve::{IncomingStream, Listener},
+};
+use shaman_relay_protocol::{ENDPOINT_PATH, SPOKEN, Version, canonical_address};
+use tokio::{
+    net::TcpListener,
+    sync::{mpsc, watch},
+    task::JoinHandle,
+};
+use tracing_subscriber::{
+    Layer, Registry,
+    filter::{EnvFilter, FilterExt, LevelFilter, Targets},
+};
+
+mod admission;
+mod caps;
+mod clock;
+pub mod config;
+mod connection;
+mod connection_log;
+mod forwarded;
+mod github;
+mod identity;
+mod joiner;
+mod listener;
+mod listing;
+mod operator;
+mod private_file;
+mod running;
+mod standing;
+mod store;
+mod tls;
+
+pub use admission::{Admission, AdmissionRule, Undecided};
+pub use caps::{
+    CONNECTIONS_AT_ONCE, IDLE_CONNECTIONS_PER_SERVER, IDLE_CONNECTIONS_PER_SERVER_WITHOUT_LOGIN,
+    JOINED_CONNECTIONS_PER_ACCOUNT, LOGINS_AT_ONCE, LOGINS_PER_ACCOUNT,
+};
+pub use clock::Clock;
+pub use forwarded::{TrustedProxy, UnrecognizedProxy};
+pub use github::{GitHub, GitHubApp, GitHubAppKey};
+pub use identity::{
+    DeviceLogin, Identity, IdentityProvider, LoginRefusal, LookUpFailed, NoIdentityProvider,
+    Organization, OrganizationUnchecked, SCRIPTED_VERIFICATION_URI, ScriptedProvider,
+};
+pub use joiner::{JOINS_ASKED_PER_SERVER, WAITING_CONNECTIONS_PER_SERVER};
+pub use operator::{
+    AccountsCommand, Confirmation, Listing, LoginsCommand, OperatorCommand, Outcome,
+    REMOVALS_CUT_AT_ONCE, operate,
+};
+pub use store::{Account, Login, Store};
+pub use tls::TlsFiles;
+
+/// How long a Server may take over each step of proving itself before a
+/// Relay stops waiting, unless its configuration says otherwise.
+const GREETING_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long a Server may take to take in what a Relay says before the Relay
+/// gives the connection up, unless its configuration says otherwise.
+const SEND_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long a waiting Server may take to take up a join asked of it before
+/// the Relay gives the join up, unless its configuration says otherwise.
+const JOIN_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// How long a Relay lets a connection go with nothing sent on it before it
+/// pings, unless its configuration says otherwise: well within the minute a
+/// reverse proxy commonly lets a connection stand idle before it closes it.
+pub const KEEPALIVE: Duration = Duration::from_secs(20);
+
+/// How often a Relay serving HTTPS reads its certificate files again, to take
+/// up a renewed certificate, unless its configuration says otherwise.
+const CERTIFICATE_CHECK_INTERVAL: Duration = Duration::from_secs(60);
+
+/// How many TLS handshakes a Relay serving HTTPS makes at once, unless its
+/// configuration says otherwise: past it, it takes no more connections until
+/// one ends, so connections that never handshake hold no more of it than
+/// that, each for no longer than the greeting timeout. A handshake takes a
+/// Server a round trip or two, so this many is room for a crowd of them
+/// reconnecting at once.
+pub const HANDSHAKES_AT_ONCE: usize = 256;
+
+/// How many lines the connection log may owe at once, unless the Relay's
+/// configuration says otherwise: one for each joined connection the Relay
+/// carries, and one for each ended whose line its reader has yet to take in.
+const CONNECTION_LOG_CAPACITY: usize = 65_536;
+
+/// How long a Server holding no Login may leave a connection idle — asking
+/// nothing of the Relay, and with no login under way on it — before the Relay
+/// lets the connection go, unless its configuration says otherwise: as long
+/// as it may take over each step of proving itself, since a Server holding no
+/// Login asks what it came for the moment it has.
+const IDLE_TIMEOUT_WITHOUT_LOGIN: Duration = GREETING_TIMEOUT;
+
+/// How long a connection proven, or done with what it last asked, may go
+/// idle before it counts among its Server's idle connections, unless the
+/// Relay's configuration says otherwise — and never longer than the greeting
+/// timeout. A Server asks what it came for the moment it has proven its key,
+/// so a burst of connections each opened to ask for a join, or to take one
+/// up, is never counted, while one that proves and then sits is.
+const IDLE_GRACE: Duration = Duration::from_secs(5);
+
+/// How often a Relay asks again about each Account its admission rules could
+/// not tell about as it started — which stands on nothing until they can —
+/// unless its configuration says otherwise: soon, rather than at its next
+/// check of every Account, and no more often than its identity provider
+/// lets it be asked.
+const UNDECIDED_RECHECK_INTERVAL: Duration = Duration::from_secs(30);
+
+/// How often a Relay tries again to record that an Account lapsed, where it
+/// could not as the Account was found to lapse, unless its configuration says
+/// otherwise. The Account is refused, and everything that stood on it cut,
+/// meanwhile.
+const LAPSE_RETRY_INTERVAL: Duration = Duration::from_secs(10);
+
+/// How long a stopping Relay waits for its connection log to write the lines
+/// it owes, and then for its diagnostic log to say how many it gave up,
+/// unless its configuration says otherwise.
+const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How often a running Relay looks for Logins its operator has removed, to
+/// cut what stands on them, unless its configuration says otherwise: soon
+/// enough that the operator's command line, waiting for the cut, returns
+/// with no wait to speak of, and seldom enough to cost nothing, each look
+/// asking only whether a table that is empty but for removals not yet cut is
+/// empty, and taking nothing a Server's connection waits on unless it is not.
+const REMOVAL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// How often a Relay checks its Accounts against its admission rules again,
+/// unless its configuration says otherwise: often enough that someone removed
+/// from an organization the rules name is cut off within a quarter of an
+/// hour, and seldom enough that checking a few thousand Accounts against it,
+/// about one request of GitHub's each, stays within the 5,000 to 12,500 an
+/// hour GitHub allows an app's installation on an organization, by its size.
+const ADMISSION_INTERVAL: Duration = Duration::from_secs(15 * 60);
+
+/// How long a Relay's admission rules may take to answer each asking before
+/// the Relay takes them to be unable to tell, unless its configuration says
+/// otherwise.
+const ADMISSION_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Dependencies that log what they carry at their verbose levels, and the most
+/// verbose level each is let log at whatever `RUST_LOG` asks: tungstenite logs
+/// every frame and message whole at trace, a login's code among them; and
+/// reqwest, hyper and hyper-util carry the Relay's requests to its identity
+/// provider, a login's device code and a user's token among them, and say
+/// what they can of each at debug and trace.
+const PAYLOAD_BEARING_TARGETS: [(&str, LevelFilter); 5] = [
+    ("tungstenite", LevelFilter::WARN),
+    ("tokio_tungstenite", LevelFilter::WARN),
+    ("reqwest", LevelFilter::WARN),
+    ("hyper", LevelFilter::WARN),
+    ("hyper_util", LevelFilter::WARN),
+];
+
+/// This build's version, as `shaman-relay --version` gives it: the Relay's
+/// own, apart from Shaman's and released only when the Relay changes
+/// (ADR-0047), with the versions of the Relay protocol it speaks.
+pub fn version() -> &'static str {
+    static VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+        let spoken = SPOKEN
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("{} (Relay protocol {spoken})", env!("CARGO_PKG_VERSION"))
+    });
+    &VERSION
+}
+
+/// How a Relay is run.
+#[derive(Clone)]
+pub struct RelayConfig {
+    listen: SocketAddr,
+    tls: Option<TlsFiles>,
+    certificate_check_interval: Duration,
+    handshakes_at_once: usize,
+    database: PathBuf,
+    public_address: String,
+    greeting_timeout: Duration,
+    send_timeout: Duration,
+    join_timeout: Duration,
+    keepalive: Duration,
+    versions: Vec<Version>,
+    clock: Clock,
+    trusted_proxies: Vec<TrustedProxy>,
+    connection_log: connection_log::Writer,
+    connection_log_capacity: usize,
+    drain_timeout: Duration,
+    removal_interval: Duration,
+    admission: Admission,
+    admission_interval: Duration,
+    admission_timeout: Duration,
+    fresh_login_every: Option<Duration>,
+    logins_per_account: NonZeroU32,
+    joined_connections_per_account: NonZeroU32,
+    connections_at_once: NonZeroU32,
+    logins_at_once: NonZeroU32,
+    idle_connections_per_server: NonZeroU32,
+    idle_connections_per_server_without_login: NonZeroU32,
+    idle_timeout_without_login: Duration,
+    idle_grace: Duration,
+    lapse_retry_interval: Duration,
+    undecided_recheck_interval: Duration,
+}
+
+impl RelayConfig {
+    /// A Relay listening for plain HTTP at `listen`, keeping its records in
+    /// the SQLite database at `database`, and known as `public_address`: the
+    /// address Servers reach it at, which every proof made for it names. A
+    /// Relay is known by its address, so it is told its own rather than
+    /// taking it from what a connection claims; behind a reverse proxy that
+    /// serves HTTPS for it, its address is the proxy's.
+    pub fn new(
+        listen: SocketAddr,
+        database: impl Into<PathBuf>,
+        public_address: impl Into<String>,
+    ) -> Self {
+        Self {
+            listen,
+            tls: None,
+            certificate_check_interval: CERTIFICATE_CHECK_INTERVAL,
+            handshakes_at_once: HANDSHAKES_AT_ONCE,
+            database: database.into(),
+            public_address: public_address.into(),
+            greeting_timeout: GREETING_TIMEOUT,
+            send_timeout: SEND_TIMEOUT,
+            join_timeout: JOIN_TIMEOUT,
+            keepalive: KEEPALIVE,
+            versions: SPOKEN.to_vec(),
+            clock: Clock::system(),
+            trusted_proxies: Vec::new(),
+            connection_log: Arc::new(Mutex::new(std::io::stdout())),
+            connection_log_capacity: CONNECTION_LOG_CAPACITY,
+            drain_timeout: DRAIN_TIMEOUT,
+            removal_interval: REMOVAL_INTERVAL,
+            admission: Admission::nobody(),
+            admission_interval: ADMISSION_INTERVAL,
+            admission_timeout: ADMISSION_TIMEOUT,
+            fresh_login_every: None,
+            logins_per_account: LOGINS_PER_ACCOUNT,
+            joined_connections_per_account: JOINED_CONNECTIONS_PER_ACCOUNT,
+            connections_at_once: CONNECTIONS_AT_ONCE,
+            logins_at_once: LOGINS_AT_ONCE,
+            idle_connections_per_server: IDLE_CONNECTIONS_PER_SERVER,
+            idle_connections_per_server_without_login: IDLE_CONNECTIONS_PER_SERVER_WITHOUT_LOGIN,
+            idle_timeout_without_login: IDLE_TIMEOUT_WITHOUT_LOGIN,
+            idle_grace: IDLE_GRACE,
+            lapse_retry_interval: LAPSE_RETRY_INTERVAL,
+            undecided_recheck_interval: UNDECIDED_RECHECK_INTERVAL,
+        }
+    }
+
+    /// Has the Relay serve HTTPS at its listening address, with the
+    /// certificate `files` hold, rather than plain HTTP. It refuses to start
+    /// with files it cannot serve from, and takes up the certificate they
+    /// hold once they are replaced, as [`TlsFiles`] says.
+    pub fn with_tls(mut self, files: TlsFiles) -> Self {
+        self.tls = Some(files);
+        self
+    }
+
+    /// Has a Relay serving HTTPS make at most `handshakes` TLS handshakes at
+    /// once rather than [`HANDSHAKES_AT_ONCE`]. The Relay refuses to start
+    /// allowed none.
+    pub fn with_handshakes_at_once(mut self, handshakes: usize) -> Self {
+        self.handshakes_at_once = handshakes;
+        self
+    }
+
+    /// Has a Relay serving HTTPS read its certificate files again every
+    /// `interval` rather than every minute. The Relay refuses to start with
+    /// an interval of nothing.
+    pub fn with_certificate_check_interval(mut self, interval: Duration) -> Self {
+        self.certificate_check_interval = interval;
+        self
+    }
+
+    /// Admits whoever `admission`'s rules admit, looking up the users and
+    /// the organizations they name as it starts. Until it is given rules, a
+    /// Relay admits nobody.
+    pub fn with_admission(mut self, admission: Admission) -> Self {
+        self.admission = admission;
+        self
+    }
+
+    /// Has the Relay check every Account a Login stands under against its
+    /// admission rules as it starts, and again each `interval`, from the end
+    /// of one pass of them to the beginning of the next. It is the gap
+    /// between passes, not the longest an Account the rules stop admitting
+    /// goes on standing: a pass asks about its Accounts one after another,
+    /// each for no longer than the admission timeout, so while the rules
+    /// answer nothing a pass over N Accounts takes N such timeouts. Each pass
+    /// begins at the first Account the one before could not tell about, so
+    /// rules that answer for only so many Accounts at a time — an identity
+    /// provider limiting how often it is asked — come to each in turn,
+    /// whatever other rules decide of the Accounts after it. A login the
+    /// rules refuse lapses its Account at once, whatever the schedule.
+    pub fn with_admission_interval(mut self, interval: Duration) -> Self {
+        self.admission_interval = interval;
+        self
+    }
+
+    /// Bounds how long the admission rules may take to answer each asking
+    /// before the Relay takes them to be unable to tell.
+    pub fn with_admission_timeout(mut self, timeout: Duration) -> Self {
+        self.admission_timeout = timeout;
+        self
+    }
+
+    /// Requires an Account to have been logged in as, from any one of its
+    /// Servers, within each `every`: an Account not logged in as for longer
+    /// lapses until one of its Servers logs in afresh. Unless asked for, a
+    /// Login stands however long ago it was formed.
+    pub fn with_fresh_login_every(mut self, every: Duration) -> Self {
+        self.fresh_login_every = Some(every);
+        self
+    }
+
+    /// Caps how many Logins may stand under each Account — how many of its
+    /// Servers may be logged in at the Relay — at `cap` rather than
+    /// [`LOGINS_PER_ACCOUNT`]. A lapsed Account's Logins count against it
+    /// still, since nothing of a lapsed Account is forgotten.
+    pub fn with_logins_per_account(mut self, cap: NonZeroU32) -> Self {
+        self.logins_per_account = cap;
+        self
+    }
+
+    /// Caps how many connections the Relay joins for each Account at once at
+    /// `cap` rather than [`JOINED_CONNECTIONS_PER_ACCOUNT`].
+    pub fn with_joined_connections_per_account(mut self, cap: NonZeroU32) -> Self {
+        self.joined_connections_per_account = cap;
+        self
+    }
+
+    /// Caps how many connections the Relay holds at once, from every Server
+    /// together, at `cap` rather than [`CONNECTIONS_AT_ONCE`]: each from the
+    /// moment it is taken until it ends, however far it got — making its TLS
+    /// handshake, proving its Server's key, or carrying a join. A connection
+    /// past it is let go as it comes, before anything else is done with it,
+    /// and nothing the Relay holds is disturbed.
+    pub fn with_connections_at_once(mut self, cap: NonZeroU32) -> Self {
+        self.connections_at_once = cap;
+        self
+    }
+
+    /// Caps how many logins may be under way at the Relay at once, from every
+    /// Server together, at `cap` rather than [`LOGINS_AT_ONCE`]. A login past
+    /// it is refused until one ends; a Server's own later login takes the
+    /// place of the one it already has under way, since each Server logs in
+    /// on one connection at a time.
+    pub fn with_logins_at_once(mut self, cap: NonZeroU32) -> Self {
+        self.logins_at_once = cap;
+        self
+    }
+
+    /// Caps how many idle connections each Server whose Login stands may hold
+    /// at once at `cap` rather than [`IDLE_CONNECTIONS_PER_SERVER`]: those on
+    /// which it is doing nothing — not waiting to be reached, not joined nor
+    /// asking to be, not logging in — such as the one a Server keeps to hear
+    /// at once that its Login stops standing. A connection counts once it
+    /// has gone idle past the idle grace ([`Self::with_idle_grace`]), so
+    /// those a Server opens to ask for joins, or take them up, which ask at
+    /// once, never count. One counted past the cap is refused.
+    pub fn with_idle_connections_per_server(mut self, cap: NonZeroU32) -> Self {
+        self.idle_connections_per_server = cap;
+        self
+    }
+
+    /// Caps how many idle connections each Server holding no Login that
+    /// stands may hold at once at `cap` rather than
+    /// [`IDLE_CONNECTIONS_PER_SERVER_WITHOUT_LOGIN`], counted as for
+    /// [`Self::with_idle_connections_per_server`]. One counted past the cap is
+    /// refused.
+    pub fn with_idle_connections_per_server_without_login(mut self, cap: NonZeroU32) -> Self {
+        self.idle_connections_per_server_without_login = cap;
+        self
+    }
+
+    /// Has the Relay let go of a connection whose Server holds no Login that
+    /// stands once it has been idle for `timeout` — asking nothing, and with
+    /// no login under way on it — rather than for as long as the greeting
+    /// timeout allows each step of proving itself.
+    pub fn with_idle_timeout_without_login(mut self, timeout: Duration) -> Self {
+        self.idle_timeout_without_login = timeout;
+        self
+    }
+
+    /// Has the Relay count a connection among its Server's idle connections
+    /// only once it has gone idle for `grace` — after its Server proved its
+    /// key, or after it was done with what the Server last asked — rather
+    /// than for five seconds; never longer than the greeting timeout.
+    pub fn with_idle_grace(mut self, grace: Duration) -> Self {
+        self.idle_grace = grace;
+        self
+    }
+
+    /// Has the Relay ask again every `interval`, rather than every thirty
+    /// seconds, about each Account its admission rules could not tell about
+    /// as it started, until they can. Such an Account is not lapsed, but its
+    /// Servers are refused as the Relay being unavailable for now until the
+    /// rules decide it.
+    pub fn with_undecided_recheck_interval(mut self, interval: Duration) -> Self {
+        self.undecided_recheck_interval = interval;
+        self
+    }
+
+    /// Has the Relay try again every `interval`, rather than every ten
+    /// seconds, to record that an Account lapsed where it could not as the
+    /// Account was found to lapse. The Account is refused, and everything
+    /// standing on it cut, from the moment it is found to lapse, however long
+    /// until its lapse is recorded.
+    pub fn with_lapse_retry_interval(mut self, interval: Duration) -> Self {
+        self.lapse_retry_interval = interval;
+        self
+    }
+
+    /// Bounds how long a Server may take over each step of proving itself.
+    pub fn with_greeting_timeout(mut self, timeout: Duration) -> Self {
+        self.greeting_timeout = timeout;
+        self
+    }
+
+    /// Bounds how long a Server may take to take in what the Relay says
+    /// before the Relay gives the connection up.
+    pub fn with_send_timeout(mut self, timeout: Duration) -> Self {
+        self.send_timeout = timeout;
+        self
+    }
+
+    /// Bounds how long a waiting Server may take to take up a join asked of
+    /// it before the Relay gives the join up.
+    pub fn with_join_timeout(mut self, timeout: Duration) -> Self {
+        self.join_timeout = timeout;
+        self
+    }
+
+    /// Has the Relay ping each connection it has sent nothing on for
+    /// `interval` rather than [`KEEPALIVE`] — a waiting Server's, one whose
+    /// login is under way however long its identity provider takes, and
+    /// either side of a join carrying nothing — so a reverse proxy that
+    /// closes connections idle for longer keeps them. Pinging holds nothing
+    /// beyond what a connection already bounds: a Server that does not take
+    /// a ping in within the send timeout is let go, as for anything else the
+    /// Relay sends it. The Relay refuses to start with an interval of
+    /// nothing.
+    pub fn with_keepalive(mut self, interval: Duration) -> Self {
+        self.keepalive = interval;
+        self
+    }
+
+    /// Has the Relay speak `versions` of its protocol rather than this
+    /// build's own, so a test can stand it beside a Server it disagrees with.
+    pub fn with_protocol_versions(mut self, versions: Vec<Version>) -> Self {
+        self.versions = versions;
+        self
+    }
+
+    /// Has the Relay read the time it stamps its records, and its
+    /// connection log, with from `clock`.
+    pub fn with_clock(mut self, clock: Clock) -> Self {
+        self.clock = clock;
+        self
+    }
+
+    /// Has the Relay believe `proxies` — and no others — about the address
+    /// a Server's connection comes from, which they name in their
+    /// `X-Forwarded-For` header. Unless they are named, the Relay believes
+    /// no proxy, and logs the address that connected to it.
+    pub fn with_trusted_proxies(mut self, proxies: impl IntoIterator<Item = TrustedProxy>) -> Self {
+        self.trusted_proxies = proxies.into_iter().collect();
+        self
+    }
+
+    /// Has the Relay write its connection log to `writer` rather than to
+    /// standard output.
+    pub fn with_connection_log(mut self, writer: impl Write + Send + 'static) -> Self {
+        self.connection_log = Arc::new(Mutex::new(writer));
+        self
+    }
+
+    /// Bounds how many lines the connection log may owe at once — one for
+    /// each joined connection the Relay carries, and one for each ended whose
+    /// line is yet to be written. Past it, the Relay refuses joins until the
+    /// log catches up, rather than carry a connection it could not record.
+    pub fn with_connection_log_capacity(mut self, lines: usize) -> Self {
+        self.connection_log_capacity = lines;
+        self
+    }
+
+    /// Bounds how long a stopping Relay waits for its connection log to
+    /// write the lines it owes, and then as long again for its diagnostic
+    /// log to take in how many it gave up.
+    pub fn with_drain_timeout(mut self, timeout: Duration) -> Self {
+        self.drain_timeout = timeout;
+        self
+    }
+
+    /// Has the running Relay look for Logins its operator has removed from
+    /// its records every `interval`, cutting what stands on them and
+    /// confirming the cut to the operator's command line, which waits for it.
+    /// A Login removed is refused from the moment it is removed, however long
+    /// until the Relay next looks; it is only what already stood on it that
+    /// waits to be cut.
+    pub fn with_removal_interval(mut self, interval: Duration) -> Self {
+        self.removal_interval = interval;
+        self
+    }
+}
+
+/// A Relay serving Servers until it is shut down.
+pub struct RunningRelay {
+    address: SocketAddr,
+    store: Store,
+    /// What every connection to the Relay shares, while anything holds it.
+    relay: Weak<connection::Relay>,
+    /// The lock beside the Relay's records that says it runs on them, held
+    /// until it has stopped.
+    _running: std::fs::File,
+    /// The connection log's writer, until it has written what it owes.
+    writing: connection_log::Writing,
+    drain_timeout: Duration,
+    stopping: watch::Sender<bool>,
+    task: JoinHandle<Result<()>>,
+    /// Ends once nothing holds the Relay: its router gone, and every
+    /// connection to it ended.
+    released: mpsc::Receiver<()>,
+}
+
+impl RunningRelay {
+    /// The address the Relay listens at.
+    pub fn address(&self) -> SocketAddr {
+        self.address
+    }
+
+    /// The Relay's records.
+    pub fn store(&self) -> &Store {
+        &self.store
+    }
+
+    /// Looks at once for Logins the Relay's operator has removed, cutting
+    /// what stands on them and confirming the cut, as the Relay does on its
+    /// own every removal interval.
+    pub async fn look_for_removals(&self) -> Result<()> {
+        match self.relay.upgrade() {
+            Some(relay) => operator::cut_removed(&relay).await,
+            None => Ok(()),
+        }
+    }
+
+    /// Stops the Relay, ending every Server's connection to it, and returns
+    /// once it has tried once more to record each lapse it found and could
+    /// not record, the last connection has gone, and the connection log has
+    /// written the lines they were owed — or has taken longer than the Relay
+    /// waits.
+    pub async fn shutdown(mut self) -> Result<()> {
+        // Held until the Relay has tried once more to record each lapse it
+        // has yet to, which would otherwise be lost with it.
+        let relay = self.relay.upgrade();
+        self.stopping.send_replace(true);
+        let served = self.task.await.context("the Relay's task panicked")?;
+        if let Some(relay) = relay {
+            admission::record_lapses_as_it_stops(&relay).await;
+        }
+        while self.released.recv().await.is_some() {}
+        self.writing.finish(self.drain_timeout).await;
+        served
+    }
+
+    /// Runs the Relay until it fails or is told to stop — interrupted, as by
+    /// Ctrl-C, or, on Unix, sent `SIGTERM`, as a service manager or container
+    /// runtime stops it — stopping as [`Self::shutdown`] does.
+    pub async fn run_until_stopped(mut self) -> Result<()> {
+        tokio::select! {
+            served = &mut self.task => served.context("the Relay's task panicked")?,
+            signal = told_to_stop() => {
+                signal?;
+                self.shutdown().await
+            }
+        }
+    }
+}
+
+/// Returns once the process is told to stop.
+async fn told_to_stop() -> Result<()> {
+    #[cfg(unix)]
+    {
+        let mut terminated =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .context("listen for SIGTERM")?;
+        tokio::select! {
+            interrupted = tokio::signal::ctrl_c() => interrupted.context("listen for Ctrl-C"),
+            _ = terminated.recv() => Ok(()),
+        }
+    }
+    #[cfg(not(unix))]
+    tokio::signal::ctrl_c().await.context("listen for Ctrl-C")
+}
+
+/// The address a connection to the Relay comes from, however the Relay
+/// listens, and what says the connection has begun its conversation.
+#[derive(Clone, Debug)]
+pub(crate) struct Peer {
+    pub(crate) address: SocketAddr,
+    pub(crate) begun: listener::Begun,
+}
+
+impl Connected<IncomingStream<'_, listener::Capped<TcpListener>>> for Peer {
+    fn connect_info(stream: IncomingStream<'_, listener::Capped<TcpListener>>) -> Self {
+        Self {
+            address: *stream.remote_addr(),
+            begun: stream.io().begun().clone(),
+        }
+    }
+}
+
+impl Connected<IncomingStream<'_, tls::TlsListener<listener::Capped<TcpListener>>>> for Peer {
+    fn connect_info(
+        stream: IncomingStream<'_, tls::TlsListener<listener::Capped<TcpListener>>>,
+    ) -> Self {
+        Self {
+            address: *stream.remote_addr(),
+            begun: stream.io().get_ref().0.begun().clone(),
+        }
+    }
+}
+
+/// Serves `app` to the connections `listener` hands on until `stopped`
+/// turns true.
+fn serve<L>(listener: L, app: Router, mut stopped: watch::Receiver<bool>) -> JoinHandle<Result<()>>
+where
+    L: Listener<Addr = SocketAddr>,
+    Peer: for<'a> Connected<IncomingStream<'a, L>>,
+{
+    tokio::spawn(async move {
+        axum::serve(listener, app.into_make_service_with_connect_info::<Peer>())
+            .with_graceful_shutdown(async move {
+                let _ = stopped.wait_for(|stopping| *stopping).await;
+            })
+            .await
+            .context("serve Servers")
+    })
+}
+
+/// Starts a Relay that logs Servers' users in through `provider`, once it
+/// has checked every Account against its admission rules: refusing to start
+/// where it cannot look up a user its rules name there, cannot check the
+/// members of an organization they name there, or cannot record what they
+/// call for.
+pub async fn start(
+    config: RelayConfig,
+    provider: Arc<dyn IdentityProvider>,
+) -> Result<RunningRelay> {
+    // A ping or a reading of the certificate files each interval of nothing
+    // would never pause: tokio refuses the one, and the other would spin.
+    if config.keepalive.is_zero() {
+        anyhow::bail!("the Relay's keepalive interval must be longer than nothing");
+    }
+    if config.tls.is_some() && config.handshakes_at_once == 0 {
+        anyhow::bail!("a Relay serving HTTPS must make at least one TLS handshake at a time");
+    }
+    if config.tls.is_some() && config.certificate_check_interval.is_zero() {
+        anyhow::bail!(
+            "the interval the Relay reads its certificate files again at must be longer than nothing"
+        );
+    }
+    let public_address = canonical_address(&config.public_address).with_context(|| {
+        format!(
+            "the Relay's public address `{}` is not an https:// or http:// address naming a host",
+            config.public_address
+        )
+    })?;
+    let certificate = config
+        .tls
+        .map(|files| tls::Certificate::load(files).map(Arc::new))
+        .transpose()?;
+    if certificate.is_some() && public_address.starts_with("http://") {
+        tracing::warn!(
+            "the Relay serves HTTPS, yet its public address {public_address} has Servers reach \
+             it by plain HTTP, which only something between them carrying it to the Relay's \
+             HTTPS can make work"
+        );
+    }
+    // One Relay runs on its records at a time, holding the lock beside them
+    // from before it carries them forward until it has stopped.
+    let running = running::run_on(&config.database).await?;
+    // It takes its address before it touches its records, so a Relay that
+    // cannot listen leaves them as they were; what it asks of its identity
+    // provider as it looks up the names its rules give rests on its records,
+    // and so comes after they are carried forward.
+    let listener = TcpListener::bind(config.listen)
+        .await
+        .with_context(|| format!("listen at {}", config.listen))?;
+    let address = listener.local_addr().context("read the Relay's address")?;
+    // Every connection the Relay takes counts against its cap from the moment
+    // it is taken — before its TLS handshake, where it serves HTTPS — until
+    // it ends, and must begin its conversation within the greeting timeout.
+    let listener = listener::Capped::new(
+        listener,
+        config.connections_at_once,
+        config.greeting_timeout,
+    );
+    let store = Store::open(&config.database)?;
+    let admission = config
+        .admission
+        .looked_up(&store, &provider, config.clock.now())
+        .await?;
+    let (connection_log, writing) = connection_log::ConnectionLog::start(
+        config.connection_log,
+        config.connection_log_capacity,
+        config.clock.clone(),
+    )?;
+    let (stopping, stopping_rx) = watch::channel(false);
+    let (held, released) = mpsc::channel(1);
+    let checks = admission::Checks::default();
+    let relay = Arc::new(connection::Relay {
+        public_address,
+        greeting_timeout: config.greeting_timeout,
+        send_timeout: config.send_timeout,
+        join_timeout: config.join_timeout,
+        keepalive: config.keepalive,
+        idle_timeout_without_login: config.idle_timeout_without_login,
+        idle_grace: config.idle_grace.min(config.greeting_timeout),
+        idle: caps::Idle::new(
+            config.idle_connections_per_server,
+            config.idle_connections_per_server_without_login,
+        ),
+        logins: caps::Logins::new(config.logins_at_once),
+        joiner: joiner::Joiner::new(),
+        standing: tokio::sync::Mutex::new(checks.verdicts()),
+        holdings: standing::Holdings::new(),
+        _held: held,
+        store: store.clone(),
+        provider,
+        admission,
+        checks,
+        admission_interval: config.admission_interval,
+        resume_at: std::sync::atomic::AtomicI64::new(0),
+        admission_timeout: config.admission_timeout,
+        lapse_retry_interval: config.lapse_retry_interval,
+        undecided_recheck_interval: config.undecided_recheck_interval,
+        lapses_unrecorded: tokio::sync::Notify::new(),
+        fresh_login_every: config.fresh_login_every,
+        logins_per_account: config.logins_per_account,
+        joined: caps::Joined::new(config.joined_connections_per_account),
+        versions: config.versions,
+        trusted_proxies: config.trusted_proxies,
+        connection_log,
+        clock: config.clock,
+        stopping: stopping_rx.clone(),
+    });
+    // Before it serves anyone, the Relay applies its rules as they now stand
+    // to every Account, so none they no longer admit — a name removed from
+    // them, say — is served even once; and refuses to start where it cannot
+    // record what they call for. Each Account is asked about for no longer
+    // than the admission timeout, and one the rules cannot tell about stands
+    // on nothing until they can, which a lapse it found and could not record
+    // before it stopped might otherwise be served past.
+    admission::check_every_account(&relay, true)
+        .await
+        .context("check every Account against the admission rules before serving")?;
+    // Logins its operator removed while it was not running are gone from its
+    // records already, with nothing standing on them to cut.
+    operator::cut_removed(&relay)
+        .await
+        .context("look for Logins the operator removed before serving")?;
+    // From then on it checks them on its own until it stops, letting go of
+    // any asking of the rules under way, and tries again to record each lapse
+    // it finds and cannot record, until it can.
+    tokio::spawn({
+        let relay = relay.clone();
+        let mut stopping = stopping_rx.clone();
+        async move {
+            tokio::select! {
+                _ = stopping.wait_for(|stopping| *stopping) => {}
+                () = admission::keep_checking(&relay) => {}
+            }
+        }
+    });
+    tokio::spawn({
+        let relay = relay.clone();
+        let mut stopping = stopping_rx.clone();
+        async move {
+            tokio::select! {
+                _ = stopping.wait_for(|stopping| *stopping) => {}
+                () = admission::keep_recording_lapses(&relay) => {}
+            }
+        }
+    });
+    // And it asks again about each Account its rules could not tell about as
+    // it started, until they decide every one.
+    tokio::spawn({
+        let relay = relay.clone();
+        let mut stopping = stopping_rx.clone();
+        async move {
+            tokio::select! {
+                _ = stopping.wait_for(|stopping| *stopping) => {}
+                () = admission::keep_deciding(&relay) => {}
+            }
+        }
+    });
+    // And it cuts what stands on each Login its operator removes, as it
+    // finds them, until it stops.
+    tokio::spawn({
+        let relay = relay.clone();
+        let mut stopping = stopping_rx.clone();
+        let interval = config.removal_interval;
+        async move {
+            tokio::select! {
+                _ = stopping.wait_for(|stopping| *stopping) => {}
+                () = operator::keep_cutting_removed(&relay, interval) => {}
+            }
+        }
+    });
+    let shared = Arc::downgrade(&relay);
+    let app = Router::new()
+        .route(ENDPOINT_PATH, get(connection::connect))
+        .with_state(relay);
+    let task = match certificate {
+        Some(certificate) => {
+            // And it takes up its certificate renewed, as its files are
+            // replaced, until it stops.
+            tokio::spawn({
+                let certificate = certificate.clone();
+                let mut stopping = stopping_rx.clone();
+                let interval = config.certificate_check_interval;
+                async move {
+                    tokio::select! {
+                        _ = stopping.wait_for(|stopping| *stopping) => {}
+                        () = tls::keep_reloading(&certificate, interval) => {}
+                    }
+                }
+            });
+            let listener = tls::TlsListener::new(
+                listener,
+                tls::server_config(certificate),
+                config.greeting_timeout,
+                config.handshakes_at_once,
+            )
+            .context("serve HTTPS")?;
+            serve(listener, app, stopping_rx)
+        }
+        None => serve(listener, app, stopping_rx),
+    };
+    tracing::info!(%address, "Relay ready");
+    Ok(RunningRelay {
+        address,
+        store,
+        relay: shared,
+        _running: running,
+        writing,
+        drain_timeout: config.drain_timeout,
+        stopping,
+        task,
+        released,
+    })
+}
+
+/// How a Relay's own log is filtered: as `directives` — `RUST_LOG`'s — ask,
+/// `info` where they ask nothing that can be read, and never letting
+/// [`PAYLOAD_BEARING_TARGETS`] log more verbosely than they are allowed,
+/// whatever the directives say.
+pub fn log_filter(
+    directives: Option<&str>,
+) -> impl tracing_subscriber::layer::Filter<Registry> + use<> {
+    let directives = directives
+        .and_then(|directives| EnvFilter::try_new(directives).ok())
+        .unwrap_or_else(|| EnvFilter::new("info"));
+    directives.and(
+        Targets::new()
+            .with_default(LevelFilter::TRACE)
+            .with_targets(PAYLOAD_BEARING_TARGETS),
+    )
+}
+
+/// The Relay's own log layer, writing to `writer` through [`log_filter`].
+pub fn log_layer<W>(directives: Option<&str>, writer: W) -> impl Layer<Registry> + use<W>
+where
+    W: for<'writer> tracing_subscriber::fmt::MakeWriter<'writer> + Send + Sync + 'static,
+{
+    tracing_subscriber::fmt::layer()
+        .with_writer(writer)
+        .with_filter(log_filter(directives))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        io::Write,
+        sync::{Arc, Mutex},
+    };
+
+    use tracing_subscriber::layer::SubscriberExt as _;
+
+    use super::*;
+
+    #[derive(Clone, Default)]
+    struct Captured(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Captured {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// However verbose `RUST_LOG` asks the log to be — naming the dependency
+    /// outright — tungstenite, which logs every message whole, and the HTTP
+    /// client that carries the Relay's requests to GitHub are held to their
+    /// warnings, while the Relay's own lines are written as verbosely as asked.
+    #[test]
+    fn a_dependency_logging_what_it_carries_is_held_to_warnings_whatever_the_filter_asks() {
+        let captured = Captured::default();
+        let writer = captured.clone();
+        let subscriber = Registry::default().with(log_layer(
+            Some(
+                "trace,tungstenite=trace,tokio_tungstenite=trace,reqwest=trace,hyper=trace,\
+                 hyper_util=trace",
+            ),
+            move || writer.clone(),
+        ));
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::trace!(target: "tungstenite::protocol", "Received message CODE-0001");
+            tracing::debug!(target: "tokio_tungstenite", "frame CODE-0002");
+            tracing::trace!(target: "reqwest::connect", "sending device_code=DEVICE-0003");
+            tracing::trace!(target: "hyper::proto::h1", "authorization: Bearer TOKEN-0004");
+            tracing::debug!(target: "hyper_util::client", "connecting to TOKEN-0005");
+            tracing::warn!(target: "tungstenite::protocol", "warning kept");
+            tracing::trace!("the Relay's own trace line");
+        });
+        let log = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+        for payload in [
+            "CODE-0001",
+            "CODE-0002",
+            "DEVICE-0003",
+            "TOKEN-0004",
+            "TOKEN-0005",
+        ] {
+            assert!(!log.contains(payload), "{payload} reached the log: {log}");
+        }
+        assert!(log.contains("warning kept"), "{log}");
+        assert!(log.contains("the Relay's own trace line"), "{log}");
+    }
+}

@@ -2,8 +2,7 @@
 use crate::codex_integration::support::ScriptedCodex;
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::{Value, json};
-use std::sync::Arc;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent, SessionSubscription},
     protocol::{
         Activity, Answer, ApprovalOutcome, ApprovalSubject, CreateSessionRequest, Decision,
@@ -13,6 +12,7 @@ use suru::{
     provider::CodexRuntime,
     server::{self, RunningServer, ServerConfig},
 };
+use std::sync::Arc;
 use tokio::time::timeout;
 
 const PREFIX: &str = r#"#!/bin/sh
@@ -68,7 +68,7 @@ impl Live {
             .create_session(CreateSessionRequest {
                 session_id: None,
                 preparation_id: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 agent_selection: None,
@@ -301,9 +301,9 @@ async fn codex_decline_is_an_empty_native_answer_and_withdrawal_prevents_late_de
 
 #[tokio::test]
 async fn codex_secret_reaches_native_callback_but_not_streamed_errors_logs_or_restored_history() {
-    const SECRET: &str = "suru-private-token-9f67af";
+    const SECRET: &str = "shaman-private-token-9f67af";
     let diagnostics = tempfile::tempdir().unwrap();
-    let log_path = diagnostics.path().join("suru.log");
+    let log_path = diagnostics.path().join("shaman.log");
     let log = Arc::new(std::fs::File::create(&log_path).unwrap());
     tracing::subscriber::set_global_default(
         tracing_subscriber::fmt()
@@ -490,7 +490,7 @@ async fn codex_secret_reaches_native_callback_but_not_streamed_errors_logs_or_re
             if updated.changes.iter().any(|change| {
                 matches!(
                     change,
-                    suru::protocol::SessionChange::TurnStatusChanged {
+                    shaman::protocol::SessionChange::TurnStatusChanged {
                         status: TurnStatus::Failed,
                         ..
                     }
@@ -539,7 +539,7 @@ async fn codex_secret_reaches_native_callback_but_not_streamed_errors_logs_or_re
                 let bytes = std::fs::read(path).unwrap();
                 assert!(
                     !bytes.windows(secret.len()).any(|part| part == secret),
-                    "secret entered Suru persistence"
+                    "secret entered Shaman persistence"
                 );
             }
         }
@@ -548,7 +548,7 @@ async fn codex_secret_reaches_native_callback_but_not_streamed_errors_logs_or_re
     let logs = std::fs::read_to_string(log_path).unwrap();
     assert!(
         !logs.contains(SECRET) && !logs.contains(left),
-        "secret entered Suru diagnostics"
+        "secret entered Shaman diagnostics"
     );
     assert!(logs.contains("drained native stderr"));
 }
@@ -635,7 +635,7 @@ async fn codex_a_broker_call_is_known_by_its_own_name_whatever_secret_spells_tha
         "questionnaire_id": "0198b27e-4b02-7c4c-a83b-a83a4787453f",
         "answers": [{ "text": UNTOLD }],
     });
-    let tool_call = |stage: &str, status: &str| json!({"method":format!("item/{stage}"),"params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"answer-call","server":"suru","tool":"answer_questionnaire","status":status,"arguments":arguments,"result":(status == "completed").then(|| json!({"content":[{"type":"text","text":"answered"}]})),"error":null}}});
+    let tool_call = |stage: &str, status: &str| json!({"method":format!("item/{stage}"),"params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"answer-call","server":"shaman","tool":"answer_questionnaire","status":status,"arguments":arguments,"result":(status == "completed").then(|| json!({"content":[{"type":"text","text":"answered"}]})),"error":null}}});
     let responses = format!(
         r#"    *'"id":"names-as-secrets","result"'*)
       printf '%s\n' '{}'
@@ -667,7 +667,7 @@ async fn codex_a_broker_call_is_known_by_its_own_name_whatever_secret_spells_tha
                 answer: Answer {
                     questions: vec![
                         QuestionAnswer::Freeform {
-                            text: "suru".into(),
+                            text: "shaman".into(),
                         },
                         QuestionAnswer::Freeform {
                             text: "answer_questionnaire".into(),

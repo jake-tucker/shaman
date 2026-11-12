@@ -1,6 +1,6 @@
 use crate::session_integration::support::{read_session_until, working_turn};
 use crate::support::PROGRESS_DEADLINE;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent},
     protocol::{
         Activity, Approval, ApprovalId, ApprovalOutcome, ApprovalSubject, Decision, Question,
@@ -269,7 +269,7 @@ async fn snapshot_events_and_standing_follow_pending_submitting_and_settled_appr
     live.server.shutdown().await.unwrap();
 }
 
-fn has_outcome(snapshot: &suru::protocol::SessionSnapshot, expected: ApprovalOutcome) -> bool {
+fn has_outcome(snapshot: &shaman::protocol::SessionSnapshot, expected: ApprovalOutcome) -> bool {
     snapshot.activities.iter().any(
         |activity| matches!(activity, Activity::Approval { outcome, .. } if *outcome == expected),
     )
@@ -278,7 +278,7 @@ fn has_outcome(snapshot: &suru::protocol::SessionSnapshot, expected: ApprovalOut
 #[tokio::test]
 async fn nested_subagent_approvals_roll_up_with_questions_survive_parent_settlement_and_clear_from_the_child()
  {
-    use suru::protocol::{SessionId, TurnStatus};
+    use shaman::protocol::{SessionId, TurnStatus};
 
     async fn spawn(
         live: &crate::session_integration::support::WorkingTurn,
@@ -945,7 +945,7 @@ async fn withdrawal_and_interrupt_settle_submitting_and_pending_approvals_withou
 async fn restart_keeps_approval_history_but_disables_abandoned_provider_requests() {
     let directory = tempfile::tempdir().unwrap();
     let channel = "approval-restart";
-    let config = suru::server::ServerConfig::new(directory.path(), channel).unwrap();
+    let config = shaman::server::ServerConfig::new(directory.path(), channel).unwrap();
     let mut live = working_turn(directory.path(), channel).await;
     live.provider_session.gate_decision_deliveries();
     let client = std::sync::Arc::new(
@@ -1025,7 +1025,7 @@ async fn restart_keeps_approval_history_but_disables_abandoned_provider_requests
     live.server.shutdown().await.unwrap();
 
     drop(delivery);
-    let restarted = suru::server::spawn_with_provider(config, live.runtime)
+    let restarted = shaman::server::spawn_with_provider(config, live.runtime)
         .await
         .unwrap();
     let client =

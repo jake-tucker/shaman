@@ -33,7 +33,7 @@ use crate::{
     },
 };
 
-const COPILOT_PATH_ENV: &str = "SURU_COPILOT_PATH";
+const COPILOT_PATH_ENV: &str = "SHAMAN_COPILOT_PATH";
 const COPILOT_EXECUTABLE_NAME: &str = "copilot";
 
 /// The Model Copilot declares its own Errands run at: the cheapest Model in the class Copilot's own
@@ -56,7 +56,7 @@ pub struct CopilotRuntime {
     /// Shared with each Session, which reads whether its Provider still offers Routing Tiers as
     /// each of its Turns begins.
     settings: Arc<StdMutex<CopilotSettings>>,
-    /// The prices the last harness Suru saw running published, kept so a
+    /// The prices the last harness Shaman saw running published, kept so a
     /// cache saving can still be estimated at them while no harness runs or
     /// one is being launched.
     last_pricing: StdMutex<Option<CopilotPricing>>,
@@ -102,7 +102,7 @@ impl CopilotRuntime {
     }
 
     /// Bounds how long an interrupt waits for Copilot to acknowledge it — and with it the other
-    /// requests Suru makes of a Session's loop on its own account: the task roster read that
+    /// requests Shaman makes of a Session's loop on its own account: the task roster read that
     /// finds a background shell's Watch, the cancel that stops one, and the context attribution a
     /// Context Breakdown reads. Injectable so tests can
     /// exercise the timeout without waiting out the default.

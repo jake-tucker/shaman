@@ -7,16 +7,16 @@ use crate::session_integration::{
     support::{hosted_model, hosted_selection},
 };
 use serde_json::{Value, json};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::*,
     provider::ProviderEvent,
     server::{self, RunningServer, ServerConfig, ServerTimings},
     source_control::GitSourceControl,
+};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 use tokio::time::{Duration, timeout};
 
@@ -70,10 +70,10 @@ fn branches(root: &Path) -> Vec<String> {
     branches
 }
 
-fn suru_base(root: &Path, branch: &str) -> Option<String> {
+fn shaman_base(root: &Path, branch: &str) -> Option<String> {
     read_git(
         root,
-        &["config", "--local", &format!("branch.{branch}.suru-base")],
+        &["config", "--local", &format!("branch.{branch}.shaman-base")],
     )
 }
 
@@ -164,7 +164,7 @@ impl Fixture {
         git: impl FnOnce(&Path) -> GitSourceControl,
     ) -> Self {
         let temporary = tempfile::tempdir().unwrap();
-        let root = suru::paths::canonical(temporary.path()).unwrap();
+        let root = shaman::paths::canonical(temporary.path()).unwrap();
         let main = root.join("repo");
         committed(&main);
         let config = errand.as_ref().map(config_root_pinning);
@@ -398,7 +398,7 @@ async fn a_derived_name_names_the_worktree_and_its_branch_from_the_moment_they_a
     assert_eq!(on_branch(&destination).as_deref(), Some(derived));
     assert_eq!(branches(&main), [derived, "main"]);
     assert!(
-        suru_base(&main, derived).is_some(),
+        shaman_base(&main, derived).is_some(),
         "Reclaim's base is recorded under the derived name"
     );
 

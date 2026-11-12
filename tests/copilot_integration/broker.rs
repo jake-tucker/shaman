@@ -2,9 +2,9 @@
 //!
 //! One Copilot CLI serves every Copilot Session, so the Broker is handed to each Session on the
 //! only per-Session seam there is: the MCP server list on `session.create` and on every
-//! `session.resume`, naming the endpoint as the HTTP server `suru` with the token its launch was
+//! `session.resume`, naming the endpoint as the HTTP server `shaman` with the token its launch was
 //! handed as a header and a per-server timeout above the Broker's longest call. Copilot asks
-//! Suru's own permission handler before every MCP call, and the handler approves the Broker's
+//! Shaman's own permission handler before every MCP call, and the handler approves the Broker's
 //! calls itself, so none reaches the user as an Approval. A Broker call that spawns, sends to, or
 //! stops a Subagent stands only in the Subagent row it affects, and the Broker's other calls are
 //! Tool Calls on its own server. Beside the server list, each of those requests appends a note to
@@ -28,7 +28,7 @@ use crate::copilot_integration::{
     },
 };
 use serde_json::{Value, json};
-use suru::{
+use shaman::{
     managed_client::ManagedClientConfig,
     protocol::{
         Activity, AdmitPromptRequest, ApprovalSubject, CreateSessionRequest, InitialPrompt,
@@ -72,7 +72,8 @@ async fn created_then_resumed(channel: &'static str, document: &str) -> CreatedT
     let data_dir = tempfile::tempdir().expect("create isolated data directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
-    std::fs::write(config_dir.path().join("suru.jsonc"), document).expect("write Config Document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), document)
+        .expect("write Config Document");
     let config = ServerConfig::new(state_dir.path(), channel)
         .expect("configure server")
         .with_data_dir(data_dir.path())
@@ -86,7 +87,7 @@ async fn created_then_resumed(channel: &'static str, document: &str) -> CreatedT
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -148,7 +149,7 @@ async fn created_then_resumed(channel: &'static str, document: &str) -> CreatedT
             .requests()
             .into_iter()
             .find(|request| request["method"] == method)
-            .unwrap_or_else(|| panic!("Suru sent {method}: {:?}", copilot.methods()))["params"]
+            .unwrap_or_else(|| panic!("Shaman sent {method}: {:?}", copilot.methods()))["params"]
             .clone()
     };
     CreatedThenResumed {
@@ -161,17 +162,17 @@ async fn created_then_resumed(channel: &'static str, document: &str) -> CreatedT
 
 /// The bearer token the Broker's entry in `params`' server list presents, once the entry is
 /// checked to be the Broker at `endpoint` over HTTP with the Broker's call timeout, and the only
-/// server Suru names.
+/// server Shaman names.
 fn broker_token<'a>(params: &'a Value, method: &str, endpoint: &str) -> &'a str {
     let servers = params["mcpServers"]
         .as_object()
         .unwrap_or_else(|| panic!("{method} carries a server list: {params}"));
     assert_eq!(
         servers.keys().collect::<Vec<_>>(),
-        ["suru"],
+        ["shaman"],
         "{method} names the Broker and nothing else: {params}"
     );
-    let server = &servers["suru"];
+    let server = &servers["shaman"];
     assert_eq!(server["type"], "http", "{method}: {server}");
     assert_eq!(server["url"], endpoint, "{method}: {server}");
     assert_eq!(
@@ -222,10 +223,10 @@ async fn session_create_and_resume_append_the_broker_note_to_copilots_system_mes
             .as_str()
             .unwrap_or_else(|| panic!("{method} carries the note: {params}"));
         for tool in [
-            "suru-list_providers",
-            "suru-spawn_subagent",
-            "suru-read_subagent",
-            "suru-stop_subagent",
+            "shaman-list_providers",
+            "shaman-spawn_subagent",
+            "shaman-read_subagent",
+            "shaman-stop_subagent",
         ] {
             assert!(
                 note.contains(tool),
@@ -237,12 +238,12 @@ async fn session_create_and_resume_append_the_broker_note_to_copilots_system_mes
             "{method}'s note says when to prefer the Broker: {note:?}"
         );
         assert!(
-            note.contains("Suru never re-routes them"),
+            note.contains("Shaman never re-routes them"),
             "{method}'s note leaves the Agent's own subagent tools in place: {note:?}"
         );
         assert!(
             note.contains(
-                "Call suru-list_workspaces to learn where the user's other work lives: the \
+                "Call shaman-list_workspaces to learn where the user's other work lives: the \
                  Workspaces they work in on this machine, each with what it is for."
             ),
             "{method}'s note says what list_workspaces is for: {note:?}"
@@ -280,7 +281,7 @@ async fn session_created_in(channel: &str, sidekick: bool) -> (Value, Vec<String
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: execution_directory,
             },
             prompt: InitialPrompt {
@@ -329,7 +330,7 @@ async fn a_sidekicks_session_is_handed_its_own_tools_and_note_and_another_sessio
     let sidekick_note = note(&params);
     assert!(
         sidekick_note.contains("You are a Sidekick")
-            && sidekick_note.contains("suru-list_sessions"),
+            && sidekick_note.contains("shaman-list_sessions"),
         "a Sidekick is told it is one, and of its own Tools as Copilot names them: {sidekick_note:?}"
     );
     assert!(
@@ -341,7 +342,7 @@ async fn a_sidekicks_session_is_handed_its_own_tools_and_note_and_another_sessio
     let (params, tools) = session_created_in("copilot-broker-not-sidekick", false).await;
     let other_note = note(&params);
     assert!(
-        other_note.contains("suru-spawn_subagent")
+        other_note.contains("shaman-spawn_subagent")
             && !other_note.contains("list_sessions")
             && !other_note.contains("Sidekick"),
         "a Session elsewhere is told of the Broker and nothing of a Sidekick's Tools: {other_note:?}"
@@ -352,7 +353,7 @@ async fn a_sidekicks_session_is_handed_its_own_tools_and_note_and_another_sessio
         "though it is offered list_workspaces, as every Agent is: {tools:?}"
     );
     assert!(
-        tools.contains(&"move_session".to_owned()) && other_note.contains("suru-move_session"),
+        tools.contains(&"move_session".to_owned()) && other_note.contains("shaman-move_session"),
         "and move_session, named as Copilot names it: {tools:?} {other_note:?}"
     );
 }
@@ -407,7 +408,7 @@ async fn a_sidekicks_session_created_once_memories_exist_is_told_their_titles_an
         before.contains("You are a Sidekick") && !before.contains("memory_id"),
         "a Sidekick created while there are no Memories is told nothing of them: {before:?}"
     );
-    let entry = &create["mcpServers"]["suru"];
+    let entry = &create["mcpServers"]["shaman"];
     let mut sidekick = McpClient::presenting(
         entry["url"].as_str().expect("the Broker's URL"),
         entry["headers"]["Authorization"]
@@ -436,7 +437,7 @@ async fn a_sidekicks_session_created_once_memories_exist_is_told_their_titles_an
         after.contains(&format!(
             "{{\"memory_id\":{},\"title\":\"How the user reviews pull requests\"}}",
             stored["memory_id"]
-        )) && after.contains("suru-recall_memory"),
+        )) && after.contains("shaman-recall_memory"),
         "a Sidekick created once there are Memories is told their titles: {after:?}"
     );
     assert!(
@@ -466,7 +467,7 @@ async fn with_the_broker_off_neither_create_nor_resume_carries_the_server_or_not
     }
 }
 
-/// The parameters of the decision Suru answered permission request `request_id` with, once it has.
+/// The parameters of the decision Shaman answered permission request `request_id` with, once it has.
 async fn native_decision(copilot: &ScriptedCopilot, request_id: &str) -> Value {
     timeout(PROGRESS_DEADLINE, async {
         loop {
@@ -480,7 +481,7 @@ async fn native_decision(copilot: &ScriptedCopilot, request_id: &str) -> Value {
         }
     })
     .await
-    .unwrap_or_else(|_| panic!("Suru answers permission request {request_id}"))
+    .unwrap_or_else(|_| panic!("Shaman answers permission request {request_id}"))
 }
 
 #[tokio::test]
@@ -488,11 +489,11 @@ async fn a_permission_request_for_the_broker_is_approved_without_reaching_the_us
     // Asked as Copilot asks before an MCP call: for the Broker, for a Sidekick's Broker Tool that
     // acts on another Session, for a server of the user's own, which the Session's posture leaves
     // to the user, and for the Broker once more under a managed policy demanding an explicit
-    // human decision, which Suru never answers for that policy.
-    let requests = r#"      event p1 permission.requested '{"requestId":"managed","permissionRequest":{"kind":"mcp","serverName":"suru","toolName":"suru-list_providers","toolTitle":"list_providers","args":{},"readOnly":false,"toolCallId":"call-managed","managedApprovalRequired":true}}'
-      event p2 permission.requested '{"requestId":"broker","permissionRequest":{"kind":"mcp","serverName":"suru","toolName":"suru-list_providers","toolTitle":"list_providers","args":{},"readOnly":false,"toolCallId":"call-broker"}}'
-      event p4 permission.requested '{"requestId":"sidekick-act","permissionRequest":{"kind":"mcp","serverName":"suru","toolName":"suru-interrupt_session","toolTitle":"interrupt_session","args":{"session_id":"elsewhere"},"readOnly":false,"toolCallId":"call-sidekick-act"}}'
-      event p5 permission.requested '{"requestId":"move","permissionRequest":{"kind":"mcp","serverName":"suru","toolName":"suru-move_session","toolTitle":"move_session","args":{"directory":"."},"readOnly":false,"toolCallId":"call-move"}}'
+    // human decision, which Shaman never answers for that policy.
+    let requests = r#"      event p1 permission.requested '{"requestId":"managed","permissionRequest":{"kind":"mcp","serverName":"shaman","toolName":"shaman-list_providers","toolTitle":"list_providers","args":{},"readOnly":false,"toolCallId":"call-managed","managedApprovalRequired":true}}'
+      event p2 permission.requested '{"requestId":"broker","permissionRequest":{"kind":"mcp","serverName":"shaman","toolName":"shaman-list_providers","toolTitle":"list_providers","args":{},"readOnly":false,"toolCallId":"call-broker"}}'
+      event p4 permission.requested '{"requestId":"sidekick-act","permissionRequest":{"kind":"mcp","serverName":"shaman","toolName":"shaman-interrupt_session","toolTitle":"interrupt_session","args":{"session_id":"elsewhere"},"readOnly":false,"toolCallId":"call-sidekick-act"}}'
+      event p5 permission.requested '{"requestId":"move","permissionRequest":{"kind":"mcp","serverName":"shaman","toolName":"shaman-move_session","toolTitle":"move_session","args":{"directory":"."},"readOnly":false,"toolCallId":"call-move"}}'
       event p3 permission.requested '{"requestId":"linear","permissionRequest":{"kind":"mcp","serverName":"linear","toolName":"linear-list_issues","toolTitle":"list_issues","args":{},"readOnly":true,"toolCallId":"call-linear"}}'
 "#;
     let copilot = ScriptedCopilot::new(&format!("{}{}", conversation_arms(), send_arm(requests)));
@@ -511,7 +512,7 @@ async fn a_permission_request_for_the_broker_is_approved_without_reaching_the_us
     let decision = native_decision(&copilot, "broker").await;
     assert_eq!(
         decision["result"]["kind"], "approve-once",
-        "Suru's handler approves the Broker's call itself: {decision}"
+        "Shaman's handler approves the Broker's call itself: {decision}"
     );
     let decision = native_decision(&copilot, "sidekick-act").await;
     assert_eq!(
@@ -552,19 +553,19 @@ async fn the_brokers_reading_calls_are_tool_calls_and_its_subagent_calls_make_no
     // Each of the Broker's calls as Copilot reports one — its start naming the server, and for the
     // longest a progress notification while it waits and output before it completes — beside a
     // call to another MCP server.
-    let timeline = r#"      event e1 tool.execution_start '{"toolCallId":"call-list","toolName":"suru-list_providers","mcpServerName":"suru","mcpToolName":"list_providers","arguments":{}}'
+    let timeline = r#"      event e1 tool.execution_start '{"toolCallId":"call-list","toolName":"shaman-list_providers","mcpServerName":"shaman","mcpToolName":"list_providers","arguments":{}}'
       event e2 tool.execution_progress '{"toolCallId":"call-list","progressMessage":"30.0/150.0 (20%): 30s of 150s"}'
       event e3 tool.shell_output '{"toolCallId":"call-list","text":"claude","sequence":0}'
       event e4 tool.execution_complete '{"toolCallId":"call-list","success":true,"result":{"content":"claude, codex, copilot"}}'
-      event e5 tool.execution_start '{"toolCallId":"call-spawn","toolName":"suru-spawn_subagent","mcpServerName":"suru","mcpToolName":"spawn_subagent","arguments":{"provider":"codex","model":"gpt-5.5","name":"Scout","description":"Map the crates","prompt":"Map the crates."}}'
+      event e5 tool.execution_start '{"toolCallId":"call-spawn","toolName":"shaman-spawn_subagent","mcpServerName":"shaman","mcpToolName":"spawn_subagent","arguments":{"provider":"codex","model":"gpt-5.5","name":"Scout","description":"Map the crates","prompt":"Map the crates."}}'
       event e6 tool.execution_complete '{"toolCallId":"call-spawn","success":true,"result":{"content":"spawned"}}'
-      event e7 tool.execution_start '{"toolCallId":"call-read","toolName":"suru-read_subagent","mcpServerName":"suru","mcpToolName":"read_subagent","arguments":{"session_id":"child-session"}}'
+      event e7 tool.execution_start '{"toolCallId":"call-read","toolName":"shaman-read_subagent","mcpServerName":"shaman","mcpToolName":"read_subagent","arguments":{"session_id":"child-session"}}'
       event e8 tool.execution_complete '{"toolCallId":"call-read","success":true,"result":{"content":"working"}}'
-      event e9 tool.execution_start '{"toolCallId":"call-send","toolName":"suru-send_to_subagent","mcpServerName":"suru","mcpToolName":"send_to_subagent","arguments":{"session_id":"child-session","prompt":"More."}}'
+      event e9 tool.execution_start '{"toolCallId":"call-send","toolName":"shaman-send_to_subagent","mcpServerName":"shaman","mcpToolName":"send_to_subagent","arguments":{"session_id":"child-session","prompt":"More."}}'
       event e10 tool.execution_complete '{"toolCallId":"call-send","success":true,"result":{"content":"sent"}}'
-      event e11 tool.execution_start '{"toolCallId":"call-wait","toolName":"suru-wait_subagents","mcpServerName":"suru","mcpToolName":"wait_subagents","arguments":{}}'
+      event e11 tool.execution_start '{"toolCallId":"call-wait","toolName":"shaman-wait_subagents","mcpServerName":"shaman","mcpToolName":"wait_subagents","arguments":{}}'
       event e12 tool.execution_complete '{"toolCallId":"call-wait","success":true,"result":{"content":"settled"}}'
-      event e13 tool.execution_start '{"toolCallId":"call-stop","toolName":"suru-stop_subagent","mcpServerName":"suru","mcpToolName":"stop_subagent","arguments":{"session_id":"child-session"}}'
+      event e13 tool.execution_start '{"toolCallId":"call-stop","toolName":"shaman-stop_subagent","mcpServerName":"shaman","mcpToolName":"stop_subagent","arguments":{"session_id":"child-session"}}'
       event e14 tool.execution_complete '{"toolCallId":"call-stop","success":true,"result":{"content":"stopped"}}'
       event e15 tool.execution_start '{"toolCallId":"call-linear","toolName":"linear-list_issues","mcpServerName":"linear","mcpToolName":"list_issues","arguments":{}}'
       event e16 tool.execution_complete '{"toolCallId":"call-linear","success":true,"result":{"content":"No issues."}}'
@@ -597,9 +598,9 @@ async fn the_brokers_reading_calls_are_tool_calls_and_its_subagent_calls_make_no
     assert_eq!(
         recorded,
         [
-            (Some("suru"), "list_providers", "claude, codex, copilot"),
-            (Some("suru"), "read_subagent", "working"),
-            (Some("suru"), "wait_subagents", "settled"),
+            (Some("shaman"), "list_providers", "claude, codex, copilot"),
+            (Some("shaman"), "read_subagent", "working"),
+            (Some("shaman"), "wait_subagents", "settled"),
             (Some("linear"), "list_issues", "No issues."),
         ],
         "the Broker's spawn, send and stop stand in no row of their own, and no Broker call is a \
@@ -628,7 +629,7 @@ async fn a_report_leaves_as_an_immediate_session_send_waking_the_idle_parent() {
     settled_session(&opened.client, parent_id, 0).await;
     let create = copilot.wait_for_request("session.create").await["params"].clone();
     let parent_sid = create["sessionId"].clone();
-    let server_entry = &create["mcpServers"]["suru"];
+    let server_entry = &create["mcpServers"]["shaman"];
     let mut broker = McpClient::presenting(
         server_entry["url"].as_str().expect("the Broker's URL"),
         server_entry["headers"]["Authorization"]
@@ -696,7 +697,7 @@ async fn a_report_leaves_as_an_immediate_session_send_waking_the_idle_parent() {
 
 /// A Sidekick Report reaches a Sidekick on Copilot as a Subagent Report does: the Session it began
 /// settling wakes the idle Sidekick with an immediate `session.send` to its own Session, whose
-/// prompt is the Report as Suru words it.
+/// prompt is the Report as Shaman words it.
 #[tokio::test]
 async fn a_sidekick_report_leaves_as_an_immediate_session_send_waking_the_idle_sidekick() {
     let copilot = conversation_fixture(ANSWERED_EVERY_SEND);
@@ -723,7 +724,7 @@ async fn a_sidekick_report_leaves_as_an_immediate_session_send_waking_the_idle_s
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: sidekick_directory,
             },
             prompt: InitialPrompt {
@@ -740,7 +741,7 @@ async fn a_sidekick_report_leaves_as_an_immediate_session_send_waking_the_idle_s
     settled_session(&client, sidekick_id, 0).await;
     let create = copilot.wait_for_request("session.create").await["params"].clone();
     let sidekick_sid = create["sessionId"].clone();
-    let server_entry = &create["mcpServers"]["suru"];
+    let server_entry = &create["mcpServers"]["shaman"];
     let mut sidekick = McpClient::presenting(
         server_entry["url"].as_str().expect("the Broker's URL"),
         server_entry["headers"]["Authorization"]
@@ -774,7 +775,7 @@ async fn a_sidekick_report_leaves_as_an_immediate_session_send_waking_the_idle_s
         .filter(|request| {
             request["params"]["prompt"]
                 .as_str()
-                .is_some_and(|prompt| prompt.starts_with("Sidekick Report from Suru"))
+                .is_some_and(|prompt| prompt.starts_with("Sidekick Report from Shaman"))
         })
         .collect::<Vec<_>>();
     assert_eq!(
@@ -802,7 +803,7 @@ async fn a_sidekick_report_leaves_as_an_immediate_session_send_waking_the_idle_s
             " has settled its Turn, which completed. Its session_id is {begun_id}, which \
              read_session takes.\n\nIts Agent's final Message:\n\nDone."
         ),
-        "as Suru words it"
+        "as Shaman words it"
     );
 
     drop(client);
@@ -815,11 +816,11 @@ async fn a_sidekick_report_leaves_as_an_immediate_session_send_waking_the_idle_s
 /// beginning a Session beside them is its row's to record, and no Tool Call.
 #[tokio::test]
 async fn a_calls_answers_stand_nowhere_in_the_tool_call_it_is_recorded_as() {
-    let timeline = r#"      event e1 tool.execution_start '{"toolCallId":"call-answer","toolName":"suru-answer_questionnaire","mcpServerName":"suru","mcpToolName":"answer_questionnaire","arguments":{"session_id":"0198b27e-3a01-7c4c-a83b-a83a4787453f","questionnaire_id":"0198b27e-4b02-7c4c-a83b-a83a4787453f","answers":[{"text":"tok-5ecret-1234"},{"choices":["eu"]}]}}'
+    let timeline = r#"      event e1 tool.execution_start '{"toolCallId":"call-answer","toolName":"shaman-answer_questionnaire","mcpServerName":"shaman","mcpToolName":"answer_questionnaire","arguments":{"session_id":"0198b27e-3a01-7c4c-a83b-a83a4787453f","questionnaire_id":"0198b27e-4b02-7c4c-a83b-a83a4787453f","answers":[{"text":"tok-5ecret-1234"},{"choices":["eu"]}]}}'
       event e2 tool.execution_complete '{"toolCallId":"call-answer","success":true,"result":{"content":"answered"}}'
-      event e3 tool.execution_start '{"toolCallId":"call-refused","toolName":"suru-answer_questionnaire","mcpServerName":"suru","mcpToolName":"answer_questionnaire","arguments":{"session_id":"0198b27e-3a01-7c4c-a83b-a83a4787453f","questionnaire_id":"0198b27e-4b02-7c4c-a83b-a83a4787453f","answers":[{"choices":"tok-5ecret-1234"}]}}'
+      event e3 tool.execution_start '{"toolCallId":"call-refused","toolName":"shaman-answer_questionnaire","mcpServerName":"shaman","mcpToolName":"answer_questionnaire","arguments":{"session_id":"0198b27e-3a01-7c4c-a83b-a83a4787453f","questionnaire_id":"0198b27e-4b02-7c4c-a83b-a83a4787453f","answers":[{"choices":"tok-5ecret-1234"}]}}'
       event e4 tool.execution_complete '{"toolCallId":"call-refused","success":false,"error":{"message":"refused"}}'
-      event e5 tool.execution_start '{"toolCallId":"call-begin","toolName":"suru-begin_session","mcpServerName":"suru","mcpToolName":"begin_session","arguments":{"directory":"/work","prompt":"Tidy the docs."}}'
+      event e5 tool.execution_start '{"toolCallId":"call-begin","toolName":"shaman-begin_session","mcpServerName":"shaman","mcpToolName":"begin_session","arguments":{"directory":"/work","prompt":"Tidy the docs."}}'
       event e6 tool.execution_complete '{"toolCallId":"call-begin","success":true,"result":{"content":"begun"}}'
       event e7 assistant.message '{"messageId":"m1","content":"Answered."}'
       event e8 session.idle '{}'
@@ -846,13 +847,13 @@ async fn a_calls_answers_stand_nowhere_in_the_tool_call_it_is_recorded_as() {
         recorded,
         [
             (
-                Some("suru"),
+                Some("shaman"),
                 "answer_questionnaire",
                 "session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
                  answers=2 Answers withheld",
             ),
             (
-                Some("suru"),
+                Some("shaman"),
                 "answer_questionnaire",
                 "session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
                  answers=1 Answer withheld",

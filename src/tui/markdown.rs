@@ -1965,12 +1965,12 @@ pub(super) mod tests {
     fn links_paint_the_label_and_destination_with_link_emphasis() {
         let theme = Theme::system();
 
-        let lines = render("[Suru](https://example.test)", &theme);
+        let lines = render("[Shaman](https://example.test)", &theme);
 
         assert_eq!(
             lines,
             vec![StyledLine::from(vec![
-                StyledSpan::text("Suru", theme.markdown.link_text),
+                StyledSpan::text("Shaman", theme.markdown.link_text),
                 StyledSpan::chrome(" (https://example.test)", theme.markdown.link),
             ])]
         );

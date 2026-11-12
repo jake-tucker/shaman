@@ -6,7 +6,7 @@
 
 use std::fmt;
 
-/// A CLI version Suru suggests without making older, readable versions unavailable.
+/// A CLI version Shaman suggests without making older, readable versions unavailable.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct SuggestedCliVersion {
     cli: &'static str,

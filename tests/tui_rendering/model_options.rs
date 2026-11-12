@@ -6,7 +6,7 @@ use crate::tui_rendering::support::{
     text_position, type_terminal_text, workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use suru::{
+use shaman::{
     protocol::{
         AgentSelection, ModelAvailability, ModelCatalog, ModelId, ModelOptionChoice,
         ModelOptionChoiceId, ModelOptionDescriptor, ModelOptionId, ModelOptionKind,
@@ -21,7 +21,7 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelOptions,
+            shaman::tui::SemanticCommandId::ModelOptions,
         )))
         .expect("invoke options without a concrete model")
     else {
@@ -116,7 +116,7 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
     let mut unavailable = Application::default();
     let ApplicationTransition::ListModels(request) = unavailable
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelOptions,
+            shaman::tui::SemanticCommandId::ModelOptions,
         )))
         .expect("invoke unavailable options")
     else {
@@ -149,7 +149,7 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
     assert!(matches!(
         unavailable
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::ModelList,
+                shaman::tui::SemanticCommandId::ModelList,
             )))
             .expect("choose the same plain model through /models"),
         ApplicationTransition::ListModels(_)
@@ -187,7 +187,7 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
     let mut missing = Application::default();
     let ApplicationTransition::ListModels(request) = missing
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelOptions,
+            shaman::tui::SemanticCommandId::ModelOptions,
         )))
         .expect("invoke options without any available model")
     else {
@@ -208,7 +208,7 @@ fn options_command_resolves_provider_default_and_explains_unavailable_configurat
     let mut ambiguous = Application::default();
     let ApplicationTransition::ListModels(request) = ambiguous
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelOptions,
+            shaman::tui::SemanticCommandId::ModelOptions,
         )))
         .expect("invoke options without a selected provider")
     else {
@@ -255,7 +255,7 @@ fn stale_catalog_failure_does_not_end_newer_options_resolution() {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(stale_request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelOptions,
+            shaman::tui::SemanticCommandId::ModelOptions,
         )))
         .expect("begin first options resolution")
     else {
@@ -263,7 +263,7 @@ fn stale_catalog_failure_does_not_end_newer_options_resolution() {
     };
     let ApplicationTransition::ListModels(current_request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelOptions,
+            shaman::tui::SemanticCommandId::ModelOptions,
         )))
         .expect("replace options resolution")
     else {
@@ -314,7 +314,7 @@ fn refreshed_descriptors_replace_a_cached_no_options_status() {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(cached_request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker to seed cache")
     else {
@@ -349,7 +349,7 @@ fn refreshed_descriptors_replace_a_cached_no_options_status() {
 
     let ApplicationTransition::ListModels(options_request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelOptions,
+            shaman::tui::SemanticCommandId::ModelOptions,
         )))
         .expect("resolve options from stale cache")
     else {
@@ -396,13 +396,13 @@ fn session_options_preserve_other_dimensions_and_roll_back_one_atomic_update() {
         provider: ProviderId::new("codex"),
         model: ModelId::new("gpt-configurable"),
         options: vec![
-            suru::protocol::ModelOptionSelection {
+            shaman::protocol::ModelOptionSelection {
                 id: ModelOptionId::new("reasoning_effort"),
                 value: ModelOptionValue::Select {
                     choice: ModelOptionChoiceId::new("low"),
                 },
             },
-            suru::protocol::ModelOptionSelection {
+            shaman::protocol::ModelOptionSelection {
                 id: ModelOptionId::new("fast"),
                 value: ModelOptionValue::Toggle { enabled: false },
             },
@@ -417,7 +417,7 @@ fn session_options_preserve_other_dimensions_and_roll_back_one_atomic_update() {
 
     let ApplicationTransition::ListModels(catalog_request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelOptions,
+            shaman::tui::SemanticCommandId::ModelOptions,
         )))
         .expect("open authoritative model options")
     else {
@@ -510,18 +510,18 @@ fn session_options_preserve_other_dimensions_and_roll_back_one_atomic_update() {
     else {
         panic!("Session options should produce one authoritative update");
     };
-    assert_eq!(updated_session.origin, suru::protocol::Outlook::Local);
+    assert_eq!(updated_session.origin, shaman::protocol::Outlook::Local);
     assert_eq!(updated_session.session_id, session_id);
     assert_eq!(
         request.selection.options,
         vec![
-            suru::protocol::ModelOptionSelection {
+            shaman::protocol::ModelOptionSelection {
                 id: ModelOptionId::new("reasoning_effort"),
                 value: ModelOptionValue::Select {
                     choice: ModelOptionChoiceId::new("high"),
                 },
             },
-            suru::protocol::ModelOptionSelection {
+            shaman::protocol::ModelOptionSelection {
                 id: ModelOptionId::new("fast"),
                 value: ModelOptionValue::Toggle { enabled: false },
             },
@@ -539,7 +539,7 @@ fn session_options_preserve_other_dimensions_and_roll_back_one_atomic_update() {
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionList,
+                shaman::tui::SemanticCommandId::SessionList,
             )))
             .expect("block session navigation while options settle"),
         ApplicationTransition::Continue
@@ -559,7 +559,7 @@ fn session_options_preserve_other_dimensions_and_roll_back_one_atomic_update() {
     assert!(matches!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::ModelOptions,
+                shaman::tui::SemanticCommandId::ModelOptions,
             )))
             .expect("reopen rolled-back options"),
         ApplicationTransition::ListModels(_)
@@ -577,13 +577,13 @@ fn refreshed_options_keep_invalidated_choice_visible_and_disable_apply() {
         provider: ProviderId::new("codex"),
         model: ModelId::new("changing"),
         options: vec![
-            suru::protocol::ModelOptionSelection {
+            shaman::protocol::ModelOptionSelection {
                 id: ModelOptionId::new("reasoning_effort"),
                 value: ModelOptionValue::Select {
                     choice: ModelOptionChoiceId::new("high"),
                 },
             },
-            suru::protocol::ModelOptionSelection {
+            shaman::protocol::ModelOptionSelection {
                 id: ModelOptionId::new("fast"),
                 value: ModelOptionValue::Toggle { enabled: false },
             },
@@ -597,7 +597,7 @@ fn refreshed_options_keep_invalidated_choice_visible_and_disable_apply() {
         .expect("attach selected session");
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelOptions,
+            shaman::tui::SemanticCommandId::ModelOptions,
         )))
         .expect("open options")
     else {
@@ -779,13 +779,13 @@ fn refreshed_options_keep_invalidated_choice_visible_and_disable_apply() {
     assert_eq!(
         request.selection.options,
         vec![
-            suru::protocol::ModelOptionSelection {
+            shaman::protocol::ModelOptionSelection {
                 id: ModelOptionId::new("reasoning_effort"),
                 value: ModelOptionValue::Select {
                     choice: ModelOptionChoiceId::new("low"),
                 },
             },
-            suru::protocol::ModelOptionSelection {
+            shaman::protocol::ModelOptionSelection {
                 id: ModelOptionId::new("fast"),
                 value: ModelOptionValue::Toggle { enabled: true },
             },
@@ -795,7 +795,7 @@ fn refreshed_options_keep_invalidated_choice_visible_and_disable_apply() {
 
 /// A Model with the two dimensions Copilot advertises: reasoning effort, and a context tier that
 /// trades context window against cost.
-fn tiered_model() -> suru::protocol::ModelDescriptor {
+fn tiered_model() -> shaman::protocol::ModelDescriptor {
     let mut model = model_descriptor(
         "copilot",
         "tiered",
@@ -852,7 +852,7 @@ fn landing_on_the_tiered_model() -> Application {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open the landing model picker")
     else {
@@ -990,7 +990,7 @@ fn selection_summary_orders_unlabelled_provider_model_and_supported_options() {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open the landing model picker")
     else {
@@ -1096,7 +1096,7 @@ fn confirm_stays_pinned_and_focused_across_navigation_and_catalog_refresh() {
     let mut application = landing_on_the_tiered_model();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelOptions,
+            shaman::tui::SemanticCommandId::ModelOptions,
         )))
         .expect("refresh options")
     else {
@@ -1203,7 +1203,7 @@ fn short_options_panel_keeps_focused_option_above_confirm() {
 
 /// `auto` as Copilot offers it with the Setting on: a Routing Tier and nothing else, one tier
 /// disabled with Copilot's reason.
-fn routed_model() -> suru::protocol::ModelDescriptor {
+fn routed_model() -> shaman::protocol::ModelDescriptor {
     let mut model = model_descriptor(
         "copilot",
         "auto",
@@ -1218,7 +1218,7 @@ fn routed_model() -> suru::protocol::ModelDescriptor {
         availability,
     };
     model.options = vec![ModelOptionDescriptor {
-        id: ModelOptionId::new(suru::protocol::ROUTING_TIER_OPTION_ID),
+        id: ModelOptionId::new(shaman::protocol::ROUTING_TIER_OPTION_ID),
         label: "Routing tier".to_owned(),
         description: None,
         role: ModelOptionRole::RoutingTier,
@@ -1253,11 +1253,11 @@ fn landing_on_the_routed_model() -> Application {
     landing_on_model_with_options(routed_model())
 }
 
-fn landing_on_model_with_options(model: suru::protocol::ModelDescriptor) -> Application {
+fn landing_on_model_with_options(model: shaman::protocol::ModelDescriptor) -> Application {
     let mut application = Application::default();
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open the landing model picker")
     else {
@@ -1336,7 +1336,7 @@ fn a_routing_tier_is_chosen_beside_the_model_and_a_disabled_one_says_why_and_can
 
 #[test]
 fn option_and_choice_descriptions_wrap_beside_the_list_and_copy_as_written() {
-    use suru::protocol::{EffectiveSettings, SidebarVisibility, TextSelectionCopy};
+    use shaman::protocol::{EffectiveSettings, SidebarVisibility, TextSelectionCopy};
 
     const OPTION_DESCRIPTION: &str = "Choose how the model balances capability and response time. This explanation is \
          intentionally longer than a single list row so its concluding guidance stays readable.";
@@ -1535,7 +1535,7 @@ fn a_selection_naming_a_routing_tier_no_longer_on_offer_reads_as_its_model() {
     plain.options.clear();
     application
         .handle_event(ApplicationEvent::Managed(
-            suru::managed_client::ManagedEvent::ModelCatalog(ModelCatalog {
+            shaman::managed_client::ManagedEvent::ModelCatalog(ModelCatalog {
                 providers: vec![ProviderModelCatalog {
                     provider: ProviderId::new("copilot"),
                     display_name: "Copilot".to_owned(),

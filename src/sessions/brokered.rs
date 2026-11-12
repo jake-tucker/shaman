@@ -23,7 +23,7 @@
 //! Turn has worked, and the latest Message it wrote there.
 //!
 //! No Provider tells the delegating Agent that its brokered Subagent's stretch
-//! settled, so Suru does, as that stretch's row settles: a Subagent Report of
+//! settled, so Shaman does, as that stretch's row settles: a Subagent Report of
 //! the outcome and the start of the Subagent's final Message, held for the
 //! delegating Session's Agent until its Provider takes it (ADR 0035).
 
@@ -96,12 +96,12 @@ impl fmt::Display for BrokeredSpawnError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CallerNotFound => formatter
-                .write_str("the Session calling the Broker no longer exists on this Suru server"),
+                .write_str("the Session calling the Broker no longer exists on this Shaman server"),
             // The Broker words a cap for the delegating Agent itself, from the
             // cap carried here; this says only what kind of refusal it is.
             Self::Capped(_) => formatter
                 .write_str("it would pass a cap the Broker's Settings put on brokered Subagents"),
-            Self::Storage(message) => write!(formatter, "Suru could not record it: {message}"),
+            Self::Storage(message) => write!(formatter, "Shaman could not record it: {message}"),
         }
     }
 }
@@ -136,7 +136,7 @@ pub(crate) struct BrokeredSubagentReading {
     pub(crate) status: TurnStatus,
     /// How long the latest Turn has worked so far, or — once settled — how
     /// long it worked, as the row its stretch stands as says; `None` where
-    /// Suru never learned when its work ended (ADR 0029).
+    /// Shaman never learned when its work ended (ADR 0029).
     pub(crate) duration_ms: Option<u64>,
     /// The latest Message the Subagent wrote in that Turn, whole: its final
     /// one once the Turn has settled. `None` when it has written none there.
@@ -319,7 +319,7 @@ impl SessionStore {
                 &state.sessions[&subagent].snapshot,
                 turn_id,
                 TrailingCommandOutput::new(),
-                format!("Suru could not record this resume: {error}"),
+                format!("Shaman could not record this resume: {error}"),
                 None,
                 OpenInterventions::TurnEnded,
             );
@@ -538,7 +538,7 @@ impl SessionStoreState {
     /// caller's top-level Session — its own, and every Subagent's at any
     /// depth — each by its own latest Turn, so a settled Subagent frees its
     /// slot even while work it delegated goes on, and that work counts for
-    /// itself. A native Subagent is not counted: Suru cannot refuse its
+    /// itself. A native Subagent is not counted: Shaman cannot refuse its
     /// Provider's spawns, so it cannot hold them to the cap either.
     fn brokered_spawn_cap(
         &self,

@@ -21,7 +21,7 @@
 //! stretch, from the delegating Agent, which heads the stretch's Turn and gives its row the
 //! description the activity lacked. Any later one is a steer: it stands in that Turn where it
 //! arrived, credited to the Agent whose `sendInput` carried that text. A steer changes nothing in
-//! the parent's Transcript, not even the Subagent row's description. Input Suru hands a child
+//! the parent's Transcript, not even the Subagent row's description. Input Shaman hands a child
 //! itself — a Subagent Report to a native Subagent that delegated through the Broker (ADR 0035) —
 //! steers a working child's turn, or begins a native turn on the child's thread that wakes it into
 //! a stretch no Delegation began: a Continuation of its own Session, as a Watch's wake is, with no
@@ -31,7 +31,7 @@
 //! that thread's token usage reads either side stands in for its counts. A compaction that fails
 //! never completes its item: Codex fails the native turn instead, and the turn's error is the
 //! Compaction's.
-//! Notifications that belong to no thread Suru follows are dropped, notifications that contradict
+//! Notifications that belong to no thread Shaman follows are dropped, notifications that contradict
 //! the recorded state fail the Session, and everything else becomes the Provider events a Session
 //! consumes.
 
@@ -85,7 +85,7 @@ const GENERIC_SUBAGENT_NAME: &str = "Agent";
 /// The one measurement a spawned child thread's first stretch is taken under.
 /// Naming every reading of that stretch the same fixes the child's baseline at
 /// nothing the first time and never rebases it, so the stretch counts whatever
-/// the thread ran before Suru attached, however many native turns it read.
+/// the thread ran before Shaman attached, however many native turns it read.
 /// A resumed stretch is measured under the native turn that resumed it
 /// instead, so it rebases onto wherever the thread's total stood.
 const CHILD_THREAD_TURN: &str = "";
@@ -100,7 +100,7 @@ pub(super) struct NativeCorrelation {
     /// the Session's one native Turn slot, which that turn's `turn/started` fills, wherever it is
     /// read first: here, or where the transport answers the request's wait for it.
     compaction_starting: bool,
-    /// An interrupt Suru took while the compaction's turn had no identity, owed to that turn once
+    /// An interrupt Shaman took while the compaction's turn had no identity, owed to that turn once
     /// Codex names it.
     interrupt_on_start: bool,
     active_turn_id: Option<String>,
@@ -337,7 +337,7 @@ fn reroute_reason(reason: NativeRerouteReason) -> String {
             "the account was flagged for potentially high-risk cyber activity".to_owned()
         }
         NativeRerouteReason::Unrecognised(code) => {
-            format!("a reason Suru does not recognise ({code})")
+            format!("a reason Shaman does not recognise ({code})")
         }
     }
 }
@@ -362,7 +362,7 @@ impl ThreadInFlight {
     }
 }
 
-/// One child thread Suru knows: the items it has open, and the latest native
+/// One child thread Shaman knows: the items it has open, and the latest native
 /// turn its items have ridden under, which is what a stop must name to
 /// `turn/interrupt` the child.
 ///
@@ -408,23 +408,23 @@ struct AttachedChild {
     /// The delegation waiting to resume this settled child once it starts a
     /// native turn.
     claim: Option<ResumeClaim>,
-    /// Input Suru handed this child itself, with a `turn/start` of its own on
+    /// Input Shaman handed this child itself, with a `turn/start` of its own on
     /// the child's thread — Subagent Reports (ADR 0035) — as the `UserMessage`
     /// it arrives as will read, until it arrives. A Report stands in no
     /// Transcript, so that item is passed over rather than read as a
     /// Delegation.
     handed_input: Vec<String>,
-    /// Where Suru's own `turn/start` on this settled child stands, while that
+    /// Where Shaman's own `turn/start` on this settled child stands, while that
     /// input wakes it.
     handed_wake: Option<HandedWake>,
 }
 
-/// Suru's own `turn/start` waking a child with input it hands the child
+/// Shaman's own `turn/start` waking a child with input it hands the child
 /// itself (ADR 0035). The native turn that input runs in is a stretch of the
 /// child's no Delegation began, so it opens with no resume: it is a
 /// Continuation of the child's Session, as a Watch's wake is. A settled
-/// child's is opened by Suru as Codex takes the input; one Codex begins with
-/// the input after a working child's turn ended — Suru having found the child
+/// child's is opened by Shaman as Codex takes the input; one Codex begins with
+/// the input after a working child's turn ended — Shaman having found the child
 /// working — waits for that stretch to settle, and opens with the wake.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum HandedWake {
@@ -432,7 +432,7 @@ enum HandedWake {
     /// child begins that no delegation claims is the one the input runs in.
     Requested,
     /// Answered, naming the native turn the input runs in — a new one, or one
-    /// still running that Suru had already seen settle, which Codex steered
+    /// still running that Shaman had already seen settle, which Codex steered
     /// the input into instead.
     Took(String),
 }
@@ -523,7 +523,7 @@ impl AttachedChild {
 
     /// The Agent that sent the steer `text`: the earliest send carrying that
     /// text whose steer has not yet arrived. A steer no known send carried —
-    /// one drained before either of its call's reports reached Suru — is
+    /// one drained before either of its call's reports reached Shaman — is
     /// credited to the conversation that delegated the stretch, which is the
     /// one that sends to it most, rather than dropped: the Subagent did
     /// receive it, and a Delegation it received stands.
@@ -575,7 +575,7 @@ enum StretchOpening {
     /// stretch has. Carries what the Delegation said, where the wire said.
     Awaited(Option<String>),
     /// The opening item has arrived, or can no longer: the stretch has done
-    /// other work first, so the item was streamed before Suru followed the
+    /// other work first, so the item was streamed before Shaman followed the
     /// thread.
     #[default]
     Passed,
@@ -1029,7 +1029,7 @@ impl NativeCorrelation {
     }
 
     /// The attribution a Subagent lifecycle item on `thread_id` rides under,
-    /// if that is a thread Suru follows and it is working — which is also the
+    /// if that is a thread Shaman follows and it is working — which is also the
     /// conversation a delegation it sends is attributed to. Deliberately not
     /// gated on the active Turn: the lifecycle speaks for threads rather than
     /// turns, and a child's completion may arrive after the turn that spawned
@@ -1114,7 +1114,7 @@ impl NativeCorrelation {
         child.opening = StretchOpening::Passed;
         child.sends.clear();
         let stretch_turns = std::mem::take(&mut child.stretch_turns);
-        // Input Suru handed the child that Codex took into a turn of its own,
+        // Input Shaman handed the child that Codex took into a turn of its own,
         // begun after the one the stretch worked in ended, wakes the child
         // there once the stretch has settled (see [`HandedWake`]). Input one
         // of the stretch's own turns took is done with.
@@ -1149,9 +1149,9 @@ impl NativeCorrelation {
         turn_id: &str,
         outcome: &NativeTurnOutcome,
     ) -> Vec<AttributedProviderEvent> {
-        // A turn Suru's own input was taken into, ending before anything of
+        // A turn Shaman's own input was taken into, ending before anything of
         // it streamed here, still ends the stretch that input woke the child
-        // into: Suru opened it, and nothing else would settle it.
+        // into: Shaman opened it, and nothing else would settle it.
         if self
             .settled_children
             .get(child_thread_id)
@@ -1228,8 +1228,8 @@ impl NativeCorrelation {
     /// the turn streams. A turn no earlier stretch ran in is a new one: where
     /// a delegation claims it, the child resumes into it; otherwise it waits
     /// for the claim, and what it streams meanwhile lands nowhere. The turn
-    /// input Suru handed the child itself runs in wakes it instead, whether
-    /// new or one Suru saw settle that Codex steered the input into.
+    /// input Shaman handed the child itself runs in wakes it instead, whether
+    /// new or one Shaman saw settle that Codex steered the input into.
     fn wake_settled_child(
         &mut self,
         child_thread_id: &str,
@@ -1313,11 +1313,11 @@ impl NativeCorrelation {
         resumed
     }
 
-    /// Wakes a settled child into native turn `turn_id`, which input Suru
+    /// Wakes a settled child into native turn `turn_id`, which input Shaman
     /// handed the child itself runs in (see [`HandedWake`]). No Delegation
     /// began the stretch, so it is no resume and gains no row: it is woken,
     /// as a Watch wakes a Subagent, into a Continuation of its own Session —
-    /// which Suru has already opened where it found the child settled as
+    /// which Shaman has already opened where it found the child settled as
     /// Codex took the input, and which the wake opens where it found the
     /// child still working. The input stands nowhere. The thread is followed
     /// again, and the Model the child last ran on follows it into the new
@@ -1375,7 +1375,7 @@ impl NativeCorrelation {
         model
     }
 
-    /// Readies this connection for input Suru is about to hand the child on
+    /// Readies this connection for input Shaman is about to hand the child on
     /// `child_thread_id` itself, with a `turn/start` of its own on the child's
     /// thread — Subagent Reports (ADR 0035) — which reads `text` as the
     /// `UserMessage` it arrives as. A working child's running turn takes it
@@ -1415,9 +1415,9 @@ impl NativeCorrelation {
         Ok(true)
     }
 
-    /// Codex took the input Suru handed the child on `child_thread_id` into
+    /// Codex took the input Shaman handed the child on `child_thread_id` into
     /// native turn `turn_id`. For a settled child that is the stretch it
-    /// wakes into, even one Suru saw settle before Codex steered the input
+    /// wakes into, even one Shaman saw settle before Codex steered the input
     /// into it. For a working child it is the turn the stretch works in,
     /// which the input steered — unless that turn had ended before the input
     /// arrived and Codex began another with it, which wakes the child into a
@@ -1441,7 +1441,7 @@ impl NativeCorrelation {
         child.handed_wake = Some(HandedWake::Took(turn_id));
     }
 
-    /// Forgets input reading `text` that Suru meant to hand the child on
+    /// Forgets input reading `text` that Shaman meant to hand the child on
     /// `child_thread_id`, which Codex never took.
     pub(super) fn forget_handed_input(&mut self, child_thread_id: &str, text: &str) {
         let settled = self.settled_children.get_mut(child_thread_id);
@@ -1531,7 +1531,7 @@ impl ChildThreadAttachment {
     /// Requests the child thread's stream, so its items reach this connection.
     /// The resumed thread's own lineage — the parent it declares — is not
     /// re-checked: the spawn item on the parent's stream already named the
-    /// relationship, and it is the spawner's account Suru follows. The attach
+    /// relationship, and it is the spawner's account Shaman follows. The attach
     /// carries no `config`: a child thread inherits its parent's per-thread MCP
     /// servers, the Broker's included, and Codex ignores a `config` on a
     /// running thread and may rebuild an idle one from it.
@@ -1884,7 +1884,7 @@ fn project_notification(
             if turn_id.is_empty() {
                 return Err(codex_error("Codex reported an empty Turn ID"));
             }
-            // The turn a compaction Suru asked for runs as, which is the Turn Suru opened for the
+            // The turn a compaction Shaman asked for runs as, which is the Turn Shaman opened for the
             // request rather than a Continuation.
             if correlation.compaction_starting {
                 correlation.adopt_compaction_turn(&turn_id);
@@ -2515,7 +2515,7 @@ fn send_receivers<'a>(
 
 /// A collab tool call starting on a followed thread. A `sendInput` to a
 /// working child is about to hand its running turn more to do, so it is noted
-/// against the child for the steer that turn will drain, which may reach Suru
+/// against the child for the steer that turn will drain, which may reach Shaman
 /// before the call's own completion does. A send to a child with no stretch
 /// open is left to its completion, which claims the turn it starts as a
 /// resume; every other call's start projects nothing.
@@ -2633,7 +2633,7 @@ fn project_collab_call_completed(
 }
 
 /// Input a thread's agent received. On the Session's own thread that is the
-/// user's Prompt, which Suru recorded when it sent it, so it projects nothing.
+/// user's Prompt, which Shaman recorded when it sent it, so it projects nothing.
 /// A child thread has no user, so there it is a Delegation: either the one its
 /// stretch began with, or — arriving after that — a steer (ADR 0032). The one
 /// the stretch began with already opens the stretch's Turn where the collab
@@ -2642,7 +2642,7 @@ fn project_collab_call_completed(
 /// is reported as the Delegation that began the stretch, from the delegating
 /// Agent. A steer stands in the Turn the child is working in, at the point its
 /// item arrived, as a Delegation from the Agent whose `sendInput` carried it;
-/// it begins no Turn and adds nothing to any row. Input Suru handed the child
+/// it begins no Turn and adds nothing to any row. Input Shaman handed the child
 /// itself — a Subagent Report — is neither, and stands nowhere (ADR 0035).
 /// Input on a child with no stretch open lands nowhere, as its work does.
 fn project_user_message(
@@ -2662,7 +2662,7 @@ fn project_user_message(
         .iter()
         .position(|handed| handed.trim() == text.trim())
     {
-        // Input Suru handed the child itself — a Report — which stands in no
+        // Input Shaman handed the child itself — a Report — which stands in no
         // Transcript. Arriving, it has passed whatever the stretch opened
         // with, as any other work would.
         child.handed_input.remove(handed);
@@ -2806,7 +2806,7 @@ fn project_reasoning_section_break(
 /// Moves the item on to the summary section Codex is reporting on, settling the
 /// block the section before it streamed into and starting the section's own.
 /// Codex names the section on every break and every delta, so following the
-/// name rather than counting breaks keeps Suru's blocks aligned with the
+/// name rather than counting breaks keeps Shaman's blocks aligned with the
 /// sections the completed item repeats, however many breaks Codex sends.
 fn open_reasoning_section(
     item_id: &str,
@@ -2837,7 +2837,7 @@ fn project_reasoning_completed(
     };
     // Reasoning is the account of the work rather than the work, so nothing
     // about it fails a Turn: losing the Turn over a Reasoning summary would cost
-    // the reader the answer it led to. A completion for a block Suru never saw
+    // the reader the answer it led to. A completion for a block Shaman never saw
     // start has nowhere to land, and is dropped the way a stray delta is.
     let Some(mut reasoning) = thread.active_reasoning.remove(&item_id) else {
         return Ok(Vec::new());
@@ -2933,7 +2933,7 @@ fn reasoning_segment_events(
 /// One cumulative reading landing on the Turn it belongs to, as the distance
 /// that Turn has travelled since it opened.
 ///
-/// On the Session's own thread the reading has to name the Turn Suru is
+/// On the Session's own thread the reading has to name the Turn Shaman is
 /// measuring. Any other reading — the total a reattach replays, or one
 /// trailing a Turn that has already settled — belongs to nobody: it moves the
 /// thread's running total, which is where the next Turn will start measuring
@@ -3502,7 +3502,7 @@ fn project_tool_use_started(
 
 /// Settles a Tool Call from the completed item of its use: the input, where it differs from what
 /// the Tool Call opened with — as a web search's does, which Codex starts before knowing what it
-/// searches — then the whole output, which Codex never streams, then the outcome. A use Suru never
+/// searches — then the whole output, which Codex never streams, then the outcome. A use Shaman never
 /// saw start opens and settles at once, rather than going unseen.
 fn project_tool_use_completed(
     correlation: &mut NativeCorrelation,
@@ -3703,7 +3703,7 @@ fn apply_effective_select_option(
     Ok(())
 }
 
-/// How a cleared native Model Option maps back onto a Suru Agent Selection.
+/// How a cleared native Model Option maps back onto a Shaman Agent Selection.
 enum NativeClearMapping {
     RemoveOption,
     Select(&'static str),
@@ -4001,7 +4001,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tool_use_from_a_turn_suru_no_longer_tracks_is_dropped() {
+    fn a_tool_use_from_a_turn_shaman_no_longer_tracks_is_dropped() {
         let mut correlation = reasoning_turn();
         for notification in [
             NativeNotification::ToolUseStarted {
@@ -4064,7 +4064,7 @@ mod tests {
         let mut correlation = reasoning_turn();
         project(&mut correlation, command_started("cargo test"));
         for delta in [
-            "   Compiling suru\n",
+            "   Compiling shaman\n",
             "running 1 test\n",
             "error: test failed\n",
         ] {
@@ -4087,7 +4087,7 @@ mod tests {
                     turn_id: TURN.to_owned(),
                     item_id: ITEM.to_owned(),
                     aggregated_output: Some(
-                        "running 1 test\n   Compiling suru\nerror: test failed\n".to_owned(),
+                        "running 1 test\n   Compiling shaman\nerror: test failed\n".to_owned(),
                     ),
                     exit_status: Some(101),
                     status: NativeCommandStatus::Failed,
@@ -4366,7 +4366,7 @@ mod tests {
     }
 
     #[test]
-    fn a_completion_for_reasoning_suru_never_saw_start_is_dropped_rather_than_failing_the_turn() {
+    fn a_completion_for_reasoning_shaman_never_saw_start_is_dropped_rather_than_failing_the_turn() {
         let mut correlation = reasoning_turn();
 
         assert_eq!(
@@ -4412,7 +4412,7 @@ mod tests {
     }
 
     #[test]
-    fn reasoning_from_a_turn_suru_no_longer_tracks_is_dropped() {
+    fn reasoning_from_a_turn_shaman_no_longer_tracks_is_dropped() {
         let mut correlation = reasoning_turn();
 
         assert_eq!(
@@ -4480,7 +4480,7 @@ mod tests {
             &mut correlation,
             NativeNotification::AgentMessageStarted {
                 thread_id: CHILD_THREAD.to_owned(),
-                turn_id: "a-turn-suru-never-heard-of".to_owned(),
+                turn_id: "a-turn-shaman-never-heard-of".to_owned(),
                 item_id: ITEM.to_owned(),
             },
         );
@@ -4535,7 +4535,7 @@ mod tests {
     }
 
     #[test]
-    fn lifecycle_items_on_a_thread_suru_does_not_follow_are_dropped() {
+    fn lifecycle_items_on_a_thread_shaman_does_not_follow_are_dropped() {
         let mut correlation = reasoning_turn();
 
         assert_eq!(
@@ -4789,7 +4789,7 @@ mod tests {
     fn resume_agent_alone_begins_no_turn_until_a_send_follows_it() {
         let mut correlation = settled_child();
 
-        // `resumeAgent` decodes as a collab tool Suru reads nothing from.
+        // `resumeAgent` decodes as a collab tool Shaman reads nothing from.
         assert_eq!(
             project_attributed(
                 &mut correlation,
@@ -5333,7 +5333,7 @@ mod tests {
                 user_message(CHILD_THREAD, CHILD_TURN, REPORT)
             ),
             Vec::new(),
-            "a Report Suru handed the child is no Delegation, even as the stretch's first input"
+            "a Report Shaman handed the child is no Delegation, even as the stretch's first input"
         );
         assert_eq!(
             project_attributed(
@@ -5372,7 +5372,7 @@ mod tests {
                 "Count the lines too",
             )],
             "input that is not what the spawn said cannot be its opener, which went by \
-             before Suru followed the thread"
+             before Shaman followed the thread"
         );
 
         let mut correlation = working_child();
@@ -5686,9 +5686,9 @@ mod tests {
         ));
     }
 
-    /// A Subagent Report as Suru hands a native child it, and as the
+    /// A Subagent Report as Shaman hands a native child it, and as the
     /// `UserMessage` it arrives as reads.
-    const REPORT: &str = "Subagent Report from Suru: the Subagent \"Researcher\" you delegated to \
+    const REPORT: &str = "Subagent Report from Shaman: the Subagent \"Researcher\" you delegated to \
                           through the Broker completed.";
 
     /// The settled child woken into a Continuation of its own Session, with
@@ -5753,7 +5753,7 @@ mod tests {
     }
 
     #[test]
-    fn a_report_codex_steers_into_a_turn_suru_saw_settle_still_ends_the_stretch_it_wakes() {
+    fn a_report_codex_steers_into_a_turn_shaman_saw_settle_still_ends_the_stretch_it_wakes() {
         let mut correlation = settled_child();
         correlation
             .expect_handed_input(CHILD_THREAD, REPORT.to_owned())
@@ -5835,7 +5835,7 @@ mod tests {
         );
 
         // The child's turn ended as the Report arrived, so Codex began another
-        // turn with it rather than steering the one Suru saw working.
+        // turn with it rather than steering the one Shaman saw working.
         correlation.handed_input_taken(CHILD_THREAD, RESUMED_TURN.to_owned());
         assert_eq!(
             project_attributed(

@@ -1,12 +1,12 @@
 //! The Secret Service a Linux desktop keeps its secrets in — GNOME Keyring,
 //! KWallet, KeePassXC, whichever answers on the D-Bus session bus — as an
 //! [`IdentityStore`]. It is spoken to through the `secret-service` crate,
-//! over zbus, a D-Bus client written in Rust, so Suru links no libdbus, in a
+//! over zbus, a D-Bus client written in Rust, so Shaman links no libdbus, in a
 //! session whose secrets are encrypted by Rust code rather than OpenSSL.
 //!
-//! An item is a secret whose attributes name Suru and the item's id. A put
+//! An item is a secret whose attributes name Shaman and the item's id. A put
 //! keeps it in the default collection; a get and a delete find it in any.
-//! Suru never asks to unlock anything: what is asked of a locked collection
+//! Shaman never asks to unlock anything: what is asked of a locked collection
 //! or item counts as unavailable. A prompt the Secret Service brings up on
 //! its own — KeePassXC asks before it keeps a new item — is waited on as
 //! long as the call is, and no longer: the [`super::BoundedStore`] every
@@ -28,9 +28,9 @@ use super::{IdentityStore, ItemId, StoreUnavailable, Stored};
 #[cfg(test)]
 mod fake;
 
-/// The attribute every item Suru keeps in the Secret Service carries, as it
-/// names Suru's Server identity keys.
-const APPLICATION: (&str, &str) = ("application", "ai.suru.server-identity");
+/// The attribute every item Shaman keeps in the Secret Service carries, as it
+/// names Shaman's Server identity keys.
+const APPLICATION: (&str, &str) = ("application", "ai.shaman.server-identity");
 /// The attribute naming an item's [`ItemId`].
 const ITEM: &str = "item";
 /// What the Secret Service is told an item's secret is: a key's bytes.
@@ -226,7 +226,7 @@ fn socket_of(address: &zbus::Address) -> anyhow::Result<PathBuf> {
         }
     }
     Err(anyhow!(
-        "Suru reaches a D-Bus session bus only over a Unix socket"
+        "Shaman reaches a D-Bus session bus only over a Unix socket"
     ))
 }
 
@@ -245,7 +245,7 @@ async fn put(
     };
     if collection.is_locked().await.map_err(failed)? {
         return Err(anyhow!(
-            "its default collection is locked, and Suru does not ask to unlock it"
+            "its default collection is locked, and Shaman does not ask to unlock it"
         )
         .into());
     }
@@ -273,7 +273,7 @@ async fn delete(service: &SecretService<'_>, item: &ItemId) -> Result<(), StoreU
 
 /// What a search for `item` finds, and whether anything may have kept one
 /// from its sight, before it or after: a collection that locks or unlocks
-/// as Suru searches is seen one way or the other.
+/// as Shaman searches is seen one way or the other.
 async fn search<'service>(
     service: &'service SecretService<'_>,
     item: &ItemId,
@@ -348,13 +348,13 @@ impl<T> Search<T> {
     fn whole(&self) -> Result<(), StoreUnavailable> {
         if !self.locked.is_empty() {
             return Err(
-                anyhow!("it keeps the item locked, and Suru does not ask to unlock it").into(),
+                anyhow!("it keeps the item locked, and Shaman does not ask to unlock it").into(),
             );
         }
         if self.maybe_hidden {
             return Err(anyhow!(
                 "it may keep the item where a search cannot see it, as a collection of it was \
-                 locked, or it had no default collection, while Suru searched"
+                 locked, or it had no default collection, while Shaman searched"
             )
             .into());
         }
@@ -375,7 +375,7 @@ fn unopened(error: secret_service::Error) -> StoreUnavailable {
         .into()
 }
 
-/// What the Secret Service failed at, in words a user can act on where Suru
+/// What the Secret Service failed at, in words a user can act on where Shaman
 /// knows them.
 fn cause(error: secret_service::Error) -> anyhow::Error {
     match error {
@@ -383,7 +383,7 @@ fn cause(error: secret_service::Error) -> anyhow::Error {
             anyhow!("no D-Bus session bus, or no Secret Service on it, was found")
         }
         secret_service::Error::Locked => {
-            anyhow!("what was asked of it is locked, and Suru does not ask to unlock it")
+            anyhow!("what was asked of it is locked, and Shaman does not ask to unlock it")
         }
         secret_service::Error::Prompt => anyhow!("it brought up a prompt, which was dismissed"),
         secret_service::Error::Zbus(zbus::Error::MethodError(name, description, _)) => {
@@ -399,7 +399,7 @@ fn cause(error: secret_service::Error) -> anyhow::Error {
 }
 
 /// The D-Bus error `name`, with its `description`, in words a user can act
-/// on where Suru knows them.
+/// on where Shaman knows them.
 fn refusal(name: &str, description: Option<&str>) -> anyhow::Error {
     match (name, description) {
         (
@@ -408,7 +408,7 @@ fn refusal(name: &str, description: Option<&str>) -> anyhow::Error {
             _,
         ) => anyhow!("no Secret Service is running on the D-Bus session bus"),
         ("org.freedesktop.Secret.Error.IsLocked", _) => {
-            anyhow!("what was asked of it is locked, and Suru does not ask to unlock it")
+            anyhow!("what was asked of it is locked, and Shaman does not ask to unlock it")
         }
         (name, Some(description)) => anyhow!("{name}: {description}"),
         (name, None) => anyhow!("{name}"),
@@ -429,16 +429,16 @@ mod tests {
         SecretServiceStore::on(Bus::Peer(fake.socket().to_owned()))
     }
 
-    /// Each item is kept under attributes naming Suru's Server identity
-    /// keys and the item's id, so no other item, Suru's or not, answers a
+    /// Each item is kept under attributes naming Shaman's Server identity
+    /// keys and the item's id, so no other item, Shaman's or not, answers a
     /// search for it.
     #[test]
-    fn an_item_is_kept_under_suru_and_its_id() {
+    fn an_item_is_kept_under_shaman_and_its_id() {
         let item = ItemId::random().to_string();
         assert_eq!(
             attributes(&item),
             HashMap::from([
-                ("application", "ai.suru.server-identity"),
+                ("application", "ai.shaman.server-identity"),
                 ("item", item.as_str()),
             ])
         );
@@ -454,13 +454,13 @@ mod tests {
             PathBuf::from("/run/user/1000/bus")
         );
         assert_eq!(
-            socket("unix:abstract=/tmp/dbus-suru").unwrap(),
-            PathBuf::from("\0/tmp/dbus-suru")
+            socket("unix:abstract=/tmp/dbus-shaman").unwrap(),
+            PathBuf::from("\0/tmp/dbus-shaman")
         );
         let error = socket("tcp:host=localhost,port=4000").unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Suru reaches a D-Bus session bus only over a Unix socket"
+            "Shaman reaches a D-Bus session bus only over a Unix socket"
         );
     }
 
@@ -507,9 +507,9 @@ mod tests {
     /// for no item at all, nor left behind by a delete said to succeed.
     #[test]
     fn a_search_that_may_have_missed_an_item_counts_as_unavailable() {
-        let locked = "it keeps the item locked, and Suru does not ask to unlock it";
+        let locked = "it keeps the item locked, and Shaman does not ask to unlock it";
         let hidden = "it may keep the item where a search cannot see it, as a collection of it \
-                      was locked, or it had no default collection, while Suru searched";
+                      was locked, or it had no default collection, while Shaman searched";
         let search =
             |unlocked: Vec<&'static str>, locked: Vec<&'static str>, maybe_hidden| Search {
                 unlocked,
@@ -533,7 +533,7 @@ mod tests {
     }
 
     /// The Secret Service's failures say why it is unavailable, in words a
-    /// user can act on where Suru knows them.
+    /// user can act on where Shaman knows them.
     #[test]
     fn a_failure_says_why_the_secret_service_is_unavailable() {
         let said = |error| failed(error).to_string();
@@ -543,7 +543,7 @@ mod tests {
         );
         assert_eq!(
             said(secret_service::Error::Locked),
-            "what was asked of it is locked, and Suru does not ask to unlock it"
+            "what was asked of it is locked, and Shaman does not ask to unlock it"
         );
         assert_eq!(
             said(secret_service::Error::Prompt),
@@ -575,7 +575,7 @@ mod tests {
         }
         assert_eq!(
             refusal("org.freedesktop.Secret.Error.IsLocked", None).to_string(),
-            "what was asked of it is locked, and Suru does not ask to unlock it"
+            "what was asked of it is locked, and Shaman does not ask to unlock it"
         );
         assert_eq!(
             refusal("org.freedesktop.DBus.Error.Failed", Some("it broke")).to_string(),
@@ -583,7 +583,7 @@ mod tests {
         );
     }
 
-    /// An item put is kept, labelled and named as Suru's; got back as it
+    /// An item put is kept, labelled and named as Shaman's; got back as it
     /// was put; and gone once deleted, deleting it again being no error.
     #[test]
     fn an_item_put_is_got_back_and_deleted() {
@@ -593,7 +593,7 @@ mod tests {
 
         assert_eq!(store.get(&item).unwrap(), Stored::NoSuchItem);
         store
-            .put(&item, "Suru Server identity key", b"the key")
+            .put(&item, "Shaman Server identity key", b"the key")
             .unwrap();
         let kept = fake.state().items();
         assert_eq!(kept.len(), 1);
@@ -601,13 +601,13 @@ mod tests {
             kept[0].collection,
             "/org/freedesktop/secrets/collection/login"
         );
-        assert_eq!(kept[0].label, "Suru Server identity key");
+        assert_eq!(kept[0].label, "Shaman Server identity key");
         assert_eq!(
             kept[0].attributes,
             HashMap::from([
                 (
                     "application".to_owned(),
-                    "ai.suru.server-identity".to_owned()
+                    "ai.shaman.server-identity".to_owned()
                 ),
                 ("item".to_owned(), item.to_string()),
             ])
@@ -650,7 +650,7 @@ mod tests {
         let error = store.put(&item, "label", b"key").unwrap_err();
         assert_eq!(
             error.to_string(),
-            "its default collection is locked, and Suru does not ask to unlock it"
+            "its default collection is locked, and Shaman does not ask to unlock it"
         );
         assert_eq!(fake.state().prompts_shown, 0);
 
@@ -764,7 +764,7 @@ mod tests {
     }
 
     /// A collection that hides its items while locked, and locks or
-    /// unlocks as Suru searches, never has an item it keeps taken for none.
+    /// unlocks as Shaman searches, never has an item it keeps taken for none.
     #[test]
     fn a_collection_locking_or_unlocking_as_searched_never_loses_an_item() {
         let fake = FakeSecrets::new();
@@ -902,7 +902,7 @@ mod tests {
     /// Puts, gets and deletes a throwaway item in this machine's Secret
     /// Service, on the user's session bus. Run it by hand on a Linux
     /// desktop with a Secret Service running and every collection of it
-    /// unlocked — a locked one may hide an item, so Suru answers whether it
+    /// unlocked — a locked one may hide an item, so Shaman answers whether it
     /// keeps one as unavailable while any is — with `cargo nextest run
     /// --run-ignored only secret_service_store`. A Secret Service that asks
     /// before it keeps or deletes an item, as KeePassXC does, wants each
@@ -912,7 +912,7 @@ mod tests {
     fn the_secret_service_keeps_gives_up_and_deletes_a_throwaway_item() {
         let store = SecretServiceStore::new();
         let item = Throwaway(ItemId::random());
-        let label = "Suru smoke test item (safe to delete)";
+        let label = "Shaman smoke test item (safe to delete)";
 
         assert_eq!(store.get(&item.0).unwrap(), Stored::NoSuchItem);
         store.put(&item.0, label, b"first").unwrap();

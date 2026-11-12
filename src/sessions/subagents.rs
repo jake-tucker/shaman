@@ -297,7 +297,7 @@ pub(super) enum SubagentRoute {
     /// Its spawner's own Provider spawned it, over the spawner's Provider
     /// actor, and named it by this identity.
     Native(StoredSubagentIdentity),
-    /// Suru spawned it through the Broker, on a Provider actor of its own
+    /// Shaman spawned it through the Broker, on a Provider actor of its own
     /// (ADR 0035). The Session id is its identity.
     Brokered,
 }

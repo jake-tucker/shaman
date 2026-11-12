@@ -17,7 +17,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use suru::{
+use shaman::{
     managed_client::{ManagedEvent, SubagentTreeEvent},
     protocol::{
         ActivityStatus, EffectiveSettings, ModelAvailability, ModelCatalog, ModelId, Outlook,

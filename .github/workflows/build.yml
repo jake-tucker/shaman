@@ -1,6 +1,6 @@
 name: Build
 
-# Checks and builds Suru for every platform it ships for. A PR or a plain manual run checks formatting, lints,
+# Checks and builds Shaman for every platform it ships for. A PR or a plain manual run checks formatting, lints,
 # tests, and keeps the archives as short-lived workflow artifacts. Given a tag, it attaches the archives to that
 # tag's draft release instead, one per target as each finishes, each beside a .sha256 file of its checksum that
 # the install scripts verify the download against without calling GitHub's rate-limited API; a target already
@@ -8,7 +8,7 @@ name: Build
 # release.
 #
 # A release attests each archive's build provenance, and the binary's inside it, before attaching it, so
-# `gh attestation verify <file> --repo suru-ai/suru` traces either to the run and commit that built it.
+# `gh attestation verify <file> --repo jake-tucker/shaman` traces either to the run and commit that built it.
 #
 # Only a release signs and notarizes its macOS binary, so only a release reads the Apple secrets below;
 # scripts/macos-signing-wizard.sh walks a maintainer through creating them.
@@ -130,8 +130,8 @@ jobs:
           else
             label=${COMMIT_SHA::7}
           fi
-          echo "stem=suru-$label-$TARGET" >> "$GITHUB_OUTPUT"
-          echo "file=suru-$label-$TARGET.$ARCHIVE" >> "$GITHUB_OUTPUT"
+          echo "stem=shaman-$label-$TARGET" >> "$GITHUB_OUTPUT"
+          echo "file=shaman-$label-$TARGET.$ARCHIVE" >> "$GITHUB_OUTPUT"
 
       - name: Check the release for this archive
         id: existing
@@ -177,7 +177,7 @@ jobs:
           persist-credentials: false
 
       - name: Free disk space
-        # Linux runners leave about 14 GB free; the SDKs Suru never uses hold far more than that.
+        # Linux runners leave about 14 GB free; the SDKs Shaman never uses hold far more than that.
         if: steps.existing.outputs.skip != 'true' && contains(matrix.target, 'linux')
         run: |
           df -h /
@@ -233,15 +233,15 @@ jobs:
         run: cargo build --profile "$BUILD_PROFILE" --locked --target "$TARGET"
 
       # A release's macOS binary is signed with the maintainer's Developer ID and notarized, so the login keychain
-      # trusts every Suru release by its publisher rather than by one binary's hash, and an upgrade never asks
-      # "suru wants to use your confidential information" (ADR-0050). No other build signs, or needs the secrets.
+      # trusts every Shaman release by its publisher rather than by one binary's hash, and an upgrade never asks
+      # "shaman wants to use your confidential information" (ADR-0050). No other build signs, or needs the secrets.
       - name: Sign the macOS binary
         id: sign
         if: env.RELEASE_TAG != '' && runner.os == 'macOS' && steps.build.outcome == 'success'
         env:
           # The keychain's trust is bound to this identifier and the certificate's Team ID together. Never change
           # either: a release under any other pair brings the prompt back for every user, on every item.
-          CODESIGN_IDENTIFIER: ai.suru.cli
+          CODESIGN_IDENTIFIER: ai.shaman.cli
           APPLE_DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
           APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -286,7 +286,7 @@ jobs:
             exit 1
           fi
 
-          binary="target/$TARGET/$BUILD_PROFILE/suru"
+          binary="target/$TARGET/$BUILD_PROFILE/shaman"
           # Hardened runtime and a secure timestamp, both of which notarization requires.
           codesign --force --sign "$identity" --keychain "$keychain" --identifier "$CODESIGN_IDENTIFIER" \
             --options runtime --timestamp "$binary"
@@ -321,7 +321,7 @@ jobs:
           credentials=(--key "$key" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID")
           # notarytool takes a zip, not a bare binary. Nor can a bare binary have the ticket stapled to it:
           # Gatekeeper finds the ticket online instead, which is enough.
-          ditto -c -k "target/$TARGET/$BUILD_PROFILE/suru" "$RUNNER_TEMP/notarize.zip"
+          ditto -c -k "target/$TARGET/$BUILD_PROFILE/shaman" "$RUNNER_TEMP/notarize.zip"
           # Judged by the status it reports, and not stopped by its exit code, so a rejection still prints its log.
           result=$(xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" "${credentials[@]}" --wait \
             --output-format json) || true
@@ -352,7 +352,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "dist/$STEM"
-          cp "target/$TARGET/$BUILD_PROFILE/suru$EXE" README.md "dist/$STEM/"
+          cp "target/$TARGET/$BUILD_PROFILE/shaman$EXE" README.md "dist/$STEM/"
           cd dist
           if [ "$ARCHIVE" = zip ]; then
             pwsh -NoProfile -Command "Compress-Archive -Path '$STEM' -DestinationPath '$FILE'"
@@ -375,7 +375,7 @@ jobs:
           # The binary as well as its archive, so an installed binary can be verified without its archive.
           subject-path: |
             dist/${{ steps.archive.outputs.file }}
-            dist/${{ steps.archive.outputs.stem }}/suru${{ matrix.exe }}
+            dist/${{ steps.archive.outputs.stem }}/shaman${{ matrix.exe }}
 
       - name: Attach to the release
         if: env.RELEASE_TAG != '' && steps.existing.outputs.skip != 'true'

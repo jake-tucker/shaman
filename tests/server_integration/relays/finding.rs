@@ -11,8 +11,8 @@ use std::sync::{
 
 use futures_util::{SinkExt, StreamExt};
 use rcgen::PublicKeyData;
-use suru::protocol::{RelayMachine, RelayMachinesAnswer, RemoteStatus, SessionErrorCode, Way};
-use suru_relay_protocol::{Bytes, ListedLogin, RelayMessage, ServerMessage};
+use shaman::protocol::{RelayMachine, RelayMachinesAnswer, RemoteStatus, SessionErrorCode, Way};
+use shaman_relay_protocol::{Bytes, ListedLogin, RelayMessage, ServerMessage};
 use tokio::time::{Duration, timeout};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -95,7 +95,7 @@ where
                     tell(
                         &mut socket,
                         &RelayMessage::LoginDone {
-                            account: suru_relay_protocol::Account {
+                            account: shaman_relay_protocol::Account {
                                 provider: "scripted".to_owned(),
                                 username: "octocat".to_owned(),
                             },
@@ -152,7 +152,7 @@ fn logins(logins: Vec<ListedLogin>, cut_short: bool) -> RelayMessage {
 }
 
 fn fingerprint(key: &[u8]) -> String {
-    suru_relay_protocol::fingerprint(key)
+    shaman_relay_protocol::fingerprint(key)
 }
 
 fn named(machines: &[RelayMachine]) -> Vec<(&str, bool)> {
@@ -275,7 +275,7 @@ async fn a_relay_is_asked_only_as_a_client_asks() {
     let laptop = TestServer::start("find-not-polled").await;
     laptop.logged_in_at_scripted(&address).await;
     laptop
-        .wait_for_state(&address, suru::protocol::RelayState::LoggedIn)
+        .wait_for_state(&address, shaman::protocol::RelayState::LoggedIn)
         .await;
     assert_eq!(asked.load(Ordering::Acquire), 0);
 
@@ -298,7 +298,7 @@ async fn a_lapsed_account_reads_login_needed_and_lists_nothing() {
 
     relay.provider.set_admitted("583231", false);
     laptop
-        .wait_for_state(&relay.address(), suru::protocol::RelayState::LoginNeeded)
+        .wait_for_state(&relay.address(), shaman::protocol::RelayState::LoginNeeded)
         .await;
     assert_eq!(
         laptop.machines_at(&relay.address()).await,
@@ -400,7 +400,7 @@ async fn a_relay_that_does_not_know_the_list_says_so_and_still_pairs_by_invite()
 
 /// What the Relay from before the list writes, word for word: the Relay's own
 /// tests hold today's Relay to these bytes for what it does not recognize, as
-/// `suru-relay` v0.1.1 writes them.
+/// `shaman-relay` v0.1.1 writes them.
 const REFUSED_AS_UNKNOWN: &str = r#"{"type":"refused","refusal":{"reason":"unexpected"},"message":"the Relay does not recognize what the Server asked"}"#;
 
 #[tokio::test]
@@ -427,7 +427,7 @@ async fn a_refusal_for_any_other_reason_reads_unreachable_saying_why() {
         tell(
             &mut socket,
             &RelayMessage::Refused {
-                refusal: suru_relay_protocol::Refusal::Unavailable,
+                refusal: shaman_relay_protocol::Refusal::Unavailable,
                 message: "busy\u{1b}[2J just now".to_owned(),
             },
         )
@@ -614,7 +614,7 @@ async fn an_absurd_list_is_bounded_by_what_one_message_holds() {
             .send(Message::Text(
                 format!(
                     r#"{{"type":"logins","logins":[{{"key":"AAEC","hostname":"{}"}}]}}"#,
-                    "x".repeat(2 * suru_relay_protocol::MAX_MESSAGE_LEN)
+                    "x".repeat(2 * shaman_relay_protocol::MAX_MESSAGE_LEN)
                 )
                 .into(),
             ))
@@ -655,9 +655,9 @@ async fn an_answer_filling_one_message_exactly_is_read_whole() {
                     "x".repeat(padding)
                 )
             };
-            let padding = suru_relay_protocol::MAX_MESSAGE_LEN - answer(0).len();
+            let padding = shaman_relay_protocol::MAX_MESSAGE_LEN - answer(0).len();
             let answer = answer(padding);
-            assert_eq!(answer.len(), suru_relay_protocol::MAX_MESSAGE_LEN);
+            assert_eq!(answer.len(), shaman_relay_protocol::MAX_MESSAGE_LEN);
             let _ = socket.send(Message::Text(answer.into())).await;
             while heard(&mut socket).await.is_some() {}
         }
@@ -728,7 +728,7 @@ async fn a_hostname_carrying_terminal_escapes_is_drawn_safely() {
         "nothing left of a name, it is named by its fingerprint"
     );
 
-    let mut application = suru::tui::Application::default();
+    let mut application = shaman::tui::Application::default();
     crate::support::drawn::type_terminal_text(&mut application, "/pair");
     let request = match application
         .take_terminal_event(crossterm::event::Event::Key(
@@ -740,17 +740,17 @@ async fn a_hostname_carrying_terminal_escapes_is_drawn_safely() {
         .expect("open /pair")
         .transition
     {
-        suru::tui::ApplicationTransition::BeginPairing(request) => request,
+        shaman::tui::ApplicationTransition::BeginPairing(request) => request,
         other => panic!("/pair looks for machines, not {other:?}"),
     };
     application
-        .handle_event(suru::tui::ApplicationEvent::MachineRelaysKnown {
+        .handle_event(shaman::tui::ApplicationEvent::MachineRelaysKnown {
             request,
             relays: vec![lying.clone()],
         })
         .unwrap();
     application
-        .handle_event(suru::tui::ApplicationEvent::RelayMachinesAnswered { request, machines })
+        .handle_event(shaman::tui::ApplicationEvent::RelayMachinesAnswered { request, machines })
         .unwrap();
     let drawn =
         crate::support::drawn::rendered_application_rows_at(&application, 100, 40).join("\n");

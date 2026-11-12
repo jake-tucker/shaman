@@ -10,7 +10,7 @@ use crate::tui_rendering::support::{
     connected_application, rendered_application_rows, rendered_application_rows_at,
     type_terminal_text, workspace_dir,
 };
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         EffectiveSettings, SettingsDiagnostic, SettingsDiagnosticSeverity, SettingsSnapshot,
@@ -56,13 +56,13 @@ fn notice_row(rows: &[String]) -> String {
 }
 
 fn config_file(name: &str) -> PathBuf {
-    PathBuf::from("/home/user/.config/suru").join(name)
+    PathBuf::from("/home/user/.config/shaman").join(name)
 }
 
 fn unreadable_document() -> SettingsDiagnostic {
     SettingsDiagnostic {
         severity: SettingsDiagnosticSeverity::Error,
-        file: config_file("suru.jsonc"),
+        file: config_file("shaman.jsonc"),
         key: None,
         message: "ignored because it is not valid JSONC: Unexpected token on line 3 column 5"
             .to_owned(),
@@ -72,7 +72,7 @@ fn unreadable_document() -> SettingsDiagnostic {
 fn unknown_key() -> SettingsDiagnostic {
     SettingsDiagnostic {
         severity: SettingsDiagnosticSeverity::Warning,
-        file: config_file("suru.jsonc"),
+        file: config_file("shaman.jsonc"),
         key: Some("transcript.defaultFoldPostures".to_owned()),
         message: "ignored because it is not a known setting".to_owned(),
     }
@@ -81,7 +81,7 @@ fn unknown_key() -> SettingsDiagnostic {
 fn mistyped_key() -> SettingsDiagnostic {
     SettingsDiagnostic {
         severity: SettingsDiagnosticSeverity::Warning,
-        file: config_file("suru.jsonc"),
+        file: config_file("shaman.jsonc"),
         key: Some("provider.codex.reasoningSummary".to_owned()),
         message: "ignored because its value is not one of \"auto\", \"concise\", \"detailed\", or \"none\""
             .to_owned(),
@@ -91,7 +91,7 @@ fn mistyped_key() -> SettingsDiagnostic {
 fn differs_on(key: &str) -> SettingsDiagnostic {
     SettingsDiagnostic {
         severity: SettingsDiagnosticSeverity::AtNextStart,
-        file: config_file("suru.jsonc"),
+        file: config_file("shaman.jsonc"),
         key: Some(key.to_owned()),
         message: "says something other than the value in force, and takes effect at the next start"
             .to_owned(),
@@ -111,7 +111,7 @@ fn a_document_ahead_of_what_is_in_force_says_which_keys_wait_for_the_next_start(
     );
     let row = notice_row(&rendered_application_rows_at(&application, 120, 12));
     assert!(
-        row.contains("suru.jsonc differs on provider.claude.permissionMode"),
+        row.contains("shaman.jsonc differs on provider.claude.permissionMode"),
         "{row}"
     );
     assert!(row.contains("takes effect at the next start"), "{row}");
@@ -187,7 +187,7 @@ fn a_syntax_broken_config_document_notices_the_failure_and_points_at_the_log() {
         "a whole config document being ignored notices at error severity: {notice:?}"
     );
     assert!(
-        notice.contains("suru.jsonc") && notice.contains("not valid JSONC"),
+        notice.contains("shaman.jsonc") && notice.contains("not valid JSONC"),
         "the notice names the file and why it was ignored: {notice:?}"
     );
     assert!(
@@ -207,9 +207,9 @@ fn an_ignored_duplicate_config_document_notices_the_file_it_dropped() {
         workspace.path(),
         vec![SettingsDiagnostic {
             severity: SettingsDiagnosticSeverity::Warning,
-            file: config_file("suru.json"),
+            file: config_file("shaman.json"),
             key: None,
-            message: "ignored because suru.jsonc exists and wins".to_owned(),
+            message: "ignored because shaman.jsonc exists and wins".to_owned(),
         }],
     );
 
@@ -219,7 +219,7 @@ fn an_ignored_duplicate_config_document_notices_the_file_it_dropped() {
         "an ignored duplicate is a warning, not a failure: {notice:?}"
     );
     assert!(
-        notice.contains("suru.json ignored because suru.jsonc exists and wins"),
+        notice.contains("shaman.json ignored because shaman.jsonc exists and wins"),
         "the notice names the dropped file and what beat it: {notice:?}"
     );
 }
@@ -235,7 +235,7 @@ fn per_key_ignores_are_counted_in_the_notice_summary() {
         "keys ignored one at a time are a warning: {notice:?}"
     );
     assert!(
-        notice.contains("2 keys ignored in suru.jsonc"),
+        notice.contains("2 keys ignored in shaman.jsonc"),
         "the notice counts the ignored keys and names their file: {notice:?}"
     );
     assert!(
@@ -277,9 +277,9 @@ fn an_ignored_document_is_worded_ahead_of_a_document_merely_dropped() {
         vec![
             SettingsDiagnostic {
                 severity: SettingsDiagnosticSeverity::Warning,
-                file: config_file("suru.json"),
+                file: config_file("shaman.json"),
                 key: None,
-                message: "ignored because suru.jsonc exists and wins".to_owned(),
+                message: "ignored because shaman.jsonc exists and wins".to_owned(),
             },
             unreadable_document(),
         ],

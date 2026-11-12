@@ -92,7 +92,7 @@ impl SidebarListingScope {
     /// Session in a directory beneath one belongs to its own Workspace and not
     /// to the one above.
     ///
-    /// A Session whose Workspace Suru could not read stands wherever the
+    /// A Session whose Workspace Shaman could not read stands wherever the
     /// listing stands, narrowed or not. This is the reading the server gives a
     /// listing it narrows, and the two must agree: a Session nobody can place
     /// is one narrowing must not be the thing that hides.
@@ -230,7 +230,7 @@ struct DrawnBody {
 
 /// The lines one active Sidebar row takes, the third of them saying nothing
 /// until git awareness gives it something to say
-/// (<https://github.com/suru-ai/suru/issues/169>).
+/// (<https://github.com/jake-tucker/shaman/issues/169>).
 pub(super) const ACTIVE_ROW_LINES: usize = 3;
 
 /// The settled rows a shelf opens on. Recent history is what a reader looks
@@ -330,7 +330,7 @@ pub(super) enum SidebarShelf<'a> {
         /// which the line beneath its Title names.
         pending_move: Option<&'a Path>,
         /// The Workspace this Session is rooted in, drawn by its last
-        /// component. A Session Suru could not read may not know its Workspace
+        /// component. A Session Shaman could not read may not know its Workspace
         /// at all.
         workspace: Option<&'a Path>,
         /// The Workspace's Icon, resolved to a glyph already and gated by
@@ -1302,7 +1302,7 @@ impl Sidebar {
         // A Workspace entry's menu offers nothing at all once Icons are
         // hidden — see `SidebarMenu::items` — so there is no item for the
         // arrows to land on; leaving the selection at rest is what a menu
-        // with nothing to select does everywhere else in Suru.
+        // with nothing to select does everywhere else in Shaman.
         if length == 0 {
             return;
         }
@@ -1463,7 +1463,7 @@ impl Sidebar {
     /// body of work — as does one narrowed to another Workspace, which resets
     /// the shelf without asking again. A listing re-asked only to catch up
     /// with the server
-    /// (<https://github.com/suru-ai/suru/issues/183>) is not the reader
+    /// (<https://github.com/jake-tucker/shaman/issues/183>) is not the reader
     /// moving anywhere, and must leave their shelf where they left it.
     fn ask_for_sessions(&mut self) {
         self.settled_on_show = SETTLED_SHELF_OPENING;
@@ -1944,7 +1944,7 @@ impl Sidebar {
     /// up more of the shelf, the selector opens its entries, an entry narrows
     /// the Sidebar to the Workspace it names, and the new-Session affordance
     /// beside the selector asks for the Landing `/new` opens. Nor is there
-    /// anything to attach when the row stands for a Session Suru could not
+    /// anything to attach when the row stands for a Session Shaman could not
     /// read, or for the Session already open — in which case Enter means only
     /// that the reader is done choosing, and the composer takes the keys back.
     /// An unreachable Remote row retries that Origin immediately and remains
@@ -3402,7 +3402,7 @@ mod tests {
 
     #[test]
     fn a_workspace_is_named_by_the_directory_the_work_is_in() {
-        assert_eq!(workspace_name(&root().join("suru")), "suru");
+        assert_eq!(workspace_name(&root().join("shaman")), "shaman");
         assert_eq!(
             workspace_name(&root()),
             root().as_os_str().to_string_lossy()

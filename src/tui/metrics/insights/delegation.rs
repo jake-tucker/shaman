@@ -1,6 +1,6 @@
 //! The Delegation panel: how the range's Cost divides between the user's
 //! own Sessions, their Subagents — the brokered share of those beside them
-//! — Sidekicks, Subsessions, and Suru's own Errands, each row's share of the
+//! — Sidekicks, Subsessions, and Shaman's own Errands, each row's share of the
 //! whole with a bar and its Cost, `+` where that Cost is partial — and on
 //! every share of work where the whole is, since a share of a partial whole
 //! is no more certain than its amount. The Errands' bar takes the colour

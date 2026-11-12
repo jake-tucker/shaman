@@ -1,7 +1,7 @@
 //! Records how Copilot's Fusion routing behaves on the wire: the routes it resolves, the phases
 //! they run, and what a host doing something mid-phase sees happen.
 //!
-//! Drives the installed Copilot CLI through the SDK the way Suru's Copilot Provider does, on model
+//! Drives the installed Copilot CLI through the SDK the way Shaman's Copilot Provider does, on model
 //! `auto` staged on the Fusion preference named. Every `session.event` goes to stdout as one JSON
 //! line in stream order, deltas included, each stamped with `_elapsed_ms`. What the host itself did
 //! and was answered goes among them as lines with a `_host` key, so the two can be read in order.
@@ -21,7 +21,7 @@
 //! - `interrupt <tier> <prompt> <trigger> <prompt>` aborts at the trigger, then sends the second
 //!   Prompt.
 //! - `steer <tier> <prompt> <trigger> <prompt>` sends the second Prompt at the trigger with
-//!   immediate delivery, as Suru steers.
+//!   immediate delivery, as Shaman steers.
 //! - `crash <tier> <prompt> <trigger> <prompt>` kills the CLI at the trigger, starts it again,
 //!   resumes the Session with the assignment, and sends the second Prompt.
 //! - `tiers` walks a Session through `set_auto_tier` and `set_model` changes on one-word Turns.
@@ -33,10 +33,10 @@
 //! - `delete <id>...` deletes Sessions a run left behind: a refused create leaves its directory.
 //! - `clear` turns a Session on `hydrafusion` back to plain `auto` after a resume without the
 //!   assignment, with a one-word Turn to prove each way of clearing it.
-//! - `first-switch <tier>` opens a Session with no Model, as Suru does, lists its Models, switches
+//! - `first-switch <tier>` opens a Session with no Model, as Shaman does, lists its Models, switches
 //!   onto the tier, and runs a one-word Turn.
 //! - `plain` opens a Session with the assignment and no Model, switches onto `auto` naming no tier
-//!   as Suru does, runs a one-word Turn, and resumes it, to learn what Copilot reports it holds.
+//!   as Shaman does, runs a one-word Turn, and resumes it, to learn what Copilot reports it holds.
 //! - `store` opens Sessions under an Errand's settings and under a conversation's, with and without
 //!   a one-word Turn on `gpt-5.6-luna`, deleting each, and prints their IDs to look up in the CLI's
 //!   `session-store.db`.
@@ -49,7 +49,7 @@
 //! describes. `PROBE_OUT` is a path prefix for the files a run writes beside its stream: each
 //! Session's on-disk `events.jsonl` before it is deleted, and what `session.getEvents` answered.
 //! `PROBE_ALLOWED_MODELS` narrows the Models a created Session may use (comma-separated), which can
-//! make a route name one it may not. `SURU_COPILOT_PATH` names the CLI (default `copilot`). Every
+//! make a route name one it may not. `SHAMAN_COPILOT_PATH` names the CLI (default `copilot`). Every
 //! Session a run creates is deleted once it is done. Every Tool the Model asks for is approved, so
 //! run it somewhere disposable.
 use std::{
@@ -541,7 +541,7 @@ impl Trigger {
 
 async fn start_cli(run: &Run) -> Result<(Client, Child), Failure> {
     let program =
-        std::env::var_os("SURU_COPILOT_PATH").map_or_else(|| "copilot".into(), PathBuf::from);
+        std::env::var_os("SHAMAN_COPILOT_PATH").map_or_else(|| "copilot".into(), PathBuf::from);
     let begun = Instant::now();
     let mut child = tokio::process::Command::new(program)
         .args(["--server", "--stdio", "--no-auto-update"])
@@ -1169,7 +1169,7 @@ async fn clear(run: &Run) -> Result<(), Failure> {
     Ok(())
 }
 
-/// The way Suru reaches a tier: a Session opened with no Model, listed, and then switched.
+/// The way Shaman reaches a tier: a Session opened with no Model, listed, and then switched.
 async fn first_switch(run: &Run, tier: &str) -> Result<(), Failure> {
     let (client, child) = start_cli(run).await?;
     let config = SessionConfig::default()

@@ -110,10 +110,10 @@ const SIDEKICK_WORKSPACE_BEGINNING: &str = "The directory is the Sidekick Worksp
      Sidekick begins a Session there, since its Agent would be a Sidekick too.";
 
 /// What every refusal says of a Session this Server does not hold.
-const SESSION_NOT_FOUND: &str = "The Session does not exist on this Suru server.";
+const SESSION_NOT_FOUND: &str = "The Session does not exist on this Shaman server.";
 
 /// What every refusal says when the Server's own storage failed it.
-const STORAGE_FAILED: &str = "Suru's own storage failed, so nothing was done; its Log says how.";
+const STORAGE_FAILED: &str = "Shaman's own storage failed, so nothing was done; its Log says how.";
 
 /// Why a Prompt was refused, whether it was to begin a Session or to be
 /// admitted to one. Beginning a Session is refused with
@@ -190,7 +190,7 @@ impl std::fmt::Display for PromptRefusal {
             Self::SidekickWorkspace => formatter.write_str(SIDEKICK_WORKSPACE_REFUSAL),
             Self::SidekickWorkspaceBeginning => formatter.write_str(SIDEKICK_WORKSPACE_BEGINNING),
             Self::AuthorGone => formatter.write_str(
-                "The Sidekick's own Session no longer exists on this Suru server, so no Session \
+                "The Sidekick's own Session no longer exists on this Shaman server, so no Session \
                  was begun for it.",
             ),
             Self::Storage => formatter.write_str(STORAGE_FAILED),
@@ -211,8 +211,9 @@ pub(crate) enum AgentSelectionRefusal {
 impl std::fmt::Display for AgentSelectionRefusal {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ProviderNotHosted => formatter
-                .write_str("The Agent Selection names a Provider this Suru server does not host."),
+            Self::ProviderNotHosted => formatter.write_str(
+                "The Agent Selection names a Provider this Shaman server does not host.",
+            ),
             Self::Invalid(reason) => write!(formatter, "Agent Selection is invalid: {reason}"),
         }
     }
@@ -1504,7 +1505,7 @@ impl SessionOperations {
     /// Whether a remembered Agent Selection may still be handed to a new
     /// Session: its Provider is one this server hosts, and one the user has
     /// left enabled. Availability is deliberately not asked here — a Provider
-    /// the user can fix from outside Suru keeps the selection they made, and
+    /// the user can fix from outside Shaman keeps the selection they made, and
     /// the fresh-Landing default behind this is what passes over one that
     /// cannot work.
     fn is_selectable_provider(&self, provider: &ProviderId) -> bool {

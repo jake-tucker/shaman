@@ -883,7 +883,7 @@ fn normalize_provider(mut catalog: ProviderModelCatalog) -> ProviderModels {
         // No Model of a Provider the user cannot use can start a Session, so
         // the whole Provider renders — and refuses selection — as unavailable.
         // A disabled Provider needs nothing of the sort: Enablement is not
-        // Availability, and a Provider Suru never consulted serves no Model to
+        // Availability, and a Provider Shaman never consulted serves no Model to
         // mark either way.
         for model in &mut catalog.models {
             model.availability = ModelAvailability::Unavailable;
@@ -938,7 +938,7 @@ fn provider_condition(status: &ProviderCatalogStatus) -> Option<ProviderConditio
             fix,
         }),
         // A Provider the user turned off puts nothing in the list — not even a
-        // reason, because Suru never looked for one.
+        // reason, because Shaman never looked for one.
         ProviderCatalogStatus::Fresh
         | ProviderCatalogStatus::Warning { .. }
         | ProviderCatalogStatus::Refreshing
@@ -955,7 +955,7 @@ fn is_unavailable(status: &ProviderCatalogStatus) -> bool {
 
 /// A Provider the user turned off leaves the list outright, rather than keeping
 /// its place the way an unavailable one does: decluttering is half of what the
-/// Setting is for, and a row reporting a Provider Suru never consulted would
+/// Setting is for, and a row reporting a Provider Shaman never consulted would
 /// replace one message with another.
 fn is_disabled(status: &ProviderCatalogStatus) -> bool {
     matches!(status, ProviderCatalogStatus::Disabled)

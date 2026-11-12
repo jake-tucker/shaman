@@ -2,7 +2,7 @@
 
 ## Identity contract
 
-The executable carries a 32-byte allocated section: `.suru` in ELF/PE and `__DATA,__suru` in Mach-O. The record contains a format marker and a random UUID minted by the `suru-build-id` procedural macro **when the binary is compiled**. The macro does not enumerate build inputs. Cargo's executable compilation already depends on source, dependencies, features, compiler options and toolchain. A fresh compilation receives a fresh identity; an unchanged Cargo build or a copy of an existing executable retains its identity. Clean recompilation may therefore replace a server even when source is unchanged, and builds are no longer byte-reproducible.
+The executable carries a 32-byte allocated section: `.shaman` in ELF/PE and `__DATA,__shaman` in Mach-O. The record contains a format marker and a random UUID minted by the `shaman-build-id` procedural macro **when the binary is compiled**. The macro does not enumerate build inputs. Cargo's executable compilation already depends on source, dependencies, features, compiler options and toolchain. A fresh compilation receives a fresh identity; an unchanged Cargo build or a copy of an existing executable retains its identity. Clean recompilation may therefore replace a server even when source is unchanged, and builds are no longer byte-reproducible.
 
 The static is referenced by address through `black_box`, retaining its allocated storage through optimization, linker garbage collection and debug stripping. Readers inspect headers, section names and the 32-byte record, without loading symbol tables or executable payloads. Universal Mach-O identity includes every architecture's marker. The identity comes entirely from the configured executable, including custom paths, without mixing in the calling client's package version.
 
@@ -12,7 +12,7 @@ A native CodeView/PDB GUID was rejected during review: a relocation-only change 
 
 ## Direct identity cost
 
-Linux, warm filesystem caches, five fresh processes per case. A small Rust harness compiled with `rustc -O` against the corresponding release Suru library times only the public `build_identity::for_executable` call. It consumes the identity without printing it; printing the elapsed duration happens after timing. Thus these are optimized reader/hash-code measurements over both executable profiles, not measurements of unoptimized hashing code.
+Linux, warm filesystem caches, five fresh processes per case. A small Rust harness compiled with `rustc -O` against the corresponding release Shaman library times only the public `build_identity::for_executable` call. It consumes the identity without printing it; printing the elapsed duration happens after timing. Thus these are optimized reader/hash-code measurements over both executable profiles, not measurements of unoptimized hashing code.
 
 The before executables and release library were the pre-change artifacts present in `target/`, copied before editing; that baseline was not freshly rebuilt from a pinned revision. Final artifacts were rebuilt with `cargo build --locked` and `cargo build --release --locked`. Before sizes: 429,006,392 bytes debug, 38,755,560 bytes release. Final sizes: 430,614,056 bytes debug, 38,775,592 bytes release.
 
@@ -25,7 +25,7 @@ A separate Linux `/proc/self/io` harness measured bytes returned by reads around
 
 ## Launch to first frame
 
-A temporary Python PTY harness used a 160-column × 40-row terminal, isolated state/data/config roots, channel `probe-278`, and all three Providers disabled through a nested `suru.json`. It answered cursor-position requests and immediately sent complete palette/foreground/background replies after the final OSC 11 query. It timestamps process launch to the first cursor-show sequence after that query, then exits the client with Ctrl+C. One unrecorded warmup precedes each profile. Fresh means a new server process, not a cold disk cache. Three fresh and five reused-server samples were collected; isolated servers were stopped on completion. No production configuration or server was changed.
+A temporary Python PTY harness used a 160-column × 40-row terminal, isolated state/data/config roots, channel `probe-278`, and all three Providers disabled through a nested `shaman.json`. It answered cursor-position requests and immediately sent complete palette/foreground/background replies after the final OSC 11 query. It timestamps process launch to the first cursor-show sequence after that query, then exits the client with Ctrl+C. One unrecorded warmup precedes each profile. Fresh means a new server process, not a cold disk cache. Three fresh and five reused-server samples were collected; isolated servers were stopped on completion. No production configuration or server was changed.
 
 Medians in milliseconds:
 
@@ -47,7 +47,7 @@ These small local samples establish removal of full-file hashing, not a universa
 
 ## Validation
 
-Regression coverage uses the public file identity and launcher seams. Synthetic ELF, Mach-O, PE and universal fixtures cover packaging invariance, every architecture, same-size/timestamp rebuilds, malformed/truncated/zero records and hashing fallback. The real packaged Suru binary must expose a marker in the tested profile. A temporary Cargo project using the real macro checks unchanged builds, relocation-only main-source changes, another module, a dependency, feature changes, optimization changes and stripped builds. It completes in about two seconds without production-scale sleeps. CLI coverage verifies reuse, atomic same-path replacement of a configured executable, subsequent reuse, channel isolation, protocol mismatches and concurrent launch convergence.
+Regression coverage uses the public file identity and launcher seams. Synthetic ELF, Mach-O, PE and universal fixtures cover packaging invariance, every architecture, same-size/timestamp rebuilds, malformed/truncated/zero records and hashing fallback. The real packaged Shaman binary must expose a marker in the tested profile. A temporary Cargo project using the real macro checks unchanged builds, relocation-only main-source changes, another module, a dependency, feature changes, optimization changes and stripped builds. It completes in about two seconds without production-scale sleeps. CLI coverage verifies reuse, atomic same-path replacement of a configured executable, subsequent reuse, channel isolation, protocol mismatches and concurrent launch convergence.
 
 The format reader independently typechecked for `aarch64-apple-darwin` and `x86_64-pc-windows-gnu` in a temporary minimal crate; that check used BLAKE3's portable `pure` feature to avoid requiring foreign assembly toolchains. Additional real Rust cross-codegen fixtures used the actual procedural macro, `opt-level=3` and address retention, then linked with `ld64.lld -dead_strip` for macOS and `lld-link /DEBUG /OPT:REF /INCREMENTAL:NO` for PE. The final public reader recovered their markers in 840 and 656 bytes respectively. These exercises verify real foreign executable formats and linker retention, but **native Windows/macOS application execution remains unverified** in this Linux environment.
 

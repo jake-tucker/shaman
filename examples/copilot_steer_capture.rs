@@ -1,6 +1,6 @@
 //! Records a live Copilot timeline in which a message reaches a working background Subagent.
 //!
-//! Drives the installed Copilot CLI through the SDK the way Suru's Copilot Provider does, asks the
+//! Drives the installed Copilot CLI through the SDK the way Shaman's Copilot Provider does, asks the
 //! main agent to start a background agent that runs three separate slow shell commands, and has
 //! something send that agent a message while it works. Every `session.event` is written to stdout
 //! as one JSON line, in stream order.
@@ -15,7 +15,7 @@
 //! The `idle` mode is #398's: the worker runs one short command and the main agent waits for it
 //! to finish before the `write_agent`, so the message meets an agent whose stretch has ended.
 //!
-//! `SURU_COPILOT_PATH` names the CLI (default `copilot`), `CAPTURE_MODEL` the Model (default
+//! `SHAMAN_COPILOT_PATH` names the CLI (default `copilot`), `CAPTURE_MODEL` the Model (default
 //! `gpt-5-mini`). Scrub account details from the output before committing it. What the captures
 //! showed is recorded in `docs/validation/0397-copilot-subagent-steer.md`.
 #[path = "support/copilot_cli.rs"]

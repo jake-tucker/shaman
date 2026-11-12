@@ -13,7 +13,7 @@ use std::{
 };
 
 use diesel::{Connection, RunQueryDsl, SqliteConnection, connection::SimpleConnection};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
     protocol::{
         CreateSessionRequest, ExecutionDirectory, InitialPrompt, Outlook, PromptId,
@@ -104,7 +104,7 @@ pub(super) async fn listed_caught_up(
 /// A directory as the Server reads it, so a path the listing gives compares
 /// equal to it on every platform.
 pub(super) fn canonical(path: &Path) -> PathBuf {
-    suru::paths::canonical(path).expect("read the directory canonically")
+    shaman::paths::canonical(path).expect("read the directory canonically")
 }
 
 /// What a listing says of a Workspace a reader tells apart: its identity,
@@ -171,7 +171,7 @@ pub(super) fn database(config: &ServerConfig) -> SqliteConnection {
     SqliteConnection::establish(
         config
             .data_dir()
-            .join("suru.db")
+            .join("shaman.db")
             .to_str()
             .expect("the fixture's database path is UTF-8"),
     )
@@ -1116,14 +1116,14 @@ async fn prompt_again(client: &ManagedClient, session_id: SessionId) {
     client
         .admit_prompt(
             session_id,
-            suru::protocol::AdmitPromptRequest {
+            shaman::protocol::AdmitPromptRequest {
                 prompt: InitialPrompt {
                     id: PromptId::new(),
                     text: "Once more".to_owned(),
                     skill_invocations: Vec::new(),
                     attachments: Vec::new(),
                 },
-                delivery: suru::protocol::PromptDelivery::Queue,
+                delivery: shaman::protocol::PromptDelivery::Queue,
             },
         )
         .await

@@ -287,7 +287,7 @@ mod tests {
             "begin_session",
         ] {
             assert!(
-                mcp("suru", tool, "inProgress", Value::Null, Value::Null).is_recorded_elsewhere(),
+                mcp("shaman", tool, "inProgress", Value::Null, Value::Null).is_recorded_elsewhere(),
                 "{tool} is its row's to record"
             );
         }
@@ -299,11 +299,11 @@ mod tests {
             "send_prompt",
             "move_session",
         ] {
-            let call = mcp("suru", tool, "inProgress", Value::Null, Value::Null);
+            let call = mcp("shaman", tool, "inProgress", Value::Null, Value::Null);
             assert!(!call.is_recorded_elsewhere(), "{tool} is a Tool Call");
             assert_eq!(
                 call.tool_call(),
-                presented(tool, Some("suru"), Some("session_id=child"))
+                presented(tool, Some("shaman"), Some("session_id=child"))
             );
         }
         assert!(

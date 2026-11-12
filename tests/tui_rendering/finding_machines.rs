@@ -9,7 +9,7 @@
 
 use crate::tui_rendering::support::{rendered_application_rows_at, type_terminal_text};
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use suru::{
+use shaman::{
     protocol::{
         DeliveredInvite, FetchShortInviteRequest, InvitePreview, RelayMachine, RelayMachines,
         RelayMachinesAnswer, ShortCode, Way,
@@ -19,7 +19,7 @@ use suru::{
 
 const RELAY: &str = "https://relay.example.com";
 const OTHER: &str = "https://other.example.org";
-const INVITE: &str = "suru-v1-pasted-whole";
+const INVITE: &str = "shaman-v1-pasted-whole";
 /// How far the workstation's fingerprint is told apart, and more than that.
 const WORKSTATION: &str = "aaaa111122223333aaaa111122223333aaaa111122223333aaaa111122223333";
 const BUILD_BOX: &str = "bbbb111122223333bbbb111122223333bbbb111122223333bbbb111122223333";
@@ -364,13 +364,13 @@ fn an_invite_pasted_before_the_machines_land_stays_and_the_keys_stay_with_it() {
 fn an_invite_typed_before_the_machines_land_stays_as_well() {
     let mut application = Application::default();
     let asked = open_pair(&mut application);
-    type_terminal_text(&mut application, "suru-v1");
+    type_terminal_text(&mut application, "shaman-v1");
     relays_known(&mut application, asked, &[RELAY]);
     answered(&mut application, asked, RELAY, listed(the_three()));
     type_terminal_text(&mut application, "-typed");
     assert!(matches!(
         press(&mut application, KeyCode::Enter),
-        ApplicationTransition::PreviewInvite { invite, .. } if invite == "suru-v1-typed"
+        ApplicationTransition::PreviewInvite { invite, .. } if invite == "shaman-v1-typed"
     ));
 }
 
@@ -392,11 +392,11 @@ fn an_invite_pasted_with_a_machine_selected_goes_to_the_field_and_enter_inspects
 #[test]
 fn a_character_typed_with_a_machine_selected_goes_to_the_field() {
     let (mut application, _) = showing_the_three();
-    type_terminal_text(&mut application, "suru");
+    type_terminal_text(&mut application, "shaman");
     let rows = shown(&application);
     assert!(
         rows.iter()
-            .any(|row| row.trim_matches([' ', '│']) == "suru"),
+            .any(|row| row.trim_matches([' ', '│']) == "shaman"),
         "{rows:#?}"
     );
 }
@@ -859,7 +859,7 @@ fn asking_with(
 /// The machine's Invite, by the format an Invite has, and its preview.
 fn delivered_invite() -> DeliveredInvite {
     DeliveredInvite {
-        invite: "suru-v1-delivered".into(),
+        invite: "shaman-v1-delivered".into(),
         preview: InvitePreview {
             hostname: "workstation".to_owned(),
             fingerprint: WORKSTATION.to_owned(),
@@ -946,16 +946,16 @@ fn what_is_no_code_is_refused_here_with_nothing_asked_of_any_server() {
 fn a_whole_invite_pasted_where_a_code_goes_is_taken_for_the_invite_it_is() {
     let (mut application, _) = showing_the_three();
     press(&mut application, KeyCode::Enter);
-    paste(&mut application, "\n  suru-v1-the-long-string\n");
+    paste(&mut application, "\n  shaman-v1-the-long-string\n");
     let text = shown_text(&application);
     assert!(text.contains("Paste invite"), "{text}");
-    assert!(text.contains("suru-v1-the-long-string"), "{text}");
+    assert!(text.contains("shaman-v1-the-long-string"), "{text}");
     let ApplicationTransition::PreviewInvite { invite, .. } =
         press(&mut application, KeyCode::Enter)
     else {
         panic!("Enter inspects it");
     };
-    assert_eq!(invite, "suru-v1-the-long-string");
+    assert_eq!(invite, "shaman-v1-the-long-string");
 }
 
 #[test]
@@ -982,7 +982,7 @@ fn a_delivered_invite_reaches_the_usual_preview_and_the_usual_redemption() {
     else {
         panic!("Enter pairs");
     };
-    assert_eq!(redemption.invite, "suru-v1-delivered");
+    assert_eq!(redemption.invite, "shaman-v1-delivered");
     assert_eq!(redemption.name.as_deref(), Some("workstation"));
 }
 
@@ -1001,7 +1001,7 @@ fn escape_at_a_delivered_invites_preview_closes_as_it_does_for_any_other() {
     press(&mut application, KeyCode::Esc);
     let text = shown_text(&application);
     assert!(!text.contains("Confirm serving server"), "{text}");
-    assert!(!text.contains("suru-v1-delivered"), "{text}");
+    assert!(!text.contains("shaman-v1-delivered"), "{text}");
 }
 
 /// A code that failed is said to be dead, and it is not typed again for the
@@ -1178,10 +1178,10 @@ fn a_whole_invite_pasted_over_what_was_begun_is_taken_for_the_invite_it_is() {
     let (mut application, _) = showing_the_three();
     press(&mut application, KeyCode::Enter);
     type_terminal_text(&mut application, "k7");
-    paste(&mut application, "suru-v1-the-long-string");
+    paste(&mut application, "shaman-v1-the-long-string");
     let text = shown_text(&application);
     assert!(text.contains("Paste invite"), "{text}");
-    assert!(text.contains("suru-v1-the-long-string"), "{text}");
+    assert!(text.contains("shaman-v1-the-long-string"), "{text}");
     assert!(!text.contains("no 0, O, 1 or I"), "{text}");
 }
 

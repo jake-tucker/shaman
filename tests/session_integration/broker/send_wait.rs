@@ -14,8 +14,8 @@
 //! reads what the Subagents' doubles were handed and what the Transcripts
 //! say.
 
-use suru::protocol::{Message, TurnId};
-use suru::provider::ProviderResumeState;
+use shaman::protocol::{Message, TurnId};
+use shaman::provider::ProviderResumeState;
 use tokio::sync::mpsc;
 
 use super::*;
@@ -33,7 +33,7 @@ const CALLER: &str = "the Agent working on \"Plan the work\"";
 /// [`FOLLOW_UP`] as the Subagent's Provider receives it from the Agent
 /// `delegator` names: one leading line naming that Agent, then what it sent.
 fn followed_up_by(delegator: &str) -> String {
-    format!("Delegated to you through Suru by {delegator}.\n\n{FOLLOW_UP}")
+    format!("Delegated to you through Shaman by {delegator}.\n\n{FOLLOW_UP}")
 }
 
 /// Every row `snapshot` holds for the Subagent whose Session is `child`, in
@@ -89,7 +89,7 @@ fn delegations(snapshot: &SessionSnapshot) -> Vec<(TurnId, String)> {
 }
 
 /// How long `turn` worked, from its beginning to its settling.
-fn worked(turn: &suru::protocol::Turn) -> Option<u64> {
+fn worked(turn: &shaman::protocol::Turn) -> Option<u64> {
     turn.settled_at
         .zip(turn.started_at)
         .map(|(settled, started)| settled.0 - started.0)
@@ -133,7 +133,8 @@ async fn next_turn(
 /// test holds it.
 fn config_pinning(document: &str) -> tempfile::TempDir {
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
-    std::fs::write(config_dir.path().join("suru.jsonc"), document).expect("write Config Document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), document)
+        .expect("write Config Document");
     config_dir
 }
 
@@ -430,7 +431,7 @@ async fn a_steer_the_subagents_provider_refuses_is_held_and_resumes_the_subagent
     let (child_id, mut child_provider) = spawn_working_child(&mut delegating).await;
 
     // The Subagent's Turn ends at its Provider as the Delegation arrives, so
-    // the Provider no longer takes a steer — and Suru hears of the end only
+    // the Provider no longer takes a steer — and Shaman hears of the end only
     // afterwards. Arriving once the work has finished, the Delegation begins
     // a Turn of its own (CONTEXT.md: Delegation).
     let (answer, ()) = tokio::join!(
@@ -1036,7 +1037,7 @@ async fn a_resume_past_the_concurrency_cap_is_refused_naming_it_and_goes_through
         .await;
     assert_eq!(
         refusal,
-        "Suru's Broker lets at most 1 brokered Subagent work at once beneath a top-level Session \
+        "Shaman's Broker lets at most 1 brokered Subagent work at once beneath a top-level Session \
          (`broker.maxConcurrentSubagents`), and 1 is working now, so the Subagent was not \
          resumed. Call wait_subagents to wait for one to settle, or ask the user to raise the \
          Setting."
@@ -1150,7 +1151,7 @@ async fn a_send_naming_no_brokered_subagent_beneath_the_caller_or_carrying_no_me
     for (arguments, says) in [
         (
             json!({ "id": unknown, "message": FOLLOW_UP }),
-            format!("Suru holds no Session `{unknown}`"),
+            format!("Shaman holds no Session `{unknown}`"),
         ),
         (
             json!({ "id": delegating.caller, "message": FOLLOW_UP }),
@@ -1502,7 +1503,7 @@ async fn a_wait_naming_no_brokered_subagent_beneath_the_caller_or_malformed_is_r
     for (arguments, says) in [
         (
             json!({ "ids": [child_id, unknown] }),
-            format!("Suru holds no Session `{unknown}`"),
+            format!("Shaman holds no Session `{unknown}`"),
         ),
         (
             json!({ "ids": [delegating.caller] }),
@@ -1652,7 +1653,7 @@ async fn a_wait_timing_out_or_refused_leaves_the_caller_waiting_on_nothing() {
             json!({ "ids": [child_id, SessionId::new()] }),
         )
         .await;
-    assert!(refusal.contains("Suru holds no Session"), "{refusal}");
+    assert!(refusal.contains("Shaman holds no Session"), "{refusal}");
     assert_eq!(
         read_session(&descriptor, delegating.caller)
             .await

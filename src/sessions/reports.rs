@@ -8,7 +8,7 @@
 //! orchestration hands it to that Agent's Provider: at once — steering a Turn
 //! at work, or waking an idle Agent into a Continuation — or at the head of
 //! the Session's next Turn when no Provider process is running to take it.
-//! Suru never relaunches a Provider to deliver one, but for the note below. A
+//! Shaman never relaunches a Provider to deliver one, but for the note below. A
 //! Report its Provider takes has its Agent working again, so a Session the
 //! user had set aside is brought back once one is delivered — never while one
 //! only waits.
@@ -20,7 +20,7 @@
 //! beside it. It wakes nothing but the Agent that asked for the Move of its own
 //! Session and ended its Turn for it (ADR 0059): that Agent is owed a
 //! Continuation whose input the note is, and since the Move ended whatever
-//! Provider connection could have taken it, this is the one Report Suru starts
+//! Provider connection could have taken it, this is the one Report Shaman starts
 //! a Provider to deliver.
 //!
 //! Nothing here reaches a Transcript: a Report stands in none, and a Move

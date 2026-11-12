@@ -87,17 +87,17 @@ impl fmt::Debug for BrokerToken {
 /// offered and what its Agent is told of them (ADR 0042). It is fixed when a
 /// Provider start's token is minted, from the Session's stored Workspace and
 /// its place in the tree, so nothing about a Session says so and no Provider
-/// learns of it: every harness lowers the one `suru` server and the note it is
+/// learns of it: every harness lowers the one `shaman` server and the note it is
 /// handed alike.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BrokerRole {
     /// Any Agent but a Sidekick — a Sidekick's own Subagents among them —
-    /// offered the Tools through which it reaches any Provider Suru hosts, a
+    /// offered the Tools through which it reaches any Provider Shaman hosts, a
     /// listing of its own Server's Workspaces, and a Move of its own Session
     /// and its brokered Subagents' bounded by where it works.
     Agent,
     /// The Agent of a top-level Session in the Sidekick Workspace, offered
-    /// besides those the Tools that work across Suru itself.
+    /// besides those the Tools that work across Shaman itself.
     Sidekick,
 }
 
@@ -128,7 +128,7 @@ pub struct BrokerHandoff {
     /// token was minted, and nothing for any other Agent.
     memories: MemoryIndex,
     /// The Workspace Roots a Sidekick's Clones are bound to, as the user had
-    /// named them when the token was minted — but one naming Suru's own data
+    /// named them when the token was minted — but one naming Shaman's own data
     /// directory, which no Clone goes in — and none for any other Agent.
     roots: Vec<String>,
 }
@@ -289,7 +289,7 @@ impl BrokerAccess {
     }
 
     /// Has a Sidekick's handoff name only the Workspace Roots its Clones may
-    /// go in, as `clone_roots` tells them: never one naming Suru's own data
+    /// go in, as `clone_roots` tells them: never one naming Shaman's own data
     /// directory.
     pub(crate) fn with_clone_roots(mut self, clone_roots: CloneRoots) -> Self {
         self.clone_roots = clone_roots;

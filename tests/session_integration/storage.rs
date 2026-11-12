@@ -9,7 +9,7 @@ use crate::support::PROGRESS_DEADLINE;
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use diesel::{Connection, SqliteConnection, connection::SimpleConnection};
 use ratatui::{Terminal, backend::TestBackend, style::Color};
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         Activity, AdmitPromptRequest, AgentId, AgentIdentity, AgentSelectionOperationId, Cost,
@@ -63,7 +63,7 @@ async fn safe_skill_invocations_are_readable_after_a_server_restart() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -169,7 +169,7 @@ async fn authenticated_clients_can_read_a_session_by_id() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -257,7 +257,7 @@ async fn session_discovery_lists_newest_first_and_filters_by_canonical_workspace
         session_id: None,
         preparation_id: None,
         agent_selection: None,
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: path.to_owned(),
         },
         prompt: InitialPrompt {
@@ -345,7 +345,7 @@ async fn session_discovery_lists_newest_first_and_filters_by_canonical_workspace
     assert_eq!(filtered[0].title, "First Session");
     assert_eq!(
         filtered[0].session.workspace.path,
-        suru::paths::canonical(first_workspace).expect("canonicalize expected Workspace")
+        shaman::paths::canonical(first_workspace).expect("canonicalize expected Workspace")
     );
 
     server.shutdown().await.expect("shut down server");
@@ -373,7 +373,7 @@ async fn session_metadata_remains_listed_after_a_server_restart() {
             session_id: None,
             preparation_id: None,
             agent_selection: Some(initial_selection),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -427,7 +427,7 @@ async fn session_metadata_remains_listed_after_a_server_restart() {
     );
     assert_eq!(
         before_restart[0].session.workspace.path,
-        suru::paths::canonical(workspace.path()).expect("canonicalize expected Workspace")
+        shaman::paths::canonical(workspace.path()).expect("canonicalize expected Workspace")
     );
     assert!(before_restart[0].created_at < before_restart[0].updated_at);
     original.shutdown().await.expect("stop original server");
@@ -495,7 +495,7 @@ async fn completed_transcript_is_readable_after_a_server_restart() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -600,7 +600,7 @@ async fn completed_transcript_is_readable_after_a_server_restart() {
     assert_eq!(completed.messages[1].content, "streamed answer");
     original.shutdown().await.expect("stop original server");
 
-    let database_path = config.data_dir().join("suru.db");
+    let database_path = config.data_dir().join("shaman.db");
     let mut database = SqliteConnection::establish(
         database_path
             .to_str()
@@ -716,7 +716,7 @@ async fn tool_calls_are_readable_after_a_server_restart() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -763,7 +763,7 @@ async fn tool_calls_are_readable_after_a_server_restart() {
         },
         ProviderEvent::ToolCallOutputDelta {
             activity_id: read.clone(),
-            content: "pub mod suru;\n".to_owned(),
+            content: "pub mod shaman;\n".to_owned(),
         },
         ProviderEvent::ToolCallCompleted {
             activity_id: read,
@@ -815,7 +815,7 @@ async fn tool_calls_are_readable_after_a_server_restart() {
             input: Some(ToolCallInput::of(
                 None,
                 "WebSearch",
-                &serde_json::json!({ "query": "suru" }),
+                &serde_json::json!({ "query": "shaman" }),
             )),
         },
         ProviderEvent::TurnCompleted,
@@ -863,12 +863,12 @@ async fn tool_calls_are_readable_after_a_server_restart() {
             *omitted_parts,
         ),
         (
-            suru::protocol::ActivityStatus::Completed,
+            shaman::protocol::ActivityStatus::Completed,
             "Read",
             None,
             "file_path=src/lib.rs",
             false,
-            "pub mod suru;\n",
+            "pub mod shaman;\n",
             false,
             0,
         )
@@ -885,7 +885,7 @@ async fn tool_calls_are_readable_after_a_server_restart() {
     else {
         panic!("an MCP Tool's use is a Tool Call, got {issue:?}");
     };
-    assert_eq!(*status, suru::protocol::ActivityStatus::Failed);
+    assert_eq!(*status, shaman::protocol::ActivityStatus::Failed);
     assert_eq!(server.as_deref(), Some("github"));
     assert_eq!(input, "title=Fix the seam", "input that followed the start");
     assert!(*output_truncated, "output past the cap is marked truncated");
@@ -910,7 +910,7 @@ async fn tool_calls_are_readable_after_a_server_restart() {
     };
     assert_eq!(
         *status,
-        suru::protocol::ActivityStatus::Failed,
+        shaman::protocol::ActivityStatus::Failed,
         "a Tool Call still running settles with its Turn"
     );
     original.shutdown().await.expect("stop original server");
@@ -973,7 +973,7 @@ async fn resume_after_summary_mutation(resume_state: Option<serde_json::Value>, 
     let data_dir = tempfile::tempdir().expect("create isolated data directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let execution_root = if regroup {
-        let root = suru::paths::canonical(workspace.path()).unwrap();
+        let root = shaman::paths::canonical(workspace.path()).unwrap();
         crate::session_integration::repositories::git(&root, &["init", "-b", "main"]);
         crate::session_integration::repositories::git(
             &root,
@@ -999,9 +999,9 @@ async fn resume_after_summary_mutation(resume_state: Option<serde_json::Value>, 
         .join("packages")
         .join("nested agent directory");
     std::fs::create_dir_all(&execution_directory).unwrap();
-    let execution_directory = suru::paths::canonical(execution_directory).unwrap();
+    let execution_directory = shaman::paths::canonical(execution_directory).unwrap();
     let grouping_directory = if regroup {
-        suru::paths::canonical(workspace.path()).unwrap()
+        shaman::paths::canonical(workspace.path()).unwrap()
     } else {
         execution_directory.clone()
     };
@@ -1021,7 +1021,7 @@ async fn resume_after_summary_mutation(resume_state: Option<serde_json::Value>, 
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: execution_directory.clone(),
             },
             prompt: InitialPrompt {
@@ -1067,7 +1067,7 @@ async fn resume_after_summary_mutation(resume_state: Option<serde_json::Value>, 
             "approval_posture": null,
         });
         let mut database =
-            SqliteConnection::establish(config.data_dir().join("suru.db").to_str().unwrap())
+            SqliteConnection::establish(config.data_dir().join("shaman.db").to_str().unwrap())
                 .unwrap();
         diesel::sql_query("UPDATE sessions SET workspace = ? WHERE id = ?")
             .bind::<diesel::sql_types::Text, _>(location.to_string())
@@ -1078,7 +1078,7 @@ async fn resume_after_summary_mutation(resume_state: Option<serde_json::Value>, 
     if let Some(payload) = &resume_state {
         use diesel::RunQueryDsl;
         let mut database =
-            SqliteConnection::establish(config.data_dir().join("suru.db").to_str().unwrap())
+            SqliteConnection::establish(config.data_dir().join("shaman.db").to_str().unwrap())
                 .unwrap();
         diesel::sql_query("INSERT INTO provider_resume_states(session_id, provider, payload) VALUES (?, 'controlled', ?)")
             .bind::<diesel::sql_types::Text, _>(created.session.id.to_string())
@@ -1116,7 +1116,7 @@ async fn resume_after_summary_mutation(resume_state: Option<serde_json::Value>, 
             created.session.id
         ))
         .bearer_auth(&checkpoint.descriptor().token)
-        .json(&suru::protocol::SettleSessionRequest { settled: true })
+        .json(&shaman::protocol::SettleSessionRequest { settled: true })
         .send()
         .await
         .unwrap()
@@ -1197,7 +1197,7 @@ async fn resume_after_summary_mutation(resume_state: Option<serde_json::Value>, 
 async fn unopened_history_is_not_decoded_or_rewritten_and_failed_hydration_invalidates_its_listing()
 {
     use futures_util::StreamExt;
-    use suru::protocol::SessionCatalogChange;
+    use shaman::protocol::SessionCatalogChange;
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let data_dir = tempfile::tempdir().expect("create isolated data directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
@@ -1214,7 +1214,7 @@ async fn unopened_history_is_not_decoded_or_rewritten_and_failed_hydration_inval
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1234,7 +1234,7 @@ async fn unopened_history_is_not_decoded_or_rewritten_and_failed_hydration_inval
         .expect("decode created Session");
     original.shutdown().await.expect("stop original server");
 
-    let database_path = config.data_dir().join("suru.db");
+    let database_path = config.data_dir().join("shaman.db");
     let mut database = SqliteConnection::establish(
         database_path
             .to_str()
@@ -1378,7 +1378,7 @@ async fn turn_timing_survives_a_restart_and_a_session_stored_before_it_stays_rea
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1458,7 +1458,7 @@ async fn turn_timing_survives_a_restart_and_a_session_stored_before_it_stays_rea
     );
     restarted.shutdown().await.expect("stop restarted server");
 
-    let database_path = config.data_dir().join("suru.db");
+    let database_path = config.data_dir().join("shaman.db");
     let mut database = SqliteConnection::establish(
         database_path
             .to_str()
@@ -1469,7 +1469,7 @@ async fn turn_timing_survives_a_restart_and_a_session_stored_before_it_stays_rea
         .batch_execute(
             "UPDATE turns SET payload = json_remove(payload, '$.started_at', '$.settled_at');",
         )
-        .expect("age the stored Turn back to before Suru recorded Turn timing");
+        .expect("age the stored Turn back to before Shaman recorded Turn timing");
     drop(database);
 
     let (replacement_runtime, _replacement_provider) = ControlledProvider::new();
@@ -1479,7 +1479,7 @@ async fn turn_timing_survives_a_restart_and_a_session_stored_before_it_stays_rea
     let aged = read_persisted_session(replacement.descriptor(), created.session.id).await;
     assert_eq!(
         aged.turns[0].started_at, None,
-        "a Turn stored before Suru recorded Turn timing decodes without it"
+        "a Turn stored before Shaman recorded Turn timing decodes without it"
     );
     assert_eq!(aged.turns[0].settled_at, None);
     assert_eq!(
@@ -1517,7 +1517,7 @@ async fn turn_usage_survives_a_restart() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1582,7 +1582,7 @@ async fn turn_usage_survives_a_restart() {
     );
     restarted.shutdown().await.expect("stop restarted server");
 
-    let database_path = config.data_dir().join("suru.db");
+    let database_path = config.data_dir().join("shaman.db");
     let mut database = SqliteConnection::establish(
         database_path
             .to_str()
@@ -1630,7 +1630,7 @@ async fn a_restored_summary_reads_the_turn_it_cut_off_as_settled() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1709,7 +1709,7 @@ async fn a_restored_summary_reads_the_turn_it_cut_off_as_settled() {
 }
 
 async fn read_persisted_session(
-    descriptor: &suru::protocol::RuntimeDescriptor,
+    descriptor: &shaman::protocol::RuntimeDescriptor,
     session_id: SessionId,
 ) -> SessionSnapshot {
     crate::support::loopback_client()
@@ -1752,7 +1752,7 @@ async fn an_update_waiting_on_stalled_storage_does_not_hold_the_stop_past_its_ov
     let mut database = SqliteConnection::establish(
         config
             .data_dir()
-            .join("suru.db")
+            .join("shaman.db")
             .to_str()
             .expect("the database path is valid UTF-8"),
     )
@@ -1763,7 +1763,7 @@ async fn an_update_waiting_on_stalled_storage_does_not_hold_the_stop_past_its_ov
     fixture
         .provider_session
         .emit_and_wait_until_observed(ProviderEvent::ResumeStateChanged {
-            resume_state: suru::provider::ProviderResumeState::new(serde_json::json!({
+            resume_state: shaman::provider::ProviderResumeState::new(serde_json::json!({
                 "conversation": "saved while storage stalls",
             })),
         })

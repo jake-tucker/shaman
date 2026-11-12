@@ -1,11 +1,11 @@
 use super::*;
 use crate::support::PROGRESS_DEADLINE;
+use shaman::protocol::*;
+use shaman::source_control::{GitSourceControl, PreparationCheckpoint, PreparationObserver};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use suru::protocol::*;
-use suru::source_control::{GitSourceControl, PreparationCheckpoint, PreparationObserver};
 struct InterruptedCreation(AtomicBool);
 #[async_trait::async_trait]
 impl PreparationObserver for InterruptedCreation {
@@ -37,16 +37,16 @@ async fn remote_preparation_retries_reuse_owning_servers_checkout_and_admission(
     )
     .await;
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let git = |args: &[&str]| {
         let output = std::process::Command::new("git")
             .arg("-C")
             .arg(&root)
             .args(args)
-            .env("GIT_AUTHOR_NAME", "Suru Test")
-            .env("GIT_AUTHOR_EMAIL", "suru@example.invalid")
-            .env("GIT_COMMITTER_NAME", "Suru Test")
-            .env("GIT_COMMITTER_EMAIL", "suru@example.invalid")
+            .env("GIT_AUTHOR_NAME", "Shaman Test")
+            .env("GIT_AUTHOR_EMAIL", "shaman@example.invalid")
+            .env("GIT_COMMITTER_NAME", "Shaman Test")
+            .env("GIT_COMMITTER_EMAIL", "shaman@example.invalid")
             .output()
             .unwrap();
         assert!(

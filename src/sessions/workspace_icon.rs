@@ -8,7 +8,7 @@
 //! for — and a reader tells Workspaces apart by both. Its prompt carries the
 //! same presentation a reader already sees for that Workspace — the
 //! Sidebar's own leaf-of-path name — and, for a Workspace whose main root
-//! Suru has found, the opening of whichever README stands there: a project's
+//! Shaman has found, the opening of whichever README stands there: a project's
 //! README is usually the shortest path to what the work is and what it is
 //! for. A Bare Workspace, one whose main root is not yet known, and one with
 //! no Repository at all send the name alone.
@@ -93,7 +93,7 @@ pub(super) fn errand_prompt(workspace: &Workspace) -> String {
     }
 }
 
-/// The shape Suru asks a Workspace Errand to answer in. A request rather than
+/// The shape Shaman asks a Workspace Errand to answer in. A request rather than
 /// a guarantee, exactly like the Title Errand's own schema — every reply is
 /// validated here regardless of whether the harness could enforce it.
 pub(super) fn reply_schema() -> Value {
@@ -151,7 +151,7 @@ fn presented_name(path: &Path) -> String {
 
 /// The Workspace's main root, where its Repository is known to have one. A
 /// Bare Workspace, an `UnknownMain` one, and one with no Repository at all
-/// have nowhere a README could stand that Suru would trust as the project's
+/// have nowhere a README could stand that Shaman would trust as the project's
 /// own.
 fn main_root(workspace: &Workspace) -> Option<&Path> {
     match &workspace.repository.as_ref()?.location {
@@ -368,7 +368,7 @@ impl SessionStore {
 
 impl SessionStoreState {
     /// Whether this server has heard of a Workspace at all: it holds a
-    /// Registry entry for it, or groups a Session under it now, one Suru
+    /// Registry entry for it, or groups a Session under it now, one Shaman
     /// could not read included. A Workspace it knows neither way is not one
     /// anything may be set on.
     pub(super) fn knows_workspace(&self, workspace_id: &WorkspaceId) -> bool {
@@ -399,7 +399,7 @@ impl SessionStoreState {
     }
 
     /// Whether a Session besides `besides` is grouped under a Workspace, one
-    /// Suru could not read included.
+    /// Shaman could not read included.
     pub(super) fn grouped_besides(
         &self,
         workspace_id: &WorkspaceId,
@@ -419,7 +419,7 @@ impl SessionStoreState {
     }
 
     /// A copy of a Workspace that a Session grouped under it carries, one
-    /// Suru could not read included.
+    /// Shaman could not read included.
     fn grouped(&self, workspace_id: &WorkspaceId) -> Option<&Workspace> {
         self.sessions
             .values()

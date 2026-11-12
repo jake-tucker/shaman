@@ -13,7 +13,7 @@ The Providers tab reported Copilot as failed:
 Model catalog contains an empty or duplicate Model ID `auto`
 ```
 
-Suru's catalog admits a discovery only after `validate_models` (`src/provider.rs`) has found
+Shaman's catalog admits a discovery only after `validate_models` (`src/provider.rs`) has found
 every Model ID exactly once, and `auto` is the first entry Copilot lists.
 
 ## What the CLI answers
@@ -31,9 +31,9 @@ accounts with the same GitHub login, one of type `user` and one of type `gh-cli`
 The two copies are identical entry for entry, and no entry says which account it came from. The
 SDK snapshot regenerated for 1.0.89 (`references/copilot-sdk`) adds a per-Model `provider`
 attribution, but documents it as present only on the per-Session `session.model.list` and absent
-on the flat list Suru asks.
+on the flat list Shaman asks.
 
-## What Suru does about it
+## What Shaman does about it
 
 `model_descriptors` in `src/provider/copilot/catalog.rs` keeps each Model ID where it first
 appeared and drops the later copies, which preserves the CLI's own picker order and leaves the
@@ -46,5 +46,5 @@ malformed in any other way.
 
 A flat list repeated once per account is a 1.0.89 regression in the CLI, worth reporting upstream
 to copilot-cli. Should a later CLI ever list copies that differ — say, a Model an administrator's
-policy disables on one account and not the other — the first account's entry is the one Suru
+policy disables on one account and not the other — the first account's entry is the one Shaman
 shows, since the flat list gives it nothing better to choose by.

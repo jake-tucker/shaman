@@ -1,9 +1,9 @@
-//! Sidekick Reports: the account Suru gives a Sidekick of a Session it set to
+//! Sidekick Reports: the account Shaman gives a Sidekick of a Session it set to
 //! work — one it began, sent a Prompt, or answered — when that Session's Turn
 //! settles, the Session comes to owe an Intervention, or the Watches that
 //! work left running end with nothing more to come of them (CONTEXT.md:
 //! Sidekick Report). It is delivered as a Subagent Report is, and rendered here once,
-//! in Suru's words, for an Agent to read: compact, naming the Session by its
+//! in Shaman's words, for an Agent to read: compact, naming the Session by its
 //! Title and by the id the Sidekick's Tools take, saying what happened, and
 //! naming the Tool that reads further or answers, without telling the
 //! Sidekick what to do beyond that.
@@ -50,7 +50,7 @@ pub enum SidekickReportOccasion {
     /// A Turn of the Session settled.
     TurnSettled {
         outcome: SidekickTurnOutcome,
-        /// How long the Turn worked; `None` where Suru never learned when it
+        /// How long the Turn worked; `None` where Shaman never learned when it
         /// began or ended.
         duration_ms: Option<u64>,
         /// What a failed Turn failed with, as its Transcript says, cut like
@@ -94,7 +94,7 @@ pub enum SidekickReportOccasion {
     /// one by one: how many more.
     MoreInterventions { untold: usize },
     /// The Session — a Remote's — has grown, with all beneath it, past what
-    /// Suru reads of a Remote at once, so its work cannot be followed for
+    /// Shaman reads of a Remote at once, so its work cannot be followed for
     /// Reports while it stays so.
     PastFollowing,
 }
@@ -106,7 +106,7 @@ pub enum SettledMessage {
     None,
     /// The start of the one it wrote last.
     Written(FinalMessage),
-    /// None of it: the Session — a Remote's — holds more than Suru reads of
+    /// None of it: the Session — a Remote's — holds more than Shaman reads of
     /// a Remote at once, so it could not be read.
     PastBudget,
 }
@@ -276,7 +276,7 @@ impl SidekickReport {
     }
 
     /// The Report that a Turn of `subject`, a Remote's Session holding more
-    /// than Suru reads of a Remote at once, settled with `outcome` after
+    /// than Shaman reads of a Remote at once, settled with `outcome` after
     /// `duration_ms`: told without its final Message, which could not be
     /// read.
     pub(crate) fn turn_settled_past_budget(
@@ -299,7 +299,7 @@ impl SidekickReport {
     }
 
     /// The Report that `subject`, a Remote's Session, has grown past what
-    /// Suru reads of a Remote at once, so its work cannot be followed.
+    /// Shaman reads of a Remote at once, so its work cannot be followed.
     pub(crate) fn past_following(subject: SidekickReportSubject) -> Self {
         Self::Session {
             subject,
@@ -372,7 +372,7 @@ impl SidekickReport {
 /// report nothing more.
 impl fmt::Display for SidekickReport {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Sidekick Report from Suru: ")?;
+        formatter.write_str("Sidekick Report from Shaman: ")?;
         match self {
             Self::Session { subject, occasion } => session_report(formatter, subject, occasion),
             Self::OriginLost(lost) => origin_lost(formatter, lost),
@@ -477,7 +477,7 @@ fn session_report(
                     formatter.write_str("\n\nIts Agent wrote no final Message in it.")
                 }
                 SettledMessage::PastBudget => formatter.write_str(
-                    "\n\nIt holds more than Suru reads of a Remote at once, so its Agent's final \
+                    "\n\nIt holds more than Shaman reads of a Remote at once, so its Agent's final \
                      Message is not given here; read_session reads it from here, as it reads any \
                      part of that Session.",
                 ),
@@ -536,7 +536,7 @@ fn session_report(
         }
         SidekickReportOccasion::PastFollowing => write!(
             formatter,
-            "{session} has grown, with all beneath it, past what Suru reads of a Remote at once, \
+            "{session} has grown, with all beneath it, past what Shaman reads of a Remote at once, \
              so its work cannot be followed for Reports while it stays so. {ids}: read_session \
              reads it from here all the same, however large it grows."
         ),
@@ -663,7 +663,7 @@ mod tests {
         assert_eq!(
             report.to_string(),
             format!(
-                "Sidekick Report from Suru: the Session \"Fix the flaky test\" you set to work \
+                "Sidekick Report from Shaman: the Session \"Fix the flaky test\" you set to work \
                  has settled its Turn, which completed after 1m 23s. Its session_id is {}, which \
                  read_session takes.\n\nIts Agent's final Message:\n\nAll 214 pass.",
                 session_of(&report)
@@ -683,7 +683,7 @@ mod tests {
         assert_eq!(
             report.to_string(),
             format!(
-                "Sidekick Report from Suru: the Session \"Fix the flaky test\" you set to work \
+                "Sidekick Report from Shaman: the Session \"Fix the flaky test\" you set to work \
                  has settled its Turn, which completed after 1m 23s. Its session_id is {}, which \
                  read_session takes.\n\nIts work is not yet done. It left Watches running, which \
                  may wake its Agent: \"cargo build\"; \"npm test\". Another Report follows when a \
@@ -702,7 +702,7 @@ mod tests {
         assert_eq!(
             report.to_string(),
             format!(
-                "Sidekick Report from Suru: the Session \"Fix the flaky test\" you set to work \
+                "Sidekick Report from Shaman: the Session \"Fix the flaky test\" you set to work \
                  has settled its Turn, which completed after 1m 23s. Its session_id is {}, which \
                  read_session takes.\n\nIts work is not yet done. Its Subagents are still \
                  Working: if they wake its Agent into a Continuation, a Report follows when that \
@@ -724,7 +724,7 @@ mod tests {
         assert_eq!(
             report.to_string(),
             format!(
-                "Sidekick Report from Suru: the Session \"Fix the flaky test\" you set to work \
+                "Sidekick Report from Shaman: the Session \"Fix the flaky test\" you set to work \
                  has settled a Continuation of the work you set going there, which completed \
                  after 1m 23s. Its session_id is {}, which read_session takes.\n\nIts Agent's \
                  final Message:\n\nThe build passed.",
@@ -743,7 +743,7 @@ mod tests {
         assert_eq!(
             ended(false),
             format!(
-                "Sidekick Report from Suru: the Watches left running in the Session \"Fix the \
+                "Sidekick Report from Shaman: the Watches left running in the Session \"Fix the \
                  flaky test\" you set to work ended without waking its Agent, so no further \
                  Report of that work follows. Its session_id is {session_id}: read_session says \
                  how it stands."
@@ -752,7 +752,7 @@ mod tests {
         assert_eq!(
             ended(true),
             format!(
-                "Sidekick Report from Suru: the Watches left running in the Session \"Fix the \
+                "Sidekick Report from Shaman: the Watches left running in the Session \"Fix the \
                  flaky test\" you set to work settled within a Turn someone else began there, \
                  which is theirs and is not reported to you, so no further Report of that work \
                  follows. Its session_id is {session_id}: read_session says how it stands."
@@ -778,7 +778,7 @@ mod tests {
         assert_eq!(
             report.to_string(),
             format!(
-                "Sidekick Report from Suru: the Session \"Fix the flaky test\" you set to work \
+                "Sidekick Report from Shaman: the Session \"Fix the flaky test\" you set to work \
                  has settled its Turn, which failed. Its session_id is {}, which read_session \
                  takes.\n\nIt failed with: Provider execution failed: the connection \
                  closed.\n\nIts Agent wrote no final Message in it.",
@@ -846,7 +846,7 @@ mod tests {
         assert_eq!(
             questionnaire.to_string(),
             format!(
-                "Sidekick Report from Suru: the Session \"Fix the flaky test\" you set to work \
+                "Sidekick Report from Shaman: the Session \"Fix the flaky test\" you set to work \
                  asks a Questionnaire, which waits on an Answer. Its session_id is {session_id}: \
                  read_session gives its Questions, and answer_questionnaire answers it."
             )
@@ -858,7 +858,7 @@ mod tests {
         assert_eq!(
             approval.to_string(),
             format!(
-                "Sidekick Report from Suru: the Session \"Fix the flaky test\" you set to work \
+                "Sidekick Report from Shaman: the Session \"Fix the flaky test\" you set to work \
                  asks an Approval, which waits on the user's Decision. Its session_id is \
                  {session_id}: read_session says what it asks."
             )
@@ -876,7 +876,7 @@ mod tests {
         assert_eq!(
             report.to_string(),
             format!(
-                "Sidekick Report from Suru: a Subagent of the Session \"Fix the flaky test\" you \
+                "Sidekick Report from Shaman: a Subagent of the Session \"Fix the flaky test\" you \
                  set to work asks a Questionnaire, which waits on an Answer. The Session's \
                  session_id is {session_id}, and the Subagent's is {subagent}: given the \
                  Subagent's, read_session gives its Questions, and answer_questionnaire answers \
@@ -900,7 +900,7 @@ mod tests {
         assert_eq!(
             report.to_string(),
             format!(
-                "Sidekick Report from Suru: a Subagent of the Session \"Fix the flaky test\" you \
+                "Sidekick Report from Shaman: a Subagent of the Session \"Fix the flaky test\" you \
                  set to work has settled its Turn, which completed after 4.2s. The Session's \
                  session_id is {session_id}, and the Subagent's is {subagent}, which \
                  read_session takes.\n\nIts Agent's final Message:\n\n{}\n\n[Cut at 2000 \
@@ -960,7 +960,7 @@ mod tests {
         assert_eq!(
             settled.to_string(),
             format!(
-                "Sidekick Report from Suru: the Session \"Fix the parser\" you set to work on the \
+                "Sidekick Report from Shaman: the Session \"Fix the parser\" you set to work on the \
                  Remote \"studio\" has settled its Turn, which completed after 4.2s. Its \
                  session_id is {session_id} and its origin \"studio\", which read_session \
                  takes.\n\nIts Agent's final Message:\n\n{}\n\n[Cut at 2000 characters: \
@@ -976,7 +976,7 @@ mod tests {
         assert_eq!(
             asked.to_string(),
             format!(
-                "Sidekick Report from Suru: a Subagent of the Session \"Fix the parser\" you set \
+                "Sidekick Report from Shaman: a Subagent of the Session \"Fix the parser\" you set \
                  to work on the Remote \"studio\" asks a Questionnaire, which waits on an Answer. \
                  The Session's session_id is {session_id}, and the Subagent's is {subagent}, each \
                  at origin \"studio\": given the Subagent's, read_session gives its Questions, and \
@@ -997,7 +997,7 @@ mod tests {
             )
             .to_string(),
             format!(
-                "Sidekick Report from Suru: a Subagent of the Session \"Fix the parser\" you set \
+                "Sidekick Report from Shaman: a Subagent of the Session \"Fix the parser\" you set \
                  to work on the Remote \"studio\" asked an Approval, which no longer waits on \
                  anyone. The Session's session_id is {session_id}, and the Subagent's is \
                  {subagent}, each at origin \"studio\": given the Subagent's, read_session says \
@@ -1007,7 +1007,7 @@ mod tests {
         assert_eq!(
             SidekickReport::more_interventions(at_studio(session_id, None), 12).to_string(),
             format!(
-                "Sidekick Report from Suru: the Session \"Fix the parser\" you set to work on the \
+                "Sidekick Report from Shaman: the Session \"Fix the parser\" you set to work on the \
                  Remote \"studio\" asked 12 more Questionnaires or Approvals than are told one by \
                  one. Its session_id is {session_id} and its origin \"studio\": read_session \
                  gives those still waiting."
@@ -1029,7 +1029,7 @@ mod tests {
         assert_eq!(
             lost.to_string(),
             format!(
-                "Sidekick Report from Suru: the Remote \"studio\" stopped answering while you \
+                "Sidekick Report from Shaman: the Remote \"studio\" stopped answering while you \
                  were owed Reports of the Sessions you set to work there, so none will come of \
                  them: \"Fix the parser\" (session_id {parser}), \"Bump deps…\" (session_id \
                  {deps}). read_session with origin \"studio\" reads them once it answers again, \
@@ -1044,7 +1044,7 @@ mod tests {
         assert_eq!(
             unpaired.to_string(),
             format!(
-                "Sidekick Report from Suru: the Pairing with the Remote \"studio\" ended while you \
+                "Sidekick Report from Shaman: the Pairing with the Remote \"studio\" ended while you \
                  were owed Reports of the Sessions you set to work there, so none will come of \
                  them: the Session {parser}. Nothing of them can be read unless it is paired \
                  again."

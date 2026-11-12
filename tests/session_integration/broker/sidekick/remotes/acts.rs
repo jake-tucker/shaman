@@ -12,7 +12,7 @@
 //! can name no one else as performing its act.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use suru::{
+use shaman::{
     protocol::{
         AUTHOR_HEADER, Author, Peer, QuestionnaireOutcome, SessionChange, SessionError,
         SessionErrorCode, SessionListItem,
@@ -85,7 +85,7 @@ async fn by_the_peer(remote: &RuntimeDescriptor) -> Author {
 fn prompt_saying<'a>(
     snapshot: &'a SessionSnapshot,
     text: &str,
-) -> Option<&'a suru::protocol::Prompt> {
+) -> Option<&'a shaman::protocol::Prompt> {
     snapshot.prompts.iter().find(|prompt| prompt.text == text)
 }
 
@@ -584,7 +584,7 @@ async fn a_directory_a_remote_lists_no_workspace_at_is_described_as_its_client_d
     let remote = pair.remote.descriptor();
     let (_sidekick, mut sidekick, _provider) = start_sidekick(&own, &mut pair.claude).await;
     let unlisted = tempfile::tempdir().expect("create a directory on the Remote");
-    let directory = suru::paths::canonical(unlisted.path())
+    let directory = shaman::paths::canonical(unlisted.path())
         .expect("read the directory canonically")
         .to_string_lossy()
         .into_owned();
@@ -785,7 +785,7 @@ async fn a_session_begun_on_a_remote_is_a_sidekicks_on_this_peer_heading_its_own
     let there = tempfile::tempdir().expect("create a Workspace on the Remote");
     let (_sidekick, mut sidekick, _provider) = start_sidekick(&own, &mut pair.claude).await;
     let directory =
-        suru::paths::canonical(there.path()).expect("read the Remote's Workspace canonically");
+        shaman::paths::canonical(there.path()).expect("read the Remote's Workspace canonically");
 
     let begun = acted(
         &mut sidekick,
@@ -1066,7 +1066,7 @@ async fn an_act_on_a_remote_that_does_not_answer_is_refused_and_nothing_is_kept_
             json!({ "session_id": target, "origin": "elsewhere", "prompt": UNSENT }),
         )
         .await,
-        "Suru is paired with no Remote named `elsewhere`; list_remotes names the Remotes it is \
+        "Shaman is paired with no Remote named `elsewhere`; list_remotes names the Remotes it is \
          paired with, and leaving `origin` out reaches this server.",
         "an Origin naming no Remote is refused"
     );
@@ -1117,7 +1117,7 @@ async fn an_act_on_a_remote_that_does_not_answer_is_refused_and_nothing_is_kept_
     assert_eq!(
         refused(&mut sidekick, "send_prompt", send).await,
         nothing_done(&format!(
-            "The Remote `{REMOTE}` runs a version of Suru that speaks another protocol than this \
+            "The Remote `{REMOTE}` runs a version of Shaman that speaks another protocol than this \
              server's, so nothing can be asked of it until one of them is updated."
         )),
         "a Remote speaking another protocol is answered as not answering"
@@ -1228,12 +1228,12 @@ async fn an_act_whose_answer_is_lost_once_the_remote_took_it_is_neither_denied_n
     let (tree, mut updates) =
         crate::session_integration::subagent_tree::open_tree(own.descriptor(), sidekick_id).await;
     let mut revision = tree.revision;
-    let confirmed = |entry: &suru::protocol::SubagentTreeSession| {
+    let confirmed = |entry: &shaman::protocol::SubagentTreeSession| {
         entry.session_id == target && entry.origin.as_deref() == Some(REMOTE) && !entry.unconfirmed
     };
     if !tree.sessions.iter().any(confirmed) {
         loop {
-            if let suru::protocol::SubagentTreeChange::SessionChanged { entry } =
+            if let shaman::protocol::SubagentTreeChange::SessionChanged { entry } =
                 crate::session_integration::subagent_tree::next_change(&mut updates, &mut revision)
                     .await
                 && confirmed(&entry)
@@ -1265,7 +1265,7 @@ async fn a_remote_hosting_other_agents_begins_with_what_it_offers_and_says_what_
     pair(own.descriptor(), &remote, REMOTE).await;
     let there = tempfile::tempdir().expect("create a Workspace on the Remote");
     let directory =
-        suru::paths::canonical(there.path()).expect("read the Remote's Workspace canonically");
+        shaman::paths::canonical(there.path()).expect("read the Remote's Workspace canonically");
     let (_sidekick, mut sidekick, _provider) = start_sidekick(own.descriptor(), &mut claude).await;
     let codex = default_selection(&codex_models());
 
@@ -1435,7 +1435,7 @@ async fn a_session_begun_on_a_remote_in_a_new_worktree_works_in_one_made_there()
     let own = pair.own.descriptor().clone();
     let remote = pair.remote.descriptor();
     let temporary = tempfile::tempdir().expect("create a home for the Remote's Repository");
-    let main = suru::paths::canonical(temporary.path())
+    let main = shaman::paths::canonical(temporary.path())
         .expect("read the Remote's home canonically")
         .join("auth");
     crate::session_integration::broker::subsessions::committed(&main);
@@ -1473,7 +1473,7 @@ async fn a_session_begun_on_a_remote_in_a_new_worktree_works_in_one_made_there()
             .checkout
             .as_ref()
             .map(|checkout| checkout.kind),
-        Some(suru::protocol::CheckoutKind::Linked)
+        Some(shaman::protocol::CheckoutKind::Linked)
     );
     assert_eq!(
         of_the_peer(snapshot.session.begun_by.clone()),

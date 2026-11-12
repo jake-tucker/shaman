@@ -49,7 +49,7 @@ impl GitSourceControl {
         let base = match self
             .text(
                 repository,
-                &["config", "--get", &format!("branch.{name}.suru-base")],
+                &["config", "--get", &format!("branch.{name}.shaman-base")],
             )
             .await?
         {
@@ -62,7 +62,7 @@ impl GitSourceControl {
                 &[
                     "config",
                     "--get",
-                    &format!("branch.{name}.suru-base-branch"),
+                    &format!("branch.{name}.shaman-base-branch"),
                 ],
             )
             .await?
@@ -217,7 +217,7 @@ impl GitSourceControl {
             Err(e) => return Err(e.to_string()),
         };
         // Removal already holds the Repository mutation guard. Read through a
-        // verified Suru recovery marker here so Reclaim can inspect and finish
+        // verified Shaman recovery marker here so Reclaim can inspect and finish
         // that abandoned operation; an external or mismatched lock remains in
         // the inspection and still blocks unattended removal.
         let reading = self.observe_checkout(checkout, true).await;

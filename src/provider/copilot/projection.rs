@@ -1,9 +1,9 @@
-//! Projection of Copilot's Session event stream onto Suru's attributed Provider events.
+//! Projection of Copilot's Session event stream onto Shaman's attributed Provider events.
 //!
 //! Copilot reports one long timeline per Session rather than one stream per Turn, and the timeline
 //! carries several conversations at once: the main agent's, and one for every subagent the runtime
 //! delegates to, whose events ride under the envelope's `agentId`. [`CopilotCorrelation`] is the
-//! running state the projection needs: whether a Suru Turn is in flight, the agent Message,
+//! running state the projection needs: whether a Shaman Turn is in flight, the agent Message,
 //! Reasoning blocks, and Tool executions each conversation still has open, and the Subagents the
 //! lifecycle events have opened. Every event leaves here attributed to the conversation that
 //! produced it, so orchestration lands a subagent's work in the Subagent's own child Session
@@ -14,7 +14,7 @@
 //! and `subagent.completed` or `subagent.failed` — addressed by the spawning tool call — settles
 //! that stretch. The spawning tool execution itself projects no row while the Subagent row answers
 //! for the delegation ([`SPAWN_TOOL`](super::tools::SPAWN_TOOL)). Main-conversation content
-//! outside a Turn Suru is running is dropped unless owed a Continuation; context snapshots can
+//! outside a Turn Shaman is running is dropped unless owed a Continuation; context snapshots can
 //! refresh idle Sessions.
 //! Events that contradict the recorded state fail the Session, and everything else becomes the
 //! Provider events a Session consumes.
@@ -50,7 +50,7 @@
 //! its completion. A File Change is settled by its completion too, but streams nothing: it records
 //! which files changed and how, never what the Tool reported of it.
 //!
-//! A Suru Turn spans one stretch of Copilot's agentic loop: it opens when the Prompt is delivered
+//! A Shaman Turn spans one stretch of Copilot's agentic loop: it opens when the Prompt is delivered
 //! and settles on the loop's idle signal, `assistant.idle`, not on the per-model-call
 //! `assistant.turn_end` — nor on `session.idle`, which Copilot holds back past the loop's end
 //! while attached background work runs, and which therefore only echoes an idle already read
@@ -88,7 +88,7 @@
 //! Continuation it compacts in, so stopping it — by interrupt or by the next Prompt — cancels the
 //! compaction (`session.history.cancelBackgroundCompaction`), which the loop's abort leaves
 //! running. A cancel that finds nothing to cancel came too late: the compaction had already ended,
-//! and Copilot's report of how, which may reach Suru after its answer, stands in the stretch the
+//! and Copilot's report of how, which may reach Shaman after its answer, stands in the stretch the
 //! compaction held — and settles that stretch as its loop's idle said, should the interrupt have
 //! found nothing else to stop ([`CopilotCorrelation::cancel_answered`]). A Subagent's compaction is followed across its stretches, so one its stretch settled
 //! without ends nowhere, least of all in the stretch resuming it, and one Copilot begins while the
@@ -96,21 +96,21 @@
 //! compaction's end settles.
 //!
 //! A Compaction the user asks for is Copilot's `session.history.compact`, which runs no stretch of
-//! the loop and reports no turn of its own: Suru opens the Turn it is asked in
+//! the loop and reports no turn of its own: Shaman opens the Turn it is asked in
 //! ([`CopilotCorrelation::begin_manual_compaction`]), the same `session.compaction_start` and
 //! `session.compaction_complete` report the compaction in it, and Copilot's answer to the request
 //! settles it ([`CopilotCorrelation::project_manual_compaction_answer`]). Only reports under the
-//! manual trigger Suru asks with decide anything of that Turn: one under another trigger, or none,
-//! could be the end of a background compaction Suru stopped following, and records nothing there.
-//! The SDK hands answers and events to Suru apart, so the answer waits for the compaction's own
+//! manual trigger Shaman asks with decide anything of that Turn: one under another trigger, or none,
+//! could be the end of a background compaction Shaman stopped following, and records nothing there.
+//! The SDK hands answers and events to Shaman apart, so the answer waits for the compaction's own
 //! end, whatever it says, so that its counts and the `compactionTokensUsed` that is the Turn's
 //! Usage land on the Compaction and its Turn — unless Copilot rejected the request outright,
-//! before it could compact anything. Only an end that never reaches Suru within the bound every
+//! before it could compact anything. Only an end that never reaches Shaman within the bound every
 //! request waits under leaves the Turn to settle on the answer alone; the reports Copilot then
 //! still owes would carry the trigger the next manual compaction's do, so the next request is
 //! turned away rather than begun while they could still arrive. Stopping it is
 //! `session.history.abortManualCompaction`, after which Copilot fails the compaction and the
-//! request as cancelled: that is the stop Suru asked for, and settles both as interrupted. It is
+//! request as cancelled: that is the stop Shaman asked for, and settles both as interrupted. It is
 //! no background compaction, so neither the background cancel nor the loop's abort ever reaches
 //! it.
 //!
@@ -182,12 +182,12 @@ use crate::provider::{
 pub(super) struct CopilotCorrelation {
     /// Where the Session works, which is where a relative path a Tool names a file by is looked up.
     execution_directory: PathBuf,
-    /// The Suru Turn the main conversation's events currently belong to — the Turn a Prompt
+    /// The Shaman Turn the main conversation's events currently belong to — the Turn a Prompt
     /// began, or the Continuation stretch late output opened.
     turn: Option<ActiveTurn>,
     /// Call IDs already observed in settled main-conversation stretches.
     previous_model_calls: HashSet<String>,
-    /// Loop stretches whose idle is still to come after Suru stopped owning them: a Prompt
+    /// Loop stretches whose idle is still to come after Shaman stopped owning them: a Prompt
     /// settles a Continuation early (ADR 0015), and the stretch it cut off still ends with an
     /// idle of its own. Each owed idle is swallowed rather than read against the Turn that
     /// Prompt began.
@@ -231,7 +231,7 @@ pub(super) struct CopilotCorrelation {
     context_turn: Option<TurnId>,
     context_sequence: u64,
     /// The main conversation's latest `tokenLimit`, which a Context Breakdown measures against:
-    /// Copilot's context attribution names no window of its own Suru can trust.
+    /// Copilot's context attribution names no window of its own Shaman can trust.
     served_window: Option<u64>,
     /// The latest projected stretch is a Continuation rather than the captured Prompt.
     context_continuation: bool,
@@ -258,7 +258,7 @@ pub(super) struct CopilotCorrelation {
     /// belongs to the stretch the interrupt settled and so is swallowed wherever it lands. Copilot's
     /// idle names no run, so this is a count of one rather than a match: a genuine idle of a later
     /// Turn is never taken for it, since only an aborted idle is swallowed, and an aborted idle
-    /// follows only an abort Suru sends — each of which forgives the debt before it goes out.
+    /// follows only an abort Shaman sends — each of which forgives the debt before it goes out.
     owes_aborted_idle: bool,
     /// The Agent Selection the Copilot Session runs under, which a Continuation Copilot owns
     /// begins under.
@@ -268,7 +268,7 @@ pub(super) struct CopilotCorrelation {
     /// Copilot still owes reports of a manual compaction whose Turn settled on its answer alone.
     /// They carry the manual trigger a new manual compaction's would, so none begins until they
     /// are in — or until a stretch of the loop has run to its idle since, which every report
-    /// Copilot wrote before that answer has reached Suru ahead of.
+    /// Copilot wrote before that answer has reached Shaman ahead of.
     manual_reports_owed: bool,
     /// The Routes of the stretch running, and of any stretch a Prompt cut off under them.
     routes: Routes,
@@ -296,14 +296,14 @@ enum Compacting {
     /// stretch the interrupt stops ([`CopilotCorrelation::settle_turn`]).
     Failed { error: Option<String> },
     /// The cancel found nothing to cancel before Copilot's `session.compaction_complete` reached
-    /// Suru: Copilot had already ended the compaction, and that report, still on its way, is its
+    /// Shaman: Copilot had already ended the compaction, and that report, still on its way, is its
     /// outcome. It is followed still, and holds the stretch it stands in until it lands there —
     /// settling that stretch too, as its loop's idle said, when `settles`: once the interrupt
     /// has left the stretch to it rather than to the idle of an abort it sends. A report that
     /// never comes within the interrupt's wait leaves it [`Self::Stopped`]
     /// ([`CopilotCorrelation::cancel_answered`]).
     Ended { settles: bool },
-    /// Suru stopped following the compaction — cancelled it, or the stretch it stood in settled
+    /// Shaman stopped following the compaction — cancelled it, or the stretch it stood in settled
     /// without it — and its Compaction settled with that stretch. Its
     /// `session.compaction_complete` is owed nothing, so it records nothing in whatever stretch
     /// runs by the time it arrives — unless another compaction starts first, which is read as the
@@ -335,15 +335,15 @@ impl Compacting {
         }
     }
 
-    /// Reads a compaction report, returning whether it is one Suru follows: a start always is,
-    /// and an end is unless it ends a compaction Suru stopped following.
+    /// Reads a compaction report, returning whether it is one Shaman follows: a start always is,
+    /// and an end is unless it ends a compaction Shaman stopped following.
     fn follows(&mut self, started: bool) -> bool {
         let before = std::mem::replace(self, if started { Self::Running } else { Self::Idle });
         started || before != Self::Stopped
     }
 }
 
-/// One stretch of Copilot's loop that Suru reads as a Turn, and the main conversation's state
+/// One stretch of Copilot's loop that Shaman reads as a Turn, and the main conversation's state
 /// within it.
 struct ActiveTurn {
     /// Whether this Turn is a Continuation — a stretch the loop ran on its own, delivering what
@@ -361,7 +361,7 @@ struct ActiveTurn {
     idled: Option<bool>,
     /// Whether Copilot owns this Continuation — it was reported with
     /// [`ProviderEvent::ContinuationStarted`] — so that the next Prompt or an interrupt stops what
-    /// Copilot runs in it rather than Suru settling it alone.
+    /// Copilot runs in it rather than Shaman settling it alone.
     owned: bool,
     /// The manual compaction this Turn was begun for (ADR 0041), which Copilot runs as
     /// `session.history.compact` rather than a stretch of its loop: no idle ends it, and Copilot's
@@ -390,7 +390,7 @@ impl ActiveTurn {
 }
 
 /// Where a manual compaction Copilot runs for `session.history.compact` stands, as its reports,
-/// Suru's abort of it and Copilot's answer have said.
+/// Shaman's abort of it and Copilot's answer have said.
 #[derive(Debug)]
 struct ManualCompactionRun {
     /// The Turn the request began, which Copilot's answer is matched to.
@@ -399,11 +399,11 @@ struct ManualCompactionRun {
     /// Copilot's account of why the compaction failed, from its `session.compaction_complete`,
     /// which the request's answer does not carry.
     failure: Option<String>,
-    /// Copilot answered Suru's `session.history.abortManualCompaction` saying it aborted the
+    /// Copilot answered Shaman's `session.history.abortManualCompaction` saying it aborted the
     /// compaction, so a failure from here on is that abort.
     aborted: bool,
     /// Copilot's answer to the request, held while the compaction's own end has still to reach
-    /// Suru.
+    /// Shaman.
     answer: Option<ManualCompactionAnswer>,
 }
 
@@ -419,7 +419,7 @@ impl ManualCompactionRun {
     }
 
     /// Whether Copilot's answer settles the Turn now rather than once the compaction's own end
-    /// has reached Suru: only when that end is in, or when Copilot rejected the request outright,
+    /// has reached Shaman: only when that end is in, or when Copilot rejected the request outright,
     /// before it could compact anything. Any other answer may still have reports on their way,
     /// which the Turn waits for, however the answer reads.
     fn settles_on(&self, answer: &ManualCompactionAnswer) -> bool {
@@ -477,7 +477,7 @@ pub(super) struct ManualCompactionAnswers {
 
 impl ManualCompactionAnswers {
     /// Puts `answer`, Copilot's answer to the manual compaction `turn_id` was begun for, on the
-    /// timeline. The SDK hands answers and events to Suru apart, so the compaction's own reports
+    /// timeline. The SDK hands answers and events to Shaman apart, so the compaction's own reports
     /// may still be on their way: should the Turn still be waiting on them `bound` on, the
     /// timeline then says so, so that the Turn settles on the answer.
     pub(super) async fn answer(
@@ -585,7 +585,7 @@ struct ConversationStreams {
     /// gave each. Copilot runs several Tools at once, so a conversation holds as many as it
     /// started.
     tools: HashMap<String, RunningTool>,
-    /// The cumulative reading for this conversation's one Suru Turn. Copilot
+    /// The cumulative reading for this conversation's one Shaman Turn. Copilot
     /// emits one usage event per model call and gives it no Turn identity, so
     /// this state lives exactly as long as the surrounding Turn streams do.
     metering: Option<ReportedMetering>,
@@ -882,7 +882,7 @@ impl CopilotCorrelation {
     }
 
     /// Opens the Turn a Compaction request began (ADR 0041), which Copilot runs as
-    /// `session.history.compact`. Suru asks only while the Session is idle, so no Turn may be
+    /// `session.history.compact`. Shaman asks only while the Session is idle, so no Turn may be
     /// running: Copilot would take the compaction mid-Turn, report success, and lose it. Context
     /// readings bind to it once its Agent Selection is in force, as a Prompt's Turn's do
     /// ([`Self::context_prompt_ready`]).
@@ -918,7 +918,7 @@ impl CopilotCorrelation {
         self.turn.as_ref().is_some_and(|turn| turn.manual.is_some())
     }
 
-    /// Copilot answered Suru's abort of the manual compaction: `aborted` says it found one to
+    /// Copilot answered Shaman's abort of the manual compaction: `aborted` says it found one to
     /// abort. One it did not find had already ended, and its answer settles the Turn as it ended.
     pub(super) fn manual_compaction_aborted(&mut self, aborted: bool) {
         if let Some(manual) = self.turn.as_mut().and_then(|turn| turn.manual.as_mut()) {
@@ -927,11 +927,11 @@ impl CopilotCorrelation {
     }
 
     /// Projects one of Copilot's reports on compacting the main conversation, as whichever of its
-    /// two operations it belongs to. Suru asks for a manual compaction with the manual trigger,
+    /// two operations it belongs to. Shaman asks for a manual compaction with the manual trigger,
     /// and Copilot reports it under that trigger; anything else it compacts is a background
     /// compaction ([`Self::project_compaction`]). Only a report under the manual trigger decides
     /// anything of a manual compaction's Turn: one under another trigger, or none, could be the
-    /// end of a background compaction Suru stopped following — which it then is, owed nothing —
+    /// end of a background compaction Shaman stopped following — which it then is, owed nothing —
     /// and Copilot runs no other compaction of the conversation meanwhile. A report under the
     /// manual trigger with no manual compaction's Turn running belongs to one that has already
     /// settled, and is owed nothing either.
@@ -1006,7 +1006,7 @@ impl CopilotCorrelation {
     }
 
     /// Takes Copilot's answer to the manual compaction `turn_id` was begun for, which settles its
-    /// Turn — at once, unless the compaction's own end has still to reach Suru
+    /// Turn — at once, unless the compaction's own end has still to reach Shaman
     /// ([`ManualCompactionRun::settles_on`]); then that end settles it. An answer for a Turn no
     /// longer running is owed nothing.
     fn project_manual_compaction_answer(
@@ -1027,7 +1027,7 @@ impl CopilotCorrelation {
     }
 
     /// The manual compaction `turn_id` was begun for answered a bound ago, and its own end has
-    /// still not reached Suru: its Turn settles on the answer alone, and the reports, should they
+    /// still not reached Shaman: its Turn settles on the answer alone, and the reports, should they
     /// come, are owed nothing ([`Self::begin_manual_compaction`]).
     fn project_manual_compaction_overdue(
         &mut self,
@@ -1041,7 +1041,7 @@ impl CopilotCorrelation {
         }
         tracing::warn!(
             reported = ?manual.reported,
-            "Copilot's report of a manual compaction it answered never reached Suru; its Turn \
+            "Copilot's report of a manual compaction it answered never reached Shaman; its Turn \
              settles on the answer, without the counts and Usage the report would carry"
         );
         self.settle_manual_compaction()
@@ -1056,8 +1056,8 @@ impl CopilotCorrelation {
     }
 
     /// Settles the manual compaction's Turn on Copilot's answer to the request. A compaction it
-    /// answered it made whose end never reached Suru completes as the answer says. One that did
-    /// not compact fails the Turn with Copilot's account of why — or stops it, when Suru's abort
+    /// answered it made whose end never reached Shaman completes as the answer says. One that did
+    /// not compact fails the Turn with Copilot's account of why — or stops it, when Shaman's abort
     /// is what cancelled it.
     fn settle_manual_compaction(&mut self) -> Vec<AttributedProviderEvent> {
         let mut turn = self
@@ -1249,7 +1249,7 @@ pub(super) struct InterruptRemainder {
 
 /// Where the projection reads the Session's background tasks from when the timeline says they
 /// changed: the Copilot Session itself, asked no longer than `request_timeout` — the bound every
-/// request Suru makes of the Session's loop waits under — because the timeline projects no
+/// request Shaman makes of the Session's loop waits under — because the timeline projects no
 /// further while the read is out.
 pub(super) struct TaskRosterSource {
     pub(super) native: Arc<NativeSession>,
@@ -1269,7 +1269,7 @@ pub(super) fn provider_events(
     roster: TaskRosterSource,
 ) -> (ProviderEventStream, ManualCompactionAnswers) {
     // The SDK drops the oldest events on a subscriber that falls behind, and a dropped delta is
-    // Transcript content Suru cannot get back, so the timeline is drained as fast as it arrives
+    // Transcript content Shaman cannot get back, so the timeline is drained as fast as it arrives
     // and queued here rather than at the pace the Session's consumer reads.
     let (events_tx, events_rx) = mpsc::unbounded_channel();
     let answers = ManualCompactionAnswers {
@@ -1328,7 +1328,7 @@ async fn drain_session_timeline(
             Err(error) => {
                 if let RecvErrorKind::Lagged(lagged) = error.kind() {
                     let _ = timeline.events.send(Err(copilot_error(format!(
-                        "Copilot produced events faster than Suru could record them: {} were lost",
+                        "Copilot produced events faster than Shaman could record them: {} were lost",
                         lagged.skipped()
                     ))));
                     return;
@@ -1346,7 +1346,7 @@ async fn drain_session_timeline(
     }
 }
 
-/// What carries one Session's timeline into Suru's projection queue, event by event.
+/// What carries one Session's timeline into Shaman's projection queue, event by event.
 struct TimelineForwarding {
     events: mpsc::UnboundedSender<Result<TimelineEvent, ProviderError>>,
     drain: EventDrainCheckpoint,
@@ -1413,7 +1413,7 @@ fn switch_failure_words(reason: &AutoTierSwitchFailureReason) -> String {
         AutoTierSwitchFailureReason::RequestFailed => "the request failed",
         AutoTierSwitchFailureReason::SetupFailed => "setup failed",
         AutoTierSwitchFailureReason::Unsupported => "not supported",
-        AutoTierSwitchFailureReason::Unknown => "no reason Suru can read",
+        AutoTierSwitchFailureReason::Unknown => "no reason Shaman can read",
     }
     .to_owned()
 }
@@ -2190,7 +2190,7 @@ fn project_session_event(
                 projected.push(attributed(None, current));
             }
             // A call of the conversation that wrote or refreshed its Prompt
-            // Cache says when that cache lapses; Suru takes the moment as given.
+            // Cache says when that cache lapses; Shaman takes the moment as given.
             if current_call && let Some(lapse) = reported_lapse(&event, &usage) {
                 projected.push(attributed(None, lapse));
             }
@@ -2506,7 +2506,7 @@ fn fixed_model_call(
         .map(|message| ProviderEvent::AgentMessageModelCleared { message })
         .collect()
 }
-/// What one model call's `assistant.usage` reports it consumed, in Suru's disjoint Usage parts,
+/// What one model call's `assistant.usage` reports it consumed, in Shaman's disjoint Usage parts,
 /// and its Cost at the catalog `pricing` holds — absent where that prices nothing for the call's
 /// Model. A Turn adds it to the Turn's reading; an Errand to the Errand's.
 pub(super) fn priced_usage(
@@ -2600,7 +2600,7 @@ fn write_price(lifetime: Option<std::time::Duration>) -> crate::protocol::CacheW
 }
 
 /// The moment a call's `cacheExpiresAt` names, an RFC 3339 timestamp, as
-/// milliseconds since the Unix epoch; none where it names no moment Suru can
+/// milliseconds since the Unix epoch; none where it names no moment Shaman can
 /// read, or one before the epoch.
 fn lapse_moment(cache_expires_at: &str) -> Option<crate::protocol::SessionTimestamp> {
     let moment = cache_expires_at.parse::<jiff::Timestamp>().ok()?;
@@ -2625,7 +2625,7 @@ fn is_compaction_report(event_type: &SessionEventType) -> bool {
 }
 
 /// Whether `event` reports the end of a compaction of the main conversation Copilot ran in the
-/// background of the Session — any but the manual one Suru asks for.
+/// background of the Session — any but the manual one Shaman asks for.
 fn is_background_compaction_end(event: &SessionEvent) -> bool {
     event.agent_id.is_none()
         && event.parsed_type() == SessionEventType::SessionCompactionComplete
@@ -2639,7 +2639,7 @@ fn is_background_compaction_end(event: &SessionEvent) -> bool {
 /// The Provider event a compaction report is, for whichever conversation it compacted: the start,
 /// or how it ended — completed with the context Copilot measured before and after it and the
 /// summary it left, or failed with Copilot's account of why. Copilot's trigger is not read: whether a Compaction was
-/// automatic is Suru's to say (ADR 0041). An end Suru cannot read still ends the compaction,
+/// automatic is Shaman's to say (ADR 0041). An end Shaman cannot read still ends the compaction,
 /// failed, since nothing else will.
 fn compaction_event(event: &SessionEvent) -> ProviderEvent {
     if event.parsed_type() == SessionEventType::SessionCompactionStart {
@@ -2662,7 +2662,7 @@ fn compaction_event(event: &SessionEvent) -> ProviderEvent {
 /// nothing of why.
 const NOT_COMPACTED: &str = "Copilot did not compact the Session's context";
 
-/// The trigger Suru asks Copilot to compact on request under, which Copilot reports the
+/// The trigger Shaman asks Copilot to compact on request under, which Copilot reports the
 /// compaction's events under.
 const MANUAL_TRIGGER: &str = "manual";
 
@@ -2999,7 +2999,7 @@ impl CopilotCorrelation {
         }
         // A spawn out of a Subagent's own conversation — the spawning tool call is one that
         // Subagent is running — recurses one level down; every other spawn is the main agent's,
-        // and lands only inside a Turn Suru is running or the Continuation late work opens.
+        // and lands only inside a Turn Shaman is running or the Continuation late work opens.
         let spawner = self.spawning_conversation(&started.tool_call_id);
         if spawner.is_none() && self.open_main_streams().is_none() {
             return Vec::new();
@@ -3304,7 +3304,7 @@ impl CopilotCorrelation {
                 serde_json::from_value::<TaskShellInfo>(task.clone())
                     .inspect_err(|error| {
                         tracing::warn!(
-                            "passed over a Copilot task roster shell Suru could not read: {error}"
+                            "passed over a Copilot task roster shell Shaman could not read: {error}"
                         );
                     })
                     .ok()
@@ -3382,7 +3382,7 @@ impl CopilotCorrelation {
     /// round trip — starts its Watch here, described in the notification's own words, and
     /// settles it at once: the woken work is still shown, headed by how the shell settled. A
     /// shell whose Watch already settled — stopped by an interrupt, which records nothing (ADR
-    /// 0030) — wakes nothing Suru shows. While a Turn is running the woken work lands in it and
+    /// 0030) — wakes nothing Shaman shows. While a Turn is running the woken work lands in it and
     /// nothing is owed. Every other kind wakes nothing this projection follows.
     fn project_system_notification(
         &mut self,
@@ -3521,8 +3521,8 @@ impl CopilotCorrelation {
     /// the compaction settling settles it, since no idle will. Copilot owns that Continuation, and
     /// a Continuation late output began becomes Copilot's once Copilot compacts in it: either is
     /// reported with [`ProviderEvent::ContinuationStarted`], so an interrupt, or the next Prompt,
-    /// cancels the compaction rather than leaving it to finish in a Turn Suru no longer holds it
-    /// in. The end of a compaction Suru stopped following is owed nothing, and one an interrupt is
+    /// cancels the compaction rather than leaving it to finish in a Turn Shaman no longer holds it
+    /// in. The end of a compaction Shaman stopped following is owed nothing, and one an interrupt is
     /// cancelling leaves the stretch for the interrupt to settle — as does one the cancel found
     /// already over, until the interrupt has decided whether an abort's idle settles it instead.
     fn project_compaction(&mut self, event: ProviderEvent) -> Vec<AttributedProviderEvent> {
@@ -3751,7 +3751,7 @@ impl CopilotCorrelation {
     }
 
     /// Copilot's report of the end of a compaction its cancel found already over never reached
-    /// the timeline within the interrupt's wait. Suru follows the compaction no further: it
+    /// the timeline within the interrupt's wait. Shaman follows the compaction no further: it
     /// settles with the stretch it stood in, as one the interrupt stopped, and its report, should
     /// it come after all, is owed nothing.
     pub(super) fn compaction_end_missing(&mut self) {
@@ -3759,7 +3759,7 @@ impl CopilotCorrelation {
         if matches!(self.compaction, Compacting::Ended { .. }) {
             tracing::warn!(
                 "Copilot found no compaction left to cancel, but its report of how that compaction \
-                 ended never reached Suru; it settles with its Turn as stopped"
+                 ended never reached Shaman; it settles with its Turn as stopped"
             );
             self.compaction = Compacting::Stopped;
         }
@@ -3940,7 +3940,7 @@ impl CopilotCorrelation {
     /// settles the stretch as the idle said (ADR 0042).
     fn project_loop_idle(&mut self, aborted: bool) -> Vec<ProviderEvent> {
         // Every report Copilot wrote before answering an earlier manual compaction has reached
-        // Suru ahead of an idle of its loop since, so any still owed will never come.
+        // Shaman ahead of an idle of its loop since, so any still owed will never come.
         self.manual_reports_owed = false;
         if self.stale_stretches > 0 {
             self.stale_stretches -= 1;
@@ -7692,7 +7692,7 @@ mod tests {
     }
 
     #[test]
-    fn a_completion_for_a_shell_suru_stopped_wakes_nothing_suru_shows() {
+    fn a_completion_for_a_shell_shaman_stopped_wakes_nothing_shaman_shows() {
         let mut correlation = in_turn();
         roster(
             &mut correlation,
@@ -7716,7 +7716,7 @@ mod tests {
                 json!({ "messageId": "m2", "content": "stray" }),
             )
             .is_empty(),
-            "a Watch stopped by an interrupt wakes nothing Suru records"
+            "a Watch stopped by an interrupt wakes nothing Shaman records"
         );
     }
 
@@ -7988,11 +7988,11 @@ mod tests {
                 json!({ "content": "Answer in French", "delivery": "steering" }),
             )
             .is_empty(),
-            "the main loop's own messages are the user's Prompts, which Suru already holds"
+            "the main loop's own messages are the user's Prompts, which Shaman already holds"
         );
     }
 
-    /// The Broker's Tools reach Copilot as executions on the MCP server `suru`. A call that spawns,
+    /// The Broker's Tools reach Copilot as executions on the MCP server `shaman`. A call that spawns,
     /// sends to, or stops a Subagent is no work a Transcript presents — the Broker adds the row
     /// that stands for what it did — so the execution projects nothing in the conversation that
     /// made it, the main agent's or a native Subagent's, while a call to any other MCP server is a
@@ -8003,8 +8003,8 @@ mod tests {
         let broker_call = |tool_call_id: &str| {
             json!({
                 "toolCallId": tool_call_id,
-                "toolName": "suru-spawn_subagent",
-                "mcpServerName": "suru",
+                "toolName": "shaman-spawn_subagent",
+                "mcpServerName": "shaman",
                 "mcpToolName": "spawn_subagent",
                 "arguments": { "provider": "codex", "model": "gpt-5.5", "prompt": "Map it." },
             })
@@ -8622,7 +8622,7 @@ mod tests {
                 json!({ "preCompactionTokens": 1 }),
             ),
             [ProviderEvent::CompactionFailed { error: None }],
-            "an end Suru cannot read still ends the compaction"
+            "an end Shaman cannot read still ends the compaction"
         );
     }
 
@@ -9551,7 +9551,7 @@ mod tests {
     }
 
     #[test]
-    fn a_compaction_starting_after_one_suru_stopped_following_is_recorded_again() {
+    fn a_compaction_starting_after_one_shaman_stopped_following_is_recorded_again() {
         let mut correlation = in_turn();
         project(
             &mut correlation,
@@ -9958,7 +9958,7 @@ mod tests {
                 manual_started()
             ),
             [ProviderEvent::CompactionStarted],
-            "no Continuation begins: the Turn Suru opened holds it"
+            "no Continuation begins: the Turn Shaman opened holds it"
         );
         assert!(
             project(&mut correlation, "session.idle", json!({})).is_empty(),
@@ -10292,7 +10292,7 @@ mod tests {
         assert!(correlation.is_compacting_on_request());
     }
     #[test]
-    fn a_manual_compactions_turn_settles_as_copilot_answered_and_as_suru_aborted_it() {
+    fn a_manual_compactions_turn_settles_as_copilot_answered_and_as_shaman_aborted_it() {
         let failure = "Compaction failed: the model returned an empty summary";
         for (aborted, ending, answer, expected) in [
             // Copilot's own failure, in its words.
@@ -10330,7 +10330,7 @@ mod tests {
                     message: NOT_COMPACTED.to_owned(),
                 },
             ),
-            // The cancellation Suru's abort asked for.
+            // The cancellation Shaman's abort asked for.
             (
                 Some(true),
                 Some(
@@ -10691,7 +10691,7 @@ mod tests {
     #[test]
     fn a_committed_resend_of_a_settled_tool_call_or_file_change_adds_nothing() {
         for (tool, args) in [
-            ("web_search", json!({ "query": "suru" })),
+            ("web_search", json!({ "query": "shaman" })),
             (
                 "edit",
                 json!({ "path": "src/main.rs", "old_str": "a", "new_str": "b" }),

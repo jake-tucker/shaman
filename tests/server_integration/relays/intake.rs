@@ -4,8 +4,8 @@
 //! field it fills, and each is followed through the Server to what its Client
 //! gets.
 
-use suru::protocol::{RelayLoginOutcome, RelayState, SessionErrorCode};
-use suru_relay_protocol::{Account, Refusal, RelayMessage, ServerMessage};
+use shaman::protocol::{RelayLoginOutcome, RelayState, SessionErrorCode};
+use shaman_relay_protocol::{Account, Refusal, RelayMessage, ServerMessage};
 
 use super::{
     RelaySocket, TestServer, challenge, error_code, greet, heard, refused_saying, relay_timings,
@@ -216,8 +216,8 @@ async fn a_login_address_is_shown_as_the_relay_gave_it_or_refused() {
         ),
         ("https://login.example.com", "https://login.example.com"),
         (
-            "https://auth.example.com:8443/device?client=suru&code=WDJB%2DMJHT#step",
-            "https://auth.example.com:8443/device?client=suru&code=WDJB%2DMJHT#step",
+            "https://auth.example.com:8443/device?client=shaman&code=WDJB%2DMJHT#step",
+            "https://auth.example.com:8443/device?client=shaman&code=WDJB%2DMJHT#step",
         ),
         // A host in another script is shown in the one form it cannot pass for
         // another host in.

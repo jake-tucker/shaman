@@ -9,7 +9,7 @@ use std::sync::{
 };
 
 use ratatui::buffer::Buffer;
-use suru::{
+use shaman::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
         AsideSettings, AsideVisibility, EffectiveSettings, LapsePenalty, ModelId, PromptCache,
@@ -65,7 +65,7 @@ fn session_kept_for(
         written_in: None,
         written_by: ModelId::new("gpt-fixture"),
         lifetime_ms,
-        write_price: suru::protocol::CacheWritePrice::Default,
+        write_price: shaman::protocol::CacheWritePrice::Default,
         prompt_limit_tokens: None,
         lapse_penalty: lapse_penalty
             .map(|usd| LapsePenalty::from_usd(usd).expect("a representable penalty")),
@@ -330,7 +330,7 @@ fn the_line_clears_once_the_next_turn_has_written_the_cache_afresh() {
                         written_in: None,
                         written_by: ModelId::new("gpt-fixture"),
                         lifetime_ms: None,
-                        write_price: suru::protocol::CacheWritePrice::Default,
+                        write_price: shaman::protocol::CacheWritePrice::Default,
                         prompt_limit_tokens: None,
                         lapse_penalty: LapsePenalty::from_usd(1.70),
                         compaction_due_at: None,
@@ -656,7 +656,7 @@ fn a_turn_that_moves_the_lapse_starts_the_countdown_afresh() {
                         written_in: None,
                         written_by: ModelId::new("gpt-fixture"),
                         lifetime_ms: Some(FIVE_MINUTES),
-                        write_price: suru::protocol::CacheWritePrice::Default,
+                        write_price: shaman::protocol::CacheWritePrice::Default,
                         prompt_limit_tokens: None,
                         lapse_penalty: LapsePenalty::from_usd(1.70),
                         compaction_due_at: None,
@@ -797,14 +797,14 @@ fn selection_changed(figure: Option<&str>) -> String {
 }
 
 /// An Agent Selection on Claude of `model` at reasoning `effort`.
-fn claude(model: &str, effort: &str) -> suru::protocol::AgentSelection {
-    suru::protocol::AgentSelection {
-        provider: suru::protocol::ProviderId::new("claude"),
+fn claude(model: &str, effort: &str) -> shaman::protocol::AgentSelection {
+    shaman::protocol::AgentSelection {
+        provider: shaman::protocol::ProviderId::new("claude"),
         model: ModelId::new(model),
-        options: vec![suru::protocol::ModelOptionSelection {
-            id: suru::protocol::ModelOptionId::new("reasoning_effort"),
-            value: suru::protocol::ModelOptionValue::Select {
-                choice: suru::protocol::ModelOptionChoiceId::new(effort),
+        options: vec![shaman::protocol::ModelOptionSelection {
+            id: shaman::protocol::ModelOptionId::new("reasoning_effort"),
+            value: shaman::protocol::ModelOptionValue::Select {
+                choice: shaman::protocol::ModelOptionChoiceId::new(effort),
             },
         }],
     }
@@ -815,8 +815,8 @@ fn claude(model: &str, effort: &str) -> suru::protocol::AgentSelection {
 /// selecting `selected`.
 fn written_under(
     workspace: &WorkspaceDir,
-    written_under: suru::protocol::AgentSelection,
-    selected: suru::protocol::AgentSelection,
+    written_under: shaman::protocol::AgentSelection,
+    selected: shaman::protocol::AgentSelection,
     lapses_at: SessionTimestamp,
     lapse_penalty: Option<f64>,
 ) -> SessionSnapshot {
@@ -829,8 +829,8 @@ fn written_under(
         .expect("the fixture holds a cache");
     cache.written_in = Some(turn_id);
     cache.written_by = written_under.model.clone();
-    snapshot.turns[0].agent = Some(suru::protocol::AgentIdentity {
-        agent: suru::protocol::AgentId::new("coding"),
+    snapshot.turns[0].agent = Some(shaman::protocol::AgentIdentity {
+        agent: shaman::protocol::AgentId::new("coding"),
         selection: written_under,
     });
     snapshot.session.agent_selection = Some(selected);
@@ -843,7 +843,7 @@ fn reselect(
     application: &mut Application,
     snapshot: &SessionSnapshot,
     revision: u64,
-    selection: suru::protocol::AgentSelection,
+    selection: shaman::protocol::AgentSelection,
     lapse_penalty: Option<f64>,
 ) {
     let mut cache = snapshot

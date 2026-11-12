@@ -3,7 +3,7 @@
 //!
 //! A Session is titled with the verbatim text of its first Prompt, which is a
 //! real Title rather than a placeholder but rarely a good one. The moment that
-//! Prompt is admitted, Suru asks a Provider — through an Errand — for a short
+//! Prompt is admitted, Shaman asks a Provider — through an Errand — for a short
 //! line naming the subject and the outcome, with an Icon standing for the
 //! work chosen alongside it, and replaces the Title with what comes back. On
 //! the same task, right after, a second Errand asks for an Icon standing for
@@ -43,7 +43,7 @@
 //! the work, read from the Prompt a Session is about to begin there with, or
 //! from the Prompts so far of a Session Moving into it. The Model reads a
 //! Prompt exactly as the Title is asked about it, Skill names included, but is
-//! asked not to make a Skill the subject. A proposal Suru can use is stripped
+//! asked not to make a Skill the subject. A proposal Shaman can use is stripped
 //! of any `refs/heads/` or `feature/` it was spelled with and shaped by the
 //! one name-shaping function every Managed Worktree name goes through, and it
 //! names the Worktree's location and its branch alike from the moment they are
@@ -55,9 +55,9 @@
 //! gives it. The same Setting governs it as governs the Title, and it never
 //! touches the Title: a Session's Title Errand asks for no branch at all.
 //!
-//! Renaming a Session is the user's act rather than Suru's: a Title they
+//! Renaming a Session is the user's act rather than Shaman's: a Title they
 //! write stands as written ([`SessionStore::set_title`]), and one they ask
-//! Suru to propose ([`Derivation::propose`]) is derived anew from the
+//! Shaman to propose ([`Derivation::propose`]) is derived anew from the
 //! Session's Prompts so far, asks for the Title alone, and changes nothing
 //! until they keep it. A proposal is governed by the same Setting, and is
 //! never the second attempt the derivation below never makes of its own
@@ -68,7 +68,7 @@
 //! it, and is attempted once per Session and never again; a Worktree's name is
 //! waited on, but only so long. A failure of any kind — a Provider that cannot
 //! be reached, a reply that arrives too late, a reply that is not the shape
-//! Suru asked for — leaves the Prompt-derived Title standing, the Workspace
+//! Shaman asked for — leaves the Prompt-derived Title standing, the Workspace
 //! without an Icon or a Description, or the Worktree with the name its Prompt
 //! or Title gives it, and reaches the Log and nowhere else.
 
@@ -108,20 +108,20 @@ const QUOTE_PAIRS: [(char, char); 6] = [
     ('\u{00AB}', '\u{00BB}'),
 ];
 
-/// What Suru asks an Errand to answer with. One object carrying both the
+/// What Shaman asks an Errand to answer with. One object carrying both the
 /// Title and the Icon Catalog name, because a Model choosing them together
 /// picks a better Icon than one retrofitting it onto a Title it had no say
 /// in — and because two calls would cost twice as much to answer the same
 /// question.
 ///
-/// Suru's own validation tolerates extra properties and a missing or unusable
-/// Icon: a Model that volunteers a field Suru did not ask for, or names an
-/// Icon Suru's Catalog does not carry, has still answered the Title question,
+/// Shaman's own validation tolerates extra properties and a missing or unusable
+/// Icon: a Model that volunteers a field Shaman did not ask for, or names an
+/// Icon Shaman's Catalog does not carry, has still answered the Title question,
 /// and throwing a good Title away over it costs the user more than ignoring
 /// it does. The requested schema still marks every property required and
 /// rejects unasked ones because Codex sends output schemas in strict mode,
 /// where every property must be required and no others allowed. Providers
-/// that cannot enforce the schema may return outside it anyway, and Suru will
+/// that cannot enforce the schema may return outside it anyway, and Shaman will
 /// keep validating regardless. A reply missing the Title is what does not
 /// deserialize at all, and it is discarded whole.
 #[derive(Debug, Deserialize)]
@@ -131,7 +131,7 @@ struct DerivedTitleReply {
     icon: Option<String>,
 }
 
-/// What one derivation yields: the Title Suru will store, and the Icon
+/// What one derivation yields: the Title Shaman will store, and the Icon
 /// Catalog name that stands beside it when the reply named a usable one.
 /// They travel together everywhere because they are derived together, in one
 /// Errand, and land together in one change — though the Icon lands only
@@ -184,7 +184,7 @@ impl Derivation {
     /// Title.
     ///
     /// Following the Session, a Session that has selected no Provider is
-    /// skipped, permanently: Suru will not pick a Provider the user did not
+    /// skipped, permanently: Shaman will not pick a Provider the user did not
     /// choose, and deferring the attempt would give derivation a second trigger
     /// point and pending state to carry. A pinned Selection is the user
     /// choosing one up front, so it titles that Session like any other. The
@@ -507,7 +507,7 @@ impl Derivation {
 
     /// The Workspace Errand `workspace` asks for — its identity and the
     /// Prompt asking for its Icon and Description — where it still lacks
-    /// either. The Sidekick Workspace is Suru's own: it wears a standing Icon
+    /// either. The Sidekick Workspace is Shaman's own: it wears a standing Icon
     /// and is described only by whoever chooses to, so nothing of it is
     /// derived.
     fn workspace_errand(
@@ -1089,7 +1089,7 @@ fn proposal_schema() -> Value {
     })
 }
 
-/// The shape Suru asks a Title Errand to answer in. A request rather than a
+/// The shape Shaman asks a Title Errand to answer in. A request rather than a
 /// guarantee — every reply is validated here regardless of whether the harness
 /// could enforce it.
 fn reply_schema() -> Value {
@@ -1135,7 +1135,7 @@ fn proposed_worktree_name(answer: &Value) -> Option<String> {
         .and_then(naming::proposed_fragment)
 }
 
-/// A Model-authored Title as Suru stores it: its first non-empty line, unwrapped
+/// A Model-authored Title as Shaman stores it: its first non-empty line, unwrapped
 /// from any quotes around it, with its whitespace collapsed and its length
 /// capped. A Title that survives none of that is no Title.
 fn sanitized_title(raw: &str) -> Option<String> {
@@ -1262,7 +1262,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reply_carrying_more_than_suru_asked_for_still_yields_its_title() {
+    fn a_reply_carrying_more_than_shaman_asked_for_still_yields_its_title() {
         assert_eq!(
             derived_title(&json!({
                 "title": "Fix the flicker",
@@ -1344,13 +1344,13 @@ mod tests {
         assert_eq!(
             schema["properties"]["icon"]["enum"],
             json!(icon_catalog::names()),
-            "a Model can only choose an Icon Suru's Catalog can resolve"
+            "a Model can only choose an Icon Shaman's Catalog can resolve"
         );
         assert_eq!(schema["required"], json!(["title", "icon"]));
     }
 
     /// The Title guard is exercised here rather than at the server seam
-    /// because nothing else in Suru writes a Title yet — a rename command is
+    /// because nothing else in Shaman writes a Title yet — a rename command is
     /// the caller this exists for, and it does not exist. The guard is built
     /// now anyway, because it is what lets that command land later without a
     /// schema change and what makes a derivation still in flight safe.

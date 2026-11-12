@@ -16,12 +16,12 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use futures_util::{SinkExt, StreamExt};
 use rcgen::{KeyPair, PublicKeyData};
 use ring::{aead, digest, hkdf, hmac};
-use spake2::{Ed25519Group, Identity, Password, Spake2};
-use suru::protocol::{
+use shaman::protocol::{
     DeliveredInvite, FetchShortInviteRequest, IssueInviteRequest, IssuedInvite, RemoteStatus,
     SessionErrorCode, ShortCode, ShortCodeStanding, ShortCodeState, Way,
 };
-use suru_relay_protocol::{RelayMessage, ServerMessage};
+use shaman_relay_protocol::{RelayMessage, ServerMessage};
+use spake2::{Ed25519Group, Identity, Password, Spake2};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream},
     time::{Duration, timeout},
@@ -41,7 +41,7 @@ use crate::{
     },
 };
 
-const PREAMBLE: &[u8] = b"suru-short-invite";
+const PREAMBLE: &[u8] = b"shaman-short-invite";
 const VERSION: u8 = 1;
 const SAYS_SHARE: u8 = 1;
 const SAYS_DELIVERY: u8 = 2;
@@ -92,7 +92,7 @@ impl TestServer {
         let telling = timeout(PROGRESS_DEADLINE, async {
             loop {
                 match self.client.next().await {
-                    Some(suru::managed_client::ManagedEvent::ShortCode(standing))
+                    Some(shaman::managed_client::ManagedEvent::ShortCode(standing))
                         if standing.state == state =>
                     {
                         return standing;
@@ -159,7 +159,7 @@ fn keys(
 ) -> Keys {
     let mut hash = digest::Context::new(&digest::SHA256);
     for part in [
-        b"suru short invite v1".as_slice(),
+        b"shaman short invite v1".as_slice(),
         &[VERSION],
         way.as_bytes(),
         redeeming,
@@ -185,13 +185,13 @@ fn keys(
         transcript,
         redeemer: hmac::Key::new(
             hmac::HMAC_SHA256,
-            &expanded(b"suru short invite v1 redeemer proof"),
+            &expanded(b"shaman short invite v1 redeemer proof"),
         ),
         serving: hmac::Key::new(
             hmac::HMAC_SHA256,
-            &expanded(b"suru short invite v1 serving proof"),
+            &expanded(b"shaman short invite v1 serving proof"),
         ),
-        invite: expanded(b"suru short invite v1 invite"),
+        invite: expanded(b"shaman short invite v1 invite"),
     }
 }
 
@@ -205,7 +205,7 @@ fn invite_naming(key: &[u8], way: &str) -> String {
         "h": "stand-in",
     });
     format!(
-        "suru-v1-{}",
+        "shaman-v1-{}",
         URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap())
     )
 }
@@ -241,7 +241,7 @@ where
                     tell(
                         &mut socket,
                         &RelayMessage::LoginDone {
-                            account: suru_relay_protocol::Account {
+                            account: shaman_relay_protocol::Account {
                                 provider: "scripted".to_owned(),
                                 username: "octocat".to_owned(),
                             },
@@ -273,7 +273,7 @@ async fn laptop_at(address: &str, channel: &str) -> TestServer {
     assert!(
         matches!(
             login.outcome,
-            suru::protocol::RelayLoginOutcome::Done { .. }
+            shaman::protocol::RelayLoginOutcome::Done { .. }
         ),
         "{login:?}"
     );
@@ -529,7 +529,7 @@ async fn a_new_code_keeps_the_invite_it_is_for() {
 #[tokio::test]
 async fn a_code_expires_with_its_invite_and_a_new_one_is_not_had_for_it() {
     let relay = TestRelay::start().await;
-    let timings = suru::server::ServerTimings {
+    let timings = shaman::server::ServerTimings {
         invite_ttl: Duration::from_millis(40),
         ..relay_timings()
     };
@@ -574,7 +574,7 @@ async fn a_code_is_superseded_with_its_invite_by_the_next() {
     // It says how to get one where nobody is at a screen, and what it means if
     // the other machine does show one.
     let said = error_message(&refused);
-    assert!(said.contains("suru serve invite"), "{said}");
+    assert!(said.contains("shaman serve invite"), "{said}");
     assert!(said.contains("does not offer this Relay"), "{said}");
     laptop
         .redeem_as(second_invite.invite, REMOTE)
@@ -1010,7 +1010,7 @@ async fn a_delivered_invites_hostname_reaches_the_preview_as_what_can_be_shown()
             "h": "lap\u{202e}top\u{200b}",
         });
         let invite = format!(
-            "suru-v1-{}",
+            "shaman-v1-{}",
             URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap())
         );
         serving_exchange(stream, "K7QF2MXP", &listed, &way, &invite).await;
@@ -1071,7 +1071,7 @@ async fn a_machine_at_two_relays_is_one_attempt_and_a_join_that_fails_is_no_gues
     let (workstation, mover) = pair_of(&relay, "short-invite-moving-on").await;
     other_relay.provider.approve(
         "nothing yet",
-        suru_relay::Identity {
+        shaman_relay::Identity {
             subject: "583231".to_owned(),
             username: "octocat".to_owned(),
         },
@@ -1285,7 +1285,7 @@ async fn no_code_or_anything_derived_from_one_reaches_a_relay_message_or_a_log()
         .expect("the right code delivers the Invite");
     let token = serde_json::from_slice::<serde_json::Value>(
         &URL_SAFE_NO_PAD
-            .decode(delivered.invite.strip_prefix("suru-v1-").unwrap())
+            .decode(delivered.invite.strip_prefix("shaman-v1-").unwrap())
             .unwrap(),
     )
     .unwrap()["t"]

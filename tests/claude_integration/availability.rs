@@ -1,7 +1,7 @@
 //! Claude's three unavailability conditions: a CLI that isn't installed, one below the version
 //! floor the wire is verified against, and one no user is signed in to. Each reaches the catalog as
 //! its own typed reason with what fixes it beside, each is found by a probe that never starts a
-//! Turn, and each clears on the refresh after the user fixes it outside Suru.
+//! Turn, and each clears on the refresh after the user fixes it outside Shaman.
 
 use crate::claude_integration::support::{
     CLAUDE_MODELS, CLAUDE_SUGGESTED_VERSION, SIGNED_IN_ACCOUNT, SIGNED_OUT_ACCOUNT, ScriptedClaude,
@@ -9,8 +9,7 @@ use crate::claude_integration::support::{
     initialize_arm, list_models_arm, probe_arms, settled_session, signed_out_initialize_arm,
     silent_version_arm, unknown_version_request_arm, upgradable_version_arm, version_arm,
 };
-use std::sync::Arc;
-use suru::{
+use shaman::{
     managed_client::ManagedClient,
     protocol::{
         Activity, CreateSessionRequest, InitialPrompt, PromptId, ProviderCatalogStatus,
@@ -19,6 +18,7 @@ use suru::{
     provider::ClaudeRuntime,
     server::{self, ServerConfig},
 };
+use std::sync::Arc;
 use tokio::time::Duration;
 
 /// The condition the Claude catalog reports and what it says fixes it, which every one of these
@@ -35,7 +35,7 @@ fn condition(status: &ProviderCatalogStatus) -> (ProviderUnavailability, String,
     (*reason, message.clone(), fix.clone())
 }
 
-/// Asserts the refresh after the user has fixed the condition outside Suru finds Claude usable
+/// Asserts the refresh after the user has fixed the condition outside Shaman finds Claude usable
 /// again, which is the recovery every one of these conditions shares.
 async fn assert_the_refresh_clears_the_condition(client: &ManagedClient) {
     let refreshed = client.refresh_models().await.expect("refresh the catalog");
@@ -66,7 +66,7 @@ async fn a_missing_claude_binary_is_reported_as_not_installed_until_it_is_instal
     assert_eq!(reason, ProviderUnavailability::NotInstalled);
     assert!(
         message.contains("could not launch"),
-        "the condition names the CLI Suru could not launch, got: {message}"
+        "the condition names the CLI Shaman could not launch, got: {message}"
     );
     assert_eq!(
         fix, "install the Claude Code CLI from https://code.claude.com/docs/en/setup",
@@ -134,7 +134,7 @@ async fn a_cli_below_the_suggested_version_warns_without_withholding_models() {
 }
 
 #[tokio::test]
-async fn a_cli_that_cannot_tell_suru_its_version_is_reported_as_incompatible() {
+async fn a_cli_that_cannot_tell_shaman_its_version_is_reported_as_incompatible() {
     let claude = ScriptedClaude::new(&format!(
         "{}{}",
         unknown_version_request_arm(),
@@ -151,11 +151,11 @@ async fn a_cli_that_cannot_tell_suru_its_version_is_reported_as_incompatible() {
     assert_eq!(
         reason,
         ProviderUnavailability::IncompatibleVersion,
-        "a CLI that will not say which version it is, is one Suru cannot vouch for"
+        "a CLI that will not say which version it is, is one Shaman cannot vouch for"
     );
     assert_eq!(
         fix, "update the Claude Code CLI",
-        "Suru cannot name the version that would answer, so the fix is to update"
+        "Shaman cannot name the version that would answer, so the fix is to update"
     );
 
     server.shutdown().await.expect("shut the server down");
@@ -366,7 +366,7 @@ async fn a_turn_reaching_an_unavailable_claude_fails_with_the_condition_leading_
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

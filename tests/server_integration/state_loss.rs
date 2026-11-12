@@ -5,7 +5,7 @@
 //! descriptor caught mid-replacement, leaves a running Server serving on.
 use super::*;
 use crate::support::PROGRESS_DEADLINE;
-use suru::{
+use shaman::{
     protocol::{AgentId, AgentIdentity, AgentSelection, ModelId, ProviderId, RuntimeDescriptor},
     server::RunningServer,
 };
@@ -111,7 +111,7 @@ async fn a_server_whose_state_directory_is_removed_stops_and_shuts_its_providers
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

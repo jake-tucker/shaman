@@ -1,8 +1,7 @@
 //! Real external Git mutations enter via the owning Server's catalog stream.
 use super::*;
 use crate::support::PROGRESS_DEADLINE;
-use std::path::Path;
-use suru::{
+use shaman::{
     managed_client::{OutlookClient, SessionCatalogSubscription},
     protocol::{
         AgentId, AgentIdentity, AgentSelection, CheckoutRevision, CheckoutSummary, ModelId,
@@ -10,16 +9,17 @@ use suru::{
         SourceControlAvailability,
     },
 };
+use std::path::Path;
 
 fn git(root: &Path, args: &[&str]) {
     let output = std::process::Command::new("git")
         .arg("-C")
         .arg(root)
         .args(args)
-        .env("GIT_AUTHOR_NAME", "Suru Test")
-        .env("GIT_AUTHOR_EMAIL", "suru@example.invalid")
-        .env("GIT_COMMITTER_NAME", "Suru Test")
-        .env("GIT_COMMITTER_EMAIL", "suru@example.invalid")
+        .env("GIT_AUTHOR_NAME", "Shaman Test")
+        .env("GIT_AUTHOR_EMAIL", "shaman@example.invalid")
+        .env("GIT_COMMITTER_NAME", "Shaman Test")
+        .env("GIT_COMMITTER_EMAIL", "shaman@example.invalid")
         .output()
         .unwrap();
     assert!(
@@ -34,7 +34,7 @@ async fn create(client: &OutlookClient, path: &Path) -> SessionId {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: path.to_owned(),
             },
             prompt: InitialPrompt {
@@ -139,7 +139,7 @@ async fn shared_checkout_streams_external_changes_to_two_clients_and_recovers_fa
     let config = ServerConfig::new(state.path(), "checkout-stream")
         .unwrap()
         .with_config_dir(config_root.path());
-    let database = config.data_dir().join("suru.db");
+    let database = config.data_dir().join("shaman.db");
     let timings = ServerTimings {
         shutdown_grace: Duration::from_millis(5),
         ..Default::default()
@@ -396,13 +396,13 @@ async fn remote_checkout_observation_is_owned_and_streamed_by_the_origin() {
 }
 
 struct GatedObservation {
-    git: suru::source_control::GitSourceControl,
+    git: shaman::source_control::GitSourceControl,
     calls: tokio::sync::mpsc::UnboundedSender<()>,
     gate: tokio::sync::Semaphore,
 }
 #[async_trait::async_trait]
-impl suru::source_control::SourceControl for GatedObservation {
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+impl shaman::source_control::SourceControl for GatedObservation {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -411,8 +411,8 @@ impl suru::source_control::SourceControl for GatedObservation {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -420,13 +420,13 @@ impl suru::source_control::SourceControl for GatedObservation {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
-    async fn discover(&self, path: &Path) -> suru::protocol::ResolvedWorkspace {
+    async fn discover(&self, path: &Path) -> shaman::protocol::ResolvedWorkspace {
         self.git.discover(path).await
     }
-    async fn observe(&self, checkout: &suru::protocol::CheckoutAssociation) -> CheckoutSummary {
+    async fn observe(&self, checkout: &shaman::protocol::CheckoutAssociation) -> CheckoutSummary {
         self.calls.send(()).unwrap();
         self.gate.acquire().await.unwrap().forget();
         self.git.observe(checkout).await
@@ -469,7 +469,7 @@ async fn checkout_observation_is_shared_and_stops_when_catalog_interest_ends() {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: root.path().to_owned(),
                 },
                 prompt: InitialPrompt {
@@ -515,7 +515,7 @@ async fn checkout_observation_is_shared_and_stops_when_catalog_interest_ends() {
                     && current
                         .turns
                         .last()
-                        .is_some_and(|t| t.status == suru::protocol::TurnStatus::Failed)
+                        .is_some_and(|t| t.status == shaman::protocol::TurnStatus::Failed)
                 {
                     break;
                 }
@@ -642,7 +642,7 @@ async fn discovery_persists_branch_and_detached_recovery_before_any_catalog_inte
                 session_id: None,
                 preparation_id: None,
                 agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory { path: path.clone() },
+                execution_directory: shaman::protocol::ExecutionDirectory { path: path.clone() },
                 prompt: InitialPrompt {
                     id: PromptId::new(),
                     text: "Retain discovered checkout".into(),
@@ -725,14 +725,14 @@ async fn discovery_persists_branch_and_detached_recovery_before_any_catalog_inte
 
 #[tokio::test]
 async fn remote_concurrent_prompts_recover_one_checkout_on_the_owning_server() {
-    use suru::{
+    use shaman::{
         protocol::*,
         provider::{ProviderEvent, ProviderResumeState},
     };
     let (runtime, mut provider) = provider_support::ControlledProvider::new();
     let pair = paired_servers_with_runtime("remote-shared-recovery", false, Some(runtime)).await;
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     let linked = root.join("external");
     std::fs::create_dir(&main).unwrap();
@@ -856,14 +856,14 @@ async fn remote_concurrent_prompts_recover_one_checkout_on_the_owning_server() {
 
 #[tokio::test]
 async fn remote_removal_routes_to_owner_counts_its_catalog_and_streams_missing() {
-    use suru::{
+    use shaman::{
         protocol::*,
         source_control::{GitSourceControl, SourceControl},
     };
     let (runtime, mut provider) = provider_support::ControlledProvider::new();
     let pair = paired_servers_with_runtime("remote-removal", false, Some(runtime)).await;
     let temp = tempfile::tempdir().unwrap();
-    let main = suru::paths::canonical(temp.path()).unwrap();
+    let main = shaman::paths::canonical(temp.path()).unwrap();
     git(&main, &["init", "-b", "main"]);
     git(
         &main,
@@ -903,7 +903,7 @@ async fn remote_removal_routes_to_owner_counts_its_catalog_and_streams_missing()
         .unwrap()
         .succeed();
     connection
-        .emit_and_wait_until_observed(suru::provider::ProviderEvent::TurnCompleted)
+        .emit_and_wait_until_observed(shaman::provider::ProviderEvent::TurnCompleted)
         .await;
     timeout(PROGRESS_DEADLINE, async { loop { if remote.list_sessions(None).await.unwrap().iter().any(|s| matches!(s, SessionListItem::Readable(s) if s.session.id == id && s.session.working_since.is_none())) { break; } tokio::time::sleep(Duration::from_millis(5)).await; } }).await.unwrap();
     create(&local, &linked).await;

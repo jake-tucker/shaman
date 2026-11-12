@@ -147,7 +147,7 @@ async fn settings_and_memories_stay_with_their_own_server_across_a_pairing() {
     )
     .await;
     assert!(
-        unknown.starts_with("Suru keeps no Memory"),
+        unknown.starts_with("Shaman keeps no Memory"),
         "and one only the Remote keeps is no Memory here: {unknown}"
     );
     assert_eq!(found(&mut ours, "deploys").await, Vec::<String>::new());
@@ -188,7 +188,7 @@ async fn settings_and_memories_stay_with_their_own_server_across_a_pairing() {
     );
     let changed = through_the_pairing("/v1/settings")
         .json(&SettingMutation::AppearanceMode {
-            value: Some(suru::protocol::AppearanceMode::Light),
+            value: Some(shaman::protocol::AppearanceMode::Light),
         })
         .send()
         .await

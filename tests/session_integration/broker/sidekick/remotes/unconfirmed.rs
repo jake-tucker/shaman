@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use suru::protocol::{AgentId, SessionListItem};
+use shaman::protocol::{AgentId, SessionListItem};
 use tokio::sync::oneshot;
 
 use super::*;
@@ -62,7 +62,7 @@ fn named_in(refusal: &str) -> SessionId {
 /// names and nothing else does: so the Remote's first reading of that
 /// directory is the beginning's own, made as its request reaches the Remote.
 fn named_only_by_the_beginning(home: &Path) -> (PathBuf, PathBuf) {
-    let repository = suru::paths::canonical(home)
+    let repository = shaman::paths::canonical(home)
         .expect("read the Remote's home canonically")
         .join("auth");
     committed(&repository);
@@ -198,7 +198,7 @@ async fn an_answer_whose_answer_was_lost_is_kept_unconfirmed_until_a_read_finds_
             questionnaire.id
         )
         .map(|(outcome, ..)| outcome),
-        Some(suru::protocol::QuestionnaireOutcome::Answered),
+        Some(shaman::protocol::QuestionnaireOutcome::Answered),
         "it was answered there, once"
     );
 
@@ -371,7 +371,7 @@ async fn answer_lost(
     sidekick: McpClient,
     asking: SessionId,
     asking_provider: &mut ControlledProviderSession,
-    questionnaire: &suru::protocol::Questionnaire,
+    questionnaire: &shaman::protocol::Questionnaire,
 ) -> (McpClient, String) {
     asking_provider.gate_questionnaire_deliveries();
     let id = questionnaire.id;

@@ -1,7 +1,7 @@
 //! Records how each installed harness treats an MCP server served the way the Broker will be.
 //!
 //! Serves a minimal streamable-HTTP MCP endpoint on loopback and drives one installed CLI
-//! against it, the way Suru's Provider for that CLI does. Every HTTP exchange the endpoint sees,
+//! against it, the way Shaman's Provider for that CLI does. Every HTTP exchange the endpoint sees,
 //! and every message the driver exchanges with the CLI, is written to stdout as one JSON line
 //! (`{"t": seconds since start, "source", "event", "body"}`), in order.
 //!
@@ -12,10 +12,10 @@
 //!   it and sending `notifications/progress` every `--progress` seconds when the call carried a
 //!   `progressToken`.
 //!
-//! Nothing runs unless `SURU_BROKER_CAPTURE=1` is set, so the program is inert in any suite.
+//! Nothing runs unless `SHAMAN_BROKER_CAPTURE=1` is set, so the program is inert in any suite.
 //!
 //! ```sh
-//! export SURU_BROKER_CAPTURE=1
+//! export SHAMAN_BROKER_CAPTURE=1
 //! cargo run --example broker_harness_capture -- serve [--progress 30] [--response sse|json]
 //! cargo run --example broker_harness_capture -- codex thread-config      # start, resume, resume bare
 //! cargo run --example broker_harness_capture -- codex launch-overrides   # `-c` at app-server launch
@@ -36,7 +36,7 @@
 //! Every Codex scenario takes `--reviewer user|auto_review`, sent as the thread's
 //! `approvalsReviewer`; without it the user's own Codex configuration decides.
 //!
-//! `SURU_CODEX_PATH`, `SURU_CLAUDE_PATH` and `SURU_COPILOT_PATH` name the CLIs (default `codex`,
+//! `SHAMAN_CODEX_PATH`, `SHAMAN_CLAUDE_PATH` and `SHAMAN_COPILOT_PATH` name the CLIs (default `codex`,
 //! `claude`, `copilot`); `--model` overrides each driver's default Model (`gpt-5.6-luna` at low
 //! effort, `haiku`, `gpt-5-mini`). The Claude driver removes every inherited `CLAUDE*` variable
 //! so a capture run from inside a Claude Code session starts a clean CLI. Scrub account details
@@ -81,7 +81,7 @@ use tokio::{
     sync::mpsc,
 };
 
-const GATE: &str = "SURU_BROKER_CAPTURE";
+const GATE: &str = "SHAMAN_BROKER_CAPTURE";
 const SERVER: &str = "capture";
 
 static START: LazyLock<Instant> = LazyLock::new(Instant::now);
@@ -284,7 +284,7 @@ async fn on_post(
                 Ok(json!({
                     "protocolVersion": version,
                     "capabilities": {"tools": {"listChanged": false}},
-                    "serverInfo": {"name": "suru-broker-capture", "version": "0.0.0"},
+                    "serverInfo": {"name": "shaman-broker-capture", "version": "0.0.0"},
                 })),
                 Some(&session),
             )
@@ -655,7 +655,7 @@ impl LineChild {
 }
 
 // ------------------------------------------------------------------------------------------------
-// Codex: one app-server per launch, driven over JSON-RPC as Suru's Codex Provider does
+// Codex: one app-server per launch, driven over JSON-RPC as Shaman's Codex Provider does
 // ------------------------------------------------------------------------------------------------
 
 const CODEX_TURN: Duration = Duration::from_secs(600);
@@ -667,7 +667,7 @@ struct AppServer {
 
 impl AppServer {
     async fn launch(overrides: &[String]) -> anyhow::Result<Self> {
-        let mut command = Command::new(program("SURU_CODEX_PATH", "codex"));
+        let mut command = Command::new(program("SHAMAN_CODEX_PATH", "codex"));
         command.arg("app-server");
         for value in overrides {
             command.arg("-c").arg(value);
@@ -685,7 +685,7 @@ impl AppServer {
             .request(
                 "initialize",
                 json!({
-                    "clientInfo": {"name": "suru-capture", "title": "Suru capture", "version": "0"},
+                    "clientInfo": {"name": "shaman-capture", "title": "Shaman capture", "version": "0"},
                     "capabilities": {"experimentalApi": false},
                 }),
             )
@@ -734,10 +734,10 @@ impl AppServer {
         };
         log("codex", "server_request", message);
         let reply = match method.as_str() {
-            // Refused as Suru's Codex transport refuses it today.
+            // Refused as Shaman's Codex transport refuses it today.
             "mcpServer/elicitation/request" => json!({
                 "jsonrpc": "2.0", "id": id,
-                "error": {"code": -32000, "message": "Suru does not support interactive request `mcpServer/elicitation/request`"},
+                "error": {"code": -32000, "message": "Shaman does not support interactive request `mcpServer/elicitation/request`"},
             }),
             "item/commandExecution/requestApproval" | "item/fileChange/requestApproval" => json!({
                 "jsonrpc": "2.0", "id": id, "result": {"decision": "decline"},
@@ -991,7 +991,7 @@ async fn codex(scenario: &str, options: &Options) -> anyhow::Result<()> {
 }
 
 // ------------------------------------------------------------------------------------------------
-// Claude: one stream-json process, permission prompts over stdio, as Suru's Claude Provider does
+// Claude: one stream-json process, permission prompts over stdio, as Shaman's Claude Provider does
 // ------------------------------------------------------------------------------------------------
 
 async fn claude(scenario: &str, options: &Options) -> anyhow::Result<()> {
@@ -1066,7 +1066,7 @@ async fn claude(scenario: &str, options: &Options) -> anyhow::Result<()> {
         args.push("--allowedTools".to_owned());
         args.push(format!("mcp__{SERVER}__*"));
     }
-    let mut command = Command::new(program("SURU_CLAUDE_PATH", "claude"));
+    let mut command = Command::new(program("SHAMAN_CLAUDE_PATH", "claude"));
     command.args(&args);
     let removed = std::env::vars_os()
         .filter_map(|(name, _)| name.into_string().ok())
@@ -1143,10 +1143,10 @@ async fn claude(scenario: &str, options: &Options) -> anyhow::Result<()> {
 }
 
 // ------------------------------------------------------------------------------------------------
-// Copilot: one CLI process through the SDK, as Suru's Copilot Provider drives it
+// Copilot: one CLI process through the SDK, as Shaman's Copilot Provider drives it
 // ------------------------------------------------------------------------------------------------
 
-/// Logs each permission request the CLI routes to the host and approves it once, as Suru's
+/// Logs each permission request the CLI routes to the host and approves it once, as Shaman's
 /// handler does under allowAll.
 struct LoggingApprover;
 

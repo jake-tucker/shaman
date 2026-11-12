@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::json;
-use suru::protocol::RelayMachinesAnswer;
+use shaman::protocol::RelayMachinesAnswer;
 
 use super::*;
 
@@ -27,7 +27,7 @@ fn document_of(server: &TestServer) -> PathBuf {
         .config
         .config_dir()
         .expect("the Server has a config root")
-        .join("suru.jsonc")
+        .join("shaman.jsonc")
 }
 
 /// Has `document` say `relays` as `serving.relays`, as a hand or a rollout
@@ -48,7 +48,7 @@ fn unpin_by_hand(document: &Path) {
 async fn server_starting_pinned(channel: &str, relays: serde_json::Value) -> TestServer {
     let state = tempfile::tempdir().expect("create the Server's state directory");
     let config_root = tempfile::tempdir().expect("create the Server's config root");
-    pin_by_hand(&config_root.path().join("suru.jsonc"), relays);
+    pin_by_hand(&config_root.path().join("shaman.jsonc"), relays);
     let config = ServerConfig::new(state.path(), channel)
         .expect("configure the Server")
         .with_config_dir(config_root.path());
@@ -68,8 +68,8 @@ async fn server_starting_pinned(channel: &str, relays: serde_json::Value) -> Tes
 /// The next Settings a Client is told of that `reached` says of.
 async fn next_settings_saying(
     client: &mut ManagedClient,
-    reached: impl Fn(&suru::protocol::SettingsSnapshot) -> bool,
-) -> suru::protocol::SettingsSnapshot {
+    reached: impl Fn(&shaman::protocol::SettingsSnapshot) -> bool,
+) -> shaman::protocol::SettingsSnapshot {
     timeout(PROGRESS_DEADLINE, async {
         loop {
             match client.next().await {
@@ -401,7 +401,8 @@ async fn a_pin_landing_while_a_removal_is_under_way_leaves_a_fresh_entry() {
                         tell(
                             &mut socket,
                             &RelayMessage::LoginStarted {
-                                verification_uri: suru_relay::SCRIPTED_VERIFICATION_URI.to_owned(),
+                                verification_uri: shaman_relay::SCRIPTED_VERIFICATION_URI
+                                    .to_owned(),
                                 user_code: "CODE-HELD".to_owned(),
                                 expires_in_seconds: 900,
                             },
@@ -634,7 +635,7 @@ async fn a_document_that_stops_parsing_says_so_and_leaves_the_pins_standing() {
 async fn pins_follow_a_document_deleted_and_hold_through_one_broken_while_the_rest_holds() {
     let state = tempfile::tempdir().expect("create the Server's state directory");
     let config_root = tempfile::tempdir().expect("create the Server's config root");
-    let document = config_root.path().join("suru.jsonc");
+    let document = config_root.path().join("shaman.jsonc");
     std::fs::write(
         &document,
         json!({ "serving": { "port": 9443, "relays": [NOWHERE] } }).to_string(),
@@ -744,7 +745,7 @@ async fn a_document_linked_here_is_followed_through_the_link() {
     let dotfiles = tempfile::tempdir().expect("create a dotfiles directory");
     let server = pinning_server("relay-pin-linked").await;
     let link = document_of(&server);
-    let target = dotfiles.path().join("suru.jsonc");
+    let target = dotfiles.path().join("shaman.jsonc");
     pin_by_hand(&target, json!([FIRST]));
     age(&target);
     std::os::unix::fs::symlink(&target, &link).unwrap();
@@ -780,10 +781,10 @@ async fn a_document_linked_here_is_followed_through_the_link() {
 async fn a_pin_is_spelled_from_the_home_of_the_servers_user() {
     let state = tempfile::tempdir().expect("create the Server's state directory");
     let home = tempfile::tempdir().expect("create the Server's home");
-    let home_path = suru::paths::canonical(home.path()).expect("resolve the Server's home");
-    let config_root = home_path.join(".config").join("suru");
+    let home_path = shaman::paths::canonical(home.path()).expect("resolve the Server's home");
+    let config_root = home_path.join(".config").join("shaman");
     std::fs::create_dir_all(&config_root).unwrap();
-    pin_by_hand(&config_root.join("suru.jsonc"), json!([NOWHERE]));
+    pin_by_hand(&config_root.join("shaman.jsonc"), json!([NOWHERE]));
     let channel = "relay-pin-spelled";
     let config = ServerConfig::new(state.path(), channel)
         .expect("configure the Server")
@@ -793,7 +794,7 @@ async fn a_pin_is_spelled_from_the_home_of_the_servers_user() {
     let (server, client) = run_server(&config, &timings, state.path(), channel).await;
 
     let separator = std::path::MAIN_SEPARATOR;
-    let spelled = format!("~{separator}.config{separator}suru{separator}suru.jsonc");
+    let spelled = format!("~{separator}.config{separator}shaman{separator}shaman.jsonc");
     let relay = client.list_relays().await.unwrap().relays.remove(0);
     assert_eq!(relay.pinned_in.as_deref(), Some(spelled.as_str()));
     let refused = client

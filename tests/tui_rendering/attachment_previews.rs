@@ -13,7 +13,7 @@ use crossterm::event::{
 };
 use image::DynamicImage;
 use ratatui::buffer::{Buffer, Cell};
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         AttachmentBinding, AttachmentDescriptor, AttachmentId, AttachmentKind, EffectiveSettings,
@@ -864,7 +864,7 @@ fn a_reply_to_a_fetch_since_replaced_never_lands_in_its_place() {
     // cache was dropped, and the Attachments are asked for afresh.
     let other = failed_session_snapshot(
         SessionId::new(),
-        suru::protocol::PromptId::new(),
+        shaman::protocol::PromptId::new(),
         "Another session",
         workspace.path(),
     );
@@ -956,7 +956,7 @@ fn switching_sessions_drops_the_thumbnails_held() {
 
     let other = failed_session_snapshot(
         SessionId::new(),
-        suru::protocol::PromptId::new(),
+        shaman::protocol::PromptId::new(),
         "Another session",
         workspace.path(),
     );
@@ -1000,7 +1000,7 @@ fn a_fetch_asked_for_a_session_left_is_waited_on_no_longer() {
 
     let other = failed_session_snapshot(
         SessionId::new(),
-        suru::protocol::PromptId::new(),
+        shaman::protocol::PromptId::new(),
         "Another session",
         workspace.path(),
     );
@@ -1049,7 +1049,7 @@ fn a_drafts_thumbnails_stand_through_the_session_its_prompt_begins() {
         SessionId::new(),
         &request.prompt,
         workspace.path(),
-        suru::protocol::SessionTimestamp::now(),
+        shaman::protocol::SessionTimestamp::now(),
     );
     created.attachments = vec![screenshot()];
     application
@@ -1223,13 +1223,13 @@ fn turn_to_studio(application: &mut Application) {
     invoke(application, SemanticCommandId::ConnectOpen);
     application
         .handle_event(ApplicationEvent::RemotesListed(vec![
-            suru::protocol::Remote {
+            shaman::protocol::Remote {
                 name: "studio".to_owned(),
                 fingerprint: "studio-fingerprint".to_owned(),
-                ways: vec![suru::protocol::Way::Direct(
+                ways: vec![shaman::protocol::Way::Direct(
                     "10.0.0.8:7777".parse().expect("parse the remote address"),
                 )],
-                status: suru::protocol::RemoteStatus::Available,
+                status: shaman::protocol::RemoteStatus::Available,
                 icon: None,
             },
         ]))
@@ -1237,9 +1237,9 @@ fn turn_to_studio(application: &mut Application) {
     application
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
-            result: Ok(suru::protocol::RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
-                status: suru::protocol::RemoteStatus::Available,
+            result: Ok(shaman::protocol::RemoteHealth {
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
+                status: shaman::protocol::RemoteStatus::Available,
                 unreachable: None,
             }),
         })

@@ -105,7 +105,7 @@ pub enum UsageMetricsKey {
     /// Turns whose Agent is not known, which no Model or Provider key can
     /// hold. Every Session has a Workspace, so that breakdown has none.
     Unknown,
-    /// Suru's own Errands, under every breakdown whatever Model, Provider,
+    /// Shaman's own Errands, under every breakdown whatever Model, Provider,
     /// or Workspace each ran under: an Errand belongs to no Session, so it
     /// is counted apart from the work of every Session. It holds Usage and
     /// Cost alone, never a Session, Subagent, or Turn.
@@ -137,7 +137,7 @@ pub struct UsageMetricsReport {
     /// the buckets' counts cannot.
     pub across_buckets: UsageMetricsBucket,
     /// The Turns no bucket can place, having neither begun nor Settled at a
-    /// recorded moment: Turns stored before Suru recorded Turn timing.
+    /// recorded moment: Turns stored before Shaman recorded Turn timing.
     pub untimed: UsageMetricsBucket,
     /// The buckets and the untimed Turns taken together, as though they were
     /// one: what a reader asking for all of time shows for the whole of it.
@@ -222,7 +222,7 @@ pub struct UsageMetricsAggregate {
     /// them, and each Errand's Cost besides. An Errand whose Usage or Cost
     /// is unknown marks it partial: an Errand's Cost is whole or absent.
     pub cost: CountedCost,
-    /// The part of `cost`'s amount Suru estimated rather than the Provider
+    /// The part of `cost`'s amount Shaman estimated rather than the Provider
     /// reported; absent where no contribution was Estimated.
     pub estimated_cost: Option<Cost>,
     /// How many distinct top-level Sessions — those without a parent, a
@@ -452,7 +452,7 @@ pub struct EstimatedSaving {
     pub is_partial: bool,
 }
 
-/// The interval's Cost divided between the Sessions' roles and Suru's own
+/// The interval's Cost divided between the Sessions' roles and Shaman's own
 /// Errands: each Cost Coverage contribution by the role of the Session whose
 /// Turn carries it, overlaps removed as a [`UsageMetricsAggregate`]'s are,
 /// and beside them the Cost of the Errands that began within the interval,
@@ -474,7 +474,7 @@ pub struct DelegationInsights {
     pub sidekicks: CountedCost,
     /// Sessions a Sidekick began.
     pub subsessions: CountedCost,
-    /// The Errands this Server ran, Suru's own work, which no Session
+    /// The Errands this Server ran, Shaman's own work, which no Session
     /// does.
     pub errands: CountedCost,
 }
@@ -504,7 +504,7 @@ pub struct CompactionInsights {
     pub automatic: CompactionCounts,
     /// Those the user asked for.
     pub manual: CompactionCounts,
-    /// Those Suru began of its own accord ahead of a Prompt Cache lapse.
+    /// Those Shaman began of its own accord ahead of a Prompt Cache lapse.
     pub scheduled: CompactionCounts,
     /// The share of the context Compactions freed, on average; absent where
     /// none can say.
@@ -570,7 +570,7 @@ pub struct ApprovalInsights {
     pub waiting: u64,
     /// Settled with no Decision recorded: withdrawn by its Provider, its
     /// Turn ended first, its request no longer live, or a Decision whose
-    /// delivery stayed uncertain, which Suru never records as made.
+    /// delivery stayed uncertain, which Shaman never records as made.
     pub expired: u64,
 }
 

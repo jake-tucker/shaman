@@ -1,12 +1,12 @@
-use suru::build_identity::for_executable;
+use shaman::build_identity::for_executable;
 
 fn record(id: u8) -> Vec<u8> {
-    let mut bytes = b"SURU_BUILD_ID_V1".to_vec();
+    let mut bytes = b"SHAMAN_BUILD_ID1".to_vec();
     bytes.extend_from_slice(&[id; 16]);
     bytes
 }
 
-// Minimal ELF64 section table with .shstrtab and the allocated .suru section.
+// Minimal ELF64 section table with .shstrtab and the allocated .shaman section.
 fn elf(id: u8) -> Vec<u8> {
     let mut bytes = vec![0; 280];
     bytes[..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
@@ -21,18 +21,18 @@ fn elf(id: u8) -> Vec<u8> {
     bytes[128..132].copy_from_slice(&1u32.to_le_bytes());
     bytes[132..136].copy_from_slice(&3u32.to_le_bytes()); // SHT_STRTAB
     bytes[152..160].copy_from_slice(&256u64.to_le_bytes());
-    bytes[160..168].copy_from_slice(&17u64.to_le_bytes());
+    bytes[160..168].copy_from_slice(&19u64.to_le_bytes());
     bytes[192..196].copy_from_slice(&11u32.to_le_bytes());
     bytes[196..200].copy_from_slice(&1u32.to_le_bytes()); // SHT_PROGBITS
     bytes[200..208].copy_from_slice(&2u64.to_le_bytes()); // SHF_ALLOC
     bytes[216..224].copy_from_slice(&280u64.to_le_bytes());
     bytes[224..232].copy_from_slice(&32u64.to_le_bytes());
-    bytes[256..273].copy_from_slice(b"\0.shstrtab\0.suru\0");
+    bytes[256..275].copy_from_slice(b"\0.shstrtab\0.shaman\0");
     bytes.extend_from_slice(&record(id));
     bytes
 }
 
-// Mach-O 64 header, LC_SEGMENT_64 and its __suru section.
+// Mach-O 64 header, LC_SEGMENT_64 and its __shaman section.
 fn macho(id: u8) -> Vec<u8> {
     let mut bytes = vec![0; 184];
     bytes[..4].copy_from_slice(&0xfeed_facfu32.to_le_bytes());
@@ -44,7 +44,7 @@ fn macho(id: u8) -> Vec<u8> {
     bytes[36..40].copy_from_slice(&152u32.to_le_bytes());
     bytes[40..46].copy_from_slice(b"__DATA");
     bytes[96..100].copy_from_slice(&1u32.to_le_bytes());
-    bytes[104..110].copy_from_slice(b"__suru");
+    bytes[104..112].copy_from_slice(b"__shaman");
     bytes[120..126].copy_from_slice(b"__DATA");
     bytes[144..152].copy_from_slice(&32u64.to_le_bytes());
     bytes[152..156].copy_from_slice(&184u32.to_le_bytes());
@@ -62,7 +62,7 @@ fn pe(id: u8, generation: u8) -> Vec<u8> {
     bytes[148..150].copy_from_slice(&240u16.to_le_bytes());
     bytes[152..154].copy_from_slice(&0x20bu16.to_le_bytes());
     bytes[260..264].copy_from_slice(&16u32.to_le_bytes());
-    bytes[392..397].copy_from_slice(b".suru");
+    bytes[392..399].copy_from_slice(b".shaman");
     bytes[400..404].copy_from_slice(&32u32.to_le_bytes());
     bytes[404..408].copy_from_slice(&0x1000u32.to_le_bytes());
     bytes[408..412].copy_from_slice(&32u32.to_le_bytes());
@@ -165,11 +165,11 @@ fn missing_or_malformed_markers_fall_back_to_content_identity() {
 }
 
 #[test]
-fn packaged_suru_has_an_embedded_identity_in_this_profile() {
-    let identity = for_executable(env!("CARGO_BIN_EXE_suru")).unwrap();
+fn packaged_shaman_has_an_embedded_identity_in_this_profile() {
+    let identity = for_executable(env!("CARGO_BIN_EXE_shaman")).unwrap();
     assert!(
-        identity.starts_with("suru-build-v1:"),
-        "Suru should not need a full-file hash: {identity}"
+        identity.starts_with("shaman-build-v1:"),
+        "Shaman should not need a full-file hash: {identity}"
     );
 }
 
@@ -179,7 +179,8 @@ fn cargo_rebuilds_invalidate_the_marker_and_unchanged_artifacts_reuse_it() {
     let root = dir.path();
     std::fs::create_dir(root.join("src")).unwrap();
     std::fs::create_dir_all(root.join("dependency/src")).unwrap();
-    let macro_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/suru-build-id");
+    let macro_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/shaman-build-id");
     std::fs::write(
         root.join("Cargo.toml"),
         format!(
@@ -191,7 +192,7 @@ edition = "2024"
 [features]
 extra = []
 [dependencies]
-suru-build-id = {{ path = {macro_path:?} }}
+shaman-build-id = {{ path = {macro_path:?} }}
 fixture-dependency = {{ path = "dependency" }}
 "#
         ),
@@ -211,9 +212,9 @@ fixture-dependency = {{ path = "dependency" }}
     let main = r#"
 mod other;
 #[used]
-#[cfg_attr(target_os = "macos", unsafe(link_section = "__DATA,__suru"))]
-#[cfg_attr(not(target_os = "macos"), unsafe(link_section = ".suru"))]
-static BUILD_ID: [u8; 32] = suru_build_id::generate!();
+#[cfg_attr(target_os = "macos", unsafe(link_section = "__DATA,__shaman"))]
+#[cfg_attr(not(target_os = "macos"), unsafe(link_section = ".shaman"))]
+static BUILD_ID: [u8; 32] = shaman_build_id::generate!();
 fn foo() -> u8 { 1 }
 fn bar() -> u8 { 2 }
 static SELECTED: fn() -> u8 = foo;
@@ -241,7 +242,7 @@ fn main() {
             String::from_utf8_lossy(&output.stderr)
         );
         let identity = for_executable(&executable).unwrap();
-        assert!(identity.starts_with("suru-build-v1:"));
+        assert!(identity.starts_with("shaman-build-v1:"));
         identity
     };
     let mut previous = build(&[]);

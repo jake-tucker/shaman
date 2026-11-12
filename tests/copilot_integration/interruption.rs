@@ -6,7 +6,7 @@ use crate::copilot_integration::support::{
     silent_abort_arm,
 };
 use crate::support::PROGRESS_DEADLINE;
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, Cost, CostBasis, MessageStatus, NativeMeter, SessionStatus,
         TurnStatus, Usage,
@@ -21,7 +21,7 @@ const WORK_IN_FLIGHT: &str = r#"      event e1 assistant.message_start '{"messag
       event e2 assistant.message_delta '{"messageId":"m1","deltaContent":"Halfway"}'
       event e3 assistant.reasoning_delta '{"reasoningId":"r1","deltaContent":"**Weighing it up**\n\nStill going"}'
       event e4 tool.execution_start '{"toolCallId":"t1","toolName":"bash","arguments":{"command":"sleep 600"}}'
-      event e5 tool.execution_start '{"toolCallId":"t2","toolName":"web_search","arguments":{"query":"suru"}}'
+      event e5 tool.execution_start '{"toolCallId":"t2","toolName":"web_search","arguments":{"query":"shaman"}}'
       event e6 assistant.usage '{"model":"claude-fixture","inputTokens":100,"outputTokens":20,"cost":0.5}'
 "#;
 

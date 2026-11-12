@@ -13,7 +13,7 @@ use crate::copilot_integration::support::{
     agent_messages, connect, conversation_fixture, opened_session, opened_session_in,
     session_where, settled_session,
 };
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, CreateSessionRequest, FileChange, InitialPrompt, PromptId,
         SessionSnapshot, TranscriptItem, TurnStatus,
@@ -90,8 +90,8 @@ const ABSORBED_AND_PLUMBING_TURN: &str = r#"      event e1 tool.execution_start 
       event e2 tool.execution_complete '{"toolCallId":"t-intent","success":true,"result":{"content":"Intent logged"}}'
       event e3 tool.execution_start '{"toolCallId":"t-bash","toolName":"bash","arguments":{"command":"ls"}}'
       event e4 tool.execution_complete '{"toolCallId":"t-bash","success":true,"result":{"content":"src\n"}}'
-      event e5 tool.execution_start '{"toolCallId":"t-ask","toolName":"ask_user","arguments":{"question":"Which crate?","choices":["suru"]}}'
-      event e6 tool.execution_complete '{"toolCallId":"t-ask","success":true,"result":{"content":"suru"}}'
+      event e5 tool.execution_start '{"toolCallId":"t-ask","toolName":"ask_user","arguments":{"question":"Which crate?","choices":["shaman"]}}'
+      event e6 tool.execution_complete '{"toolCallId":"t-ask","success":true,"result":{"content":"shaman"}}'
       event e7 tool.execution_start '{"toolCallId":"t-spawn","toolName":"task","arguments":{"agent_type":"explore","name":"scout","description":"Scout the crate","prompt":"Scout the crate."}}'
       agent_event e8 agent-1 subagent.started '{"toolCallId":"t-spawn","agentName":"scout","agentDisplayName":"Scout","agentDescription":"Scout the crate"}'
       agent_event e9 agent-1 subagent.completed '{"toolCallId":"t-spawn","agentName":"scout","agentDisplayName":"Scout"}'
@@ -121,7 +121,7 @@ const FAILED_WITH_A_RESULT_TURN: &str = r#"      event e1 tool.execution_start '
 "#;
 
 /// A Turn Copilot abandons while a Tool Call still runs.
-const ABANDONED_TOOL_CALL: &str = r#"      event e1 tool.execution_start '{"toolCallId":"t1","toolName":"web_search","arguments":{"query":"suru"}}'
+const ABANDONED_TOOL_CALL: &str = r#"      event e1 tool.execution_start '{"toolCallId":"t1","toolName":"web_search","arguments":{"query":"shaman"}}'
       event e2 tool.shell_output '{"toolCallId":"t1","text":"Searching","sequence":0}'
       event e3 session.error '{"errorType":"quota","message":"Out of premium requests."}'
       event e4 session.idle '{}'
@@ -137,7 +137,7 @@ const HELD_TOOL_CALL_TURN: &str = r#"      event e1 tool.execution_start '{"tool
       event e5 session.idle '{}'
 "#;
 
-/// A Turn whose one Tool Call is handed more input and streams more output than Suru stores.
+/// A Turn whose one Tool Call is handed more input and streams more output than Shaman stores.
 fn oversized_tool_call_turn() -> String {
     let input = "y".repeat(5_000);
     let output = "x".repeat(35_000);
@@ -166,7 +166,7 @@ async fn worked_session(
     name: &'static str,
     timeline: &str,
     text: &str,
-) -> suru::protocol::SessionSnapshot {
+) -> shaman::protocol::SessionSnapshot {
     let copilot = conversation_fixture(timeline);
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
@@ -183,7 +183,7 @@ async fn worked_session(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1082,10 +1082,10 @@ async fn a_create_is_an_add_where_its_path_was_absent_as_it_began_and_an_update_
 }
 
 #[tokio::test]
-async fn a_patch_suru_cannot_read_and_an_edit_naming_no_file_are_tool_calls_keeping_all_of_it() {
+async fn a_patch_shaman_cannot_read_and_an_edit_naming_no_file_are_tool_calls_keeping_all_of_it() {
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let patched = path_in(workspace.path(), "lib.rs");
-    // The patch was cut off before its end, so Suru cannot know it names every file it touches.
+    // The patch was cut off before its end, so Shaman cannot know it names every file it touches.
     let partial = format!(
         "*** Begin Patch\n*** Update File: {}\n@@\n-before\n+after\n",
         path_text(&patched)
@@ -1113,7 +1113,7 @@ async fn a_patch_suru_cannot_read_and_an_edit_naming_no_file_are_tool_calls_keep
                 ..
             } => (*status, name.as_str(), input.as_str()),
             other => panic!(
-                "an edit Suru cannot read is a Tool Call, got {other:?} among {:?}",
+                "an edit Shaman cannot read is a Tool Call, got {other:?} among {:?}",
                 settled.activities
             ),
         })

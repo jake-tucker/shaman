@@ -1,10 +1,10 @@
 name: Relay build
 
-# Builds the Relay — `suru-relay`, which carries a version of its own and is released apart from Suru (ADR-0047) —
-# for every platform it ships for, and its Linux container image. Given a Relay tag (`suru-relay-v1.2.3`), it
+# Builds the Relay — `shaman-relay`, which carries a version of its own and is released apart from Shaman (ADR-0047) —
+# for every platform it ships for, and its Linux container image. Given a Relay tag (`shaman-relay-v1.2.3`), it
 # attaches the archives to that tag's draft release, one per target as each finishes, skipping a target already
 # attached, and pushes the image built from the release's own Linux archives to the GitHub Container Registry. It
-# refuses any other tag, so it never builds or publishes anything for a Suru release, as Suru's build.yml refuses a
+# refuses any other tag, so it never builds or publishes anything for a Shaman release, as Shaman's build.yml refuses a
 # Relay tag. Otherwise — a PR touching the Relay, or a plain manual run — it keeps the archives as short-lived
 # workflow artifacts and builds the image from source without pushing it. Formatting, lints and tests run for the
 # whole workspace, the Relay included, in build.yml.
@@ -16,8 +16,8 @@ name: Relay build
 on:
   pull_request:
     paths:
-      - crates/suru-relay/**
-      - crates/suru-relay-protocol/**
+      - crates/shaman-relay/**
+      - crates/shaman-relay-protocol/**
       - docs/relay/**
       - Cargo.lock
       - rust-toolchain.toml
@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Draft Relay release to attach the archives to, e.g. suru-relay-v1.2.3. Leave empty for a plain build.
+        description: Draft Relay release to attach the archives to, e.g. shaman-relay-v1.2.3. Leave empty for a plain build.
         type: string
         default: ""
   workflow_call:
@@ -84,16 +84,16 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$RELEASE_TAG" ]; then
-            if ! [[ "$RELEASE_TAG" =~ ^suru-relay-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::error::'$RELEASE_TAG' is not a Relay release tag like suru-relay-v1.2.3."
+            if ! [[ "$RELEASE_TAG" =~ ^shaman-relay-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::'$RELEASE_TAG' is not a Relay release tag like shaman-relay-v1.2.3."
               exit 1
             fi
-            label=v${RELEASE_TAG#suru-relay-v}
+            label=v${RELEASE_TAG#shaman-relay-v}
           else
             label=${COMMIT_SHA::7}
           fi
-          echo "stem=suru-relay-$label-$TARGET" >> "$GITHUB_OUTPUT"
-          echo "file=suru-relay-$label-$TARGET.$ARCHIVE" >> "$GITHUB_OUTPUT"
+          echo "stem=shaman-relay-$label-$TARGET" >> "$GITHUB_OUTPUT"
+          echo "file=shaman-relay-$label-$TARGET.$ARCHIVE" >> "$GITHUB_OUTPUT"
 
       - name: Check the release for this archive
         id: existing
@@ -139,9 +139,9 @@ jobs:
         if: env.RELEASE_TAG != '' && steps.existing.outputs.skip != 'true'
         run: |
           set -euo pipefail
-          version=$(awk -F'"' '/^\[/ { in_package = ($0 == "[package]") } in_package && /^version *=/ { print $2; exit }' crates/suru-relay/Cargo.toml)
-          if [ "suru-relay-v$version" != "$RELEASE_TAG" ]; then
-            echo "::error::$RELEASE_TAG does not name the Relay's version, $version, in crates/suru-relay/Cargo.toml."
+          version=$(awk -F'"' '/^\[/ { in_package = ($0 == "[package]") } in_package && /^version *=/ { print $2; exit }' crates/shaman-relay/Cargo.toml)
+          if [ "shaman-relay-v$version" != "$RELEASE_TAG" ]; then
+            echo "::error::$RELEASE_TAG does not name the Relay's version, $version, in crates/shaman-relay/Cargo.toml."
             exit 1
           fi
 
@@ -161,7 +161,7 @@ jobs:
       - name: Build
         id: build
         if: steps.existing.outputs.skip != 'true'
-        run: cargo build --profile "$BUILD_PROFILE" --locked --target "$TARGET" --package suru-relay
+        run: cargo build --profile "$BUILD_PROFILE" --locked --target "$TARGET" --package shaman-relay
 
       - name: Package
         id: package
@@ -173,9 +173,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "dist/$STEM"
-          cp "target/$TARGET/$BUILD_PROFILE/suru-relay$EXE" LICENSE "dist/$STEM/"
+          cp "target/$TARGET/$BUILD_PROFILE/shaman-relay$EXE" LICENSE "dist/$STEM/"
           # The setup guide, the configuration reference and the example configuration it describes.
-          cp docs/relay/README.md docs/relay/configuration.md docs/relay/suru-relay.toml "dist/$STEM/"
+          cp docs/relay/README.md docs/relay/configuration.md docs/relay/shaman-relay.toml "dist/$STEM/"
           cd dist
           if [ "$ARCHIVE" = zip ]; then
             pwsh -NoProfile -Command "Compress-Archive -Path '$STEM' -DestinationPath '$FILE'"
@@ -191,7 +191,7 @@ jobs:
           # The binary as well as its archive, so an installed binary can be verified without its archive.
           subject-path: |
             dist/${{ steps.archive.outputs.file }}
-            dist/${{ steps.archive.outputs.stem }}/suru-relay${{ matrix.exe }}
+            dist/${{ steps.archive.outputs.stem }}/shaman-relay${{ matrix.exe }}
 
       - name: Attach to the release
         if: env.RELEASE_TAG != '' && steps.package.outcome == 'success'
@@ -242,8 +242,8 @@ jobs:
         id: existing
         run: |
           set -euo pipefail
-          name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/suru-relay
-          version=${RELEASE_TAG#suru-relay-v}
+          name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/shaman-relay
+          version=${RELEASE_TAG#shaman-relay-v}
           image=$name:$version
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -272,12 +272,12 @@ jobs:
         if: steps.existing.outputs.skip != 'true'
         run: |
           set -euo pipefail
-          label=v${RELEASE_TAG#suru-relay-v}
+          label=v${RELEASE_TAG#shaman-relay-v}
           for pair in x86_64:amd64 aarch64:arm64; do
-            stem=suru-relay-$label-${pair%%:*}-unknown-linux-gnu
+            stem=shaman-relay-$label-${pair%%:*}-unknown-linux-gnu
             gh release download "$RELEASE_TAG" --pattern "$stem.tar.gz" --dir dist
             tar -xzf "dist/$stem.tar.gz" -C dist
-            install -D "dist/$stem/suru-relay" "dist/image/linux-${pair##*:}/suru-relay"
+            install -D "dist/$stem/shaman-relay" "dist/image/linux-${pair##*:}/shaman-relay"
           done
 
       - name: Build and push the image
@@ -291,11 +291,11 @@ jobs:
           docker buildx create --use --name relay
           docker buildx build . \
             --metadata-file "$RUNNER_TEMP/image-metadata.json" \
-            --file crates/suru-relay/Dockerfile \
+            --file crates/shaman-relay/Dockerfile \
             --platform linux/amd64,linux/arm64 \
             --build-arg BINARY=release \
             --build-context binaries=dist/image \
-            --label "org.opencontainers.image.title=Suru Relay" \
+            --label "org.opencontainers.image.title=Shaman Relay" \
             --label "org.opencontainers.image.source=$SOURCE" \
             --label "org.opencontainers.image.version=$VERSION" \
             --label "org.opencontainers.image.licenses=MIT" \
@@ -326,5 +326,5 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: docker build --file crates/suru-relay/Dockerfile --tag suru-relay:check .
-      - run: docker run --rm suru-relay:check --version
+      - run: docker build --file crates/shaman-relay/Dockerfile --tag shaman-relay:check .
+      - run: docker run --rm shaman-relay:check --version

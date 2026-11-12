@@ -9,7 +9,7 @@ use crate::session_integration::support::{
     WorkingTurn, open_catalog_stream_with_snapshot, read_session_until,
 };
 use crate::support::{PROGRESS_DEADLINE, next_catalog_change_matching};
-use suru::{
+use shaman::{
     protocol::{
         RuntimeDescriptor, SessionCatalogChange, SessionId, SessionListItem, SessionSnapshot,
         SessionSummary, SessionTimestamp, TurnStatus,
@@ -254,7 +254,7 @@ async fn working_takes_precedence_over_a_live_watch_across_the_session_tree() {
         .activities
         .iter()
         .find_map(|activity| match activity {
-            suru::protocol::Activity::Subagent { session_id, .. } => Some(*session_id),
+            shaman::protocol::Activity::Subagent { session_id, .. } => Some(*session_id),
             _ => None,
         })
         .expect("the Subagent's row names its Session");
@@ -676,7 +676,7 @@ fn child_of(snapshot: &SessionSnapshot, description: &str) -> SessionId {
         .activities
         .iter()
         .find_map(|activity| match activity {
-            suru::protocol::Activity::Subagent {
+            shaman::protocol::Activity::Subagent {
                 session_id,
                 description: row,
                 ..

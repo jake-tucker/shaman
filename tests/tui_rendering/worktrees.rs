@@ -7,8 +7,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use std::path::{Path, PathBuf};
-use suru::{
+use shaman::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::*,
     tui::{
@@ -16,6 +15,7 @@ use suru::{
         SemanticCommandId,
     },
 };
+use std::path::{Path, PathBuf};
 
 struct Layout {
     _temporary: tempfile::TempDir,
@@ -28,7 +28,7 @@ struct Layout {
 impl Layout {
     fn new() -> Self {
         let temporary = tempfile::tempdir().unwrap();
-        let root = suru::paths::canonical(temporary.path()).unwrap();
+        let root = shaman::paths::canonical(temporary.path()).unwrap();
         let main = root.join("main");
         let linked = root.join("linked");
         let nested = linked.join("nested");
@@ -493,7 +493,7 @@ fn landing_remote_and_path_icons_are_measured_by_existing_truncation() {
     crate::tui_rendering::connecting::turn_to_studio(&mut app);
     app.handle_event(ApplicationEvent::WorkspaceResolved {
         outlook: Outlook::Remote("studio".to_owned()),
-        surface: suru::tui::WorkspaceResolutionSurface::Outlook,
+        surface: shaman::tui::WorkspaceResolutionSurface::Outlook,
         request_id: 2,
         result: Ok(layout.context.clone()),
     })
@@ -539,9 +539,9 @@ fn turning_to_a_remote_leaves_the_local_checkout_state_behind() {
     );
 }
 
-/// A Worktree Suru made is known by the name it was given, at whatever depth
+/// A Worktree Shaman made is known by the name it was given, at whatever depth
 /// under `.worktrees` the Server that made it chose to put it: what the
-/// managed directory holds beneath itself is Suru's own business rather than
+/// managed directory holds beneath itself is Shaman's own business rather than
 /// the reader's. Both a Worktree standing directly beneath it and one standing
 /// a level further down are offered by their leaf name alone.
 #[test]
@@ -1055,7 +1055,7 @@ fn on_a_remote_the_remotes_name_opens_connect_and_the_workspace_after_it_the_wor
         crate::tui_rendering::connecting::turn_to_studio(&mut app);
         app.handle_event(ApplicationEvent::WorkspaceResolved {
             outlook: Outlook::Remote("studio".to_owned()),
-            surface: suru::tui::WorkspaceResolutionSurface::Outlook,
+            surface: shaman::tui::WorkspaceResolutionSurface::Outlook,
             request_id: 2,
             result: Ok(layout.context.clone()),
         })
@@ -1251,7 +1251,7 @@ fn pressing_the_subdirectory_is_refused_while_the_remote_is_unreachable() {
     .unwrap();
     app.handle_event(ApplicationEvent::WorkspaceResolved {
         outlook: Outlook::Remote("studio".to_owned()),
-        surface: suru::tui::WorkspaceResolutionSurface::Outlook,
+        surface: shaman::tui::WorkspaceResolutionSurface::Outlook,
         request_id: 2,
         result: Ok(layout.context.clone()),
     })
@@ -1434,7 +1434,7 @@ fn a_new_worktree_intent_lets_no_stale_binding_through_a_moved_sessions_composer
 
 #[test]
 fn same_workspace_identity_on_another_origin_has_independent_execution_memory() {
-    use suru::tui::WorkspaceResolutionSurface;
+    use shaman::tui::WorkspaceResolutionSurface;
     let layout = Layout::new();
     let mut app = layout.app();
     crate::tui_rendering::connecting::turn_to_studio(&mut app);
@@ -2411,7 +2411,7 @@ fn the_sidekick_opened_from_a_refused_claim_leaves_its_workspace_remembering_the
     std::fs::create_dir(&sidekick).unwrap();
     app.handle_event(ApplicationEvent::WorkspaceResolved {
         outlook,
-        surface: suru::tui::WorkspaceResolutionSurface::Sidekick,
+        surface: shaman::tui::WorkspaceResolutionSurface::Sidekick,
         request_id,
         result: Ok(ResolvedWorkspace::directory(sidekick)),
     })
@@ -2693,7 +2693,7 @@ fn a_lost_remote_refuses_a_removal_in_the_selector_and_escape_steps_out() {
     crate::tui_rendering::connecting::turn_to_studio(&mut app);
     app.handle_event(ApplicationEvent::WorkspaceResolved {
         outlook: Outlook::Remote("studio".to_owned()),
-        surface: suru::tui::WorkspaceResolutionSurface::Outlook,
+        surface: shaman::tui::WorkspaceResolutionSurface::Outlook,
         request_id: 2,
         result: Ok(layout.context.clone()),
     })
@@ -2764,7 +2764,7 @@ fn a_lost_remote_refuses_a_worktree_in_the_selector_and_escape_closes_it() {
     crate::tui_rendering::connecting::turn_to_studio(&mut app);
     app.handle_event(ApplicationEvent::WorkspaceResolved {
         outlook: Outlook::Remote("studio".to_owned()),
-        surface: suru::tui::WorkspaceResolutionSurface::Outlook,
+        surface: shaman::tui::WorkspaceResolutionSurface::Outlook,
         request_id: 2,
         result: Ok(layout.context.clone()),
     })

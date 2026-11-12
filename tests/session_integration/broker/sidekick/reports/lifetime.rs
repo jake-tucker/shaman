@@ -75,7 +75,7 @@ async fn asks(
                     activity,
                     Activity::Questionnaire {
                         questionnaire: asked,
-                        outcome: suru::protocol::QuestionnaireOutcome::Pending,
+                        outcome: shaman::protocol::QuestionnaireOutcome::Pending,
                         ..
                     } if asked.id == questionnaire.id
                 )
@@ -367,7 +367,7 @@ async fn an_intervention_asked_as_soon_as_a_sidekicks_prompt_arrives_is_reported
     assert_eq!(
         report,
         format!(
-            "Sidekick Report from Suru: the Session \"Run the auth suite.\" you set to work asks \
+            "Sidekick Report from Shaman: the Session \"Run the auth suite.\" you set to work asks \
              a Questionnaire, which waits on an Answer. Its session_id is {users}: read_session \
              gives its Questions, and answer_questionnaire answers it."
         )
@@ -437,7 +437,7 @@ async fn a_continuation_a_subagents_report_wakes_is_reported_to_the_sidekick_as_
     assert_eq!(
         untimed_sidekick_report(&woken),
         format!(
-            "Sidekick Report from Suru: the Session \"Run the auth suite.\" you set to work has \
+            "Sidekick Report from Shaman: the Session \"Run the auth suite.\" you set to work has \
              settled a Continuation of the work you set going there, which completed. Its \
              session_id is {users}, which read_session takes.\n\nIts Agent's final \
              Message:\n\nThe Researcher found three seams."
@@ -501,7 +501,7 @@ async fn a_subagent_working_on_after_the_turn_that_spawned_it_settled_still_repo
     assert_eq!(
         asked,
         format!(
-            "Sidekick Report from Suru: a Subagent of the Session \"Run the auth suite.\" you \
+            "Sidekick Report from Shaman: a Subagent of the Session \"Run the auth suite.\" you \
              set to work asks a Questionnaire, which waits on an Answer. The Session's \
              session_id is {users}, and the Subagent's is {child}: given the Subagent's, \
              read_session gives its Questions, and answer_questionnaire answers it."
@@ -614,7 +614,7 @@ async fn a_steer_sent_while_a_continuation_runs_begins_a_turn_the_sidekick_is_to
     // Subagent then opens a Continuation, which no steer joins.
     users_provider
         .emit_and_wait_until_observed(ProviderEvent::SubagentStarted {
-            subagent_id: suru::provider::ProviderSubagentId::new("task-1"),
+            subagent_id: shaman::provider::ProviderSubagentId::new("task-1"),
             name: "Explore".to_owned(),
             description: "Map the provider seams".to_owned(),
             delegation: None,
@@ -793,7 +793,7 @@ async fn a_subagent_the_users_turn_resumed_is_no_longer_the_sidekicks_to_hear_of
     assert_eq!(
         report,
         format!(
-            "Sidekick Report from Suru: a Subagent of the Session \"{ASKED}\" you set to work \
+            "Sidekick Report from Shaman: a Subagent of the Session \"{ASKED}\" you set to work \
              asks an Approval, which waits on the user's Decision. The Session's session_id is \
              {begun}, and the Subagent's is {}: given the Subagent's, read_session says what \
              it asks.",
@@ -842,7 +842,7 @@ async fn a_subagent_a_sidekicks_turn_resumed_is_the_sidekicks_to_hear_of() {
     assert_eq!(
         report,
         format!(
-            "Sidekick Report from Suru: a Subagent of the Session \"Run the auth suite.\" you \
+            "Sidekick Report from Shaman: a Subagent of the Session \"Run the auth suite.\" you \
              set to work asks a Questionnaire, which waits on an Answer. The Session's \
              session_id is {users}, and the Subagent's is {}: given the Subagent's, \
              read_session gives its Questions, and answer_questionnaire answers it.",

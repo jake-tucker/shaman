@@ -306,7 +306,7 @@ pub(super) struct MetricsKeys {
 /// showing again, `1`–`5` or a click in
 /// the range bar choose the range both tabs share, `[`/`]` step to the
 /// range before or after, a click on its ✕ closes it, and Ctrl+C leaves
-/// Suru, as it does from a composer with nothing in it — the view holds
+/// Shaman, as it does from a composer with nothing in it — the view holds
 /// nothing a press could clear, and a draft it covers is the reader's to
 /// come back to. Everything else is the tab's own: see
 /// [`command_for_overview_key`], [`command_for_overview_pointer`],

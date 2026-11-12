@@ -18,7 +18,7 @@
 //! Each test acts as the MCP client a Sidekick's harness is and asserts on
 //! what the Tools answer it, and on what Clients of the Session API observe.
 
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
     protocol::{Workspace, WorkspaceDescription, WorkspaceDescriptionChanged},
 };
@@ -259,7 +259,7 @@ async fn a_sidekick_is_offered_both_workspace_tools_and_any_other_agent_the_list
     assert_eq!(
         setting["annotations"]["readOnlyHint"],
         json!(false),
-        "set_workspace_description changes what Suru holds: {setting}"
+        "set_workspace_description changes what Shaman holds: {setting}"
     );
     assert_eq!(
         setting["inputSchema"]["required"],
@@ -433,7 +433,7 @@ async fn a_workspace_known_without_a_session_is_listed_and_a_sidekick_may_descri
         )
         .await,
         format!(
-            "Suru knows no Workspace `{}` on this server, and no directory is there to find one \
+            "Shaman knows no Workspace `{}` on this server, and no directory is there to find one \
              in; name a Workspace by the workspace_id or the path list_workspaces gives it, or \
              by the absolute path of a directory in it.",
             missing.display()
@@ -562,7 +562,7 @@ async fn a_workspace_is_named_by_its_path_exactly_as_given() {
 #[tokio::test]
 async fn a_managed_worktrees_session_is_listed_under_its_repositorys_workspace() {
     let temporary = tempfile::tempdir().expect("create a home for the Repository");
-    let main = suru::paths::canonical(temporary.path())
+    let main = shaman::paths::canonical(temporary.path())
         .expect("read the home")
         .join("auth");
     committed(&main);
@@ -894,7 +894,7 @@ async fn every_workspace_refusal_is_a_tool_error_in_words_the_sidekick_can_relay
     let id = json!(atlas_workspace.id);
     let unknown = |named: &str| {
         format!(
-            "Suru knows no Workspace `{named}` on this server, and no directory is there to find \
+            "Shaman knows no Workspace `{named}` on this server, and no directory is there to find \
              one in; name a Workspace by the workspace_id or the path list_workspaces gives it, or \
              by the absolute path of a directory in it."
         )
@@ -930,7 +930,7 @@ async fn every_workspace_refusal_is_a_tool_error_in_words_the_sidekick_can_relay
         (
             json!({ "workspace": id }),
             "set_workspace_description needs `text`, the Description to set; give \"\" to clear \
-             it, so Suru may derive one again."
+             it, so Shaman may derive one again."
                 .to_owned(),
         ),
         (

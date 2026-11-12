@@ -13,4 +13,4 @@ ADR 0007 makes the transcript projection memoized and frame-independent: its cac
 - Animated persisted Transcript content must record the cells its overlay patches. Transient tail presentation may instead stay outside the projection and its cache key.
 - Animation timing and frame definitions are hardcoded pending a coherent motion policy across the TUI.
 - An idle TUI is not wholly without wakeups. Beside one-shot presentation deadlines, a countdown drawn above a Session's composer, such as the one to its Prompt Cache's lapse or to a pending scheduled Compaction, wakes it once when the countdown comes to stand and then once a second while it counts, and stops when what it counts to arrives. The once-a-second wakeups are bounded by the countdown's own length, and nothing wakes for a countdown no frame lays out.
-- Nor is it without them while a focused composer is on screen: its caret, which Suru draws itself, blinks once every 530 ms (ADR 0075).
+- Nor is it without them while a focused composer is on screen: its caret, which Shaman draws itself, blinks once every 530 ms (ADR 0075).

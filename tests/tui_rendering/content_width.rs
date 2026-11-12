@@ -6,7 +6,7 @@ use crate::tui_rendering::support::{
 };
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Position;
-use suru::{
+use shaman::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
         Activity, ActivityStatus, EffectiveSettings, GroupPosture, MessageRole,
@@ -19,7 +19,7 @@ use suru::{
 fn session_with_width(
     workspace: &std::path::Path,
     content_width: SessionContentWidth,
-) -> (Application, suru::protocol::SessionSnapshot) {
+) -> (Application, shaman::protocol::SessionSnapshot) {
     let mut application = connected_application(workspace);
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
@@ -127,9 +127,9 @@ fn content_width_snapshot(
                 initial_visibility: SidebarVisibility::Hidden,
                 ..SidebarSettings::default()
             },
-            aside: suru::protocol::AsideSettings {
-                initial_visibility: suru::protocol::AsideVisibility::Hidden,
-                ..suru::protocol::AsideSettings::default()
+            aside: shaman::protocol::AsideSettings {
+                initial_visibility: shaman::protocol::AsideVisibility::Hidden,
+                ..shaman::protocol::AsideSettings::default()
             },
             // A fold test clicks a lone command's own row, which a Group of
             // one would otherwise stand in for.

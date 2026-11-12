@@ -22,7 +22,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use diesel::{Connection, QueryableByName, RunQueryDsl, SqliteConnection, sql_types::Text};
 
 use reqwest::header::{ACCEPT, AUTHORIZATION, HOST};
-use suru::{
+use shaman::{
     protocol::{
         CheckoutAssociation, CheckoutBranchOutcome, CheckoutRecovery, CheckoutRemovalInspection,
         CheckoutRemovalTarget, CheckoutSummary, IssueInviteRequest, IssuedInvite, PROTOCOL_VERSION,
@@ -202,7 +202,7 @@ impl Serving {
             ..
         } = self;
         server.shutdown().await.expect("stop the Remote");
-        meanwhile(&config.data_dir().join("suru.db"));
+        meanwhile(&config.data_dir().join("shaman.db"));
         let (server, provider) =
             Self::spawn(&config, protocol_version, keep_alive, &hosted, &git).await;
         route.retarget(
@@ -309,7 +309,7 @@ impl HeldGit {
             .parent()
             .expect("a directory to be made has a parent");
         let held = HeldNaming {
-            destination: suru::paths::canonical(parent)
+            destination: shaman::paths::canonical(parent)
                 .expect("read the directory's parent canonically")
                 .join(
                     destination
@@ -332,11 +332,11 @@ impl HeldGit {
     fn hold_discovery_of(&self, directory: &Path) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
         let (reached, reaching) = oneshot::channel();
         let (release, released) = oneshot::channel();
-        let directory = suru::paths::canonical(directory).unwrap_or_else(|_| {
+        let directory = shaman::paths::canonical(directory).unwrap_or_else(|_| {
             let parent = directory
                 .parent()
                 .expect("a directory to be made has a parent");
-            suru::paths::canonical(parent)
+            shaman::paths::canonical(parent)
                 .expect("read the directory's parent canonically")
                 .join(
                     directory
@@ -359,7 +359,7 @@ impl HeldGit {
 
 #[async_trait::async_trait]
 impl SourceControl for HeldGit {
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -368,8 +368,8 @@ impl SourceControl for HeldGit {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -377,11 +377,11 @@ impl SourceControl for HeldGit {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
     async fn discover(&self, directory: &Path) -> ResolvedWorkspace {
-        let discovering = suru::paths::canonical(directory).unwrap_or_else(|_| directory.into());
+        let discovering = shaman::paths::canonical(directory).unwrap_or_else(|_| directory.into());
         let held = {
             let mut held = self.held.lock().unwrap();
             if held
@@ -441,8 +441,8 @@ impl SourceControl for HeldGit {
     }
     async fn made_checkout(
         &self,
-        repository: &suru::protocol::Repository,
-        checkout: &suru::protocol::CheckoutAssociation,
+        repository: &shaman::protocol::Repository,
+        checkout: &shaman::protocol::CheckoutAssociation,
     ) -> bool {
         self.git.made_checkout(repository, checkout).await
     }
@@ -538,7 +538,7 @@ async fn own_server(
         .with_config_dir(config_root.path());
     if let Some(seed) = seed {
         std::fs::create_dir_all(config.data_dir()).expect("create the own Server's data root");
-        std::fs::copy(seed, config.data_dir().join("suru.db")).expect("seed the own Server");
+        std::fs::copy(seed, config.data_dir().join("shaman.db")).expect("seed the own Server");
     }
     let (runtime, claude) =
         ControlledProvider::with_provider(ProviderId::new("claude"), claude_models());
@@ -559,7 +559,7 @@ async fn own_server(
 /// whatever lock the Server's own writes hold on it rather than refusing a
 /// read at once.
 fn running_database(config: &ServerConfig) -> SqliteConnection {
-    let database = config.data_dir().join("suru.db");
+    let database = config.data_dir().join("shaman.db");
     let mut database =
         SqliteConnection::establish(database.to_str().expect("the database's path is UTF-8"))
             .expect("open the running Server's database");
@@ -746,8 +746,8 @@ async fn paired_homed(channel: &str, home: &Path) -> Paired {
 /// A Relay in-process whose identity provider the test scripts, reached at a
 /// route of its own whose address it is known by.
 struct TestRelay {
-    running: suru_relay::RunningRelay,
-    provider: std::sync::Arc<suru_relay::ScriptedProvider>,
+    running: shaman_relay::RunningRelay,
+    provider: std::sync::Arc<shaman_relay::ScriptedProvider>,
     route: ObservedTcpProxy,
     _directory: tempfile::TempDir,
 }
@@ -755,19 +755,19 @@ struct TestRelay {
 impl TestRelay {
     async fn start() -> Self {
         let directory = tempfile::tempdir().expect("create the Relay's directory");
-        let provider = std::sync::Arc::new(suru_relay::ScriptedProvider::new());
+        let provider = std::sync::Arc::new(shaman_relay::ScriptedProvider::new());
         // The route comes first, since the Relay is known by the address
         // Servers reach it at, and is pointed at the Relay once it runs.
         let route = ObservedTcpProxy::start((Ipv4Addr::LOCALHOST, 9).into()).await;
-        let running = suru_relay::start(
-            suru_relay::RelayConfig::new(
+        let running = shaman_relay::start(
+            shaman_relay::RelayConfig::new(
                 (Ipv4Addr::LOCALHOST, 0).into(),
                 directory.path().join("relay.db"),
                 format!("http://{}", route.address),
             )
             .with_connection_log(std::io::sink())
-            .with_admission(suru_relay::Admission::by([
-                provider.clone() as std::sync::Arc<dyn suru_relay::AdmissionRule>
+            .with_admission(shaman_relay::Admission::by([
+                provider.clone() as std::sync::Arc<dyn shaman_relay::AdmissionRule>
             ])),
             provider.clone(),
         )
@@ -802,18 +802,18 @@ impl TestRelay {
     /// as the one identity every Server of the test is logged in as.
     async fn log_in(&self, server: &RuntimeDescriptor) {
         let http = crate::support::loopback_client();
-        let _: suru::protocol::Relay = posted(
+        let _: shaman::protocol::Relay = posted(
             server,
             "/v1/relays",
-            &suru::protocol::AddRelayRequest {
+            &shaman::protocol::AddRelayRequest {
                 address: self.address(),
             },
         )
         .await;
-        let lead: suru::protocol::RelayLoginLead = http
+        let lead: shaman::protocol::RelayLoginLead = http
             .put(self.route_of(server, &["login"]))
             .bearer_auth(&server.token)
-            .json(&suru::protocol::RelayLoginRequest { afresh: false })
+            .json(&shaman::protocol::RelayLoginRequest { afresh: false })
             .send()
             .await
             .and_then(reqwest::Response::error_for_status)
@@ -821,19 +821,19 @@ impl TestRelay {
             .json()
             .await
             .expect("decode the login");
-        let suru::protocol::RelayLoginStanding::Begun { login } = lead.standing else {
+        let shaman::protocol::RelayLoginStanding::Begun { login } = lead.standing else {
             panic!("no Login stands there, and none is under way: {lead:?}");
         };
         assert!(self.provider.approve(
             &login.user_code,
-            suru_relay::Identity {
+            shaman_relay::Identity {
                 subject: "583231".to_owned(),
                 username: "octocat".to_owned(),
             },
         ));
         let logged_in = timeout(PROGRESS_DEADLINE, async {
             loop {
-                let listing: suru::protocol::RelayListing = http
+                let listing: shaman::protocol::RelayListing = http
                     .get(format!("{}/v1/relays", server.base_url))
                     .bearer_auth(&server.token)
                     .send()
@@ -845,7 +845,7 @@ impl TestRelay {
                 if listing
                     .relays
                     .iter()
-                    .any(|relay| relay.state == suru::protocol::RelayState::LoggedIn)
+                    .any(|relay| relay.state == shaman::protocol::RelayState::LoggedIn)
                 {
                     return;
                 }
@@ -861,7 +861,7 @@ impl TestRelay {
         crate::support::loopback_client()
             .put(self.route_of(server, &["serve-through"]))
             .bearer_auth(&server.token)
-            .json(&suru::protocol::RelayServeThroughRequest {
+            .json(&shaman::protocol::RelayServeThroughRequest {
                 serve_through: true,
             })
             .send()
@@ -987,7 +987,7 @@ async fn complete_turn(
 /// What the Remote is said to be when it cannot be reached at all.
 fn unreachable() -> String {
     format!(
-        "The Remote `{REMOTE}` is not answering: Suru could not reach it at any address it was \
+        "The Remote `{REMOTE}` is not answering: Shaman could not reach it at any address it was \
          paired at."
     )
 }
@@ -1146,7 +1146,7 @@ async fn a_listing_is_this_servers_by_default_a_remotes_by_its_origin_and_every_
     assert_eq!(theirs["sessions"][0]["session_id"], json!(bound));
     assert_eq!(
         theirs["sessions"][0]["workspace"],
-        json!(suru::paths::canonical(there.path()).expect("read the Remote's Workspace")),
+        json!(shaman::paths::canonical(there.path()).expect("read the Remote's Workspace")),
         "a Remote's row names the Workspace its Session works in there"
     );
     assert_eq!(
@@ -1501,13 +1501,13 @@ async fn a_remotes_session_reads_through_the_pairing_as_the_same_read_reads_on_t
         "Run the tests.",
     )
     .await;
-    let questionnaire = suru::protocol::Questionnaire {
-        id: suru::protocol::QuestionnaireId::new(),
-        questions: vec![suru::questionnaire::Question {
+    let questionnaire = shaman::protocol::Questionnaire {
+        id: shaman::protocol::QuestionnaireId::new(),
+        questions: vec![shaman::questionnaire::Question {
             id: "machine".to_owned(),
             title: Some("Machine".to_owned()),
             text: "Where should the tests run?".to_owned(),
-            choices: vec![suru::questionnaire::QuestionChoice {
+            choices: vec![shaman::questionnaire::QuestionChoice {
                 id: "staging".to_owned(),
                 label: "Staging".to_owned(),
                 description: None,
@@ -1623,9 +1623,9 @@ async fn reading_a_remotes_session_names_its_approval_and_changes_nothing_there(
     .await;
     approving_provider
         .emit_and_wait_until_observed(ProviderEvent::ApprovalRequested {
-            approval: suru::protocol::Approval {
-                id: suru::protocol::ApprovalId::new(),
-                subject: suru::protocol::ApprovalSubject::Command {
+            approval: shaman::protocol::Approval {
+                id: shaman::protocol::ApprovalId::new(),
+                subject: shaman::protocol::ApprovalSubject::Command {
                     command: "cargo nextest run".into(),
                     cwd: None,
                     actions: Vec::new(),
@@ -1766,7 +1766,7 @@ async fn reading_at_an_origin_that_is_unknown_or_does_not_answer_is_refused_in_w
     let (_sidekick, mut sidekick, _provider) = start_sidekick(&own, &mut pair.claude).await;
     let bound = working_session(&remote, there.path(), "Bind the ledger").await;
 
-    let unknown = "Suru is paired with no Remote named `laptop`; list_remotes names the Remotes \
+    let unknown = "Shaman is paired with no Remote named `laptop`; list_remotes names the Remotes \
                    it is paired with, and leaving `origin` out reaches this server.";
     for (tool, arguments) in [
         (
@@ -1803,7 +1803,7 @@ async fn reading_at_an_origin_that_is_unknown_or_does_not_answer_is_refused_in_w
             .refusal("read_session", json!({ "session_id": bound }))
             .await,
         format!(
-            "Suru holds no Session `{bound}` on this server; pass a session_id, and the origin \
+            "Shaman holds no Session `{bound}` on this server; pass a session_id, and the origin \
              beside it, as list_sessions or a Subagent row gives them."
         ),
         "a Session's identity names it only at its Origin"
@@ -1817,7 +1817,7 @@ async fn reading_at_an_origin_that_is_unknown_or_does_not_answer_is_refused_in_w
             )
             .await,
         format!(
-            "Suru holds no Session `{nowhere}` on the Remote `{REMOTE}`; pass a session_id, and \
+            "Shaman holds no Session `{nowhere}` on the Remote `{REMOTE}`; pass a session_id, and \
              the origin beside it, as list_sessions or a Subagent row gives them."
         )
     );
@@ -1879,7 +1879,7 @@ async fn a_session_its_remote_cannot_read_is_refused_saying_so() {
             )
             .await,
         format!(
-            "Suru holds Session `{broken}` on the Remote `{REMOTE}` but could not read what it \
+            "Shaman holds Session `{broken}` on the Remote `{REMOTE}` but could not read what it \
              stored of it, so there is nothing to read."
         )
     );
@@ -1891,7 +1891,7 @@ async fn a_session_its_remote_cannot_read_is_refused_saying_so() {
 async fn a_remotes_workspaces_are_listed_as_it_lists_them_each_carrying_its_name() {
     const {
         assert!(
-            suru::protocol::PROTOCOL_VERSION >= 77,
+            shaman::protocol::PROTOCOL_VERSION >= 77,
             "a Remote's Workspaces are asked of it over the Pairing"
         );
     }
@@ -1944,7 +1944,7 @@ async fn a_remotes_workspaces_are_listed_as_it_lists_them_each_carrying_its_name
         "a Remote's Workspaces are listed as it lists them: {theirs}"
     );
     let unworked_path =
-        suru::paths::canonical(unworked.path()).expect("read the unworked directory");
+        shaman::paths::canonical(unworked.path()).expect("read the unworked directory");
     assert!(
         theirs["workspaces"]
             .as_array()

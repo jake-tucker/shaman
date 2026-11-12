@@ -10,8 +10,7 @@ use crate::tui_rendering::support::{
     studio_stops_answering_because, type_terminal_text,
 };
 use crossterm::event::KeyCode;
-use std::time::Duration;
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         Outlook, Relay, RelayAccount, RelayListing, RelayLogin, RelayLoginOutcome, RelayState,
@@ -19,6 +18,7 @@ use suru::{
     },
     tui::{Application, ApplicationEvent, ApplicationTransition, CommandId, SemanticCommandId},
 };
+use std::time::Duration;
 
 fn studio() -> Outlook {
     Outlook::Remote("studio".to_owned())
@@ -39,7 +39,7 @@ fn a_remote_that_stops_answering_never_raises_the_whole_frame_modal() {
 
     let screen = rendered_application_rows(&application).join("\n");
     assert!(
-        !screen.contains("Reconnecting to Suru"),
+        !screen.contains("Reconnecting to Shaman"),
         "only the local server's own loss stands the whole frame down: {screen}"
     );
     assert!(
@@ -735,10 +735,10 @@ fn the_client_stays_live_around_an_unreachable_remote() {
 
 #[test]
 fn exit_passes_even_under_the_local_servers_own_modal() {
-    let mut application = suru::tui::Application::default();
+    let mut application = shaman::tui::Application::default();
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Recovering(
-            suru::managed_client::RecoveryStatus {
+            shaman::managed_client::RecoveryStatus {
                 attempt: 1,
                 retry_in: std::time::Duration::from_secs(1),
                 unreachable: None,
@@ -749,7 +749,7 @@ fn exit_passes_even_under_the_local_servers_own_modal() {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Reconnecting to Suru"),
+            .contains("Reconnecting to Shaman"),
         "the local server's own loss still stands the whole frame down"
     );
 
@@ -782,13 +782,13 @@ fn turning_the_outlook_away_from_an_unreachable_remote_still_works() {
         .expect("open the Connect picker");
     application
         .handle_event(ApplicationEvent::RemotesListed(vec![
-            suru::protocol::Remote {
+            shaman::protocol::Remote {
                 name: "studio".to_owned(),
                 fingerprint: "studio-fingerprint".to_owned(),
-                ways: vec![suru::protocol::Way::Direct(
+                ways: vec![shaman::protocol::Way::Direct(
                     "10.0.0.8:7777".parse().expect("parse the address"),
                 )],
-                status: suru::protocol::RemoteStatus::Available,
+                status: shaman::protocol::RemoteStatus::Available,
                 icon: None,
             },
         ]))
@@ -857,7 +857,7 @@ fn an_unreachable_remote_is_marked_and_dimmed_outside_everywhere() {
     };
     assert_eq!(
         request.scope(),
-        &suru::tui::SessionListScope::AllWorkspaces,
+        &shaman::tui::SessionListScope::AllWorkspaces,
         "the sidebar opens on a scope narrower than Everywhere"
     );
     application
@@ -927,13 +927,13 @@ fn local_work_is_untouched_while_a_remote_is_unreachable() {
         .expect("open the Connect picker");
     application
         .handle_event(ApplicationEvent::RemotesListed(vec![
-            suru::protocol::Remote {
+            shaman::protocol::Remote {
                 name: "studio".to_owned(),
                 fingerprint: "studio-fingerprint".to_owned(),
-                ways: vec![suru::protocol::Way::Direct(
+                ways: vec![shaman::protocol::Way::Direct(
                     "10.0.0.8:7777".parse().expect("parse the address"),
                 )],
-                status: suru::protocol::RemoteStatus::Available,
+                status: shaman::protocol::RemoteStatus::Available,
                 icon: None,
             },
         ]))
@@ -963,7 +963,7 @@ fn an_intervention_waits_out_of_sight_until_its_remote_answers() {
     pend_an_approval(&mut snapshot, turn_id);
     application
         .handle_event(ApplicationEvent::Session(
-            suru::managed_client::SessionEvent::snapshot(snapshot.clone()),
+            shaman::managed_client::SessionEvent::snapshot(snapshot.clone()),
         ))
         .expect("deliver the session snapshot");
 
@@ -999,7 +999,7 @@ fn the_outlook_stays_turned_toward_a_remote_that_merely_stops_answering() {
     );
 }
 
-fn listed(title: &str) -> suru::protocol::SessionListItem {
+fn listed(title: &str) -> shaman::protocol::SessionListItem {
     crate::tui_rendering::support::listed_session(
         SessionId::new(),
         title,
@@ -1047,7 +1047,7 @@ fn a_held_intervention_does_not_advertise_a_key_that_would_be_refused() {
     pend_an_approval(&mut snapshot, turn_id);
     application
         .handle_event(ApplicationEvent::Session(
-            suru::managed_client::SessionEvent::snapshot(snapshot.clone()),
+            shaman::managed_client::SessionEvent::snapshot(snapshot.clone()),
         ))
         .expect("deliver the session snapshot");
 
@@ -1128,19 +1128,19 @@ fn the_status_line_says_nothing_until_the_grace_runs_out() {
 }
 
 fn pend_an_approval(
-    snapshot: &mut suru::protocol::SessionSnapshot,
-    turn_id: suru::protocol::TurnId,
+    snapshot: &mut shaman::protocol::SessionSnapshot,
+    turn_id: shaman::protocol::TurnId,
 ) {
     let activity = crate::tui_rendering::support::approval_activity(
         turn_id,
-        suru::protocol::ApprovalSubject::Network {
+        shaman::protocol::ApprovalSubject::Network {
             host_or_url: "https://api.example.test/v1".to_owned(),
         },
         None,
-        suru::protocol::ApprovalOutcome::Pending,
+        shaman::protocol::ApprovalOutcome::Pending,
         None,
     );
-    let suru::protocol::Activity::Approval { approval, .. } = &activity else {
+    let shaman::protocol::Activity::Approval { approval, .. } = &activity else {
         unreachable!("an approval activity carries an approval")
     };
     snapshot.pending_approvals.push(approval.id);
@@ -1153,7 +1153,7 @@ fn a_fatal_error_that_lowers_the_modal_is_not_overruled_by_a_later_grace() {
     let mut application = application_looking_at_studio();
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Recovering(
-            suru::managed_client::RecoveryStatus {
+            shaman::managed_client::RecoveryStatus {
                 attempt: 1,
                 retry_in: Duration::from_secs(1),
                 unreachable: None,
@@ -1164,7 +1164,7 @@ fn a_fatal_error_that_lowers_the_modal_is_not_overruled_by_a_later_grace() {
     assert!(
         rendered_application_rows(&application)
             .join("\n")
-            .contains("Reconnecting to Suru"),
+            .contains("Reconnecting to Shaman"),
         "the local server's own loss stands the whole frame down"
     );
 
@@ -1176,7 +1176,7 @@ fn a_fatal_error_that_lowers_the_modal_is_not_overruled_by_a_later_grace() {
         .expect("take the fatal error");
     let failed = rendered_application_rows(&application).join("\n");
     assert!(
-        !failed.contains("Reconnecting to Suru"),
+        !failed.contains("Reconnecting to Shaman"),
         "a fatal error takes the modal down: {failed}"
     );
 
@@ -1185,7 +1185,7 @@ fn a_fatal_error_that_lowers_the_modal_is_not_overruled_by_a_later_grace() {
     grace_elapses(&mut application, Outlook::Local);
     let still_failed = rendered_application_rows(&application).join("\n");
     assert!(
-        !still_failed.contains("Reconnecting to Suru"),
+        !still_failed.contains("Reconnecting to Shaman"),
         "a grace already served cannot raise the modal over a fatal error: {still_failed}"
     );
     assert!(
@@ -1196,7 +1196,7 @@ fn a_fatal_error_that_lowers_the_modal_is_not_overruled_by_a_later_grace() {
 
 #[test]
 fn a_remote_whose_pairing_ends_stops_being_merely_unreachable() {
-    let mut application = suru::tui::Application::default();
+    let mut application = shaman::tui::Application::default();
     // The Outlook is Local throughout; studio is reached only as a background
     // Origin, the way Everywhere keeps it.
     studio_stops_answering(&mut application, 1, Duration::from_secs(5));
@@ -1204,7 +1204,7 @@ fn a_remote_whose_pairing_ends_stops_being_merely_unreachable() {
         .handle_event(ApplicationEvent::OriginCatalog {
             outlook: studio(),
             event: ManagedEvent::RemoteFailed {
-                status: suru::protocol::RemoteStatus::Revoked,
+                status: shaman::protocol::RemoteStatus::Revoked,
                 message: "the pairing was ended".to_owned(),
             },
         })
@@ -1233,7 +1233,7 @@ fn an_open_panel_leaves_the_frame_when_its_origin_stops_answering() {
     pend_an_approval(&mut snapshot, turn_id);
     application
         .handle_event(ApplicationEvent::Session(
-            suru::managed_client::SessionEvent::snapshot(snapshot.clone()),
+            shaman::managed_client::SessionEvent::snapshot(snapshot.clone()),
         ))
         .expect("deliver the session snapshot");
     assert!(
@@ -1284,13 +1284,13 @@ fn turn_toward_studio(application: &mut Application) {
         .expect("open the Connect picker");
     application
         .handle_event(ApplicationEvent::RemotesListed(vec![
-            suru::protocol::Remote {
+            shaman::protocol::Remote {
                 name: "studio".to_owned(),
                 fingerprint: "studio-fingerprint".to_owned(),
-                ways: vec![suru::protocol::Way::Direct(
+                ways: vec![shaman::protocol::Way::Direct(
                     "10.0.0.8:7777".parse().expect("parse the address"),
                 )],
-                status: suru::protocol::RemoteStatus::Available,
+                status: shaman::protocol::RemoteStatus::Available,
                 icon: None,
             },
         ]))
@@ -1298,9 +1298,9 @@ fn turn_toward_studio(application: &mut Application) {
     application
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
-            result: Ok(suru::protocol::RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
-                status: suru::protocol::RemoteStatus::Available,
+            result: Ok(shaman::protocol::RemoteHealth {
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
+                status: shaman::protocol::RemoteStatus::Available,
                 unreachable: None,
             }),
         })

@@ -23,7 +23,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         EffectiveSettings, Outlook, Relay, RelayAccount, RelayListing, RelayLogin,
@@ -703,7 +703,7 @@ fn everything_else_stays_live_while_a_relay_needs_a_login_or_is_unreachable() {
     let screen = rendered_application_rows(&application).join("\n");
     assert!(screen.contains("unfinished thought"), "{screen}");
     assert!(
-        !screen.contains("Reconnecting to Suru"),
+        !screen.contains("Reconnecting to Shaman"),
         "neither a relay nor a remote takes the client down: {screen}"
     );
 
@@ -743,11 +743,11 @@ fn everything_else_stays_live_while_a_relay_needs_a_login_or_is_unreachable() {
         .expect("open the Connect picker");
     application
         .handle_event(ApplicationEvent::RemotesListed(vec![
-            suru::protocol::Remote {
+            shaman::protocol::Remote {
                 name: "studio".to_owned(),
                 fingerprint: "studio-fingerprint".to_owned(),
-                ways: vec![suru::protocol::Way::Relay(COMPANY.to_owned())],
-                status: suru::protocol::RemoteStatus::Available,
+                ways: vec![shaman::protocol::Way::Relay(COMPANY.to_owned())],
+                status: shaman::protocol::RemoteStatus::Available,
                 icon: None,
             },
         ]))

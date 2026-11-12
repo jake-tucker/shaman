@@ -13,7 +13,7 @@
 //! for that very directory, made or yet to be — nor the place a symlink its
 //! user relocated it by leads to before anything is there; judged as the
 //! Root is read, within the Clone's deadline. Nor does a Clone go in a Root
-//! naming Suru's own data directory, where the Sidekick Workspace is kept,
+//! naming Shaman's own data directory, where the Sidekick Workspace is kept,
 //! however the Root is spelled: told apart as every Root is told from a
 //! directory, it is passed over as no Root a Clone may go in, and refused
 //! where named or where it is the only one — and so is a Root read as that
@@ -113,7 +113,7 @@ impl WorkspaceCloning {
 }
 
 /// How the Workspace Roots a Clone may go in are read: the home a Root
-/// beginning with `~` lies beneath; Suru's own data directory, read
+/// beginning with `~` lies beneath; Shaman's own data directory, read
 /// canonically, where the Sidekick Workspace is kept and which is never a
 /// Root a Clone may go in; the reads apart every Root is read by, so one on
 /// a mount gone quiet holds up none of the Server's own threads; and the
@@ -131,19 +131,22 @@ impl CloneRoots {
         Self {
             home,
             data_root,
-            reads: Arc::new(ReadsApart::new("suru-clone-root-read", ROOT_READS_AT_ONCE)),
+            reads: Arc::new(ReadsApart::new(
+                "shaman-clone-root-read",
+                ROOT_READS_AT_ONCE,
+            )),
             wait,
         }
     }
 
     /// The Roots among `roots` a Clone may go in — every one but those
-    /// naming Suru's own data directory — as a Sidekick is told them.
+    /// naming Shaman's own data directory — as a Sidekick is told them.
     pub(crate) async fn open_to_clones(&self, roots: Vec<String>) -> Vec<String> {
         self.told(roots, self.wait).await.0
     }
 
     /// `roots`, each in the Setting's order, told apart as those a Clone may
-    /// go in and those naming Suru's own data directory, as every Root is
+    /// go in and those naming Shaman's own data directory, as every Root is
     /// told from a directory (see [`root_directories`]): written as it, or
     /// resolving to it where reading the Root answers within `wait`.
     async fn told(&self, roots: Vec<String>, wait: Duration) -> (Vec<String>, Vec<String>) {
@@ -224,7 +227,7 @@ pub(crate) enum CloneRefusal {
     /// The Root cannot be read, as `reason` says.
     UnreadableRoot { root: String, reason: String },
     /// The Root the Clone would go in, `root` as the Setting or the Clone
-    /// spells it, names Suru's own data directory, where the Sidekick
+    /// spells it, names Shaman's own data directory, where the Sidekick
     /// Workspace is kept, which is never a Root a Clone may go in.
     DataRoot { root: String },
     /// The name given is not one plain directory name.
@@ -308,11 +311,11 @@ impl fmt::Display for CloneRefusal {
             Self::UnreadableRoot { root, reason } => write!(
                 formatter,
                 "The Workspace Root `{root}` cannot be read ({reason}), so nothing was cloned; \
-                 Suru never makes a Workspace Root, so ask the user to make it or to name another."
+                 Shaman never makes a Workspace Root, so ask the user to make it or to name another."
             ),
             Self::DataRoot { root } => write!(
                 formatter,
-                "`{root}` names Suru's own data directory, where the Sidekick Workspace is kept, \
+                "`{root}` names Shaman's own data directory, where the Sidekick Workspace is kept, \
                  which is not a Root a Clone may go in, so nothing was cloned; Clone into another \
                  of this server's Workspace Roots, or ask the user to name a directory of their \
                  own in the workspace.roots Setting."
@@ -619,7 +622,7 @@ fn readable_root(root: &str, home: Option<&Path>) -> Result<PathBuf, CloneRefusa
 const UNPORTABLE: [char; 9] = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 
 /// `name`, where it is one plain directory name, and the same one directory
-/// on every platform Suru runs on: something besides space, naming one
+/// on every platform Shaman runs on: something besides space, naming one
 /// directory within whatever directory it is joined to — never `.` or `..`
 /// — and holding no control character nor any of the [`UNPORTABLE`] ones,
 /// ending in neither a dot nor a space, which Windows takes away, and naming
@@ -741,7 +744,7 @@ fn named_by(url: &str) -> Result<&str, CloneRefusal> {
 }
 
 /// Where a Clone is asked to go: the Workspace Roots configured that a
-/// Clone may go in, those naming Suru's own data directory, which none may,
+/// Clone may go in, those naming Shaman's own data directory, which none may,
 /// the one it names where it names one, the directory it makes within it,
 /// the home a Root beginning with `~` lies beneath, and the data directory,
 /// read canonically.
@@ -755,7 +758,7 @@ struct Placement {
 }
 
 /// Where the Clone `placement` asks for goes — directly within the Root it
-/// names, or the only one, never one naming Suru's own data directory,
+/// names, or the only one, never one naming Shaman's own data directory,
 /// however it is spelled or comes to be read — and whether something stands
 /// there already,
 /// the Root read by `read` apart (see [`ReadsApart`]), so a Root on a mount
@@ -1445,7 +1448,7 @@ mod tests {
     /// have.
     #[test]
     fn a_workspace_a_clone_makes_may_not_be_hidden() {
-        for name in [".atlas", ".atlas.suru-clone-deadbeef", ".git", "..atlas"] {
+        for name in [".atlas", ".atlas.shaman-clone-deadbeef", ".git", "..atlas"] {
             assert_eq!(
                 workspace_name(name),
                 Err(CloneRefusal::HiddenName {
@@ -1455,7 +1458,7 @@ mod tests {
                 "{name:?}"
             );
         }
-        for name in ["atlas", "atlas.suru-clone-deadbeef", "atlas.git", "a.b"] {
+        for name in ["atlas", "atlas.shaman-clone-deadbeef", "atlas.git", "a.b"] {
             assert_eq!(workspace_name(name), Ok(name));
         }
         assert_eq!(
@@ -1469,12 +1472,12 @@ mod tests {
         for (url, name) in [
             ("https://github.com/org/.atlas.git", ".atlas"),
             (
-                "https://github.com/org/.atlas.suru-clone-deadbeef",
-                ".atlas.suru-clone-deadbeef",
+                "https://github.com/org/.atlas.shaman-clone-deadbeef",
+                ".atlas.shaman-clone-deadbeef",
             ),
             (
-                "git@github.com:org/.atlas.suru-clone-deadbeef.git",
-                ".atlas.suru-clone-deadbeef",
+                "git@github.com:org/.atlas.shaman-clone-deadbeef.git",
+                ".atlas.shaman-clone-deadbeef",
             ),
             ("/srv/git/.hidden/", ".hidden"),
         ] {
@@ -1489,11 +1492,11 @@ mod tests {
         }
         assert_eq!(
             CloneRefusal::HiddenName {
-                name: ".atlas.suru-clone-deadbeef".to_owned(),
+                name: ".atlas.shaman-clone-deadbeef".to_owned(),
                 url: None,
             }
             .to_string(),
-            "`.atlas.suru-clone-deadbeef` begins with a dot, and a Workspace's name may not be \
+            "`.atlas.shaman-clone-deadbeef` begins with a dot, and a Workspace's name may not be \
              hidden, so nothing was cloned; give `name` as one that does not begin with a dot."
         );
         assert_eq!(
@@ -1632,7 +1635,7 @@ mod tests {
     /// read as ever.
     #[tokio::test]
     async fn a_root_that_does_not_answer_holds_a_clone_no_longer_than_its_deadline() {
-        let reads = ReadsApart::new("suru-clone-root-read", 2);
+        let reads = ReadsApart::new("shaman-clone-root-read", 2);
         let (release, released) = std::sync::mpsc::channel::<()>();
         let quiet = move |root: &str, _home: Option<&Path>| {
             let _ = released.recv();
@@ -1704,7 +1707,7 @@ mod tests {
     /// refuses is the Clone's answer.
     #[tokio::test]
     async fn judging_a_destination_holds_a_clone_no_longer_than_its_deadline() {
-        let reads = ReadsApart::new("suru-clone-root-read", 2);
+        let reads = ReadsApart::new("shaman-clone-root-read", 2);
         let (release, released) = std::sync::mpsc::channel::<()>();
         let placing = placed(
             &reads,
@@ -1745,15 +1748,15 @@ mod tests {
         );
     }
 
-    /// No Clone goes in a Root naming Suru's own data directory, where the
+    /// No Clone goes in a Root naming Shaman's own data directory, where the
     /// Sidekick Workspace is kept: one told apart as naming it is refused
     /// when named, and where it is the only Root configured, and passed over
     /// otherwise, so the only other Root takes a Clone naming none; and one
     /// not told apart in time is refused once it is read as that directory.
     #[tokio::test]
-    async fn no_clone_goes_in_a_root_naming_suru_s_own_data_directory() {
-        let reads = ReadsApart::new("suru-clone-root-read", 4);
-        let (data, projects) = (rooted("suru/data"), rooted("projects"));
+    async fn no_clone_goes_in_a_root_naming_shaman_s_own_data_directory() {
+        let reads = ReadsApart::new("shaman-clone-root-read", 4);
+        let (data, projects) = (rooted("shaman/data"), rooted("projects"));
         let data_root = PathBuf::from(&data);
         let deadline = || tokio::time::Instant::now() + Duration::from_secs(30);
         let placing =
@@ -1810,7 +1813,7 @@ mod tests {
                 &reads,
                 deadline(),
                 placing(&[&quiet], &[], None),
-                move |_: &str, _: Option<&Path>| Ok(PathBuf::from(rooted("suru/data"))),
+                move |_: &str, _: Option<&Path>| Ok(PathBuf::from(rooted("shaman/data"))),
                 |_: &Path| Ok(())
             )
             .await,
@@ -1819,10 +1822,10 @@ mod tests {
         );
         assert_eq!(
             CloneRefusal::DataRoot {
-                root: "~/.local/share/suru".to_owned(),
+                root: "~/.local/share/shaman".to_owned(),
             }
             .to_string(),
-            "`~/.local/share/suru` names Suru's own data directory, where the Sidekick Workspace \
+            "`~/.local/share/shaman` names Shaman's own data directory, where the Sidekick Workspace \
              is kept, which is not a Root a Clone may go in, so nothing was cloned; Clone into \
              another of this server's Workspace Roots, or ask the user to name a directory of \
              their own in the workspace.roots Setting."
@@ -1840,7 +1843,7 @@ mod tests {
             Repository, RepositoryId, RepositoryLocation, ResolvedWorkspace,
             SourceControlAvailability, SourceControlCapabilities,
         };
-        let reads = ReadsApart::new("suru-clone-root-read", 4);
+        let reads = ReadsApart::new("shaman-clone-root-read", 4);
         let destination = PathBuf::from(rooted("projects/atlas"));
         let repository = |capabilities| Repository {
             id: RepositoryId::from_metadata("git", &destination.join(".git")),

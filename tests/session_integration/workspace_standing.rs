@@ -21,7 +21,7 @@ use std::{
     time::Duration,
 };
 
-use suru::{
+use shaman::{
     managed_client::ManagedClient,
     protocol::{
         SessionId, SettingMutation, Workspace, WorkspaceDescription, WorkspaceUnavailability,
@@ -520,7 +520,7 @@ async fn removing_a_root_drops_what_was_discovered_under_it_but_what_a_session_b
 /// The Config Document a Server reads its Workspace Roots from, written by
 /// hand into `home`'s config root as `text`.
 fn write_config_document(home: &Path, text: &str) {
-    std::fs::write(home.join("config").join("suru.jsonc"), text)
+    std::fs::write(home.join("config").join("shaman.jsonc"), text)
         .expect("write the Config Document");
 }
 
@@ -856,7 +856,7 @@ async fn a_server_started_on_a_config_root_it_cannot_search_keeps_every_discover
         .expect("seal the config root");
     let _unseal = Unseal(config_root.clone());
     // A superuser searches past any mode, so there is nothing to withhold.
-    if std::fs::metadata(config_root.join("suru.jsonc")).is_ok() {
+    if std::fs::metadata(config_root.join("shaman.jsonc")).is_ok() {
         return;
     }
     let (_, restarted) = server_beneath(&home, CHANNEL, Duration::ZERO).await;

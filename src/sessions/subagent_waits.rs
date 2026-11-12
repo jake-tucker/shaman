@@ -12,9 +12,9 @@
 //! process, since no call does.
 //!
 //! A wait is spent in the Turn working when it began. A Provider may begin a
-//! Continuation of its own accord and call the Broker from it before Suru has
+//! Continuation of its own accord and call the Broker from it before Shaman has
 //! heard the Continuation begin — the call and the Provider's events reach
-//! Suru by different roads — so a wait finding no Turn working is spent in
+//! Shaman by different roads — so a wait finding no Turn working is spent in
 //! the next Turn to begin while it is open. A wait that began in a Turn keeps
 //! it, so one lingering after that Turn settled never marks the next.
 
@@ -274,7 +274,7 @@ mod tests {
         );
     }
 
-    /// A Provider's Continuation and its call to the Broker reach Suru by
+    /// A Provider's Continuation and its call to the Broker reach Shaman by
     /// different roads, so a wait may arrive before the Turn it is spent in.
     #[tokio::test]
     async fn a_wait_opened_with_no_turn_working_is_spent_in_the_next_to_begin() {

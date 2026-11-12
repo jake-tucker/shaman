@@ -4,7 +4,7 @@
 //! with the parent's: nothing is left running for a Session that no longer
 //! exists, and no Broker token outlives the Provider it was handed to.
 
-use suru::protocol::{SessionError, SessionErrorCode, SessionListItem};
+use shaman::protocol::{SessionError, SessionErrorCode, SessionListItem};
 
 use super::*;
 

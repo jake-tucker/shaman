@@ -15,7 +15,7 @@ use http_body_util::{BodyExt as _, Full};
 use hyper::{StatusCode, client::conn::http2};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use rcgen::{KeyPair, PublicKeyData};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
     protocol::{
         IssueInviteRequest, ListenerState, PROTOCOL_VERSION, RedeemInviteRequest, Relay,
@@ -23,7 +23,7 @@ use suru::{
     },
     server::ServerTimings,
 };
-use suru_relay_protocol::{Bytes, Refusal, RelayMessage, ServerMessage};
+use shaman_relay_protocol::{Bytes, Refusal, RelayMessage, ServerMessage};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream},
     sync::{Notify, oneshot},
@@ -243,7 +243,7 @@ async fn pinned_tls<S: AsyncRead + AsyncWrite + Unpin>(
 }
 
 /// Runs the Pairing's pinned-key TLS over `stream` as the Server whose
-/// identity key is `key`, pinning `server`'s, in TLS 1.3 as Suru does and
+/// identity key is `key`, pinning `server`'s, in TLS 1.3 as Shaman does and
 /// asking to speak HTTP/2 over it, as a Relay way's connection does.
 pub(super) async fn paired_tls<S: AsyncRead + AsyncWrite + Unpin>(
     stream: S,
@@ -470,7 +470,7 @@ async fn serving_through_a_relay_is_off_until_chosen_and_holding_a_login_opens_n
     let (key, server) = (laptop.identity(), workstation.identity());
 
     let listed = workstation
-        .wait_for_state(&address, suru::protocol::RelayState::LoggedIn)
+        .wait_for_state(&address, shaman::protocol::RelayState::LoggedIn)
         .await;
     assert!(
         !listed.serve_through,
@@ -567,7 +567,7 @@ async fn serving_through_a_relay_is_off_until_chosen_and_holding_a_login_opens_n
         .expect_err("a Relay the Server holds no entry for");
     assert_eq!(
         super::error_code(&refused),
-        suru::protocol::SessionErrorCode::RelayNotFound
+        shaman::protocol::SessionErrorCode::RelayNotFound
     );
 
     laptop.shutdown().await;
@@ -694,7 +694,7 @@ async fn a_carried_connection_meets_the_acceptor_the_listener_feeds() {
     certificate.distinguished_name = rcgen::DistinguishedName::new();
     certificate
         .distinguished_name
-        .push(rcgen::DnType::CommonName, format!("suru-invite-{token}"));
+        .push(rcgen::DnType::CommonName, format!("shaman-invite-{token}"));
     let mut enrolling = Multiplexed::over(
         pinned_tls(
             serving
@@ -715,7 +715,7 @@ async fn a_carried_connection_meets_the_acceptor_the_listener_feeds() {
     .unwrap();
     enrolling.enroll(&token, "prepare").await;
     enrolling.enroll(&token, "commit").await;
-    let fingerprint = suru_relay_protocol::fingerprint(&redeeming.subject_public_key_info());
+    let fingerprint = shaman_relay_protocol::fingerprint(&redeeming.subject_public_key_info());
     let peers = serving.workstation.client.list_peers().await.unwrap();
     assert!(
         peers.iter().any(|peer| peer.id == fingerprint),
@@ -741,7 +741,7 @@ async fn a_carried_connection_meets_the_acceptor_the_listener_feeds() {
     // A revoked key is answered through the Relay as on the listener: let
     // through as a tombstone, so its Server tells revocation from a dropped
     // connection, and refused what it asks.
-    let laptop_peer = suru_relay_protocol::fingerprint(&laptop.subject_public_key_info());
+    let laptop_peer = shaman_relay_protocol::fingerprint(&laptop.subject_public_key_info());
     serving
         .workstation
         .client
@@ -857,7 +857,7 @@ fn invite_token(invite: &str) -> String {
     use base64::Engine as _;
     let payload: serde_json::Value = serde_json::from_slice(
         &base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .decode(invite.strip_prefix("suru-v1-").unwrap())
+            .decode(invite.strip_prefix("shaman-v1-").unwrap())
             .unwrap(),
     )
     .unwrap();
@@ -883,7 +883,7 @@ async fn removing_a_peer_closes_its_relay_carried_connections_as_it_closes_its_l
     )
     .await;
 
-    let peer = suru_relay_protocol::fingerprint(&laptop.subject_public_key_info());
+    let peer = shaman_relay_protocol::fingerprint(&laptop.subject_public_key_info());
     serving.workstation.client.remove_peer(&peer).await.unwrap();
     assert!(
         carried.ended().await,
@@ -976,7 +976,7 @@ impl HeldTakeUp {
                             tell(
                                 &mut socket,
                                 &RelayMessage::LoginDone {
-                                    account: suru_relay_protocol::Account {
+                                    account: shaman_relay_protocol::Account {
                                         provider: "scripted".to_owned(),
                                         username: "octocat".to_owned(),
                                     },

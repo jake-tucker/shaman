@@ -98,13 +98,13 @@ const MINIMUM_TERMINAL_HEIGHT: u16 = 5;
 const LANDING_DETAILS_MINIMUM_HEIGHT: u16 = 9;
 const SESSION_HEADER_TITLE_GAP: usize = 2;
 const LANDING_LOGO: [&str; 7] = [
-    "        █          ▀▀▀▀▀▀▀█",
-    "▀▀▀▀▀▀▀▀█▀▀▀▀▀          ▄▀",
-    "     ▄▀▀█             ▄▀",
-    "     ▀▄▄█           ▄▀▀▀▀▀▄",
-    "        █          █       █",
-    "       ▄▀           ▄▀▀▄   █",
-    "     ▀▀             ▀▄▄▀▄▄▀",
+    " ▄                          ▄▄▄▄▄▄▄▄  ▄",
+    "  ▀▄   █                          ▄▀   ▀▄    █",
+    "▄      █   █                    ▄▀           █",
+    " ▀▄   █   ▄█▄▀▀█  ▀▀▀▀▀▀▀▀  ▀▄▄▀            █",
+    "     █      █ ▀               ▀▄           █",
+    "  ▄▄▀       ▀▄                  ▀       ▄▄▀",
+    "▀▀           ▀                        ▀▀",
 ];
 /// Nerd Fonts `nf-cod-folder` (Codicons folder).
 pub(super) const NF_COD_FOLDER: char = '\u{ea83}';
@@ -3354,7 +3354,7 @@ fn render_workspace_description_editor(
         ("Saving…".to_owned(), theme.text.subdued)
     } else if editor.kept_chars == 0 {
         (
-            "Save it blank to let Suru describe it".to_owned(),
+            "Save it blank to let Shaman describe it".to_owned(),
             theme.text.subdued,
         )
     } else if over {
@@ -6496,7 +6496,7 @@ fn sidebar_settled_row_line(
 ///
 /// Viewed suppresses settled outcomes already seen by any Client. Approval and
 /// Input remain tied to the reserved Needs Intervention variant under issue #168
-/// (<https://github.com/suru-ai/suru/issues/168>).
+/// (<https://github.com/jake-tucker/shaman/issues/168>).
 fn sidebar_active_slot(
     standing: Option<SessionStanding>,
     liveness: SidebarLiveness,
@@ -6957,8 +6957,7 @@ fn render_landing(
     let panel = centered_rect(content, 72, panel_height);
     let mut row = panel.y;
     if show_brand {
-        // Offset the logo's heavier right character for visual balance.
-        let logo_offset = ((panel.width - logo_width) / 2).saturating_sub(1);
+        let logo_offset = (panel.width - logo_width) / 2;
         frame.render_widget(
             Paragraph::new(LANDING_LOGO.join("\n"))
                 .style(theme.accent.primary.add_modifier(Modifier::BOLD)),
@@ -8632,7 +8631,7 @@ fn countdown(seconds: u64) -> String {
 
 /// The one line a Remote that has stopped answering is drawn on: directly
 /// above the composer, on the Session View and the Landing alike. It names the
-/// Remote — never "Suru", because the rest of the Client is working — the
+/// Remote — never "Shaman", because the rest of the Client is working — the
 /// schedule its recovery is on, and the retry the reader may ask for
 /// themselves. Where the Remote cannot be reached for a reason the reader can
 /// act on, that is said in full on the rows above it, as many as it wraps to.
@@ -8717,13 +8716,13 @@ fn render_reconnect_overlay(frame: &mut Frame<'_>, theme: &Theme) {
     frame.render_widget(Clear, area);
     let details = if area.width >= 42 {
         vec![
-            Line::styled("Reconnecting to Suru…", theme.feedback.warning),
+            Line::styled("Reconnecting to Shaman…", theme.feedback.warning),
             Line::default(),
             Line::styled("Your session will resume automatically", theme.text.subdued),
         ]
     } else {
         vec![
-            Line::styled("Reconnecting to Suru…", theme.feedback.warning),
+            Line::styled("Reconnecting to Shaman…", theme.feedback.warning),
             Line::styled("Your session will", theme.text.subdued),
             Line::styled("resume automatically", theme.text.subdued),
         ]
@@ -9057,7 +9056,7 @@ fn status_text(state: &TuiState) -> String {
     }
     match &state.identity {
         Some(identity) => format!("Connected | {}", server_identity_text(identity)),
-        None => "Connecting to Suru server...".to_owned(),
+        None => "Connecting to Shaman server...".to_owned(),
     }
 }
 
@@ -9385,7 +9384,7 @@ mod tests {
                 instance_id,
                 pid: 42_424,
                 protocol_version: 1,
-                build_identity: "suru@test".to_owned(),
+                build_identity: "shaman@test".to_owned(),
             },
             LifecycleState::Ready,
         )));
@@ -9394,7 +9393,7 @@ mod tests {
         ));
 
         let screen = rendered_rows(&application).join("\n");
-        assert!(!screen.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+        assert!(!screen.contains("▄█▄▀▀█"));
         assert!(screen.contains("Connection failed"));
         assert!(screen.contains("unknown event type 'future_event'"));
     }

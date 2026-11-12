@@ -19,14 +19,7 @@ use ratatui::{
     buffer::{Buffer, Cell},
     style::{Color, Modifier},
 };
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::{Duration, Instant},
-};
-use suru::{
+use shaman::{
     managed_client::{
         ManagedClient, ManagedClientConfig, ManagedEvent, SessionEvent, SessionSubscription,
     },
@@ -47,13 +40,20 @@ use suru::{
         TerminalFacts,
     },
 };
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
 /// Puts a fixture's Turn — and the Session running it — in flight, which is
 /// what a reader watching that work is looking at. A settled Turn folds to its
 /// marker, the subject of the Turn Fold tests, while these tests are about how
 /// the entries inside a Turn disclose.
 #[track_caller]
-fn set_turn_in_flight(snapshot: &mut suru::protocol::SessionSnapshot, turn_id: TurnId) {
+fn set_turn_in_flight(snapshot: &mut shaman::protocol::SessionSnapshot, turn_id: TurnId) {
     snapshot.session.status = SessionStatus::Active;
     snapshot
         .turns
@@ -687,7 +687,7 @@ async fn streamed_agent_markdown_updates_one_unboxed_row_through_the_real_sessio
  session_id: None,
  preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1766,7 +1766,7 @@ fn command_activity_session(
     status: ActivityStatus,
     output: &str,
     output_truncated: bool,
-) -> (suru::protocol::SessionSnapshot, ActivityId) {
+) -> (shaman::protocol::SessionSnapshot, ActivityId) {
     let mut snapshot = failed_session_snapshot(
         SessionId::new(),
         PromptId::new(),
@@ -2003,7 +2003,7 @@ fn a_reroute_stands_as_a_status_row_naming_both_models_and_the_reason() {
     let reroute = Activity::Reroute {
         id: ActivityId::new(),
         turn_id,
-        reroute: suru::protocol::Reroute {
+        reroute: shaman::protocol::Reroute {
             provider: ProviderId::new("copilot"),
             from: Some(ModelId::new("first")),
             to: ModelId::new("second"),
@@ -2223,8 +2223,8 @@ fn working_indicator_names_only_the_current_reported_model() {
     let mut snapshot = navigable_session_snapshot(session_id, workspace.path(), 1);
     let turn_id = snapshot.turns[0].id;
     set_turn_in_flight(&mut snapshot, turn_id);
-    snapshot.session.working_since = Some(suru::protocol::SessionTimestamp::now());
-    snapshot.current_model = Some(suru::protocol::WorkingModel {
+    snapshot.session.working_since = Some(shaman::protocol::SessionTimestamp::now());
+    snapshot.current_model = Some(shaman::protocol::WorkingModel {
         turn_id,
         model: auto_model("first"),
     });
@@ -2296,7 +2296,7 @@ fn model_names_follow_the_open_sessions_origin_for_messages_and_working() {
     let turn_id = snapshot.turns[0].id;
     set_turn_in_flight(&mut snapshot, turn_id);
     snapshot.session.working_since = Some(SessionTimestamp::now());
-    snapshot.current_model = Some(suru::protocol::WorkingModel {
+    snapshot.current_model = Some(shaman::protocol::WorkingModel {
         turn_id,
         model: auto_model("first"),
     });
@@ -2336,7 +2336,7 @@ fn model_names_follow_the_open_sessions_origin_for_messages_and_working() {
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
             result: Ok(RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                 status: RemoteStatus::Available,
                 unreachable: None,
             }),
@@ -3182,13 +3182,13 @@ fn session_opened_under(
     workspace: &std::path::Path,
     mut settings: EffectiveSettings,
     pinned: &[&str],
-    snapshot: suru::protocol::SessionSnapshot,
+    snapshot: shaman::protocol::SessionSnapshot,
 ) -> Application {
     // These fixtures exercise Transcript behavior at their stated frame
     // widths. Keep the adjacent Sidebar out of that width unless a test is
     // explicitly about composing the two surfaces.
-    settings.sidebar.initial_visibility = suru::protocol::SidebarVisibility::Hidden;
-    settings.aside.initial_visibility = suru::protocol::AsideVisibility::Hidden;
+    settings.sidebar.initial_visibility = shaman::protocol::SidebarVisibility::Hidden;
+    settings.aside.initial_visibility = shaman::protocol::AsideVisibility::Hidden;
     let mut application = connected_application(workspace);
     deliver_settings(&mut application, settings, pinned);
     application
@@ -3211,8 +3211,8 @@ fn ungroup_with_theme(application: &mut Application, theme: Option<&str>) {
     if let Some(theme) = theme {
         settings.appearance.theme = theme.to_owned();
     }
-    settings.sidebar.initial_visibility = suru::protocol::SidebarVisibility::Hidden;
-    settings.aside.initial_visibility = suru::protocol::AsideVisibility::Hidden;
+    settings.sidebar.initial_visibility = shaman::protocol::SidebarVisibility::Hidden;
+    settings.aside.initial_visibility = shaman::protocol::AsideVisibility::Hidden;
     deliver_settings(application, settings, &["transcript.groups"]);
 }
 
@@ -3239,7 +3239,7 @@ fn deliver_settings(application: &mut Application, settings: EffectiveSettings, 
 fn session_opened_at(
     workspace: &std::path::Path,
     posture: FoldPosture,
-    snapshot: suru::protocol::SessionSnapshot,
+    snapshot: shaman::protocol::SessionSnapshot,
 ) -> Application {
     session_opened_under(
         workspace,
@@ -3263,7 +3263,7 @@ fn session_opened_at(
     )
 }
 
-/// A connected client whose reader asked to see Reasoning. Suru hides it by
+/// A connected client whose reader asked to see Reasoning. Shaman hides it by
 /// default — a Transcript leads with the work and the answer rather than the
 /// account of how the agent got there — so every test about how a Reasoning
 /// row, Group, or Fold presents starts by turning it on.
@@ -3272,8 +3272,8 @@ fn client_showing_reasoning(workspace: &std::path::Path) -> Application {
     let mut settings = settings_with_reasoning(ReasoningVisibility::Shown);
     // Initial visibility is seeded by the first Settings snapshot, so hide
     // the Sidebar here rather than trying to correct the fixture later.
-    settings.sidebar.initial_visibility = suru::protocol::SidebarVisibility::Hidden;
-    settings.aside.initial_visibility = suru::protocol::AsideVisibility::Hidden;
+    settings.sidebar.initial_visibility = shaman::protocol::SidebarVisibility::Hidden;
+    settings.aside.initial_visibility = shaman::protocol::AsideVisibility::Hidden;
     deliver_settings(
         &mut application,
         settings,
@@ -3505,7 +3505,7 @@ fn reasoning_activity_session(
     title: Option<&str>,
     content: &str,
     duration_ms: Option<u64>,
-) -> (suru::protocol::SessionSnapshot, ActivityId) {
+) -> (shaman::protocol::SessionSnapshot, ActivityId) {
     let mut snapshot = failed_session_snapshot(
         SessionId::new(),
         PromptId::new(),
@@ -3928,7 +3928,7 @@ fn subagent_activity_session(
     status: ActivityStatus,
     description: &str,
     duration_ms: Option<u64>,
-) -> (suru::protocol::SessionSnapshot, ActivityId) {
+) -> (shaman::protocol::SessionSnapshot, ActivityId) {
     let mut snapshot = failed_session_snapshot(
         SessionId::new(),
         PromptId::new(),
@@ -4015,7 +4015,7 @@ fn tool_call_activity_session(
     server: Option<&str>,
     name: &str,
     input: &str,
-) -> suru::protocol::SessionSnapshot {
+) -> shaman::protocol::SessionSnapshot {
     let mut snapshot =
         failed_session_snapshot(SessionId::new(), PromptId::new(), "Use a tool", workspace);
     let turn_id = snapshot.turns[0].id;
@@ -4067,10 +4067,10 @@ fn tool_call_rows_lead_with_their_marker_then_their_tool_and_input() {
         // A Tool given no arguments is its name alone.
         (
             ActivityStatus::Completed,
-            Some("suru"),
+            Some("shaman"),
             "list_providers",
             "",
-            "✓ suru/list_providers",
+            "✓ shaman/list_providers",
             PANDA.success,
         ),
     ];
@@ -4144,7 +4144,7 @@ fn tool_call_output_session(
     workspace: &std::path::Path,
     status: ActivityStatus,
     output: &str,
-) -> (suru::protocol::SessionSnapshot, ActivityId) {
+) -> (shaman::protocol::SessionSnapshot, ActivityId) {
     let mut snapshot = tool_call_activity_session(
         workspace,
         status,
@@ -4731,7 +4731,7 @@ fn watch_outcome_session(
     status: WatchOutcomeStatus,
     description: &str,
     summary: Option<&str>,
-) -> suru::protocol::SessionSnapshot {
+) -> shaman::protocol::SessionSnapshot {
     let mut snapshot = failed_session_snapshot(
         SessionId::new(),
         PromptId::new(),
@@ -4815,7 +4815,7 @@ fn watch_outcome_rows_wear_the_outcome_marker_for_each_status_beside_the_provide
 fn compaction_session(
     workspace: &std::path::Path,
     compaction: impl FnOnce(ActivityId, TurnId) -> Activity,
-) -> (suru::protocol::SessionSnapshot, ActivityId) {
+) -> (shaman::protocol::SessionSnapshot, ActivityId) {
     let mut snapshot = failed_session_snapshot(
         SessionId::new(),
         PromptId::new(),
@@ -4901,7 +4901,7 @@ fn compaction_rows_wear_their_marker_and_say_how_the_context_changed() {
             "    ✓ Compacted context · 182K → 31K",
             PANDA.muted,
         ),
-        // One Suru began of its own accord says so, since nobody asked.
+        // One Shaman began of its own accord says so, since nobody asked.
         (
             ActivityStatus::Completed,
             CompactionTrigger::Scheduled,
@@ -5038,7 +5038,7 @@ fn an_active_compaction_settles_in_place_when_its_outcome_arrives() {
 
 #[test]
 fn a_compaction_row_reads_the_same_whichever_provider_compacted() {
-    use suru::protocol::{AgentId, AgentIdentity, AgentSelection, ModelId, ProviderId};
+    use shaman::protocol::{AgentId, AgentIdentity, AgentSelection, ModelId, ProviderId};
 
     let workspace = workspace_dir();
     // Codex's counts come from Context Fill readings and Claude's from the
@@ -5132,12 +5132,12 @@ fn a_completed_compaction_row_gains_its_after_reading_in_place() {
 }
 
 /// A Session whose single Activity is an automatic Compaction from 182K to
-/// 31K that left `summary`, cut by Suru's cap where `summary_truncated` says.
+/// 31K that left `summary`, cut by Shaman's cap where `summary_truncated` says.
 fn summarised_compaction_session(
     workspace: &std::path::Path,
     summary: &str,
     summary_truncated: bool,
-) -> suru::protocol::SessionSnapshot {
+) -> shaman::protocol::SessionSnapshot {
     compaction_session(workspace, |id, turn_id| Activity::Compaction {
         id,
         turn_id,
@@ -5333,7 +5333,7 @@ fn requested_compaction_session(
     status: ActivityStatus,
     instructions: Option<&str>,
     summary: Option<&str>,
-) -> suru::protocol::SessionSnapshot {
+) -> shaman::protocol::SessionSnapshot {
     let mut snapshot = failed_session_snapshot(
         SessionId::new(),
         PromptId::new(),
@@ -5348,7 +5348,7 @@ fn requested_compaction_session(
         },
         started_at: Some(SessionTimestamp(1_755_000_000_000)),
         settled_at: Some(SessionTimestamp(1_755_000_012_000)),
-        ..Turn::requested_compaction(None, suru::protocol::CompactionRequest::Manual)
+        ..Turn::requested_compaction(None, shaman::protocol::CompactionRequest::Manual)
     };
     let compaction = ActivityId::new();
     let completed = status == ActivityStatus::Completed;
@@ -6232,7 +6232,7 @@ impl ReasoningBlock {
         }
     }
 
-    /// A block stored before Suru recorded Reasoning durations, so it has a
+    /// A block stored before Shaman recorded Reasoning durations, so it has a
     /// heading and prose but nothing to contribute to a summed duration.
     const fn untimed(title: &'static str, content: &'static str) -> Self {
         Self {
@@ -6304,7 +6304,7 @@ fn command_run_snapshot(
     session_id: SessionId,
     workspace: &std::path::Path,
     entries: &[RunEntry],
-) -> suru::protocol::SessionSnapshot {
+) -> shaman::protocol::SessionSnapshot {
     let mut snapshot =
         failed_session_snapshot(session_id, PromptId::new(), "Run the workflow", workspace);
     let turn_id = snapshot.turns[0].id;
@@ -6428,7 +6428,7 @@ const SUCCESSFUL_COMMAND: RunEntry = RunEntry::Command(ActivityStatus::Completed
 fn live_command_run_snapshot(
     session_id: SessionId,
     workspace: &std::path::Path,
-) -> suru::protocol::SessionSnapshot {
+) -> shaman::protocol::SessionSnapshot {
     let mut snapshot = command_run_snapshot(
         session_id,
         workspace,
@@ -6980,7 +6980,7 @@ fn an_interrupted_command_stays_in_its_group_and_opens_at_the_peek_it_was_watche
 /// Rewrites the output of the run member holding `command`, so a test can give
 /// one member more output than its Fold budget without touching the others.
 fn set_member_output(
-    snapshot: &mut suru::protocol::SessionSnapshot,
+    snapshot: &mut shaman::protocol::SessionSnapshot,
     command: &str,
     output: String,
 ) {
@@ -7814,7 +7814,7 @@ const COMPLETED_TOOL_CALL: RunEntry = RunEntry::ToolCall(ActivityStatus::Complet
 fn live_tool_call_run_snapshot(
     session_id: SessionId,
     workspace: &std::path::Path,
-) -> suru::protocol::SessionSnapshot {
+) -> shaman::protocol::SessionSnapshot {
     let mut snapshot = command_run_snapshot(
         session_id,
         workspace,
@@ -7850,7 +7850,7 @@ fn tool_call_settles(
 /// Rewrites the result of the run member named `name`, so a test can give one
 /// Tool Call more output than its Fold budget without touching the others.
 fn set_tool_call_output(
-    snapshot: &mut suru::protocol::SessionSnapshot,
+    snapshot: &mut shaman::protocol::SessionSnapshot,
     name: &str,
     output: String,
 ) {
@@ -8363,7 +8363,7 @@ fn tool_calls_are_shown_by_default_and_the_setting_hides_and_restores_them() {
 #[test]
 fn a_turn_whose_only_work_was_hidden_tool_calls_shows_no_trace_of_them() {
     let workspace = workspace_dir();
-    let hiding = |mut snapshot: suru::protocol::SessionSnapshot, settled: bool| {
+    let hiding = |mut snapshot: shaman::protocol::SessionSnapshot, settled: bool| {
         if settled {
             snapshot.session.status = SessionStatus::Idle;
             snapshot.turns[0].status = TurnStatus::Completed;
@@ -8466,7 +8466,7 @@ fn live_reasoning_run_snapshot(
     session_id: SessionId,
     workspace: &std::path::Path,
     streaming: ReasoningBlock,
-) -> suru::protocol::SessionSnapshot {
+) -> shaman::protocol::SessionSnapshot {
     let mut snapshot = command_run_snapshot(
         session_id,
         workspace,
@@ -9338,7 +9338,7 @@ fn settled_turn_session(
     workspace: &std::path::Path,
     prompt: &'static str,
     answer: &'static str,
-) -> suru::protocol::SessionSnapshot {
+) -> shaman::protocol::SessionSnapshot {
     let mut snapshot = command_run_snapshot(
         SessionId::new(),
         workspace,
@@ -9421,7 +9421,7 @@ fn a_settled_turn_fold_marker_renders_duration_without_tokens_or_cost() {
 /// Appends a second settled Turn to `snapshot`, so a test can watch what one
 /// Turn Fold does to the Turns around it.
 fn append_settled_turn(
-    snapshot: &mut suru::protocol::SessionSnapshot,
+    snapshot: &mut shaman::protocol::SessionSnapshot,
     prompt: &str,
     reasoning: &str,
     answer: &str,
@@ -9689,7 +9689,7 @@ fn the_turn_a_compaction_request_began_shows_its_one_row_under_its_turn_fold() {
             status: turn_status,
             started_at: Some(SessionTimestamp(1_755_000_000_000)),
             settled_at: Some(SessionTimestamp(1_755_000_012_000)),
-            ..Turn::requested_compaction(None, suru::protocol::CompactionRequest::Manual)
+            ..Turn::requested_compaction(None, shaman::protocol::CompactionRequest::Manual)
         };
         let compaction = ActivityId::new();
         snapshot.activities.push(Activity::Compaction {
@@ -10286,7 +10286,7 @@ fn select_transcript_payload(
     application: &mut Application,
     start: (u16, u16),
     end: (u16, u16),
-) -> suru::tui::ClipboardContent {
+) -> shaman::tui::ClipboardContent {
     use crossterm::event::MouseButton;
     application
         .handle_terminal_event(selection_mouse(
@@ -10343,7 +10343,7 @@ fn a_word_from_any_block_copies_as_the_word_alone() {
                 start,
                 (start.0 + word.len() as u16 - 1, start.1)
             ),
-            suru::tui::ClipboardContent::from(word),
+            shaman::tui::ClipboardContent::from(word),
             "{source}"
         );
     }
@@ -10383,17 +10383,17 @@ fn the_plain_text_setting_decides_what_a_table_offers_a_text_only_paste() {
     let html = "<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody>\n<tr><td>one</td><td>two</td></tr>\n</tbody></table>\n";
     for (plain_text, text) in [
         (
-            suru::protocol::TextSelectionPlainText::Visible,
+            shaman::protocol::TextSelectionPlainText::Visible,
             "a\tb\none\ttwo",
         ),
         (
-            suru::protocol::TextSelectionPlainText::Markdown,
+            shaman::protocol::TextSelectionPlainText::Markdown,
             "| a | b |\n| --- | --- |\n| one | two |",
         ),
     ] {
         let mut application = connected_application(workspace.path());
         let mut settings = EffectiveSettings::default();
-        settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+        settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
         settings.text_selection.plain_text = plain_text;
         deliver_settings(
             &mut application,
@@ -10412,7 +10412,7 @@ fn the_plain_text_setting_decides_what_a_table_offers_a_text_only_paste() {
         let end = text_position(&buffer, "two");
         assert_eq!(
             select_transcript_payload(&mut application, start, (end.0 + 2, end.1)),
-            suru::tui::ClipboardContent {
+            shaman::tui::ClipboardContent {
                 text: text.into(),
                 html: Some(html.into()),
             }
@@ -10438,7 +10438,7 @@ fn markdown_selection_balances_partial_inline_formatting_without_unselected_word
     let start = text_position(&buffer, "chosen words");
     assert_eq!(
         select_transcript_payload(&mut application, start, (start.0 + 18, start.1)),
-        suru::tui::ClipboardContent {
+        shaman::tui::ClipboardContent {
             text: "chosen words after".into(),
             html: Some("<p><strong><em>chosen words</em> after</strong></p>\n".into()),
         }
@@ -10946,7 +10946,7 @@ fn transcript_selection_unwraps_the_visible_tail_of_a_folded_command_line() {
 #[test]
 fn manual_selection_waits_for_copy_and_explicit_copy_clears_in_both_modes() {
     use crossterm::event::MouseButton;
-    use suru::protocol::TextSelectionCopy;
+    use shaman::protocol::TextSelectionCopy;
     let workspace = workspace_dir();
     for mode in [TextSelectionCopy::Manual, TextSelectionCopy::Release] {
         for right_click in [false, true] {
@@ -11016,8 +11016,8 @@ fn manual_selection_waits_for_copy_and_explicit_copy_clears_in_both_modes() {
 /// Copies on release, offering a text-only paste the selected Markdown.
 fn pin_markdown_copy(application: &mut Application) {
     let mut settings = EffectiveSettings::default();
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
-    settings.text_selection.plain_text = suru::protocol::TextSelectionPlainText::Markdown;
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
+    settings.text_selection.plain_text = shaman::protocol::TextSelectionPlainText::Markdown;
     deliver_settings(
         application,
         settings,
@@ -11027,7 +11027,7 @@ fn pin_markdown_copy(application: &mut Application) {
 
 fn pin_release_copy(application: &mut Application) {
     let mut settings = EffectiveSettings::default();
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
     deliver_settings(application, settings, &["textSelection.copy"]);
 }
 
@@ -11036,7 +11036,7 @@ fn pin_release_copy(application: &mut Application) {
 /// Group of one it would otherwise stand in.
 fn pin_release_copy_ungrouped(application: &mut Application) {
     let mut settings = EffectiveSettings::default();
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
     settings.transcript.groups = GroupPosture::Off;
     deliver_settings(
         application,
@@ -11265,7 +11265,7 @@ fn reconnecting_cancels_a_held_transcript_edge_drag() {
     assert!(application.wants_spinner());
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Recovering(
-            suru::managed_client::RecoveryStatus {
+            shaman::managed_client::RecoveryStatus {
                 attempt: 1,
                 retry_in: Duration::ZERO,
                 unreachable: None,
@@ -11274,7 +11274,7 @@ fn reconnecting_cancels_a_held_transcript_edge_drag() {
         .unwrap();
     application
         .handle_event(ApplicationEvent::ReconnectGraceElapsed(
-            suru::protocol::Outlook::Local,
+            shaman::protocol::Outlook::Local,
         ))
         .unwrap();
     application
@@ -11693,9 +11693,9 @@ fn markdown_selection_preserves_visible_reasoning_and_excludes_folded_body() {
     let mut application = client_showing_reasoning(workspace.path());
     let mut settings = EffectiveSettings::default();
     settings.transcript.reasoning_visibility = ReasoningVisibility::Shown;
-    settings.sidebar.initial_visibility = suru::protocol::SidebarVisibility::Hidden;
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
-    settings.text_selection.plain_text = suru::protocol::TextSelectionPlainText::Markdown;
+    settings.sidebar.initial_visibility = shaman::protocol::SidebarVisibility::Hidden;
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
+    settings.text_selection.plain_text = shaman::protocol::TextSelectionPlainText::Markdown;
     deliver_settings(
         &mut application,
         settings,
@@ -11959,7 +11959,7 @@ fn supported_markdown_link_clicks_open_semantically_and_copy_their_words_and_des
             position,
             (position.0 + "guide".len() as u16 - 1, position.1),
         ),
-        suru::tui::ClipboardContent {
+        shaman::tui::ClipboardContent {
             text: "guide".into(),
             html: Some("<p><a href=\"https://example.test/path\">guide</a></p>\n".into()),
         }
@@ -12054,7 +12054,7 @@ fn markdown_rule_copy_is_valid_from_far_right_partial_cells_at_multiple_widths()
                     (start, rule_row),
                     (first, rule_row + 1),
                 ),
-                suru::tui::ClipboardContent {
+                shaman::tui::ClipboardContent {
                     text: "---".into(),
                     html: Some("<hr />\n".into()),
                 },
@@ -12089,7 +12089,7 @@ fn markdown_image_chrome_is_excluded_from_plain_and_rich_copy() {
             start,
             (end.0 + destination.len() as u16 - 1, end.1),
         ),
-        suru::tui::ClipboardContent {
+        shaman::tui::ClipboardContent {
             text: "diagram".into(),
             html: Some("<p><a href=\"https://example.test/diagram.png\">diagram</a></p>\n".into()),
         }
@@ -12416,7 +12416,7 @@ fn second_press_two_cells_away_after_the_interval_or_on_another_surface_starts_o
 fn double_click_in_manual_mode_stands_until_ctrl_c_copies_it() {
     let (mut application, clock) = word_click_application("Alpha bravo charlie");
     let mut settings = EffectiveSettings::default();
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Manual;
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Manual;
     deliver_settings(&mut application, settings, &["textSelection.copy"]);
     let buffer = rendered_application_buffer(&application, 60, 24);
     let bravo = text_position(&buffer, "bravo");
@@ -12630,9 +12630,9 @@ fn click_count_survives_a_release_copy_ctrl_c_escape_and_a_fold_toggle() {
             });
         let mut settings = EffectiveSettings::default();
         settings.text_selection.copy = if reset == "ctrl-c" {
-            suru::protocol::TextSelectionCopy::Manual
+            shaman::protocol::TextSelectionCopy::Manual
         } else {
-            suru::protocol::TextSelectionCopy::Release
+            shaman::protocol::TextSelectionCopy::Release
         };
         deliver_settings(&mut application, settings, &["textSelection.copy"]);
         application
@@ -12888,7 +12888,7 @@ fn triple_click_copies_command_and_fold_words_without_affordances() {
     );
     let mut settings = EffectiveSettings::default();
     settings.transcript.reasoning_visibility = ReasoningVisibility::Shown;
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
     deliver_settings(
         &mut application,
         settings,

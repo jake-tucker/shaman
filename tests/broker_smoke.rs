@@ -6,7 +6,7 @@
 //! Agent into a Continuation, and through a wait on it held open for longer
 //! than Claude's idle window for a silent call.
 //!
-//! Every other Broker test drives Suru against Provider doubles and scripted
+//! Every other Broker test drives Shaman against Provider doubles and scripted
 //! stand-ins; these are the check that the real harnesses do what those
 //! doubles were written to: that Claude loads the Broker from its MCP config,
 //! finds its Tools, and calls them unasked, at whichever MCP revision it
@@ -14,15 +14,15 @@
 //! runs a brokered Subagent at the posture derived for it; that Claude answers
 //! a Report as a Turn of its own; and that a long Broker call survives Claude's
 //! timers. They spend real Model calls, so they run only when asked twice —
-//! the ignore attribute and `SURU_BROKER_SMOKE=1` — and skip when Suru finds
+//! the ignore attribute and `SHAMAN_BROKER_SMOKE=1` — and skip when Shaman finds
 //! either CLI not installed or not signed in:
 //!
 //! ```text
-//! SURU_BROKER_SMOKE=1 cargo nextest run --test integration --run-ignored ignored-only --no-capture broker_smoke::
+//! SHAMAN_BROKER_SMOKE=1 cargo nextest run --test integration --run-ignored ignored-only --no-capture broker_smoke::
 //! ```
 //!
-//! `SURU_CLAUDE_PATH` and `SURU_CODEX_PATH` name other binaries, as they do for
-//! Suru itself, and `SURU_LOG` writes the Server's own tracing to stderr. What
+//! `SHAMAN_CLAUDE_PATH` and `SHAMAN_CODEX_PATH` name other binaries, as they do for
+//! Shaman itself, and `SHAMAN_LOG` writes the Server's own tracing to stderr. What
 //! they assert, and the versions they last passed against, are recorded in
 //! `docs/validation/0421-broker-smoke.md`.
 
@@ -31,7 +31,7 @@ use crate::support as server_support;
 use std::{ffi::OsStr, fmt::Display, path::Path, process::Command, sync::Arc};
 
 use server_support::{PROGRESS_DEADLINE, receive_initial_state};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionSubscription, SubagentTreeEvent},
     protocol::{
         Activity, ActivityStatus, AgentSelection, ApprovalPosture, ClaudePermissionMode,
@@ -45,17 +45,17 @@ use suru::{
 };
 use tokio::time::{Duration, Instant, timeout};
 
-const GATE: &str = "SURU_BROKER_SMOKE";
+const GATE: &str = "SHAMAN_BROKER_SMOKE";
 
 /// What the Report smoke asks of the Claude Agent. It names the Broker but
-/// none of its Tools, which the Agent learns from the note Suru appends to its
+/// none of its Tools, which the Agent learns from the note Shaman appends to its
 /// system prompt. The Subagent sleeps before it answers so that its Report
 /// reaches a Claude Agent whose Turn has settled — the Continuation that smoke
 /// is about — rather than steering the Turn that spawned it.
-const REPORT_PROMPT: &str = "Using Suru's Broker, spawn one Subagent on the codex Provider, on \
+const REPORT_PROMPT: &str = "Using Shaman's Broker, spawn one Subagent on the codex Provider, on \
 that Provider's default Model, named echo. Tell it to run the shell command `sleep 8` and then \
 reply with exactly the word PONG and nothing else. Do not do its task yourself, and do not wait \
-for it or check on it: once it is spawned, end your turn straight away. Suru will bring you its \
+for it or check on it: once it is spawned, end your turn straight away. Shaman will bring you its \
 Report as a new message; when it arrives, answer with the single word DONE followed by the \
 Subagent's reply.";
 
@@ -74,7 +74,7 @@ const WAIT_TIMEOUT_SECONDS: u64 = 400;
 /// fail, so a call Claude cut short is told apart from one that answered.
 fn wait_prompt() -> String {
     format!(
-        "Using Suru's Broker, spawn one Subagent on the codex Provider, on that Provider's \
+        "Using Shaman's Broker, spawn one Subagent on the codex Provider, on that Provider's \
          default Model, named echo. Tell it to run the shell command `sleep \
          {SUBAGENT_SLEEP_SECONDS}`, which takes over five minutes, to wait for that command to \
          finish, and only then to reply with exactly the word PONG and nothing else. Do not do \
@@ -118,7 +118,7 @@ const WAIT_SMOKE_DEADLINE: Duration = Duration::from_secs(600);
 const REST_GRACE: Duration = PROGRESS_DEADLINE;
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "set SURU_BROKER_SMOKE=1 to use the installed, signed-in Claude and Codex binaries"]
+#[ignore = "set SHAMAN_BROKER_SMOKE=1 to use the installed, signed-in Claude and Codex binaries"]
 async fn a_claude_agent_spawns_a_codex_subagent_through_the_broker_and_answers_its_report() {
     let Some(mut live) = Live::start("broker-report-smoke").await else {
         return;
@@ -260,7 +260,7 @@ async fn a_claude_agent_spawns_a_codex_subagent_through_the_broker_and_answers_i
 /// Turn that waited, so the smoke waits past the answer for the Session to come
 /// to rest (`docs/validation/0407-claude-folded-steer.md`).
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "set SURU_BROKER_SMOKE=1 to use the installed, signed-in Claude and Codex binaries"]
+#[ignore = "set SHAMAN_BROKER_SMOKE=1 to use the installed, signed-in Claude and Codex binaries"]
 async fn a_claude_agents_wait_on_a_codex_subagent_outlasts_claudes_idle_window() {
     let Some(mut live) = Live::start("broker-wait-smoke").await else {
         return;
@@ -421,11 +421,11 @@ impl Live {
         let began = Instant::now();
         println!(
             "claude --version: {}",
-            cli_version("SURU_CLAUDE_PATH", "claude")
+            cli_version("SHAMAN_CLAUDE_PATH", "claude")
         );
         println!(
             "codex --version: {}",
-            cli_version("SURU_CODEX_PATH", "codex")
+            cli_version("SHAMAN_CODEX_PATH", "codex")
         );
 
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
@@ -434,7 +434,7 @@ impl Live {
         // Subagent (ADR 0036), so nothing in the tree asks; and no Title or Workspace Icon is
         // derived, which would spend Model calls the smoke has no stake in.
         std::fs::write(
-            config_dir.path().join("suru.jsonc"),
+            config_dir.path().join("shaman.jsonc"),
             r#"{
   "provider": { "claude": { "permissionMode": "bypassPermissions" } },
   "derivation": { "errand": "off" }
@@ -751,7 +751,10 @@ async fn settled_in_the_tree(
 }
 
 /// The tree `parent_id` heads, as its stream's opening snapshot gives it.
-async fn subagent_tree(live: &Live, parent_id: SessionId) -> suru::protocol::SubagentTreeSnapshot {
+async fn subagent_tree(
+    live: &Live,
+    parent_id: SessionId,
+) -> shaman::protocol::SubagentTreeSnapshot {
     let mut tree = live.client.subscribe_subagent_tree(parent_id);
     let SubagentTreeEvent::Snapshot(snapshot) = timeout(PROGRESS_DEADLINE, tree.next())
         .await
@@ -995,7 +998,7 @@ fn describe(snapshot: &SessionSnapshot) -> String {
     lines.join("\n")
 }
 
-/// Why the smoke cannot run here, when Suru finds either CLI not installed or
+/// Why the smoke cannot run here, when Shaman finds either CLI not installed or
 /// not signed in. Anything else wrong with a Provider is the smoke's to report
 /// as a failure.
 fn unusable(catalog: &ModelCatalog) -> Option<String> {
@@ -1023,7 +1026,7 @@ fn unusable(catalog: &ModelCatalog) -> Option<String> {
 fn catalog_of<'a>(
     catalog: &'a ModelCatalog,
     provider: &str,
-) -> &'a suru::protocol::ProviderModelCatalog {
+) -> &'a shaman::protocol::ProviderModelCatalog {
     catalog
         .providers
         .iter()
@@ -1094,10 +1097,10 @@ fn scratch_repository() -> tempfile::TempDir {
             .arg(workspace.path())
             .args(args)
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_AUTHOR_NAME", "Suru Smoke")
-            .env("GIT_AUTHOR_EMAIL", "suru@example.invalid")
-            .env("GIT_COMMITTER_NAME", "Suru Smoke")
-            .env("GIT_COMMITTER_EMAIL", "suru@example.invalid")
+            .env("GIT_AUTHOR_NAME", "Shaman Smoke")
+            .env("GIT_AUTHOR_EMAIL", "shaman@example.invalid")
+            .env("GIT_COMMITTER_NAME", "Shaman Smoke")
+            .env("GIT_COMMITTER_EMAIL", "shaman@example.invalid")
             .output()
             .expect("run git");
         assert!(
@@ -1109,10 +1112,10 @@ fn scratch_repository() -> tempfile::TempDir {
     workspace
 }
 
-/// Writes the Server's own tracing to stderr when `SURU_LOG` names a filter,
+/// Writes the Server's own tracing to stderr when `SHAMAN_LOG` names a filter,
 /// as the detached Server writes it to its Log file.
 fn trace_the_server_when_asked() {
-    if let Ok(filter) = std::env::var("SURU_LOG") {
+    if let Ok(filter) = std::env::var("SHAMAN_LOG") {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::new(filter))
             .with_writer(std::io::stderr)

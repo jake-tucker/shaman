@@ -10,7 +10,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::json;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         AgentId, AgentIdentity, AgentSelection, CreateSessionRequest, DerivationErrand,
@@ -36,7 +36,7 @@ fn create_request(workspace: &std::path::Path, prompt: &str) -> CreateSessionReq
         session_id: None,
         preparation_id: None,
         agent_selection: Some(hosted_selection(PROVIDER, MODEL)),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -194,7 +194,7 @@ async fn an_answered_errand_updates_the_open_session_title_and_icon() {
         .expect("valid snapshot");
     assert!(matches!(
         initial,
-        suru::managed_client::SessionEvent::Snapshot(_)
+        shaman::managed_client::SessionEvent::Snapshot(_)
     ));
 
     let errand = timeout(PROGRESS_DEADLINE, provider.next_errand())
@@ -214,7 +214,7 @@ async fn an_answered_errand_updates_the_open_session_title_and_icon() {
     );
     assert_eq!(
         errand.execution_directory(),
-        suru::paths::canonical(workspace.path())
+        shaman::paths::canonical(workspace.path())
             .expect("canonicalize Workspace")
             .as_path(),
         "the Errand runs in the Session's Workspace"
@@ -226,7 +226,7 @@ async fn an_answered_errand_updates_the_open_session_title_and_icon() {
     );
     assert_eq!(
         schema["properties"]["icon"]["enum"],
-        json!(suru::icon_catalog_names()),
+        json!(shaman::icon_catalog_names()),
         "the reply schema carries the Icon Catalog as a strict enum: {schema}"
     );
     errand.succeed(json!({
@@ -263,10 +263,10 @@ async fn an_answered_errand_updates_the_open_session_title_and_icon() {
                 .await
                 .expect("stream remains open")
                 .expect("valid update");
-            if let suru::managed_client::SessionEvent::Updated(update) = event
+            if let shaman::managed_client::SessionEvent::Updated(update) = event
                 && update.changes.iter().any(|change| {
                     matches!(change,
-                        suru::protocol::SessionChange::TitleChanged { title, icon }
+                        shaman::protocol::SessionChange::TitleChanged { title, icon }
                             if title == "Fix reasoning group flicker"
                                 && icon.as_deref() == Some("md-bug")
                     )
@@ -548,7 +548,7 @@ async fn an_errand_answering_outside_its_schema_yields_no_partial_title() {
     assert_eq!(
         listed_title(&client, session_id).await,
         ("Explain the seam".to_owned(), None),
-        "a reply Suru cannot read is discarded whole rather than half-applied"
+        "a reply Shaman cannot read is discarded whole rather than half-applied"
     );
     finish_initial_turn(&mut provider).await;
     assert_no_title_reaches(
@@ -561,7 +561,7 @@ async fn an_errand_answering_outside_its_schema_yields_no_partial_title() {
     server.shutdown().await.expect("shut down server");
 }
 
-/// An Icon Suru's Catalog does not carry is not a reason to throw the Title
+/// An Icon Shaman's Catalog does not carry is not a reason to throw the Title
 /// away: validation looks the name up, finds nothing, and lands the Title
 /// alone — exactly as a reply naming no Icon at all does.
 #[tokio::test]
@@ -689,7 +689,7 @@ async fn a_session_with_no_agent_selection_asks_for_no_errand_at_all() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -707,7 +707,7 @@ async fn a_session_with_no_agent_selection_asks_for_no_errand_at_all() {
 
     assert!(
         provider.try_next_errand().is_none(),
-        "Suru asks no Errand of a Provider the user never selected"
+        "Shaman asks no Errand of a Provider the user never selected"
     );
 
     server.shutdown().await.expect("shut down server");
@@ -781,7 +781,7 @@ async fn interrupting_the_first_turn_still_yields_a_derived_title() {
 }
 
 #[tokio::test]
-async fn an_errand_run_through_a_provider_side_session_creates_no_suru_session() {
+async fn an_errand_run_through_a_provider_side_session_creates_no_shaman_session() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let (runtime, mut provider) = titling_provider();
@@ -981,7 +981,7 @@ async fn title_derivation_turned_off_asks_for_no_errand_at_all() {
 
     assert!(
         provider.try_next_errand().is_none(),
-        "a user who turned titling off is charged for no Provider call on Suru's behalf"
+        "a user who turned titling off is charged for no Provider call on Shaman's behalf"
     );
     assert_eq!(
         listed_title(&client, created.session.id).await,
@@ -1085,7 +1085,7 @@ async fn a_pinned_selection_titles_a_session_that_has_selected_no_provider() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

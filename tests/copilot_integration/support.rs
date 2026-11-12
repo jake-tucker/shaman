@@ -7,7 +7,7 @@
 //! request's JSON-RPC ID and `reply` framing a response body.
 
 use crate::support::PROGRESS_DEADLINE;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionSubscription},
     protocol::{
         Activity, CreateSessionRequest, Delegator, DerivationErrand, InitialPrompt, Message,
@@ -68,7 +68,7 @@ reply() {
 }
 
 # One entry on the Session's timeline: `event <id> <type> <data-object>`. The Session it belongs to
-# is the one the create arm recorded, so the SDK routes it to the Session Suru is driving. The
+# is the one the create arm recorded, so the SDK routes it to the Session Shaman is driving. The
 # entries a `session.sendAndWait` completes on are remembered for its answer: the last assistant
 # message, and the idle or error that ends the request.
 event() {
@@ -137,9 +137,9 @@ pub fn connect_arm_with_version(version: &str) -> String {
 }
 
 /// A `connect` arm reporting a protocol version well outside the range this SDK build speaks,
-/// standing in for a CLI too new for Suru — until [`ScriptedCopilot::upgrade`] leaves the marker
+/// standing in for a CLI too new for Shaman — until [`ScriptedCopilot::upgrade`] leaves the marker
 /// that makes the same fixture answer compatibly, which is the user fixing the version outside
-/// Suru.
+/// Shaman.
 pub fn upgradable_connect_arm() -> String {
     format!(
         r#"    *'"method":"connect"'*)
@@ -168,7 +168,7 @@ const SIGNED_OUT: &str = r#"{"authErrors":["no credentials on file"]}"#;
 
 /// What a CLI signed in through the gh CLI answers, as CLI 1.0.88 does: the credentials stay with
 /// the CLI, so the answer names the account and how it was resolved and carries no token. The
-/// SDK's own typing of this answer expects one, which is the shape Suru must not depend on
+/// SDK's own typing of this answer expects one, which is the shape Shaman must not depend on
 /// (docs/validation/copilot-signin-credential-shape.md).
 const SIGNED_IN_THROUGH_GH_CLI: &str = r#"{"authInfo":{"type":"gh-cli","host":"https://github.com","login":"fixture-user","copilotUser":{"login":"fixture-user"}}}"#;
 
@@ -197,7 +197,7 @@ pub fn gh_cli_signed_in_arm() -> String {
 
 /// The same arm for a CLI holding no credentials at all — until [`ScriptedCopilot::sign_in`] leaves
 /// the marker that makes it answer signed in, which is the user signing in with the Copilot CLI
-/// while Suru is running.
+/// while Shaman is running.
 pub fn signed_out_arm() -> String {
     format!(
         r#"    *'"method":"account.getCurrentAuth"'*)
@@ -212,7 +212,7 @@ pub fn signed_out_arm() -> String {
 }
 
 /// An `account.getCurrentAuth` arm from a CLI that has never heard of the method, which is how one
-/// too old for the protocol Suru speaks answers a query it predates.
+/// too old for the protocol Shaman speaks answers a query it predates.
 pub fn unknown_method_arm() -> String {
     r#"    *'"method":"account.getCurrentAuth"'*)
       reply '{"jsonrpc":"2.0","id":'"$id"',"error":{"code":-32601,"message":"unknown method"}}'
@@ -221,9 +221,9 @@ pub fn unknown_method_arm() -> String {
     .to_owned()
 }
 
-/// A `session.create` arm answering with the identifier Suru generated for the Session, and holding
+/// A `session.create` arm answering with the identifier Shaman generated for the Session, and holding
 /// on to it so the arms that follow can address their events at that Session. It brings the
-/// permission-mode arm with it, because every Session Suru opens sets one.
+/// permission-mode arm with it, because every Session Shaman opens sets one.
 pub fn create_session_arm() -> String {
     r#"    *'"method":"session.create"'*)
       sid=$(printf '%s' "$body" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
@@ -234,7 +234,7 @@ pub fn create_session_arm() -> String {
         + &permission_mode_arm()
 }
 
-/// A `session.resume` arm answering with the identifier Suru asked to resume, and holding on to it
+/// A `session.resume` arm answering with the identifier Shaman asked to resume, and holding on to it
 /// so the arms that follow can address their events at that Session — a resumed Session carries on
 /// under the identifier it was created with.
 pub fn resume_session_arm() -> String {
@@ -247,7 +247,7 @@ pub fn resume_session_arm() -> String {
         + &permission_mode_arm()
 }
 
-/// A `session.permissions.setMode` arm applying whichever mode Suru asks for, as a CLI whose
+/// A `session.permissions.setMode` arm applying whichever mode Shaman asks for, as a CLI whose
 /// policy permits every mode does.
 pub fn permission_mode_arm() -> String {
     r#"    *'"method":"session.permissions.setMode"'*)
@@ -299,7 +299,7 @@ pub fn modelless_current_model_arm() -> String {
     .to_owned()
 }
 
-/// A `session.model.list` arm answering with the Session's own catalog — empty, since Suru asks
+/// A `session.model.list` arm answering with the Session's own catalog — empty, since Shaman asks
 /// only so the CLI resolves it before a switch — and noting, for [`cold_switch_refusing_arm`],
 /// that this Session's was asked for.
 pub fn session_models_arm() -> String {
@@ -565,7 +565,7 @@ impl ScriptedCopilot {
 
     /// Takes the program off disk, standing in for a Copilot CLI the user has not installed. The
     /// runtime already holds the path, so [`install`](Self::install) is the user installing it
-    /// while Suru runs.
+    /// while Shaman runs.
     pub fn uninstall(&self) {
         std::fs::remove_file(&self.executable).expect("uninstall the scripted Copilot");
     }
@@ -581,7 +581,7 @@ impl ScriptedCopilot {
         std::fs::write(&self.signed_in, b"signed in").expect("sign the scripted Copilot in");
     }
 
-    /// Moves the fixture to a protocol version Suru speaks, which is what
+    /// Moves the fixture to a protocol version Shaman speaks, which is what
     /// [`upgradable_connect_arm`] answers the handshake with from here on.
     pub fn upgrade(&self) {
         std::fs::write(&self.upgraded, b"upgraded").expect("upgrade the scripted Copilot");
@@ -694,7 +694,7 @@ pub fn conversation_fixture(timeline: &str) -> ScriptedCopilot {
 }
 
 /// The same fixture for a Session that outlives the CLI process it was created on: it answers the
-/// resume Suru comes back with, and plays `timeline` for every Turn either side of that.
+/// resume Shaman comes back with, and plays `timeline` for every Turn either side of that.
 pub fn resumable_conversation_fixture(timeline: &str) -> ScriptedCopilot {
     ScriptedCopilot::new(&format!(
         "{}{}{}{}",
@@ -745,7 +745,7 @@ impl LiveTurn {
         let workspace = tempfile::tempdir().expect("create valid Workspace");
         let config_dir = document.map(|document| {
             let directory = tempfile::tempdir().expect("create isolated config directory");
-            std::fs::write(directory.path().join("suru.jsonc"), document)
+            std::fs::write(directory.path().join("shaman.jsonc"), document)
                 .expect("write Config Document");
             directory
         });
@@ -762,7 +762,7 @@ impl LiveTurn {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 prompt: InitialPrompt {
@@ -894,7 +894,7 @@ async fn open_session(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1030,7 +1030,7 @@ pub async fn session_where(
 }
 
 /// A config root turning Title derivation off, for a test whose subject is the Turn rather than the
-/// Errand Suru runs beside it. Both land on the same Copilot CLI, so a Session that named an Agent
+/// Errand Shaman runs beside it. Both land on the same Copilot CLI, so a Session that named an Agent
 /// Selection — which is what makes it a Session worth deriving a Title for — would otherwise have
 /// the Errand's own Copilot Session interleaving with its own.
 pub fn titling_turned_off() -> tempfile::TempDir {
@@ -1119,10 +1119,10 @@ pub fn transcript_outline(snapshot: &SessionSnapshot, parent: Option<SessionId>)
                     } => format!("subagent {name} ({description}) {status:?}"),
                     Activity::Reasoning { .. } => "reasoning".to_owned(),
                     Activity::Route { decision, .. } => {
-                        decision.sentence(suru::provider::provider_name)
+                        decision.sentence(shaman::provider::provider_name)
                     }
                     Activity::Reroute { reroute, .. } => {
-                        reroute.sentence(suru::provider::provider_name, ModelId::to_string)
+                        reroute.sentence(shaman::provider::provider_name, ModelId::to_string)
                     }
                     other => format!("{other:?}"),
                 };

@@ -8,12 +8,12 @@
 //! Compaction the user asks for begins a Turn of its own (ADR 0041), which
 //! only an idle top-level Session on a Provider that compacts on request
 //! takes, and which Settles as its Compaction does. The summary a completed
-//! one left is stored under Suru's cap, which flags what it cut as Truncation.
+//! one left is stored under Shaman's cap, which flags what it cut as Truncation.
 //! That Turn takes no steer: a Prompt sent while it runs is held to begin the
 //! next Turn once the Compaction completes, and withdrawn if it fails or is
-//! interrupted — or, behind a scheduled Compaction Suru began of its own
+//! interrupted — or, behind a scheduled Compaction Shaman began of its own
 //! accord, delivered whether it completes or fails, and withdrawn only if an
-//! interrupt reaches it first or Suru stops, which withdraws any Prompt still
+//! interrupt reaches it first or Shaman stops, which withdraws any Prompt still
 //! owed a Turn.
 
 use crate::session_integration::support::{
@@ -23,7 +23,7 @@ use crate::session_integration::support::{
 use crate::support::PROGRESS_DEADLINE;
 use axum::http::StatusCode;
 use diesel::Connection;
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, AgentId, AgentIdentity, Approval, ApprovalId,
         ApprovalSubject, CompactionRequest, CompactionTrigger, ContextFill, InitialPrompt,
@@ -143,7 +143,7 @@ fn compactions(snapshot: &SessionSnapshot) -> Vec<&Activity> {
 }
 
 /// Each Compaction's summary in `snapshot`, in Transcript order, beside
-/// whether Suru's cap cut it.
+/// whether Shaman's cap cut it.
 fn summaries(snapshot: &SessionSnapshot) -> Vec<(Option<&str>, bool)> {
     compactions(snapshot)
         .into_iter()
@@ -367,7 +367,7 @@ async fn a_compaction_still_active_when_its_turn_settles_settles_with_it() {
 }
 
 #[tokio::test]
-async fn a_compaction_failing_after_suru_interrupted_its_turn_settles_interrupted() {
+async fn a_compaction_failing_after_shaman_interrupted_its_turn_settles_interrupted() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let mut fixture = working_turn(state_dir.path(), "compaction-interrupt-test").await;
     let session_id = fixture.session_id;
@@ -399,7 +399,7 @@ async fn a_compaction_failing_after_suru_interrupted_its_turn_settles_interrupte
     assert_eq!(
         *status,
         ActivityStatus::Interrupted,
-        "the failure Suru asked for is the Compaction stopped, not gone wrong"
+        "the failure Shaman asked for is the Compaction stopped, not gone wrong"
     );
     assert_eq!(*error, None, "a stop carries no failure to explain");
     assert_eq!(cancelled.turns[0].status, TurnStatus::Active);
@@ -1053,7 +1053,7 @@ async fn a_compaction_request_begins_a_turn_of_its_own_that_settles_as_its_manua
     assert_eq!(
         user_messages(&requested),
         user_messages(&before),
-        "no user Message is drawn for a Suru command"
+        "no user Message is drawn for a Shaman command"
     );
 
     fixture
@@ -1500,7 +1500,7 @@ async fn a_prompt_sent_during_a_requested_compaction_is_never_steered_into_it() 
             let admitted = request.send().await.expect("admit a Prompt");
             assert!(admitted.status().is_success());
             admitted
-                .json::<suru::protocol::Prompt>()
+                .json::<shaman::protocol::Prompt>()
                 .await
                 .expect("decode the admitted Prompt")
         }
@@ -1590,7 +1590,7 @@ async fn a_requested_compactions_turn_is_stored_apart_from_a_continuation_and_su
     // A Turn stored before a Turn named who asked for its Compaction said
     // only that one was asked for, and loads once named the user's.
     let config = ServerConfig::new(state_dir.path(), channel).expect("configure server");
-    let database_path = config.data_dir().join("suru.db");
+    let database_path = config.data_dir().join("shaman.db");
     let mut database = diesel::SqliteConnection::establish(
         database_path
             .to_str()
@@ -1873,10 +1873,10 @@ async fn a_compaction_request_is_refused_while_a_prompt_waits_for_its_turn() {
     .expect("spawn server");
     let created = crate::session_integration::support::create_session(
         server.descriptor(),
-        &suru::protocol::CreateSessionRequest {
+        &shaman::protocol::CreateSessionRequest {
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1980,7 +1980,7 @@ async fn a_native_turn_beginning_before_a_requested_compaction_is_asked_for_take
     // A Watch outlives the Turn, leaving the Session idle but Monitoring.
     for event in [
         ProviderEvent::WatchStarted {
-            watch_id: suru::provider::ProviderWatchId::new("monitor-1"),
+            watch_id: shaman::provider::ProviderWatchId::new("monitor-1"),
             description: "Watch the build".to_owned(),
         },
         ProviderEvent::TurnCompleted,
@@ -2114,7 +2114,7 @@ fn turn_has_error(snapshot: &SessionSnapshot, turn: usize) -> bool {
 #[tokio::test]
 async fn interrupting_a_requested_compaction_settles_it_and_its_turn_interrupted_measuring_nothing()
 {
-    // Each way a Provider may end the work once it has acknowledged Suru's
+    // Each way a Provider may end the work once it has acknowledged Shaman's
     // interrupt: reporting the cancelled Compaction as a failure, as Claude
     // does, or leaving it running; and closing the Turn as interrupted, or
     // with a success that compacted nothing, as Claude's `result` does.
@@ -2142,7 +2142,7 @@ async fn interrupting_a_requested_compaction_settles_it_and_its_turn_interrupted
             vec![ProviderEvent::TurnInterrupted],
         ),
         // Copilot's manual compaction, aborted, reports itself failed and
-        // its request failing too, both for the cancellation Suru asked for.
+        // its request failing too, both for the cancellation Shaman asked for.
         (
             "the cancellation reported failed, then a failed boundary",
             vec![
@@ -2215,7 +2215,7 @@ async fn interrupting_a_requested_compaction_settles_it_and_its_turn_interrupted
                 CompactionTrigger::Manual,
                 &None
             ),
-            "{described}: the stop Suru asked for is no failure"
+            "{described}: the stop Shaman asked for is no failure"
         );
         assert_eq!(
             measured(&settled),
@@ -2310,7 +2310,7 @@ async fn a_requested_compaction_interrupted_before_its_provider_reported_compact
 
 #[tokio::test]
 async fn a_summary_is_stored_as_provider_text_under_a_cap_that_flags_what_it_cut() {
-    /// Suru's cap on one stored summary, in characters.
+    /// Shaman's cap on one stored summary, in characters.
     const CAP: usize = 64 * 1024;
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let fixture = working_turn(state_dir.path(), "compaction-summary-test").await;
@@ -2354,7 +2354,7 @@ async fn a_summary_is_stored_as_provider_text_under_a_cap_that_flags_what_it_cut
     );
     assert!(
         !capped.contains("dropped"),
-        "what the cap dropped is gone from the stored summary, which carries no marker of Suru's"
+        "what the cap dropped is gone from the stored summary, which carries no marker of Shaman's"
     );
     assert_eq!(
         third,
@@ -2374,7 +2374,7 @@ async fn a_summary_is_stored_as_provider_text_under_a_cap_that_flags_what_it_cut
 
 #[tokio::test]
 async fn a_requested_compaction_completing_as_it_is_interrupted_stays_completed_with_its_counts() {
-    // The Provider may complete the Compaction before Suru's interrupt
+    // The Provider may complete the Compaction before Shaman's interrupt
     // reaches it, or while the interrupt is still out — read only once the
     // Provider has acknowledged it — and then close the work however it
     // closes stopped work. A Compaction that completed did compact, so it
@@ -2547,8 +2547,8 @@ async fn a_requested_compaction_is_recorded_under_the_selection_its_provider_com
     .expect("the request reaches the Provider");
     // A Provider that cannot apply a Selection to a compaction runs it under the one it has in
     // force, and says so.
-    let in_force = suru::protocol::AgentSelection {
-        model: suru::protocol::ModelId::new("model-in-force"),
+    let in_force = shaman::protocol::AgentSelection {
+        model: shaman::protocol::ModelId::new("model-in-force"),
         ..request.input().selection.clone()
     };
     request.succeed_under(in_force.clone());

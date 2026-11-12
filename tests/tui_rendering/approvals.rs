@@ -7,16 +7,16 @@ use crossterm::event::{
     Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use serde_json::json;
-use std::{path::PathBuf, time::Duration};
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityId, ApprovalId, ApprovalOutcome, ApprovalSubject, CommandAction,
         Decision, TranscriptItem,
     },
     tui::{Application, ApplicationEvent, ApplicationTransition, CommandId, SemanticCommandId},
 };
+use std::{path::PathBuf, time::Duration};
 
-fn pending_application() -> (Application, ApprovalId, suru::protocol::SessionSnapshot) {
+fn pending_application() -> (Application, ApprovalId, shaman::protocol::SessionSnapshot) {
     let workspace = workspace_dir();
     let mut app =
         connected_application(workspace.path()).with_intervention_arming_delay(Duration::ZERO);
@@ -39,7 +39,7 @@ fn pending_application() -> (Application, ApprovalId, suru::protocol::SessionSna
     snapshot.pending_approvals_revision = snapshot.revision;
     add_activity(&mut snapshot, activity);
     app.handle_event(ApplicationEvent::Session(
-        suru::managed_client::SessionEvent::snapshot(snapshot.clone()),
+        shaman::managed_client::SessionEvent::snapshot(snapshot.clone()),
     ))
     .unwrap();
     (app, approval_id, snapshot)
@@ -47,7 +47,7 @@ fn pending_application() -> (Application, ApprovalId, suru::protocol::SessionSna
 
 #[test]
 fn local_and_descendant_intervention_notices_keep_both_actions_visible() {
-    use suru::protocol::{QuestionnaireId, SessionId, SubagentInterventions};
+    use shaman::protocol::{QuestionnaireId, SessionId, SubagentInterventions};
 
     let (mut app, _, mut snapshot) = pending_application();
     let child_id = SessionId::new();
@@ -61,7 +61,7 @@ fn local_and_descendant_intervention_notices_keep_both_actions_visible() {
         submitting_approvals: Vec::new(),
     }];
     app.handle_event(ApplicationEvent::Session(
-        suru::managed_client::SessionEvent::snapshot(snapshot),
+        shaman::managed_client::SessionEvent::snapshot(snapshot),
     ))
     .unwrap();
     // The Approval presents itself; the notices are what putting it away
@@ -94,7 +94,7 @@ fn every_typed_subject_renders_all_available_detail_reason_and_tool_link() {
     snapshot.activities.push(Activity::Command {
         id: command_id,
         turn_id,
-        status: suru::protocol::ActivityStatus::Active,
+        status: shaman::protocol::ActivityStatus::Active,
         command: "cargo check".into(),
         cwd: Some(PathBuf::from("project")),
         output: String::new(),
@@ -188,10 +188,10 @@ fn every_typed_subject_renders_all_available_detail_reason_and_tool_link() {
         Activity::ToolCall {
             id: tool_call_id,
             turn_id,
-            status: suru::protocol::ActivityStatus::Active,
+            status: shaman::protocol::ActivityStatus::Active,
             name: "fetch_release".into(),
             server: Some("releases".into()),
-            input: "repository=suru tag=next".into(),
+            input: "repository=shaman tag=next".into(),
             input_truncated: false,
             output: String::new(),
             output_truncated: false,
@@ -202,7 +202,7 @@ fn every_typed_subject_renders_all_available_detail_reason_and_tool_link() {
         turn_id,
         ApprovalSubject::OtherTool {
             name: "fetch_release".into(),
-            input: json!({"repository": "suru", "tag": "next"}),
+            input: json!({"repository": "shaman", "tag": "next"}),
         },
         Some("Fetch the release manifest"),
         ApprovalOutcome::Pending,
@@ -217,7 +217,7 @@ fn every_typed_subject_renders_all_available_detail_reason_and_tool_link() {
     *tool_activity_id = Some(tool_call_id);
     add_activity(&mut snapshot, other_tool);
     app.handle_event(ApplicationEvent::Session(
-        suru::managed_client::SessionEvent::snapshot(snapshot),
+        shaman::managed_client::SessionEvent::snapshot(snapshot),
     ))
     .unwrap();
     invoke(&mut app, SemanticCommandId::TranscriptFoldsToggle);
@@ -328,8 +328,8 @@ fn decision_number_and_focus_keys_only_submit_from_an_explicitly_open_approval()
 #[test]
 fn decision_retry_waits_for_authoritative_reconciliation_and_uncertainty_stays_terminal() {
     let (mut app, id, mut stale_pending) = pending_application();
-    let session = suru::protocol::SessionReference::new(
-        suru::protocol::Outlook::Local,
+    let session = shaman::protocol::SessionReference::new(
+        shaman::protocol::Outlook::Local,
         stale_pending.session.id,
     );
     invoke(&mut app, SemanticCommandId::ApprovalOpen);
@@ -340,7 +340,7 @@ fn decision_retry_waits_for_authoritative_reconciliation_and_uncertainty_stays_t
 
     stale_pending.revision.0 += 1;
     app.handle_event(ApplicationEvent::Session(
-        suru::managed_client::SessionEvent::snapshot(stale_pending.clone()),
+        shaman::managed_client::SessionEvent::snapshot(stale_pending.clone()),
     ))
     .unwrap();
     assert!(matches!(
@@ -427,8 +427,10 @@ fn decision_retry_waits_for_authoritative_reconciliation_and_uncertainty_stays_t
 #[test]
 fn delivered_decision_keeps_a_failed_interrupt_visible_after_reconciliation() {
     let (mut app, id, mut snapshot) = pending_application();
-    let session =
-        suru::protocol::SessionReference::new(suru::protocol::Outlook::Local, snapshot.session.id);
+    let session = shaman::protocol::SessionReference::new(
+        shaman::protocol::Outlook::Local,
+        snapshot.session.id,
+    );
     let failure = "Provider post-Decision action failed: interrupt refused";
     let Activity::Approval {
         outcome,
@@ -502,7 +504,7 @@ fn approval_history_distinguishes_every_lifecycle_outcome_and_records_full_decis
         );
     }
     app.handle_event(ApplicationEvent::Session(
-        suru::managed_client::SessionEvent::snapshot(snapshot),
+        shaman::managed_client::SessionEvent::snapshot(snapshot),
     ))
     .unwrap();
     let screen = rendered_application_rows_at(&app, 120, 70).join("\n");
@@ -573,7 +575,7 @@ fn long_approval_detail_has_a_reversible_fold_and_a_distinct_stored_truncation_m
     *detail_truncated = true;
     add_activity(&mut snapshot, truncated);
     app.handle_event(ApplicationEvent::Session(
-        suru::managed_client::SessionEvent::snapshot(snapshot),
+        shaman::managed_client::SessionEvent::snapshot(snapshot),
     ))
     .unwrap();
 
@@ -626,8 +628,8 @@ fn folded_approval_summary_is_bounded_and_its_fold_affordance_is_not_copied() {
     let workspace = workspace_dir();
     let mut app = connected_application(workspace.path());
     // Windows defaults to copying manually; this test is about what a release copies.
-    let mut settings = suru::protocol::EffectiveSettings::default();
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    let mut settings = shaman::protocol::EffectiveSettings::default();
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
     crate::tui_rendering::support::deliver_settings(&mut app, settings);
     let (_, mut snapshot, turn_id) = enter_active_session(&mut app, workspace.path());
     let hidden_tail = "HIDDEN-COMMAND-TAIL";
@@ -647,7 +649,7 @@ fn folded_approval_summary_is_bounded_and_its_fold_affordance_is_not_copied() {
         ),
     );
     app.handle_event(ApplicationEvent::Session(
-        suru::managed_client::SessionEvent::snapshot(snapshot),
+        shaman::managed_client::SessionEvent::snapshot(snapshot),
     ))
     .unwrap();
 

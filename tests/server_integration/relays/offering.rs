@@ -6,12 +6,12 @@
 //! Invite gave them. A Relay learned so that the Peer holds no entry for is
 //! listed with the Remote and never dialled.
 
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{Outlook, RelayState, RemoteStatus, UnreachableReason, Way},
     server::ServerTimings,
 };
-use suru_relay_protocol::{Refusal, RelayMessage, ServerMessage};
+use shaman_relay_protocol::{Refusal, RelayMessage, ServerMessage};
 use tokio::{
     sync::watch,
     time::{Duration, timeout},
@@ -564,7 +564,7 @@ async fn a_login_needing_renewal_withdraws_no_relay_way_and_the_remote_recovers_
     assert!(
         matches!(
             login.outcome,
-            suru::protocol::RelayLoginOutcome::Done { .. }
+            shaman::protocol::RelayLoginOutcome::Done { .. }
         ),
         "{login:?}"
     );
@@ -608,7 +608,7 @@ impl LapsingRelay {
                     ) {
                         return;
                     }
-                    let login = standing.then(|| suru_relay_protocol::Account {
+                    let login = standing.then(|| shaman_relay_protocol::Account {
                         provider: "scripted".to_owned(),
                         username: "octocat".to_owned(),
                     });

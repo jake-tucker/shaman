@@ -5,7 +5,7 @@
 //! A Keeper holds no authority of its own. The Channel's election says whether a
 //! Server stands, and its last-stop record whether the last one to stand was
 //! stopped, and a Keeper only ever reads both, so it serves no differently from
-//! any Client launching: [`keep_server`] sets out as `suru server start` does,
+//! any Client launching: [`keep_server`] sets out as `shaman server start` does,
 //! then takes a [`Look`] now and then.
 //!
 //! - **A Server holds the election.** There is nothing to do, whichever Client
@@ -177,7 +177,7 @@ pub async fn keep_server(
 ) -> Result<()> {
     let baseline = launcher::StopBaseline::read(config);
     let startup = tokio::time::Instant::now() + config.startup_timeout;
-    // As `suru server start` does, so a Server of another build still running
+    // As `shaman server start` does, so a Server of another build still running
     // is replaced here as any Client replaces one. Only here: from now on, what
     // stands is what its user or their Clients have left standing.
     match launcher::ensure_server(config, startup, baseline).await {
@@ -322,7 +322,7 @@ mod tests {
         }
     }
 
-    /// `suru server start` after a stop: that stop is behind the Keeper now, so
+    /// `shaman server start` after a stop: that stop is behind the Keeper now, so
     /// the new Server's crash is answered, and its own stop is final.
     #[test]
     fn a_server_started_after_a_stop_is_kept_like_any_other() {

@@ -76,7 +76,7 @@ impl std::fmt::Display for ItemId {
 /// What an [`IdentityStore`] keeps as an item, as it answers.
 // Only the login keychain, the Secret Service and Credential Manager keep
 // anything a Server asks for yet: elsewhere the platform's store is
-// unavailable until Suru keeps keys there.
+// unavailable until Shaman keeps keys there.
 #[cfg_attr(
     not(any(test, target_os = "macos", target_os = "linux", windows)),
     allow(dead_code)
@@ -112,7 +112,7 @@ impl std::error::Error for StoreUnavailable {
 
 /// The platform credential store of the platform this Server runs on: the
 /// login keychain on macOS, the Secret Service on Linux, and Credential
-/// Manager on Windows. Suru keeps nothing in any other platform's store
+/// Manager on Windows. Shaman keeps nothing in any other platform's store
 /// yet, so there it counts as unavailable, and a Server keeps a new key in
 /// its file instead.
 pub(crate) fn platform_identity_store() -> Arc<dyn IdentityStore> {
@@ -204,7 +204,7 @@ impl BoundedStore {
         let (answer, answered) = mpsc::sync_channel(1);
         let store = Arc::clone(&self.store);
         let started = thread::Builder::new()
-            .name("suru-identity-store".to_owned())
+            .name("shaman-identity-store".to_owned())
             .spawn(move || {
                 let answered = {
                     // Over before the answer is sent, so whoever reads the
@@ -260,7 +260,7 @@ impl IdentityStore for BoundedStore {
     }
 }
 
-/// A store a Server may keep its identity key in, as `SURU_IDENTITY_STORE`
+/// A store a Server may keep its identity key in, as `SHAMAN_IDENTITY_STORE`
 /// names it: `system`, the platform credential store, or `file`, an
 /// owner-only file in the Server's data directory.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -308,15 +308,15 @@ pub(crate) enum Selection {
     /// too is a program the platform credential store has never seen, and a
     /// test's Server keeps nothing in the store of the machine it runs on.
     CargoRun,
-    /// `SURU_IDENTITY_STORE`, naming the store whatever the build.
+    /// `SHAMAN_IDENTITY_STORE`, naming the store whatever the build.
     Chosen(IdentityStoreChoice),
 }
 
 impl Selection {
     /// The selection of this build as it runs, where `chosen`, as
-    /// `SURU_IDENTITY_STORE` names a store, does not override it. Cargo sets
+    /// `SHAMAN_IDENTITY_STORE` names a store, does not override it. Cargo sets
     /// `CARGO_MANIFEST_DIR` for whatever it runs, which those programs pass
-    /// on to theirs, and a Suru installed and run as it ships never has it.
+    /// on to theirs, and a Shaman installed and run as it ships never has it.
     pub(crate) fn for_this_build(chosen: Option<IdentityStoreChoice>) -> Self {
         Self::for_build(
             cfg!(debug_assertions),
@@ -326,7 +326,7 @@ impl Selection {
     }
 
     /// The selection of a debug build, or a release one, run by Cargo or
-    /// not, where `chosen`, as `SURU_IDENTITY_STORE` names a store, does not
+    /// not, where `chosen`, as `SHAMAN_IDENTITY_STORE` names a store, does not
     /// override it.
     pub(crate) fn for_build(
         debug_build: bool,
@@ -355,12 +355,12 @@ impl Selection {
         match self {
             Self::ReleaseBuild => "release builds keep it there".to_owned(),
             Self::DebugBuild => {
-                "debug builds keep it there unless SURU_IDENTITY_STORE=system".to_owned()
+                "debug builds keep it there unless SHAMAN_IDENTITY_STORE=system".to_owned()
             }
             Self::CargoRun => {
-                "builds Cargo runs keep it there unless SURU_IDENTITY_STORE=system".to_owned()
+                "builds Cargo runs keep it there unless SHAMAN_IDENTITY_STORE=system".to_owned()
             }
-            Self::Chosen(chosen) => format!("SURU_IDENTITY_STORE={chosen} keeps it there"),
+            Self::Chosen(chosen) => format!("SHAMAN_IDENTITY_STORE={chosen} keeps it there"),
         }
     }
 }
@@ -678,9 +678,9 @@ mod tests {
 
     /// Release builds keep a new key in the platform credential store, and
     /// debug builds and builds Cargo runs, whatever their profile, in the
-    /// file; `SURU_IDENTITY_STORE` overrides any of them.
+    /// file; `SHAMAN_IDENTITY_STORE` overrides any of them.
     #[test]
-    fn the_build_selects_the_store_and_suru_identity_store_overrides_it() {
+    fn the_build_selects_the_store_and_shaman_identity_store_overrides_it() {
         use IdentityStoreChoice::{File, System};
 
         assert_eq!(Selection::for_build(false, false, None).store(), System);
@@ -689,7 +689,7 @@ mod tests {
         assert_eq!(Selection::for_build(true, true, None).store(), File);
         assert_eq!(
             Selection::for_build(false, true, None).why(),
-            "builds Cargo runs keep it there unless SURU_IDENTITY_STORE=system"
+            "builds Cargo runs keep it there unless SHAMAN_IDENTITY_STORE=system"
         );
         for debug_build in [false, true] {
             for run_by_cargo in [false, true] {
@@ -720,7 +720,7 @@ mod tests {
     /// This build, run by Cargo as every test is, keeps a new key in the
     /// file whatever its profile — a debug build, or a release one Cargo
     /// runs — so no test's Server keeps one in the store of the machine it
-    /// runs on unless `SURU_IDENTITY_STORE` chooses it.
+    /// runs on unless `SHAMAN_IDENTITY_STORE` chooses it.
     #[test]
     fn a_build_cargo_runs_selects_the_file_whatever_its_profile() {
         let selected = Selection::for_this_build(None);

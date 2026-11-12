@@ -44,7 +44,7 @@ use super::{IdentityStore, ItemId, StoreUnavailable, Stored};
 
 /// The service every item is kept under, which Keychain Access shows as
 /// where the item is used.
-const SERVICE: &str = "ai.suru.server-identity";
+const SERVICE: &str = "ai.shaman.server-identity";
 
 /// The login keychain, by the name Keychain Services finds it by among the
 /// user's own keychains, whatever its file is called on this macOS.
@@ -205,7 +205,7 @@ fn kept_nothing(before: Lock, after: Lock) -> Result<(), StoreUnavailable> {
         Ok(())
     } else {
         Err(anyhow!(
-            "it was locked while Suru searched it, and may keep the item where no search can \
+            "it was locked while Shaman searched it, and may keep the item where no search can \
              see it"
         )
         .into())
@@ -230,14 +230,14 @@ fn stored(found: Result<Vec<SearchResult>, Error>) -> Result<Stored, StoreUnavai
 fn unavailable(error: Error) -> StoreUnavailable {
     let why = match error.code() {
         ERR_SEC_INTERACTION_NOT_ALLOWED | ERR_SEC_INTERACTION_REQUIRED => {
-            "it is locked, or would ask whether Suru may use the item, and nobody can be asked here"
+            "it is locked, or would ask whether Shaman may use the item, and nobody can be asked here"
         }
         ERR_SEC_USER_CANCELED => {
-            "asking to unlock it, or whether Suru may use the item, was cancelled"
+            "asking to unlock it, or whether Shaman may use the item, was cancelled"
         }
-        ERR_SEC_AUTH_FAILED => "it refused Suru the item",
+        ERR_SEC_AUTH_FAILED => "it refused Shaman the item",
         ERR_SEC_NO_SUCH_KEYCHAIN | ERR_SEC_INVALID_KEYCHAIN => {
-            "this user has no login keychain Suru can open"
+            "this user has no login keychain Shaman can open"
         }
         ERR_SEC_NOT_AVAILABLE => "no keychain is available",
         ERR_SEC_READ_ONLY | ERR_SEC_WRITE_PERMISSIONS => "it cannot be written to",
@@ -284,7 +284,7 @@ mod tests {
             let error = kept_nothing(before, after).unwrap_err();
             assert_eq!(
                 error.to_string(),
-                "it was locked while Suru searched it, and may keep the item where no search \
+                "it was locked while Shaman searched it, and may keep the item where no search \
                  can see it"
             );
         }
@@ -312,7 +312,7 @@ mod tests {
         let path = directory.path().join("missing").join("login.keychain-db");
         let store = LoginKeychain::at(&path);
         let item = ItemId::random();
-        let missing = "this user has no login keychain Suru can open: ";
+        let missing = "this user has no login keychain Shaman can open: ";
 
         let error = store.get(&item).unwrap_err().to_string();
         assert!(error.starts_with(missing), "{error}");
@@ -326,7 +326,7 @@ mod tests {
         );
     }
 
-    /// A keychain that is locked, or that would ask whether Suru may use the
+    /// A keychain that is locked, or that would ask whether Shaman may use the
     /// item, with nobody to ask — as over SSH with nobody logged in at the
     /// Mac's screen — counts as unavailable, and says so.
     #[test]
@@ -338,7 +338,7 @@ mod tests {
             let error = unavailable(Error::from_code(code)).to_string();
             assert!(
                 error.starts_with(
-                    "it is locked, or would ask whether Suru may use the item, and nobody can \
+                    "it is locked, or would ask whether Shaman may use the item, and nobody can \
                      be asked here: "
                 ),
                 "{error}"
@@ -347,23 +347,23 @@ mod tests {
         }
     }
 
-    /// Each way the keychain can turn Suru away is told apart, with what the
+    /// Each way the keychain can turn Shaman away is told apart, with what the
     /// keychain itself says of it.
     #[test]
     fn each_refusal_says_why() {
         for (code, why) in [
             (
                 ERR_SEC_USER_CANCELED,
-                "asking to unlock it, or whether Suru may use the item, was cancelled",
+                "asking to unlock it, or whether Shaman may use the item, was cancelled",
             ),
-            (ERR_SEC_AUTH_FAILED, "it refused Suru the item"),
+            (ERR_SEC_AUTH_FAILED, "it refused Shaman the item"),
             (
                 ERR_SEC_NO_SUCH_KEYCHAIN,
-                "this user has no login keychain Suru can open",
+                "this user has no login keychain Shaman can open",
             ),
             (
                 ERR_SEC_INVALID_KEYCHAIN,
-                "this user has no login keychain Suru can open",
+                "this user has no login keychain Shaman can open",
             ),
             (ERR_SEC_NOT_AVAILABLE, "no keychain is available"),
             (ERR_SEC_READ_ONLY, "it cannot be written to"),
@@ -413,7 +413,7 @@ mod tests {
     fn the_login_keychain_keeps_gives_back_replaces_and_deletes_an_item() {
         let store = crate::serving::platform_identity_store();
         let item = Throwaway(ItemId::random());
-        let label = format!("Suru Server identity key (smoke test, {})", item.0);
+        let label = format!("Shaman Server identity key (smoke test, {})", item.0);
 
         store.put(&item.0, &label, b"first").unwrap();
         assert_eq!(

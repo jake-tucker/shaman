@@ -11,7 +11,7 @@
 //! Providers, as test Servers whose temporary directories were deleted did.
 //!
 //! So a Server confirms, once it has won the lock, that the lock is still the
-//! Channel's, and keeps watch while it runs. It stops — the way `suru server
+//! Channel's, and keeps watch while it runs. It stops — the way `shaman server
 //! stop` stops it — on either of two findings, and on nothing less:
 //!
 //! - **The lock's file has no name left.** Asked of the file the Server holds
@@ -51,7 +51,7 @@
 //!
 //! An election is also where a Manual stop is made final (ADR 0002). Servers
 //! that lose an election wait out the winner's hold, and one still waiting
-//! when the winner is stopped with `suru server stop` would take the Channel
+//! when the winner is stopped with `shaman server stop` would take the Channel
 //! the moment it is let go, undoing a stop that had reported success. So a
 //! Server stopped manually records its stop ([`LastStop`](crate::LastStop))
 //! before it lets the lock go, and a Server once elected confirms that no
@@ -394,7 +394,7 @@ pub(super) fn watch(
             // own that nothing waits on: not the runtime as the process ends,
             // which waits out every blocking task it began, and not this
             // watch once the Server begins stopping.
-            let spawned = super::off_thread("suru-standing", {
+            let spawned = super::off_thread("shaman-standing", {
                 let lock = lock.clone();
                 let descriptor_path = descriptor_path.clone();
                 move || Look::take(&lock, &descriptor_path)

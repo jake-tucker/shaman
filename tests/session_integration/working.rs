@@ -6,7 +6,7 @@
 use crate::session_integration::support::{open_catalog_stream_with_snapshot, read_session_until};
 use crate::support::PROGRESS_DEADLINE;
 use crate::support::provider::ControlledProvider;
-use suru::{
+use shaman::{
     protocol::{
         CreateSessionRequest, InitialPrompt, InterruptOutcome, PromptId, PromptStatus,
         RuntimeDescriptor, SessionCatalogChange, SessionId, SessionListItem, SessionSnapshot,
@@ -35,7 +35,7 @@ fn creation(workspace: &std::path::Path, prompt: PromptId, text: &str) -> Create
         session_id: None,
         preparation_id: None,
         agent_selection: None,
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -280,8 +280,8 @@ async fn interrupting_a_session_owed_a_turn_withdraws_the_prompt() {
 
     // The startup that was already under way is abandoned rather than run:
     // answering it now begins no Turn.
-    let mut provider_session = start.succeed(suru::protocol::AgentIdentity {
-        agent: suru::protocol::AgentId::new("controlled-agent"),
+    let mut provider_session = start.succeed(shaman::protocol::AgentIdentity {
+        agent: shaman::protocol::AgentId::new("controlled-agent"),
         selection: crate::session_integration::support::controlled_selection(
             "gpt-withdrawn",
             "high",
@@ -371,8 +371,8 @@ async fn a_follow_up_prompt_on_an_idle_session_is_working_and_withdrawable() {
             descriptor.base_url, created.session.id
         ))
         .bearer_auth(&descriptor.token)
-        .json(&suru::protocol::AdmitPromptRequest {
-            delivery: suru::protocol::PromptDelivery::Steer,
+        .json(&shaman::protocol::AdmitPromptRequest {
+            delivery: shaman::protocol::PromptDelivery::Steer,
             prompt: InitialPrompt {
                 id: follow_up,
                 text: "Try that again".to_owned(),
@@ -422,8 +422,8 @@ async fn a_follow_up_prompt_on_an_idle_session_is_working_and_withdrawable() {
     assert_eq!(withdrawn.prompts[1].status, PromptStatus::Cancelled);
     assert_eq!(withdrawn.turns.len(), 1);
 
-    let mut provider_session = start.succeed(suru::protocol::AgentIdentity {
-        agent: suru::protocol::AgentId::new("controlled-agent"),
+    let mut provider_session = start.succeed(shaman::protocol::AgentIdentity {
+        agent: shaman::protocol::AgentId::new("controlled-agent"),
         selection: crate::session_integration::support::controlled_selection(
             "gpt-withdrawn",
             "high",

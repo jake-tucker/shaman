@@ -441,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn a_change_of_directory_suru_cannot_resolve_or_that_may_not_hold_stays_in_the_command() {
+    fn a_change_of_directory_shaman_cannot_resolve_or_that_may_not_hold_stays_in_the_command() {
         let root = root();
         for command in [
             "cd src && ls".to_owned(),

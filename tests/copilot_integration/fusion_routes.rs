@@ -14,7 +14,7 @@ use crate::copilot_integration::{
     },
 };
 use serde_json::Value;
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, Decision, Message, MessageRole, MessageStatus, ModelId,
         RouteAction, RouteDecision, RouteStep, RouteVerdict, SessionSnapshot, TurnStatus,
@@ -625,7 +625,7 @@ async fn a_stored_transcript_reads_back_the_same() {
         .await
         .expect("spawn server");
         let client = crate::copilot_integration::support::connect_in(
-            suru::managed_client::ManagedClientConfig::new(state.path(), "fusion-restart")
+            shaman::managed_client::ManagedClientConfig::new(state.path(), "fusion-restart")
                 .expect("configure client")
                 .with_data_dir(data.path()),
         )
@@ -635,15 +635,15 @@ async fn a_stored_transcript_reads_back_the_same() {
 
     let (server, client) = host().await;
     let session_id = client
-        .create_session(suru::protocol::CreateSessionRequest {
+        .create_session(shaman::protocol::CreateSessionRequest {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
-            prompt: suru::protocol::InitialPrompt {
-                id: suru::protocol::PromptId::new(),
+            prompt: shaman::protocol::InitialPrompt {
+                id: shaman::protocol::PromptId::new(),
                 text: "Do it".to_owned(),
                 skill_invocations: Vec::new(),
                 attachments: Vec::new(),
@@ -691,14 +691,14 @@ async fn the_turn_after_a_route_begins_again_and_settles_on_its_own_idle() {
         .client
         .admit_prompt(
             opened.session_id,
-            suru::protocol::AdmitPromptRequest {
-                prompt: suru::protocol::InitialPrompt {
-                    id: suru::protocol::PromptId::new(),
+            shaman::protocol::AdmitPromptRequest {
+                prompt: shaman::protocol::InitialPrompt {
+                    id: shaman::protocol::PromptId::new(),
                     text: "Carry on".to_owned(),
                     skill_invocations: Vec::new(),
                     attachments: Vec::new(),
                 },
-                delivery: suru::protocol::PromptDelivery::Steer,
+                delivery: shaman::protocol::PromptDelivery::Steer,
             },
         )
         .await
@@ -752,7 +752,7 @@ fn asked_in_review(capture: &'static str) -> ScriptedCopilot {
 }
 
 /// The Approval a review asked, which stands in no Tool row and is the user's to decide.
-fn review_approval(snapshot: &SessionSnapshot) -> (suru::protocol::ApprovalId, Option<&str>) {
+fn review_approval(snapshot: &SessionSnapshot) -> (shaman::protocol::ApprovalId, Option<&str>) {
     snapshot
         .activities
         .iter()

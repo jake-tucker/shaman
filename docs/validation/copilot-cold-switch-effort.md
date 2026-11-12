@@ -14,14 +14,14 @@ session.model.switchTo failed with message: Reasoning effort 'none' is not suppo
 'gpt-6-luna'.
 ```
 
-Suru's catalog had `none` from the CLI itself: `models.list` names it first among the Model's
-`supportedReasoningEfforts`, and names no `defaultReasoningEffort` for any Model, so Suru's
+Shaman's catalog had `none` from the CLI itself: `models.list` names it first among the Model's
+`supportedReasoningEfforts`, and names no `defaultReasoningEffort` for any Model, so Shaman's
 first-listed-choice fallback made it the default.
 
 ## What the CLI does
 
 Every switch below is `session.model.switchTo` with `reasoningEffort` set, on a Session created
-with no Model, as Suru opens every Copilot Session before switching it onto the Agent Selection.
+with no Model, as Shaman opens every Copilot Session before switching it onto the Agent Selection.
 
 | Session before the switch | `none` | `low` | no effort |
 | --- | --- | --- | --- |
@@ -47,7 +47,7 @@ that catalog only on request, falling back to a stricter source before then. A `
 naming the Model and `none` up front is accepted, so an Errand, which opens its Session that way, was
 never affected.
 
-## What Suru does about it
+## What Shaman does about it
 
 A Copilot Session lists its own Models once, before its first Model switch, and discards the
 answer (`CopilotSession::apply_selection`). The scripted CLI in `tests/copilot_integration` has a
@@ -63,7 +63,7 @@ stretch failed with.
 
 Copilot still names no default effort for any Model (CLI 1.0.91, 2026-10-27), and taking the first
 choice the CLI lists made `none` — reasoning off — the default on the GPT 5.4, 5.6 and 6 families.
-Where Copilot names no default, Suru now defaults to `medium` where a Model offers it, and
+Where Copilot names no default, Shaman now defaults to `medium` where a Model offers it, and
 otherwise to the middle effort it lists, the lower of two (`default_effort` in
-`src/provider/copilot/catalog.rs`). It remains Suru's choice, not Copilot's: the CLI itself sends
+`src/provider/copilot/catalog.rs`). It remains Shaman's choice, not Copilot's: the CLI itself sends
 no effort when none is chosen and lets the service decide.

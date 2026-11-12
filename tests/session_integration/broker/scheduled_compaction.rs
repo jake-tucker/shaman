@@ -5,7 +5,7 @@
 //! compacted as any top-level Session is, a Prompt its Sidekick sends while
 //! it runs held and delivered as the user's would be.
 
-use suru::{
+use shaman::{
     protocol::{CompactionRequest, SessionTimestamp},
     provider::CacheLifetime,
     server::{ManualClock, ServerClock},
@@ -40,7 +40,7 @@ struct Scheduling {
 async fn scheduling(state_dir: &Path, channel: &str) -> Scheduling {
     let config = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config.path().join("suru.jsonc"),
+        config.path().join("shaman.jsonc"),
         r#"{ "compaction": { "scheduled": { "enabled": true, "sessions": "all" } } }"#,
     )
     .expect("write Config Document");
@@ -409,7 +409,7 @@ async fn held_for_a_sidekick(channel: &str, state_dir: &Path) -> HeldForASidekic
             .prompts
             .iter()
             .any(|prompt| prompt.text == "Now the lexer."
-                && prompt.status == suru::protocol::PromptStatus::Pending),
+                && prompt.status == shaman::protocol::PromptStatus::Pending),
         "the Sidekick's Prompt is held: {:?}",
         holding.prompts
     );
@@ -461,7 +461,7 @@ impl HeldForASidekick {
 /// A Prompt the Sidekick sends a Subsession while a scheduled Compaction runs
 /// there is held as the user's would be, and begins the next Turn though the
 /// Compaction fails. The Sidekick is told of that Turn, as of any Turn its
-/// Prompt began, and of nothing of the Compaction's, which was Suru's own.
+/// Prompt began, and of nothing of the Compaction's, which was Shaman's own.
 #[tokio::test]
 async fn a_sidekicks_prompt_held_behind_a_subsessions_scheduled_compaction_is_delivered_and_reported()
  {
@@ -551,7 +551,7 @@ async fn a_sidekicks_prompt_withdrawn_from_behind_a_subsessions_scheduled_compac
             .prompts
             .iter()
             .any(|prompt| prompt.text == "Now the lexer."
-                && prompt.status == suru::protocol::PromptStatus::Cancelled),
+                && prompt.status == shaman::protocol::PromptStatus::Cancelled),
         "the Sidekick's Prompt is withdrawn: {:?}",
         withdrawn.prompts
     );
@@ -587,7 +587,7 @@ async fn a_sidekicks_prompt_withdrawn_from_behind_a_subsessions_scheduled_compac
 }
 
 /// A Session whose Provider the user turned off is never compacted on its
-/// behalf: Suru asks nothing of a Provider that is off.
+/// behalf: Shaman asks nothing of a Provider that is off.
 #[tokio::test]
 async fn a_session_whose_provider_was_turned_off_is_left_alone() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");

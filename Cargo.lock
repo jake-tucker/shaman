@@ -3480,6 +3480,140 @@ dependencies = [
 ]
 
 [[package]]
+name = "shaman"
+version = "0.3.11"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "blake3",
+ "clap",
+ "core-foundation 0.10.1",
+ "crossterm",
+ "curve25519-dalek",
+ "diesel",
+ "diesel_migrations",
+ "dirs",
+ "dunce",
+ "eventsource-stream",
+ "fs2",
+ "futures-util",
+ "github-copilot-sdk",
+ "hostname",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "icu_normalizer",
+ "icu_properties",
+ "if-addrs",
+ "image",
+ "jiff",
+ "jsonc-parser",
+ "libc",
+ "libsqlite3-sys",
+ "object",
+ "portable-pty",
+ "pulldown-cmark",
+ "rand_core 0.6.4",
+ "ratatui",
+ "ratatui-image",
+ "rcgen",
+ "reqwest",
+ "ring",
+ "rmcp",
+ "rustls",
+ "rustls-platform-verifier",
+ "secret-service",
+ "security-framework",
+ "serde",
+ "serde_json",
+ "shaman-build-id",
+ "shaman-relay",
+ "shaman-relay-protocol",
+ "shlex",
+ "signal-hook",
+ "socket2",
+ "spake2",
+ "subtle",
+ "syntect",
+ "sysinfo",
+ "tempfile",
+ "termina",
+ "time",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
+ "tower-service",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "two-face",
+ "unicode-segmentation",
+ "unicode-width 0.2.0",
+ "uuid",
+ "windows-sys 0.61.2",
+ "x509-parser",
+ "zbus",
+ "zeroize",
+]
+
+[[package]]
+name = "shaman-build-id"
+version = "0.1.0"
+dependencies = [
+ "uuid",
+]
+
+[[package]]
+name = "shaman-relay"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "clap",
+ "diesel",
+ "diesel_migrations",
+ "futures-util",
+ "icu_properties",
+ "ipnet",
+ "libsqlite3-sys",
+ "rcgen",
+ "reqwest",
+ "ring",
+ "rustls",
+ "rustls-platform-verifier",
+ "serde",
+ "serde_json",
+ "shaman-relay-protocol",
+ "tempfile",
+ "time",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "shaman-relay-protocol"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "rcgen",
+ "ring",
+ "serde",
+ "serde_json",
+ "url",
+ "x509-parser",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3667,140 +3801,6 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
-
-[[package]]
-name = "suru"
-version = "0.3.11"
-dependencies = [
- "anyhow",
- "arboard",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "blake3",
- "clap",
- "core-foundation 0.10.1",
- "crossterm",
- "curve25519-dalek",
- "diesel",
- "diesel_migrations",
- "dirs",
- "dunce",
- "eventsource-stream",
- "fs2",
- "futures-util",
- "github-copilot-sdk",
- "hostname",
- "http-body-util",
- "hyper",
- "hyper-util",
- "icu_normalizer",
- "icu_properties",
- "if-addrs",
- "image",
- "jiff",
- "jsonc-parser",
- "libc",
- "libsqlite3-sys",
- "object",
- "portable-pty",
- "pulldown-cmark",
- "rand_core 0.6.4",
- "ratatui",
- "ratatui-image",
- "rcgen",
- "reqwest",
- "ring",
- "rmcp",
- "rustls",
- "rustls-platform-verifier",
- "secret-service",
- "security-framework",
- "serde",
- "serde_json",
- "shlex",
- "signal-hook",
- "socket2",
- "spake2",
- "subtle",
- "suru-build-id",
- "suru-relay",
- "suru-relay-protocol",
- "syntect",
- "sysinfo",
- "tempfile",
- "termina",
- "time",
- "tokio",
- "tokio-rustls",
- "tokio-tungstenite",
- "tower-service",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "two-face",
- "unicode-segmentation",
- "unicode-width 0.2.0",
- "uuid",
- "windows-sys 0.61.2",
- "x509-parser",
- "zbus",
- "zeroize",
-]
-
-[[package]]
-name = "suru-build-id"
-version = "0.1.0"
-dependencies = [
- "uuid",
-]
-
-[[package]]
-name = "suru-relay"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "clap",
- "diesel",
- "diesel_migrations",
- "futures-util",
- "icu_properties",
- "ipnet",
- "libsqlite3-sys",
- "rcgen",
- "reqwest",
- "ring",
- "rustls",
- "rustls-platform-verifier",
- "serde",
- "serde_json",
- "suru-relay-protocol",
- "tempfile",
- "time",
- "tokio",
- "tokio-rustls",
- "tokio-tungstenite",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "suru-relay-protocol"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "blake3",
- "rcgen",
- "ring",
- "serde",
- "serde_json",
- "url",
- "x509-parser",
-]
 
 [[package]]
 name = "symlink"

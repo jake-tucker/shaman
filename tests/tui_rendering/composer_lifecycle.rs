@@ -5,7 +5,7 @@
 //! held, is demoted to plain text with a Notice naming it.
 
 use crossterm::event::KeyCode;
-use suru::{
+use shaman::{
     protocol::{AttachmentId, Outlook, PromptId, SessionId, SessionReference, SessionTimestamp},
     tui::{
         Application, ApplicationEvent, ApplicationTransition, AttachmentCheckId, ClipboardRead,
@@ -23,7 +23,7 @@ use crate::tui_rendering::{
 
 const LINE: &str = "Image 1 · PNG · 1280×720 · 312 KiB";
 
-fn wide() -> suru::protocol::AttachmentDescriptor {
+fn wide() -> shaman::protocol::AttachmentDescriptor {
     descriptor("wide", 1280, 720, 312 * 1024)
 }
 
@@ -45,7 +45,7 @@ fn open_through_the_picker(
     application: &mut Application,
     workspace: &std::path::Path,
     target: SessionId,
-    snapshot: suru::protocol::SessionSnapshot,
+    snapshot: shaman::protocol::SessionSnapshot,
 ) {
     let ApplicationTransition::ListSessions(request) =
         invoke(application, SemanticCommandId::SessionList)
@@ -454,7 +454,7 @@ fn landing_with_an_image_in_its_draft_and_its_history(application: &mut Applicat
     assert!(rows.contains("Old [Image 1]"), "{rows}");
 }
 
-fn tall() -> suru::protocol::AttachmentDescriptor {
+fn tall() -> shaman::protocol::AttachmentDescriptor {
     descriptor("tall", 90, 1600, 2_411_725)
 }
 
@@ -620,13 +620,13 @@ fn turn_toward_studio(application: &mut Application) {
     );
     application
         .handle_event(ApplicationEvent::RemotesListed(vec![
-            suru::protocol::Remote {
+            shaman::protocol::Remote {
                 name: "studio".to_owned(),
                 fingerprint: "studio-fingerprint".to_owned(),
-                ways: vec![suru::protocol::Way::Direct(
+                ways: vec![shaman::protocol::Way::Direct(
                     "10.0.0.8:7777".parse().expect("parse the remote address"),
                 )],
-                status: suru::protocol::RemoteStatus::Available,
+                status: shaman::protocol::RemoteStatus::Available,
                 icon: None,
             },
         ]))
@@ -634,9 +634,9 @@ fn turn_toward_studio(application: &mut Application) {
     application
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
-            result: Ok(suru::protocol::RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
-                status: suru::protocol::RemoteStatus::Available,
+            result: Ok(shaman::protocol::RemoteHealth {
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
+                status: shaman::protocol::RemoteStatus::Available,
                 unreachable: None,
             }),
         })

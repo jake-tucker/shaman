@@ -10,7 +10,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::json;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent},
     protocol::{
         CreateSessionRequest, InitialPrompt, PromptId, ProviderId, SessionCatalogChange,
@@ -31,7 +31,7 @@ fn create_request(workspace: &std::path::Path, prompt: &str) -> CreateSessionReq
         // No Agent Selection, so no Title Errand runs and the only Icon a
         // Session carries is whichever this test chooses for it.
         agent_selection: None,
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -48,7 +48,7 @@ fn errand_request(workspace: &std::path::Path, prompt: &str) -> CreateSessionReq
         session_id: None,
         preparation_id: None,
         agent_selection: Some(hosted_selection(PROVIDER, MODEL)),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -94,7 +94,7 @@ async fn listed_icon(client: &ManagedClient, session_id: SessionId) -> Option<St
 }
 
 async fn set_icon_response(
-    descriptor: &suru::protocol::RuntimeDescriptor,
+    descriptor: &shaman::protocol::RuntimeDescriptor,
     session_id: SessionId,
     icon: &str,
 ) -> reqwest::Response {

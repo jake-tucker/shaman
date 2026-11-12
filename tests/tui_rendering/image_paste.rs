@@ -6,7 +6,7 @@
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         Activity, ApprovalOutcome, ApprovalSubject, AttachmentBinding, AttachmentDescriptor,

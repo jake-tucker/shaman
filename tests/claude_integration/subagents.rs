@@ -16,7 +16,7 @@ use crate::claude_integration::{
         stop_task_arm, user_turn_arm,
     },
 };
-use suru::{
+use shaman::{
     managed_client::SubagentTreeEvent,
     protocol::{
         Activity, ActivityStatus, Delegator, MessageRole, SessionSnapshot, TranscriptItem, TurnId,
@@ -797,7 +797,7 @@ const RESUMED_SUBAGENT_TURN: &str = r#"      emit '{"type":"stream_event","event
 "#;
 
 /// The Model a Turn's Agent was observed running, if any.
-fn turn_model(turn: &suru::protocol::Turn) -> Option<&str> {
+fn turn_model(turn: &shaman::protocol::Turn) -> Option<&str> {
     turn.agent
         .as_ref()
         .map(|agent| agent.selection.model.as_str())

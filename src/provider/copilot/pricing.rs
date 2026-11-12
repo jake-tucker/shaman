@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// Copilot documents each AI credit as one cent. Catalog prices are credits
-/// per token batch, so this is the final conversion into the dollar Cost Suru
+/// per token batch, so this is the final conversion into the dollar Cost Shaman
 /// stores.
 const USD_PER_AI_CREDIT: f64 = 0.01;
 

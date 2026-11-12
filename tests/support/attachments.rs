@@ -3,7 +3,7 @@
 //! the labels a Prompt's text carries.
 
 use reqwest::header::CONTENT_TYPE;
-use suru::protocol::{AttachmentBinding, AttachmentDescriptor, RuntimeDescriptor, TextSpan};
+use shaman::protocol::{AttachmentBinding, AttachmentDescriptor, RuntimeDescriptor, TextSpan};
 
 pub fn png(width: u32, height: u32) -> Vec<u8> {
     let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();

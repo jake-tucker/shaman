@@ -1,4 +1,4 @@
-//! Reports: the accounts Suru gives an Agent unasked, as that Agent's own
+//! Reports: the accounts Shaman gives an Agent unasked, as that Agent's own
 //! input — at the head of a Turn's input beside a Prompt, alone to wake a
 //! Continuation, or as a steer of a Turn still working — through the start
 //! and steer every Provider already takes (ADR 0035). There are three: the
@@ -23,7 +23,7 @@ pub use sidekick::{
     SidekickReport, SidekickReportOccasion, SidekickReportSubject, SidekickTurnOutcome,
 };
 
-/// One account Suru gives an Agent as its own input, whichever it is: every
+/// One account Shaman gives an Agent as its own input, whichever it is: every
 /// harness carries the one as it carries the other, in the words each
 /// renders itself as.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -74,7 +74,7 @@ impl fmt::Display for Report {
 pub struct MoveNote {
     pub from: ExecutionDirectory,
     pub to: ExecutionDirectory,
-    /// Whether the note is the whole input of a Continuation Suru began for
+    /// Whether the note is the whole input of a Continuation Shaman began for
     /// it: the Move was asked for from the Session itself, by its Agent, which
     /// ended its Turn for it to apply, or by a native Subagent whose call its
     /// Provider gives no name to. So the Agent is told to carry on, in words
@@ -89,14 +89,14 @@ impl fmt::Display for MoveNote {
         let to = self.to.path.display();
         write!(
             formatter,
-            "Note from Suru: this Session Moved, and its Execution Directory changed from {from} to \
+            "Note from Shaman: this Session Moved, and its Execution Directory changed from {from} to \
              {to}. Work in {to} from now on, not in {from}. Subagents spawned before the Move still \
              work where they were, so for work here spawn new ones, or Move those with \
              move_session, rather than continuing them there."
         )?;
         if self.continues {
             formatter.write_str(
-                " This Move was asked for with move_session from within this Session, and Suru \
+                " This Move was asked for with move_session from within this Session, and Shaman \
                  began this Turn itself so that the work in hand carries on here.",
             )?;
         }
@@ -110,7 +110,7 @@ pub enum SubagentReportOutcome {
     /// The Subagent finished the work it was delegated.
     Completed,
     /// Its Turn failed: its Provider said so, its Provider was lost under it,
-    /// or Suru stopped before it finished (ADR 0029).
+    /// or Shaman stopped before it finished (ADR 0029).
     Failed,
     /// It was stopped on its own — by the user, or by an Agent's
     /// `stop_subagent` — since the Agent that delegated it planned on the
@@ -131,7 +131,7 @@ pub struct SubagentReport {
     pub name: String,
     pub outcome: SubagentReportOutcome,
     /// How long the stretch worked, as its settled row says; `None` where
-    /// Suru never learned when it ended (ADR 0029).
+    /// Shaman never learned when it ended (ADR 0029).
     pub duration_ms: Option<u64>,
     /// What the stretch failed with, where it failed and the Subagent's
     /// Transcript says why: the text of the error row that settled it, cut
@@ -199,7 +199,7 @@ impl fmt::Display for SubagentReport {
         };
         write!(
             formatter,
-            "Subagent Report from Suru: the Subagent \"{}\" you delegated to through the Broker {settled}",
+            "Subagent Report from Shaman: the Subagent \"{}\" you delegated to through the Broker {settled}",
             one_line(&self.name),
         )?;
         if let Some(duration_ms) = self.duration_ms {
@@ -305,7 +305,7 @@ mod tests {
         assert_eq!(
             woken.strip_prefix(text.as_str()),
             Some(
-                " This Move was asked for with move_session from within this Session, and Suru \
+                " This Move was asked for with move_session from within this Session, and Shaman \
                  began this Turn itself so that the work in hand carries on here."
             ),
             "one that woke the Agent tells it to carry on, after all the rest"
@@ -336,7 +336,7 @@ mod tests {
         assert_eq!(
             report.to_string(),
             format!(
-                "Subagent Report from Suru: the Subagent \"Researcher\" you delegated to through \
+                "Subagent Report from Shaman: the Subagent \"Researcher\" you delegated to through \
                  the Broker failed after 0.4s. Its session_id is {}, which read_subagent and \
                  send_to_subagent take.\n\nIt failed with: Provider execution failed: Copilot \
                  Model selection failed: RPC error -32603.\n\nIt wrote no final Message.",
@@ -400,7 +400,7 @@ mod tests {
         assert_eq!(
             report.to_string(),
             format!(
-                "Subagent Report from Suru: the Subagent \"Researcher\" you delegated to through \
+                "Subagent Report from Shaman: the Subagent \"Researcher\" you delegated to through \
                  the Broker completed after 1m 23s. Its session_id is {}, which read_subagent and \
                  send_to_subagent take.\n\nIts final Message:\n\nThree seams.",
                 report.subagent
@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(
             failed.to_string(),
             format!(
-                "Subagent Report from Suru: the Subagent \"Researcher\" you delegated to through \
+                "Subagent Report from Shaman: the Subagent \"Researcher\" you delegated to through \
                  the Broker failed. Its session_id is {}, which read_subagent and send_to_subagent \
                  take.\n\nIt wrote no final Message.",
                 failed.subagent

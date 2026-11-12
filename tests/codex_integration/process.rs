@@ -2,8 +2,7 @@
 
 use crate::codex_integration::support::{ScriptedCodex, receive_initial_state};
 use crate::support::PROGRESS_DEADLINE;
-use std::sync::Arc;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionSubscription},
     protocol::{
         Activity, AdmitPromptRequest, AgentId, CreateSessionRequest, InitialPrompt, MessageRole,
@@ -13,6 +12,7 @@ use suru::{
     provider::CodexRuntime,
     server::{self, RunningServer, ServerConfig},
 };
+use std::sync::Arc;
 use tokio::time::{Duration, timeout};
 
 const STARTUP_RETRY: &str = r#"
@@ -105,10 +105,10 @@ const IDLE_PROCESS_LOSS_THEN_RESUME: &str = r#"
 "#;
 
 #[tokio::test]
-#[ignore = "set SURU_CODEX_SMOKE=1 to use the installed authenticated Codex binary"]
+#[ignore = "set SHAMAN_CODEX_SMOKE=1 to use the installed authenticated Codex binary"]
 async fn installed_codex_launches_runs_one_text_turn_and_shuts_down() {
-    if std::env::var_os("SURU_CODEX_SMOKE").as_deref() != Some(std::ffi::OsStr::new("1")) {
-        eprintln!("skipping: set SURU_CODEX_SMOKE=1 to opt in");
+    if std::env::var_os("SHAMAN_CODEX_SMOKE").as_deref() != Some(std::ffi::OsStr::new("1")) {
+        eprintln!("skipping: set SHAMAN_CODEX_SMOKE=1 to opt in");
         return;
     }
 
@@ -132,7 +132,7 @@ async fn installed_codex_launches_runs_one_text_turn_and_shuts_down() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -275,7 +275,7 @@ async fn codex_resumes_the_known_thread_after_active_process_loss() {
             .filter(|message| message.content == "Lose the first app-server")
             .count(),
         1,
-        "resume must not project native history into the Suru transcript"
+        "resume must not project native history into the Shaman transcript"
     );
     assert_eq!(
         recovered
@@ -309,7 +309,7 @@ async fn codex_resumes_the_known_thread_after_active_process_loss() {
     assert_eq!(resume["params"]["threadId"], "recoverable-thread");
     assert_eq!(
         resume["params"]["cwd"],
-        suru::paths::canonical(fixture.workspace.path())
+        shaman::paths::canonical(fixture.workspace.path())
             .expect("canonicalize Workspace")
             .to_string_lossy()
             .as_ref()
@@ -441,7 +441,7 @@ impl RecoveryFixture {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 prompt: InitialPrompt {
@@ -618,7 +618,7 @@ async fn a_moved_sessions_next_turn_resumes_its_thread_in_the_new_directory() {
     let state = tempfile::tempdir().unwrap();
     let origin = tempfile::tempdir().unwrap();
     let destination = tempfile::tempdir().unwrap();
-    let destination_path = suru::paths::canonical(destination.path()).unwrap();
+    let destination_path = shaman::paths::canonical(destination.path()).unwrap();
     let server = server::spawn_with_provider(
         ServerConfig::new(state.path(), "moved-codex").unwrap(),
         Arc::new(CodexRuntime::new(codex.executable())),
@@ -634,7 +634,7 @@ async fn a_moved_sessions_next_turn_resumes_its_thread_in_the_new_directory() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: origin.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -705,11 +705,11 @@ async fn a_moved_sessions_next_turn_resumes_its_thread_in_the_new_directory() {
         destination_path.to_str(),
         "in the directory the Session Moved to"
     );
-    let note = suru::provider::MoveNote {
-        from: suru::protocol::ExecutionDirectory {
-            path: suru::paths::canonical(origin.path()).unwrap(),
+    let note = shaman::provider::MoveNote {
+        from: shaman::protocol::ExecutionDirectory {
+            path: shaman::paths::canonical(origin.path()).unwrap(),
         },
-        to: suru::protocol::ExecutionDirectory {
+        to: shaman::protocol::ExecutionDirectory {
             path: destination_path.clone(),
         },
         continues: false,

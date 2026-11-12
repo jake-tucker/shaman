@@ -801,8 +801,8 @@ async fn the_workspace_breakdown_counts_each_turn_under_its_own_session_s_worksp
 #[tokio::test]
 async fn workspaces_of_one_name_are_told_apart_by_where_they_are() {
     let directory = tempfile::tempdir().unwrap();
-    let mine = directory.path().join("mine").join("suru");
-    let theirs = directory.path().join("theirs").join("suru");
+    let mine = directory.path().join("mine").join("shaman");
+    let theirs = directory.path().join("theirs").join("shaman");
     let mut records = Vec::new();
     for path in [&mine, &theirs] {
         let mut session = persisted(path, None);
@@ -826,8 +826,8 @@ async fn workspaces_of_one_name_are_told_apart_by_where_they_are() {
 #[tokio::test]
 async fn a_key_reads_alike_in_every_report_whatever_else_the_report_names() {
     let directory = tempfile::tempdir().unwrap();
-    let mine = directory.path().join("mine").join("suru");
-    let theirs = directory.path().join("theirs").join("suru");
+    let mine = directory.path().join("mine").join("shaman");
+    let theirs = directory.path().join("theirs").join("shaman");
     let records = vec![
         titled(
             &mine,
@@ -943,7 +943,7 @@ async fn a_workspace_is_named_as_its_registry_entry_presents_it_or_else_as_its_s
 #[tokio::test]
 async fn two_workspaces_presented_at_one_path_are_still_told_apart() {
     let directory = tempfile::tempdir().unwrap();
-    let shared = directory.path().join("suru");
+    let shared = directory.path().join("shaman");
     let mut records = Vec::new();
     let mut registry = HashMap::new();
     for (index, turn_at) in [11, 12].into_iter().enumerate() {
@@ -1947,8 +1947,8 @@ async fn top_sessions_that_cost_alike_stand_in_the_order_of_their_identities() {
 #[tokio::test]
 async fn a_top_session_s_workspace_is_told_apart_whatever_the_breakdown() {
     let directory = tempfile::tempdir().unwrap();
-    let mine = directory.path().join("mine").join("suru");
-    let theirs = directory.path().join("theirs").join("suru");
+    let mine = directory.path().join("mine").join("shaman");
+    let theirs = directory.path().join("theirs").join("shaman");
     let records = vec![
         titled(&mine, "Mine", vec![turn_scoped(OPUS, 11, 0.20)]),
         titled(&theirs, "Theirs", vec![turn_scoped(CODEX, 12, 0.10)]),
@@ -2166,7 +2166,7 @@ async fn an_errand_of_unknown_usage_or_with_no_cost_marks_every_figure_holding_i
     );
     let session_id = session.snapshot.session.id;
     let errands = vec![
-        // Timed out: Suru stopped listening before the Provider could say.
+        // Timed out: Shaman stopped listening before the Provider could say.
         ErrandRecord {
             outcome: ErrandOutcome::TimedOut,
             ..errand(14, None, None)

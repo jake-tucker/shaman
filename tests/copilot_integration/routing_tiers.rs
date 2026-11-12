@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use serde_json::{Value, json};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedEvent},
     protocol::{
         Activity, AgentSelection, AgentSelectionOperationId, CopilotSettings, CreateSessionRequest,
@@ -615,7 +615,7 @@ async fn a_tier_survives_a_resume_without_being_asked_for_again() {
 
 /// Copilot accepted the change and refused it only when the Turn tried it, leaving the old tier in
 /// force. The report is ephemeral and comes ahead of the Prompt's own echo, as it did live. The
-/// Selection says what ran, and the user may ask again: what Suru believes is in force follows the
+/// Selection says what ran, and the user may ask again: what Shaman believes is in force follows the
 /// correction too, or the same request would be taken as already met.
 #[tokio::test]
 async fn a_change_copilot_refuses_as_the_turn_claims_it_corrects_the_selection_with_a_status_row() {
@@ -779,8 +779,8 @@ async fn a_change_copilot_refuses_at_once_corrects_the_selection_and_fails_no_tu
     server.shutdown().await.expect("stop server");
 }
 
-/// The Setting went off while Suru was down: Copilot still reports the tier after a resume with no
-/// assignment, and would fail every Prompt, so Suru clears it first.
+/// The Setting went off while Shaman was down: Copilot still reports the tier after a resume with no
+/// assignment, and would fail every Prompt, so Shaman clears it first.
 #[tokio::test]
 async fn with_the_setting_off_a_resumed_session_on_a_tier_falls_back_to_plain_auto() {
     let copilot = tiered_conversation(SETTLES);
@@ -994,7 +994,7 @@ async fn changing_the_setting_refreshes_the_catalog() {
     server.shutdown().await.expect("stop server");
 }
 
-/// Suru remembers the last catalog across restarts: one offering tiers, with the Setting off by the
+/// Shaman remembers the last catalog across restarts: one offering tiers, with the Setting off by the
 /// time it comes back, offers none from the first thing a client hears.
 #[tokio::test]
 async fn a_catalog_remembered_with_tiers_offers_none_once_the_setting_is_off_across_a_restart() {

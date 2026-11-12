@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use serde_json::json;
-use suru::protocol::{
+use shaman::protocol::{
     Activity, ActivityId, ActivityStatus, AdmitPromptRequest, AgentId, AgentIdentity,
     AgentSelection, AgentSelectionOperationId, Answer, ApprovalSubject, AttachmentBinding,
     AttachmentDescriptor, AttachmentId, AttachmentKind, Author, CompactSessionRequest,
@@ -112,7 +112,7 @@ fn approval_subjects_have_strict_provider_neutral_wire_shapes() {
 
 #[test]
 fn a_lapse_penalty_is_a_usd_figure_never_negative_and_an_unknown_one_is_absent() {
-    use suru::protocol::{LapsePenalty, PromptCache};
+    use shaman::protocol::{LapsePenalty, PromptCache};
     assert_eq!(
         serde_json::from_value::<LapsePenalty>(json!(0.0)).expect("decode a zero penalty"),
         LapsePenalty::from_nano_usd(0)
@@ -144,7 +144,7 @@ fn a_lapse_penalty_is_a_usd_figure_never_negative_and_an_unknown_one_is_absent()
 /// no Prompt Cache it reads.
 #[test]
 fn a_prompt_cache_names_the_write_price_its_call_paid() {
-    use suru::protocol::{CacheWritePrice, PromptCache};
+    use shaman::protocol::{CacheWritePrice, PromptCache};
     const {
         assert!(
             PROTOCOL_VERSION >= 113,
@@ -220,8 +220,8 @@ fn a_reported_zero_cost_is_known_while_an_unattributed_cost_is_rejected() {
 fn workspace_skill_catalog_round_trips_only_safe_provider_neutral_metadata() {
     let catalog = SkillCatalog {
         provider: ProviderId::new("codex"),
-        execution_directory: suru::protocol::ExecutionDirectory {
-            path: PathBuf::from("/work/suru"),
+        execution_directory: shaman::protocol::ExecutionDirectory {
+            path: PathBuf::from("/work/shaman"),
         },
         skills: vec![SkillDescriptor {
             id: SkillId::new("01J-safe-opaque-id"),
@@ -241,7 +241,7 @@ fn workspace_skill_catalog_round_trips_only_safe_provider_neutral_metadata() {
     };
     let expected = json!({
         "provider": "codex",
-        "execution_directory": { "path": "/work/suru" },
+        "execution_directory": { "path": "/work/shaman" },
         "skills": [{
             "id": "01J-safe-opaque-id",
             "name": "code-review",
@@ -276,24 +276,24 @@ fn hiding_subsessions_rides_the_settings_snapshot_and_has_its_own_mutation() {
             "a Setting the settings snapshot and its mutations carry changes the wire"
         );
     }
-    let mut settings = suru::protocol::EffectiveSettings::default();
+    let mut settings = shaman::protocol::EffectiveSettings::default();
     settings.sidekick.hide_subsessions = true;
     let encoded = serde_json::to_value(&settings).expect("encode the effective Settings");
     assert_eq!(encoded["sidekick"], json!({ "hide_subsessions": true }));
     assert_eq!(
-        serde_json::from_value::<suru::protocol::EffectiveSettings>(encoded)
+        serde_json::from_value::<shaman::protocol::EffectiveSettings>(encoded)
             .expect("decode the effective Settings"),
         settings
     );
 
-    let mutation = suru::protocol::SettingMutation::SidekickHideSubsessions { value: Some(true) };
+    let mutation = shaman::protocol::SettingMutation::SidekickHideSubsessions { value: Some(true) };
     let expected = json!({ "setting": "sidekick_hide_subsessions", "value": true });
     assert_eq!(
         serde_json::to_value(&mutation).expect("encode the mutation"),
         expected
     );
     assert_eq!(
-        serde_json::from_value::<suru::protocol::SettingMutation>(expected)
+        serde_json::from_value::<shaman::protocol::SettingMutation>(expected)
             .expect("decode the mutation"),
         mutation
     );
@@ -312,24 +312,24 @@ fn workspace_round_trips_its_icon_and_description_and_tolerates_their_absence() 
         );
     }
     let dressed = Workspace {
-        id: suru::protocol::WorkspaceId("directory:/work/suru".to_owned()),
-        path: PathBuf::from("/work/suru"),
+        id: shaman::protocol::WorkspaceId("directory:/work/shaman".to_owned()),
+        path: PathBuf::from("/work/shaman"),
         repository: None,
-        source_control: suru::protocol::SourceControlAvailability::NotDetected,
+        source_control: shaman::protocol::SourceControlAvailability::NotDetected,
         icon: Some("dev-rust".to_owned()),
-        description: Some(suru::protocol::WorkspaceDescription {
-            text: "Where Suru itself is built.".to_owned(),
+        description: Some(shaman::protocol::WorkspaceDescription {
+            text: "Where Shaman itself is built.".to_owned(),
             set: true,
         }),
         unavailable: None,
     };
     let expected = json!({
-        "id": "directory:/work/suru",
-        "path": "/work/suru",
+        "id": "directory:/work/shaman",
+        "path": "/work/shaman",
         "repository": null,
         "source_control": { "status": "not_detected" },
         "icon": "dev-rust",
-        "description": { "text": "Where Suru itself is built.", "set": true },
+        "description": { "text": "Where Shaman itself is built.", "set": true },
     });
     assert_eq!(
         serde_json::to_value(&dressed).expect("encode Workspace"),
@@ -341,8 +341,8 @@ fn workspace_round_trips_its_icon_and_description_and_tolerates_their_absence() 
     );
 
     let undressed = json!({
-        "id": "directory:/work/suru",
-        "path": "/work/suru",
+        "id": "directory:/work/shaman",
+        "path": "/work/shaman",
         "repository": null,
         "source_control": { "status": "not_detected" },
     });
@@ -378,7 +378,7 @@ fn workspace_round_trips_why_it_cannot_be_opened() {
         );
     }
     let unavailable = Workspace {
-        unavailable: Some(suru::protocol::WorkspaceUnavailability::HolderUnreadable),
+        unavailable: Some(shaman::protocol::WorkspaceUnavailability::HolderUnreadable),
         ..Workspace::directory(absolute(&["drive", "atlas"]))
     };
     let encoded = serde_json::to_value(&unavailable).expect("encode Workspace");
@@ -388,7 +388,7 @@ fn workspace_round_trips_why_it_cannot_be_opened() {
         unavailable
     );
     assert!(
-        serde_json::to_value(Workspace::directory(absolute(&["work", "suru"])))
+        serde_json::to_value(Workspace::directory(absolute(&["work", "shaman"])))
             .expect("encode Workspace")
             .get("unavailable")
             .is_none(),
@@ -406,20 +406,20 @@ fn health_carries_whether_the_server_has_been_onboarded() {
             "saying whether a Server has been onboarded changes the wire"
         );
     }
-    let health = suru::protocol::Health::new(
-        suru::protocol::ServerIdentity {
+    let health = shaman::protocol::Health::new(
+        shaman::protocol::ServerIdentity {
             instance_id: Uuid::nil(),
             pid: 1,
             protocol_version: PROTOCOL_VERSION,
-            build_identity: "suru@test".to_owned(),
+            build_identity: "shaman@test".to_owned(),
         },
-        suru::protocol::LifecycleState::Ready,
+        shaman::protocol::LifecycleState::Ready,
     )
     .with_onboarded(true);
     let mut encoded = serde_json::to_value(&health).expect("encode health");
     assert_eq!(encoded["onboarded"], json!(true));
     assert_eq!(
-        serde_json::from_value::<suru::protocol::Health>(encoded.clone()).expect("decode health"),
+        serde_json::from_value::<shaman::protocol::Health>(encoded.clone()).expect("decode health"),
         health
     );
     encoded
@@ -427,7 +427,7 @@ fn health_carries_whether_the_server_has_been_onboarded() {
         .expect("health is an object")
         .remove("onboarded");
     assert!(
-        serde_json::from_value::<suru::protocol::Health>(encoded).is_err(),
+        serde_json::from_value::<shaman::protocol::Health>(encoded).is_err(),
         "a health that does not say is refused"
     );
 }
@@ -436,7 +436,7 @@ fn health_carries_whether_the_server_has_been_onboarded() {
 fn skill_catalog_request_round_trips_provider_and_workspace_context() {
     let request = SkillCatalogRequest {
         provider: ProviderId::new("codex"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: PathBuf::from("workspace"),
         },
     };
@@ -550,10 +550,10 @@ fn session_summary_round_trips_with_discovery_metadata() {
             context_fill: None,
             prompt_cache: None,
             id: SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f")),
-            execution_directory: suru::protocol::ExecutionDirectory {
-                path: PathBuf::from("/work/suru"),
+            execution_directory: shaman::protocol::ExecutionDirectory {
+                path: PathBuf::from("/work/shaman"),
             },
-            workspace: Workspace::directory(PathBuf::from("/work/suru")),
+            workspace: Workspace::directory(PathBuf::from("/work/shaman")),
             agent_selection: Some(AgentSelection {
                 provider: ProviderId::new("codex"),
                 model: ModelId::new("gpt-5"),
@@ -615,9 +615,9 @@ fn session_summary_round_trips_with_discovery_metadata() {
             "cost_is_partial": false
         },
         "own_cost": { "cost": 0.02, "is_partial": false },
-        "workspace": Workspace::directory(std::path::PathBuf::from("/work/suru")),
+        "workspace": Workspace::directory(std::path::PathBuf::from("/work/shaman")),
         "checkout": null,
-        "execution_directory": { "path": "/work/suru" },
+        "execution_directory": { "path": "/work/shaman" },
         "agent_selection": {
             "provider": "codex",
             "model": "gpt-5",
@@ -679,25 +679,25 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
         session: Session {
             pending_move: None,
             checkout: None,
-            context_fill: Some(suru::protocol::ContextFill {
+            context_fill: Some(shaman::protocol::ContextFill {
                 occupied_tokens: 12_400,
                 capacity_tokens: Some(200_000),
             }),
-            prompt_cache: Some(suru::protocol::PromptCache {
+            prompt_cache: Some(shaman::protocol::PromptCache {
                 lapses_at: SessionTimestamp(1_767_225_900_250),
                 written_in: None,
                 written_by: ModelId::new("gpt-5"),
                 lifetime_ms: Some(3_600_000),
-                write_price: suru::protocol::CacheWritePrice::Default,
+                write_price: shaman::protocol::CacheWritePrice::Default,
                 prompt_limit_tokens: None,
-                lapse_penalty: suru::protocol::LapsePenalty::from_usd(1.65),
+                lapse_penalty: shaman::protocol::LapsePenalty::from_usd(1.65),
                 compaction_due_at: None,
             }),
             id: SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f")),
-            execution_directory: suru::protocol::ExecutionDirectory {
-                path: PathBuf::from("/work/suru"),
+            execution_directory: shaman::protocol::ExecutionDirectory {
+                path: PathBuf::from("/work/shaman"),
             },
-            workspace: Workspace::directory(PathBuf::from("/work/suru")),
+            workspace: Workspace::directory(PathBuf::from("/work/shaman")),
             agent_selection: Some(AgentSelection {
                 provider: ProviderId::new("codex"),
                 model: ModelId::new("gpt-5"),
@@ -797,7 +797,7 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
         subagent_interventions: Vec::new(),
         pending_approvals: Vec::new(),
         submitting_approvals: Vec::new(),
-        pending_approvals_revision: suru::protocol::SessionRevision(0),
+        pending_approvals_revision: shaman::protocol::SessionRevision(0),
         watches: Vec::new(),
         waiting_on_subagents: None,
         current_model: None,
@@ -816,9 +816,9 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
         "icon": null,
         "session": {
             "id": "0198b27e-26ec-7c4c-a83b-a83a4787453f",
-            "workspace": Workspace::directory(std::path::PathBuf::from("/work/suru")),
+            "workspace": Workspace::directory(std::path::PathBuf::from("/work/shaman")),
         "checkout": null,
-            "execution_directory": { "path": "/work/suru" },
+            "execution_directory": { "path": "/work/shaman" },
             "agent_selection": {
                 "provider": "codex",
                 "model": "gpt-5",
@@ -1113,7 +1113,7 @@ fn session_at(id: SessionId, workspace: &std::path::Path) -> Session {
         context_fill: None,
         prompt_cache: None,
         id,
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         workspace: Workspace::directory(workspace.to_owned()),
@@ -1136,7 +1136,7 @@ fn a_sidekicks_tree_carries_the_sessions_it_has_a_hand_in_and_every_other_tree_i
             "the Sessions a Sidekick's tree carries change the wire"
         );
     }
-    use suru::protocol::{
+    use shaman::protocol::{
         SubagentTreeChange, SubagentTreeRevision, SubagentTreeSession, SubagentTreeSnapshot,
         SubagentTreeTopLevel,
     };
@@ -1316,14 +1316,14 @@ fn a_sidekick_on_a_peer_is_named_by_the_peer_alone() {
         None,
         "it names no Session of the Server holding what it sent"
     );
-    assert_eq!(suru::protocol::AUTHOR_HEADER, "x-suru-author");
+    assert_eq!(shaman::protocol::AUTHOR_HEADER, "x-shaman-author");
     // Only the Sidekick's own Server knows it began a Session on a Remote, so
     // the Sidekick's Session names those Sessions for every Client.
-    let began = suru::protocol::RemoteSession {
+    let began = shaman::protocol::RemoteSession {
         origin: "workstation".to_owned(),
         session_id: SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f")),
     };
-    let changed = suru::protocol::SessionCatalogChange::RemoteSubsessionsChanged {
+    let changed = shaman::protocol::SessionCatalogChange::RemoteSubsessionsChanged {
         session_id: SessionId::from_uuid(fixture_id("0198b27e-3a01-7c4c-a83b-a83a4787453f")),
         remote_subsessions: vec![began],
     };
@@ -1340,11 +1340,11 @@ fn a_sidekick_on_a_peer_is_named_by_the_peer_alone() {
         })
     );
     assert_eq!(
-        serde_json::from_value::<suru::protocol::SessionCatalogChange>(encoded)
+        serde_json::from_value::<shaman::protocol::SessionCatalogChange>(encoded)
             .expect("decode the change"),
         changed
     );
-    let peer = suru::protocol::Peer {
+    let peer = shaman::protocol::Peer {
         id: "ab12".to_owned(),
         fingerprint: "ab12".to_owned(),
         name: "laptop".to_owned(),
@@ -1367,7 +1367,7 @@ fn a_prompt_says_which_turn_took_it_and_when() {
         );
     }
     let turn_id = TurnId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f"));
-    let taking = suru::protocol::PromptTaking {
+    let taking = shaman::protocol::PromptTaking {
         turn_id,
         taken_at: Some(SessionTimestamp(42)),
     };
@@ -1396,7 +1396,7 @@ fn a_prompt_says_which_turn_took_it_and_when() {
         "admission_order": 2,
         "status": "delivered"
     });
-    let prompt = serde_json::from_value::<suru::protocol::Prompt>(untaken.clone())
+    let prompt = serde_json::from_value::<shaman::protocol::Prompt>(untaken.clone())
         .expect("a Prompt no Turn took decodes");
     assert_eq!(prompt.taken, None);
     assert_eq!(
@@ -1418,8 +1418,9 @@ fn an_act_on_a_peer_names_itself_and_an_intervention_says_when() {
             "an act's own name and an Intervention's moments travel between Servers"
         );
     }
-    assert_eq!(suru::protocol::ACT_HEADER, "x-suru-act");
-    let act = suru::protocol::ActId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f"));
+    assert_eq!(shaman::protocol::ACT_HEADER, "x-shaman-act");
+    let act =
+        shaman::protocol::ActId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f"));
     let on_peer = Author::PeerSidekick {
         peer: "laptop".to_owned(),
         fingerprint: "ab12".to_owned(),
@@ -1455,8 +1456,8 @@ fn an_act_on_a_peer_names_itself_and_an_intervention_says_when() {
     let asked = Activity::Approval {
         id: ActivityId::from_uuid(fixture_id("0198b27e-3a01-7c4c-a83b-a83a4787453f")),
         turn_id: TurnId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f")),
-        approval: suru::protocol::Approval {
-            id: suru::protocol::ApprovalId::from_uuid(fixture_id(
+        approval: shaman::protocol::Approval {
+            id: shaman::protocol::ApprovalId::from_uuid(fixture_id(
                 "0198b27e-4b02-7c4c-a83b-a83a4787453f",
             )),
             subject: ApprovalSubject::Command {
@@ -1468,7 +1469,7 @@ fn an_act_on_a_peer_names_itself_and_an_intervention_says_when() {
         },
         tool_activity_id: None,
         detail_truncated: false,
-        outcome: suru::protocol::ApprovalOutcome::Pending,
+        outcome: shaman::protocol::ApprovalOutcome::Pending,
         decision: None,
         follow_up_error: None,
         asked_at: Some(SessionTimestamp(7)),
@@ -1516,7 +1517,7 @@ fn a_servers_workspace_listing_carries_the_paths_its_workspaces_are_spelled_in()
             "a Server's listing of its Workspaces is pushed, at a revision of its own"
         );
     }
-    use suru::protocol::{PathStyle, WorkspaceListing, WorkspaceListingRevision, WorkspacePaths};
+    use shaman::protocol::{PathStyle, WorkspaceListing, WorkspaceListingRevision, WorkspacePaths};
     let workspace = Workspace::directory(std::env::temp_dir().join("atlas"));
     let run = Uuid::from_u128(1);
     let listing = WorkspaceListing {
@@ -1565,7 +1566,7 @@ fn a_clone_asked_of_a_remote_and_its_answer_cross_the_pairing() {
             "a Clone is carried to a Remote over the Pairing"
         );
     }
-    use suru::protocol::{
+    use shaman::protocol::{
         CloneWorkspaceRequest, ClonedWorkspace, PathStyle, WorkspaceId, WorkspacePaths,
     };
     let bare = CloneWorkspaceRequest {
@@ -1973,7 +1974,7 @@ fn command_activity_lifecycle_uses_typed_incremental_updates() {
                     turn_id,
                     status: ActivityStatus::Active,
                     command: "cargo test --test session_protocol".to_owned(),
-                    cwd: Some(PathBuf::from("/work/suru")),
+                    cwd: Some(PathBuf::from("/work/shaman")),
                     output: String::new(),
                     output_truncated: false,
                     exit_status: None,
@@ -2015,7 +2016,7 @@ fn command_activity_lifecycle_uses_typed_incremental_updates() {
                     "kind": "command",
                     "status": "active",
                     "command": "cargo test --test session_protocol",
-                    "cwd": "/work/suru",
+                    "cwd": "/work/shaman",
                     "output": "",
                     "output_truncated": false,
                     "exit_status": null
@@ -2333,7 +2334,7 @@ fn a_compaction_is_added_active_and_settles_with_its_context_fill_and_summary() 
             session_id,
             revision: SessionRevision(9),
             // A completed Compaction carries the summary it left, and whether
-            // Suru's cap cut it short, as a typed property beside it.
+            // Shaman's cap cut it short, as a typed property beside it.
             changes: vec![SessionChange::CompactionSettled {
                 activity_id: completed,
                 status: ActivityStatus::Completed,
@@ -2466,7 +2467,7 @@ fn a_completed_compaction_is_measured_after_by_the_sessions_next_context_fill_re
         revision: SessionRevision(11),
         changes: vec![
             SessionChange::ContextFillChanged {
-                context_fill: Some(suru::protocol::ContextFill {
+                context_fill: Some(shaman::protocol::ContextFill {
                     occupied_tokens: 35_000,
                     capacity_tokens: Some(272_000),
                 }),
@@ -2508,7 +2509,7 @@ fn a_completed_compaction_is_measured_after_by_the_sessions_next_context_fill_re
 /// one.
 #[test]
 fn a_prompt_cache_names_when_a_pending_scheduled_compaction_falls_due() {
-    use suru::protocol::{CacheWritePrice, PromptCache};
+    use shaman::protocol::{CacheWritePrice, PromptCache};
     const {
         assert!(
             PROTOCOL_VERSION >= 116,
@@ -2522,7 +2523,7 @@ fn a_prompt_cache_names_when_a_pending_scheduled_compaction_falls_due() {
         lifetime_ms: Some(300_000),
         write_price: CacheWritePrice::Default,
         prompt_limit_tokens: None,
-        lapse_penalty: suru::protocol::LapsePenalty::from_usd(1.65),
+        lapse_penalty: shaman::protocol::LapsePenalty::from_usd(1.65),
         compaction_due_at: Some(SessionTimestamp(1_767_225_780_000)),
     };
     let wire = json!({
@@ -2558,16 +2559,16 @@ fn a_prompt_cache_change_carries_the_whole_cache_or_its_absence() {
         revision: SessionRevision(9),
         changes: vec![
             SessionChange::PromptCacheChanged {
-                prompt_cache: Some(suru::protocol::PromptCache {
+                prompt_cache: Some(shaman::protocol::PromptCache {
                     lapses_at: SessionTimestamp(1_767_225_900_000),
                     written_in: Some(TurnId::from_uuid(fixture_id(
                         "0198b27e-2dc4-76ba-9895-f43db821fe3d",
                     ))),
                     written_by: ModelId::new("gpt-5"),
                     lifetime_ms: None,
-                    write_price: suru::protocol::CacheWritePrice::Default,
+                    write_price: shaman::protocol::CacheWritePrice::Default,
                     prompt_limit_tokens: Some(272_000),
-                    lapse_penalty: suru::protocol::LapsePenalty::from_usd(0.46),
+                    lapse_penalty: shaman::protocol::LapsePenalty::from_usd(0.46),
                     compaction_due_at: None,
                 }),
             },
@@ -2619,7 +2620,7 @@ fn a_watch_outcome_is_added_already_settled_with_its_status_description_and_summ
             activity: Activity::WatchOutcome {
                 id: activity_id,
                 turn_id,
-                status: suru::protocol::WatchOutcomeStatus::Failed,
+                status: shaman::protocol::WatchOutcomeStatus::Failed,
                 description: "cargo test".to_owned(),
                 summary: Some(
                     r#"Background command "cargo test" failed with exit code 1"#.to_owned(),
@@ -2932,8 +2933,8 @@ fn initial_session_command_round_trips_through_json() {
         session_id: None,
         preparation_id: None,
         agent_selection: None,
-        execution_directory: suru::protocol::ExecutionDirectory {
-            path: PathBuf::from("/work/suru"),
+        execution_directory: shaman::protocol::ExecutionDirectory {
+            path: PathBuf::from("/work/shaman"),
         },
         prompt: InitialPrompt {
             id: PromptId::from_uuid(fixture_id("0198b27e-2a7e-7562-b80d-54aa50c360f9")),
@@ -2945,7 +2946,7 @@ fn initial_session_command_round_trips_through_json() {
     let expected = json!({
         "preparation_id": null,
         "agent_selection": null,
-        "execution_directory": { "path": "/work/suru" },
+        "execution_directory": { "path": "/work/shaman" },
         "prompt": {
             "id": "0198b27e-2a7e-7562-b80d-54aa50c360f9",
             "text": "Explain this workspace",
@@ -3093,7 +3094,7 @@ fn a_preparation_prompt_carries_its_attachment_bindings_and_keeps_them_off_the_w
     let request = PrepareCheckoutRequest {
         intended_session: None,
         id: PreparationId(fixture_id("0198b27e-2a7e-7562-b80d-54aa50c360fa")),
-        source: suru::protocol::ExecutionDirectory {
+        source: shaman::protocol::ExecutionDirectory {
             path: PathBuf::from("workspace"),
         },
         prompt: PreparationPrompt {
@@ -3210,10 +3211,10 @@ fn a_snapshot_and_its_updates_describe_the_attachments_its_session_binds() {
             context_fill: None,
             prompt_cache: None,
             id: SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f")),
-            execution_directory: suru::protocol::ExecutionDirectory {
-                path: PathBuf::from("/work/suru"),
+            execution_directory: shaman::protocol::ExecutionDirectory {
+                path: PathBuf::from("/work/shaman"),
             },
-            workspace: Workspace::directory(PathBuf::from("/work/suru")),
+            workspace: Workspace::directory(PathBuf::from("/work/shaman")),
             agent_selection: None,
             agent_selection_availability: ModelAvailability::Available,
             approval_posture: None,
@@ -3313,7 +3314,7 @@ fn session_delta_status_and_error_contracts_use_stable_provider_neutral_shapes()
                 },
                 cost: Cost::from_usd(0.03),
                 cost_basis: Some(CostBasis::Reported),
-                cost_coverage: Some(suru::protocol::CostCoverage::Turn),
+                cost_coverage: Some(shaman::protocol::CostCoverage::Turn),
                 cost_is_partial: false,
                 cost_recorded_at: Some(SessionTimestamp(1_755_000_004_100)),
                 model_shares: Vec::new(),
@@ -3705,8 +3706,8 @@ fn a_session_error_names_its_code_in_a_header_as_its_body_does() {
         );
     }
     assert_eq!(
-        suru::protocol::SESSION_ERROR_CODE_HEADER,
-        "x-suru-error-code"
+        shaman::protocol::SESSION_ERROR_CODE_HEADER,
+        "x-shaman-error-code"
     );
     for code in [
         SessionErrorCode::AttachmentNotFound,
@@ -3889,7 +3890,7 @@ fn a_compaction_request_and_the_turn_it_begins_travel_on_the_wire() {
         serde_json::to_value(&requested).expect("encode a requested Turn")["compaction_requested"],
         json!("manual")
     );
-    // One Suru began ahead of a Prompt Cache lapse says so on the wire, and
+    // One Shaman began ahead of a Prompt Cache lapse says so on the wire, and
     // is no Continuation either.
     let mut scheduled = turn.clone();
     scheduled["compaction_requested"] = json!("scheduled");
@@ -3961,7 +3962,7 @@ fn a_reroute_row_keeps_its_wire_shape() {
     let activity = Activity::Reroute {
         id: ActivityId::from_uuid(fixture_id("0198b27e-345a-700e-ae3b-d971c57fbe87")),
         turn_id: TurnId::from_uuid(fixture_id("0198b27e-2dc4-76ba-9895-f43db821fe3d")),
-        reroute: suru::protocol::Reroute {
+        reroute: shaman::protocol::Reroute {
             provider: ProviderId::new("copilot"),
             from: Some(ModelId::new("gpt-sol")),
             to: ModelId::new("gpt-luna"),
@@ -4005,10 +4006,10 @@ fn a_superseded_message_and_a_route_row_keep_their_wire_shape() {
                 activity: Activity::Route {
                     id: activity_id,
                     turn_id,
-                    decision: suru::protocol::RouteDecision::Chosen {
-                        steps: vec![suru::protocol::RouteStep {
+                    decision: shaman::protocol::RouteDecision::Chosen {
+                        steps: vec![shaman::protocol::RouteStep {
                             model: ModelId::new("gpt-sol"),
-                            action: suru::protocol::RouteAction::Works,
+                            action: shaman::protocol::RouteAction::Works,
                         }],
                     },
                 },

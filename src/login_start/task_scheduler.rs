@@ -55,7 +55,7 @@ fn task_name(channel: &str, user: &str) -> String {
             }
         })
         .collect::<String>();
-    format!("suru-server-{channel} ({user})")
+    format!("shaman-server-{channel} ({user})")
 }
 
 /// `word` as `CommandLineToArgvW` reads one back: in double quotes, a `"` is
@@ -97,7 +97,7 @@ fn task_definition(keep: &KeepCommand, user: &str, working_directory: &str) -> S
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Suru keeper: starts this channel's server at logon, and restarts it if it crashes</Description>
+    <Description>Shaman keeper: starts this channel's server at logon, and restarts it if it crashes</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
@@ -223,7 +223,7 @@ impl ServiceManager for ScheduledTask {
         let name = self.name();
         let definition = task_definition(keep, &self.user, &self.home.to_string_lossy());
         let file = tempfile::Builder::new()
-            .prefix("suru-login-start-")
+            .prefix("shaman-login-start-")
             .suffix(".xml")
             .tempfile()
             .context("create the Task's definition")?;
@@ -357,7 +357,7 @@ mod tests {
         let task = task_definition(&awkward_keep(), USER, r"C:\Users\jo & co");
         // The program is its own element, in need of no quoting but XML's.
         assert!(
-            task.contains("<Command>/Users/jo smith/R&amp;D &lt;x&gt;/suru</Command>"),
+            task.contains("<Command>/Users/jo smith/R&amp;D &lt;x&gt;/shaman</Command>"),
             "{task}"
         );
         assert!(
@@ -391,21 +391,24 @@ mod tests {
 
     #[test]
     fn a_tasks_name_is_kept_apart_by_channel_by_user_and_by_domain() {
-        assert_eq!(task_name("beta", USER), "suru-server-beta (jo@HOST)");
-        assert_eq!(task_name("release", USER), "suru-server-release (jo@HOST)");
+        assert_eq!(task_name("beta", USER), "shaman-server-beta (jo@HOST)");
+        assert_eq!(
+            task_name("release", USER),
+            "shaman-server-release (jo@HOST)"
+        );
         assert_eq!(
             task_name("beta", r"HOST\sam"),
-            "suru-server-beta (sam@HOST)"
+            "shaman-server-beta (sam@HOST)"
         );
         assert_eq!(
             task_name("beta", r"OTHER\jo"),
-            "suru-server-beta (jo@OTHER)"
+            "shaman-server-beta (jo@OTHER)"
         );
         assert_eq!(
             task_name("beta", r"HOST\jo smith"),
-            "suru-server-beta (jo_smith@HOST)"
+            "shaman-server-beta (jo_smith@HOST)"
         );
-        assert_eq!(task_name("beta", "jo"), "suru-server-beta (jo)");
+        assert_eq!(task_name("beta", "jo"), "shaman-server-beta (jo)");
     }
 
     /// A Task's name carries its domain another way; what it runs as does not.
@@ -429,7 +432,7 @@ mod tests {
         for command in commands.ran() {
             assert_eq!(command[0], "schtasks");
             assert_eq!(command[1], "/Create");
-            assert_eq!(&command[2..4], ["/TN", "suru-server-beta (jo@HOST)"]);
+            assert_eq!(&command[2..4], ["/TN", "shaman-server-beta (jo@HOST)"]);
             assert_eq!(command[4], "/XML");
             assert_eq!(
                 command[6], "/F",
@@ -448,7 +451,7 @@ mod tests {
         let ran = commands.ran();
         assert_eq!(ran[0][1], "/Query");
         assert_eq!(ran[1][1], "/Delete");
-        assert_eq!(&ran[1][2..], ["/TN", "suru-server-beta (jo@HOST)", "/F"]);
+        assert_eq!(&ran[1][2..], ["/TN", "shaman-server-beta (jo@HOST)", "/F"]);
         assert!(!ran.iter().flatten().any(|word| word == "/End"), "{ran:?}");
 
         commands.refuse("/TN");
@@ -476,7 +479,7 @@ mod tests {
         commands.print("\"\\other task\",\"N/A\",\"Ready\"\r\n");
         assert_eq!(beta.standing(), Standing::NotRegistered);
 
-        commands.print("\"\\suru-server-beta (jo@HOST)\",\"N/A\",\"Running\"\r\n");
+        commands.print("\"\\shaman-server-beta (jo@HOST)\",\"N/A\",\"Running\"\r\n");
         assert!(matches!(beta.standing(), Standing::Registered(_)));
 
         commands.refuse("/FO");

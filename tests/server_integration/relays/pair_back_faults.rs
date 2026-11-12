@@ -22,7 +22,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use futures_util::{StreamExt as _, stream};
 use hyper_util::{rt::TokioIo, service::TowerToHyperService};
 use rcgen::{KeyPair, PublicKeyData};
-use suru::{
+use shaman::{
     protocol::{
         AnswerOfferRequest, OfferHeldUp, PROTOCOL_VERSION, RedemptionFailure, RemoteStatus,
         SessionErrorCode, Way,
@@ -191,7 +191,7 @@ fn invite_offering(key: &KeyPair, ways: serde_json::Value) -> String {
         "h": "stand-in",
     });
     format!(
-        "suru-v1-{}",
+        "shaman-v1-{}",
         URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap())
     )
 }
@@ -199,7 +199,7 @@ fn invite_offering(key: &KeyPair, ways: serde_json::Value) -> String {
 /// Runs `app` over the Pairing's TLS holding `identity`, speaking HTTP/1.1 as a
 /// direct way's connection does, and answers where it is reached.
 async fn standing_in(identity: &KeyPair, app: Router) -> SocketAddr {
-    let certificate = rcgen::CertificateParams::new(vec!["suru-server".to_owned()])
+    let certificate = rcgen::CertificateParams::new(vec!["shaman-server".to_owned()])
         .unwrap()
         .self_signed(identity)
         .unwrap();
@@ -280,7 +280,7 @@ async fn failed_as(server: &TestServer, why: RedemptionFailure) {
 fn assert_holds_no_token(log: &[u8], token: &str) {
     let log = String::from_utf8_lossy(log);
     assert!(!log.is_empty(), "both Servers logged something");
-    assert!(!log.contains("suru-v1-"), "a Log holds an Invite: {log}");
+    assert!(!log.contains("shaman-v1-"), "a Log holds an Invite: {log}");
     assert!(!log.contains(token), "a Log holds an Invite's token: {log}");
 }
 
@@ -363,7 +363,7 @@ async fn no_invite_or_token_of_an_offer_reaches_a_log() {
     let sent = word["invite"]["invite"].as_str().unwrap().to_owned();
     let payload: serde_json::Value = serde_json::from_slice(
         &URL_SAFE_NO_PAD
-            .decode(sent.strip_prefix("suru-v1-").unwrap())
+            .decode(sent.strip_prefix("shaman-v1-").unwrap())
             .unwrap(),
     )
     .unwrap();

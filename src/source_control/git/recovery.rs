@@ -50,7 +50,7 @@ impl GitSourceControl {
         {
             return Err("Repository metadata no longer identifies the known Repository".to_owned());
         }
-        let token = format!("suru-recovery:{}", checkout.id.0);
+        let token = format!("shaman-recovery:{}", checkout.id.0);
         // Git cannot match a missing registration root with a trailing separator.
         let command_root: PathBuf = checkout.root.components().collect();
         let destination = command_root
@@ -67,7 +67,7 @@ impl GitSourceControl {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
                 Err(e) => return Err(e.to_string()),
             }
-            match std::fs::read_to_string(metadata.join("suru-recovery")) {
+            match std::fs::read_to_string(metadata.join("shaman-recovery")) {
                 Ok(marker) if marker == token => {
                     materialized = true;
                     ours = true;
@@ -172,7 +172,7 @@ impl GitSourceControl {
         }
         let metadata = registration.ok_or("Recovery registration was not created")?;
         // Git took the last marker with the registration a Reclaim removed. A
-        // Worktree recreated here is Suru's own making from now on, whoever made
+        // Worktree recreated here is Shaman's own making from now on, whoever made
         // the first, and only one in the managed directory is ever taken for it.
         mark_managed(&metadata)?;
         let branch = self
@@ -208,7 +208,7 @@ impl GitSourceControl {
                 .map_err(|e| e.to_string())?;
             marker.as_file().sync_all().map_err(|e| e.to_string())?;
             marker
-                .persist(metadata.join("suru-recovery"))
+                .persist(metadata.join("shaman-recovery"))
                 .map_err(|e| e.to_string())?;
         }
         if metadata.join("locked").exists() {
@@ -232,7 +232,7 @@ impl GitSourceControl {
         }
         // Keep proof through the last await: cancellation must leave the next
         // caller able to report recreation and invalidate every warm actor.
-        std::fs::remove_file(metadata.join("suru-recovery")).map_err(|e| e.to_string())?;
+        std::fs::remove_file(metadata.join("shaman-recovery")).map_err(|e| e.to_string())?;
         let mut association = checkout.clone();
         association.recovery_revision = reading.revision;
         Ok(CheckoutRecovery {

@@ -1,7 +1,7 @@
 //! The Broker handed to Claude (ADR 0034, docs/validation/0408-claude-http-mcp-long-calls.md).
 //!
 //! A Session's CLI process is pointed with `--mcp-config` at a file naming the Broker's endpoint as
-//! the MCP server `suru`, the bearer token its launch was handed as a header, and a per-server
+//! the MCP server `shaman`, the bearer token its launch was handed as a header, and a per-server
 //! timeout above the longest call the Broker serves; `--allowedTools` allowlists the Broker's Tools
 //! so calling one never raises an Approval. The token travels in that owner-only file rather than
 //! on the command line, the file is gone once the process it served is, and a relaunch after a
@@ -23,7 +23,7 @@ use crate::support::{
     broker::{McpClient, untimed_sidekick_report},
 };
 use serde_json::{Value, json};
-use suru::{
+use shaman::{
     protocol::{
         Activity, AdmitPromptRequest, CreateSessionRequest, InitialPrompt, MessageRole,
         PromptDelivery, PromptId, TurnStatus,
@@ -51,7 +51,7 @@ const ANSWERED: &str = r#"      lifecycle "$uuid" queued
 /// the Report (docs/validation/0421-broker-smoke.md, run 5; 0407-claude-folded-steer.md, case A).
 fn waiting_parent_and_answering_child() -> String {
     format!(
-        r#"    *'"type":"user"'*'Subagent Report from Suru'*)
+        r#"    *'"type":"user"'*'Subagent Report from Shaman'*)
       lifecycle "$uuid" queued
       emit '{{"type":"user","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"toolu_wait","content":[{{"type":"text","text":"{{\"settled\":[{{\"status\":\"completed\"}}]}}"}}],"is_error":false}}]}},"parent_tool_use_id":null,"session_id":"prov-session"}}'
       lifecycle "$uuid" started
@@ -69,7 +69,7 @@ fn waiting_parent_and_answering_child() -> String {
       lifecycle "$prompt" queued
       lifecycle "$prompt" started
       emit '{{"type":"stream_event","event":{{"type":"message_start","message":{{"role":"assistant"}}}},"parent_tool_use_id":null,"session_id":"prov-session"}}'
-      emit '{{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"tool_use","id":"toolu_wait","name":"mcp__suru__wait_subagents","input":{{}}}}}},"parent_tool_use_id":null,"session_id":"prov-session"}}'
+      emit '{{"type":"stream_event","event":{{"type":"content_block_start","index":0,"content_block":{{"type":"tool_use","id":"toolu_wait","name":"mcp__shaman__wait_subagents","input":{{}}}}}},"parent_tool_use_id":null,"session_id":"prov-session"}}'
       emit '{{"type":"stream_event","event":{{"type":"content_block_stop","index":0}},"parent_tool_use_id":null,"session_id":"prov-session"}}'
       emit '{{"type":"stream_event","event":{{"type":"message_stop"}},"parent_tool_use_id":null,"session_id":"prov-session"}}'
       ;;
@@ -79,17 +79,17 @@ fn waiting_parent_and_answering_child() -> String {
 
 /// A Turn calling each of the Broker's Tools once, as Claude names them, every call answered.
 const BROKER_CALLS_TURN: &str = r#"      emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_list","name":"mcp__suru__list_providers","input":{}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_list","name":"mcp__shaman__list_providers","input":{}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      emit '{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_spawn","name":"mcp__suru__spawn_subagent","input":{"provider":"codex","model":"gpt-5.5","name":"Scout","description":"Map the crates","prompt":"Map the crates."}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_spawn","name":"mcp__shaman__spawn_subagent","input":{"provider":"codex","model":"gpt-5.5","name":"Scout","description":"Map the crates","prompt":"Map the crates."}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_stop","index":1},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      emit '{"type":"stream_event","event":{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_read","name":"mcp__suru__read_subagent","input":{"session_id":"child-session"}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_read","name":"mcp__shaman__read_subagent","input":{"session_id":"child-session"}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_stop","index":2},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      emit '{"type":"stream_event","event":{"type":"content_block_start","index":3,"content_block":{"type":"tool_use","id":"toolu_send","name":"mcp__suru__send_to_subagent","input":{"session_id":"child-session","prompt":"More."}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":3,"content_block":{"type":"tool_use","id":"toolu_send","name":"mcp__shaman__send_to_subagent","input":{"session_id":"child-session","prompt":"More."}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_stop","index":3},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      emit '{"type":"stream_event","event":{"type":"content_block_start","index":4,"content_block":{"type":"tool_use","id":"toolu_wait","name":"mcp__suru__wait_subagents","input":{}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":4,"content_block":{"type":"tool_use","id":"toolu_wait","name":"mcp__shaman__wait_subagents","input":{}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_stop","index":4},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      emit '{"type":"stream_event","event":{"type":"content_block_start","index":5,"content_block":{"type":"tool_use","id":"toolu_stop","name":"mcp__suru__stop_subagent","input":{"session_id":"child-session"}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":5,"content_block":{"type":"tool_use","id":"toolu_stop","name":"mcp__shaman__stop_subagent","input":{"session_id":"child-session"}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_stop","index":5},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"message_stop"},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_list","content":[{"type":"text","text":"{\"providers\":[]}"}],"is_error":false},{"type":"tool_result","tool_use_id":"toolu_spawn","content":"spawned","is_error":false},{"type":"tool_result","tool_use_id":"toolu_read","content":"working","is_error":false},{"type":"tool_result","tool_use_id":"toolu_send","content":"sent","is_error":false},{"type":"tool_result","tool_use_id":"toolu_wait","content":"settled","is_error":false},{"type":"tool_result","tool_use_id":"toolu_stop","content":"stopped","is_error":false}]},"parent_tool_use_id":null,"session_id":"prov-session"}'
@@ -97,18 +97,18 @@ const BROKER_CALLS_TURN: &str = r#"      emit '{"type":"stream_event","event":{"
 "#;
 
 /// The Broker's entry in an MCP config, which must be the only server the file names: the user's
-/// own servers come from their own settings, never from a file Suru wrote.
+/// own servers come from their own settings, never from a file Shaman wrote.
 fn broker_server(config: &McpConfigFile) -> &Value {
     let servers = config.contents["mcpServers"]
         .as_object()
         .unwrap_or_else(|| panic!("the file names MCP servers: {}", config.contents));
     assert_eq!(
         servers.keys().collect::<Vec<_>>(),
-        ["suru"],
+        ["shaman"],
         "the file names the Broker and nothing else: {}",
         config.contents
     );
-    &servers["suru"]
+    &servers["shaman"]
 }
 
 /// Checks the note `launch` appends to the Agent's system prompt: it names each of the Broker's
@@ -117,10 +117,10 @@ fn broker_server(config: &McpConfigFile) -> &Value {
 fn assert_carries_the_broker_note(launch: &Launch) {
     let note = launch.value("--append-system-prompt");
     for tool in [
-        "mcp__suru__list_providers",
-        "mcp__suru__spawn_subagent",
-        "mcp__suru__read_subagent",
-        "mcp__suru__stop_subagent",
+        "mcp__shaman__list_providers",
+        "mcp__shaman__spawn_subagent",
+        "mcp__shaman__read_subagent",
+        "mcp__shaman__stop_subagent",
     ] {
         assert!(
             note.contains(tool),
@@ -132,12 +132,12 @@ fn assert_carries_the_broker_note(launch: &Launch) {
         "the note says when to prefer the Broker: {note:?}"
     );
     assert!(
-        note.contains("Suru never re-routes them"),
+        note.contains("Shaman never re-routes them"),
         "the note leaves the Agent's own subagent tools in place: {note:?}"
     );
     assert!(
         note.contains(
-            "Call mcp__suru__list_workspaces to learn where the user's other work lives: the \
+            "Call mcp__shaman__list_workspaces to learn where the user's other work lives: the \
              Workspaces they work in on this machine, each with what it is for."
         ),
         "the note says what list_workspaces is for: {note:?}"
@@ -166,7 +166,7 @@ async fn a_session_launch_carries_the_broker_config_and_allowlist_with_a_token()
 
     assert_eq!(
         launch.value("--allowedTools"),
-        "mcp__suru__*",
+        "mcp__shaman__*",
         "every Broker Tool is allowlisted, so none raises an Approval: {:?}",
         launch.arguments
     );
@@ -178,7 +178,7 @@ async fn a_session_launch_carries_the_broker_config_and_allowlist_with_a_token()
     );
     assert_eq!(
         config.permissions, "-rw-------",
-        "only the user Suru runs as may read the token in the file"
+        "only the user Shaman runs as may read the token in the file"
     );
     let server = broker_server(&config);
     assert_eq!(server["type"], "http");
@@ -233,7 +233,7 @@ async fn listed_tools(server: &Value) -> Vec<String> {
         .collect()
 }
 
-/// A Sidekick's launch is handed the same one `suru` server and allowlist as any other, but its
+/// A Sidekick's launch is handed the same one `shaman` server and allowlist as any other, but its
 /// token lists the Sidekick's own Tools and its note names them and what a Sidekick may not do; a
 /// launch for a Session elsewhere is told nothing of them and its token lists none of them.
 #[tokio::test]
@@ -246,11 +246,11 @@ async fn a_sidekicks_launch_is_handed_its_own_tools_and_note_and_another_session
     )
     .await;
     let launch = claude.wait_for_launch_carrying("--session-id").await;
-    assert_eq!(launch.value("--allowedTools"), "mcp__suru__*");
+    assert_eq!(launch.value("--allowedTools"), "mcp__shaman__*");
     assert_carries_the_broker_note(&launch);
     let note = launch.value("--append-system-prompt");
     assert!(
-        note.contains("You are a Sidekick") && note.contains("mcp__suru__list_sessions"),
+        note.contains("You are a Sidekick") && note.contains("mcp__shaman__list_sessions"),
         "a Sidekick is told it is one, and of its own Tools: {note:?}"
     );
     assert!(
@@ -344,7 +344,7 @@ async fn a_sidekick_launched_once_memories_exist_is_told_their_titles_and_one_la
         after.contains(&format!(
             "{{\"memory_id\":{},\"title\":\"How the user reviews pull requests\"}}",
             stored["memory_id"]
-        )) && after.contains("mcp__suru__recall_memory"),
+        )) && after.contains("mcp__shaman__recall_memory"),
         "a Sidekick launched once there are Memories is told their titles: {after:?}"
     );
     assert!(
@@ -366,7 +366,7 @@ async fn a_resume_relaunch_after_a_restart_carries_a_fresh_token() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -413,7 +413,7 @@ async fn a_resume_relaunch_after_a_restart_carries_a_fresh_token() {
         TurnStatus::Completed
     );
     let resume = claude.launch_carrying("--resume");
-    assert_eq!(resume.value("--allowedTools"), "mcp__suru__*");
+    assert_eq!(resume.value("--allowedTools"), "mcp__shaman__*");
     // A system prompt lives only as long as the process it was given to, so the relaunch appends
     // the note again.
     assert_carries_the_broker_note(&resume);
@@ -538,7 +538,7 @@ async fn a_report_leaves_as_a_stdin_user_message_waking_the_idle_parent() {
     assert_eq!(
         delivered[0]["message"]["content"].as_array().map(Vec::len),
         Some(1),
-        "whose one text block is the Report as Suru words it"
+        "whose one text block is the Report as Shaman words it"
     );
     assert!(
         woken
@@ -559,7 +559,7 @@ async fn a_report_leaves_as_a_stdin_user_message_waking_the_idle_parent() {
 
 /// A Sidekick Report reaches a Sidekick on Claude as a Subagent Report does: the Session it began
 /// settling wakes the idle Sidekick with one stdin user message, whose one text block is the
-/// Report as Suru words it.
+/// Report as Shaman words it.
 #[tokio::test]
 async fn a_sidekick_report_leaves_as_a_stdin_user_message_waking_the_idle_sidekick() {
     // Beginning a Session runs Errands, which fail at once rather than reach the conversation.
@@ -582,7 +582,7 @@ async fn a_sidekick_report_leaves_as_a_stdin_user_message_waking_the_idle_sideki
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: sidekick_directory,
             },
             prompt: InitialPrompt {
@@ -635,7 +635,7 @@ async fn a_sidekick_report_leaves_as_a_stdin_user_message_waking_the_idle_sideki
             request
                 .pointer("/message/content/0/text")
                 .and_then(Value::as_str)
-                .is_some_and(|text| text.starts_with("Sidekick Report from Suru"))
+                .is_some_and(|text| text.starts_with("Sidekick Report from Shaman"))
         })
         .collect::<Vec<_>>();
     assert_eq!(
@@ -660,7 +660,7 @@ async fn a_sidekick_report_leaves_as_a_stdin_user_message_waking_the_idle_sideki
             " has settled its Turn, which completed. Its session_id is {begun_id}, which \
              read_session takes.\n\nIts Agent's final Message:\n\nDone"
         ),
-        "as Suru words it"
+        "as Shaman words it"
     );
     assert!(
         woken
@@ -758,7 +758,7 @@ async fn a_report_folded_into_a_turn_waiting_in_a_broker_call_settles_it_on_the_
     assert!(
         parent_messages[1]["message"]["content"][0]["text"]
             .as_str()
-            .is_some_and(|text| text.starts_with("Subagent Report from Suru")),
+            .is_some_and(|text| text.starts_with("Subagent Report from Shaman")),
         "the Report steered the running loop as a stdin user message: {parent_messages:?}"
     );
     assert!(
@@ -795,9 +795,9 @@ async fn the_brokers_reading_calls_are_tool_calls_and_its_subagent_calls_make_no
     assert_eq!(
         recorded,
         [
-            (Some("suru"), "list_providers", r#"{"providers":[]}"#),
-            (Some("suru"), "read_subagent", "working"),
-            (Some("suru"), "wait_subagents", "settled"),
+            (Some("shaman"), "list_providers", r#"{"providers":[]}"#),
+            (Some("shaman"), "read_subagent", "working"),
+            (Some("shaman"), "wait_subagents", "settled"),
         ]
     );
     opened
@@ -811,13 +811,13 @@ async fn the_brokers_reading_calls_are_tool_calls_and_its_subagent_calls_make_no
 /// streamed in after the block starts, then carried whole on the block start — and
 /// `begin_session` once.
 const ANSWERING_TURN: &str = r#"      emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_streamed","name":"mcp__suru__answer_questionnaire","input":{}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_streamed","name":"mcp__shaman__answer_questionnaire","input":{}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"session_id\":\"0198b27e-3a01-7c4c-a83b-a83a4787453f\",\"questionnaire_id\":\"0198b27e-4b02-7c4c-a83b-a83a4787453f\","}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"answers\":[{\"text\":\"tok-5ecret-1234\"},{\"choices\":[\"eu\"]}]}"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      emit '{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_whole","name":"mcp__suru__answer_questionnaire","input":{"session_id":"0198b27e-3a01-7c4c-a83b-a83a4787453f","questionnaire_id":"0198b27e-4b02-7c4c-a83b-a83a4787453f","answers":[{"choices":"tok-5ecret-1234"}]}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_whole","name":"mcp__shaman__answer_questionnaire","input":{"session_id":"0198b27e-3a01-7c4c-a83b-a83a4787453f","questionnaire_id":"0198b27e-4b02-7c4c-a83b-a83a4787453f","answers":[{"choices":"tok-5ecret-1234"}]}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_stop","index":1},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      emit '{"type":"stream_event","event":{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_begin","name":"mcp__suru__begin_session","input":{"directory":"/work","prompt":"Tidy the docs."}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_begin","name":"mcp__shaman__begin_session","input":{"directory":"/work","prompt":"Tidy the docs."}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_stop","index":2},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"message_stop"},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_streamed","content":[{"type":"text","text":"answered"}],"is_error":false},{"type":"tool_result","tool_use_id":"toolu_whole","content":"refused","is_error":true},{"type":"tool_result","tool_use_id":"toolu_begin","content":"begun","is_error":false}]},"parent_tool_use_id":null,"session_id":"prov-session"}'
@@ -853,13 +853,13 @@ async fn a_calls_answers_stand_nowhere_in_the_tool_call_it_is_recorded_as() {
         recorded,
         [
             (
-                Some("suru"),
+                Some("shaman"),
                 "answer_questionnaire",
                 "session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
                  answers=2 Answers withheld",
             ),
             (
-                Some("suru"),
+                Some("shaman"),
                 "answer_questionnaire",
                 "session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
                  answers=1 Answer withheld",

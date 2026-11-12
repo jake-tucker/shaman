@@ -11,8 +11,7 @@ use crate::tui_rendering::{
     },
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use std::time::Duration;
-use suru::{
+use shaman::{
     managed_client::{
         ManagedClient, ManagedClientConfig, ManagedEvent, RecoveryStatus, SessionEvent,
     },
@@ -27,6 +26,7 @@ use suru::{
         command_for_terminal_event,
     },
 };
+use std::time::Duration;
 use uuid::Uuid;
 
 fn rendered_state_rows(application: &Application) -> Vec<String> {
@@ -58,7 +58,7 @@ fn a_launch_directory_that_cannot_be_canonicalized_still_starts_on_the_path_as_g
 
     let landing = rendered_application_rows_at(&application, 100, 20).join("\n");
     assert!(
-        !landing.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"),
+        !landing.contains("▄█▄▀▀█"),
         "the client starts on the workspace it cannot read: {landing:?}"
     );
     assert!(
@@ -92,7 +92,7 @@ fn headless_application_handles_terminal_and_managed_events_through_the_producti
     assert!(matches!(
         &managed_transition,
         ApplicationTransition::ResolveWorkspace {
-            outlook: suru::protocol::Outlook::Local,
+            outlook: shaman::protocol::Outlook::Local,
             ..
         }
     ));
@@ -102,7 +102,7 @@ fn headless_application_handles_terminal_and_managed_events_through_the_producti
     );
 
     let screen = rendered_application_rows(&application).join("\n");
-    assert!(!screen.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+    assert!(!screen.contains("▄█▄▀▀█"));
     assert!(screen.contains("Type a prompt"));
     assert!(screen.contains("Connected"));
     assert!(screen.contains("pid 42424"));
@@ -156,7 +156,7 @@ fn connected_application_uses_the_persisted_landing_agent_selection() {
     assert!(before_catalog.contains("codex · gpt-remembered"));
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open the model picker")
     else {
@@ -230,7 +230,7 @@ async fn headless_application_creates_a_session_and_renders_its_first_turn_throu
             .expect("handle managed event");
     }
     let landing = rendered_application_rows(&application).join("\n");
-    assert!(!landing.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+    assert!(!landing.contains("▄█▄▀▀█"));
     assert!(landing.contains("Type a prompt"));
 
     for character in "Explain this workspace".chars() {
@@ -386,7 +386,7 @@ async fn headless_application_creates_a_session_and_renders_its_first_turn_throu
         .handle_event(ApplicationEvent::Session(SessionEvent::snapshot(created)))
         .expect("ignore a queued event from the ended Session");
     let after_replacement = rendered_application_rows(&application).join("\n");
-    assert!(!after_replacement.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+    assert!(!after_replacement.contains("▄█▄▀▀█"));
     assert!(after_replacement.contains("Keep this unsent draft"));
     assert!(after_replacement.contains("Session ended because the shared server was replaced"));
     assert!(!after_replacement.contains("Explain this workspace"));
@@ -401,9 +401,9 @@ async fn headless_application_creates_a_session_and_renders_its_first_turn_throu
 fn connecting_view_exposes_connection_state_before_a_snapshot_arrives() {
     let screen = rendered_state_rows(&Application::default()).join("\n");
 
-    assert!(!screen.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+    assert!(!screen.contains("▄█▄▀▀█"));
     assert!(screen.contains("Type a prompt"));
-    assert!(screen.contains("Connecting to Suru server..."));
+    assert!(screen.contains("Connecting to Shaman server..."));
 }
 
 #[test]
@@ -413,7 +413,7 @@ fn connected_view_centers_the_landing_composer_and_shows_server_identity() {
     let state = connected_state(instance_id, 42_424);
 
     let screen = rendered_state_rows(&state).join("\n");
-    assert!(!screen.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+    assert!(!screen.contains("▄█▄▀▀█"));
     assert!(screen.contains("Type a prompt"));
     assert!(screen.contains("Connected"));
     assert!(screen.contains("pid 42424"));
@@ -425,14 +425,14 @@ fn landing_centers_the_logo_and_composer_together_as_the_draft_grows() {
     let workspace = workspace_dir();
     for draft in ["", "one\ntwo\nthree\nfour"] {
         let mut application = connected_application(workspace.path());
-        let mut settings = suru::protocol::EffectiveSettings::default();
-        settings.appearance.landing_page = suru::protocol::LandingPage::Fancy;
+        let mut settings = shaman::protocol::EffectiveSettings::default();
+        settings.appearance.landing_page = shaman::protocol::LandingPage::Fancy;
         crate::tui_rendering::support::deliver_settings(&mut application, settings);
         type_terminal_text(&mut application, draft);
-        for (width, height) in [(80, 20), (80, 21), (43, 20)] {
+        for (width, height) in [(80, 20), (80, 21), (100, 20)] {
             let rows = rendered_application_rows_at(&application, width, height);
-            let logo_top = rendered_row(&rows, "█          ▀▀▀▀▀▀▀█");
-            let logo_bottom = rendered_row(&rows, "▀▄▄▀▄▄▀");
+            let logo_top = rendered_row(&rows, "▄▄▄▄▄▄▄▄  ▄");
+            let logo_bottom = rendered_row(&rows, "▀▀           ▀");
             let composer_top = rendered_row(&rows, "┌");
             let composer_bottom = rendered_row(&rows, "└");
             let footer = rendered_row(&rows, "Connected");
@@ -460,8 +460,8 @@ fn landing_centers_the_logo_and_composer_together_as_the_draft_grows() {
                 .max()
                 .unwrap();
             assert!(
-                (logo_left - main_left + 1).abs_diff(width as usize - logo_right - 1) <= 1,
-                "the logo sits one column left of the main view's center for visual balance"
+                (logo_left - main_left).abs_diff(width as usize - logo_right) <= 1,
+                "the logo sits at the main view's center"
             );
         }
 
@@ -469,11 +469,11 @@ fn landing_centers_the_logo_and_composer_together_as_the_draft_grows() {
         // existing draft without changing its contents.
         crate::tui_rendering::support::deliver_settings(
             &mut application,
-            suru::protocol::EffectiveSettings::default(),
+            shaman::protocol::EffectiveSettings::default(),
         );
         for (width, height) in [(80, 20), (80, 21), (43, 20)] {
             let rows = rendered_application_rows_at(&application, width, height);
-            assert!(!rows.join("\n").contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+            assert!(!rows.join("\n").contains("▄█▄▀▀█"));
             let composer_top = rendered_row(&rows, "┌");
             let composer_bottom = rendered_row(&rows, "└");
             let footer = rendered_row(&rows, "Connected");
@@ -489,8 +489,8 @@ fn landing_centers_the_logo_and_composer_together_as_the_draft_grows() {
 fn landing_shell_degrades_by_priority_without_sacrificing_the_composer() {
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
-    let mut settings = suru::protocol::EffectiveSettings::default();
-    settings.appearance.landing_page = suru::protocol::LandingPage::Fancy;
+    let mut settings = shaman::protocol::EffectiveSettings::default();
+    settings.appearance.landing_page = shaman::protocol::LandingPage::Fancy;
     crate::tui_rendering::support::deliver_settings(&mut application, settings);
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
@@ -511,7 +511,7 @@ fn landing_shell_degrades_by_priority_without_sacrificing_the_composer() {
     );
     assert!(!wide.contains("Workspace "), "{wide}");
 
-    assert!(wide.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+    assert!(wide.contains("▄█▄▀▀█"));
     assert!(!wide.contains("What would you like to work on?"));
 
     let narrow = rendered_application_rows_at(&application, 43, 10).join("\n");
@@ -521,7 +521,7 @@ fn landing_shell_degrades_by_priority_without_sacrificing_the_composer() {
             "narrow landing frame omitted {core:?}"
         );
     }
-    assert!(!narrow.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+    assert!(!narrow.contains("▄█▄▀▀█"));
     for secondary in ["Workspace", "Provider", "Model", "Enter submit"] {
         assert!(
             !narrow.contains(secondary),
@@ -530,8 +530,8 @@ fn landing_shell_degrades_by_priority_without_sacrificing_the_composer() {
     }
 
     let short = rendered_application_rows_at(&application, 80, 6).join("\n");
-    assert!(!short.contains("Suru"));
-    assert!(!short.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+    assert!(!short.contains("Shaman"));
+    assert!(!short.contains("▄█▄▀▀█"));
     assert!(short.contains("Keep the composer usable"));
     assert!(short.contains("Connected"));
 
@@ -837,7 +837,7 @@ fn session_shell_degrades_metadata_before_transcript_or_composer_content() {
         );
     }
     assert!(
-        !wide.contains("Workspace ") && !wide.contains("Suru"),
+        !wide.contains("Workspace ") && !wide.contains("Shaman"),
         "{wide}"
     );
 
@@ -856,7 +856,7 @@ fn session_shell_degrades_metadata_before_transcript_or_composer_content() {
     }
 
     let short = rendered_application_rows_at(&application, 100, 6).join("\n");
-    assert!(!short.contains("Suru"));
+    assert!(!short.contains("Shaman"));
     assert!(!short.contains("Workspace"));
     assert!(short.contains("Working"));
     assert!(short.contains("Keep the draft visible"));
@@ -909,12 +909,12 @@ fn recovering_view_retains_the_landing_composer_and_last_server_identity() {
 
     state
         .handle_event(ApplicationEvent::ReconnectGraceElapsed(
-            suru::protocol::Outlook::Local,
+            shaman::protocol::Outlook::Local,
         ))
         .expect("elapse the grace period");
     let screen = rendered_state_rows(&state).join("\n");
 
-    assert!(!screen.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+    assert!(!screen.contains("▄█▄▀▀█"));
     assert!(screen.contains("Recovering"));
     assert!(screen.contains("pid 42424"));
 }
@@ -954,16 +954,16 @@ fn reconnect_overlay_waits_for_the_grace_period_and_blocks_composer_input() {
     );
     assert!(brief.contains("Keep the session visible"));
     assert!(brief.contains("Preserve this draft"));
-    assert!(!brief.contains("Reconnecting to Suru"));
+    assert!(!brief.contains("Reconnecting to Shaman"));
     assert!(!brief.contains("Your session will resume automatically"));
 
     application
         .handle_event(ApplicationEvent::ReconnectGraceElapsed(
-            suru::protocol::Outlook::Local,
+            shaman::protocol::Outlook::Local,
         ))
         .expect("show delayed reconnect overlay");
     let prolonged = rendered_application_rows_at(&application, 80, 15).join("\n");
-    assert!(prolonged.contains("Reconnecting to Suru"));
+    assert!(prolonged.contains("Reconnecting to Shaman"));
     assert!(prolonged.contains("Your session will resume automatically"));
     application
         .handle_event(ApplicationEvent::Command(CommandId::InsertText(
@@ -977,7 +977,7 @@ fn reconnect_overlay_waits_for_the_grace_period_and_blocks_composer_input() {
         )))
         .expect("reconnect to surviving server");
     let recovered = rendered_application_rows_at(&application, 80, 15).join("\n");
-    assert!(!recovered.contains("Reconnecting to Suru"));
+    assert!(!recovered.contains("Reconnecting to Shaman"));
     assert!(recovered.contains("Keep the session visible"));
     assert!(recovered.contains("Preserve this draft"));
     assert!(!recovered.contains("must stay blocked"));
@@ -1027,7 +1027,7 @@ fn manual_stop_view_retains_the_landing_screen_and_last_server_identity() {
         .expect("stop server");
 
     let screen = rendered_state_rows(&state).join("\n");
-    assert!(!screen.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+    assert!(!screen.contains("▄█▄▀▀█"));
     assert!(screen.contains("Shared server stopped intentionally"));
     assert!(screen.contains("pid 42424"));
     assert!(screen.contains("c2f03bd2"));
@@ -1043,8 +1043,8 @@ fn ended_session_subscription_requests_a_fresh_snapshot_for_reconciliation() {
         application
             .handle_event(ApplicationEvent::SessionSubscriptionEnded)
             .expect("handle ended session subscription"),
-        ApplicationTransition::SubscribeSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::SubscribeSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             session_id,
         ))
     );
@@ -1078,7 +1078,7 @@ async fn headless_slash_settle_sets_the_open_session_aside_on_a_real_server() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1112,7 +1112,7 @@ async fn headless_slash_settle_sets_the_open_session_aside_on_a_real_server() {
         named.session_id, session_id,
         "the command names the session the reader is in"
     );
-    assert_eq!(named.origin, suru::protocol::Outlook::Local);
+    assert_eq!(named.origin, shaman::protocol::Outlook::Local);
     assert!(
         set_aside,
         "and asks for it to be set aside rather than brought back"

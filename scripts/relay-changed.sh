@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Says whether the Relay has changed between two commits, so that it is released only when it does (ADR-0047):
-# whether anything `suru-relay` is built and released from differs, and nothing else the repository holds. It
+# whether anything `shaman-relay` is built and released from differs, and nothing else the repository holds. It
 # compares
 #   - the Relay's two crates, their tests aside, its container image among them;
 #   - the packages and features a build of the Relay resolves to, as `cargo tree` reads each commit's Cargo.lock,
-#     so a release of Suru, or a dependency only Suru uses, changes nothing;
+#     so a release of Shaman, or a dependency only Shaman uses, changes nothing;
 #   - the workspace's build profiles, its toolchain and its Cargo configuration;
 #   - the Relay's build and release workflows.
 #
@@ -24,8 +24,8 @@ previous=$1
 current=${2:-HEAD}
 changed=()
 
-if ! git diff --quiet "$previous" "$current" -- crates/suru-relay crates/suru-relay-protocol \
-  ':(exclude)crates/suru-relay/tests' ':(exclude)crates/suru-relay-protocol/tests'; then
+if ! git diff --quiet "$previous" "$current" -- crates/shaman-relay crates/shaman-relay-protocol \
+  ':(exclude)crates/shaman-relay/tests' ':(exclude)crates/shaman-relay-protocol/tests'; then
   changed+=("the Relay's crates")
 fi
 if ! git diff --quiet "$previous" "$current" -- rust-toolchain.toml .cargo/config.toml; then
@@ -51,7 +51,7 @@ trap 'rm -rf "$work"' EXIT
 dependencies() {
   mkdir "$work/$1"
   git archive "$2" | tar -x -C "$work/$1"
-  cargo tree --manifest-path "$work/$1/Cargo.toml" --locked --package suru-relay --edges normal,build \
+  cargo tree --manifest-path "$work/$1/Cargo.toml" --locked --package shaman-relay --edges normal,build \
     --target all --prefix none --no-dedupe --format '{p} {f}' \
     | sed 's| (/[^)]*)||' | sort -u
 }

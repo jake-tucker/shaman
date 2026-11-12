@@ -6,7 +6,7 @@ use crate::tui_rendering::support::{
     rendered_application_rows_at, text_position, workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         PromptId, SessionChange, SessionId, SessionRevision, SessionSnapshot, SessionTimestamp,
@@ -247,8 +247,8 @@ fn a_watch_stop_that_fails_offers_the_gesture_again() {
 
     application
         .handle_event(ApplicationEvent::SessionOperationFailed {
-            asked_from: Some(suru::protocol::SessionReference::new(
-                suru::protocol::Outlook::Local,
+            asked_from: Some(shaman::protocol::SessionReference::new(
+                shaman::protocol::Outlook::Local,
                 session_id,
             )),
             error: "Provider watch stop failed".to_owned(),

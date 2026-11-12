@@ -1,6 +1,6 @@
 # First-frame validation for #277
 
-Measured on Linux with warm filesystem caches, a 160-column × 40-row pseudo-terminal, isolated `SURU_STATE_DIR`, `SURU_DATA_DIR`, and `SURU_CONFIG_DIR`, and dedicated `SURU_CHANNEL=probe-277`. The nested `suru.json` configuration pinned `provider.{codex,copilot,claude}.enabled` to false. No production state or configuration was used.
+Measured on Linux with warm filesystem caches, a 160-column × 40-row pseudo-terminal, isolated `SHAMAN_STATE_DIR`, `SHAMAN_DATA_DIR`, and `SHAMAN_CONFIG_DIR`, and dedicated `SHAMAN_CHANNEL=probe-277`. The nested `shaman.json` configuration pinned `provider.{codex,copilot,claude}.enabled` to false. No production state or configuration was used.
 
 Before: `0c9c6ba6c1c9b07fa7a6687c9787598534334404`. After: the #277 implementation in this commit. Both used `cargo build --locked` and `cargo build --release --locked`. The same temporary Python PTY harness and copied binaries measured both revisions. Each process exited through Ctrl+C after its first frame; each matrix stopped its isolated server on completion.
 

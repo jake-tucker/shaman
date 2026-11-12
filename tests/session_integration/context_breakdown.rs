@@ -2,7 +2,7 @@
 use crate::session_integration::support::{
     WorkingTurn, read_session_until, the_subagent_row, working_turn,
 };
-use suru::{
+use shaman::{
     protocol::{
         Activity, ContextBreakdown, ContextFill, ContextPart, ContextSource, SessionError,
         SessionErrorCode, SessionId,

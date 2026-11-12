@@ -16,7 +16,7 @@ use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use ratatui::style::Modifier;
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         AgentSelection, ChildDirectory, DerivationErrand, DerivationSettings, DirectoryListing,
@@ -143,7 +143,7 @@ fn open_connect(application: &mut Application) {
     press(application, KeyCode::Enter);
     application
         .handle_event(ApplicationEvent::RemotesListed(vec![
-            suru::protocol::Remote {
+            shaman::protocol::Remote {
                 name: "studio".to_owned(),
                 fingerprint: "studio-fingerprint".to_owned(),
                 ways: vec![Way::Direct("10.0.0.8:7777".parse().unwrap())],
@@ -156,7 +156,7 @@ fn open_connect(application: &mut Application) {
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
             result: Ok(RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                 status: RemoteStatus::Available,
                 unreachable: None,
             }),
@@ -538,7 +538,7 @@ fn slash_onboarding_opens_over_an_open_session() {
 fn startup_diagnostic() -> SettingsDiagnostic {
     SettingsDiagnostic {
         severity: SettingsDiagnosticSeverity::Warning,
-        file: std::path::PathBuf::from("suru.jsonc"),
+        file: std::path::PathBuf::from("shaman.jsonc"),
         key: Some("transcript.defaultFoldPostures".to_owned()),
         message: "ignored because it is not a known setting".to_owned(),
     }
@@ -1384,7 +1384,7 @@ fn space_after_a_move_no_frame_has_shown_toggles_nothing() {
     );
 }
 
-/// A terminal shrunk below what Suru draws in shows no Provider at all, so
+/// A terminal shrunk below what Shaman draws in shows no Provider at all, so
 /// Space toggles none until a frame draws one again.
 #[test]
 fn space_on_a_terminal_too_small_to_draw_toggles_nothing() {
@@ -1794,7 +1794,7 @@ fn an_available_provider_that_is_disabled_does_not_unlock_next() {
 fn a_warning_or_refreshing_provider_does_not_lock_next() {
     for passing in [
         ProviderCatalogStatus::Warning {
-            message: "an older CLI than Suru prefers".to_owned(),
+            message: "an older CLI than Shaman prefers".to_owned(),
         },
         ProviderCatalogStatus::Refreshing,
     ] {
@@ -1870,7 +1870,7 @@ fn slash_onboarding_shows_providers_turned_off_in_the_settings_panel() {
 
 /// The Model the Derivation step's tests pin, which carries Model Options so
 /// a pin can tell the options the reader chose from the ones they left be.
-fn cheap_model() -> suru::protocol::ModelDescriptor {
+fn cheap_model() -> shaman::protocol::ModelDescriptor {
     let mut cheap = model_descriptor(
         "codex",
         "gpt-5-mini",
@@ -2336,7 +2336,7 @@ fn a_warning_or_refreshing_provider_still_offers_its_models_on_the_derivation_st
     );
     let mut catalog = pushed_catalog();
     catalog.providers[0].status = ProviderCatalogStatus::Warning {
-        message: "codex is older than Suru prefers".to_owned(),
+        message: "codex is older than Shaman prefers".to_owned(),
     };
     catalog.providers[2] = ProviderModelCatalog {
         status: ProviderCatalogStatus::Refreshing,

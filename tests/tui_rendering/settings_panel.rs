@@ -18,7 +18,7 @@ use crate::tui_rendering::support::{
     rendered_application_rows_at, rendered_row, selected_session_snapshot, studio_stops_answering,
     text_position, type_terminal_text, workspace_dir,
 };
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         AfterWorktreeCreation, AgentSelection, AppearanceMode, AppearanceSettings, AsideSettings,
@@ -276,7 +276,7 @@ fn deliver_catalog(
 /// of presses keeps these tests off the row order of the tab, which is free to
 /// grow.
 fn focus_setting(application: &mut Application, key: &str) {
-    for _ in 0..suru::settings::SCHEMA.len() {
+    for _ in 0..shaman::settings::SCHEMA.len() {
         if rendered_application_rows(application)
             .join("\n")
             .contains(key)
@@ -292,7 +292,7 @@ fn focus_setting(application: &mut Application, key: &str) {
 /// whose key the panel spells, in its headline.
 fn focused_key(application: &Application) -> String {
     let panel = rendered_application_rows(application).join("\n");
-    let named = suru::settings::SCHEMA
+    let named = shaman::settings::SCHEMA
         .iter()
         .map(|descriptor| descriptor.key)
         .filter(|key| panel.contains(key))
@@ -583,7 +583,7 @@ fn the_transcript_tab_presents_image_previews_on_by_default_beside_the_other_tra
         "transcript.commandAutoExpand",
         "transcript.imagePreviews",
     ] {
-        let descriptor = suru::settings::SCHEMA
+        let descriptor = shaman::settings::SCHEMA
             .iter()
             .find(|descriptor| descriptor.key == key)
             .expect("the transcript setting is in the schema");
@@ -677,7 +677,7 @@ fn source_control_tab_presents_the_server_reclaim_setting_between_providers_and_
         "default threshold is visible: {reclaim_row}"
     );
     assert_eq!(focused_key(&application), "worktree.autoReclaim");
-    let descriptor = suru::settings::SCHEMA
+    let descriptor = shaman::settings::SCHEMA
         .iter()
         .find(|descriptor| descriptor.key == "worktree.autoReclaim")
         .expect("schema declares reclaim");
@@ -687,7 +687,7 @@ fn source_control_tab_presents_the_server_reclaim_setting_between_providers_and_
     deliver_snapshot(
         &mut application,
         EffectiveSettings {
-            worktree: suru::protocol::WorktreeSettings {
+            worktree: shaman::protocol::WorktreeSettings {
                 auto_reclaim: AutoReclaim::Off,
                 ..Default::default()
             },
@@ -714,7 +714,7 @@ fn source_control_tab_offers_whether_the_landing_returns_from_a_worktree_it_crea
     );
     let after = row(&application, "After creating a worktree");
     assert_eq!(shown_in(&after), "return", "{after}");
-    let descriptor = suru::settings::SCHEMA
+    let descriptor = shaman::settings::SCHEMA
         .iter()
         .find(|descriptor| descriptor.key == "worktree.afterCreation")
         .expect("the schema declares it");
@@ -796,7 +796,7 @@ fn the_source_control_tab_presents_the_workspace_roots_beneath_reclaim_naming_no
         roots, "none",
         "no root is named until the user names one: {roots}"
     );
-    let descriptor = suru::settings::SCHEMA
+    let descriptor = shaman::settings::SCHEMA
         .iter()
         .find(|descriptor| descriptor.key == "workspace.roots")
         .expect("the schema declares the workspace roots");
@@ -914,7 +914,7 @@ fn the_experimental_tab_presents_and_edits_the_relays_pinned() {
     let mut application = client_showing(
         workspace.path(),
         EffectiveSettings {
-            serving: suru::protocol::ServingSettings {
+            serving: shaman::protocol::ServingSettings {
                 relays: vec![COMPANY.to_owned()],
                 ..Default::default()
             },
@@ -1594,7 +1594,7 @@ fn the_experimental_tab_stands_past_the_providers_and_lists_the_settings_declare
         "serving.bindAddress",
         "serving.relays",
     ] {
-        let descriptor = suru::settings::SCHEMA
+        let descriptor = shaman::settings::SCHEMA
             .iter()
             .find(|descriptor| descriptor.key == key)
             .unwrap_or_else(|| panic!("the schema does not declare {key}"));
@@ -1633,7 +1633,7 @@ fn the_broker_setting_stands_under_the_experimental_tab_and_is_on_by_default() {
         broker, "true",
         "the broker is offered until the reader turns it off: {broker:?}"
     );
-    let descriptor = suru::settings::SCHEMA
+    let descriptor = shaman::settings::SCHEMA
         .iter()
         .find(|descriptor| descriptor.key == "broker.enabled")
         .expect("the schema declares broker.enabled");
@@ -1678,7 +1678,7 @@ fn the_broker_limits_stand_under_the_experimental_tab_and_take_a_typed_cap() {
             limit == default,
             "{key} holds its built-in cap until the reader pins another: {limit:?}"
         );
-        let descriptor = suru::settings::SCHEMA
+        let descriptor = shaman::settings::SCHEMA
             .iter()
             .find(|descriptor| descriptor.key == key)
             .unwrap_or_else(|| panic!("the schema declares {key}"));
@@ -1829,7 +1829,7 @@ fn a_broker_limit_outside_its_bound_stays_in_the_editor_and_escape_discards_the_
 /// is the same arrival as walking onto it: the tab that presents the Providers
 /// re-reads their Availability however the reader got there — the reader
 /// already on it included, because clicking that label is the natural way to
-/// ask Suru to look again after signing in outside it.
+/// ask Shaman to look again after signing in outside it.
 #[test]
 fn clicking_a_tab_label_switches_to_that_tab() {
     let workspace = workspace_dir();
@@ -1984,7 +1984,7 @@ fn panel_clicks_keep_prose_and_chrome_inert_and_dismiss_outside() {
         assert_eq!(
             click(&mut application, column, row),
             ApplicationTransition::Continue,
-            "a click at ({column}, {row}) asked something of Suru"
+            "a click at ({column}, {row}) asked something of Shaman"
         );
         assert_eq!(
             rendered_application_rows(&application),
@@ -2123,7 +2123,7 @@ fn space_on_a_provider_row_toggles_that_providers_enablement() {
 
     let headline = rendered_application_rows(&application).join("\n");
     assert!(
-        headline.contains("Whether Suru offers Codex"),
+        headline.contains("Whether Shaman offers Codex"),
         "the headline says what the row's one key would do: {headline}"
     );
 
@@ -2172,7 +2172,7 @@ fn space_on_a_provider_row_toggles_that_providers_enablement() {
     );
 }
 
-/// Availability is a fact about the environment that Suru re-reads when the
+/// Availability is a fact about the environment that Shaman re-reads when the
 /// reader turns to a surface presenting the Providers themselves, so arriving
 /// on the tab asks again — every time, however the reader got there — and
 /// leaving asks nothing.
@@ -2239,9 +2239,9 @@ fn entering_the_providers_tab_reads_availability_every_time() {
     );
 }
 
-/// A Provider Suru cannot use names the condition on its row, and spells it
+/// A Provider Shaman cannot use names the condition on its row, and spells it
 /// out in full with what fixes it where the reader is looking, because every
-/// way a Provider can be unavailable is something they fix outside Suru.
+/// way a Provider can be unavailable is something they fix outside Shaman.
 #[test]
 fn an_unavailable_provider_names_its_reason_and_the_headline_carries_it_and_its_fix() {
     let workspace = workspace_dir();
@@ -2344,7 +2344,7 @@ fn the_fix_beneath_the_headline_copies_as_one_unbroken_line() {
         "https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli";
     let workspace = workspace_dir();
     let mut settings = EffectiveSettings::default();
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
     let mut application = client_showing(workspace.path(), settings, &[]);
     let request = read_providers_tab(&mut application);
     deliver_catalog(
@@ -2392,7 +2392,7 @@ fn a_panel_too_small_for_the_whole_fix_keeps_its_end_in_view() {
         "https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli";
     let workspace = workspace_dir();
     let mut settings = EffectiveSettings::default();
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
     let mut application = client_showing(workspace.path(), settings, &[]);
     let request = read_providers_tab(&mut application);
     deliver_catalog(
@@ -2556,8 +2556,8 @@ fn a_provider_shows_a_spinner_while_its_availability_is_being_read() {
     );
 }
 
-/// A Provider the reader turned off is one Suru leaves entirely alone, so its
-/// row reports the choice and nothing Suru would have had to look for.
+/// A Provider the reader turned off is one Shaman leaves entirely alone, so its
+/// row reports the choice and nothing Shaman would have had to look for.
 #[test]
 fn a_disabled_provider_is_never_read_and_makes_no_availability_claim() {
     let workspace = workspace_dir();
@@ -2589,7 +2589,7 @@ fn a_disabled_provider_is_never_read_and_makes_no_availability_claim() {
     let codex = row(&application, "Codex");
     assert!(
         !codex.contains("not signed in") && !codex.contains("error"),
-        "and its row claims nothing about a provider Suru has not consulted: {codex:?}"
+        "and its row claims nothing about a provider Shaman has not consulted: {codex:?}"
     );
     let panel = rendered_application_rows(&application).join("\n");
     assert!(
@@ -2613,7 +2613,7 @@ fn a_listing_that_never_came_back_leaves_every_asked_about_provider_in_error() {
     application
         .handle_event(ApplicationEvent::ModelListingFailed {
             request,
-            error: "the Suru server closed the connection mid-listing".to_owned(),
+            error: "the Shaman server closed the connection mid-listing".to_owned(),
         })
         .expect("hear that the read never came back");
 
@@ -2701,7 +2701,7 @@ fn a_provider_the_answer_passes_over_stops_waiting_and_says_so() {
     );
 }
 
-/// Turning a Provider off takes back everything Suru had found out about it:
+/// Turning a Provider off takes back everything Shaman had found out about it:
 /// the row goes quiet, and so must the headline above it, which is the other
 /// place a Provider speaks.
 #[test]
@@ -2736,7 +2736,7 @@ fn turning_a_provider_off_after_a_read_silences_its_row_and_the_headline() {
     let panel = rendered_application_rows(&application).join("\n");
     assert!(
         !panel.contains("not signed in"),
-        "and nothing at all once it is one Suru leaves entirely alone: {panel}"
+        "and nothing at all once it is one Shaman leaves entirely alone: {panel}"
     );
     let codex = row(&application, "Codex");
     assert!(
@@ -3019,7 +3019,7 @@ fn the_keys_are_back_on_the_providers_each_time_the_panel_opens() {
     assert_eq!(focused_key(&application), "provider.codex.enabled");
 }
 
-/// Enablement governs what Suru does with a Provider, not whether the reader
+/// Enablement governs what Shaman does with a Provider, not whether the reader
 /// may configure it: a Provider turned off says so where it is accounted for,
 /// still lists its Settings, and they take the edits that apply when it is
 /// turned back on.
@@ -3041,9 +3041,9 @@ fn a_disabled_providers_pane_says_so_and_its_settings_stay_editable() {
 
     let details = pane(&application);
     assert_eq!(details[0], "Codex disabled", "{details:#?}");
-    pane_row(
-        &details,
-        "Suru leaves Codex entirely alone until you enable it.",
+    assert!(
+        pane_text(&application).contains("Shaman leaves Codex entirely alone until you enable it."),
+        "{details:#?}"
     );
     pane_row(&details, "Reasoning summary auto");
     pane_row(&details, "Sandbox mode workspace-write");
@@ -3058,7 +3058,7 @@ fn a_disabled_providers_pane_says_so_and_its_settings_stay_editable() {
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
         MutatesSetting(SettingMutation::ProviderCodexApprovalPolicy {
-            value: Some(suru::protocol::CodexApprovalPolicy::Never),
+            value: Some(shaman::protocol::CodexApprovalPolicy::Never),
         }),
         "and whose settings are edited as they would be were it enabled"
     );
@@ -3110,7 +3110,7 @@ fn each_provider_row_ends_on_its_condition_in_the_value_column() {
     assert_eq!(
         shown(&application, "Copilot"),
         "not signed in",
-        "a provider Suru cannot use names why in the column, its fix left to \
+        "a provider Shaman cannot use names why in the column, its fix left to \
          where the reader is looking: {rows:#?}"
     );
     assert_eq!(
@@ -3154,7 +3154,7 @@ fn a_wide_panel_accounts_for_the_focused_provider_and_its_own_settings() {
         EffectiveSettings {
             provider: ProviderSettings {
                 codex: CodexSettings {
-                    sandbox_mode: suru::protocol::CodexSandboxMode::ReadOnly,
+                    sandbox_mode: shaman::protocol::CodexSandboxMode::ReadOnly,
                     ..CodexSettings::default()
                 },
                 ..ProviderSettings::default()
@@ -3292,7 +3292,7 @@ fn enter_moves_the_keys_into_the_pane_where_they_edit_and_esc_brings_them_back()
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
         MutatesSetting(SettingMutation::ProviderCodexApprovalPolicy {
-            value: Some(suru::protocol::CodexApprovalPolicy::Never),
+            value: Some(shaman::protocol::CodexApprovalPolicy::Never),
         }),
         "Space edits the setting the pane has the keys on"
     );
@@ -3950,7 +3950,7 @@ fn the_general_tab_presents_hiding_subsessions_on_by_default_beside_the_sidebars
         MutatesSetting(SettingMutation::SidekickHideSubsessions { value: Some(false) }),
         "Space lists them"
     );
-    let descriptor = suru::settings::SCHEMA
+    let descriptor = shaman::settings::SCHEMA
         .iter()
         .find(|descriptor| descriptor.key == "sidekick.hideSubsessions")
         .expect("the setting is in the schema");
@@ -3999,7 +3999,7 @@ fn enter_never_edits_a_value_and_opens_nothing_on_a_row_that_stands_for_nothing(
     application
         .handle_event(ApplicationEvent::SettingMutationFailed {
             request: SettingRequest::new(),
-            error: "Config document \"suru.jsonc\" is not valid JSONC".to_owned(),
+            error: "Config document \"shaman.jsonc\" is not valid JSONC".to_owned(),
         })
         .expect("hear that an edit never landed");
     press(&mut application, KeyCode::Enter, KeyModifiers::NONE);
@@ -4091,7 +4091,7 @@ fn an_edit_the_server_refuses_says_so_and_leaves_the_row_where_it_was() {
     application
         .handle_event(ApplicationEvent::SettingMutationFailed {
             request: SettingRequest::new(),
-            error: "Config document \"suru.jsonc\" is not valid JSONC".to_owned(),
+            error: "Config document \"shaman.jsonc\" is not valid JSONC".to_owned(),
         })
         .expect("hear that the edit never landed");
     let panel = rendered_application_rows(&application).join("\n");
@@ -4251,7 +4251,7 @@ fn a_click_at_a_terminal_too_small_to_draw_the_panel_changes_nothing() {
 
 /// The pointer reaches the panel as a command like any other, so the command
 /// can arrive while the panel is closed. It must move no focus the reader
-/// cannot see and send Suru off to consult no Provider.
+/// cannot see and send Shaman off to consult no Provider.
 #[test]
 fn a_pointer_command_invoked_while_the_panel_is_closed_changes_nothing() {
     let workspace = workspace_dir();
@@ -4266,7 +4266,7 @@ fn a_pointer_command_invoked_while_the_panel_is_closed_changes_nothing() {
             }))
             .expect("point at a panel that is not open"),
         ApplicationTransition::Continue,
-        "a click with no panel open asked something of Suru"
+        "a click with no panel open asked something of Shaman"
     );
     assert_eq!(
         rendered_application_rows(&application),
@@ -4448,7 +4448,7 @@ fn pinning_title_derivation_offers_no_routing_tier() {
         description: None,
         availability: ModelAvailability::Available,
     };
-    let auto = suru::protocol::ModelDescriptor {
+    let auto = shaman::protocol::ModelDescriptor {
         provider: ProviderId::new("copilot"),
         id: ModelId::new("auto"),
         display_name: "Auto".to_owned(),
@@ -4456,7 +4456,7 @@ fn pinning_title_derivation_offers_no_routing_tier() {
         is_default: true,
         availability: ModelAvailability::Available,
         options: vec![ModelOptionDescriptor {
-            id: ModelOptionId::new(suru::protocol::ROUTING_TIER_OPTION_ID),
+            id: ModelOptionId::new(shaman::protocol::ROUTING_TIER_OPTION_ID),
             label: "Routing tier".to_owned(),
             description: None,
             role: ModelOptionRole::RoutingTier,
@@ -4578,7 +4578,7 @@ fn opening_the_title_derivation_row_pins_the_model_chosen_at_the_picker() {
 
 /// The Session's own Model is not what this picker is asking about. The
 /// listing the row's picker asks for lands after it opens, and every other
-/// picker in Suru focuses the Session's Selection when one does — so this is
+/// picker in Shaman focuses the Session's Selection when one does — so this is
 /// the frame where a Setting's pin is easiest to lose.
 #[test]
 fn a_catalog_landing_leaves_the_pinned_model_focused_rather_than_the_sessions() {
@@ -4826,7 +4826,7 @@ fn choosing_another_title_model_or_provider_starts_with_inherited_options() {
 
 #[test]
 fn copy_text_selection_cycles_on_the_general_tab() {
-    use suru::protocol::TextSelectionCopy;
+    use shaman::protocol::TextSelectionCopy;
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
     open_panel(&mut application);
@@ -4854,7 +4854,7 @@ fn copy_text_selection_cycles_on_the_general_tab() {
 
 #[test]
 fn copy_as_plain_text_cycles_on_the_general_tab() {
-    use suru::protocol::TextSelectionPlainText::{Markdown, Visible};
+    use shaman::protocol::TextSelectionPlainText::{Markdown, Visible};
     let workspace = workspace_dir();
     let mut application = connected_application(workspace.path());
     open_panel(&mut application);
@@ -4879,7 +4879,7 @@ fn numeric_editor_selection_is_modal_over_the_settings_panel() {
     use super::selection::{drag, mouse};
     let workspace = workspace_dir();
     let mut settings = EffectiveSettings::default();
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
     let mut application = client_showing(workspace.path(), settings, &[]);
     open_panel(&mut application);
     focus_setting(&mut application, "session.contentWidth");
@@ -4991,7 +4991,7 @@ fn a_wide_panel_details_the_focused_setting_in_a_pane_beside_its_rows() {
         workspace.path(),
         EffectiveSettings {
             transcript: TranscriptSettings {
-                groups: suru::protocol::GroupPosture::Expanded,
+                groups: shaman::protocol::GroupPosture::Expanded,
                 ..TranscriptSettings::default()
             },
             ..EffectiveSettings::default()
@@ -5170,7 +5170,7 @@ fn the_pane_says_where_a_setting_applies_and_why_a_sidekick_may_only_read_it() {
     assert!(text.contains("Applies on the server"), "{text}");
     assert!(
         text.contains(
-            "Sidekicks read only, since turning it on lets Suru remove worktrees, ignored \
+            "Sidekicks read only, since turning it on lets Shaman remove worktrees, ignored \
              files and all, which no later change can undo"
         ),
         "the reason is given whole, wrapped beneath its label: {text}"
@@ -5199,7 +5199,7 @@ fn a_wide_panel_leads_its_pane_with_a_providers_condition_and_its_whole_fix() {
         "https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli";
     let workspace = workspace_dir();
     let mut settings = EffectiveSettings::default();
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
     let mut application = client_showing(workspace.path(), settings, &[]);
     let request = read_providers_tab(&mut application);
     deliver_catalog(
@@ -5287,7 +5287,7 @@ fn a_refused_edit_leads_the_pane_above_the_providers_own_condition() {
     application
         .handle_event(ApplicationEvent::SettingMutationFailed {
             request: SettingRequest::new(),
-            error: "Config document \"suru.jsonc\" is not valid JSONC".to_owned(),
+            error: "Config document \"shaman.jsonc\" is not valid JSONC".to_owned(),
         })
         .expect("hear that the edit never landed");
 
@@ -5304,7 +5304,7 @@ fn a_refused_edit_leads_the_pane_above_the_providers_own_condition() {
             .unwrap_or_else(|| panic!("the pane says {needle:?}: {text}"))
     };
     assert!(
-        at("Config document \"suru.jsonc\" is not valid JSONC")
+        at("Config document \"shaman.jsonc\" is not valid JSONC")
             < at("the codex CLI is not on PATH fix the CLI")
             && at("the codex CLI is not on PATH") < at("Reasoning summary auto"),
         "the refusal leads, and the provider's condition still follows with its fix, \
@@ -5329,14 +5329,14 @@ fn a_refused_edit_leads_the_pane_above_the_providers_own_condition() {
 fn a_setting_a_document_is_ahead_on_shows_the_value_in_force_and_says_so() {
     let workspace = workspace_dir();
     let mut application = client_showing(workspace.path(), EffectiveSettings::default(), &[]);
-    let document = super::support::named_workspace_path("suru.jsonc");
+    let document = super::support::named_workspace_path("shaman.jsonc");
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings: EffectiveSettings::default(),
                 pinned: Default::default(),
-                diagnostics: vec![suru::protocol::SettingsDiagnostic {
-                    severity: suru::protocol::SettingsDiagnosticSeverity::AtNextStart,
+                diagnostics: vec![shaman::protocol::SettingsDiagnostic {
+                    severity: shaman::protocol::SettingsDiagnosticSeverity::AtNextStart,
                     file: document,
                     key: Some("serving.enabled".to_owned()),
                     message: "says something other than the value in force, and takes effect at \
@@ -5367,9 +5367,9 @@ fn a_setting_a_document_is_ahead_on_shows_the_value_in_force_and_says_so() {
 fn a_diagnostic_naming_the_focused_setting_leads_the_pane_with_its_file() {
     let workspace = workspace_dir();
     let mut application = client_showing(workspace.path(), EffectiveSettings::default(), &[]);
-    let file = super::support::named_workspace_path("suru.jsonc");
-    let diagnostic = |key: &str, message: &str| suru::protocol::SettingsDiagnostic {
-        severity: suru::protocol::SettingsDiagnosticSeverity::Warning,
+    let file = super::support::named_workspace_path("shaman.jsonc");
+    let diagnostic = |key: &str, message: &str| shaman::protocol::SettingsDiagnostic {
+        severity: shaman::protocol::SettingsDiagnosticSeverity::Warning,
         file: file.clone(),
         key: Some(key.to_owned()),
         message: message.to_owned(),
@@ -5399,7 +5399,7 @@ fn a_diagnostic_naming_the_focused_setting_leads_the_pane_with_its_file() {
             "{}: ignored because its value is not one of \"collapsed\", \"expanded\", or \"off\"",
             file.display()
         )),
-        "the pin Suru ignored is named with the config document it was in: {text}"
+        "the pin Shaman ignored is named with the config document it was in: {text}"
     );
     assert!(
         !text.contains("ignored for a test"),
@@ -5528,7 +5528,7 @@ fn a_click_on_a_providers_own_setting_in_the_pane_takes_the_keys_onto_it() {
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
         MutatesSetting(SettingMutation::ProviderCodexSandboxMode {
-            value: Some(suru::protocol::CodexSandboxMode::DangerFullAccess),
+            value: Some(shaman::protocol::CodexSandboxMode::DangerFullAccess),
         }),
         "the keys are on the setting the reader pointed at"
     );
@@ -5549,14 +5549,14 @@ fn a_click_on_a_providers_own_setting_in_the_pane_takes_the_keys_onto_it() {
 fn a_diagnostic_naming_one_of_a_providers_own_settings_leads_its_pane() {
     let workspace = workspace_dir();
     let mut application = client_showing(workspace.path(), EffectiveSettings::default(), &[]);
-    let file = super::support::named_workspace_path("suru.jsonc");
+    let file = super::support::named_workspace_path("shaman.jsonc");
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings: EffectiveSettings::default(),
                 pinned: Default::default(),
-                diagnostics: vec![suru::protocol::SettingsDiagnostic {
-                    severity: suru::protocol::SettingsDiagnosticSeverity::Warning,
+                diagnostics: vec![shaman::protocol::SettingsDiagnostic {
+                    severity: shaman::protocol::SettingsDiagnosticSeverity::Warning,
                     file: file.clone(),
                     key: Some("provider.codex.sandboxMode".to_owned()),
                     message: "ignored for a test".to_owned(),
@@ -5659,7 +5659,7 @@ fn the_pane_scrolls_the_setting_the_keys_are_on_into_view_with_all_its_detail() 
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
         MutatesSetting(SettingMutation::ProviderCodexApprovalPolicy {
-            value: Some(suru::protocol::CodexApprovalPolicy::Never),
+            value: Some(shaman::protocol::CodexApprovalPolicy::Never),
         }),
         "and Space edits the Setting on show"
     );
@@ -5711,7 +5711,7 @@ fn scheduled_compaction_stands_on_the_experimental_tab_and_takes_its_minimum_in_
     ] {
         focus_setting(&mut application, key);
         assert_eq!(shown(&application, label), default, "{key}");
-        let descriptor = suru::settings::SCHEMA
+        let descriptor = shaman::settings::SCHEMA
             .iter()
             .find(|descriptor| descriptor.key == key)
             .unwrap_or_else(|| panic!("the schema declares {key}"));
@@ -5728,7 +5728,7 @@ fn scheduled_compaction_stands_on_the_experimental_tab_and_takes_its_minimum_in_
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
         MutatesSetting(SettingMutation::CompactionScheduledSessions {
-            value: Some(suru::protocol::ScheduledCompactionSessions::All),
+            value: Some(shaman::protocol::ScheduledCompactionSessions::All),
         }),
         "and widens it to every session"
     );
@@ -5762,16 +5762,16 @@ fn scheduled_compaction_stands_on_the_experimental_tab_and_takes_its_minimum_in_
     assert_eq!(
         press(&mut application, KeyCode::Enter, KeyModifiers::NONE),
         MutatesSetting(SettingMutation::CompactionScheduledMinimumPenalty {
-            value: suru::protocol::PenaltyThreshold::from_cents(125),
+            value: shaman::protocol::PenaltyThreshold::from_cents(125),
         }),
         "Enter pins the cents the reader typed"
     );
     deliver_snapshot(
         &mut application,
         EffectiveSettings {
-            compaction: suru::protocol::CompactionSettings {
-                scheduled: suru::protocol::ScheduledCompactionSettings {
-                    minimum_penalty: suru::protocol::PenaltyThreshold::from_cents(125).unwrap(),
+            compaction: shaman::protocol::CompactionSettings {
+                scheduled: shaman::protocol::ScheduledCompactionSettings {
+                    minimum_penalty: shaman::protocol::PenaltyThreshold::from_cents(125).unwrap(),
                     ..Default::default()
                 },
             },
@@ -5787,20 +5787,20 @@ fn scheduled_compaction_stands_on_the_experimental_tab_and_takes_its_minimum_in_
 }
 
 /// However much the pane has to lead with — a refused edit, a Provider's
-/// condition and its fix, a pin Suru ignored, each wrapped over rows of its
+/// condition and its fix, a pin Shaman ignored, each wrapped over rows of its
 /// own — the Setting the keys are on is never pushed out of it.
 #[test]
 fn leads_however_long_never_push_the_setting_the_keys_are_on_out_of_the_pane() {
     let workspace = workspace_dir();
     let mut application = client_showing(workspace.path(), EffectiveSettings::default(), &[]);
-    let file = super::support::named_workspace_path("suru.jsonc");
+    let file = super::support::named_workspace_path("shaman.jsonc");
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings: EffectiveSettings::default(),
                 pinned: Default::default(),
-                diagnostics: vec![suru::protocol::SettingsDiagnostic {
-                    severity: suru::protocol::SettingsDiagnosticSeverity::Warning,
+                diagnostics: vec![shaman::protocol::SettingsDiagnostic {
+                    severity: shaman::protocol::SettingsDiagnosticSeverity::Warning,
                     file,
                     key: Some("provider.copilot.permissions".to_owned()),
                     message: "ignored because its value is not one of \"ask\", \"auto\", or \
@@ -5837,8 +5837,8 @@ fn leads_however_long_never_push_the_setting_the_keys_are_on_out_of_the_pane() {
     application
         .handle_event(ApplicationEvent::SettingMutationFailed {
             request: SettingRequest::new(),
-            error: "Config document \"suru.jsonc\" is not valid JSONC: expected a value \
-                    at line 3, column 14, so Suru left it exactly as it was"
+            error: "Config document \"shaman.jsonc\" is not valid JSONC: expected a value \
+                    at line 3, column 14, so Shaman left it exactly as it was"
                 .to_owned(),
         })
         .expect("hear that the edit never landed");
@@ -5862,7 +5862,7 @@ fn leads_however_long_never_push_the_setting_the_keys_are_on_out_of_the_pane() {
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
         MutatesSetting(SettingMutation::ProviderCopilotPermissions {
-            value: Some(suru::protocol::CopilotPermissions::AllowAll),
+            value: Some(shaman::protocol::CopilotPermissions::AllowAll),
         })
     );
 }
@@ -5895,7 +5895,7 @@ fn a_click_lands_on_the_setting_a_scrolled_pane_drew_there() {
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
         MutatesSetting(SettingMutation::ProviderCodexSandboxMode {
-            value: Some(suru::protocol::CodexSandboxMode::DangerFullAccess),
+            value: Some(shaman::protocol::CodexSandboxMode::DangerFullAccess),
         })
     );
 }
@@ -5917,7 +5917,7 @@ fn copy_across(application: &mut Application, first: &str, last: &str) -> Applic
 fn a_fact_or_a_value_copies_with_its_label_whether_or_not_it_wraps() {
     let workspace = workspace_dir();
     let mut settings = with_workspace_roots(&["~/src", WORK_ROOT]);
-    settings.text_selection.copy = suru::protocol::TextSelectionCopy::Release;
+    settings.text_selection.copy = shaman::protocol::TextSelectionCopy::Release;
     let mut application = client_showing(workspace.path(), settings, &["workspace.roots"]);
     open_panel(&mut application);
     click_tab(&mut application, "Source Control");
@@ -5935,7 +5935,7 @@ fn a_fact_or_a_value_copies_with_its_label_whether_or_not_it_wraps() {
             "no later change can undo"
         ),
         ApplicationTransition::CopyToClipboard(
-            "Sidekicks  read only, since turning it on lets Suru remove worktrees, ignored \
+            "Sidekicks  read only, since turning it on lets Shaman remove worktrees, ignored \
              files and all, which no later change can undo"
                 .into()
         ),
@@ -5966,7 +5966,7 @@ const READER_HOME: &str = r"C:\Users\reader";
 #[cfg(not(windows))]
 const READER_HOME: &str = "/home/reader";
 
-/// A pin Suru ignored is named by the Config Document it is in, spelled from
+/// A pin Shaman ignored is named by the Config Document it is in, spelled from
 /// the reader's home as every other path of their own Server is, so the pane
 /// says where without a run of rows to say it in.
 #[test]
@@ -5976,28 +5976,30 @@ fn a_diagnostic_names_its_config_document_from_the_readers_home() {
     application
         .handle_event(ApplicationEvent::OriginCatalog {
             outlook: Outlook::Local,
-            event: ManagedEvent::SessionCatalogReconciled(suru::protocol::SessionCatalogSnapshot {
-                workspace_paths: suru::protocol::WorkspacePaths {
-                    home: Some(READER_HOME.to_owned()),
-                    ..suru::protocol::WorkspacePaths::default()
+            event: ManagedEvent::SessionCatalogReconciled(
+                shaman::protocol::SessionCatalogSnapshot {
+                    workspace_paths: shaman::protocol::WorkspacePaths {
+                        home: Some(READER_HOME.to_owned()),
+                        ..shaman::protocol::WorkspacePaths::default()
+                    },
+                    revision: shaman::protocol::SessionCatalogRevision::INITIAL,
+                    session_ids: Vec::new(),
+                    checkout_states: Vec::new(),
                 },
-                revision: suru::protocol::SessionCatalogRevision::INITIAL,
-                session_ids: Vec::new(),
-                checkout_states: Vec::new(),
-            }),
+            ),
         })
         .expect("hear how the reader's own server spells its paths");
     let file = Path::new(READER_HOME)
         .join(".config")
-        .join("suru")
-        .join("suru.jsonc");
+        .join("shaman")
+        .join("shaman.jsonc");
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings: EffectiveSettings::default(),
                 pinned: Default::default(),
-                diagnostics: vec![suru::protocol::SettingsDiagnostic {
-                    severity: suru::protocol::SettingsDiagnosticSeverity::Warning,
+                diagnostics: vec![shaman::protocol::SettingsDiagnostic {
+                    severity: shaman::protocol::SettingsDiagnosticSeverity::Warning,
                     file,
                     key: Some("transcript.groups".to_owned()),
                     message: "ignored for a test".to_owned(),
@@ -6012,7 +6014,7 @@ fn a_diagnostic_names_its_config_document_from_the_readers_home() {
     pane_row(
         &details,
         &format!(
-            "~{MAIN_SEPARATOR}.config{MAIN_SEPARATOR}suru{MAIN_SEPARATOR}suru.jsonc: ignored \
+            "~{MAIN_SEPARATOR}.config{MAIN_SEPARATOR}shaman{MAIN_SEPARATOR}shaman.jsonc: ignored \
              for a test"
         ),
     );
@@ -6031,13 +6033,13 @@ fn a_refused_edit_holds_in_view_while_the_pane_scrolls_to_the_setting_refused() 
     assert_eq!(
         press(&mut application, KeyCode::Char(' '), KeyModifiers::NONE),
         MutatesSetting(SettingMutation::ProviderCodexSandboxMode {
-            value: Some(suru::protocol::CodexSandboxMode::DangerFullAccess),
+            value: Some(shaman::protocol::CodexSandboxMode::DangerFullAccess),
         })
     );
     application
         .handle_event(ApplicationEvent::SettingMutationFailed {
             request: SettingRequest::new(),
-            error: "Config document \"suru.jsonc\" is not valid JSONC".to_owned(),
+            error: "Config document \"shaman.jsonc\" is not valid JSONC".to_owned(),
         })
         .expect("hear that the edit never landed");
 
@@ -6049,7 +6051,7 @@ fn a_refused_edit_holds_in_view_while_the_pane_scrolls_to_the_setting_refused() 
                 "Codex enabled",
                 "provider.codex.enabled",
                 "",
-                "Config document \"suru.jsonc\" is not valid JSONC"
+                "Config document \"shaman.jsonc\" is not valid JSONC"
             ],
             "the refusal holds beneath the heading at {height} rows: {details:#?}"
         );

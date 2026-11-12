@@ -9,7 +9,7 @@ use eventsource_stream::Eventsource as _;
 use futures_util::StreamExt as _;
 use http_body_util::Full;
 use hyper::{Method, Request, StatusCode};
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         AnswerOfferRequest, HeldOffer, InviteText, IssueInviteRequest, MadeOffer, OfferHeldUp,
@@ -253,7 +253,10 @@ async fn an_offer_carries_no_token_and_survives_either_server_restarting() {
     // workstation's hold no copy of.
     for records in [records_of(&workstation), records_of(&laptop)] {
         assert!(records.contains(&held.id.to_string()));
-        assert!(!records.contains("suru-v1-"), "no Invite stored: {records}");
+        assert!(
+            !records.contains("shaman-v1-"),
+            "no Invite stored: {records}"
+        );
     }
 
     workstation.restart().await;
@@ -338,7 +341,7 @@ async fn an_acceptance_forms_it_through_a_relay_the_offerer_serves_through() {
     laptop.offers_clear().await;
 
     // The second Pairing shows up where machines are found, by its key.
-    let suru::protocol::RelayMachinesAnswer::Listed { machines, .. } = workstation
+    let shaman::protocol::RelayMachinesAnswer::Listed { machines, .. } = workstation
         .client
         .list_relay_machines(&relay.address())
         .await
@@ -628,7 +631,7 @@ async fn a_failed_redemption_says_why_there_and_is_tried_again_at_a_bounded_pace
                 .is_some_and(|answer| {
                     answer.held_up
                         == Some(OfferHeldUp::RedemptionFailed {
-                            why: suru::protocol::RedemptionFailure::NameTaken,
+                            why: shaman::protocol::RedemptionFailure::NameTaken,
                         })
                 })
         })
@@ -715,7 +718,7 @@ pub(super) fn said(body: serde_json::Value) -> Request<Full<axum::body::Bytes>> 
         .method(Method::POST)
         .uri("/v1/pairing/offer")
         .header("content-type", "application/json")
-        .header("x-suru-protocol-version", PROTOCOL_VERSION)
+        .header("x-shaman-protocol-version", PROTOCOL_VERSION)
         .body(Full::new(axum::body::Bytes::from(body.to_string())))
         .unwrap()
 }
@@ -811,7 +814,7 @@ async fn a_peer_says_nothing_of_another_peers_offer_and_hears_nothing_of_one() {
     for word in [
         serde_json::json!({ "withdrawn": { "id": laptops } }),
         serde_json::json!({ "cannot_offer": { "id": laptops, "why": "no_way" } }),
-        serde_json::json!({ "invite": { "id": laptops, "invite": "suru-v1-x" } }),
+        serde_json::json!({ "invite": { "id": laptops, "invite": "shaman-v1-x" } }),
     ] {
         let (_, body) = hostile.ask(said(word)).await.unwrap();
         assert_eq!(
@@ -825,7 +828,7 @@ async fn a_peer_says_nothing_of_another_peers_offer_and_hears_nothing_of_one() {
         .ask_first_line(
             Request::builder()
                 .uri("/v1/pairing/offered-relays")
-                .header("x-suru-protocol-version", PROTOCOL_VERSION)
+                .header("x-shaman-protocol-version", PROTOCOL_VERSION)
                 .body(Full::new(axum::body::Bytes::new()))
                 .unwrap(),
         )
@@ -959,7 +962,7 @@ async fn a_client_is_told_of_offers_as_it_connects_and_as_they_change() {
                 .await
                 .expect("the stream stays open")
                 .expect("an event");
-            if event.event == suru::protocol::PAIR_BACK_EVENT {
+            if event.event == shaman::protocol::PAIR_BACK_EVENT {
                 return serde_json::from_str::<PairBackOffers>(&event.data).unwrap();
             }
         }
@@ -1111,7 +1114,7 @@ async fn no_record_holds_an_invite_once_it_has_formed_a_pairing() {
     laptop.offers_clear().await;
     for server in [&workstation, &laptop] {
         assert!(
-            !records_of(server).contains("suru-v1-"),
+            !records_of(server).contains("shaman-v1-"),
             "no Invite is written where a Server keeps its records"
         );
     }
@@ -1215,7 +1218,7 @@ async fn a_relay_the_accepting_machine_holds_no_login_at_is_said_and_it_forms_on
                 .is_some_and(|answer| {
                     answer.held_up
                         == Some(OfferHeldUp::RedemptionFailed {
-                            why: suru::protocol::RedemptionFailure::RelayLoginNeeded,
+                            why: shaman::protocol::RedemptionFailure::RelayLoginNeeded,
                         })
                 })
         })

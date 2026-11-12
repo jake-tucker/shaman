@@ -1,6 +1,6 @@
 //! Reads an image's format and pixel dimensions from its header bytes alone.
 //!
-//! Suru never decodes pixels on the Server (ADR 0037). The format is sniffed
+//! Shaman never decodes pixels on the Server (ADR 0037). The format is sniffed
 //! from the magic bytes the image begins with, never taken from what a client
 //! declared, and width and height come from the few header bytes each of the
 //! four admitted formats keeps them in.

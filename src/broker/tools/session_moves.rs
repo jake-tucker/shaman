@@ -18,7 +18,7 @@
 //!
 //! An Agent is Working whenever it calls a Tool, so a Move of its own Session is
 //! by nature pending. Its answer is therefore the Agent's instruction as much as
-//! its report: that ending its Turn is what lets the Move apply, that Suru then
+//! its report: that ending its Turn is what lets the Move apply, that Shaman then
 //! begins its next Turn in the destination for it to carry on in, and for a new
 //! Worktree, that the commit it was made from has already been read. The
 //! description says as much before any call, since an Agent weighing a Move
@@ -48,7 +48,7 @@ directory; further is the user's to do. Another Agent's Session is refused, and 
 a native Subagent's, which works inside its parent's process; a native \
 Subagent's own call may act for its parent's Session. A Session at work Moves \
 once its Turn and any native Subagents settle. After Moving your own, end your \
-Turn: Suru begins your next in the new directory itself, so you carry on there. \
+Turn: Shaman begins your next in the new directory itself, so you carry on there. \
 Calling again replaces where it is bound; naming where it works cancels that. Answers with JSON of the shape \
 {\"session_id\": \"...\", \"outcome\": \"...\", \"directory\": \"...\", \
 \"message\": \"...\"}: \"outcome\" is \"moved\", \"pending\", \"already_there\" or \
@@ -59,7 +59,7 @@ pub(super) const SIDEKICK_DESCRIPTION: &str = concat!(
 Move any other Session to another directory of the server it lives on: it keeps \
 its conversation and works there from its next Turn. Takes \"session_id\", a \
 Session's id as list_sessions gives it; \"origin\", the Remote it lives on as its \
-row gives it, left out for one on this Suru server; \"directory\", any directory \
+row gives it, left out for one on this Shaman server; \"directory\", any directory \
 of that server, another Workspace's among them, which that server alone reads and \
 judges: an absolute path as it writes paths, one relative to where that Session \
 works, or one beginning with ~ for its home; and optionally \"new_worktree\": true \
@@ -85,7 +85,7 @@ pub(super) fn input_schema(role: BrokerRole) -> Value {
     let new_worktree = json!({
         "type": "boolean",
         "description": "true to Move the Session instead into a new Worktree of the \
-            directory's Repository, which Suru makes as you call.",
+            directory's Repository, which Shaman makes as you call.",
     });
     match role {
         BrokerRole::Agent => json!({
@@ -175,8 +175,8 @@ impl BrokerTools {
         .map_err(|error| {
             tracing::error!(%session_id, "a Session's Move did not run to its end: {error}");
             ToolRefusal::new(
-                "Suru could not finish the Move, so the Session may or may not have Moved; \
-                 Suru's Log says why.",
+                "Shaman could not finish the Move, so the Session may or may not have Moved; \
+                 Shaman's Log says why.",
             )
         })??;
         let speaker = Speaker::of(session_id, caller, remote.as_deref());
@@ -319,7 +319,7 @@ impl<'a> Speaker<'a> {
         let directory = self.place(directory);
         if new_worktree {
             format!(
-                "{session} now works in the new Worktree Suru made at {directory}, from the \
+                "{session} now works in the new Worktree Shaman made at {directory}, from the \
                  commit HEAD stood at; {next} next Turn works there. Changes left uncommitted \
                  where it worked stayed there."
             )
@@ -333,11 +333,11 @@ impl<'a> Speaker<'a> {
     fn pending(self, to: &Path, from: &Path, new_worktree: bool) -> String {
         let (to, from) = (self.place(to), self.place(from));
         let made =
-            format!("Suru made a new Worktree at {to} from the commit HEAD stands at now, and");
+            format!("Shaman made a new Worktree at {to} from the commit HEAD stands at now, and");
         // An Agent's own Session is woken where the Move lands, so it is told
         // to end its Turn for that; any other works on where it is.
         const OWN_TURN: &str = "this Turn and any native Subagents you have running";
-        const OWN_NEXT: &str = "Suru then begins your next Turn there itself, for you to carry \
+        const OWN_NEXT: &str = "Shaman then begins your next Turn there itself, for you to carry \
                                 on without waiting for the user";
         const OTHER_TURN: &str = "its Turn and any native Subagents it has running";
         const OTHER_NEXT: &str = "its next Turn works there";
@@ -732,7 +732,7 @@ mod tests {
         assert!(words <= 225, "the description runs to {words} words");
         for woken in [
             "After Moving your own, end your Turn",
-            "Suru begins your next in the new directory itself",
+            "Shaman begins your next in the new directory itself",
         ] {
             assert!(DESCRIPTION.contains(woken), "{woken}");
         }
@@ -742,7 +742,7 @@ mod tests {
         );
     }
 
-    /// A Tool every Agent is offered, changing what Suru holds, and recorded as
+    /// A Tool every Agent is offered, changing what Shaman holds, and recorded as
     /// a Tool Call beside the Move's own row, whose arguments hold nothing a
     /// Transcript may not keep.
     #[test]
@@ -759,7 +759,7 @@ mod tests {
     }
 
     /// What a pending Move tells an Agent of a Move of its own Session teaches
-    /// it to end its Turn, since Suru wakes it where the Move lands, and of a
+    /// it to end its Turn, since Shaman wakes it where the Move lands, and of a
     /// new Worktree, that what it commits next is left behind; of a Subagent's,
     /// nothing is asked of it.
     #[test]
@@ -774,15 +774,15 @@ mod tests {
         assert_eq!(
             own.pending(to, from, false),
             "Your Session's Move to to is pending: it applies once this Turn and any native \
-             Subagents you have running settle, and Suru then begins your next Turn there \
+             Subagents you have running settle, and Shaman then begins your next Turn there \
              itself, for you to carry on without waiting for the user. End this Turn now rather \
              than working on in from."
         );
         assert_eq!(
             own.pending(to, from, true),
-            "Suru made a new Worktree at to from the commit HEAD stands at now, and your \
+            "Shaman made a new Worktree at to from the commit HEAD stands at now, and your \
              Session's Move there is pending: it applies once this Turn and any native Subagents \
-             you have running settle, and Suru then begins your next Turn there itself, for you \
+             you have running settle, and Shaman then begins your next Turn there itself, for you \
              to carry on without waiting for the user. End this Turn now rather than working on \
              in from. Commits you make after this call, and changes you leave uncommitted, stay \
              on the old branch and never reach the new Worktree: if it needs them, commit and \
@@ -799,7 +799,7 @@ mod tests {
         assert_eq!(
             other.pending(to, from, true),
             format!(
-                "Suru made a new Worktree at to from the commit HEAD stands at now, and Session \
+                "Shaman made a new Worktree at to from the commit HEAD stands at now, and Session \
                  {subagent}'s Move there is pending: it applies once its Turn and any native \
                  Subagents it has running settle, and its next Turn works there. It keeps working \
                  in from until then. Commits made there after this call, and changes left \
@@ -830,7 +830,7 @@ mod tests {
         assert_eq!(
             remote.pending(to, from, true),
             format!(
-                "Suru made a new Worktree at to on the Remote `workstation` from the commit HEAD \
+                "Shaman made a new Worktree at to on the Remote `workstation` from the commit HEAD \
                  stands at now, and Session {session_id}'s Move there is pending: it applies once \
                  its Turn and any native Subagents it has running settle, and its next Turn works \
                  there. It keeps working in from on the Remote `workstation` until then. Commits \
@@ -873,7 +873,7 @@ mod tests {
             }
             .moved(there, true),
             format!(
-                "Session {subagent} now works in the new Worktree Suru made at there, from the \
+                "Session {subagent} now works in the new Worktree Shaman made at there, from the \
                  commit HEAD stood at; its next Turn works there. Changes left uncommitted where \
                  it worked stayed there."
             )

@@ -5,7 +5,7 @@ use crate::copilot_integration::support::{
     LiveTurn, ScriptedCopilot, agent_messages, conversation_arms, conversation_fixture,
     settled_session_on,
 };
-use suru::{
+use shaman::{
     protocol::{
         Activity, AdmitPromptRequest, InitialPrompt, MessageRole, PromptDelivery, PromptId,
         PromptStatus, TurnStatus,

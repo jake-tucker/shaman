@@ -1,8 +1,8 @@
 //! Probes what the installed Copilot CLI lists as a Model's reasoning efforts against what it
-//! accepts when a Session is switched onto that Model with one — the switch Suru makes at the
+//! accepts when a Session is switched onto that Model with one — the switch Shaman makes at the
 //! start of a Turn selected under an effort.
 //!
-//! Drives the CLI through the SDK the way Suru's Copilot Provider does. The default run lists the
+//! Drives the CLI through the SDK the way Shaman's Copilot Provider does. The default run lists the
 //! Model from both catalogs, switches a Session onto it with every listed effort, and opens one
 //! with `none` up front; each `PROBE_*` variable adds a further round:
 //!
@@ -14,7 +14,7 @@
 //! PROBE_TURN=1 cargo run --example copilot_effort_probe   # a Turn at `none` once it is accepted
 //! ```
 //!
-//! `SURU_COPILOT_PATH` names the CLI (default `copilot`). What the probes showed is recorded in
+//! `SHAMAN_COPILOT_PATH` names the CLI (default `copilot`). What the probes showed is recorded in
 //! `docs/validation/copilot-cold-switch-effort.md`.
 #[path = "support/copilot_cli.rs"]
 mod copilot_cli;
@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         Err(e) => println!("[PROBE] create_session(effort=none) -> Err({e})"),
     }
-    // Exactly Suru's own path: a Session opened on no Model, then switched onto the Model with
+    // Exactly Shaman's own path: a Session opened on no Model, then switched onto the Model with
     // the effort and the context tier lowered together, as `apply_selection` does.
     use github_copilot_sdk::session_events::ContextTier;
     for (effort, tier) in [

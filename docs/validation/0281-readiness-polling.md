@@ -8,7 +8,7 @@ Startup waits 5, 10, 20, 40, then at most 50 ms between unsuccessful probes. The
 
 ## Measurements
 
-Linux, optimized release build, warm filesystem caches, ten alternating fixed/adaptive pairs. Every fresh launch used a temporary state/data/config root and a new server process, with Codex, Copilot, and Claude disabled in `suru.jsonc`. Reuse immediately followed its fresh launch, and each isolated server was stopped afterward. Timings cover the public `start_server` call, including executable identity and authenticated probing; they exclude TUI startup, terminal color negotiation, and event stream attachment.
+Linux, optimized release build, warm filesystem caches, ten alternating fixed/adaptive pairs. Every fresh launch used a temporary state/data/config root and a new server process, with Codex, Copilot, and Claude disabled in `shaman.jsonc`. Reuse immediately followed its fresh launch, and each isolated server was stopped afterward. Timings cover the public `start_server` call, including executable identity and authenticated probing; they exclude TUI startup, terminal color negotiation, and event stream attachment.
 
 The before comparison used the same executable and library with `with_readiness_polling(50 ms, 50 ms)`, reproducing the previous polling cadence on successful launches. This isolates cadence from unrelated changes since the issue's original measurements; it is not a comparison with that older revision. The adaptive comparison used the production defaults.
 

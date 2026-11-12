@@ -7,7 +7,7 @@
 //! moment came is never pending again.
 
 use super::*;
-use suru::protocol::PenaltyThreshold;
+use shaman::protocol::PenaltyThreshold;
 
 impl Idle {
     /// Waits until the Session publishes `due_at` as when its scheduled
@@ -218,7 +218,7 @@ async fn a_session_that_will_have_settled_on_its_own_by_the_moment_is_not_pendin
                     lapses_at: SessionTimestamp(now.0 + 3 * 24 * 60 * 60 * 1000),
                     model: None,
                     lifetime: None,
-                    write_price: suru::protocol::CacheWritePrice::Default,
+                    write_price: shaman::protocol::CacheWritePrice::Default,
                     prompt_limit_tokens: None,
                 });
         },
@@ -246,7 +246,7 @@ async fn a_changed_selection_withdraws_it_and_the_original_selection_restores_it
     let writer = idle.model().await;
     idle.fixture
         .runtime
-        .price_cache(suru::protocol::ModelId::new("gpt-other"), RATES);
+        .price_cache(shaman::protocol::ModelId::new("gpt-other"), RATES);
 
     idle.select("gpt-other").await;
     idle.until_pending(None, "the Selection left the cache")
@@ -289,7 +289,7 @@ async fn a_subagent_working_beneath_or_the_continuation_it_leaves_owed_holds_it_
     working
         .emit([ProviderEvent::SubagentCompleted {
             subagent_id: ProviderSubagentId::new("reader"),
-            status: suru::provider::ProviderSubagentStatus::Completed,
+            status: shaman::provider::ProviderSubagentStatus::Completed,
         }])
         .await;
     working
@@ -383,7 +383,7 @@ async fn a_stretch_skipped_when_its_moment_came_is_never_pending_again() {
     working
         .emit([ProviderEvent::SubagentCompleted {
             subagent_id: ProviderSubagentId::new("reader"),
-            status: suru::provider::ProviderSubagentStatus::Completed,
+            status: shaman::provider::ProviderSubagentStatus::Completed,
         }])
         .await;
     working

@@ -2,8 +2,7 @@
 
 use crate::codex_integration::support::{ScriptedCodex, receive_initial_state};
 use crate::support::PROGRESS_DEADLINE;
-use std::sync::Arc;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent},
     protocol::{
         Activity, ActivityStatus, CreateSessionRequest, InitialPrompt, MessageRole, MessageStatus,
@@ -12,6 +11,7 @@ use suru::{
     provider::CodexRuntime,
     server::{self, ServerConfig, ServerTimings},
 };
+use std::sync::Arc;
 use tokio::time::{Duration, timeout};
 
 const INTERRUPTION_CODEX: &str = r#"#!/bin/sh
@@ -81,7 +81,7 @@ async fn scripted_codex_interrupt_acknowledges_before_trailing_output_and_termin
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -149,7 +149,7 @@ async fn scripted_codex_interrupt_acknowledges_before_trailing_output_and_termin
                     .filter(|change| {
                         matches!(
                             change,
-                            suru::protocol::SessionChange::TurnStatusChanged {
+                            shaman::protocol::SessionChange::TurnStatusChanged {
                                 turn_id: changed_turn_id,
                                 status: TurnStatus::Interrupted,
                                 ..
@@ -267,7 +267,7 @@ async fn assert_interruption_failure(script: &str, channel: &str, expected_error
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

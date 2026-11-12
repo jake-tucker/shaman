@@ -10,7 +10,7 @@ use crate::copilot_integration::support::{
     settled_session, settled_session_on, signed_in_arm,
 };
 use serde_json::{Value, json};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         AdmitPromptRequest, CopilotSettings, CreateSessionRequest, EffectiveSettings,
@@ -25,7 +25,7 @@ const TIMELINE: &str = r#"      event e1 assistant.message '{"messageId":"m1","c
       event e2 session.idle '{}'
 "#;
 
-/// The assignment on the wire, spelled here rather than read off Suru so a change to what Suru
+/// The assignment on the wire, spelled here rather than read off Shaman so a change to what Shaman
 /// asserts to Copilot's service is a deliberate change here as well.
 fn fusion_assignment() -> Value {
     json!({
@@ -77,7 +77,7 @@ pub(super) fn fusion_tiers_in_force() -> EffectiveSettings {
     }
 }
 
-/// The directories one Suru keeps across a restart, and the Workspace its Session works in.
+/// The directories one Shaman keeps across a restart, and the Workspace its Session works in.
 pub(super) struct Home {
     state: tempfile::TempDir,
     data: tempfile::TempDir,
@@ -165,7 +165,7 @@ async fn opened_session(client: &ManagedClient, workspace: &Path) -> SessionId {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             prompt: prompt("Begin"),
@@ -197,7 +197,7 @@ pub(super) async fn continued_session(client: &ManagedClient, session_id: Sessio
     settled_session_on(client, &mut feed, session_id, 1).await;
 }
 
-/// Creates a Session under `at_create`, restarts Suru, and resumes it under `at_resume`, answering
+/// Creates a Session under `at_create`, restarts Shaman, and resumes it under `at_resume`, answering
 /// with the requests the CLI received. A `None` leaves the Setting as the Config Document has it.
 async fn created_and_resumed(
     channel: &'static str,

@@ -7,7 +7,7 @@
 //! longer to hold it. One begun there stands in the Sidekick's Transcript as
 //! a row naming that Remote. The record outlives a stop of either Server.
 
-use suru::protocol::{
+use shaman::protocol::{
     ActivityStatus, SubagentTreeChange, SubagentTreeEntry, SubagentTreeRevision,
     SubagentTreeSession,
 };
@@ -59,7 +59,7 @@ async fn a_session_acted_on_or_begun_on_a_remote_stands_in_the_sidekicks_tree_by
     pair(&own.descriptor(), &remote, REMOTE).await;
     let mut remote = remote;
     let there = tempfile::tempdir().expect("create a Workspace on the Remote");
-    let directory = suru::paths::canonical(there.path()).expect("read the Remote's Workspace");
+    let directory = shaman::paths::canonical(there.path()).expect("read the Remote's Workspace");
     let (sidekick_id, mut sidekick, _provider) =
         start_sidekick(&own.descriptor(), &mut own.claude).await;
     let (target, mut target_provider) = started_session(
@@ -208,8 +208,8 @@ async fn a_session_acted_on_or_begun_on_a_remote_stands_in_the_sidekicks_tree_by
 async fn listed_summary(
     descriptor: &RuntimeDescriptor,
     session_id: SessionId,
-) -> suru::protocol::SessionSummary {
-    let listed: Vec<suru::protocol::SessionListItem> = crate::support::loopback_client()
+) -> shaman::protocol::SessionSummary {
+    let listed: Vec<shaman::protocol::SessionListItem> = crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
@@ -221,7 +221,7 @@ async fn listed_summary(
     listed
         .into_iter()
         .find_map(|item| match item {
-            suru::protocol::SessionListItem::Readable(summary)
+            shaman::protocol::SessionListItem::Readable(summary)
                 if summary.session.id == session_id =>
             {
                 Some(*summary)
@@ -242,7 +242,7 @@ async fn a_sidekicks_session_names_the_sessions_it_began_on_remotes_for_every_cl
     let mut own = OwnServer::start("sidekick-remote-subsessions", ServerTimings::default()).await;
     pair(&own.descriptor(), &remote, REMOTE).await;
     let there = tempfile::tempdir().expect("create a Workspace on the Remote");
-    let directory = suru::paths::canonical(there.path()).expect("read the Remote's Workspace");
+    let directory = shaman::paths::canonical(there.path()).expect("read the Remote's Workspace");
     let (sidekick_id, mut sidekick, _provider) =
         start_sidekick(&own.descriptor(), &mut own.claude).await;
     let acted_on = working_session(&remote.descriptor(), there.path(), "Write the parser").await;
@@ -262,7 +262,7 @@ async fn a_sidekicks_session_names_the_sessions_it_began_on_remotes_for_every_cl
     .await;
     let begun: SessionId =
         serde_json::from_value(begun["session_id"].clone()).expect("the Session begun is named");
-    let named = vec![suru::protocol::RemoteSession {
+    let named = vec![shaman::protocol::RemoteSession {
         origin: REMOTE.to_owned(),
         session_id: begun,
     }];
@@ -271,7 +271,7 @@ async fn a_sidekicks_session_names_the_sessions_it_began_on_remotes_for_every_cl
             let update = futures_util::StreamExt::next(&mut catalog)
                 .await
                 .expect("the catalog stream stays open");
-            if let suru::protocol::SessionCatalogChange::RemoteSubsessionsChanged {
+            if let shaman::protocol::SessionCatalogChange::RemoteSubsessionsChanged {
                 session_id,
                 remote_subsessions,
             } = update.change
@@ -341,7 +341,7 @@ async fn a_session_begun_on_a_remote_stands_as_a_row_naming_its_remote_that_foll
         OwnServer::start("sidekick-remote-subsession-row", ServerTimings::default()).await;
     pair(&own.descriptor(), &remote, REMOTE).await;
     let there = tempfile::tempdir().expect("create a Workspace on the Remote");
-    let directory = suru::paths::canonical(there.path()).expect("read the Remote's Workspace");
+    let directory = shaman::paths::canonical(there.path()).expect("read the Remote's Workspace");
     let (sidekick_id, mut sidekick, _provider) =
         start_sidekick(&own.descriptor(), &mut own.claude).await;
     // Watching the Sidekick's tree keeps the Remote in view.
@@ -523,9 +523,9 @@ async fn a_remote_sessions_subagents_stand_beneath_it_as_its_remote_says_of_them
 
     spawner_provider
         .emit_attributed_and_wait_until_observed(
-            suru::provider::ProviderEventAttribution::OwningSession,
+            shaman::provider::ProviderEventAttribution::OwningSession,
             ProviderEvent::SubagentStarted {
-                subagent_id: suru::provider::ProviderSubagentId::new("explorer"),
+                subagent_id: shaman::provider::ProviderSubagentId::new("explorer"),
                 name: "Explore".to_owned(),
                 description: "Survey the flaky tests".to_owned(),
                 delegation: None,
@@ -548,10 +548,10 @@ async fn a_remote_sessions_subagents_stand_beneath_it_as_its_remote_says_of_them
 
     spawner_provider
         .emit_attributed_and_wait_until_observed(
-            suru::provider::ProviderEventAttribution::OwningSession,
+            shaman::provider::ProviderEventAttribution::OwningSession,
             ProviderEvent::SubagentCompleted {
-                subagent_id: suru::provider::ProviderSubagentId::new("explorer"),
-                status: suru::provider::ProviderSubagentStatus::Completed,
+                subagent_id: shaman::provider::ProviderSubagentId::new("explorer"),
+                status: shaman::provider::ProviderSubagentStatus::Completed,
             },
         )
         .await;
@@ -624,9 +624,9 @@ async fn a_remote_falling_silent_leaves_its_sessions_subagents_named_and_nothing
     .await;
     spawner_provider
         .emit_attributed_and_wait_until_observed(
-            suru::provider::ProviderEventAttribution::OwningSession,
+            shaman::provider::ProviderEventAttribution::OwningSession,
             ProviderEvent::SubagentStarted {
-                subagent_id: suru::provider::ProviderSubagentId::new("explorer"),
+                subagent_id: shaman::provider::ProviderSubagentId::new("explorer"),
                 name: "Explore".to_owned(),
                 description: "Survey the flaky tests".to_owned(),
                 delegation: None,
@@ -675,9 +675,9 @@ async fn past_the_trees_followed_of_a_remote_a_session_says_its_subagents_are_no
     let mut acted_on = ActedOn::start(
         "sidekick-remote-trees-bounded",
         Serving::start("sidekick-remote-trees-bounded").await,
-        ServerTimings::default().with_remote_watch_limits(suru::server::RemoteWatchLimits {
+        ServerTimings::default().with_remote_watch_limits(shaman::server::RemoteWatchLimits {
             trees_per_remote: 1,
-            ..suru::server::RemoteWatchLimits::default()
+            ..shaman::server::RemoteWatchLimits::default()
         }),
     )
     .await;
@@ -751,7 +751,7 @@ async fn a_remote_session_its_own_sidekick_began_stands_with_its_own_subagents()
     .await;
     let remote = acted_on.remote.descriptor();
     let there = tempfile::tempdir().expect("create another Workspace on the Remote");
-    let directory = suru::paths::canonical(there.path()).expect("read the Remote's Workspace");
+    let directory = shaman::paths::canonical(there.path()).expect("read the Remote's Workspace");
     let (_their_sidekick, mut theirs, _their_provider) =
         start_sidekick(&remote, &mut acted_on.remote.provider).await;
     let begun = acted(
@@ -766,7 +766,7 @@ async fn a_remote_session_its_own_sidekick_began_stands_with_its_own_subagents()
         next_start(&mut acted_on.remote.provider)
             .await
             .succeed(AgentIdentity {
-                agent: suru::protocol::AgentId::new("claude-agent"),
+                agent: shaman::protocol::AgentId::new("claude-agent"),
                 selection: default_selection(&claude_models()),
             });
     timeout(PROGRESS_DEADLINE, begun_provider.next_turn())
@@ -785,9 +785,9 @@ async fn a_remote_session_its_own_sidekick_began_stands_with_its_own_subagents()
 
     begun_provider
         .emit_attributed_and_wait_until_observed(
-            suru::provider::ProviderEventAttribution::OwningSession,
+            shaman::provider::ProviderEventAttribution::OwningSession,
             ProviderEvent::SubagentStarted {
-                subagent_id: suru::provider::ProviderSubagentId::new("explorer"),
+                subagent_id: shaman::provider::ProviderSubagentId::new("explorer"),
                 name: "Explore".to_owned(),
                 description: "Survey the flaky tests".to_owned(),
                 delegation: None,
@@ -990,7 +990,7 @@ async fn a_remote_session_found_gone_by_a_read_or_a_listing_is_dropped() {
                 json!({ "session_id": target, "origin": REMOTE })
             )
             .await
-            .contains("Suru holds no Session"),
+            .contains("Shaman holds no Session"),
         "a read finds it gone"
     );
     acted(&mut sidekick, "list_sessions", json!({ "origin": REMOTE })).await;
@@ -1027,9 +1027,9 @@ async fn an_act_on_a_remotes_subagent_stands_by_the_session_heading_it_and_stays
     .await;
     spawner_provider
         .emit_attributed_and_wait_until_observed(
-            suru::provider::ProviderEventAttribution::OwningSession,
+            shaman::provider::ProviderEventAttribution::OwningSession,
             ProviderEvent::SubagentStarted {
-                subagent_id: suru::provider::ProviderSubagentId::new("explorer"),
+                subagent_id: shaman::provider::ProviderSubagentId::new("explorer"),
                 name: "Explore".to_owned(),
                 description: "Survey the flaky tests".to_owned(),
                 delegation: None,

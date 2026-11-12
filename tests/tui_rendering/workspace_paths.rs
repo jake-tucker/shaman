@@ -4,7 +4,7 @@ use crate::tui_rendering::support::{
     connected_application, enter_session, fixture_instance_id, ready_health,
     rendered_application_rows_at,
 };
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{EffectiveSettings, SettingsSnapshot, SidebarVisibility, WorkspacePaths},
     tui::{Application, ApplicationEvent},
@@ -32,16 +32,16 @@ fn screen(application: &Application) -> String {
 #[test]
 fn local_landing_uses_the_servers_home_while_a_session_uses_the_workspace_name() {
     let home = tempfile::tempdir().unwrap();
-    let workspace = home.path().join("Projects").join("suru");
+    let workspace = home.path().join("Projects").join("shaman");
     std::fs::create_dir_all(&workspace).unwrap();
-    let workspace = suru::paths::canonical(&workspace).unwrap();
+    let workspace = shaman::paths::canonical(&workspace).unwrap();
     let mut application = connected_application(&workspace);
     hide_sidebar(&mut application);
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Connected(
             ready_health(fixture_instance_id(), 42).with_workspace_paths(WorkspacePaths {
                 home: Some(
-                    suru::paths::canonical(home.path())
+                    shaman::paths::canonical(home.path())
                         .unwrap()
                         .to_str()
                         .unwrap()
@@ -53,9 +53,9 @@ fn local_landing_uses_the_servers_home_while_a_session_uses_the_workspace_name()
         .unwrap();
 
     let label = if cfg!(windows) {
-        r"~\Projects\suru"
+        r"~\Projects\shaman"
     } else {
-        "~/Projects/suru"
+        "~/Projects/shaman"
     };
     let landing = screen(&application);
     let rows = landing.lines().collect::<Vec<_>>();
@@ -67,24 +67,24 @@ fn local_landing_uses_the_servers_home_while_a_session_uses_the_workspace_name()
     let (_, snapshot) = enter_session(&mut application, &workspace);
     let session = screen(&application);
     assert!(
-        session.lines().next().unwrap().contains("suru"),
+        session.lines().next().unwrap().contains("shaman"),
         "{session}"
     );
     assert!(
         !session.lines().next().unwrap().contains(label),
         "{session}"
     );
-    assert!(!session.contains("Suru"), "{session}");
+    assert!(!session.contains("Shaman"), "{session}");
     assert!(!session.contains("Workspace "), "{session}");
     assert_eq!(snapshot.session.workspace.path, workspace);
 }
 
 #[test]
 fn remote_landing_paths_and_session_names_follow_the_remote_path_style() {
-    use std::path::Path;
-    use suru::protocol::{
+    use shaman::protocol::{
         Outlook, PathStyle, SessionCatalogRevision, SessionCatalogSnapshot, SessionId,
     };
+    use std::path::Path;
 
     // These are wire paths, deliberately exercising both remote platforms on
     // every host; none is resolved using the test machine's filesystem.
@@ -92,30 +92,30 @@ fn remote_landing_paths_and_session_names_follow_the_remote_path_style() {
         (
             PathStyle::Unix,
             Some("/home/remote"),
-            "/home/remote/Projects/suru",
-            "~/Projects/suru",
-            "suru",
+            "/home/remote/Projects/shaman",
+            "~/Projects/shaman",
+            "shaman",
         ),
         (
             PathStyle::Windows,
             Some(r"C:\Users\Remote"),
-            r"\\?\C:\Users\Remote\Projects\suru",
-            r"~\Projects\suru",
-            "suru",
+            r"\\?\C:\Users\Remote\Projects\shaman",
+            r"~\Projects\shaman",
+            "shaman",
         ),
         (
             PathStyle::Windows,
             Some(r"\\?\UNC\host\users\Remote"),
-            r"\\host\users\Remote\suru",
-            r"~\suru",
-            "suru",
+            r"\\host\users\Remote\shaman",
+            r"~\shaman",
+            "shaman",
         ),
         (
             PathStyle::Windows,
             None,
-            r"\\?\UNC\host\users\Remote\suru",
-            r"\\host\users\Remote\suru",
-            "suru",
+            r"\\?\UNC\host\users\Remote\shaman",
+            r"\\host\users\Remote\shaman",
+            "shaman",
         ),
         (
             PathStyle::Unix,
@@ -127,37 +127,37 @@ fn remote_landing_paths_and_session_names_follow_the_remote_path_style() {
         (
             PathStyle::Unix,
             Some("/home/remote"),
-            "/home/remote-other/suru",
-            "/home/remote-other/suru",
-            "suru",
+            "/home/remote-other/shaman",
+            "/home/remote-other/shaman",
+            "shaman",
         ),
         (
             PathStyle::Windows,
             Some(r"C:\Users\Remote"),
-            r"\\?\D:\Projects\suru",
-            r"D:\Projects\suru",
-            "suru",
+            r"\\?\D:\Projects\shaman",
+            r"D:\Projects\shaman",
+            "shaman",
         ),
         (
             PathStyle::Unix,
             Some("/"),
-            "/Projects/suru",
-            "~/Projects/suru",
-            "suru",
+            "/Projects/shaman",
+            "~/Projects/shaman",
+            "shaman",
         ),
         (
             PathStyle::Windows,
             Some(r"C:\"),
-            r"C:\Projects\suru",
-            r"~\Projects\suru",
-            "suru",
+            r"C:\Projects\shaman",
+            r"~\Projects\shaman",
+            "shaman",
         ),
         (
             PathStyle::Unix,
             Some("/home/remote"),
-            "/home/remote/../elsewhere/suru",
-            "/home/remote/../elsewhere/suru",
-            "suru",
+            "/home/remote/../elsewhere/shaman",
+            "/home/remote/../elsewhere/shaman",
+            "shaman",
         ),
     ] {
         let mut application = Application::default();
@@ -220,12 +220,12 @@ fn remote_landing_paths_and_session_names_follow_the_remote_path_style() {
 /// as well, by the directory that Remote names for it.
 #[test]
 fn the_workspace_picker_offers_no_remotes_sidekick_workspace() {
-    use suru::protocol::{
+    use shaman::protocol::{
         Outlook, PathStyle, SessionCatalogRevision, SessionCatalogSnapshot, SessionId,
     };
-    use suru::tui::{ApplicationTransition, CommandId, SemanticCommandId};
+    use shaman::tui::{ApplicationTransition, CommandId, SemanticCommandId};
 
-    let sidekick = "/srv/suru/sidekick";
+    let sidekick = "/srv/shaman/sidekick";
     let other = "/home/Remote/ledger";
     let mut application = Application::default();
     hide_sidebar(&mut application);
@@ -278,27 +278,27 @@ fn the_workspace_picker_offers_no_remotes_sidekick_workspace() {
 #[test]
 fn both_pickers_use_the_remote_home_even_without_a_remote_badge() {
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-    use suru::protocol::{
+    use shaman::protocol::{
         Outlook, PathStyle, SessionCatalogRevision, SessionCatalogSnapshot, SessionId,
         SessionListItem, SessionSummary, SessionTimestamp,
     };
-    use suru::tui::{ApplicationTransition, CommandId, SemanticCommandId};
+    use shaman::tui::{ApplicationTransition, CommandId, SemanticCommandId};
 
     for (style, home, path, label, name) in [
         (
             PathStyle::Windows,
             r"C:\Users\Remote",
-            r"C:\Users\Remote\suru",
-            r"~\suru",
-            "suru",
+            r"C:\Users\Remote\shaman",
+            r"~\shaman",
+            "shaman",
         ),
         // A backslash belongs to the Unix filename, even on a Windows Client.
         (
             PathStyle::Unix,
             "/home/Remote",
-            r"/home/Remote/suru\notes",
-            r"~/suru\notes",
-            r"suru\notes",
+            r"/home/Remote/shaman\notes",
+            r"~/shaman\notes",
+            r"shaman\notes",
         ),
     ] {
         for command in [
@@ -387,6 +387,9 @@ fn both_pickers_use_the_remote_home_even_without_a_remote_badge() {
                         )))
                         .unwrap();
                 }
+                // Searching for the Workspace by its name leaves its row the
+                // one chosen, whatever stands above it in the list.
+                crate::tui_rendering::support::type_terminal_text(&mut application, "shaman");
                 // The Workspace chosen here becomes the one the client runs
                 // in, which the Sidebar's selector offers by the name the
                 // Remote's own path style gives it.
@@ -407,9 +410,9 @@ fn both_pickers_use_the_remote_home_even_without_a_remote_badge() {
                 application
                     .handle_event(ApplicationEvent::WorkspaceResolved {
                         outlook,
-                        surface: suru::tui::WorkspaceResolutionSurface::WorkspacePicker,
+                        surface: shaman::tui::WorkspaceResolutionSurface::WorkspacePicker,
                         request_id,
-                        result: Ok(suru::protocol::ResolvedWorkspace::directory(request.path)),
+                        result: Ok(shaman::protocol::ResolvedWorkspace::directory(request.path)),
                     })
                     .unwrap();
                 let ApplicationTransition::ListSessions(request) = application
@@ -453,7 +456,7 @@ fn symlinked_homes_shorten_resolved_workspaces_but_links_outside_home_stay_absol
     let root = tempfile::tempdir().unwrap();
     let home = root.path().join("home");
     let outside = root.path().join("outside");
-    std::fs::create_dir_all(home.join("suru")).unwrap();
+    std::fs::create_dir_all(home.join("shaman")).unwrap();
     std::fs::create_dir(&outside).unwrap();
     let alias = root.path().join("home-alias");
     std::os::unix::fs::symlink(&home, &alias).unwrap();
@@ -463,7 +466,7 @@ fn symlinked_homes_shorten_resolved_workspaces_but_links_outside_home_stay_absol
     // path gives up its front. A link outside home is known by the end it
     // keeps — its resolved target's — and by nothing of it being spelled from
     // home.
-    let resolved_outside = suru::paths::canonical(&outside).unwrap();
+    let resolved_outside = shaman::paths::canonical(&outside).unwrap();
     let resolved_outside_end = resolved_outside
         .strip_prefix(resolved_outside.parent().unwrap().parent().unwrap())
         .unwrap()
@@ -471,7 +474,7 @@ fn symlinked_homes_shorten_resolved_workspaces_but_links_outside_home_stay_absol
         .unwrap()
         .to_owned();
     for (workspace, expected, spelled_from_home) in [
-        (alias.join("suru"), "~/suru".to_owned(), true),
+        (alias.join("shaman"), "~/shaman".to_owned(), true),
         (alias.join("linked"), resolved_outside_end, false),
     ] {
         let mut application = connected_application(&workspace);

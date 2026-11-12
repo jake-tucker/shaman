@@ -1,9 +1,9 @@
 //! Copilot reports when a conversation's Prompt Cache lapses with each model call that writes or
-//! refreshes it, as `cacheExpiresAt` on `assistant.usage`. Suru takes the latest such moment of
+//! refreshes it, as `cacheExpiresAt` on `assistant.usage`. Shaman takes the latest such moment of
 //! the Session's own conversation as given, and forecasts its Lapse Penalty at the prices
 //! Copilot's catalog lists for the Session's Model.
 use crate::copilot_integration::support::{conversation_fixture, hosting, session_where};
-use suru::protocol::{
+use shaman::protocol::{
     CreateSessionRequest, InitialPrompt, LapsePenalty, ModelId, PromptCache, PromptId,
     SessionTimestamp, TurnStatus,
 };
@@ -30,7 +30,7 @@ async fn the_latest_reported_lapse_of_the_sessions_conversation_becomes_its_laps
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -62,7 +62,7 @@ async fn the_latest_reported_lapse_of_the_sessions_conversation_becomes_its_laps
             written_in: Some(settled.turns[0].id),
             written_by: ModelId::new("claude-fixture"),
             lifetime_ms: Some(3_600_000),
-            write_price: suru::protocol::CacheWritePrice::Hour,
+            write_price: shaman::protocol::CacheWritePrice::Hour,
             prompt_limit_tokens: Some(128_000),
             // 12,400 tokens at the catalog's 5 credits a thousand written to a
             // cache kept an hour, less 0.5 read, a credit being a cent.

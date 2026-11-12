@@ -145,7 +145,7 @@ impl ManualCompaction {
 }
 
 /// How long a Provider keeps a Session's Prompt Cache while the Session sits
-/// idle, which tells Suru when the cache lapses and the Session goes cold. It
+/// idle, which tells Shaman when the cache lapses and the Session goes cold. It
 /// defaults to none, so a Provider added later is never warned about a lapse
 /// it does not have; every built-in Provider declares its own.
 ///
@@ -186,9 +186,9 @@ pub enum CacheLifetime {
     None,
     /// The Provider reports the moment the cache lapses, as
     /// [`ProviderEvent::PromptCacheLapseReported`] with the output of the
-    /// Model Call that wrote it, and Suru takes that moment as given.
+    /// Model Call that wrote it, and Shaman takes that moment as given.
     Reported,
-    /// Suru assumes the cache lapses this long after the last Provider output
+    /// Shaman assumes the cache lapses this long after the last Provider output
     /// of the Session's latest Turn. It is for a Provider whose cache lapses
     /// on idle but which says nothing of it, neither moment nor Model Call;
     /// no built-in Provider declares it today. A moment the Provider reports all
@@ -196,7 +196,7 @@ pub enum CacheLifetime {
     Assumed(std::time::Duration),
     /// The Provider states, as [`ProviderEvent::PromptCacheRefreshed`], each
     /// Model Call the conversation makes and what it wrote to the cache, and
-    /// Suru infers the lapse from them: the cache lapses the lifetime the
+    /// Shaman infers the lapse from them: the cache lapses the lifetime the
     /// latest call wrote for after that call, or, where it wrote nothing,
     /// the lifetime of the write last observed for the Session, or
     /// `unobserved` where no moment stands to have observed one. Only those
@@ -229,7 +229,7 @@ pub enum ManualCompactionRefusal {
 }
 
 /// The Provider runtimes a production server hosts, in the fixed built-in
-/// order a fresh Landing defaults from. This is the one place Suru names a
+/// order a fresh Landing defaults from. This is the one place Shaman names a
 /// concrete Provider. `data_dir` is where durable Provider-neutral caches —
 /// the models.dev rate table a Codex Cost and any cache saving are estimated
 /// from — live between runs.
@@ -319,7 +319,7 @@ pub(crate) fn built_in_environments() -> Vec<ProviderEnvironment> {
 /// The built-in Providers as a client lists them, in that same fixed order.
 /// Read off the runtimes themselves, so a surface presenting Providers can
 /// neither miss one the server hosts nor call one a name no runtime answers
-/// to. Built once, because neither the set nor a name changes while Suru runs.
+/// to. Built once, because neither the set nor a name changes while Shaman runs.
 pub fn built_in_providers() -> &'static [BuiltInProvider] {
     static PROVIDERS: OnceLock<Vec<BuiltInProvider>> = OnceLock::new();
     PROVIDERS.get_or_init(|| {
@@ -337,7 +337,7 @@ pub fn built_in_providers() -> &'static [BuiltInProvider] {
 }
 
 /// What a Provider no catalog in hand names is called: the name its runtime
-/// declares, where Suru knows the Provider, and its identifier otherwise.
+/// declares, where Shaman knows the Provider, and its identifier otherwise.
 pub fn provider_name(provider: &ProviderId) -> String {
     built_in_providers()
         .iter()
@@ -372,7 +372,7 @@ pub(crate) fn concise_remote_message(message: &str, fallback: &str) -> String {
 }
 
 /// Resolves a Provider's harness executable: the `variable` override first, then `name` for the
-/// PATH to answer. Every Provider follows this convention, and Suru installs or updates none of
+/// PATH to answer. Every Provider follows this convention, and Shaman installs or updates none of
 /// them — the user owns their own CLI.
 pub(crate) fn resolve_executable(variable: &str, name: &str) -> std::ffi::OsString {
     std::env::var_os(variable)
@@ -476,7 +476,7 @@ pub type ProviderEventStream =
     Pin<Box<dyn Stream<Item = Result<AttributedProviderEvent, ProviderError>> + Send>>;
 
 /// A Decision the Provider has definitively received, together with any work
-/// that must wait until Suru has durably recorded that delivery. Owning the
+/// that must wait until Shaman has durably recorded that delivery. Owning the
 /// follow-up future also owns its cleanup: cancellation drops it rather than
 /// stranding a Provider-side stream barrier.
 pub struct ProviderDecisionDelivery {
@@ -498,7 +498,7 @@ impl ProviderDecisionDelivery {
 }
 
 /// One Provider event together with the attribution naming the Session it
-/// lands in. A Provider knows nothing of Suru Sessions, so the attribution
+/// lands in. A Provider knows nothing of Shaman Sessions, so the attribution
 /// speaks in the Provider's own terms — the conversation itself, or a Subagent
 /// it delegated to — and orchestration resolves it to a Session.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -582,7 +582,7 @@ enum ProviderErrorKind {
     /// The Provider knows the native request was already resolved elsewhere.
     DecisionWithdrawn,
     /// The Provider itself cannot be used yet, for a reason the user fixes
-    /// outside Suru, and what the Provider says fixes it. Carried on the error
+    /// outside Shaman, and what the Provider says fixes it. Carried on the error
     /// so whatever asked the runtime to work — Model discovery above all — can
     /// report the condition rather than a bare failure.
     Unavailable {
@@ -648,7 +648,7 @@ impl ProviderError {
         }
     }
 
-    /// The Provider cannot be used until the user fixes `reason` outside Suru,
+    /// The Provider cannot be used until the user fixes `reason` outside Shaman,
     /// which they do as `fix` says: the Provider's own check names it, since
     /// only that check knows which CLI and which account it looked for.
     pub fn unavailable(
@@ -729,8 +729,8 @@ impl fmt::Display for ProviderError {
 impl Error for ProviderError {}
 
 /// What a runtime needs to start one Provider-side session. It deliberately
-/// names no Suru Session: a runtime fulfilling an Errand through the
-/// session-shaped fallback (ADR 0011) has no Suru Session to name, and no
+/// names no Shaman Session: a runtime fulfilling an Errand through the
+/// session-shaped fallback (ADR 0011) has no Shaman Session to name, and no
 /// harness ever read the identifier this used to carry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProviderSessionRequest {
@@ -746,7 +746,7 @@ pub struct ProviderSessionRequest {
     pub broker: Option<BrokerHandoff>,
 }
 
-/// One Errand: a single Provider call Suru makes for its own purposes rather
+/// One Errand: a single Provider call Shaman makes for its own purposes rather
 /// than the user's. It carries one Prompt, the shape the answer should take,
 /// and the Agent Selection to run under — and no Tools, no Session, and nothing
 /// the Provider is expected to remember afterwards. So it carries no Broker
@@ -992,12 +992,12 @@ pub struct ProviderSkillInvocation {
     pub spans: Vec<TextSpan>,
 }
 
-/// What Suru hands a Provider as its Agent's own input, to begin a Turn or to
+/// What Shaman hands a Provider as its Agent's own input, to begin a Turn or to
 /// steer one: the Reports it delivers — Subagent Reports, and a Sidekick's
 /// Sidekick Reports — standing at the head, then the Prompt — or, in a
 /// brokered Subagent's Session, the Delegation — beside them. Input with
 /// Reports and no Prompt is how a Report alone wakes an idle Agent into a
-/// Continuation (ADR 0035). Suru never hands a Provider input holding
+/// Continuation (ADR 0035). Shaman never hands a Provider input holding
 /// neither.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProviderInput {
@@ -1037,7 +1037,7 @@ impl ProviderInput {
     /// words as its transport allows (see [`headed_text`]); input with
     /// Reports and no Prompt is `reports_alone`'s to lower from their text.
     /// `provider` names the harness in the failure for input holding
-    /// neither, which Suru never hands a Provider.
+    /// neither, which Shaman never hands a Provider.
     pub(crate) async fn lower<T>(
         self,
         provider: &str,
@@ -1053,7 +1053,7 @@ impl ProviderInput {
         }
     }
 
-    /// The Reports as the Agent reads them — each in the one text Suru
+    /// The Reports as the Agent reads them — each in the one text Shaman
     /// renders it as, a blank line apart — or `None` for input carrying none.
     pub fn report_text(&self) -> Option<String> {
         (!self.reports.is_empty()).then(|| {
@@ -1176,7 +1176,7 @@ pub enum ProviderSubagentStatus {
     Completed,
     Failed,
     /// The Subagent was stopped rather than finishing or failing — by a stop
-    /// Suru asked for, or by one the Provider ran on its own account.
+    /// Shaman asked for, or by one the Provider ran on its own account.
     Interrupted,
 }
 
@@ -1186,7 +1186,7 @@ pub enum ProviderWatchOutcome {
     Completed,
     Failed,
     /// The Watch was stopped rather than finishing or failing — by a stop
-    /// Suru asked for, or by one the Provider or its Agent ran on its own.
+    /// Shaman asked for, or by one the Provider or its Agent ran on its own.
     Stopped,
     /// The Watch died with the Provider process that ran it, which will never
     /// report it settling: the process was stopped, or replaced by one that
@@ -1387,7 +1387,7 @@ pub enum ProviderEvent {
     /// identity finds that Session even when an earlier process spawned the
     /// Subagent, because it is stored with the Session. `description` is what
     /// the resume asked for; the Subagent's Title stays what its spawn said,
-    /// and its rows keep its spawn's name. `name` is used only when Suru holds
+    /// and its rows keep its spawn's name. `name` is used only when Shaman holds
     /// no Session for the identity at all, and so records the resume as a new
     /// Subagent rather than losing it.
     SubagentResumed {
@@ -1431,7 +1431,7 @@ pub enum ProviderEvent {
     /// woke the Subagent heads the Turn it next works in, whatever began it,
     /// and is recorded as the resume begins that Turn, before this event can
     /// arrive. It is no output of any Turn of the delegating Session's, so it
-    /// never begins a Continuation there. One naming a Subagent Suru stopped
+    /// never begins a Continuation there. One naming a Subagent Shaman stopped
     /// trails it as a late echo, and stands nowhere; one naming a Subagent
     /// with no working stretch otherwise is an invalid event, which fails the
     /// Turn it would have landed in by its attribution, as any invalid event
@@ -1440,7 +1440,7 @@ pub enum ProviderEvent {
         subagent_id: ProviderSubagentId,
         delegation: String,
     },
-    /// A settled Subagent's own Watch woke it, or input Suru handed it itself
+    /// A settled Subagent's own Watch woke it, or input Shaman handed it itself
     /// — a Subagent Report (ADR 0035) — began a turn of its: the same agent
     /// works on in the same conversation, though no Agent delegated anything
     /// to it. So it is no resume (ADR 0031) and gains no row in any
@@ -1508,7 +1508,7 @@ pub enum ProviderEvent {
     /// whose compaction runs in a native turn it began on its own reports
     /// [`Self::ContinuationStarted`] first, so an interrupt — or the next
     /// Prompt's delivery — stops that turn rather than only the Continuation
-    /// Suru holds it in.
+    /// Shaman holds it in.
     CompactionStarted,
     /// The Provider's Compaction completed, with the Context Fill before and
     /// after in tokens where it reported them. A side it leaves out is read
@@ -1518,7 +1518,7 @@ pub enum ProviderEvent {
     /// the moment it stands. `summary` is what the Agent was left with, where
     /// the Provider gave it, as the Provider's summarising call wrote it —
     /// unwrapped of whatever the Provider put around it for the Agent, and
-    /// uncapped, since orchestration stores it under Suru's cap.
+    /// uncapped, since orchestration stores it under Shaman's cap.
     CompactionCompleted {
         before_tokens: Option<u64>,
         after_tokens: Option<u64>,
@@ -1553,7 +1553,7 @@ pub enum ProviderEvent {
     },
     /// A Model Call of the conversation the event is attributed to used its
     /// Prompt Cache, which keeps the cache from lapsing, as a Provider
-    /// declaring [`CacheLifetime::Inferred`] states each one. Suru takes the
+    /// declaring [`CacheLifetime::Inferred`] states each one. Shaman takes the
     /// moment it arrives, on the Server's clock, as the moment of the call. Only the owning Session's are kept, and one is no output of
     /// any Turn on its own: it begins no Continuation.
     PromptCacheRefreshed {
@@ -1945,7 +1945,7 @@ fn add_reported_counts(current: Option<u64>, next: Option<u64>) -> Option<u64> {
         .and_then(|(current, next)| current.checked_add(next))
 }
 
-/// A Provider Suru hosts.
+/// A Provider Shaman hosts.
 ///
 /// Its declarations — [`Self::cache_lifetime`], [`Self::manual_compaction`],
 /// [`Self::takes_routing_tier`] and [`Self::routes_calls`] — are read with the
@@ -2319,7 +2319,7 @@ pub trait ProviderSession: Send + Sync + 'static {
     /// Turn is then recorded and priced under. How the
     /// Compaction goes arrives on the event stream like any other, as
     /// [`ProviderEvent::CompactionStarted`] and its completion or failure,
-    /// and the Turn's terminal event follows. Suru asks only while the
+    /// and the Turn's terminal event follows. Shaman asks only while the
     /// Session is idle, which it judges itself rather than leaving to the
     /// Provider. Defaulted to a refusal to match the runtime's
     /// [`ProviderRuntime::manual_compaction`] default; a runtime that declares
@@ -2375,10 +2375,10 @@ pub trait ProviderSession: Send + Sync + 'static {
     /// that Subagent's own input, through the Provider's route to it: a
     /// Subagent Report to a native Subagent that delegated through the Broker
     /// (ADR 0035). A settled Subagent wakes into a Continuation of its own
-    /// Session, which Suru opens once the Provider takes the input, and whose
+    /// Session, which Shaman opens once the Provider takes the input, and whose
     /// events the Provider attributes to the Subagent until its next settle;
     /// a working one is steered. Defaulted to a refusal, so a Provider that
-    /// lets Suru address its Subagents has to say how.
+    /// lets Shaman address its Subagents has to say how.
     fn deliver_to_subagent(
         &self,
         subagent_id: ProviderSubagentId,
@@ -2558,14 +2558,14 @@ mod tests {
                 environment
                     .carried
                     .iter()
-                    .any(|name| name.starts_with("SURU_") && name.ends_with("_PATH")),
+                    .any(|name| name.starts_with("SHAMAN_") && name.ends_with("_PATH")),
                 "{} names no executable override: {environment:?}",
                 runtime.display_name()
             );
         }
     }
 
-    const FIXTURE_PATH_ENV: &str = "SURU_FIXTURE_PROVIDER_PATH";
+    const FIXTURE_PATH_ENV: &str = "SHAMAN_FIXTURE_PROVIDER_PATH";
 
     #[test]
     fn a_remote_error_keeps_actionable_detail_past_the_old_cap() {

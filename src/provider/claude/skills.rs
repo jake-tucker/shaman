@@ -65,7 +65,7 @@ impl ClaudeSkills {
 
         // Claude's dedicated Skill projection contains what the model can invoke. Initialization's
         // broader command projection also carries Skills reserved for explicit user invocation,
-        // mixed with built-in slash commands. Both are needed for Suru's user-facing catalog.
+        // mixed with built-in slash commands. Both are needed for Shaman's user-facing catalog.
         let listed = async {
             let initialized = transport
                 .control_request(&ControlRequest::Initialize, request_timeout)
@@ -289,7 +289,7 @@ fn scoped_metadata(description: &str) -> Option<SafeMetadata> {
 
 fn opaque_skill_id(execution_directory: &Path, skill: &NativeSkill, scope: &str) -> SkillId {
     let mut hash = blake3::Hasher::new();
-    hash.update(b"suru:claude-skill:v1\0");
+    hash.update(b"shaman:claude-skill:v1\0");
     hash.update(execution_directory.to_string_lossy().as_bytes());
     for component in [&skill.name, &skill.description, &skill.argument_hint, scope] {
         hash.update(b"\0");

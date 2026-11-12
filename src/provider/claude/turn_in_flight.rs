@@ -13,7 +13,7 @@
 //! loop's own `result`; one still queued when the loop ends begins a loop of its own once that
 //! `result` is out, which ends with a `result` of its own
 //! (docs/validation/0407-claude-folded-steer.md). So a `result` Settles the Turn unless a message
-//! written into it is still waiting for a loop to take it up, and Suru keeps the whole stretch
+//! written into it is still waiting for a loop to take it up, and Shaman keeps the whole stretch
 //! inside the one Turn the steer joined. A CLI that has never reported a message's fate gives no
 //! such account: there every `result` Settles the Turn, and a loop a message still queued begins
 //! afterwards is a native Continuation — never a Turn left waiting on a `result` that a message
@@ -62,7 +62,7 @@ struct TurnState {
     reports_lifecycle: bool,
     /// The tasks the CLI has reported started and not yet reported settled.
     tasks: BTreeSet<String>,
-    /// Of those tasks, the ones running Subagents. A Subagent is known to the rest of Suru by its
+    /// Of those tasks, the ones running Subagents. A Subagent is known to the rest of Shaman by its
     /// task id — the identity a resume starts again, and the one the CLI's stop request takes —
     /// so this is the lookup a per-Subagent stop resolves through, whichever stretch is running.
     subagents: BTreeSet<String>,
@@ -87,7 +87,7 @@ impl TurnInFlight {
         Arc::new(Self::default())
     }
 
-    /// A Turn is beginning, and its Prompt is to be written under the uuid this answers. Suru runs
+    /// A Turn is beginning, and its Prompt is to be written under the uuid this answers. Shaman runs
     /// one Turn at a time, so this replaces what was in flight rather than adding to it: a message
     /// left over from a Turn that ended some way this Session never heard about belongs to nothing
     /// now.
@@ -102,7 +102,7 @@ impl TurnInFlight {
     }
 
     /// A Compaction request's Turn is beginning, and Claude's `/compact` is to be written under the
-    /// uuid this answers. To the CLI it is a loop like any other, which an interrupt stops; Suru
+    /// uuid this answers. To the CLI it is a loop like any other, which an interrupt stops; Shaman
     /// steers nothing into it (ADR 0041), and tells it apart so the projection reads the command's
     /// outcome as the Compaction's.
     pub(super) fn begin_compaction(&self, selection: AgentSelection) -> String {
@@ -119,7 +119,7 @@ impl TurnInFlight {
 
     /// A fresh native message after a result begins another loop, including when a background
     /// command (rather than a Subagent) woke Claude. Its result and interrupt belong to that
-    /// loop before any of its blocks are projected. No message of Suru's began it, so none is
+    /// loop before any of its blocks are projected. No message of Shaman's began it, so none is
     /// waiting on it.
     pub(super) fn begin_continuation(&self) -> Option<AgentSelection> {
         let mut state = self.state();

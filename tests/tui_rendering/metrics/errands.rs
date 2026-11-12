@@ -1,4 +1,4 @@
-//! The Errands series: Suru's own work, which the Server counts under a
+//! The Errands series: Shaman's own work, which the Server counts under a
 //! reserved key whatever the breakdown, drawn as a series of its own that
 //! never folds into Other and always takes the colour reserved for it.
 
@@ -11,7 +11,7 @@ use super::{
 use crate::tui_rendering::support::invoke;
 use crossterm::event::KeyModifiers;
 use ratatui::style::Color;
-use suru::{
+use shaman::{
     protocol::{UsageMetricsKey, UsageMetricsQuery, UsageMetricsReport},
     tui::{Application, SemanticCommandId},
 };

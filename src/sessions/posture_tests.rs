@@ -494,6 +494,6 @@ fn a_brokered_subagents_posture_is_its_spawners_on_its_provider_and_the_tables_o
     assert_eq!(
         spawned(Some(spawner), "gemini"),
         None,
-        "and a Provider with no native posture Suru can name holds none"
+        "and a Provider with no native posture Shaman can name holds none"
     );
 }

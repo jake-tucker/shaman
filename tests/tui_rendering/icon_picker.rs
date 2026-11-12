@@ -10,8 +10,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use std::path::Path;
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         AppearanceSettings, EffectiveSettings, Outlook, SessionId, SessionListItem,
@@ -22,6 +21,7 @@ use suru::{
         WorkspaceListRequest,
     },
 };
+use std::path::Path;
 
 fn shown_with_icons(show_icons: bool) -> EffectiveSettings {
     EffectiveSettings {

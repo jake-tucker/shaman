@@ -1,11 +1,11 @@
 use super::*;
 use crate::support::PROGRESS_DEADLINE;
+use shaman::source_control::{
+    GitSourceControl, PreparationCheckpoint, PreparationObserver, SourceControl,
+};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
-};
-use suru::source_control::{
-    GitSourceControl, PreparationCheckpoint, PreparationObserver, SourceControl,
 };
 async fn target(path: &Path) -> CheckoutRemovalTarget {
     let resolved = GitSourceControl::default().discover(path).await;
@@ -308,7 +308,7 @@ async fn removal_reconfirms_new_ignored_contents_and_retains_fresh_revision_hist
 
 #[tokio::test]
 async fn removal_waits_for_native_startup_and_force_cannot_remove_surviving_subagent_checkout() {
-    use suru::provider::{ProviderSubagentId, ProviderSubagentStatus};
+    use shaman::provider::{ProviderSubagentId, ProviderSubagentStatus};
     let layout = Layout::new();
     let (runtime, mut provider) = ControlledProvider::new();
     let server = server::spawn_with_provider(layout.config("working"), runtime)
@@ -467,7 +467,7 @@ struct RefusingRemoval {
 
 #[async_trait::async_trait]
 impl SourceControl for RefusingRemoval {
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -476,8 +476,8 @@ impl SourceControl for RefusingRemoval {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -485,7 +485,7 @@ impl SourceControl for RefusingRemoval {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
     async fn discover(&self, directory: &Path) -> ResolvedWorkspace {
@@ -522,10 +522,10 @@ impl SourceControl for RefusingRemoval {
 async fn failed_removal_restores_branch_recovery_facts() {
     let layout = Layout::new();
     let base = read_git(&layout.main, &["rev-parse", "main"]);
-    git(&layout.main, &["config", "branch.topic.suru-base", &base]);
+    git(&layout.main, &["config", "branch.topic.shaman-base", &base]);
     git(
         &layout.main,
-        &["config", "branch.topic.suru-base-branch", "main"],
+        &["config", "branch.topic.shaman-base-branch", "main"],
     );
     let (runtime, mut provider) = ControlledProvider::new();
     let server = server::spawn_with_source_control(

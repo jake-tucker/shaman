@@ -14,7 +14,7 @@ use crate::claude_integration::support::{
 };
 use crate::support::usage::{self, by_model, share, usd};
 use serde_json::json;
-use suru::protocol::{
+use shaman::protocol::{
     AgentSelection, Cost, ModelId, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection,
     ModelOptionValue, ModelShare, Outlook, ProviderId, SessionSnapshot, TurnStatus, Usage,
     UsageMetricsKey, UsageMetricsModelView, UsageMetricsReport,

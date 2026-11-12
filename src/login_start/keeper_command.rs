@@ -12,9 +12,9 @@ use crate::IdentityStoreChoice;
 /// shell does.
 ///
 /// Every registration on every machine holds this, in a file or Task no later
-/// build rewrites, until `suru server install` is run again. So these spellings
+/// build rewrites, until `shaman server install` is run again. So these spellings
 /// are a persisted interface: a build renaming one would fail at the next login,
-/// silently, while `suru server status` said registered. Accept an old spelling
+/// silently, while `shaman server status` said registered. Accept an old spelling
 /// as an alias, and never remove one. The test
 /// `a_keepers_flags_are_spelled_as_registrations_have_them` holds them still.
 #[derive(Clone, Debug, Eq, PartialEq, clap::Args)]
@@ -155,7 +155,7 @@ mod tests {
 
     fn every_argument() -> KeeperArguments {
         KeeperArguments {
-            executable: PathBuf::from("/opt/suru"),
+            executable: PathBuf::from("/opt/shaman"),
             state_base_dir: PathBuf::from("/state dir"),
             data_base_dir: PathBuf::from("/data"),
             config_dir: Some(PathBuf::from("/config")),
@@ -178,7 +178,7 @@ mod tests {
         let arguments = every_argument();
         let words = arguments.words().unwrap();
         let ReadBackCommand::Keeper(read) = ReadBack::try_parse_from(
-            std::iter::once("suru").chain(words.iter().map(String::as_str)),
+            std::iter::once("shaman").chain(words.iter().map(String::as_str)),
         )
         .unwrap()
         .command;
@@ -195,7 +195,7 @@ mod tests {
             [
                 "__keep-server",
                 "--executable",
-                "/opt/suru",
+                "/opt/shaman",
                 "--state-dir",
                 "/state dir",
                 "--data-dir",
@@ -220,9 +220,9 @@ mod tests {
     fn a_registration_runs_the_binary_its_keeper_launches() {
         let keep = KeepCommand::new(&every_argument()).unwrap();
         let words = keep.words().collect::<Vec<_>>();
-        assert_eq!(words[0], "/opt/suru");
+        assert_eq!(words[0], "/opt/shaman");
         assert_eq!(words[1], KEEPER_COMMAND);
-        assert_eq!(words[3], "/opt/suru");
+        assert_eq!(words[3], "/opt/shaman");
     }
 
     #[test]

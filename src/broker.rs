@@ -1,4 +1,4 @@
-//! The Broker: the Tools Suru itself offers every Provider Session, served as
+//! The Broker: the Tools Shaman itself offers every Provider Session, served as
 //! a streamable-HTTP MCP endpoint on the Server's loopback listener (ADR 0034).
 //!
 //! Each time a Session's Provider is started it is handed a [`BrokerHandoff`]
@@ -25,7 +25,7 @@
 //! they are never handed the Broker. With the `broker.enabled` Setting off no
 //! Provider start is handed an endpoint and the endpoint answers nothing.
 //!
-//! Everything MCP-specific stays in [`mcp`]; the Tools themselves, in Suru's
+//! Everything MCP-specific stays in [`mcp`]; the Tools themselves, in Shaman's
 //! own terms, are in [`tools`]. What each harness is handed is lowered by that
 //! harness onto its own per-Session seam, from the handoff and the constants
 //! here, which are the same in every one — and so is the note each harness

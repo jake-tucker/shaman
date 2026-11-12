@@ -3,7 +3,7 @@
 
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Frame, Terminal, backend::TestBackend};
-use suru::tui::{Application, ApplicationTransition};
+use shaman::tui::{Application, ApplicationTransition};
 
 pub fn rendered_rows_at(
     width: u16,

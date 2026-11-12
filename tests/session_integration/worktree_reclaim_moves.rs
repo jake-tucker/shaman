@@ -111,13 +111,17 @@ fn record_branch_base(layout: &ReclaimLayout, name: &str) {
     let base = read_git(&layout.main, &["rev-parse", "main"]);
     git(
         &layout.main,
-        &["config", &format!("branch.feature/{name}.suru-base"), &base],
+        &[
+            "config",
+            &format!("branch.feature/{name}.shaman-base"),
+            &base,
+        ],
     );
     git(
         &layout.main,
         &[
             "config",
-            &format!("branch.feature/{name}.suru-base-branch"),
+            &format!("branch.feature/{name}.shaman-base-branch"),
             "main",
         ],
     );
@@ -385,7 +389,7 @@ async fn session_with_a_settled_native_subagent(
         .await
         .unwrap()
         .succeed();
-    let child = suru::provider::ProviderSubagentId::new("left-behind");
+    let child = shaman::provider::ProviderSubagentId::new("left-behind");
     connection
         .emit_and_wait_until_observed(ProviderEvent::SubagentStarted {
             subagent_id: child.clone(),
@@ -397,7 +401,7 @@ async fn session_with_a_settled_native_subagent(
     connection
         .emit_and_wait_until_observed(ProviderEvent::SubagentCompleted {
             subagent_id: child,
-            status: suru::provider::ProviderSubagentStatus::Completed,
+            status: shaman::provider::ProviderSubagentStatus::Completed,
         })
         .await;
     connection
@@ -1253,14 +1257,14 @@ async fn a_removal_preview_says_a_pending_move_is_bound_there_and_removal_is_ref
 struct FailCheckoutCreation;
 
 #[async_trait::async_trait]
-impl suru::source_control::PreparationObserver for FailCheckoutCreation {
+impl shaman::source_control::PreparationObserver for FailCheckoutCreation {
     async fn checkpoint(
         &self,
-        at: suru::source_control::PreparationCheckpoint,
+        at: shaman::source_control::PreparationCheckpoint,
         _preparation: &PreparedCheckout,
     ) -> Result<(), String> {
         match at {
-            suru::source_control::PreparationCheckpoint::CheckoutCreated => {
+            shaman::source_control::PreparationCheckpoint::CheckoutCreated => {
                 Err("the disk gave out".to_owned())
             }
             _ => Ok(()),

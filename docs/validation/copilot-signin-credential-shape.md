@@ -46,13 +46,13 @@ use the credential-free `AuthIdentity`, yet the `account.getCurrentAuth` result 
 `AuthInfo`. The SDK snapshot regenerated for CLI 1.0.89 (`references/copilot-sdk`) carries the
 same types, so an SDK upgrade does not change this.
 
-## What Suru does about it
+## What Shaman does about it
 
-Suru asks `account.getCurrentAuth` through the SDK client's raw `call` and reads the answer only
+Shaman asks `account.getCurrentAuth` through the SDK client's raw `call` and reads the answer only
 as far as it needs it: whether `authInfo` is present, and what `authErrors` says when it is not
 (`CurrentAuth` in `src/provider/copilot/transport.rs`). The credentials stay the CLI's own, which
 is where ADR-0008 wants them. The scripted CLI answers the sign-in check the way 1.0.88 does, and
-`a_cli_signed_in_through_the_gh_cli_serves_its_models_without_showing_suru_a_token` fails against
+`a_cli_signed_in_through_the_gh_cli_serves_its_models_without_showing_shaman_a_token` fails against
 the SDK's typed query.
 
 A Model Catalog discovery that fails is now also written to the Log at `warn`
@@ -64,5 +64,5 @@ user on the tab and never for the Log.
 ## Left open
 
 The SDK's typing of the `account.getCurrentAuth` result is the upstream defect: it should be
-`AuthIdentity`. Until it is, every SDK release keeps the mismatch, and Suru keeps reading the wire
+`AuthIdentity`. Until it is, every SDK release keeps the mismatch, and Shaman keeps reading the wire
 itself.

@@ -59,7 +59,7 @@ async fn what_a_subagent_asked_for_the_sidekicks_turn_is_reported_though_another
         owed.steered("what the Subagent asked for the Sidekick's Turn is reported")
             .await,
         format!(
-            "Sidekick Report from Suru: a Subagent of the Session \"{ASKED}\" you set to work on \
+            "Sidekick Report from Shaman: a Subagent of the Session \"{ASKED}\" you set to work on \
              the Remote \"{REMOTE}\" asked a Questionnaire, which no longer waits on anyone. The \
              Session's session_id is {begun}, and the Subagent's is {child}, each at origin \
              \"{REMOTE}\": given the Subagent's, read_session says how it was settled."
@@ -172,12 +172,12 @@ async fn more_interventions_than_are_told_one_by_one_in_a_reading_are_counted_in
         steer.succeed();
     }
     let one = format!(
-        "Sidekick Report from Suru: the Session \"{ASKED}\" you set to work on the Remote \
+        "Sidekick Report from Shaman: the Session \"{ASKED}\" you set to work on the Remote \
          \"{REMOTE}\" asks an Approval, which waits on the user's Decision. Its session_id is \
          {begun} and its origin \"{REMOTE}\": read_session says what it asks."
     );
     let counted = format!(
-        "Sidekick Report from Suru: the Session \"{ASKED}\" you set to work on the Remote \
+        "Sidekick Report from Shaman: the Session \"{ASKED}\" you set to work on the Remote \
          \"{REMOTE}\" asked {} more Questionnaires or Approvals than are told one by one. Its \
          session_id is {begun} and its origin \"{REMOTE}\": read_session gives those still \
          waiting.",

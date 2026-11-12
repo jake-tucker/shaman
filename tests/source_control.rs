@@ -1,11 +1,11 @@
 //! Portable real Git layouts exercise the production source control adapter.
+use shaman::{
+    protocol::*,
+    source_control::{CloneFailure, CloneStaging, GitSourceControl, SourceControl},
+};
 use std::{
     path::{Path, PathBuf},
     process::Command,
-};
-use suru::{
-    protocol::*,
-    source_control::{CloneFailure, CloneStaging, GitSourceControl, SourceControl},
 };
 
 fn git(directory: &Path, args: &[&str]) {
@@ -14,10 +14,10 @@ fn git(directory: &Path, args: &[&str]) {
         .arg(directory)
         .args(args)
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_AUTHOR_NAME", "Suru Test")
-        .env("GIT_AUTHOR_EMAIL", "suru@example.invalid")
-        .env("GIT_COMMITTER_NAME", "Suru Test")
-        .env("GIT_COMMITTER_EMAIL", "suru@example.invalid")
+        .env("GIT_AUTHOR_NAME", "Shaman Test")
+        .env("GIT_AUTHOR_EMAIL", "shaman@example.invalid")
+        .env("GIT_COMMITTER_NAME", "Shaman Test")
+        .env("GIT_COMMITTER_EMAIL", "shaman@example.invalid")
         .output()
         .unwrap();
     assert!(
@@ -28,7 +28,7 @@ fn git(directory: &Path, args: &[&str]) {
 }
 fn root() -> (tempfile::TempDir, PathBuf) {
     let temporary = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temporary.path()).unwrap();
+    let root = shaman::paths::canonical(temporary.path()).unwrap();
     (temporary, root)
 }
 fn init(root: &Path) {
@@ -76,7 +76,7 @@ async fn reclaim_accepts_a_preparation_lock_only_with_git_owned_marker_and_ref_e
             .strip_prefix("gitdir: ")
             .unwrap(),
     );
-    let reason = std::fs::read_to_string(metadata.join("suru-preparation")).unwrap();
+    let reason = std::fs::read_to_string(metadata.join("shaman-preparation")).unwrap();
     git(
         &main,
         &[
@@ -101,7 +101,7 @@ async fn reclaim_accepts_a_preparation_lock_only_with_git_owned_marker_and_ref_e
     assert!(!plan.destination.path.exists());
 }
 
-/// Only what Suru made counts as made, and one Suru recreated keeps counting
+/// Only what Shaman made counts as made, and one Shaman recreated keeps counting
 /// although the marker went with the registration a removal took.
 #[tokio::test]
 async fn a_checkout_is_made_by_preparing_it_or_recovering_it_and_not_by_where_it_stands() {
@@ -185,7 +185,7 @@ async fn managed_branch_records_the_planned_source_commit_and_branch_when_claime
     assert_eq!(
         read_git(
             &main,
-            &["config", "--get", &format!("branch.{branch}.suru-base")],
+            &["config", "--get", &format!("branch.{branch}.shaman-base")],
         ),
         *source_commit
     );
@@ -195,7 +195,7 @@ async fn managed_branch_records_the_planned_source_commit_and_branch_when_claime
             &[
                 "config",
                 "--get",
-                &format!("branch.{branch}.suru-base-branch"),
+                &format!("branch.{branch}.shaman-base-branch"),
             ],
         ),
         "main"
@@ -247,7 +247,7 @@ async fn hooks_run_with_the_shell_and_tools_their_git_ships() {
     let ran = std::fs::read_to_string(&ran).unwrap_or_default();
     assert!(
         ran.lines().any(|state| state == "committed"),
-        "the branch Suru created ran the reference-transaction hook: {ran:?}"
+        "the branch Shaman created ran the reference-transaction hook: {ran:?}"
     );
 }
 
@@ -316,10 +316,10 @@ async fn branch_outcome_is_deleted_only_when_the_managed_tip_is_in_its_local_sou
     );
 
     let base = read_git(&main, &["rev-parse", "main"]);
-    git(&main, &["config", "branch.managed.suru-base", &base]);
+    git(&main, &["config", "branch.managed.shaman-base", &base]);
     git(
         &main,
-        &["config", "branch.managed.suru-base-branch", "main"],
+        &["config", "branch.managed.shaman-base-branch", "main"],
     );
     assert_eq!(
         adapter
@@ -351,10 +351,10 @@ async fn remote_tracking_refs_are_considered_only_after_the_source_branch_is_del
     commit(&linked_root);
     let base = read_git(&main, &["rev-parse", "main"]);
     let managed = read_git(&main, &["rev-parse", "managed"]);
-    git(&main, &["config", "branch.managed.suru-base", &base]);
+    git(&main, &["config", "branch.managed.shaman-base", &base]);
     git(
         &main,
-        &["config", "branch.managed.suru-base-branch", "main"],
+        &["config", "branch.managed.shaman-base-branch", "main"],
     );
     git(
         &main,
@@ -395,10 +395,10 @@ async fn unreadable_ref_store_does_not_authorize_remote_fallback() {
     commit(&linked_root);
     let base = read_git(&main, &["rev-parse", "main"]);
     let managed = read_git(&main, &["rev-parse", "managed"]);
-    git(&main, &["config", "branch.managed.suru-base", &base]);
+    git(&main, &["config", "branch.managed.shaman-base", &base]);
     git(
         &main,
-        &["config", "branch.managed.suru-base-branch", "main"],
+        &["config", "branch.managed.shaman-base-branch", "main"],
     );
     git(
         &main,
@@ -428,10 +428,10 @@ async fn removing_a_fully_merged_worktree_deletes_its_branch() {
     let linked_root = root.join("linked");
     linked(&main, &linked_root, "managed");
     let base = read_git(&main, &["rev-parse", "main"]);
-    git(&main, &["config", "branch.managed.suru-base", &base]);
+    git(&main, &["config", "branch.managed.shaman-base", &base]);
     git(
         &main,
-        &["config", "branch.managed.suru-base-branch", "main"],
+        &["config", "branch.managed.shaman-base-branch", "main"],
     );
     let adapter = GitSourceControl::default();
     let target = removal_target(&adapter, &linked_root).await;
@@ -465,10 +465,10 @@ async fn removal_never_broadens_a_confirmed_retained_branch_outcome() {
     let linked_root = root.join("linked");
     linked(&main, &linked_root, "managed");
     let base = read_git(&main, &["rev-parse", "main"]);
-    git(&main, &["config", "branch.managed.suru-base", &base]);
+    git(&main, &["config", "branch.managed.shaman-base", &base]);
     git(
         &main,
-        &["config", "branch.managed.suru-base-branch", "main"],
+        &["config", "branch.managed.shaman-base-branch", "main"],
     );
     let adapter = GitSourceControl::default();
     let target = removal_target(&adapter, &linked_root).await;
@@ -504,10 +504,10 @@ async fn branch_checked_out_elsewhere_is_retained_after_its_selected_worktree_is
         ],
     );
     let base = read_git(&main, &["rev-parse", "main"]);
-    git(&main, &["config", "branch.managed.suru-base", &base]);
+    git(&main, &["config", "branch.managed.shaman-base", &base]);
     git(
         &main,
-        &["config", "branch.managed.suru-base-branch", "main"],
+        &["config", "branch.managed.shaman-base-branch", "main"],
     );
     let adapter = GitSourceControl::default();
     let target = removal_target(&adapter, &linked_root).await;
@@ -1075,7 +1075,7 @@ async fn clone_landed(
     destination: &Path,
     branch: Option<&str>,
     timeout: std::time::Duration,
-) -> Result<suru::protocol::Workspace, CloneFailure> {
+) -> Result<shaman::protocol::Workspace, CloneFailure> {
     adapter
         .clone_repository(
             url,
@@ -1252,7 +1252,7 @@ async fn a_clone_needing_a_credential_git_cannot_find_fails_at_once() {
             }
             let _ = connection
                 .write_all(
-                    b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"suru\"\r\n\
+                    b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"shaman\"\r\n\
                       Content-Length: 0\r\nConnection: close\r\n\r\n",
                 )
                 .await;
@@ -1345,11 +1345,11 @@ async fn a_clone_is_made_out_of_sight_and_one_abandoned_leaves_nothing_behind() 
 /// from one run to the next.
 #[cfg(unix)]
 #[derive(Default)]
-struct SharedRecords(std::sync::Mutex<Vec<suru::source_control::StagingRecord>>);
+struct SharedRecords(std::sync::Mutex<Vec<shaman::source_control::StagingRecord>>);
 
 #[cfg(unix)]
-impl suru::source_control::StagingRecords for SharedRecords {
-    fn record(&self, record: &suru::source_control::StagingRecord) -> Result<(), String> {
+impl shaman::source_control::StagingRecords for SharedRecords {
+    fn record(&self, record: &shaman::source_control::StagingRecord) -> Result<(), String> {
         let mut records = self.0.lock().unwrap();
         records.retain(|kept| kept.directory != record.directory);
         records.push(record.clone());
@@ -1364,7 +1364,7 @@ impl suru::source_control::StagingRecords for SharedRecords {
         Ok(())
     }
 
-    fn recorded(&self) -> Result<Vec<suru::source_control::StagingRecord>, String> {
+    fn recorded(&self) -> Result<Vec<shaman::source_control::StagingRecord>, String> {
         Ok(self.0.lock().unwrap().clone())
     }
 }
@@ -1379,7 +1379,7 @@ impl suru::source_control::StagingRecords for SharedRecords {
 #[cfg(unix)]
 #[tokio::test]
 async fn a_clone_whose_root_goes_away_midway_is_removed_by_the_first_start_once_it_is_back() {
-    use suru::source_control::StagingRecords as _;
+    use shaman::source_control::StagingRecords as _;
 
     let (_temporary, root) = root();
     let projects = root.join("projects");

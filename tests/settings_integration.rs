@@ -4,8 +4,7 @@
 //! managed client over the real protocol, against temp config directories only.
 
 use crate::support::deadlines::PROGRESS_DEADLINE;
-use std::{net::IpAddr, path::Path};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
     protocol::{
         AgentSelection, AppearanceMode, AsideVisibility, AutoReclaim, AutoSettle,
@@ -17,6 +16,7 @@ use suru::{
     },
     server::{self, ServerConfig},
 };
+use std::{net::IpAddr, path::Path};
 use tokio::time::timeout;
 
 async fn attach(state_dir: &Path, channel: &str) -> (ManagedClient, SettingsSnapshot) {
@@ -72,7 +72,8 @@ async fn appearance_theme_round_trips_byte_preservingly_and_reaches_every_client
         "  \"transcript\": { \"reasoningVisibility\": \"shown\" },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), original)
+        .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-theme")
             .expect("configure server")
@@ -176,7 +177,8 @@ async fn appearance_mode_round_trips_byte_preservingly_and_reaches_every_client(
         "  \"transcript\": { \"reasoningVisibility\": \"shown\" },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), original)
+        .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-mode")
             .expect("configure server")
@@ -218,7 +220,7 @@ async fn appearance_mode_round_trips_byte_preservingly_and_reaches_every_client(
 #[tokio::test]
 async fn nerd_font_icons_round_trip_byte_preservingly_and_reach_every_client() {
     assert!(
-        !suru::protocol::EffectiveSettings::default()
+        !shaman::protocol::EffectiveSettings::default()
             .appearance
             .show_icons,
         "Nerd Font icons stay off until the reader asks for them"
@@ -233,7 +235,8 @@ async fn nerd_font_icons_round_trip_byte_preservingly_and_reach_every_client() {
         "  \"transcript\": { \"reasoningVisibility\": \"shown\" },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), original)
+        .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-icons")
             .expect("configure server")
@@ -275,7 +278,7 @@ async fn an_invalid_appearance_mode_is_ignored_alone_and_names_all_three_accepte
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             "appearance": { "mode": "sepia" },
             "transcript": { "reasoningVisibility": "shown" }
@@ -314,7 +317,7 @@ async fn an_unknown_theme_name_is_a_valid_open_setting_pin() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             "appearance": { "theme": "my-missing-theme" },
             "transcript": { "reasoningVisibility": "shown" }
@@ -349,7 +352,7 @@ async fn a_pinned_setting_reaches_every_connecting_client_and_the_rest_default()
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             // sessions should open with everything visible.
             "transcript": {
@@ -386,7 +389,7 @@ async fn a_pinned_setting_reaches_every_connecting_client_and_the_rest_default()
 
 #[tokio::test]
 async fn serving_settings_pin_from_the_config_document_with_dual_stack_defaults() {
-    let defaults = suru::protocol::EffectiveSettings::default().serving;
+    let defaults = shaman::protocol::EffectiveSettings::default().serving;
     assert!(!defaults.enabled);
     assert_eq!(defaults.port, 7777);
     assert_eq!(
@@ -398,7 +401,7 @@ async fn serving_settings_pin_from_the_config_document_with_dual_stack_defaults(
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             "serving": {
                 "enabled": false,
@@ -452,7 +455,7 @@ async fn serving_settings_pin_from_the_config_document_with_dual_stack_defaults(
 #[tokio::test]
 async fn the_serving_listener_is_on_by_default_and_pins_beside_the_other_serving_settings() {
     assert!(
-        suru::protocol::EffectiveSettings::default()
+        shaman::protocol::EffectiveSettings::default()
             .serving
             .listener,
         "a serving server listens at its own addresses unless its user says otherwise"
@@ -466,7 +469,8 @@ async fn the_serving_listener_is_on_by_default_and_pins_beside_the_other_serving
         "  \"serving\": { \"listener\":    false, \"port\": 8443 },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), original)
+        .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-serving-listener")
             .expect("configure server")
@@ -513,7 +517,7 @@ async fn showing_reasoning_pins_from_a_document_and_resets_to_the_hidden_default
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             // I want to read the model think.
             "transcript": { "reasoningVisibility": "shown" },
@@ -565,7 +569,7 @@ async fn hiding_tool_calls_pins_from_a_document_and_resets_to_the_shown_default(
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             // Only the answers, please.
             "transcript": { "toolCallVisibility": "hidden", "reasoningVisibility": "shown" },
@@ -580,7 +584,7 @@ async fn hiding_tool_calls_pins_from_a_document_and_resets_to_the_shown_default(
     .await
     .expect("spawn server");
     assert_eq!(
-        suru::protocol::EffectiveSettings::default()
+        shaman::protocol::EffectiveSettings::default()
             .transcript
             .tool_call_visibility,
         ToolCallVisibility::Shown,
@@ -647,7 +651,8 @@ async fn tool_call_visibility_mutations_land_in_the_document_and_reach_every_cli
         "  \"transcript\": { \"reasoningVisibility\": \"shown\" },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), original)
+        .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-tool-call-mutations")
             .expect("configure server")
@@ -725,7 +730,7 @@ async fn an_invalid_tool_call_visibility_is_ignored_alone_and_names_both_accepte
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             "transcript": { "toolCallVisibility": "invisible", "reasoningVisibility": "shown" }
         }"#,
@@ -823,7 +828,8 @@ async fn image_previews_default_on_pin_off_through_the_config_document_and_reset
         "  \"transcript\": { \"reasoningVisibility\": \"shown\" },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), original)
+        .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-image-previews")
             .expect("configure server")
@@ -907,7 +913,8 @@ async fn hiding_subsessions_defaults_on_pins_off_through_the_config_document_and
         "  \"sidebar\": { \"autoSettle\": \"off\" },\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), original).expect("write config document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), original)
+        .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-hide-subsessions")
             .expect("configure server")
@@ -977,7 +984,7 @@ async fn command_auto_expansion_pins_a_millisecond_delay_and_resets_to_off() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "transcript": { "commandAutoExpand": 275 } }"#,
     )
     .expect("write config document");
@@ -1019,7 +1026,7 @@ async fn transcript_groups_pin_from_a_document_move_by_mutation_and_reset_to_col
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "transcript": { "groups": "off" } }"#,
     )
     .expect("write config document");
@@ -1031,7 +1038,7 @@ async fn transcript_groups_pin_from_a_document_move_by_mutation_and_reset_to_col
     .await
     .expect("spawn server");
     assert_eq!(
-        suru::protocol::EffectiveSettings::default()
+        shaman::protocol::EffectiveSettings::default()
             .transcript
             .groups,
         GroupPosture::Collapsed
@@ -1070,7 +1077,7 @@ async fn a_hidden_sidebar_pins_from_a_document_and_resets_to_the_shown_default()
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             // I would rather have the columns.
             "sidebar": { "initialVisibility": "hidden" },
@@ -1113,7 +1120,7 @@ async fn sidebar_initial_width_loads_without_a_product_level_maximum_and_resets(
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "sidebar": { "initialWidth": 1000000 } }"#,
     )
     .expect("write config document");
@@ -1153,7 +1160,7 @@ async fn a_sidebar_width_below_the_floor_is_ignored_individually_with_a_diagnost
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             "sidebar": { "initialWidth": 23 },
             "transcript": { "reasoningVisibility": "shown" }
@@ -1194,7 +1201,7 @@ async fn a_hidden_aside_pins_from_a_document_and_resets_to_the_shown_default() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             // I would rather have the columns.
             "aside": { "initialVisibility": "hidden" },
@@ -1237,7 +1244,7 @@ async fn aside_initial_width_pins_from_a_document_and_resets_to_its_default() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "aside": { "initialWidth": 48 } }"#,
     )
     .expect("write config document");
@@ -1281,7 +1288,7 @@ async fn an_aside_width_below_the_floor_is_ignored_individually_with_a_diagnosti
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             "aside": { "initialWidth": 23 },
             "transcript": { "reasoningVisibility": "shown" }
@@ -1322,7 +1329,7 @@ async fn an_everywhere_sidebar_at_launch_pins_from_a_document_and_resets_to_ever
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             // Every origin is where I look for work.
             "sidebar": { "initialScope": "everywhere" },
@@ -1391,7 +1398,7 @@ async fn an_invalid_sidebar_scope_names_all_three_accepted_values() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "sidebar": { "initialScope": "nearby" } }"#,
     )
     .expect("write config document");
@@ -1428,7 +1435,7 @@ async fn the_auto_settle_setting_pins_from_a_document_and_resets_to_its_default(
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             // A week is how long I leave a thing before it is done with me.
             "sidebar": { "autoSettle": 7 },
@@ -1481,7 +1488,7 @@ async fn the_auto_reclaim_setting_round_trips_both_scalar_forms_and_defaults_to_
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "worktree": { "autoReclaim": 7 } }"#,
     )
     .expect("write config document");
@@ -1526,7 +1533,7 @@ async fn auto_reclaim_rejects_values_below_one_with_the_usual_diagnostic() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "worktree": { "autoReclaim": 0 } }"#,
     )
     .expect("write config document");
@@ -1578,7 +1585,7 @@ const NOT_A_ROOT: &str = "because it is not an absolute path or a path beginning
 #[tokio::test]
 async fn workspace_roots_pin_from_a_document_round_trip_whole_and_reach_every_client() {
     assert!(
-        suru::protocol::EffectiveSettings::default()
+        shaman::protocol::EffectiveSettings::default()
             .workspace
             .roots
             .is_empty(),
@@ -1597,7 +1604,8 @@ async fn workspace_roots_pin_from_a_document_round_trip_whole_and_reach_every_cl
         ),
         named
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), &original).expect("write config document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), &original)
+        .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-workspace-roots")
             .expect("configure server")
@@ -1665,7 +1673,7 @@ async fn a_workspace_root_neither_absolute_nor_beginning_with_a_tilde_is_ignored
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         format!(
             r#"{{
                 "workspace": {{ "roots": ["~/src", "projects", "", {}, 7, "~"] }},
@@ -1702,7 +1710,7 @@ async fn a_workspace_root_neither_absolute_nor_beginning_with_a_tilde_is_ignored
         .iter()
         .map(|diagnostic| {
             assert_eq!(diagnostic.severity, SettingsDiagnosticSeverity::Warning);
-            assert_eq!(diagnostic.file, config_dir.path().join("suru.jsonc"));
+            assert_eq!(diagnostic.file, config_dir.path().join("shaman.jsonc"));
             assert_eq!(diagnostic.key.as_deref(), Some("workspace.roots"));
             diagnostic.message.as_str()
         })
@@ -1742,7 +1750,7 @@ async fn workspace_roots_that_are_not_a_list_are_ignored_saying_what_the_setting
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "workspace": { "roots": "~/src" } }"#,
     )
     .expect("write config document");
@@ -1782,7 +1790,7 @@ async fn invalid_auto_settle_pins_are_ignored_individually_with_diagnostics() {
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
         let config_dir = tempfile::tempdir().expect("create isolated config directory");
         std::fs::write(
-            config_dir.path().join("suru.jsonc"),
+            config_dir.path().join("shaman.jsonc"),
             format!(
                 r#"{{
                     "sidebar": {{ "autoSettle": {invalid} }},
@@ -1834,7 +1842,7 @@ async fn fill_session_content_width_loads_from_a_config_document() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "session": { "contentWidth": "fill" } }"#,
     )
     .expect("write config document");
@@ -1862,7 +1870,7 @@ async fn minimum_session_content_width_loads_from_a_config_document() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "session": { "contentWidth": 50 } }"#,
     )
     .expect("write config document");
@@ -1890,7 +1898,7 @@ async fn session_content_width_has_no_product_level_maximum() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "session": { "contentWidth": 1000000 } }"#,
     )
     .expect("write config document");
@@ -1926,7 +1934,7 @@ async fn invalid_session_content_width_pins_are_ignored_individually_with_diagno
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
         let config_dir = tempfile::tempdir().expect("create isolated config directory");
         std::fs::write(
-            config_dir.path().join("suru.jsonc"),
+            config_dir.path().join("shaman.jsonc"),
             format!(
                 r#"{{
                     "session": {{ "contentWidth": {invalid} }},
@@ -1974,11 +1982,11 @@ async fn invalid_session_content_width_pins_are_ignored_individually_with_diagno
 }
 
 #[tokio::test]
-async fn suru_json_alone_works_and_is_parsed_just_as_leniently() {
+async fn shaman_json_alone_works_and_is_parsed_just_as_leniently() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.json"),
+        config_dir.path().join("shaman.json"),
         r#"{
             /* Plain-JSON habits, JSONC leniency. */
             "provider": { "codex": { "reasoningSummary": "detailed", } },
@@ -2005,16 +2013,16 @@ async fn suru_json_alone_works_and_is_parsed_just_as_leniently() {
 }
 
 #[tokio::test]
-async fn suru_jsonc_wins_over_a_duplicate_suru_json_with_a_diagnostic() {
+async fn shaman_jsonc_wins_over_a_duplicate_shaman_json_with_a_diagnostic() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "transcript": { "defaultFoldPosture": "expanded" } }"#,
     )
     .expect("write primary config document");
     std::fs::write(
-        config_dir.path().join("suru.json"),
+        config_dir.path().join("shaman.json"),
         r#"{
             "transcript": { "defaultFoldPosture": "folded" },
             "provider": { "codex": { "reasoningSummary": "detailed" } }
@@ -2033,18 +2041,18 @@ async fn suru_jsonc_wins_over_a_duplicate_suru_json_with_a_diagnostic() {
     assert_eq!(
         snapshot.settings.transcript.default_fold_posture,
         FoldPosture::Expanded,
-        "the winning suru.jsonc value applies"
+        "the winning shaman.jsonc value applies"
     );
     assert_eq!(
         snapshot.settings.provider.codex.reasoning_summary,
         ReasoningSummaryDetail::Auto,
-        "nothing from the ignored suru.json is merged in"
+        "nothing from the ignored shaman.json is merged in"
     );
     let [diagnostic] = snapshot.diagnostics.as_slice() else {
         panic!("expected one diagnostic, got {:?}", snapshot.diagnostics);
     };
     assert_eq!(diagnostic.severity, SettingsDiagnosticSeverity::Warning);
-    assert_eq!(diagnostic.file, config_dir.path().join("suru.json"));
+    assert_eq!(diagnostic.file, config_dir.path().join("shaman.json"));
 
     server.shutdown().await.expect("shut down server");
 }
@@ -2054,7 +2062,7 @@ async fn a_syntax_broken_document_never_blocks_startup_and_defaults_apply_loudly
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "transcript": { "defaultFoldPosture" "#,
     )
     .expect("write broken config document");
@@ -2073,7 +2081,7 @@ async fn a_syntax_broken_document_never_blocks_startup_and_defaults_apply_loudly
         panic!("expected one diagnostic, got {:?}", snapshot.diagnostics);
     };
     assert_eq!(diagnostic.severity, SettingsDiagnosticSeverity::Error);
-    assert_eq!(diagnostic.file, config_dir.path().join("suru.jsonc"));
+    assert_eq!(diagnostic.file, config_dir.path().join("shaman.jsonc"));
     assert_eq!(diagnostic.key, None);
 
     server.shutdown().await.expect("shut down server");
@@ -2084,7 +2092,7 @@ async fn unknown_and_mistyped_keys_are_ignored_alone_while_the_rest_applies() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             "transcript": {
                 "defaultFoldPosture": "sideways",
@@ -2119,7 +2127,7 @@ async fn unknown_and_mistyped_keys_are_ignored_alone_while_the_rest_applies() {
         .iter()
         .map(|diagnostic| {
             assert_eq!(diagnostic.severity, SettingsDiagnosticSeverity::Warning);
-            assert_eq!(diagnostic.file, config_dir.path().join("suru.jsonc"));
+            assert_eq!(diagnostic.file, config_dir.path().join("shaman.jsonc"));
             diagnostic
                 .key
                 .as_deref()
@@ -2169,7 +2177,7 @@ async fn a_flat_dotted_spelling_is_not_a_second_way_to_pin() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "transcript.defaultFoldPosture": "expanded" }"#,
     )
     .expect("write config document");
@@ -2201,7 +2209,7 @@ async fn a_flat_dotted_spelling_is_not_a_second_way_to_pin() {
 }
 
 /// A hand-written Config Document: comments, tabs, irregular spacing around a
-/// value, and a key order the author chose. Suru's edits must leave every byte
+/// value, and a key order the author chose. Shaman's edits must leave every byte
 /// of it alone except the value they target.
 const HAND_WRITTEN: &str = "{\n\t// Codex should say as much about its thinking as it likes.\n\t\"provider\": {\n\t\t\"codex\": { \"reasoningSummary\":    \"detailed\" }\n\t},\n\n\t// I read my sessions folded.\n\t\"transcript\": { \"defaultFoldPosture\": \"folded\" },\n}\n";
 
@@ -2214,15 +2222,18 @@ const CONTENT_WIDTH_DOCUMENT: &str = concat!(
 );
 
 fn config_document(config_dir: &Path) -> String {
-    std::fs::read_to_string(config_dir.join("suru.jsonc")).expect("read the config document")
+    std::fs::read_to_string(config_dir.join("shaman.jsonc")).expect("read the config document")
 }
 
 #[tokio::test]
 async fn session_content_width_mutations_preserve_bytes_broadcast_and_reset() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
-    std::fs::write(config_dir.path().join("suru.jsonc"), CONTENT_WIDTH_DOCUMENT)
-        .expect("write config document");
+    std::fs::write(
+        config_dir.path().join("shaman.jsonc"),
+        CONTENT_WIDTH_DOCUMENT,
+    )
+    .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-content-mutation")
             .expect("configure server")
@@ -2348,7 +2359,7 @@ async fn a_set_reaches_the_document_the_mutating_client_and_a_second_client() {
 async fn an_edit_leaves_a_hand_written_document_byte_for_byte_except_its_target() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
-    std::fs::write(config_dir.path().join("suru.jsonc"), HAND_WRITTEN)
+    std::fs::write(config_dir.path().join("shaman.jsonc"), HAND_WRITTEN)
         .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-bytes")
@@ -2390,7 +2401,7 @@ async fn a_new_key_lands_in_the_documents_own_indent_style_leaving_the_rest_alon
         "    }\n",
         "}\n",
     );
-    std::fs::write(config_dir.path().join("suru.jsonc"), seeded).expect("write config document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), seeded).expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-insert")
             .expect("configure server")
@@ -2670,7 +2681,7 @@ async fn a_scheduled_compaction_minimum_finer_than_a_cent_or_below_nothing_is_ig
         let state_dir = tempfile::tempdir().unwrap();
         let config_dir = tempfile::tempdir().unwrap();
         std::fs::write(
-            config_dir.path().join("suru.jsonc"),
+            config_dir.path().join("shaman.jsonc"),
             format!(
                 r#"{{ "compaction": {{ "scheduled": {{ "enabled": true, "minimumPenalty": {pinned} }} }} }}"#
             ),
@@ -2928,7 +2939,7 @@ async fn broker_caps_load_without_a_product_level_maximum_and_pin_down_to_one() 
     let state_dir = tempfile::tempdir().unwrap();
     let config_dir = tempfile::tempdir().unwrap();
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{"broker": {"maxConcurrentSubagents": 4294967295, "maxDepth": 1000000}}"#,
     )
     .unwrap();
@@ -2993,7 +3004,7 @@ async fn a_broker_cap_outside_its_bound_is_ignored_alone_naming_the_bound() {
         let state_dir = tempfile::tempdir().unwrap();
         let config_dir = tempfile::tempdir().unwrap();
         std::fs::write(
-            config_dir.path().join("suru.jsonc"),
+            config_dir.path().join("shaman.jsonc"),
             format!(
                 r#"{{"broker": {{"enabled": false, "maxConcurrentSubagents": {invalid}, "maxDepth": {invalid}}}}}"#
             ),
@@ -3049,7 +3060,7 @@ async fn a_broker_cap_outside_its_bound_is_ignored_alone_naming_the_bound() {
 async fn an_unset_keeps_the_comments_that_outlive_the_pin_it_removes() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
-    std::fs::write(config_dir.path().join("suru.jsonc"), HAND_WRITTEN)
+    std::fs::write(config_dir.path().join("shaman.jsonc"), HAND_WRITTEN)
         .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-unset-comments")
@@ -3073,7 +3084,7 @@ async fn an_unset_keeps_the_comments_that_outlive_the_pin_it_removes() {
     let document = config_document(config_dir.path());
     assert!(
         document.contains("// I read my sessions folded."),
-        "a comment about the removed pin is the author's to delete, not Suru's: {document:?}"
+        "a comment about the removed pin is the author's to delete, not Shaman's: {document:?}"
     );
     assert!(
         document.contains("\"reasoningSummary\":    \"detailed\""),
@@ -3092,7 +3103,7 @@ async fn an_unset_keeps_the_comments_that_outlive_the_pin_it_removes() {
 async fn the_first_set_creates_the_config_document_under_the_config_root() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_home = tempfile::tempdir().expect("create isolated config home");
-    let config_dir = config_home.path().join("suru");
+    let config_dir = config_home.path().join("shaman");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-create")
             .expect("configure server")
@@ -3116,8 +3127,8 @@ async fn the_first_set_creates_the_config_document_under_the_config_root() {
         "{\n  \"transcript\": {\n    \"defaultFoldPosture\": \"expanded\"\n  }\n}\n"
     );
     assert!(
-        !config_dir.join("suru.json").exists(),
-        "Suru creates the primary config document, never the fallback name"
+        !config_dir.join("shaman.json").exists(),
+        "Shaman creates the primary config document, never the fallback name"
     );
 
     drop(client);
@@ -3129,7 +3140,7 @@ async fn a_document_that_does_not_parse_is_refused_rather_than_rewritten() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let broken = r#"{ "transcript": { "defaultFoldPosture" "#;
-    std::fs::write(config_dir.path().join("suru.jsonc"), broken).expect("write config document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), broken).expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-refuse")
             .expect("configure server")
@@ -3144,16 +3155,16 @@ async fn a_document_that_does_not_parse_is_refused_rather_than_rewritten() {
             value: Some(FoldPosture::Expanded),
         })
         .await
-        .expect_err("a document Suru cannot read is a document Suru cannot edit");
+        .expect_err("a document Shaman cannot read is a document Shaman cannot edit");
 
     assert!(
-        refusal.to_string().contains("suru.jsonc"),
+        refusal.to_string().contains("shaman.jsonc"),
         "the refusal names the file standing in the way: {refusal}"
     );
     assert_eq!(
         config_document(config_dir.path()),
         broken,
-        "Suru never rewrites a document to fix it"
+        "Shaman never rewrites a document to fix it"
     );
 
     drop(client);
@@ -3210,7 +3221,7 @@ async fn an_unauthenticated_mutation_never_reaches_the_config_document() {
 
     assert_eq!(refused.status(), reqwest::StatusCode::UNAUTHORIZED);
     assert!(
-        !config_dir.path().join("suru.jsonc").exists(),
+        !config_dir.path().join("shaman.jsonc").exists(),
         "an unauthenticated command writes nothing"
     );
 
@@ -3225,7 +3236,7 @@ async fn a_provider_pinned_off_round_trips_and_the_rest_default_to_enabled() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             // I only ever work with Codex.
             "provider": {
@@ -3258,7 +3269,7 @@ async fn a_provider_pinned_off_round_trips_and_the_rest_default_to_enabled() {
 async fn turning_a_provider_off_and_resetting_it_leaves_the_rest_of_the_document_alone() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
-    std::fs::write(config_dir.path().join("suru.jsonc"), HAND_WRITTEN)
+    std::fs::write(config_dir.path().join("shaman.jsonc"), HAND_WRITTEN)
         .expect("write config document");
     let server = server::spawn(
         ServerConfig::new(state_dir.path(), "settings-provider-toggle")
@@ -3345,7 +3356,7 @@ async fn a_mistyped_enablement_is_diagnosed_with_unquoted_booleans_and_ignored_a
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             "provider": {
                 "codex": { "enabled": "no" },
@@ -3460,7 +3471,7 @@ async fn a_pinned_derivation_errand_selection_round_trips_through_a_config_docum
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             // Every title and icon written by the cheap model, whatever the session uses.
             "derivation": {
@@ -3543,7 +3554,7 @@ async fn a_mistyped_derivation_errand_is_ignored_alone_and_says_what_it_accepts(
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             "derivation": { "errand": "sometimes" },
             "transcript": { "reasoningVisibility": "shown" }
@@ -3577,7 +3588,7 @@ async fn a_mistyped_derivation_errand_is_ignored_alone_and_says_what_it_accepts(
         panic!("expected one diagnostic, got {:?}", snapshot.diagnostics);
     };
     assert_eq!(diagnostic.severity, SettingsDiagnosticSeverity::Warning);
-    assert_eq!(diagnostic.file, config_dir.path().join("suru.jsonc"));
+    assert_eq!(diagnostic.file, config_dir.path().join("shaman.jsonc"));
     assert_eq!(diagnostic.key.as_deref(), Some("derivation.errand"));
     assert!(
         diagnostic
@@ -3599,7 +3610,7 @@ async fn the_retired_title_derivation_key_is_no_longer_a_known_setting() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{ "session": { "title": { "errand": "off" } } }"#,
     )
     .expect("write config document");
@@ -3655,7 +3666,7 @@ async fn a_reset_on_a_fresh_install_leaves_the_config_root_empty() {
     assert_eq!(snapshot.settings, Default::default());
     assert_eq!(snapshot.pinned_keys(), [] as [String; 0]);
     assert!(
-        !config_dir.path().join("suru.jsonc").exists(),
+        !config_dir.path().join("shaman.jsonc").exists(),
         "an edit with nothing to remove writes no document"
     );
 
@@ -3665,7 +3676,7 @@ async fn a_reset_on_a_fresh_install_leaves_the_config_root_empty() {
 
 #[tokio::test]
 async fn text_selection_plain_text_defaults_to_visible_and_pins_markdown() {
-    use suru::protocol::TextSelectionPlainText;
+    use shaman::protocol::TextSelectionPlainText;
     let state_dir = tempfile::tempdir().unwrap();
     let config_dir = tempfile::tempdir().unwrap();
     let server = server::spawn(
@@ -3706,11 +3717,11 @@ async fn text_selection_plain_text_defaults_to_visible_and_pins_markdown() {
 
 #[tokio::test]
 async fn text_selection_copy_pins_resets_and_reaches_every_client() {
-    use suru::protocol::TextSelectionCopy;
+    use shaman::protocol::TextSelectionCopy;
     let state_dir = tempfile::tempdir().unwrap();
     let config_dir = tempfile::tempdir().unwrap();
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{"textSelection": {"copy": "manual"}}"#,
     )
     .unwrap();
@@ -3772,7 +3783,7 @@ async fn text_selection_copy_rejects_unknown_values_naming_both_choices() {
     let state_dir = tempfile::tempdir().unwrap();
     let config_dir = tempfile::tempdir().unwrap();
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{"textSelection":{"copy":"never"}}"#,
     )
     .unwrap();
@@ -3824,12 +3835,13 @@ async fn a_config_root_that_cannot_be_searched_is_an_error_and_takes_no_change()
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let document = r#"{ "transcript": { "reasoningVisibility": "shown" } }"#;
-    std::fs::write(config_dir.path().join("suru.jsonc"), document).expect("write config document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), document)
+        .expect("write config document");
     std::fs::set_permissions(config_dir.path(), std::fs::Permissions::from_mode(0o000))
         .expect("seal the config root");
     let unseal = Unseal(config_dir.path());
     // A superuser searches past any mode, so there is nothing to refuse.
-    if std::fs::metadata(config_dir.path().join("suru.jsonc")).is_ok() {
+    if std::fs::metadata(config_dir.path().join("shaman.jsonc")).is_ok() {
         return;
     }
     let server = server::spawn(
@@ -3873,7 +3885,7 @@ async fn a_config_root_that_cannot_be_searched_is_an_error_and_takes_no_change()
     server.shutdown().await.expect("shut down server");
     drop(unseal);
     assert_eq!(
-        std::fs::read_to_string(config_dir.path().join("suru.jsonc")).expect("read the document"),
+        std::fs::read_to_string(config_dir.path().join("shaman.jsonc")).expect("read the document"),
         document,
         "and nothing was written"
     );
@@ -3889,14 +3901,14 @@ async fn a_config_root_that_cannot_be_searched_is_an_error_and_takes_no_change()
 async fn an_outside_edit_of_a_setting_waits_for_the_next_start_saying_so() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
-    let document = config_dir.path().join("suru.jsonc");
+    let document = config_dir.path().join("shaman.jsonc");
     let channel = "settings-another-hand";
     let spawn = || {
         server::spawn_with_timings(
             ServerConfig::new(state_dir.path(), channel)
                 .expect("configure server")
                 .with_config_dir(config_dir.path()),
-            suru::server::ServerTimings::default()
+            shaman::server::ServerTimings::default()
                 .with_config_document_check_interval(std::time::Duration::from_millis(5)),
         )
     };

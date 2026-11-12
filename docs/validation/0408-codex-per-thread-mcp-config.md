@@ -3,7 +3,7 @@
 Captured 2026-09-27 against Codex CLI **0.157.1** (`/usr/bin/codex app-server`,
 signed in with a ChatGPT account). The Model was `gpt-5.6-luna` at
 `model_reasoning_effort = "low"`. `examples/broker_harness_capture.rs codex
-<scenario>` stood in for Suru's Codex Provider: one `codex app-server` per
+<scenario>` stood in for Shaman's Codex Provider: one `codex app-server` per
 launch, `initialize` with `experimentalApi: false`, and a fresh app-server for
 each resume. The MCP server was the example's loopback streamable-HTTP endpoint,
 named `capture`. Its Tools carry no annotations, as a worst case for approval.
@@ -66,7 +66,7 @@ Each `config` key is a dotted path, applied the way a `-c` override is
 | 4b | as 4, progress every 5 s | as 4 | Four progress notifications went out, and the call still failed at 20.06 s. Progress does not extend `tool_timeout_sec`. |
 | 5 | `thread/start` `config`, `bearer_token` in place of `http_headers` | inline token | Refused: `-32600 failed to load configuration: bearer_token is not supported for streamable_http in mcp_servers.capture`. |
 | 6 | `thread/start` `config` without `default_tools_approval_mode`; this machine's `approvals_reviewer = "auto_review"` | | No request reached the client. Codex's automatic reviewer ran for 7.3 s, emitted `guardianWarning` ("Automatic approval review approved (risk: medium, authorization: high) …"), then made the call. |
-| 7 | as 6, with `approvalsReviewer: "user"` on `thread/start` | | `mcpServer/elicitation/request` (below). The capture answered with the error Suru's transport sends today, and Codex failed the call as `user rejected MCP tool call`. |
+| 7 | as 6, with `approvalsReviewer: "user"` on `thread/start` | | `mcpServer/elicitation/request` (below). The capture answered with the error Shaman's transport sends today, and Codex failed the call as `user rejected MCP tool call`. |
 | 8 | as 1, with `approvalsReviewer: "user"` and a native Subagent | token `…-parent`, 60, approve | Neither the parent's call nor the child's asked. |
 
 Run 7's request, trimmed:
@@ -105,7 +105,7 @@ Run 7's request, trimmed:
 ## Decision
 
 The Broker relies on the per-thread `config` map on `thread/start` and on every
-`thread/resume`, with one entry, `mcp_servers.suru`:
+`thread/resume`, with one entry, `mcp_servers.shaman`:
 
 - `url`: the Broker's loopback endpoint.
 - `http_headers`: `{"Authorization": "Bearer <token>"}`. Never `bearer_token`,
@@ -115,16 +115,16 @@ The Broker relies on the per-thread `config` map on `thread/start` and on every
   `wait_subagents`.
 - `default_tools_approval_mode: "approve"`. This is mandatory. Without it, a
   Broker call either waits on Codex's automatic reviewer, which may refuse it,
-  or raises an elicitation that Suru's transport rejects, failing the call.
+  or raises an elicitation that Shaman's transport rejects, failing the call.
 
 A resume without the entry has no server, so the entry goes on every
-`thread/resume` Suru sends, and the re-minted token with it. Nothing about the
+`thread/resume` Shaman sends, and the re-minted token with it. Nothing about the
 server survives in the thread.
 
 Codex does not cancel a call it has timed out. The Broker therefore bounds each
 call by its own arguments rather than waiting for the client to go away.
 
-**Fallback:** launch-time `-c mcp_servers.suru.…` overrides on `codex
-app-server` behave identically. Suru launches one app-server per Session and
+**Fallback:** launch-time `-c mcp_servers.shaman.…` overrides on `codex
+app-server` behave identically. Shaman launches one app-server per Session and
 relaunches it for each resume, so the overrides would carry the same per-Session
 token if a later Codex stopped honoring `mcp_servers` in the per-thread map.

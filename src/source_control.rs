@@ -277,8 +277,8 @@ pub trait SourceControl: Send + Sync {
     ) -> Result<crate::protocol::CheckoutBranchOutcome, String> {
         Err("Preparation ownership retirement is unsupported".into())
     }
-    /// Whether this system made `checkout` for Suru, rather than someone having
-    /// made it themselves where Suru keeps its own. Reclaim removes only what
+    /// Whether this system made `checkout` for Shaman, rather than someone having
+    /// made it themselves where Shaman keeps its own. Reclaim removes only what
     /// this answers for, so a system that cannot tell keeps the default and has
     /// nothing removed unattended.
     async fn made_checkout(
@@ -398,7 +398,7 @@ pub trait SourceControl: Send + Sync {
     }
     /// Every Worktree this Repository presently has, named rather than read.
     /// Checkout observation enumerates a known Repository through this on its
-    /// own cadence, so a Worktree added or removed outside Suru is picked up;
+    /// own cadence, so a Worktree added or removed outside Shaman is picked up;
     /// it is one call per Repository, and each named Worktree is then read by
     /// [`SourceControl::observe`].
     ///
@@ -438,7 +438,7 @@ pub(crate) struct SourceControlService {
     repository_changes: crate::change_count::ChangeCount,
     mutations: Arc<Mutex<HashMap<RepositoryId, Arc<tokio::sync::Mutex<()>>>>>,
     incarnations: Arc<Mutex<HashMap<crate::protocol::CheckoutId, u64>>>,
-    /// The directory Suru owns outside source control, which is a directory
+    /// The directory Shaman owns outside source control, which is a directory
     /// Workspace of its own whatever Repository encloses it.
     sidekick: Option<crate::sidekick::SidekickWorkspace>,
     /// The run this Server's Clones mark what they make with, and where they

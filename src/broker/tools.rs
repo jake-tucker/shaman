@@ -1,4 +1,4 @@
-//! The Tools the Broker offers, each described once and answered in Suru's
+//! The Tools the Broker offers, each described once and answered in Shaman's
 //! own terms. Nothing here knows MCP: the transport in [`super::mcp`] turns a
 //! [`BrokerTool`]'s description into what `tools/list` lists and routes a
 //! `tools/call` into [`BrokerTools::call`].
@@ -7,7 +7,7 @@
 //! ([`BrokerTool::is_sidekicks`]): every Agent is offered the Tools through
 //! which it reaches any Provider, a listing of its own Server's Workspaces,
 //! and a Move bounded by where it works, and a Sidekick those besides the Tools
-//! that work across Suru itself (ADR 0042, ADR 0051, ADR 0059). The transport
+//! that work across Shaman itself (ADR 0042, ADR 0051, ADR 0059). The transport
 //! lists and dispatches by [`BrokerTool::offered_to`], and the note an Agent is
 //! told names what it reads, so a Sidekick's Tool is declared here and nowhere
 //! else. A Tool every Agent is offered is described to each caller as it
@@ -156,7 +156,7 @@ impl BrokerTool {
         Self::ALL.into_iter().find(|tool| tool.name() == name)
     }
 
-    /// Whether the Tool is a Sidekick's alone — one that works across Suru
+    /// Whether the Tool is a Sidekick's alone — one that works across Shaman
     /// itself — rather than one every Agent is offered.
     pub(super) const fn is_sidekicks(self) -> bool {
         match self {
@@ -560,7 +560,7 @@ impl BrokerTool {
         }
     }
 
-    /// Whether the Tool only reads, changing nothing Suru holds.
+    /// Whether the Tool only reads, changing nothing Shaman holds.
     pub(super) fn is_read_only(self) -> bool {
         match self {
             Self::ListProviders
@@ -595,11 +595,11 @@ impl BrokerTool {
 }
 
 const LIST_PROVIDERS_DESCRIPTION: &str = "\
-List the Providers Suru hosts, with the Models and Model Options each offers, \
+List the Providers Shaman hosts, with the Models and Model Options each offers, \
 so you can choose where to delegate work. Takes no arguments. Answers with \
 JSON of the shape {\"providers\": [provider, ...]}, one entry per hosted \
-Provider in Suru's order. Each provider has \"id\"; \"name\"; \"enabled\" \
-(false when the user has turned the Provider off in Suru); \"available\" (true \
+Provider in Shaman's order. Each provider has \"id\"; \"name\"; \"enabled\" \
+(false when the user has turned the Provider off in Shaman); \"available\" (true \
 when it can be used now, false when it cannot, null when it is turned off and \
 so was never checked); \"reason\" and \"detail\" when \"available\" is false, \
 where reason is one of \"not_installed\", \"not_signed_in\", \
@@ -613,11 +613,11 @@ Model the Provider uses unless told otherwise) and \"options\". Each Model \
 Option has \"id\", \"name\" and \"type\": a \"select\" option has \"choices\" \
 (each with \"id\" and \"name\") and the \"default\" choice id; a \"toggle\" \
 option has a boolean \"default\". Only Models and choices that can be selected \
-are listed. Availability is as Suru last found it; calling again does not \
+are listed. Availability is as Shaman last found it; calling again does not \
 re-check a Provider.";
 
 const SPAWN_SUBAGENT_DESCRIPTION: &str = "\
-Spawn a Subagent on any Provider Suru hosts, your own or another, to do a \
+Spawn a Subagent on any Provider Shaman hosts, your own or another, to do a \
 piece of work for you; it answers at once while the Subagent works on its own. \
 Call list_providers first to learn which Providers, Models and Model Options \
 may be chosen. Takes \"provider\" and \"model\", ids as list_providers gives \
@@ -645,7 +645,7 @@ answered with. Answers with JSON of the shape {\"session_id\": \"...\", \
 the Subagent's latest stretch of work: \"status\" is \"working\" while it \
 works, and once it settles \"completed\", \"failed\" or \"stopped\"; \
 \"duration_ms\" is how long that stretch has worked so far, or worked in all \
-once settled, and null where Suru never learned when it ended; and \
+once settled, and null where Shaman never learned when it ended; and \
 \"message\" is the latest Message the Subagent wrote in that stretch, in full \
 — its final answer once settled — or null when it has written none. A \
 \"failed\" stretch also carries \"error\": what it failed with, as its \
@@ -1005,7 +1005,7 @@ fn spawn_refusal(refusal: BrokeredSpawnRefusal) -> ToolRefusal {
 fn cap_refusal(cap: BrokeredSpawnCap, not_done: &str) -> ToolRefusal {
     match cap {
         BrokeredSpawnCap::Depth { max_depth, depth } => ToolRefusal(format!(
-            "Suru's Broker lets Subagents stand at most {max_depth} {sessions} deep, counting the \
+            "Shaman's Broker lets Subagents stand at most {max_depth} {sessions} deep, counting the \
              top-level Session as the first (`broker.maxDepth`), and one spawned here would stand \
              {depth} deep, so {not_done}. Do this work yourself, or ask the user to raise the \
              Setting.",
@@ -1019,7 +1019,7 @@ fn cap_refusal(cap: BrokeredSpawnCap, not_done: &str) -> ToolRefusal {
             max_concurrent_subagents,
             working,
         } => ToolRefusal(format!(
-            "Suru's Broker lets at most {max_concurrent_subagents} brokered {subagents} work at \
+            "Shaman's Broker lets at most {max_concurrent_subagents} brokered {subagents} work at \
              once beneath a top-level Session (`broker.maxConcurrentSubagents`), and {working} \
              {are} working now, so {not_done}. Call wait_subagents to wait for one to settle, or \
              ask the user to raise the Setting.",
@@ -1186,10 +1186,10 @@ fn unreachable_refusal(
     };
     ToolRefusal::new(match error {
         BrokeredReadError::CallerNotFound => {
-            "The Session calling the Broker no longer exists on this Suru server.".to_owned()
+            "The Session calling the Broker no longer exists on this Shaman server.".to_owned()
         }
         BrokeredReadError::NoSuchSession => format!(
-            "Suru holds no Session `{subagent}`; pass the session_id spawn_subagent answered with."
+            "Shaman holds no Session `{subagent}`; pass the session_id spawn_subagent answered with."
         ),
         BrokeredReadError::NotBrokeredBeneathCaller => format!(
             "`{subagent}` is not a Subagent spawned with spawn_subagent by you or by a Subagent \
@@ -1533,7 +1533,7 @@ pub(super) fn requested_selection_on(
         );
         return Err(ToolRefusal::new(match on {
             ChosenOn::Here => format!(
-                "Suru hosts no Provider `{provider}`; the Providers it hosts are {hosted}. Call \
+                "Shaman hosts no Provider `{provider}`; the Providers it hosts are {hosted}. Call \
                  list_providers to see which may be chosen."
             ),
             ChosenOn::Remote(remote) => format!(
@@ -1546,7 +1546,7 @@ pub(super) fn requested_selection_on(
         Choosable::Disabled => {
             return Err(ToolRefusal::new(match on {
                 ChosenOn::Here => format!(
-                    "Provider `{provider}` is turned off in Suru; ask the user to turn it back \
+                    "Provider `{provider}` is turned off in Shaman; ask the user to turn it back \
                      on, or choose another Provider."
                 ),
                 ChosenOn::Remote(remote) => format!(
@@ -1678,7 +1678,7 @@ struct ListedProvider {
     id: ProviderId,
     name: String,
     enabled: bool,
-    /// `None` for a Provider the user turned off: Suru never checked it, so
+    /// `None` for a Provider the user turned off: Shaman never checked it, so
     /// there is no Availability to report.
     available: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1698,9 +1698,9 @@ enum UnavailableReason {
     NotInstalled,
     NotSignedIn,
     IncompatibleVersion,
-    /// Suru could not learn the Provider's Models, for no reason it can name.
+    /// Shaman could not learn the Provider's Models, for no reason it can name.
     CatalogFailed,
-    /// Suru is still asking the Provider for its Models for the first time.
+    /// Shaman is still asking the Provider for its Models for the first time.
     Checking,
 }
 
@@ -1764,7 +1764,7 @@ fn provider_listing(catalog: ModelCatalog) -> ProviderListing {
 /// `list_providers` reports and `spawn_subagent` checks a spawn against, so
 /// neither offers what the other refuses.
 enum Choosable<'a> {
-    /// The user has turned the Provider off, so Suru never checked it.
+    /// The user has turned the Provider off, so Shaman never checked it.
     Disabled,
     /// It cannot be used now, for the reason given, which says what to tell
     /// the user, and — where the Provider named one — what the user does to
@@ -1799,7 +1799,7 @@ fn choosable(catalog: &ProviderModelCatalog) -> Choosable<'_> {
         // re-check of Models already known leaves them selectable.
         ProviderCatalogStatus::Refreshing if catalog.models.is_empty() => Choosable::Unavailable {
             reason: UnavailableReason::Checking,
-            detail: "Suru is still asking this Provider for its Models; ask again shortly."
+            detail: "Shaman is still asking this Provider for its Models; ask again shortly."
                 .to_owned(),
             fix: None,
         },
@@ -2159,7 +2159,7 @@ mod tests {
         assert_eq!(checking["reason"], json!("checking"));
         assert!(
             checking.get("fix").is_none(),
-            "Suru names no fix for a Provider it is still asking"
+            "Shaman names no fix for a Provider it is still asking"
         );
     }
 
@@ -2465,7 +2465,7 @@ mod tests {
         assert_eq!(schema["additionalProperties"], json!(false));
         assert!(
             !BrokerTool::StopSubagent.is_read_only(),
-            "a stop changes what Suru holds"
+            "a stop changes what Shaman holds"
         );
     }
 
@@ -2556,7 +2556,7 @@ mod tests {
                 "claude",
                 "runs",
                 json!({}),
-                "Suru hosts no Provider `claude`; the Providers it hosts are `codex`",
+                "Shaman hosts no Provider `claude`; the Providers it hosts are `codex`",
             ),
             (
                 &fresh,
@@ -2598,7 +2598,7 @@ mod tests {
                 "codex",
                 "runs",
                 json!({}),
-                "Provider `codex` is turned off in Suru",
+                "Provider `codex` is turned off in Shaman",
             ),
             (
                 &spawnable(ProviderCatalogStatus::Unavailable {
@@ -2617,7 +2617,7 @@ mod tests {
                 "codex",
                 "runs",
                 json!({}),
-                "Suru is still asking this Provider for its Models",
+                "Shaman is still asking this Provider for its Models",
             ),
         ] {
             let refusal = refused(catalog, provider, model, chosen);
@@ -3024,7 +3024,7 @@ mod tests {
         assert!(!BrokerTool::SendToSubagent.is_read_only());
         assert!(
             BrokerTool::WaitSubagents.is_read_only(),
-            "a wait changes nothing Suru holds"
+            "a wait changes nothing Shaman holds"
         );
     }
 
@@ -3067,7 +3067,7 @@ mod tests {
         .to_string();
         assert_eq!(
             depth,
-            "Suru's Broker lets Subagents stand at most 1 Session deep, counting the top-level \
+            "Shaman's Broker lets Subagents stand at most 1 Session deep, counting the top-level \
              Session as the first (`broker.maxDepth`), and one spawned here would stand 2 deep, \
              so nothing was spawned. Do this work yourself, or ask the user to raise the Setting."
         );
@@ -3080,7 +3080,7 @@ mod tests {
         .to_string();
         assert_eq!(
             concurrency,
-            "Suru's Broker lets at most 1 brokered Subagent work at once beneath a top-level \
+            "Shaman's Broker lets at most 1 brokered Subagent work at once beneath a top-level \
              Session (`broker.maxConcurrentSubagents`), and 1 is working now, so nothing was \
              spawned. Call wait_subagents to wait for one to settle, or ask the user to raise the \
              Setting."

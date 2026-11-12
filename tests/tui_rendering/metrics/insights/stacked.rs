@@ -14,7 +14,7 @@ use ratatui::{
     buffer::Buffer,
     style::{Modifier, Style},
 };
-use suru::tui::{Application, ApplicationTransition, InsightsPanel, SemanticCommandId};
+use shaman::tui::{Application, ApplicationTransition, InsightsPanel, SemanticCommandId};
 
 /// The narrowest frame the view is drawn in.
 const NARROW: u16 = 80;
@@ -384,7 +384,7 @@ fn clicks_land_on_the_cells_bins_and_rows_shown_in_the_scrolled_column() {
     let opened = press_at(&mut workspace, blog);
     workspaces::answer_overview_by_workspace(&mut workspace, opened);
     assert_eq!(
-        workspaces::dimmed(&workspace, ["suru", "relay-infra", "dotfiles", "blog"]),
+        workspaces::dimmed(&workspace, ["shaman", "relay-infra", "dotfiles", "blog"]),
         [Some(true), Some(true), Some(true), Some(false)],
         "the workspace clicked is the one opened"
     );

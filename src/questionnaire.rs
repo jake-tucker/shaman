@@ -336,7 +336,7 @@ impl std::fmt::Display for AnswerMismatch {
             ),
             Unaccepted::Placeholder => write!(
                 formatter,
-                "{question} was given the placeholder Suru keeps for a secret Answer, which is \
+                "{question} was given the placeholder Shaman keeps for a secret Answer, which is \
                  no Answer."
             ),
         }

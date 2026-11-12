@@ -4,7 +4,7 @@
 //! anywhere beneath that top-level Session (`broker.maxConcurrentSubagents`).
 //! A spawn past either is refused in words naming the cap and its Setting, and
 //! never queued: nothing of it is created, and nothing of it starts once room
-//! is made. Native Subagents are not counted, because Suru cannot refuse them.
+//! is made. Native Subagents are not counted, because Shaman cannot refuse them.
 
 use super::*;
 
@@ -12,7 +12,7 @@ use super::*;
 /// while `working` brokered Subagents work beneath its top-level Session.
 fn too_many_working(cap: u32, working: u32) -> String {
     format!(
-        "Suru's Broker lets at most {cap} brokered Subagents work at once beneath a top-level \
+        "Shaman's Broker lets at most {cap} brokered Subagents work at once beneath a top-level \
          Session (`broker.maxConcurrentSubagents`), and {working} are working now, so nothing was \
          spawned. Call wait_subagents to wait for one to settle, or ask the user to raise the \
          Setting."
@@ -23,7 +23,7 @@ fn too_many_working(cap: u32, working: u32) -> String {
 /// Subagent would have stood `depth` Sessions deep.
 fn too_deep(cap: u32, depth: u32) -> String {
     format!(
-        "Suru's Broker lets Subagents stand at most {cap} Sessions deep, counting the top-level \
+        "Shaman's Broker lets Subagents stand at most {cap} Sessions deep, counting the top-level \
          Session as the first (`broker.maxDepth`), and one spawned here would stand {depth} deep, \
          so nothing was spawned. Do this work yourself, or ask the user to raise the Setting."
     )
@@ -95,7 +95,8 @@ async fn brokered_rows(descriptor: &RuntimeDescriptor, session_id: SessionId) ->
 /// test holds it.
 fn config_pinning(document: &str) -> tempfile::TempDir {
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
-    std::fs::write(config_dir.path().join("suru.jsonc"), document).expect("write Config Document");
+    std::fs::write(config_dir.path().join("shaman.jsonc"), document)
+        .expect("write Config Document");
     config_dir
 }
 
@@ -106,7 +107,7 @@ async fn the_seventh_working_brokered_subagent_beneath_a_top_level_session_is_re
     let mut delegating = delegating(state_dir.path(), "broker-limits-concurrency", None).await;
     let descriptor = delegating.descriptor.clone();
 
-    // A native Subagent works beneath the top-level Session throughout: Suru
+    // A native Subagent works beneath the top-level Session throughout: Shaman
     // cannot refuse its Provider's own spawns, so it counts for nothing.
     delegating
         .caller_provider

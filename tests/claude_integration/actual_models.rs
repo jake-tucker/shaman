@@ -13,7 +13,7 @@ use crate::claude_integration::support::{
     interrupt_arm, on_resume, opened_session, settled_session, silent_interrupt_arm, user_turn_arm,
 };
 use crate::support::PROGRESS_DEADLINE;
-use suru::{
+use shaman::{
     protocol::{
         Activity, AdmitPromptRequest, AgentSelection, InitialPrompt, Message, MessageStatus,
         ModelAttribution, ModelId, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection,
@@ -186,7 +186,7 @@ const ABORTED_RESULT: &str = r#"      emit '{"type":"user","message":{"role":"us
 "#;
 
 /// The first child streams a Message whose Model nothing names and never answers the interrupt
-/// that follows, so Suru replaces it with a child resuming the conversation, which runs the next
+/// that follows, so Shaman replaces it with a child resuming the conversation, which runs the next
 /// Turn on another Model.
 const CUT_OFF_BEFORE_A_RESPAWN: &str = r#"      emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"Cut off."}},"parent_tool_use_id":null,"session_id":"prov-session"}'

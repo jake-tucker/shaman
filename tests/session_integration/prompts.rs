@@ -8,7 +8,7 @@ use crate::session_integration::{
 use crate::support::PROGRESS_DEADLINE;
 use eventsource_stream::Eventsource;
 use futures_util::{StreamExt, future::join_all};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent},
     protocol::{
         Activity, ActivityId, AdmitPromptRequest, AgentId, AgentIdentity, AgentSelection,
@@ -45,7 +45,7 @@ async fn authenticated_creation_returns_pending_before_async_provider_failure() 
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace_parent.path().join(".").join("workspace"),
             },
             prompt: InitialPrompt {
@@ -66,7 +66,7 @@ async fn authenticated_creation_returns_pending_before_async_provider_failure() 
         .expect("decode created Session snapshot");
     assert_eq!(
         snapshot.session.workspace.path,
-        suru::paths::canonical(&workspace).expect("canonicalize expected Workspace")
+        shaman::paths::canonical(&workspace).expect("canonicalize expected Workspace")
     );
     assert_eq!(snapshot.session.agent_selection, None);
     // The Prompt was admitted to begin a Turn, so the Session is already at
@@ -128,7 +128,7 @@ async fn client_generated_prompt_ids_make_session_creation_retries_idempotent() 
         session_id: None,
         preparation_id: None,
         agent_selection: None,
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.path().to_owned(),
         },
         prompt: InitialPrompt {
@@ -188,7 +188,7 @@ async fn client_generated_prompt_ids_make_session_creation_retries_idempotent() 
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: other_workspace.path().to_owned(),
             },
             prompt: request.prompt.clone(),
@@ -254,7 +254,7 @@ async fn admitted_steers_stream_once_and_exact_retries_do_not_duplicate_them() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -497,7 +497,7 @@ async fn active_turn_admission_preserves_order_and_safe_steer_delivery() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -803,7 +803,7 @@ async fn pending_prompt_mutations_and_interruption_converge_across_clients() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1089,7 +1089,7 @@ async fn consecutive_prompt_admissions_and_failures_do_not_collapse_revisions() 
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1206,7 +1206,7 @@ async fn invalid_workspace_and_blank_prompt_are_rejected_before_session_creation
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1228,7 +1228,7 @@ async fn invalid_workspace_and_blank_prompt_are_rejected_before_session_creation
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1258,7 +1258,7 @@ async fn invalid_workspace_and_blank_prompt_are_rejected_before_session_creation
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().join("missing"),
             },
             prompt: InitialPrompt {

@@ -1,4 +1,4 @@
-//! The serde types Suru exchanges with a Claude Code CLI over its stream-json wire.
+//! The serde types Shaman exchanges with a Claude Code CLI over its stream-json wire.
 //!
 //! The wire is verified against Claude Code CLI 2.1.280, live, and the Agent SDK type definitions
 //! 0.3.280 that ship with it (see docs/claude-metering-contract.md for the metering half). The wire
@@ -30,7 +30,7 @@ impl<'a> ControlRequestEnvelope<'a> {
     }
 }
 
-/// A control request Suru issues to the CLI.
+/// A control request Shaman issues to the CLI.
 #[derive(Serialize)]
 #[serde(tag = "subtype", rename_all = "snake_case")]
 pub(super) enum ControlRequest {
@@ -53,7 +53,7 @@ pub(super) enum ControlRequest {
     /// Stops the running loop. The CLI answers with an interrupt receipt and ends the Turn with a
     /// terminal result of its own.
     Interrupt {
-        /// Whether the messages the user queued into the loop are dropped with it. Suru always
+        /// Whether the messages the user queued into the loop are dropped with it. Shaman always
         /// asks for that: a steer already queued would otherwise survive the interrupt and be
         /// answered afterwards — work the user has just asked to stop, on a Turn that has Settled.
         /// The CLI advertises this as the `interrupt_cancel_queued_v1` capability on its init
@@ -86,7 +86,7 @@ impl ControlRequest {
 /// A Prompt on its way into the running loop, in the envelope stream-json input takes user
 /// messages in. The CLI owns the conversation's identity, so the envelope's `session_id` rides
 /// along empty and `parent_tool_use_id` marks the message as the user's own rather than a
-/// subagent's. The `uuid` is Suru's own for the message: the CLI reports the message's fate under
+/// subagent's. The `uuid` is Shaman's own for the message: the CLI reports the message's fate under
 /// it as a [`CommandLifecycle`], and reports nothing for a message sent without one.
 #[derive(Serialize)]
 pub(super) struct UserMessageEnvelope<'a> {
@@ -218,7 +218,7 @@ pub(super) struct StreamEvent {
 
 /// The assistant message a `message_start` opens, decoded only for the Model the API names as
 /// running it and the usage its request opened with, which says what it wrote to the Prompt
-/// Cache. The usage stays undecoded here, so one in a shape Suru cannot read leaves the event
+/// Cache. The usage stays undecoded here, so one in a shape Shaman cannot read leaves the event
 /// read.
 #[derive(Deserialize)]
 pub(super) struct OpenedMessage {
@@ -379,7 +379,7 @@ pub(super) struct ResultMessage {
     pub(super) total_cost_usd: Option<f64>,
     /// The conversation's running totals by the Model each call ran on, Subagents' calls among
     /// them, on the same terms as `total_cost_usd`. Kept unread here so an entry in some shape
-    /// Suru cannot read leaves the totals unbelieved rather than the result unread.
+    /// Shaman cannot read leaves the totals unbelieved rather than the result unread.
     #[serde(default, rename = "modelUsage")]
     pub(super) model_usage: Option<Value>,
     /// The conversation the result belongs to: the one the process was spawned or resumed under,
@@ -498,7 +498,7 @@ pub(super) struct SystemMessage {
 
 /// What a `compact_boundary` says of the compaction that left it: the conversation's context in
 /// tokens before and after, and the segment of messages it kept. Its `trigger` is not decoded,
-/// because whether a Compaction was asked for is Suru's to know (ADR 0041).
+/// because whether a Compaction was asked for is Shaman's to know (ADR 0041).
 #[derive(Default, Deserialize)]
 pub(super) struct CompactMetadata {
     #[serde(default)]
@@ -580,7 +580,7 @@ pub(super) struct NativeBinaryVersion {
     pub(super) version: String,
 }
 
-/// What `initialize` answers with, decoded as far as Suru reads it: the account the CLI would make
+/// What `initialize` answers with, decoded as far as Shaman reads it: the account the CLI would make
 /// requests under and the slash commands a user can invoke. A CLI holding no credentials answers
 /// with an account naming none rather than by omitting it, but an absent account decodes as one
 /// naming none all the same.
@@ -638,7 +638,7 @@ pub(super) struct NativeModelList {
 }
 
 /// One row of the CLI's model picker. `value` is what a spawn's model flag accepts — an alias such
-/// as `sonnet` or `opus[1m]` — so it is the Model ID Suru presents, rows verbatim rather than
+/// as `sonnet` or `opus[1m]` — so it is the Model ID Shaman presents, rows verbatim rather than
 /// aliases collapsed. The row's canonical `resolvedModel` names the Model the alias runs today,
 /// which is only what a rate table is asked about.
 #[derive(Deserialize)]

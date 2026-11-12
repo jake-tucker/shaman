@@ -225,7 +225,7 @@ impl ClipboardReader {
         let incoming = pending.clone();
         let create_source = self.create_source.clone();
         let thread = thread::Builder::new()
-            .name("suru-clipboard-read".to_owned())
+            .name("shaman-clipboard-read".to_owned())
             .spawn(move || {
                 // Created, used, and dropped here: a native source need not
                 // even be Send.
@@ -280,7 +280,7 @@ impl Drop for ClipboardReader {
 
 /// Under WSL, arboard reaches the Linux side's clipboard, which never holds
 /// the image a reader copied in Windows. Codex's TUI asks Windows PowerShell
-/// for it instead; so does Suru, but only once arboard found no image.
+/// for it instead; so does Shaman, but only once arboard found no image.
 #[cfg(target_os = "linux")]
 mod wsl {
     use std::ffi::OsString;
@@ -633,11 +633,11 @@ mod wsl {
             let mut windows = PowerShellClipboard::command("sh", &["-c", &no_image()]);
             assert_eq!(windows.image(), Ok(None));
 
-            let mut windows = PowerShellClipboard::command("suru-no-such-powershell", &[]);
+            let mut windows = PowerShellClipboard::command("shaman-no-such-powershell", &[]);
             let error = windows.image().expect_err("a missing PowerShell fails");
             assert!(
                 error.starts_with(
-                    "suru-no-such-powershell could not be started for the Windows clipboard"
+                    "shaman-no-such-powershell could not be started for the Windows clipboard"
                 ),
                 "{error}"
             );

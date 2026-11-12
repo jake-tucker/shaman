@@ -1,6 +1,6 @@
-//! Normalization of Copilot's Model catalog onto Suru's [`ModelDescriptor`].
+//! Normalization of Copilot's Model catalog onto Shaman's [`ModelDescriptor`].
 //!
-//! Copilot advertises two per-Model configuration dimensions Suru surfaces as Model Options:
+//! Copilot advertises two per-Model configuration dimensions Shaman surfaces as Model Options:
 //! reasoning effort, from the efforts a Model declares support for, and context tier, which trades
 //! context window against cost. A Model that advertises neither carries no Options at all. What
 //! else Copilot publishes about a Model — its relative cost, token prices per context tier, limits,
@@ -30,7 +30,7 @@ use crate::{
 };
 
 /// The Model Copilot routes on the user's behalf. Copilot's catalog names no default of its own, so
-/// when it offers this one Suru defaults to it rather than guessing between concrete Models.
+/// when it offers this one Shaman defaults to it rather than guessing between concrete Models.
 pub(super) const AUTO_MODEL_ID: &str = "auto";
 
 /// The reasoning effort a Model defaults to where Copilot names none and the Model offers it.
@@ -46,7 +46,7 @@ pub(super) fn tier_id(tier: ContextTier) -> String {
     id
 }
 
-/// Turns the Models Copilot reports into Suru's catalog, marking exactly one of them the default.
+/// Turns the Models Copilot reports into Shaman's catalog, marking exactly one of them the default.
 ///
 /// Each Model stands once, where it first appeared. CLI 1.0.89 lists the catalog once per account
 /// it holds credentials for — a `copilot login` beside the gh CLI's credentials is two — as one
@@ -166,7 +166,7 @@ pub(super) fn token_count(count: i64) -> Option<u64> {
 /// Copilot's token prices, in the AI Credits it bills, one tier per context tier: the standard
 /// tier always, then the extended one where the Model publishes a second price for it. Each tier is
 /// labelled as the Model's Context option labels the same tier. Both the catalog and the Costs
-/// Suru works out from a Turn's usage read Copilot's prices from here.
+/// Shaman works out from a Turn's usage read Copilot's prices from here.
 pub(super) fn token_prices(prices: &ModelBillingTokenPrices) -> Option<ModelPrices> {
     // Copilot publishes both tiers' prices under the same field names, in types of their own.
     macro_rules! tier {

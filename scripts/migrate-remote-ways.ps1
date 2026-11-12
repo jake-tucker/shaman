@@ -9,20 +9,20 @@
 #
 # Only Remotes still in an old shape change, so the script is idempotent: a
 # second run migrates nothing. Runs on Windows PowerShell 5.1 and PowerShell 7.
-# Stop the Suru server for the Channel first: a running server holds its
+# Stop the Shaman server for the Channel first: a running server holds its
 # Remotes in memory and would write its own copy back.
 #
 # Usage: migrate-remote-ways.ps1 [-DryRun] [-Channel NAME | -File PATH]
 #   -DryRun   Report what would change without writing anything.
 #   -Channel  The Channel whose remotes.json to migrate (default:
-#             $env:SURU_CHANNEL, else release). Honors SURU_DATA_DIR and
-#             SURU_STATE_DIR.
+#             $env:SHAMAN_CHANNEL, else release). Honors SHAMAN_DATA_DIR and
+#             SHAMAN_STATE_DIR.
 #   -File     Migrate this remotes.json instead of a Channel's.
 
 [CmdletBinding()]
 param(
     [switch]$DryRun,
-    [string]$Channel = $(if ($env:SURU_CHANNEL) { $env:SURU_CHANNEL } else { 'release' }),
+    [string]$Channel = $(if ($env:SHAMAN_CHANNEL) { $env:SHAMAN_CHANNEL } else { 'release' }),
     [string]$File
 )
 
@@ -36,8 +36,8 @@ function Fail([string]$Message) {
 # Mirrors the roots main.rs resolves through the dirs crate: on Windows both
 # data and state live under %LOCALAPPDATA%, and a non-release Channel lives in
 # a subdirectory of each.
-$dataBase = if ($env:SURU_DATA_DIR) { $env:SURU_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'suru' }
-$stateBase = if ($env:SURU_STATE_DIR) { $env:SURU_STATE_DIR } else { Join-Path $env:LOCALAPPDATA 'suru' }
+$dataBase = if ($env:SHAMAN_DATA_DIR) { $env:SHAMAN_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'shaman' }
+$stateBase = if ($env:SHAMAN_STATE_DIR) { $env:SHAMAN_STATE_DIR } else { Join-Path $env:LOCALAPPDATA 'shaman' }
 function Get-ChannelRoot([string]$Base) {
     if ($Channel -eq 'release') { $Base } else { Join-Path $Base $Channel }
 }
@@ -48,7 +48,7 @@ if (-not $File) {
     if (-not $DryRun -and (Test-Path -LiteralPath $runtime)) {
         $serverPid = (Get-Content -LiteralPath $runtime -Raw | ConvertFrom-Json).pid
         if ($serverPid -and (Get-Process -Id $serverPid -ErrorAction SilentlyContinue)) {
-            Fail "the $Channel Suru server (pid $serverPid) is running; stop it first"
+            Fail "the $Channel Shaman server (pid $serverPid) is running; stop it first"
         }
     }
 }

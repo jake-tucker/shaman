@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Walks a maintainer through creating the secrets the release workflow signs and notarizes Suru's macOS binary
+# Walks a maintainer through creating the secrets the release workflow signs and notarizes Shaman's macOS binary
 # with (ADR-0050), and sets them on the repository: the Developer ID Application certificate as a p12 and its
 # password, the Team ID, and an App Store Connect API key with its Key ID and Issuer ID. Re-run it to renew the
 # certificate or rotate the key; it offers to keep any secret already set.
@@ -314,7 +314,7 @@ p12_identity() (
   printf '%s\n' "$identity"
 )
 
-banner "Suru macOS release signing for $REPO"
+banner "Shaman macOS release signing for $REPO"
 
 TEAM_ID=""
 CERT_KEPT=false
@@ -355,8 +355,8 @@ else
   step "In the login keychain's My Certificates, select 'Developer ID Application: … (your Team ID)'."
   step "Expand it: its private key must be beneath it, or the export can't sign anything."
   step "File → Export Items…, format Personal Information Exchange (.p12)."
-  step "Save it to your Desktop as suru-developer-id.p12, and give it a strong password."
-  P12_PATH="$HOME/Desktop/suru-developer-id.p12"
+  step "Save it to your Desktop as shaman-developer-id.p12, and give it a strong password."
+  P12_PATH="$HOME/Desktop/shaman-developer-id.p12"
   while :; do
     ask_path P12_PATH "Path to the .p12:" "$P12_PATH"
     ask_secret P12_PASSWORD "The password you exported it with:"
@@ -388,8 +388,8 @@ fi
 pause "Press Enter to continue"
 
 stage "Team ID"
-warn "Every Suru release must come from one team, signed as ai.suru.cli: the keychain trusts that pair."
-warn "Another team brings 'suru wants to use your confidential information' back for every user."
+warn "Every Shaman release must come from one team, signed as ai.shaman.cli: the keychain trusts that pair."
+warn "Another team brings 'shaman wants to use your confidential information' back for every user."
 note "A renewed certificate from the same team is fine."
 if [[ -n "$TEAM_ID" ]]; then
   say "The certificate you exported belongs to team $TEAM_ID. APPLE_TEAM_ID must name it, or the release"
@@ -413,7 +413,7 @@ stage "App Store Connect API key, for notarization"
 if ! keep_existing "${API_KEY_SECRETS[@]}"; then
   open_url "https://appstoreconnect.apple.com/access/integrations/api"
   step "Under Team Keys, click + (the first time, the Account Holder must Request Access)."
-  step "Name it 'Suru notarization', give it Developer access, then Generate."
+  step "Name it 'Shaman notarization', give it Developer access, then Generate."
   step "Download API Key on its row. Apple offers the download only once."
   step "Copy the Issuer ID shown above the list of keys."
   # Offers the newest key in Downloads.
@@ -462,7 +462,7 @@ pause "Press Enter to finish"
 finish
 if (( ${#SKIPPED[@]} == 0 )); then
   say "The next release signs and notarizes its macOS binary. To check a released binary:"
-  note "  codesign --verify --strict suru && codesign -d -r- suru"
-  note "Its designated requirement names identifier \"ai.suru.cli\" and your Team ID."
+  note "  codesign --verify --strict shaman && codesign -d -r- shaman"
+  note "Its designated requirement names identifier \"ai.shaman.cli\" and your Team ID."
   printf '\n'
 fi

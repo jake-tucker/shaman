@@ -29,7 +29,7 @@
 //! told apart as directories (see
 //! [`super::root_directories`]); one that cannot be resolved is told by its
 //! writing alone, so a Root on a mount gone quiet holds back no other Root's
-//! discoveries. A Root naming Suru's own data directory, where the Sidekick
+//! discoveries. A Root naming Shaman's own data directory, where the Sidekick
 //! Workspace is kept, is ignored, the Log saying why, so the Sidekick
 //! Workspace is never within a Root — and, being no Root, holds nothing
 //! from another: neither a Workspace presented at it nor a Repository
@@ -424,7 +424,7 @@ pub(crate) struct RegistryScan {
     source_control: SourceControlService,
     /// The directory a Root beginning with `~` is read beneath.
     home: Option<PathBuf>,
-    /// Suru's own data directory, read canonically, which no Root may be.
+    /// Shaman's own data directory, read canonically, which no Root may be.
     data_root: Option<PathBuf>,
     /// The longest a scan waits on the other Roots being resolved.
     wait: Duration,
@@ -472,9 +472,9 @@ impl RegistryScan {
             home,
             data_root,
             wait,
-            listings: ReadsApart::new("suru-root-discovery-listing", LISTINGS_AT_ONCE),
-            reads: ReadsApart::new("suru-root-discovery-read", READS_AT_ONCE),
-            resolutions: ReadsApart::new("suru-root-discovery-resolution", RESOLUTIONS_AT_ONCE),
+            listings: ReadsApart::new("shaman-root-discovery-listing", LISTINGS_AT_ONCE),
+            reads: ReadsApart::new("shaman-root-discovery-read", READS_AT_ONCE),
+            resolutions: ReadsApart::new("shaman-root-discovery-resolution", RESOLUTIONS_AT_ONCE),
         }
     }
 
@@ -514,7 +514,7 @@ impl RegistryScan {
 impl RootScan for RegistryScan {
     /// Enters what is directly within `root` in the Registry, as the module
     /// says. A Root that cannot be read is skipped, saying why in the Log,
-    /// and never made; so is one naming Suru's own data directory.
+    /// and never made; so is one naming Shaman's own data directory.
     async fn scan(&self, root: &str, commit: &Commit) {
         let began = std::time::Instant::now();
         let Some(directory) = expand(root, self.home.as_deref()) else {
@@ -555,12 +555,12 @@ impl RootScan for RegistryScan {
         if self.data_root.as_ref() == Some(&resolved) {
             tracing::warn!(
                 root,
-                "a Workspace Root may not be Suru's own data directory, so it is ignored and \
+                "a Workspace Root may not be Shaman's own data directory, so it is ignored and \
                  nothing within it was discovered"
             );
             return;
         }
-        // A Root ignored as Suru's own data directory is no Root at all, so
+        // A Root ignored as Shaman's own data directory is no Root at all, so
         // it holds nothing this one would otherwise count.
         let others = root_directories::resolve(
             &self.resolutions,

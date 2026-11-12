@@ -8,9 +8,9 @@ use reqwest::{
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
 };
 use serde_json::{Value, json};
-use suru::{protocol::SessionId, provider::BrokerHandoff};
+use shaman::{protocol::SessionId, provider::BrokerHandoff};
 
-/// The MCP revision the client speaks, as the harnesses Suru hosts do today.
+/// The MCP revision the client speaks, as the harnesses Shaman hosts do today.
 pub const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 
 /// The MCP revision Claude 2.1.283 speaks to a server whose `server/discover`
@@ -282,7 +282,7 @@ fn initialize_params() -> Value {
 }
 
 fn client_info() -> Value {
-    json!({ "name": "suru-broker-test", "version": "0" })
+    json!({ "name": "shaman-broker-test", "version": "0" })
 }
 
 /// The JSON-RPC response `id` names, whether the endpoint answered with JSON

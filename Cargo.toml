@@ -1,5 +1,5 @@
 [package]
-name = "suru"
+name = "shaman"
 version = "0.3.11"
 edition = "2024"
 # The integration tests are one binary, rather than one per file Cargo would discover; see `tests/integration.rs`.
@@ -15,13 +15,13 @@ name = "relay_system"
 path = "tests/relay_system.rs"
 
 [workspace]
-members = ["crates/suru-relay", "crates/suru-relay-protocol"]
-# The Relay and the protocol it shares with the Server are linted and tested beside Suru itself.
-default-members = [".", "crates/suru-relay", "crates/suru-relay-protocol"]
+members = ["crates/shaman-relay", "crates/shaman-relay-protocol"]
+# The Relay and the protocol it shares with the Server are linted and tested beside Shaman itself.
+default-members = [".", "crates/shaman-relay", "crates/shaman-relay-protocol"]
 
 [dependencies]
-suru-build-id = { path = "crates/suru-build-id" }
-suru-relay-protocol = { path = "crates/suru-relay-protocol" }
+shaman-build-id = { path = "crates/shaman-build-id" }
+shaman-relay-protocol = { path = "crates/shaman-relay-protocol" }
 async-trait = "0.1"
 anyhow = "1.0.99"
 arboard = { version = "3.6.1", default-features = false, features = ["image-data", "wayland-data-control"] }
@@ -61,7 +61,7 @@ rmcp = { version = "3.4.1", default-features = false, features = ["server", "tra
 reqwest = { version = "0.12.23", default-features = false, features = ["json", "rustls-tls", "stream", "system-proxy"] }
 ratatui = { version = "0.29.0", features = ["unstable-rendered-line-info"] }
 # The last release on ratatui 0.29. Its defaults would link chafa and enable every image format;
-# Suru tells it the protocol and cell size rather than letting it probe (ADR 0038).
+# Shaman tells it the protocol and cell size rather than letting it probe (ADR 0038).
 ratatui-image = { version = "9.0.0", default-features = false }
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std", "tls12"] }
 # A Server verifies an HTTPS Relay against the operating system's trust store, so a company's TLS-inspecting
@@ -112,10 +112,10 @@ jiff = { version = "0.2.38", default-features = false, features = ["std", "tz-sy
 # Holds SPAKE2's randomness still, to show a short Invite's exchange differs by a code nowhere it should not.
 rand_core = "0.6.4"
 # A real Relay in-process, which the Relay tests drive a Server against.
-suru-relay = { path = "crates/suru-relay" }
-# Marks the test binaries the way `src/main.rs` marks Suru's, so a Server a test starts in-process identifies its
+shaman-relay = { path = "crates/shaman-relay" }
+# Marks the test binaries the way `src/main.rs` marks Shaman's, so a Server a test starts in-process identifies its
 # executable without hashing the whole of it; see `tests/support/build_id.rs`.
-suru-build-id = { path = "crates/suru-build-id" }
+shaman-build-id = { path = "crates/shaman-build-id" }
 # The Copilot fixtures answer the SDK's own protocol handshake, so they read the version it speaks
 # from the crate rather than pinning a literal that silently rots on an upgrade.
 github-copilot-sdk = { version = "1.0.29-preview.5", default-features = false }
@@ -137,7 +137,7 @@ signal-hook = "0.3.18"
 [target.'cfg(target_os = "linux")'.dependencies]
 # Keeps the Server identity key in the Secret Service (ADR-0050), over zbus, a D-Bus client written in Rust, so the
 # release binaries link no libdbus, with the session's encryption done in Rust rather than OpenSSL. zbus runs on the
-# tokio Suru already builds, and Suru connects it to the bus itself, so a connection given up on never blocks.
+# tokio Shaman already builds, and Shaman connects it to the bus itself, so a connection given up on never blocks.
 secret-service = { version = "5.2.0", features = ["rt-tokio-crypto-rust"] }
 zbus = { version = "5.19.0", default-features = false, features = ["tokio"] }
 
@@ -160,7 +160,7 @@ strip = true
 lto = "fat"
 codegen-units = 1
 
-# Every test binary links the whole of Suru, and with full debug information each came to about a gigabyte, so a build
+# Every test binary links the whole of Shaman, and with full debug information each came to about a gigabyte, so a build
 # spent much of its time writing them out. Line tables keep a panic's file and line; for a debugger's view of
 # variables, build with `CARGO_PROFILE_DEV_DEBUG=full`.
 [profile.dev]

@@ -42,7 +42,7 @@ use crate::{
 };
 
 pub(super) const DESCRIPTION: &str = "\
-Read one Session, on this Suru server or a Remote, as compact text: how it \
+Read one Session, on this Shaman server or a Remote, as compact text: how it \
 stands, what in it waits on the user, and what its Transcript says. Any \
 Session may be read — the user's, a Subagent's, another Sidekick's, or your \
 own — and reading changes nothing. Takes \"session_id\", the Session's id as \
@@ -399,15 +399,15 @@ fn read_refusal(
             too_large(session_id, &remote, &budget, request)
         }
         SessionReadRefusal::Unloadable => ToolRefusal::new(format!(
-            "Suru could not load Session `{session_id}` from its storage, so it cannot be read \
+            "Shaman could not load Session `{session_id}` from its storage, so it cannot be read \
              now."
         )),
         SessionReadRefusal::Unreadable => ToolRefusal::new(format!(
-            "Suru holds Session `{session_id}` {at} but could not read what it stored of it, so \
+            "Shaman holds Session `{session_id}` {at} but could not read what it stored of it, so \
              there is nothing to read."
         )),
         SessionReadRefusal::NotFound => ToolRefusal::new(format!(
-            "Suru holds no Session `{session_id}` {at}; pass a session_id, and the origin beside \
+            "Shaman holds no Session `{session_id}` {at}; pass a session_id, and the origin beside \
              it, as list_sessions or a Subagent row gives them."
         )),
     }

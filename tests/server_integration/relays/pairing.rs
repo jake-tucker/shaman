@@ -15,7 +15,7 @@ use std::{
 use eventsource_stream::Eventsource as _;
 use futures_util::{SinkExt, StreamExt};
 use rcgen::PublicKeyData;
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         AdmitPromptRequest, AttachmentDescriptor, CreateSessionRequest, Health, InitialPrompt,
@@ -26,8 +26,8 @@ use suru::{
     },
     server::ServerTimings,
 };
-use suru_relay::RelayConfig;
-use suru_relay_protocol::{Refusal, RelayMessage, ServerMessage};
+use shaman_relay::RelayConfig;
+use shaman_relay_protocol::{Refusal, RelayMessage, ServerMessage};
 use tokio::{
     sync::Notify,
     time::{Duration, timeout},
@@ -58,7 +58,7 @@ impl TestServer {
     /// Redeems `invite`, naming the Remote `name`.
     pub(super) async fn redeem_as(
         &self,
-        invite: impl Into<suru::protocol::InviteText>,
+        invite: impl Into<shaman::protocol::InviteText>,
         name: &str,
     ) -> anyhow::Result<Remote> {
         self.client
@@ -108,7 +108,7 @@ impl TestServer {
 /// What a refusal says to a reader.
 pub(super) fn error_message(error: &anyhow::Error) -> String {
     error
-        .downcast_ref::<suru::protocol::SessionError>()
+        .downcast_ref::<shaman::protocol::SessionError>()
         .unwrap_or_else(|| panic!("a typed Session error, not {error:#}"))
         .message
         .clone()
@@ -181,7 +181,7 @@ pub(super) async fn serving_through(
 
 /// The Session catalog's next event, skipping the Model Catalog's.
 pub(super) async fn next_catalog_event(
-    catalog: &mut suru::managed_client::SessionCatalogSubscription,
+    catalog: &mut shaman::managed_client::SessionCatalogSubscription,
 ) -> Option<ManagedEvent> {
     timeout(
         PROGRESS_DEADLINE,
@@ -550,7 +550,7 @@ async fn redeeming_through_a_relay_under_another_account_is_refused_saying_what_
         error_reason(&refused),
         Some(UnreachableReason::RelayDifferentAccounts {
             relay: relay.address(),
-            account: suru::protocol::RelayAccount {
+            account: shaman::protocol::RelayAccount {
                 provider: "scripted".to_owned(),
                 username: "someone-else".to_owned(),
             },
@@ -709,8 +709,8 @@ async fn a_remote_out_of_reach_for_want_of_a_login_reads_unreachable_saying_a_lo
 }
 
 /// The Account `username` stands under at a test's Relay.
-fn scripted(username: &str) -> suru::protocol::RelayAccount {
-    suru::protocol::RelayAccount {
+fn scripted(username: &str) -> shaman::protocol::RelayAccount {
+    shaman::protocol::RelayAccount {
         provider: "scripted".to_owned(),
         username: username.to_owned(),
     }
@@ -1123,7 +1123,7 @@ async fn a_session_is_created_prompted_and_streamed_through_a_relay_as_directly(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1203,7 +1203,7 @@ async fn a_session_is_created_prompted_and_streamed_through_a_relay_as_directly(
         .expect("admit a Prompt through the Relay")
         .error_for_status()
         .expect("the Remote admits the Prompt")
-        .json::<suru::protocol::Prompt>()
+        .json::<shaman::protocol::Prompt>()
         .await
         .expect("decode the admitted Prompt");
     timeout(PROGRESS_DEADLINE, async {
@@ -1558,7 +1558,7 @@ async fn a_remote_reached_only_through_a_relay_that_stops_answering_answers_agai
 
 /// Waits until the Remote whose stream `catalog` follows answers again, with
 /// nobody asking.
-async fn recovered(catalog: &mut suru::managed_client::SessionCatalogSubscription) {
+async fn recovered(catalog: &mut shaman::managed_client::SessionCatalogSubscription) {
     let recovering = timeout(PROGRESS_DEADLINE, async {
         loop {
             match crate::server_integration::next_session_catalog_event(catalog).await {
@@ -1676,7 +1676,7 @@ async fn a_lapsed_account_cuts_a_live_stream_through_its_relay_and_one_fresh_log
     assert!(
         matches!(
             login.outcome,
-            suru::protocol::RelayLoginOutcome::Done { .. }
+            shaman::protocol::RelayLoginOutcome::Done { .. }
         ),
         "{login:?}"
     );
@@ -1719,7 +1719,7 @@ async fn holding_joins(
                     tell(
                         &mut socket,
                         &RelayMessage::LoginDone {
-                            account: suru_relay_protocol::Account {
+                            account: shaman_relay_protocol::Account {
                                 provider: "scripted".to_owned(),
                                 username: "octocat".to_owned(),
                             },
@@ -1764,7 +1764,7 @@ pub(super) async fn serving_through_stand_in(
         assert!(
             matches!(
                 login.outcome,
-                suru::protocol::RelayLoginOutcome::Done { .. }
+                shaman::protocol::RelayLoginOutcome::Done { .. }
             ),
             "{login:?}"
         );
@@ -1875,7 +1875,7 @@ async fn an_invite_offers_no_relay_whose_login_there_needs_renewing() {
     workstation
         .wait_for_state(&address, RelayState::LoginNeeded)
         .await;
-    let refused_ways = |refused: anyhow::Result<suru::protocol::IssuedInvite>| {
+    let refused_ways = |refused: anyhow::Result<shaman::protocol::IssuedInvite>| {
         let refused = refused
             .expect_err("a Relay whose Login there needs renewing is no way an Invite offers");
         assert_eq!(error_code(&refused), SessionErrorCode::InvalidInviteWays);
@@ -2506,13 +2506,13 @@ impl RemoteApi {
     pub(super) async fn begin_session(
         &self,
         workspace: &std::path::Path,
-    ) -> suru::protocol::SessionId {
+    ) -> shaman::protocol::SessionId {
         self.post("/v1/sessions")
             .json(&CreateSessionRequest {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.to_owned(),
                 },
                 prompt: InitialPrompt {
@@ -2536,7 +2536,7 @@ impl RemoteApi {
     /// The stream of `session`'s events, once its snapshot has come.
     pub(super) async fn session_events(
         &self,
-        session: &suru::protocol::SessionId,
+        session: &shaman::protocol::SessionId,
     ) -> SessionEvents {
         let mut events: SessionEvents = Box::pin(
             self.get(&format!("/v1/sessions/{session}/events"))
@@ -2559,9 +2559,9 @@ impl RemoteApi {
     /// Queues a Prompt saying `text` on `session`.
     async fn prompt(
         &self,
-        session: &suru::protocol::SessionId,
+        session: &shaman::protocol::SessionId,
         text: &str,
-    ) -> suru::protocol::Prompt {
+    ) -> shaman::protocol::Prompt {
         self.post(&format!("/v1/sessions/{session}/prompts"))
             .json(&AdmitPromptRequest {
                 prompt: InitialPrompt {
@@ -2583,7 +2583,7 @@ impl RemoteApi {
 }
 
 /// Waits until `events` says `prompt` was added to its Session.
-async fn prompt_added(events: &mut SessionEvents, prompt: &suru::protocol::Prompt) {
+async fn prompt_added(events: &mut SessionEvents, prompt: &shaman::protocol::Prompt) {
     let streamed = timeout(PROGRESS_DEADLINE, async {
         loop {
             let event = events
@@ -2955,7 +2955,7 @@ const KEEPALIVE: (Duration, Duration) = (Duration::from_millis(50), Duration::fr
 /// Waits until `catalog`, a Remote's, says the Remote went away and is being
 /// tried again, past whatever it says before.
 pub(super) async fn until_recovering(
-    catalog: &mut suru::managed_client::SessionCatalogSubscription,
+    catalog: &mut shaman::managed_client::SessionCatalogSubscription,
 ) {
     let recovering = timeout(PROGRESS_DEADLINE, async {
         loop {
@@ -2973,7 +2973,7 @@ pub(super) async fn until_recovering(
 
 /// Waits until `catalog`, a Remote's, says the Remote answers again.
 pub(super) async fn until_recovered(
-    catalog: &mut suru::managed_client::SessionCatalogSubscription,
+    catalog: &mut shaman::managed_client::SessionCatalogSubscription,
 ) {
     let recovered = timeout(PROGRESS_DEADLINE, async {
         loop {
@@ -3185,7 +3185,7 @@ async fn an_attachment_its_relay_holds_up_for_a_while_is_fetched_whole() {
 
 /// The joined stream filled to what it carries at once: a hundred streams
 /// of `session`'s events, each open once its snapshot has come.
-async fn filled(api: &RemoteApi, session: &suru::protocol::SessionId) -> Vec<SessionEvents> {
+async fn filled(api: &RemoteApi, session: &shaman::protocol::SessionId) -> Vec<SessionEvents> {
     timeout(
         PROGRESS_DEADLINE,
         futures_util::future::join_all((0..100).map(|_| api.session_events(session))),

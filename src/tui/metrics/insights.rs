@@ -795,7 +795,7 @@ impl InsightsView {
     }
 
     /// Whether what is shown for `range` from `origin` leaves out Turns
-    /// stored before Suru timed Turns, which only All time, reaching back
+    /// stored before Shaman timed Turns, which only All time, reaching back
     /// to the first moment a Turn can be placed at, would otherwise hold:
     /// as its Workspace read says.
     pub(in crate::tui) fn leaves_out_untimed(&self, origin: &Outlook, range: MetricsRange) -> bool {

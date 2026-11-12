@@ -4,7 +4,7 @@ use crate::support::PROGRESS_DEADLINE;
 use crate::support::provider::{
     ControlledProvider, ControlledProviderRuntime, ControlledProviderSession,
 };
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, SessionEvent},
     protocol::{
         Activity, AgentId, AgentIdentity, AgentSelection, CreateSessionRequest, InitialPrompt,
@@ -124,7 +124,7 @@ pub fn controlled_selection(model: &str, effort: &str, speed: &str) -> AgentSele
 }
 
 pub async fn next_session_update(
-    subscription: &mut suru::managed_client::SessionSubscription,
+    subscription: &mut shaman::managed_client::SessionSubscription,
 ) -> SessionUpdate {
     let SessionEvent::Updated(update) = timeout(PROGRESS_DEADLINE, subscription.next())
         .await
@@ -244,7 +244,7 @@ pub async fn working_turn_on(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -331,7 +331,7 @@ pub async fn compact(
             descriptor.base_url
         ))
         .bearer_auth(&descriptor.token)
-        .json(&suru::protocol::CompactSessionRequest {
+        .json(&shaman::protocol::CompactSessionRequest {
             instructions: instructions.map(ToOwned::to_owned),
         })
         .send()
@@ -377,7 +377,7 @@ pub async fn open_catalog_stream_with_snapshot(
     descriptor: &RuntimeDescriptor,
 ) -> (
     Vec<SessionId>,
-    impl futures_util::Stream<Item = suru::protocol::SessionCatalogUpdate> + Unpin + use<>,
+    impl futures_util::Stream<Item = shaman::protocol::SessionCatalogUpdate> + Unpin + use<>,
 ) {
     use futures_util::StreamExt;
 
@@ -387,13 +387,13 @@ pub async fn open_catalog_stream_with_snapshot(
             .await
             .expect("the catalog snapshot arrives")
             .expect("the catalog stream stays open");
-        if event.event == suru::protocol::SESSION_CATALOG_SNAPSHOT_EVENT {
-            break serde_json::from_str::<suru::protocol::SessionCatalogSnapshot>(&event.data)
+        if event.event == shaman::protocol::SESSION_CATALOG_SNAPSHOT_EVENT {
+            break serde_json::from_str::<shaman::protocol::SessionCatalogSnapshot>(&event.data)
                 .expect("decode the catalog snapshot");
         }
     };
     let updates =
-        crate::support::named_events(events, suru::protocol::SESSION_CATALOG_UPDATED_EVENT);
+        crate::support::named_events(events, shaman::protocol::SESSION_CATALOG_UPDATED_EVENT);
     (snapshot.session_ids, updates)
 }
 
@@ -413,15 +413,15 @@ pub fn git_output_mentions_path(haystack: &str, path: &std::path::Path) -> bool 
 pub async fn receive_managed_client_initial_state(client: &mut ManagedClient) {
     assert!(matches!(
         crate::support::next_event(client).await,
-        Some(suru::managed_client::ManagedEvent::Connecting)
+        Some(shaman::managed_client::ManagedEvent::Connecting)
     ));
     assert!(matches!(
         crate::support::next_event(client).await,
-        Some(suru::managed_client::ManagedEvent::Connected(_))
+        Some(shaman::managed_client::ManagedEvent::Connected(_))
     ));
     assert!(matches!(
         crate::support::next_event(client).await,
-        Some(suru::managed_client::ManagedEvent::SettingsSnapshot(_))
+        Some(shaman::managed_client::ManagedEvent::SettingsSnapshot(_))
     ));
     crate::support::receive_model_catalog(client).await;
     crate::support::receive_relays(client).await;
@@ -434,8 +434,8 @@ pub async fn receive_managed_client_initial_state(client: &mut ManagedClient) {
 /// to the Server like any client's. Whatever it hands its reader back — a
 /// withdrawn Prompt in its composer — is what that reader would send next.
 pub struct Reader {
-    application: suru::tui::Application,
-    subscription: suru::managed_client::SessionSubscription,
+    application: shaman::tui::Application,
+    subscription: shaman::managed_client::SessionSubscription,
     revision: SessionRevision,
     client: ManagedClient,
     _launched_in: tempfile::TempDir,
@@ -446,7 +446,7 @@ impl Reader {
     /// `channel`, as it stands now.
     pub async fn open(state_dir: &std::path::Path, channel: &str, session_id: SessionId) -> Self {
         let mut client = ManagedClient::connect(
-            suru::managed_client::ManagedClientConfig::new(state_dir, channel)
+            shaman::managed_client::ManagedClientConfig::new(state_dir, channel)
                 .expect("configure managed client"),
         )
         .await
@@ -454,10 +454,10 @@ impl Reader {
         receive_managed_client_initial_state(&mut client).await;
         let (subscription, snapshot) = subscribe(&client, session_id).await;
         let launched_in = tempfile::tempdir().expect("create a launch directory");
-        let mut application = suru::tui::Application::new(launched_in.path(), Default::default());
+        let mut application = shaman::tui::Application::new(launched_in.path(), Default::default());
         let revision = snapshot.revision;
         application
-            .handle_event(suru::tui::ApplicationEvent::SessionAttached(snapshot))
+            .handle_event(shaman::tui::ApplicationEvent::SessionAttached(snapshot))
             .expect("open the Session");
         Self {
             application,
@@ -472,8 +472,8 @@ impl Reader {
     /// new does, seeing nothing more of it until they come back.
     pub fn leave(&mut self) {
         self.application
-            .handle_event(suru::tui::ApplicationEvent::Command(
-                suru::tui::CommandId::InvokeSemantic(suru::tui::SemanticCommandId::SessionNew),
+            .handle_event(shaman::tui::ApplicationEvent::Command(
+                shaman::tui::CommandId::InvokeSemantic(shaman::tui::SemanticCommandId::SessionNew),
             ))
             .expect("leave for the Landing");
     }
@@ -485,7 +485,7 @@ impl Reader {
         self.subscription = subscription;
         self.revision = snapshot.revision;
         self.application
-            .handle_event(suru::tui::ApplicationEvent::SessionAttached(snapshot))
+            .handle_event(shaman::tui::ApplicationEvent::SessionAttached(snapshot))
             .expect("open the Session again");
     }
 
@@ -495,19 +495,19 @@ impl Reader {
             let update = next_session_update(&mut self.subscription).await;
             self.revision = update.revision;
             self.application
-                .handle_event(suru::tui::ApplicationEvent::Session(SessionEvent::Updated(
-                    update,
-                )))
+                .handle_event(shaman::tui::ApplicationEvent::Session(
+                    SessionEvent::Updated(update),
+                ))
                 .expect("follow the Session");
         }
     }
 
     /// Writes `text` into the composer and sends it, answering the admission
     /// the reader asked for.
-    pub fn write_and_send(&mut self, text: &str) -> suru::protocol::AdmitPromptRequest {
+    pub fn write_and_send(&mut self, text: &str) -> shaman::protocol::AdmitPromptRequest {
         self.application
-            .handle_event(suru::tui::ApplicationEvent::Command(
-                suru::tui::CommandId::InsertText(text.to_owned()),
+            .handle_event(shaman::tui::ApplicationEvent::Command(
+                shaman::tui::CommandId::InsertText(text.to_owned()),
             ))
             .expect("write a Prompt");
         self.send().expect("a written Prompt is sent")
@@ -515,15 +515,15 @@ impl Reader {
 
     /// Sends whatever the composer holds, answering the admission the reader
     /// asked for, if it asked for one.
-    pub fn send(&mut self) -> Option<suru::protocol::AdmitPromptRequest> {
+    pub fn send(&mut self) -> Option<shaman::protocol::AdmitPromptRequest> {
         match self
             .application
-            .handle_event(suru::tui::ApplicationEvent::Command(
-                suru::tui::CommandId::SubmitSteer,
+            .handle_event(shaman::tui::ApplicationEvent::Command(
+                shaman::tui::CommandId::SubmitSteer,
             ))
             .expect("send the composer")
         {
-            suru::tui::ApplicationTransition::AdmitPrompt { request, .. } => Some(request),
+            shaman::tui::ApplicationTransition::AdmitPrompt { request, .. } => Some(request),
             _ => None,
         }
     }
@@ -534,12 +534,12 @@ impl Reader {
     /// client sends nothing itself.
     pub fn interrupt(&mut self) -> bool {
         for command in [
-            suru::tui::CommandId::RequestInterrupt,
-            suru::tui::CommandId::ConfirmInterrupt,
+            shaman::tui::CommandId::RequestInterrupt,
+            shaman::tui::CommandId::ConfirmInterrupt,
         ] {
-            if let suru::tui::ApplicationTransition::InterruptSession { .. } = self
+            if let shaman::tui::ApplicationTransition::InterruptSession { .. } = self
                 .application
-                .handle_event(suru::tui::ApplicationEvent::Command(command))
+                .handle_event(shaman::tui::ApplicationEvent::Command(command))
                 .expect("press for an interrupt")
             {
                 return true;
@@ -554,7 +554,7 @@ impl Reader {
         &mut self,
         descriptor: &RuntimeDescriptor,
         session_id: SessionId,
-        request: &suru::protocol::AdmitPromptRequest,
+        request: &shaman::protocol::AdmitPromptRequest,
     ) -> reqwest::StatusCode {
         let status = crate::support::loopback_client()
             .post(format!(
@@ -569,9 +569,9 @@ impl Reader {
             .status();
         assert!(status.is_success(), "the Server admits it: {status}");
         self.application
-            .handle_event(suru::tui::ApplicationEvent::PromptAdmissionSucceeded {
-                session: suru::protocol::SessionReference::new(
-                    suru::protocol::Outlook::Local,
+            .handle_event(shaman::tui::ApplicationEvent::PromptAdmissionSucceeded {
+                session: shaman::protocol::SessionReference::new(
+                    shaman::protocol::Outlook::Local,
                     session_id,
                 ),
                 prompt_id: request.prompt.id,
@@ -585,7 +585,7 @@ impl Reader {
 async fn subscribe(
     client: &ManagedClient,
     session_id: SessionId,
-) -> (suru::managed_client::SessionSubscription, SessionSnapshot) {
+) -> (shaman::managed_client::SessionSubscription, SessionSnapshot) {
     let mut subscription = client
         .subscribe_session(session_id)
         .await

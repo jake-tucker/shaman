@@ -11,13 +11,13 @@
 # been written to it, up to its size, until it is detached.
 #
 # Environment:
-#   SURU_TEST_RAMDISK_MB  The disk's size when it is made. Defaults to 2048.
+#   SHAMAN_TEST_RAMDISK_MB  The disk's size when it is made. Defaults to 2048.
 #
 # Kept to what macOS's bash 3.2 runs.
 
 set -euo pipefail
 
-VOLUME=/Volumes/suru-test-ram
+VOLUME=/Volumes/shaman-test-ram
 
 # Enough descriptors for the Relay tests, which open more than macOS's default 256.
 ulimit -n 4096 2> /dev/null || true
@@ -37,7 +37,7 @@ if [ "${1:-}" = --detach ]; then
 fi
 
 if [ ! -d "$VOLUME" ]; then
-  size_mb=${SURU_TEST_RAMDISK_MB:-2048}
+  size_mb=${SHAMAN_TEST_RAMDISK_MB:-2048}
   device=$(hdiutil attach -nomount "ram://$((size_mb * 2048))" 2> /dev/null | awk '{ print $1 }')
   diskutil erasevolume APFS "$(basename "$VOLUME")" "$device" > /dev/null
 fi

@@ -17,7 +17,7 @@ use crate::support::PROGRESS_DEADLINE;
 use crate::support::provider::{
     ControlledProvider, ControlledProviderRuntime, ControlledProviderSession,
 };
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AgentId, AgentIdentity, CompactionRequest, CompactionTrigger,
         Cost, PromptDelivery, SessionId, SessionSnapshot, SessionTimestamp, TurnStatus, Usage,
@@ -262,7 +262,7 @@ impl Idle {
 /// What an [`Idle`] fixture leaves once its Server has stopped.
 struct Stopped {
     session_id: SessionId,
-    model: suru::protocol::ModelId,
+    model: shaman::protocol::ModelId,
     hand: ManualClock,
     clock: ServerClock,
     config: tempfile::TempDir,
@@ -277,7 +277,7 @@ impl Stopped {
     /// Pins `settings` in the Config Document, as the user editing it while
     /// no Server runs.
     fn pin(&self, settings: &str) {
-        std::fs::write(self.config.path().join("suru.jsonc"), settings)
+        std::fs::write(self.config.path().join("shaman.jsonc"), settings)
             .expect("write Config Document");
     }
 
@@ -808,8 +808,8 @@ async fn a_stretch_skipped_before_its_tree_was_evicted_does_not_fire_late() {
     idle.assert_nothing_scheduled(1, "the penalty falls short of the minimum")
         .await;
     idle.mutate(
-        suru::protocol::SettingMutation::CompactionScheduledMinimumPenalty {
-            value: suru::protocol::PenaltyThreshold::from_cents(5),
+        shaman::protocol::SettingMutation::CompactionScheduledMinimumPenalty {
+            value: shaman::protocol::PenaltyThreshold::from_cents(5),
         },
     )
     .await;
@@ -992,8 +992,10 @@ async fn a_stretch_whose_tree_was_evicted_with_the_setting_off_is_skipped_for_go
 
     idle.advance_to(due_at);
     assert_nothing_starts(&mut idle.provider, "the Setting is off at the moment").await;
-    idle.mutate(suru::protocol::SettingMutation::CompactionScheduledEnabled { value: Some(true) })
-        .await;
+    idle.mutate(
+        shaman::protocol::SettingMutation::CompactionScheduledEnabled { value: Some(true) },
+    )
+    .await;
     idle.advance_to(SessionTimestamp(due_at.0 + millis(LEAD) / 2));
     assert_nothing_starts(
         &mut idle.provider,
@@ -1025,8 +1027,10 @@ async fn the_setting_turned_on_before_the_moment_reaches_an_evicted_tree() {
     .await
     .expect("the tree is evicted");
 
-    idle.mutate(suru::protocol::SettingMutation::CompactionScheduledEnabled { value: Some(true) })
-        .await;
+    idle.mutate(
+        shaman::protocol::SettingMutation::CompactionScheduledEnabled { value: Some(true) },
+    )
+    .await;
     idle.advance_to(due_at);
     let mut session = resumed(&mut idle.provider, "the scheduled Compaction is due").await;
     let asked = timeout(PROGRESS_DEADLINE, session.next_compaction())

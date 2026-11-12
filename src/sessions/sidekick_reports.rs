@@ -57,7 +57,7 @@
 //! works is not known, no branch is taken to have settled.
 //!
 //! All of it is held in memory beside the Session: lost with everything else
-//! held when Suru stops, so a Turn a restart settles tells no one; gone with
+//! held when Shaman stops, so a Turn a restart settles tells no one; gone with
 //! the Session when it is deleted; and dropped when the Sidekick's own
 //! Session is. It is apart from the stored record of the Sidekick's acts its
 //! tree lists (see `sidekick_acts`), which outlives a stop and counts every
@@ -1250,7 +1250,7 @@ fn asked_interventions(
 /// The Turn of `snapshot` whose row leads into `subagent` at the moment `at`
 /// — now, where `None`: the latest such row that had set it working by then,
 /// since a Subagent resumed stands in a row of each Turn that resumed it. A
-/// row stood before Suru recorded when is taken to have stood before
+/// row stood before Shaman recorded when is taken to have stood before
 /// anything else it says.
 fn spawning_turn_at(
     snapshot: &SessionSnapshot,
@@ -1278,7 +1278,7 @@ fn spawning_turn_at(
 
 /// Whether a Watch heard to start at `started_at` started while `turn`
 /// worked: from when it began — whenever that was, for one stood before
-/// Suru recorded it — until it settled.
+/// Shaman recorded it — until it settled.
 pub(super) fn started_within(turn: &Turn, started_at: SessionTimestamp) -> bool {
     turn.started_at.is_none_or(|began| began <= started_at)
         && turn.settled_at.is_none_or(|settled| started_at <= settled)

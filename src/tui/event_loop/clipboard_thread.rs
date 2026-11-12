@@ -57,7 +57,7 @@ where
             let incoming = pending.clone();
             let create_writer = self.create_writer.clone();
             match thread::Builder::new()
-                .name("suru-clipboard".to_owned())
+                .name("shaman-clipboard".to_owned())
                 .spawn(move || {
                     // The handle is created, used, and dropped on this thread;
                     // the native writer need not even be Send.

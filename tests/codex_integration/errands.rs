@@ -1,6 +1,6 @@
 //! Codex running Errands through its own one-shot mode.
 //!
-//! An Errand is one Provider call Suru makes for its own purposes, and Codex
+//! An Errand is one Provider call Shaman makes for its own purposes, and Codex
 //! fulfils it with `codex exec` rather than through the app-server every Session
 //! is driven over: the flags that make one run ephemeral, read-only, and
 //! schema-constrained are the whole reason ADR 0011 prefers a native one-shot
@@ -17,8 +17,7 @@ use crate::codex_integration::{
 };
 use axum::{Json, Router, routing::get};
 use serde_json::json;
-use std::sync::Arc;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     pricing::PricingSource,
     protocol::{
@@ -32,6 +31,7 @@ use suru::{
     },
     server::{self, ServerConfig, ServerTimings},
 };
+use std::sync::Arc;
 use tokio::{
     net::TcpListener,
     time::{Duration, timeout},
@@ -163,7 +163,7 @@ async fn create_session(client: &ManagedClient, workspace: &std::path::Path) -> 
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             prompt: InitialPrompt {
@@ -180,7 +180,7 @@ async fn create_session(client: &ManagedClient, workspace: &std::path::Path) -> 
 }
 
 /// What Codex was invoked with, with the two temporary paths it was pointed at
-/// replaced by a marker: what those files are called is Suru's own business,
+/// replaced by a marker: what those files are called is Shaman's own business,
 /// but that a schema goes in and an answer comes back is not.
 fn errand_invocation(codex: &ScriptedCodex) -> Vec<String> {
     let mut previous = String::new();
@@ -267,7 +267,7 @@ async fn codex_derives_a_title_through_its_own_one_shot_mode() {
     );
     assert_eq!(
         codex.errand_cwd(),
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace"),
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace"),
         "the Errand runs in the Session's Workspace"
     );
     assert!(
@@ -280,7 +280,7 @@ async fn codex_derives_a_title_through_its_own_one_shot_mode() {
         schema["properties"]["title"].is_object()
             && schema["properties"]["icon"].is_object()
             && schema["additionalProperties"] == false,
-        "the schema Suru asked for is handed to Codex natively: {schema}"
+        "the schema Shaman asked for is handed to Codex natively: {schema}"
     );
 
     assert_eq!(
@@ -303,14 +303,14 @@ async fn codex_derives_a_title_through_its_own_one_shot_mode() {
 /// The Title Errand still needs the Skill's visible name to understand the
 /// request, but handing Codex its `$` marker would make `codex exec` select the
 /// Skill again from the Workspace and run its instructions instead of the
-/// small, schema-constrained Errand Suru asked for.
+/// small, schema-constrained Errand Shaman asked for.
 #[tokio::test]
 async fn a_bound_skill_marker_is_plain_text_in_a_codex_title_errand() {
     const PROMPT: &str = "$implement fix $titles";
 
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let canonical_workspace =
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
     let workspace_json =
         serde_json::to_string(&canonical_workspace).expect("encode Workspace path");
     let skill_arm = format!(
@@ -330,7 +330,7 @@ async fn a_bound_skill_marker_is_plain_text_in_a_codex_title_errand() {
     let loading = client
         .list_skills(SkillCatalogRequest {
             provider: ProviderId::new("codex"),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
         })
@@ -351,7 +351,7 @@ async fn a_bound_skill_marker_is_plain_text_in_a_codex_title_errand() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -386,7 +386,7 @@ async fn a_bound_skill_marker_is_plain_text_in_a_codex_title_errand() {
     server.shutdown().await.expect("shut down server");
 }
 
-/// A Provider changing its catalog does not stop Suru titling Sessions: the
+/// A Provider changing its catalog does not stop Shaman titling Sessions: the
 /// declared Model having gone, the Errand runs at the Model Codex defaults to,
 /// under that Model's own Options rather than the withdrawn one's.
 #[tokio::test]
@@ -512,7 +512,7 @@ const ANSWERED_EVENTS: &str = r#"{"type":"thread.started","thread_id":"0199a213-
 {"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"{\"title\":\"Fix reasoning group flicker\"}"}}
 {"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":3,"cache_write_input_tokens":4,"output_tokens":29,"reasoning_output_tokens":7}}"#;
 
-/// What those events' usage is in Suru's own disjoint parts.
+/// What those events' usage is in Shaman's own disjoint parts.
 fn answered_usage() -> Usage {
     Usage {
         fresh_input_tokens: Some(3),

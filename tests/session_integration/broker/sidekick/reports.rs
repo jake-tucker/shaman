@@ -1,13 +1,13 @@
 //! Sidekick Reports: a Sidekick is told of work it set going instead of
 //! polling for it. Once it has begun a Session, sent one a Prompt, or answered
-//! one's Questionnaire, Suru gives it an account of that Session when the
+//! one's Questionnaire, Shaman gives it an account of that Session when the
 //! Turn it had a hand in settles — how it settled and a bounded excerpt of the
 //! final Message — and whenever the Session comes to owe a Questionnaire or an
 //! Approval meanwhile, naming which. The Report is the Sidekick's own Provider
 //! input, delivered as a Subagent Report is: it steers a Turn still working,
 //! wakes an idle Sidekick into a Continuation, and with no Provider process
 //! waits for the head of its next Turn, never relaunching one. It stands in no
-//! Transcript, and it is lost if Suru stops first.
+//! Transcript, and it is lost if Shaman stops first.
 //!
 //! A Sidekick is never told of a Session it had no hand in, nor of one it
 //! only read, listed, interrupted or set aside, nor of a Turn the user begins
@@ -18,9 +18,9 @@
 //! Sidekick's Provider double is handed, which is what its Agent would read.
 
 use reqwest::StatusCode;
-use suru::protocol::{Approval, ApprovalId, ApprovalSubject, Questionnaire, QuestionnaireId};
-use suru::provider::Report;
-use suru::questionnaire::{Question, QuestionChoice};
+use shaman::protocol::{Approval, ApprovalId, ApprovalSubject, Questionnaire, QuestionnaireId};
+use shaman::provider::Report;
+use shaman::questionnaire::{Question, QuestionChoice};
 
 use super::*;
 use crate::session_integration::broker::{
@@ -223,7 +223,7 @@ fn settled_report(
     final_message: &str,
 ) -> String {
     format!(
-        "Sidekick Report from Suru: the Session \"{title}\" you set to work has settled its \
+        "Sidekick Report from Shaman: the Session \"{title}\" you set to work has settled its \
          Turn, which {settled}. Its session_id is {session_id}, which read_session \
          takes.\n\nIts Agent's final Message:\n\n{final_message}"
     )
@@ -573,7 +573,7 @@ async fn a_report_says_a_turn_failed_or_was_interrupted_and_where_to_read_a_mess
     assert_eq!(
         head,
         format!(
-            "Sidekick Report from Suru: the Session \"Run the auth suite.\" you set to work has \
+            "Sidekick Report from Shaman: the Session \"Run the auth suite.\" you set to work has \
              settled its Turn, which failed. Its session_id is {prompted}, which read_session \
              takes.\n\nIt failed with: {failure}\n\nIts Agent's final Message:\n\n{}",
             &long[..2_000]
@@ -632,7 +632,7 @@ async fn a_report_says_a_turn_failed_or_was_interrupted_and_where_to_read_a_mess
     assert_eq!(
         untimed_sidekick_report(&interrupted),
         format!(
-            "Sidekick Report from Suru: the Session \"Run the auth suite.\" you set to work has \
+            "Sidekick Report from Shaman: the Session \"Run the auth suite.\" you set to work has \
              settled its Turn, which was interrupted. Its session_id is {prompted}, which \
              read_session takes.\n\nIts Agent wrote no final Message in it."
         )
@@ -665,7 +665,7 @@ async fn each_questionnaire_and_approval_a_session_it_set_to_work_comes_to_owe_i
     assert_eq!(
         asked,
         format!(
-            "Sidekick Report from Suru: the Session \"{ASKED}\" you set to work asks a \
+            "Sidekick Report from Shaman: the Session \"{ASKED}\" you set to work asks a \
              Questionnaire, which waits on an Answer. Its session_id is {begun}: read_session \
              gives its Questions, and answer_questionnaire answers it."
         ),
@@ -706,7 +706,7 @@ async fn each_questionnaire_and_approval_a_session_it_set_to_work_comes_to_owe_i
     assert_eq!(
         approval,
         format!(
-            "Sidekick Report from Suru: the Session \"{ASKED}\" you set to work asks an \
+            "Sidekick Report from Shaman: the Session \"{ASKED}\" you set to work asks an \
              Approval, which waits on the user's Decision. Its session_id is {begun}: \
              read_session says what it asks."
         )
@@ -752,7 +752,7 @@ async fn a_sidekick_that_answers_a_questionnaire_is_told_when_the_turn_it_answer
                 matches!(
                     activity,
                     Activity::Questionnaire {
-                        outcome: suru::protocol::QuestionnaireOutcome::Pending,
+                        outcome: shaman::protocol::QuestionnaireOutcome::Pending,
                         ..
                     }
                 )
@@ -832,7 +832,7 @@ async fn a_questionnaire_a_subagent_asks_beneath_a_session_it_set_to_work_names_
     assert_eq!(
         report,
         format!(
-            "Sidekick Report from Suru: a Subagent of the Session \"Run the auth suite.\" you \
+            "Sidekick Report from Shaman: a Subagent of the Session \"Run the auth suite.\" you \
              set to work asks a Questionnaire, which waits on an Answer. The Session's \
              session_id is {prompted}, and the Subagent's is {child}: given the Subagent's, \
              read_session gives its Questions, and answer_questionnaire answers it."
@@ -902,7 +902,7 @@ async fn a_sidekick_that_answers_a_subagents_questionnaire_is_told_of_that_subag
     assert_eq!(
         untimed_sidekick_report(&report),
         format!(
-            "Sidekick Report from Suru: a Subagent of the Session \"Run the auth suite.\" you set \
+            "Sidekick Report from Shaman: a Subagent of the Session \"Run the auth suite.\" you set \
              to work has settled its Turn, which completed. The Session's session_id is \
              {delegating}, and the Subagent's is {child}, which read_session \
              takes.\n\nIts Agent's final Message:\n\n{FIXED}"
@@ -1093,7 +1093,7 @@ async fn a_sidekick_whose_answer_was_not_delivered_is_owed_nothing_of_the_turn()
                 matches!(
                     activity,
                     Activity::Questionnaire {
-                        outcome: suru::protocol::QuestionnaireOutcome::Pending,
+                        outcome: shaman::protocol::QuestionnaireOutcome::Pending,
                         ..
                     }
                 )

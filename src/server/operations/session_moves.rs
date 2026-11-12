@@ -925,7 +925,7 @@ async fn readable_directory(destination: PathBuf) -> Result<PathBuf, MoveRefusal
     tokio::task::spawn_blocking(move || crate::source_control::readable_directory(&destination))
         .await
         .map_err(|_| {
-            MoveRefusal::Destination("Suru could not finish reading the destination".to_owned())
+            MoveRefusal::Destination("Shaman could not finish reading the destination".to_owned())
         })?
         .map_err(MoveRefusal::Destination)
 }

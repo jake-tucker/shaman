@@ -18,7 +18,7 @@
 use std::path::{Path, PathBuf};
 
 use diesel::{Connection, QueryableByName, RunQueryDsl, SqliteConnection, sql_types::Text};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SubagentTreeEvent},
     protocol::{
         Outlook, SessionListItem, SessionTimestamp, SubagentTreeRevision, SubagentTreeSession,
@@ -63,7 +63,7 @@ fn begun_id(answer: &Value) -> SessionId {
 
 /// `path` as the Server reads every directory: canonically.
 fn canonical(path: &Path) -> PathBuf {
-    suru::paths::canonical(path).expect("read the directory")
+    shaman::paths::canonical(path).expect("read the directory")
 }
 
 /// The Sessions a tree lists beneath its Sidekick, in its order, as
@@ -115,7 +115,7 @@ async fn delete(descriptor: &RuntimeDescriptor, session_id: SessionId) {
 /// The database of the stopped Server for `channel` beneath `state_dir`.
 fn stored(state_dir: &Path, channel: &str) -> SqliteConnection {
     let config = ServerConfig::new(state_dir, channel).expect("configure server");
-    let database = config.data_dir().join("suru.db");
+    let database = config.data_dir().join("shaman.db");
     SqliteConnection::establish(database.to_str().expect("the database's path is UTF-8"))
         .expect("open the stopped Server's database")
 }
@@ -142,7 +142,7 @@ fn stored_acts(state_dir: &Path, channel: &str) -> Vec<(String, String)> {
 async fn every_act_lists_the_session_by_its_latest_moment_and_reading_or_a_refusal_lists_nothing() {
     const {
         assert!(
-            suru::protocol::PROTOCOL_VERSION >= 76,
+            shaman::protocol::PROTOCOL_VERSION >= 76,
             "the Sessions a Sidekick's tree carries change the wire"
         );
     }
@@ -544,7 +544,7 @@ async fn a_subsessions_tree_is_its_sidekicks_and_a_session_only_acted_on_heads_i
 
 /// The next event a managed client's tree subscription delivers.
 async fn next_tree_event(
-    subscription: &mut suru::managed_client::SubagentTreeSubscription,
+    subscription: &mut shaman::managed_client::SubagentTreeSubscription,
 ) -> SubagentTreeEvent {
     timeout(PROGRESS_DEADLINE, subscription.next())
         .await

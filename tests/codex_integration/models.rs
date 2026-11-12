@@ -3,8 +3,7 @@
 use crate::codex_integration::support::{ScriptedCodex, receive_initial_state};
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::Value;
-use std::sync::Arc;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         Activity, AgentSelection, CreateSessionRequest, InitialPrompt, ModelAvailability, ModelId,
@@ -15,6 +14,7 @@ use suru::{
     provider::CodexRuntime,
     server::{self, ServerConfig},
 };
+use std::sync::Arc;
 use tokio::time::timeout;
 
 const MODEL_CATALOG_CODEX: &str = r#"#!/bin/sh
@@ -70,7 +70,7 @@ const OUTDATED_CODEX_MODEL_CATALOG: &str = r#"#!/bin/sh
 while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*)
-      printf '%s\n' '{"id":1,"result":{"userAgent":"suru/0.149.0 (Linux 6; x86_64) codex_cli_rs/0.149.0"}}'
+      printf '%s\n' '{"id":1,"result":{"userAgent":"shaman/0.149.0 (Linux 6; x86_64) codex_cli_rs/0.149.0"}}'
       ;;
     *'"method":"model/list"'*)
       printf '%s\n' '{"id":2,"result":{"data":[{"id":"gpt-fixture","displayName":"GPT Fixture","description":"Fixture model","hidden":false,"supportedReasoningEfforts":[],"defaultReasoningEffort":"medium","serviceTiers":[],"defaultServiceTier":null,"isDefault":true}],"nextCursor":null}}'
@@ -274,7 +274,7 @@ async fn codex_model_catalog_is_paginated_normalized_and_kept_across_refresh_fai
                     },
                 }],
             }),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -293,7 +293,7 @@ async fn codex_model_catalog_is_paginated_normalized_and_kept_across_refresh_fai
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -454,7 +454,7 @@ async fn selected_model_is_lowered_to_codex_and_effective_model_is_projected_bac
             session_id: None,
             preparation_id: None,
             agent_selection: Some(requested),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -568,7 +568,7 @@ async fn codex_materializes_thread_options_and_handles_native_omission_and_clear
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -692,7 +692,7 @@ async fn codex_adapter_distinguishes_explicit_option_defaults_from_native_omissi
                     },
                 ],
             }),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -729,7 +729,7 @@ async fn codex_adapter_distinguishes_explicit_option_defaults_from_native_omissi
                 model: ModelId::new("requested-model"),
                 options: Vec::new(),
             }),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -803,7 +803,7 @@ async fn codex_lowers_every_advertised_effort_and_tier_combination_independently
                             },
                         ],
                     }),
-                    execution_directory: suru::protocol::ExecutionDirectory {
+                    execution_directory: shaman::protocol::ExecutionDirectory {
                         path: workspace.path().to_owned(),
                     },
                     prompt: InitialPrompt {
@@ -880,7 +880,7 @@ async fn codex_model_rejection_never_falls_back_and_restores_the_prompt() {
             session_id: None,
             preparation_id: None,
             agent_selection: Some(selection.clone()),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -980,7 +980,7 @@ async fn codex_option_rejection_never_falls_back_and_restores_the_prompt() {
             session_id: None,
             preparation_id: None,
             agent_selection: Some(selection.clone()),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1072,7 +1072,7 @@ async fn generic_codex_turn_rejection_does_not_mark_the_model_unavailable() {
                 model: ModelId::new("valid-model"),
                 options: Vec::new(),
             }),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1114,7 +1114,7 @@ async fn generic_codex_turn_rejection_does_not_mark_the_model_unavailable() {
 }
 
 /// Issue #116: a Codex CLI that isn't installed is a condition the user fixes
-/// outside Suru, so the catalog reports it as typed unavailability, with where
+/// outside Shaman, so the catalog reports it as typed unavailability, with where
 /// to install it from beside it, and the next refresh clears it without a
 /// restart.
 #[tokio::test]

@@ -346,12 +346,12 @@ fn memory_refusal(tool: BrokerTool, error: MemoryError, not_done: &str) -> ToolR
     let searching = tool == BrokerTool::SearchMemory;
     ToolRefusal::new(match error {
         MemoryError::NoSuchMemory(id) => format!(
-            "Suru keeps no Memory {id} on this server: it was never stored here, or has been \
+            "Shaman keeps no Memory {id} on this server: it was never stored here, or has been \
              forgotten since. search_memory finds Memories by their words, and lists them when \
              given none."
         ),
         MemoryError::Storage(_) => {
-            format!("Suru's own storage failed, so {not_done}; its Log says how.")
+            format!("Shaman's own storage failed, so {not_done}; its Log says how.")
         }
         MemoryError::Refused(refusal) => match refusal {
             MemoryRefusal::EmptyTitle => format!(
@@ -750,7 +750,7 @@ mod tests {
                 "no Memory was read"
             )
             .to_string(),
-            "Suru keeps no Memory 12 on this server: it was never stored here, or has been \
+            "Shaman keeps no Memory 12 on this server: it was never stored here, or has been \
              forgotten since. search_memory finds Memories by their words, and lists them when \
              given none."
         );

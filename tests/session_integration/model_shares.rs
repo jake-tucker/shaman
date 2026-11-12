@@ -16,7 +16,7 @@ use crate::support::{
     PROGRESS_DEADLINE,
     usage::{self, all_of_time, by_model, share, tokens, usd},
 };
-use suru::{
+use shaman::{
     pricing::CacheRates,
     protocol::{
         AdmitPromptRequest, AgentId, AgentIdentity, CostBasis, CountedCost, CreateSessionRequest,

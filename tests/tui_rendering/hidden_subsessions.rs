@@ -21,7 +21,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use suru::{
+use shaman::{
     managed_client::{ManagedEvent, SessionEvent, SubagentTreeEvent},
     protocol::{
         Activity, ActivityId, ActivityStatus, ApprovalId, ApprovalOutcome, ApprovalSubject,
@@ -118,7 +118,7 @@ fn listed(
 
 fn edit(
     session: SessionListItem,
-    change: impl FnOnce(&mut suru::protocol::SessionSummary),
+    change: impl FnOnce(&mut shaman::protocol::SessionSummary),
 ) -> SessionListItem {
     let SessionListItem::Readable(mut summary) = session else {
         unreachable!("the fixture builds a readable session");
@@ -202,7 +202,7 @@ fn viewed(session: SessionListItem, at: u64) -> SessionListItem {
 /// Rooted at `workspace` rather than where the fixture put it.
 fn rooted_at(session: SessionListItem, workspace: &Path) -> SessionListItem {
     edit(session, |summary| {
-        summary.session.workspace = suru::protocol::Workspace::directory(workspace.to_owned());
+        summary.session.workspace = shaman::protocol::Workspace::directory(workspace.to_owned());
     })
 }
 
@@ -906,7 +906,7 @@ fn a_settled_sidekicks_row_stays_active_while_a_subsession_it_hides_has_somethin
 fn sidekick_with_its_subsession_row(
     sidekick: &Sidekick,
     workspace: &Path,
-) -> suru::protocol::SessionSnapshot {
+) -> shaman::protocol::SessionSnapshot {
     let mut snapshot = navigable_session_snapshot(sidekick.session, workspace, 1);
     let turn_id = snapshot.turns[0].id;
     let row = ActivityId::new();
@@ -1062,7 +1062,10 @@ fn armed_sidebar(
 
 /// The Subsession's own Session, working a Turn that owes an Approval and a
 /// Questionnaire, the Approval first.
-fn subsession_owing_both(sidekick: &Sidekick, workspace: &Path) -> suru::protocol::SessionSnapshot {
+fn subsession_owing_both(
+    sidekick: &Sidekick,
+    workspace: &Path,
+) -> shaman::protocol::SessionSnapshot {
     let mut snapshot = failed_session_snapshot(
         sidekick.subsession,
         PromptId::new(),
@@ -1574,9 +1577,9 @@ fn everywhere_a_subsession_begun_on_a_remote_from_here_is_carried_by_its_sidekic
     application
         .handle_event(ApplicationEvent::Managed(
             ManagedEvent::SessionRemoteSubsessionsChanged(
-                suru::protocol::SessionRemoteSubsessionsChanged {
+                shaman::protocol::SessionRemoteSubsessionsChanged {
                     session_id: local.session,
-                    remote_subsessions: vec![suru::protocol::RemoteSession {
+                    remote_subsessions: vec![shaman::protocol::RemoteSession {
                         origin: "studio".to_owned(),
                         session_id: begun_here,
                     }],
@@ -1675,7 +1678,7 @@ fn picker_listing(root: &Path, sidekick: &Sidekick) -> Vec<SessionListItem> {
     vec![
         sidekick.own(root),
         owing_an_answer(edit(sidekick.began(root), |summary| {
-            summary.session.workspace = suru::protocol::Workspace::directory(root.to_owned());
+            summary.session.workspace = shaman::protocol::Workspace::directory(root.to_owned());
         })),
         listed(SessionId::new(), "Own work here", root, 1),
         listed(SessionId::new(), "Own work elsewhere", &repository(root), 1),
@@ -1800,7 +1803,7 @@ fn everywhere_the_session_picker_leaves_out_a_subsession_begun_on_a_remote_from_
     for request in requests {
         let sessions = match request.outlook() {
             Outlook::Local => vec![edit(sidekick.own(root), |summary| {
-                summary.remote_subsessions = vec![suru::protocol::RemoteSession {
+                summary.remote_subsessions = vec![shaman::protocol::RemoteSession {
                     origin: "studio".to_owned(),
                     session_id: begun_here,
                 }];
@@ -2039,7 +2042,7 @@ fn look_at_studio(application: &mut Application, workspace: &Path) -> Vec<Sessio
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
             result: Ok(RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
                 status: RemoteStatus::Available,
                 unreachable: None,
             }),
@@ -2225,7 +2228,7 @@ fn naming_its_remote_subsession(
     begun: SessionId,
 ) -> SessionListItem {
     edit(sidekick.own(root), |summary| {
-        summary.remote_subsessions = vec![suru::protocol::RemoteSession {
+        summary.remote_subsessions = vec![shaman::protocol::RemoteSession {
             origin: "studio".to_owned(),
             session_id: begun,
         }];

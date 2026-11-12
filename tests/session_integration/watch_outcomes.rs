@@ -8,7 +8,7 @@ use crate::session_integration::support::{
     WorkingTurn, controlled_selection, read_session, read_session_until, working_turn,
 };
 use crate::support::PROGRESS_DEADLINE;
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, InitialPrompt, PromptDelivery, PromptId,
         RuntimeDescriptor, SessionId, SessionSnapshot, TranscriptItem, TurnId, TurnStatus,

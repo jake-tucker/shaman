@@ -17,13 +17,13 @@ pub(super) fn token(plan: &PreparedCheckout) -> String {
         &plan.intended_session,
     ))
     .expect("preparation identity serializes");
-    format!("suru-preparation:{}", blake3::hash(&identity).to_hex())
+    format!("shaman-preparation:{}", blake3::hash(&identity).to_hex())
 }
 impl GitSourceControl {
-    /// Whether a lock is backed by both pieces of Git-owned evidence Suru
+    /// Whether a lock is backed by both pieces of Git-owned evidence Shaman
     /// writes during preparation. This remains verifiable after the intent is
     /// retired: the registration marker and ownership-ref reflog carry the
-    /// same opaque token. A raw `suru-preparation:` prefix proves nothing.
+    /// same opaque token. A raw `shaman-preparation:` prefix proves nothing.
     pub(super) async fn owns_preparation_lock(
         &self,
         target: &CheckoutRemovalTarget,
@@ -33,7 +33,7 @@ impl GitSourceControl {
         else {
             return Ok(false);
         };
-        let marker = match std::fs::read_to_string(metadata.join("suru-preparation")) {
+        let marker = match std::fs::read_to_string(metadata.join("shaman-preparation")) {
             Ok(marker) => marker,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
             Err(error) => return Err(error.to_string()),
@@ -47,7 +47,7 @@ impl GitSourceControl {
                 &[
                     "for-each-ref",
                     "--format=%(refname)",
-                    "refs/suru/preparations",
+                    "refs/shaman/preparations",
                 ],
             )
             .await?
@@ -72,14 +72,14 @@ impl GitSourceControl {
             source_commit,
             source_branch,
         } = &plan.plan;
-        let base_key = format!("branch.{branch}.suru-base");
+        let base_key = format!("branch.{branch}.shaman-base");
         self.mutate(
             &plan.repository.metadata_directory,
             &["config", "--local", &base_key, source_commit],
         )
         .await?;
         if let Some(source_branch) = source_branch {
-            let branch_key = format!("branch.{branch}.suru-base-branch");
+            let branch_key = format!("branch.{branch}.shaman-base-branch");
             self.mutate(
                 &plan.repository.metadata_directory,
                 &["config", "--local", &branch_key, source_branch],
@@ -119,7 +119,7 @@ impl GitSourceControl {
             ..
         } = &plan.plan;
         let root = &plan.repository.metadata_directory;
-        let claim = format!("refs/suru/preparations/{}", plan.id.0.simple());
+        let claim = format!("refs/shaman/preparations/{}", plan.id.0.simple());
         let branch_ref = format!("refs/heads/{branch}");
         let expected = token(plan);
         if let Some(commit) = self.text(root, &["rev-parse", "--verify", &claim]).await? {
@@ -234,7 +234,7 @@ impl GitSourceControl {
     }
     fn validate_ownership(&self, plan: &PreparedCheckout, metadata: &Path) -> Result<(), String> {
         let expected = token(plan);
-        let marker = match std::fs::read_to_string(metadata.join("suru-preparation")) {
+        let marker = match std::fs::read_to_string(metadata.join("shaman-preparation")) {
             Ok(value) if value == expected => Some(value),
             Ok(_) => return Err("Preparation marker conflicts with the recorded intention".into()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -324,7 +324,7 @@ impl GitSourceControl {
             .owned_registration(plan)?
             .ok_or("Prepared checkout registration is unavailable")?;
         self.validate_prepared(plan).await?;
-        if metadata.join("suru-preparation").exists() {
+        if metadata.join("shaman-preparation").exists() {
             if metadata.join("locked").exists() {
                 self.mutate(root, &["worktree", "unlock", destination_text])
                     .await?;
@@ -339,7 +339,7 @@ impl GitSourceControl {
             .map_err(|e| e.to_string())?;
         marker.as_file().sync_all().map_err(|e| e.to_string())?;
         marker
-            .persist(metadata.join("suru-preparation"))
+            .persist(metadata.join("shaman-preparation"))
             .map_err(|e| e.to_string())?;
         if metadata.join("locked").exists() {
             self.mutate(root, &["worktree", "unlock", destination_text])
@@ -376,10 +376,10 @@ mod tests {
                 capabilities: SourceControlCapabilities::discovery_only(),
             },
             destination: ExecutionDirectory {
-                path: "repository/.suru-worktrees/fix-the-cost-indicator".into(),
+                path: "repository/.shaman-worktrees/fix-the-cost-indicator".into(),
             },
             plan: CheckoutPreparationPlan::Git {
-                branch: "suru/fix-the-cost-indicator".to_owned(),
+                branch: "shaman/fix-the-cost-indicator".to_owned(),
                 source_commit: "90aae04c34c0d70c91c5be38daeb559f911adfc1".to_owned(),
                 source_branch: source_branch.map(str::to_owned),
             },
@@ -402,11 +402,11 @@ mod tests {
     fn a_persisted_intents_token_is_the_one_git_already_holds() {
         assert_eq!(
             token(&intent(None)),
-            "suru-preparation:3097d527d5cf5edc6f653949b6c8e0f97082d2b6390494438308748a288070d1"
+            "shaman-preparation:dc58f4f2419900329e4b75562e639b2ec40e011afb6f33c9f5821a35970e0685"
         );
         assert_eq!(
             token(&intent(Some("main"))),
-            "suru-preparation:1a7ac5c6c7b2741bf332ef29ab426b0a950586d2ad6c20487f68f9a8f55572dc"
+            "shaman-preparation:cb3b3c2dbcbeb3898fac149c2811e8f99fae7e52be87532c0db9e70d2be17c1e"
         );
     }
 }

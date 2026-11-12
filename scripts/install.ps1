@@ -1,11 +1,11 @@
-# Installs Suru from its GitHub releases on Windows; re-running it upgrades the install in place.
+# Installs Shaman from its GitHub releases on Windows; re-running it upgrades the install in place.
 #
-#   irm https://raw.githubusercontent.com/suru-ai/suru/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/jake-tucker/shaman/main/scripts/install.ps1 | iex
 #
 # Environment:
-#   SURU_VERSION      Release to install, e.g. v0.1.1. Defaults to the latest release.
-#   SURU_INSTALL_DIR  Directory the binary goes in. Defaults to %LOCALAPPDATA%\Programs\suru.
-#   SURU_YES          Set to 1 to answer yes to every question, for unattended installs.
+#   SHAMAN_VERSION      Release to install, e.g. v0.1.1. Defaults to the latest release.
+#   SHAMAN_INSTALL_DIR  Directory the binary goes in. Defaults to %LOCALAPPDATA%\Programs\shaman.
+#   SHAMAN_YES          Set to 1 to answer yes to every question, for unattended installs.
 #
 # Talks only to GitHub's release pages and downloads, never its API, whose anonymous rate limit is shared by
 # everyone behind one IP address.
@@ -13,18 +13,18 @@
 # Runs on Windows PowerShell 5.1 and PowerShell 7. Everything lives in one function that reports failure by
 # throwing: piped into iex the script runs in the caller's own session, which `exit` would close.
 
-function Install-Suru {
+function Install-Shaman {
     $ErrorActionPreference = 'Stop'
     # Windows PowerShell draws a progress bar that slows downloads to a crawl.
     $ProgressPreference = 'SilentlyContinue'
 
     if ($PSVersionTable.PSVersion.Major -ge 6 -and -not $IsWindows) {
-        throw 'This script installs Suru on Windows. On Linux and macOS, use install.sh.'
+        throw 'This script installs Shaman on Windows. On Linux and macOS, use install.sh.'
     }
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-    $releases = 'https://github.com/suru-ai/suru/releases'
-    $assumeYes = $env:SURU_YES -eq '1'
+    $releases = 'https://github.com/jake-tucker/shaman/releases'
+    $assumeYes = $env:SHAMAN_YES -eq '1'
 
     # Answers $null when there is no one to ask, which every caller treats as a no.
     function Confirm-Step([string] $Question) {
@@ -42,11 +42,11 @@ function Install-Suru {
     $target = switch ($arch.ToUpperInvariant()) {
         { $_ -in 'X64', 'AMD64' } { 'x86_64-pc-windows-msvc' }
         'ARM64' { 'aarch64-pc-windows-msvc' }
-        default { throw "$arch Windows is not supported. Suru is built for x64 and ARM64 Windows." }
+        default { throw "$arch Windows is not supported. Shaman is built for x64 and ARM64 Windows." }
     }
 
-    $installDir = if ($env:SURU_INSTALL_DIR) { $env:SURU_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\suru' }
-    $dest = Join-Path $installDir 'suru.exe'
+    $installDir = if ($env:SHAMAN_INSTALL_DIR) { $env:SHAMAN_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\shaman' }
+    $dest = Join-Path $installDir 'shaman.exe'
 
     # Asks before adding the install directory to the user's PATH, and only when it is not already there.
     function Add-ToPath {
@@ -64,20 +64,20 @@ function Install-Suru {
             Set-ItemProperty -Path 'HKCU:\Environment' -Name 'Path' -Value $newPath -Type $kind
             # Writing the registry tells no one; setting any user variable through .NET broadcasts the change,
             # so newly opened terminals see the new PATH.
-            [Environment]::SetEnvironmentVariable('SURU_PATH_BROADCAST', '1', 'User')
-            [Environment]::SetEnvironmentVariable('SURU_PATH_BROADCAST', $null, 'User')
+            [Environment]::SetEnvironmentVariable('SHAMAN_PATH_BROADCAST', '1', 'User')
+            [Environment]::SetEnvironmentVariable('SHAMAN_PATH_BROADCAST', $null, 'User')
             $env:Path = $env:Path.TrimEnd(';') + ';' + $installDir
             Write-Host "Added $installDir to your PATH."
         }
         else {
-            Write-Host "$installDir is not on your PATH. Add it to run suru from anywhere."
+            Write-Host "$installDir is not on your PATH. Add it to run shaman from anywhere."
         }
     }
 
-    if ($env:SURU_VERSION) {
-        $tag = $env:SURU_VERSION
+    if ($env:SHAMAN_VERSION) {
+        $tag = $env:SHAMAN_VERSION
         try { Invoke-WebRequest -Uri "$releases/tag/$tag" -Method Head -UseBasicParsing | Out-Null }
-        catch { throw "Could not find the Suru release $tag. $_" }
+        catch { throw "Could not find the Shaman release $tag. $_" }
     }
     else {
         # The latest release's page redirects to the release's own, which names its tag. Asked through .NET's
@@ -90,21 +90,21 @@ function Install-Suru {
             $response = $request.GetResponse()
             try { $location = [string]$response.Headers['Location'] } finally { $response.Close() }
         }
-        catch { throw "Could not read the latest Suru release from GitHub. $_" }
-        if (-not $location) { throw 'Could not read the latest Suru release from GitHub: its releases page did not name one.' }
+        catch { throw "Could not read the latest Shaman release from GitHub. $_" }
+        if (-not $location) { throw 'Could not read the latest Shaman release from GitHub: its releases page did not name one.' }
         $tag = $location.Substring($location.LastIndexOf('/') + 1)
     }
-    # The repository releases its Relay too, under tags of its own, never marked latest; anything but a Suru
+    # The repository releases its Relay too, under tags of its own, never marked latest; anything but a Shaman
     # release tag here is not one this installs.
     if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
-        throw "The release $tag is not a Suru release, which are tagged like v0.1.2. Set SURU_VERSION to the Suru release to install."
+        throw "The release $tag is not a Shaman release, which are tagged like v0.1.2. Set SHAMAN_VERSION to the Shaman release to install."
     }
 
     $installed = $null
     if (Test-Path $dest) {
         $installed = try { (& $dest --version) -split ' ' | Select-Object -Last 1 } catch { $null }
         if ("v$installed" -eq $tag) {
-            Write-Host "Suru $tag is already installed at $dest."
+            Write-Host "Shaman $tag is already installed at $dest."
             Add-ToPath
             return
         }
@@ -112,11 +112,11 @@ function Install-Suru {
     $kept = if ($installed) { "v$installed" } else { 'the installed version' }
 
     # Each release attaches its checksum beside each archive, so the archive is verified without GitHub's API.
-    $file = "suru-$tag-$target.zip"
+    $file = "shaman-$tag-$target.zip"
     try {
         $checksum = (Invoke-WebRequest -Uri "$releases/download/$tag/$file.sha256" -UseBasicParsing).Content
     }
-    catch { throw "Suru $tag has no build for $target, or publishes no checksum for it, so it cannot be verified. $_" }
+    catch { throw "Shaman $tag has no build for $target, or publishes no checksum for it, so it cannot be verified. $_" }
     if ($checksum -is [byte[]]) { $checksum = [Text.Encoding]::ASCII.GetString($checksum) }
     $digest = ([string]$checksum -split '\s+')[0]
     if ($digest -notmatch '^[0-9a-fA-F]{64}$') { throw "The published checksum for $file is not a SHA-256 digest, so it cannot be verified." }
@@ -125,21 +125,21 @@ function Install-Suru {
     # Asked before anything is downloaded, and acted on only once the new binary is verified.
     function Get-Running {
         $resolved = (Resolve-Path $dest).Path
-        Get-Process -Name suru -ErrorAction SilentlyContinue | Where-Object { $_.Path -ieq $resolved }
+        Get-Process -Name shaman -ErrorAction SilentlyContinue | Where-Object { $_.Path -ieq $resolved }
     }
     $running = (Test-Path $dest) -and (Get-Running)
     if ($running) {
-        $answer = Confirm-Step 'Suru is running. Stopping it will interrupt any work in progress. Stop it and continue?'
+        $answer = Confirm-Step 'Shaman is running. Stopping it will interrupt any work in progress. Stop it and continue?'
         if ($null -eq $answer) {
-            throw "Suru is running and there is no terminal to ask on. Close it and run 'suru server stop', or set SURU_YES=1, and try again."
+            throw "Shaman is running and there is no terminal to ask on. Close it and run 'shaman server stop', or set SHAMAN_YES=1, and try again."
         }
-        if (-not $answer) { throw "Suru is still running, so $kept stays installed." }
+        if (-not $answer) { throw "Shaman is still running, so $kept stays installed." }
     }
 
-    $tmp = Join-Path ([IO.Path]::GetTempPath()) "suru-install-$([Guid]::NewGuid().ToString('N'))"
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) "shaman-install-$([Guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $tmp | Out-Null
     try {
-        Write-Host "Downloading Suru $tag for $target"
+        Write-Host "Downloading Shaman $tag for $target"
         $archive = Join-Path $tmp $file
         Invoke-WebRequest -Uri "$releases/download/$tag/$file" -OutFile $archive -UseBasicParsing
 
@@ -150,9 +150,9 @@ function Install-Suru {
         Expand-Archive -Path $archive -DestinationPath $tmp
 
         if ($running) {
-            Write-Host 'Stopping Suru'
+            Write-Host 'Stopping Shaman'
             # The Server is asked to shut down cleanly; whatever is still running after that is ended.
-            try { & $dest server stop *> $null } catch { Write-Verbose "Suru server stop failed: $_" }
+            try { & $dest server stop *> $null } catch { Write-Verbose "Shaman server stop failed: $_" }
             $left = @(Get-Running)
             if ($left) {
                 $left | Stop-Process -Force
@@ -161,7 +161,7 @@ function Install-Suru {
         }
 
         New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-        $binary = Join-Path $tmp "suru-$tag-$target\suru.exe"
+        $binary = Join-Path $tmp "shaman-$tag-$target\shaman.exe"
         # A process that has just exited can hold its executable for a moment longer.
         for ($attempt = 1; ; $attempt++) {
             try {
@@ -178,8 +178,8 @@ function Install-Suru {
         Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    Write-Host "Installed Suru $tag to $dest"
+    Write-Host "Installed Shaman $tag to $dest"
     Add-ToPath
 }
 
-Install-Suru
+Install-Shaman

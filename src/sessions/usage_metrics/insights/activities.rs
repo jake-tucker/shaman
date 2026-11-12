@@ -79,7 +79,7 @@ impl ActivityTally {
 
     /// Counts a Compaction by its trigger and status, and where it
     /// completed knowing both figures with some context before, the share
-    /// of that context it freed. One whose trigger or status this Suru
+    /// of that context it freed. One whose trigger or status this Shaman
     /// cannot read is left out.
     fn add_compaction(
         &mut self,
@@ -117,10 +117,10 @@ impl ActivityTally {
     }
 
     /// Counts an Approval asked, and how it stands by the Decision
-    /// recorded for it. One whose outcome or Decision this Suru cannot read
+    /// recorded for it. One whose outcome or Decision this Shaman cannot read
     /// is left out, so every Approval asked stands in one other figure.
     fn add_approval(&mut self, outcome: Spelled<ApprovalOutcome>, decision: Spelled<Decision>) {
-        // Absent, or a Decision this Suru reads.
+        // Absent, or a Decision this Shaman reads.
         let read_decision = match &decision {
             Spelled::Absent => Some(None),
             Spelled::Known(decision) => Some(Some(*decision)),

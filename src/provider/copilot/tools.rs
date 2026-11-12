@@ -2,7 +2,7 @@
 //! how that Activity presents it.
 //!
 //! Only a real shell execution is a Command, presented with Copilot's launcher plumbing off it, and
-//! only an edit Suru can read the files of is a File Change. A Tool whose execution another
+//! only an edit Shaman can read the files of is a File Change. A Tool whose execution another
 //! Activity records — a spawn its Subagent row, a send the Delegation it delivers, a question its
 //! Questionnaire, a Broker call the Subagent row it affects — is recorded as nothing more, and so
 //! is Copilot's plumbing. Every other execution is a Tool Call.
@@ -58,7 +58,7 @@ const PLUMBING_TOOLS: [&str; 2] = ["report_intent", "task_complete"];
 /// What one tool execution is to a Transcript, decided as it starts: which Activity records it, if
 /// any does. A Tool Call is the fallback for every execution no more specific Activity records and
 /// that is no plumbing, so a Tool this build has never heard of is a Tool Call — and so is a file
-/// tool's execution whose arguments Suru cannot read the files of, which keeps them all.
+/// tool's execution whose arguments Shaman cannot read the files of, which keeps them all.
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum ToolDisposition {
     /// A shell execution, recorded as a Command running the command as a reader should see it.
@@ -156,7 +156,7 @@ fn tool(started: &ToolExecutionStartData) -> &str {
 }
 
 /// What a file tool's execution changes, read from the arguments it starts with, or nothing when
-/// they name no file Suru can read.
+/// they name no file Shaman can read.
 ///
 /// A `create` of a file absent right now — as the execution starts, before it runs — adds it, and
 /// one of a file already there updates it. The CLI shares the Server's filesystem, and a relative
@@ -188,7 +188,7 @@ fn file_changes(
 }
 
 /// The command a shell tool ran, or nothing when the execution is no shell tool's or carries no
-/// command Suru can read.
+/// command Shaman can read.
 ///
 /// Copilot's shell driver rewrites what the Model asked for before spawning it — dropping the
 /// redundant `cd` into the working directory the Session already runs in — and reports the rewrite
@@ -349,7 +349,7 @@ mod tests {
                 server: None,
                 input: ToolCallInput::rendered(r#"action={"command":["bash","-lc","ls"]}"#),
             },
-            "a shape Suru cannot read a command out of keeps everything Copilot said about it"
+            "a shape Shaman cannot read a command out of keeps everything Copilot said about it"
         );
     }
 

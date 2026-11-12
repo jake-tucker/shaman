@@ -1,6 +1,6 @@
 //! A child process held together with every process it starts.
 //!
-//! Suru launches processes that launch processes of their own: a Provider's harness runs tool
+//! Shaman launches processes that launch processes of their own: a Provider's harness runs tool
 //! shells and MCP servers, and Git runs hooks and remote helpers. Signalling the child alone leaves
 //! those descendants running as orphans of init, so each such child is launched as the root of a
 //! [`ProcessTree`] that contains its descendants too — a process group on Unix, a Job Object on
@@ -11,10 +11,10 @@
 //! ran on shut down, or a panic unwinding past it. A tree whose root exits on its own takes down
 //! what the root left running or leaves it be, as the [`Descendants`] it was launched with say.
 //!
-//! A tree is taken down as well when the Suru process holding it ends without dropping it at all:
+//! A tree is taken down as well when the Shaman process holding it ends without dropping it at all:
 //! killed outright, ended by the out-of-memory killer, or aborted by a crash. On Windows the
 //! kernel closing the tree's Job Object does that. On Unix the tree's process group is led by an
-//! anchor that kills the group once Suru is gone; see `ANCHOR_SCRIPT`.
+//! anchor that kills the group once Shaman is gone; see `ANCHOR_SCRIPT`.
 
 use std::{
     io,
@@ -34,7 +34,7 @@ pub(crate) enum Descendants {
     EndWithRoot,
     /// They are left to run. A Git hook may start work in the background meant to outlive the
     /// command that ran it, such as regenerating tags after a checkout. On Windows they are left
-    /// to run even when Suru is ended outright while the root still runs, since only a tree whose
+    /// to run even when Shaman is ended outright while the root still runs, since only a tree whose
     /// descendants end with it has its Job Object kill them as it closes.
     MayOutliveRoot,
 }
@@ -75,7 +75,7 @@ impl ProcessTree {
     /// Launches `command` as the root of a tree of its own, its pipes handed back beside it.
     ///
     /// Fails rather than launching the root uncontained: on Unix, should the anchor that would
-    /// take the tree down with Suru not launch, or not say it is ready, neither does the root.
+    /// take the tree down with Shaman not launch, or not say it is ready, neither does the root.
     pub(crate) async fn spawn(
         command: &mut Command,
         descendants: Descendants,
@@ -285,7 +285,7 @@ const KILLED_REAP_STEP: std::time::Duration = std::time::Duration::from_millis(1
 
 /// Reaps a process of a tree just killed, rather than leaving it to Tokio, which reaps a child it
 /// has been handed back only once some runtime's driver next runs — never, where the tree was
-/// dropped with the last runtime, leaving the process a zombie for the life of Suru. A process
+/// dropped with the last runtime, leaving the process a zombie for the life of Shaman. A process
 /// still not gone at the bound is left to Tokio after all.
 fn reap_killed(child: &mut Child) {
     let deadline = std::time::Instant::now() + KILLED_REAP_BOUND;
@@ -299,14 +299,14 @@ fn reap_killed(child: &mut Child) {
 }
 
 /// What the anchor leading a tree's process group runs on Unix, tying the tree to the life of the
-/// Suru process holding it.
+/// Shaman process holding it.
 ///
 /// The anchor is launched first, as the leader of a group of its own, and the root then joins
 /// that group, so the group's ID is the anchor's process ID rather than the root's. The anchor
 /// reads its stdin, which is this process's lifeline (see [`Lifeline`]), until it ends — as it
 /// does only once this process has ended, however it ended — and then kills its whole group,
 /// itself included. `kill 0` names the anchor's own group, which is the tree's for as long as
-/// the anchor lives, so that kill can reach no stranger, however long Suru has been gone.
+/// the anchor lives, so that kill can reach no stranger, however long Shaman has been gone.
 ///
 /// The anchor ignores every signal that would end or stop it short of SIGKILL, so a signal sent
 /// to the whole group — by a tool tidying up with `kill 0`, say — reaches the programs in it but
@@ -314,16 +314,16 @@ fn reap_killed(child: &mut Child) {
 /// letting go of it or taking the group down, or by itself. Once it is ignoring them it says so,
 /// writing [`ANCHOR_READY`] to its stdout, and only then is the root launched into its group, so
 /// nothing in the group can signal it before it is ready. Someone killing it outright can still
-/// end it; the tree then loses only its tie to Suru's life, since its group stays the tree's for
-/// as long as Suru leaves the dead anchor unreaped.
+/// end it; the tree then loses only its tie to Shaman's life, since its group stays the tree's for
+/// as long as Shaman leaves the dead anchor unreaped.
 ///
 /// The anchor stands beside the root rather than the root being launched through it, so the root
-/// is still Suru's own child: Suru waits on it directly, sees how it truly exited — the code it
+/// is still Shaman's own child: Shaman waits on it directly, sees how it truly exited — the code it
 /// exited with or the signal that ended it — and speaks over its stdin, stdout and stderr with
 /// nothing between.
 ///
-/// It is a shell rather than Suru itself, so launching one needs no Suru executable to be found:
-/// a test binary hosts the Server in tests, and an installed Suru may be replaced or removed
+/// It is a shell rather than Shaman itself, so launching one needs no Shaman executable to be found:
+/// a test binary hosts the Server in tests, and an installed Shaman may be replaced or removed
 /// under a running Server. The script is plain POSIX shell, run by the first of
 /// [`ANCHOR_SHELLS`] there is; its environment is cleared, so no startup file that environment
 /// names runs in it.
@@ -335,7 +335,7 @@ while read -r line; do :; done
 kill -s KILL 0";
 
 /// The shells an anchor may be run by, in the order they are preferred. `/bin/sh` is where every
-/// Unix Suru runs on keeps the shell its C library's `system` and `popen` run commands with.
+/// Unix Shaman runs on keeps the shell its C library's `system` and `popen` run commands with.
 /// Dash is preferred where it is installed, since every tree's launch waits on its anchor being
 /// ready: it is what `/bin/sh` already is on Debian and Ubuntu, and on macOS, where `/bin/sh` is
 /// a stand-in that itself launches Bash, it is ready in about a millisecond rather than four.
@@ -368,8 +368,8 @@ const ANCHOR_READINESS_DEADLINE: std::time::Duration = std::time::Duration::from
 /// process has ended. Its writing end is held here for the rest of the process's life and never
 /// written to, so only the kernel closing it as the process ends can end an anchor's read.
 ///
-/// Both ends are close-on-exec, so no process Suru launches holds the writing end open past
-/// Suru. Where the system cannot create a pipe close-on-exec at once, as on macOS, a process
+/// Both ends are close-on-exec, so no process Shaman launches holds the writing end open past
+/// Shaman. Where the system cannot create a pipe close-on-exec at once, as on macOS, a process
 /// launched while it is being created could still inherit it; every tree's launch takes the
 /// lifeline first, waiting on its creation, and the Server launches nothing but trees.
 #[cfg(unix)]
@@ -549,7 +549,7 @@ impl Containment {
     }
 
     /// Lets go of the group, killing its anchor alone, and waits for the anchor to be reaped.
-    /// What is left in the group no longer goes down with Suru, and the group's ID is no longer
+    /// What is left in the group no longer goes down with Shaman, and the group's ID is no longer
     /// the tree's to signal.
     fn poll_let_go(&mut self, context: &mut Context<'_>) -> Poll<()> {
         let Some(anchor) = self.anchor.as_mut() else {
@@ -640,7 +640,7 @@ async fn spawn_contained(
 
     // The root starts suspended so it is in the job before it can start anything outside it.
     // `CREATE_NO_WINDOW` keeps a console-subsystem process from allocating a console of its own:
-    // Suru's server runs detached and so has no console to lend it, which would otherwise make
+    // Shaman's server runs detached and so has no console to lend it, which would otherwise make
     // Windows pop a terminal window for every process launched.
     command.creation_flags(CREATE_SUSPENDED | CREATE_NO_WINDOW);
     let mut child = command.spawn()?;
@@ -1046,7 +1046,7 @@ mod tests {
     }
 
     /// A signal sent to the whole group — such as a tool tidying up with `kill 0` — reaches the
-    /// programs in it, which here ignore it, and leaves the anchor to take them down with Suru.
+    /// programs in it, which here ignore it, and leaves the anchor to take them down with Shaman.
     /// It is sent by the root at the earliest moment it can be, before the root's own program
     /// has even begun: the anchor has said it is ready by then.
     #[tokio::test]
@@ -1085,7 +1085,7 @@ mod tests {
         assert_ended(descendant).await;
     }
 
-    /// A tree that could not be tied to Suru's life is not launched at all, rather than launched
+    /// A tree that could not be tied to Shaman's life is not launched at all, rather than launched
     /// to outlive it; and the failure does not pass for the root's program being missing.
     #[tokio::test]
     async fn a_tree_whose_anchor_cannot_launch_launches_nothing() {

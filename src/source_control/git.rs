@@ -622,7 +622,7 @@ impl SourceControl for GitSourceControl {
         if self.common(source_path).await?.as_ref() != Some(&repository.metadata_directory) {
             return Err("The source checkout no longer belongs to this Repository".to_owned());
         }
-        let ownership_ref = format!("refs/suru/preparations/{}", id.0.simple());
+        let ownership_ref = format!("refs/shaman/preparations/{}", id.0.simple());
         if self
             .text(
                 &repository.metadata_directory,
@@ -756,7 +756,7 @@ impl SourceControl for GitSourceControl {
     ) -> Result<CheckoutBranchOutcome, String> {
         // Branch analysis occurs between the Server's inspection and this
         // mutation. Re-read before releasing any lock so a user's newer pin is
-        // never removed as though it were the older Suru-owned one.
+        // never removed as though it were the older Shaman-owned one.
         let current = self.inspect_linked_removal(target).await?;
         if &current != inspection {
             return Err("Worktree conditions changed before Reclaim".into());
@@ -768,7 +768,7 @@ impl SourceControl for GitSourceControl {
             return Err("Worktree requires force and is not eligible for Reclaim".into());
         }
         if let Some(lock) = &current.lock {
-            let recovery = format!("suru-recovery:{}", target.checkout.id.0);
+            let recovery = format!("shaman-recovery:{}", target.checkout.id.0);
             let preparation = preparations.iter().any(|plan| {
                 plan.destination.path == target.checkout.root
                     && preparation::token(plan) == *lock
@@ -792,7 +792,9 @@ impl SourceControl for GitSourceControl {
             let mut expected = current;
             expected.lock = None;
             if unlocked != expected {
-                return Err("Worktree conditions changed while its Suru lock was released".into());
+                return Err(
+                    "Worktree conditions changed while its Shaman lock was released".into(),
+                );
             }
             return self
                 .remove_checkout(target, &unlocked, false, branch_outcome)
@@ -811,7 +813,7 @@ impl SourceControl for GitSourceControl {
             source_commit,
             ..
         } = &plan.plan;
-        let reference = format!("refs/suru/preparations/{}", plan.id.0.simple());
+        let reference = format!("refs/shaman/preparations/{}", plan.id.0.simple());
         let repository = &plan.repository.metadata_directory;
         let status = self
             .command(repository, &["show-ref", "--verify", "--quiet", &reference])
@@ -922,7 +924,7 @@ impl SourceControl for GitSourceControl {
             .metadata_directory
             .join("info")
             .join("exclude");
-        // The managed directory is Suru's own, kept out of the reader's own
+        // The managed directory is Shaman's own, kept out of the reader's own
         // status listings by the Repository-local exclude.
         let excluded = format!("/{MANAGED_WORKTREE_DIRECTORY}/");
         let mut contents = match std::fs::read(&exclude) {
@@ -1381,7 +1383,7 @@ fn probed_layout(stdout: &[u8], committed: bool) -> Option<[Option<String>; 3]> 
 }
 
 /// The Worktrees a `worktree list --porcelain -z` listing names, each paired
-/// with the association the rest of Suru knows it by. Discovery and plain
+/// with the association the rest of Shaman knows it by. Discovery and plain
 /// listing differ in what they do with a named Worktree — one reads it, the
 /// other only names it — but never in which Worktrees a listing names.
 ///
@@ -1496,14 +1498,14 @@ fn path_from_bytes(bytes: &[u8]) -> PathBuf {
     }
 }
 
-/// The file in a linked Worktree's registration saying Suru made it. It stands
+/// The file in a linked Worktree's registration saying Shaman made it. It stands
 /// beside Git's own files there, so it never shows in the checkout and Git
 /// removes it with the registration; recovery writes it again on recreating one.
-const MANAGED_MARKER: &str = "suru-managed";
+const MANAGED_MARKER: &str = "shaman-managed";
 
 fn mark_managed(metadata: &Path) -> Result<(), String> {
     std::fs::write(metadata.join(MANAGED_MARKER), "")
-        .map_err(|e| format!("Cannot mark the Worktree as Suru's own: {e}"))
+        .map_err(|e| format!("Cannot mark the Worktree as Shaman's own: {e}"))
 }
 
 /// An unfinished recovery must not replace the durable revision it is restoring.
@@ -1518,9 +1520,9 @@ fn recovery_in_progress(root: &Path) -> bool {
         return false;
     };
     let metadata = root.join(metadata);
-    metadata.join("suru-recovery").exists()
+    metadata.join("shaman-recovery").exists()
         || std::fs::read_to_string(metadata.join("locked"))
-            .is_ok_and(|lock| lock.starts_with("suru-recovery:"))
+            .is_ok_and(|lock| lock.starts_with("shaman-recovery:"))
 }
 
 #[cfg(test)]

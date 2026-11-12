@@ -7,15 +7,15 @@ use crate::support::PROGRESS_DEADLINE;
 use diesel::{Connection, RunQueryDsl};
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
+use shaman::{
+    protocol::*,
+    server::{self, ServerConfig, ServerTimings},
+    source_control::GitSourceControl,
+};
 use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::Arc,
-};
-use suru::{
-    protocol::*,
-    server::{self, ServerConfig, ServerTimings},
-    source_control::GitSourceControl,
 };
 
 pub(super) fn git(directory: &Path, args: &[&str]) {
@@ -23,10 +23,10 @@ pub(super) fn git(directory: &Path, args: &[&str]) {
         .arg("-C")
         .arg(directory)
         .args(args)
-        .env("GIT_AUTHOR_NAME", "Suru Test")
-        .env("GIT_AUTHOR_EMAIL", "suru@example.invalid")
-        .env("GIT_COMMITTER_NAME", "Suru Test")
-        .env("GIT_COMMITTER_EMAIL", "suru@example.invalid")
+        .env("GIT_AUTHOR_NAME", "Shaman Test")
+        .env("GIT_AUTHOR_EMAIL", "shaman@example.invalid")
+        .env("GIT_COMMITTER_NAME", "Shaman Test")
+        .env("GIT_COMMITTER_EMAIL", "shaman@example.invalid")
         .output()
         .unwrap();
     assert!(
@@ -124,7 +124,7 @@ async fn list(descriptor: &RuntimeDescriptor, id: Option<&WorkspaceId>) -> Vec<S
         .unwrap()
 }
 fn canonical(path: &Path) -> PathBuf {
-    suru::paths::canonical(path).unwrap()
+    shaman::paths::canonical(path).unwrap()
 }
 
 #[tokio::test]
@@ -385,7 +385,7 @@ async fn directory_grouping_regroups_durably_and_lazily_with_missing_membership_
     let missing_directory = create(original.descriptor(), &missing).await;
     original.shutdown().await.unwrap();
     let mut db =
-        diesel::SqliteConnection::establish(config.data_dir().join("suru.db").to_str().unwrap())
+        diesel::SqliteConnection::establish(config.data_dir().join("shaman.db").to_str().unwrap())
             .unwrap();
     // Group each under its plain directory, as before its Repository existed.
     for snapshot in [&readable, &corrupt_history, &missing_directory] {
@@ -530,14 +530,14 @@ async fn missing_known_checkout_does_not_poison_readable_repository_on_restart()
 async fn session_creation_rejects_execution_directory_that_changed_since_discovery() {
     struct PreviousDirectory(PathBuf);
     #[async_trait::async_trait]
-    impl suru::source_control::SourceControl for PreviousDirectory {
+    impl shaman::source_control::SourceControl for PreviousDirectory {
         async fn discover(&self, _directory: &Path) -> ResolvedWorkspace {
             ResolvedWorkspace::directory(self.0.clone())
         }
         // Reads every directory as one it remembers, with no Repository to
         // Clone from or into.
-        fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
-            suru::protocol::SourceControlCapability::Unsupported {
+        fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
+            shaman::protocol::SourceControlCapability::Unsupported {
                 reason: "This stand-in reads directories and Clones nothing".to_owned(),
             }
         }
@@ -547,15 +547,15 @@ async fn session_creation_rejects_execution_directory_that_changed_since_discove
             _destination: &Path,
             _branch: Option<&str>,
             _timeout: std::time::Duration,
-            _staging: &suru::source_control::CloneStaging,
-        ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure>
+            _staging: &shaman::source_control::CloneStaging,
+        ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure>
         {
-            Err(suru::source_control::CloneFailure::Failed(
+            Err(shaman::source_control::CloneFailure::Failed(
                 "This stand-in reads directories and Clones nothing".to_owned(),
             ))
         }
         async fn settle_clones(&self) {}
-        async fn sweep_abandoned_clones(&self, _staging: &suru::source_control::CloneStaging) {}
+        async fn sweep_abandoned_clones(&self, _staging: &shaman::source_control::CloneStaging) {}
     }
     let temporary = tempfile::tempdir().unwrap();
     let root = canonical(temporary.path());
@@ -715,7 +715,7 @@ async fn known_repository_worktrees_are_observed_without_any_session_referencing
     expected.sort();
     assert_eq!(observed, expected);
     drop(rejoined);
-    // Switching the Session-less Worktree's branch outside Suru is announced.
+    // Switching the Session-less Worktree's branch outside Shaman is announced.
     git(&spare, &["checkout", "-b", "moved"]);
     await_catalog_change!(catalog, |change| reading(change, &spare_id, "moved"));
     drop(catalog);
@@ -734,8 +734,8 @@ async fn a_failed_worktree_listing_retires_nothing_it_could_not_speak_for() {
         listings: std::sync::atomic::AtomicUsize,
     }
     #[async_trait::async_trait]
-    impl suru::source_control::SourceControl for FailingListing {
-        fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+    impl shaman::source_control::SourceControl for FailingListing {
+        fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
             self.git.clone_capability()
         }
         async fn clone_repository(
@@ -744,8 +744,8 @@ async fn a_failed_worktree_listing_retires_nothing_it_could_not_speak_for() {
             destination: &Path,
             branch: Option<&str>,
             timeout: std::time::Duration,
-            staging: &suru::source_control::CloneStaging,
-        ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure>
+            staging: &shaman::source_control::CloneStaging,
+        ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure>
         {
             self.git
                 .clone_repository(url, destination, branch, timeout, staging)
@@ -754,7 +754,7 @@ async fn a_failed_worktree_listing_retires_nothing_it_could_not_speak_for() {
         async fn settle_clones(&self) {
             self.git.settle_clones().await;
         }
-        async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+        async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
             self.git.sweep_abandoned_clones(staging).await;
         }
         async fn discover(&self, directory: &Path) -> ResolvedWorkspace {

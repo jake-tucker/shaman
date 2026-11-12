@@ -1,4 +1,4 @@
-//! Subagent Reports (ADR 0035): when a brokered Subagent's Turn settles, Suru
+//! Subagent Reports (ADR 0035): when a brokered Subagent's Turn settles, Shaman
 //! delivers the delegating Agent an account of it — the outcome and a bounded
 //! excerpt of the Subagent's final Message — as that Agent's own Provider
 //! input. An idle Agent wakes into a Continuation; a Turn still working is
@@ -9,8 +9,8 @@
 //! Each test reads what the parent's double was handed, which is what its
 //! Agent would read.
 
-use suru::protocol::{ExecutionDirectory, MoveDestination, MoveOutcome, MoveSessionRequest};
-use suru::provider::{MoveNote, Report, SubagentReport, SubagentReportOutcome};
+use shaman::protocol::{ExecutionDirectory, MoveDestination, MoveOutcome, MoveSessionRequest};
+use shaman::provider::{MoveNote, Report, SubagentReport, SubagentReportOutcome};
 
 use super::*;
 
@@ -96,7 +96,7 @@ async fn settle_session(descriptor: &RuntimeDescriptor, session_id: SessionId, s
             descriptor.base_url
         ))
         .bearer_auth(&descriptor.token)
-        .json(&suru::protocol::SettleSessionRequest { settled })
+        .json(&shaman::protocol::SettleSessionRequest { settled })
         .send()
         .await
         .expect("send Session settlement")
@@ -108,7 +108,7 @@ async fn settle_session(descriptor: &RuntimeDescriptor, session_id: SessionId, s
 async fn settled_at(
     descriptor: &RuntimeDescriptor,
     session_id: SessionId,
-) -> Option<suru::protocol::SessionTimestamp> {
+) -> Option<shaman::protocol::SessionTimestamp> {
     crate::support::loopback_client()
         .get(format!("{}/v1/sessions", descriptor.base_url))
         .bearer_auth(&descriptor.token)
@@ -117,7 +117,7 @@ async fn settled_at(
         .expect("list Sessions")
         .error_for_status()
         .expect("Session listing succeeds")
-        .json::<Vec<suru::protocol::SessionListItem>>()
+        .json::<Vec<shaman::protocol::SessionListItem>>()
         .await
         .expect("decode the Session listing")
         .into_iter()
@@ -140,7 +140,7 @@ async fn active_again(descriptor: &RuntimeDescriptor, session_id: SessionId) {
 }
 
 /// Everything `snapshot`'s Transcript holds that stands in Turn `turn_id`.
-pub(super) fn held_in(snapshot: &SessionSnapshot, turn_id: suru::protocol::TurnId) -> usize {
+pub(super) fn held_in(snapshot: &SessionSnapshot, turn_id: shaman::protocol::TurnId) -> usize {
     snapshot
         .messages
         .iter()
@@ -278,7 +278,7 @@ async fn a_subagent_settling_while_its_parent_is_idle_wakes_the_parent_into_a_co
 /// two stand in the Subagent's Transcript.
 #[tokio::test]
 async fn a_report_never_excerpts_a_superseded_message() {
-    use suru::provider::ProviderMessageId;
+    use shaman::provider::ProviderMessageId;
 
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let mut delegating = delegating(state_dir.path(), "broker-report-superseded", None).await;
@@ -552,7 +552,7 @@ async fn a_moved_parent_is_told_of_its_move_ahead_of_the_report_waiting_for_its_
     let destination = hosted.workspace.path().join("moved here");
     std::fs::create_dir(&destination).expect("create the destination");
     let destination = ExecutionDirectory {
-        path: suru::paths::canonical(&destination).expect("canonicalize the destination"),
+        path: shaman::paths::canonical(&destination).expect("canonicalize the destination"),
     };
 
     // With its Report waiting, the parent Moves.
@@ -622,7 +622,7 @@ async fn a_pending_move_applies_past_a_working_subagent_whose_report_then_waits_
     let destination = delegating.hosted.workspace.path().join("moved here");
     std::fs::create_dir(&destination).expect("create the destination");
     let destination = ExecutionDirectory {
-        path: suru::paths::canonical(&destination).expect("canonicalize the destination"),
+        path: shaman::paths::canonical(&destination).expect("canonicalize the destination"),
     };
 
     let answer: MoveOutcome = crate::support::loopback_client()
@@ -974,7 +974,7 @@ async fn interrupting_the_parent_reports_nothing_of_the_subagents_it_stopped() {
 #[tokio::test]
 async fn a_report_wakes_a_brokered_subagent_under_the_posture_derived_for_it() {
     use super::posture::{claude, codex_unrestricted, pin};
-    use suru::protocol::ClaudePermissionMode;
+    use shaman::protocol::ClaudePermissionMode;
 
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let mut delegating = delegating(state_dir.path(), "broker-report-derived-posture", None).await;
@@ -1058,7 +1058,7 @@ async fn a_report_wakes_a_brokered_subagent_under_the_posture_derived_for_it() {
 async fn a_report_reaching_a_continuation_opened_for_late_output_waits_to_wake_the_agent_once_it_settles()
  {
     use super::posture::{claude, pin};
-    use suru::protocol::ClaudePermissionMode;
+    use shaman::protocol::ClaudePermissionMode;
 
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let mut delegating = delegating(state_dir.path(), "broker-report-late-output", None).await;
@@ -1071,7 +1071,7 @@ async fn a_report_reaching_a_continuation_opened_for_late_output_waits_to_wake_t
     .await;
 
     // The parent's Provider works on for the Subagent still working, and
-    // that output opens a Continuation of its own: no Turn Suru began on the
+    // that output opens a Continuation of its own: no Turn Shaman began on the
     // Provider, so none a harness could take a steer into.
     write_agent_message(
         &delegating.caller_provider,

@@ -610,7 +610,7 @@ fn not_answering_line(
 /// from what its settled Turns worked and the moment the work it does now
 /// began; **monitoring** for a settled entry whose Watches outlive it, since
 /// they may wake it yet; and otherwise the time all its Turns took, or
-/// nothing where Suru never learned when its work ended.
+/// nothing where Shaman never learned when its work ended.
 fn work_time(
     working: bool,
     worked_ms: Option<u64>,

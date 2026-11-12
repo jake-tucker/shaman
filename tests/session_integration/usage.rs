@@ -8,7 +8,7 @@ use crate::session_integration::{
         working_turn,
     },
 };
-use suru::{
+use shaman::{
     protocol::{
         Activity, Cost, SessionCatalogChange, SessionCatalogUpdate, SessionId, SessionSnapshot,
         Usage, UsageTotal,
@@ -576,7 +576,7 @@ async fn independent_reporting_lifetimes_on_one_turn_survive_restart() {
     assert_eq!(live_details.prior.len(), 1);
     assert!(matches!(
         &live_details.prior[0].coverage,
-        suru::protocol::CostCoverage::SessionSubtree { reporting_lifetime }
+        shaman::protocol::CostCoverage::SessionSubtree { reporting_lifetime }
             if reporting_lifetime == "process-1"
     ));
     let live = live_snapshot.total_usage().expect("live lifetime total");

@@ -10,7 +10,7 @@ use crate::claude_integration::{
         hosting, hosting_runtime, malformed_list_models_arm, probe_arms, silent_list_models_arm,
     },
 };
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         ModelAvailability, ModelDescriptor, ModelId, ModelOptionChoiceId, ModelOptionId,
@@ -291,10 +291,10 @@ async fn a_discovery_the_cli_never_answers_fails_after_the_injected_timeout() {
     server.shutdown().await.expect("shut the server down");
 }
 
-/// The stream-json wire is an SDK implementation detail, so drift is Suru's to absorb (ADR 0010):
+/// The stream-json wire is an SDK implementation detail, so drift is Shaman's to absorb (ADR 0010):
 /// a control response of a subtype this build has never heard of is ridden out, not a failure.
 #[tokio::test]
-async fn a_control_response_subtype_suru_does_not_know_is_ridden_out() {
+async fn a_control_response_subtype_shaman_does_not_know_is_ridden_out() {
     let claude = ScriptedClaude::new(&format!(
         "{}{}",
         probe_arms(),
@@ -392,7 +392,7 @@ async fn a_discovery_after_a_crashed_one_launches_a_fresh_process() {
 /// A models.dev catalog pricing the fixture's canonical Models under
 /// `anthropic`: the first at every input rate, the second with no
 /// cache-write rate, and the third not at all.
-pub(super) async fn anthropic_rates() -> (Arc<suru::pricing::PricingSource>, tempfile::TempDir) {
+pub(super) async fn anthropic_rates() -> (Arc<shaman::pricing::PricingSource>, tempfile::TempDir) {
     use axum::{Json, Router, routing::get};
     use serde_json::json;
 
@@ -426,7 +426,7 @@ pub(super) async fn anthropic_rates() -> (Arc<suru::pricing::PricingSource>, tem
         let _ = axum::serve(listener, app).await;
     });
     let cache = tempfile::tempdir().expect("create pricing cache directory");
-    let pricing = suru::pricing::PricingSource::new(cache.path())
+    let pricing = shaman::pricing::PricingSource::new(cache.path())
         .with_http_client(crate::support::loopback_client())
         .with_source_endpoint(endpoint);
     (Arc::new(pricing), cache)
@@ -434,7 +434,7 @@ pub(super) async fn anthropic_rates() -> (Arc<suru::pricing::PricingSource>, tem
 
 #[tokio::test]
 async fn claude_prices_an_alias_at_the_models_dev_rates_of_the_model_it_resolves_to() {
-    use suru::{pricing::CacheRates, provider::ProviderRuntime};
+    use shaman::{pricing::CacheRates, provider::ProviderRuntime};
 
     let claude = ScriptedClaude::with_models(CLAUDE_MODELS);
     let (pricing, _cache) = anthropic_rates().await;

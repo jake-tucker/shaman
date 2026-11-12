@@ -3,11 +3,11 @@
 //! Servers it names off the running Relay at once — a live stream through it
 //! cut — and ends no Pairing (ADR-0048).
 
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{Outlook, RelayLoginOutcome, RelayState, RemoteStatus, Way},
 };
-use suru_relay::{AccountsCommand, Confirmation, LoginsCommand, OperatorCommand, Outcome};
+use shaman_relay::{AccountsCommand, Confirmation, LoginsCommand, OperatorCommand, Outcome};
 use tokio::time::Duration;
 
 use super::{
@@ -66,7 +66,7 @@ impl Paired {
     /// printed.
     async fn operate(&self, command: OperatorCommand) -> String {
         let (mut printed, mut said) = (Vec::new(), Vec::new());
-        let outcome = suru_relay::operate(
+        let outcome = shaman_relay::operate(
             &self.relay.directory.path().join("relay.db"),
             command,
             &mut printed,
@@ -80,7 +80,7 @@ impl Paired {
 
     /// The laptop's view of the workstation's Session catalog, streamed
     /// through the Relay, once it has been read.
-    async fn laptops_catalog(&self) -> suru::managed_client::SessionCatalogSubscription {
+    async fn laptops_catalog(&self) -> shaman::managed_client::SessionCatalogSubscription {
         let mut catalog = self
             .laptop
             .client
@@ -96,7 +96,7 @@ impl Paired {
     /// Asserts that no Pairing has ended: the workstation's Peers are
     /// `peers`, and the laptop and the tablet each still have the
     /// workstation as a Remote.
-    async fn assert_no_pairing_ended(&self, peers: &[suru::protocol::Peer]) {
+    async fn assert_no_pairing_ended(&self, peers: &[shaman::protocol::Peer]) {
         assert_eq!(
             self.workstation.client.list_peers().await.unwrap(),
             peers,

@@ -1,4 +1,4 @@
-//! Interventions a brokered Subagent raises. Suru runs a brokered Subagent on
+//! Interventions a brokered Subagent raises. Shaman runs a brokered Subagent on
 //! a Provider actor of its own (ADR 0035), so an Approval or Questionnaire its
 //! Provider raises belongs to the Subagent's own Session and crosses the
 //! client as a native Subagent's does: listed on that Session, marking that
@@ -7,7 +7,7 @@
 //! Provider — never the one its parent runs on — and the client-facing
 //! protocol is the one a native Subagent's Interventions use.
 
-use suru::protocol::{
+use shaman::protocol::{
     Answer, Approval, ApprovalId, ApprovalOutcome, ApprovalSubject, Decision, Question,
     QuestionAnswer, Questionnaire, QuestionnaireId, QuestionnaireOutcome, QuestionnaireSubmission,
     SessionListItem, SessionStandingInputs, SubagentTreeSnapshot,
@@ -82,7 +82,7 @@ fn intervention_flags(tree: &SubagentTreeSnapshot) -> Vec<(SessionId, bool)> {
 /// Intervention.
 async fn next_intervention_change(
     updates: &mut crate::session_integration::subagent_tree::TreeUpdates,
-    revision: &mut suru::protocol::SubagentTreeRevision,
+    revision: &mut shaman::protocol::SubagentTreeRevision,
 ) -> SubagentTreeChange {
     changes_until(updates, revision, |change| {
         matches!(change, SubagentTreeChange::NeedsInterventionChanged { .. })
@@ -539,7 +539,7 @@ async fn declining_and_interrupting_a_brokered_subagents_approval_ends_its_turn_
                 (report.subagent, report.outcome)
             })
             .collect::<Vec<_>>(),
-        [(child_id, suru::provider::SubagentReportOutcome::Stopped)]
+        [(child_id, shaman::provider::SubagentReportOutcome::Stopped)]
     );
     steer.succeed();
     let child = read_session(&descriptor, child_id).await;

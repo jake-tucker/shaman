@@ -23,12 +23,12 @@ So whoever can do both, the Relay in the path or a machine chosen by mistake, ge
 
 ## The exchange
 
-A connection a Relay carried opens with the exchange or with TLS, told apart by its first byte. A TLS ClientHello's first byte says handshake, `0x16`; the exchange opens with `suru-short-invite`. The exchange travels in the bytes a join carries, which the Relay never reads, so the Relay protocol does not move (ADR-0047). A version byte follows the preamble, so the exchange can change later and another version is refused with nothing spent. The Serving listener never reads for it: a connection dialled there is TLS or nothing, and direct Pairing is untouched.
+A connection a Relay carried opens with the exchange or with TLS, told apart by its first byte. A TLS ClientHello's first byte says handshake, `0x16`; the exchange opens with `shaman-short-invite`. The exchange travels in the bytes a join carries, which the Relay never reads, so the Relay protocol does not move (ADR-0047). A version byte follows the preamble, so the exchange can change later and another version is refused with nothing spent. The Serving listener never reads for it: a connection dialled there is TLS or nothing, and direct Pairing is untouched.
 
 `R` is the redeeming Server and `S` the Serving one. `pA` and `pB` are SPAKE2's messages, `K_R` and `K_S` the identity keys:
 
 ```text
-R → S  "suru-short-invite", version, K_R, pA
+R → S  "shaman-short-invite", version, K_R, pA
 S → R  either: refused at once, naming why (no code live, another version, malformed), and it ends
        or:     pB
 R → S  MAC(k_redeemer, transcript)
@@ -36,7 +36,7 @@ S → R  either: failed, and it ends
        or:     MAC(k_serving, transcript), AEAD(k_invite, Invite, aad = transcript)
 ```
 
-`R` is SPAKE2's side A and `S` its side B, fixed. SPAKE2 is given the canonical code as its password and `K_R` and `K_S` as its identities. Its output is the hash of `H(code)`, `H(K_R)`, `H(K_S)`, `pA`, `pB` and the shared point. The transcript is the SHA-256 of the label `suru short invite v1`, the version byte, the Relay's address, `K_R`, `K_S`, `pA` and `pB`, each length-prefixed. HKDF-SHA-256, salted with the transcript, derives three keys from SPAKE2's output, under the info strings `suru short invite v1 redeemer proof`, `… serving proof` and `… invite`. The MACs are HMAC-SHA-256 and the AEAD is ChaCha20-Poly1305, its key sealing this one Invite under an all-zero nonce.
+`R` is SPAKE2's side A and `S` its side B, fixed. SPAKE2 is given the canonical code as its password and `K_R` and `K_S` as its identities. Its output is the hash of `H(code)`, `H(K_R)`, `H(K_S)`, `pA`, `pB` and the shared point. The transcript is the SHA-256 of the label `shaman short invite v1`, the version byte, the Relay's address, `K_R`, `K_S`, `pA` and `pB`, each length-prefixed. HKDF-SHA-256, salted with the transcript, derives three keys from SPAKE2's output, under the info strings `shaman short invite v1 redeemer proof`, `… serving proof` and `… invite`. The MACs are HMAC-SHA-256 and the AEAD is ChaCha20-Poly1305, its key sealing this one Invite under an all-zero nonce.
 
 **What each message reveals.** SPAKE2's messages are uniformly random whatever the code is. What follows them depends on the shared point, and testing any guess against it but the one a party put into the exchange takes solving Diffie-Hellman.
 
@@ -68,7 +68,7 @@ The redeemer refuses a delivered Invite whose key is not the one listed, and say
 
 ## The crate
 
-SPAKE2 from RustCrypto's `spake2` 0.4.0. It is a balanced PAKE, in pure Rust on `curve25519-dalek`, and is what `magic-wormhole` uses. Its transcript hashes each identity on its own, with no ambiguous concatenation, and its messages carry their side. It has had no independent audit, as its README says, which is a risk accepted here on its small size and its wide use. The 0.5 line is still a pre-release on pre-release dependencies, so it was left until it is released. HKDF, HMAC, ChaCha20-Poly1305 and randomness come from `ring`, already built for `rustls` and `rcgen`. It newly compiles `curve25519-dalek` and `fiat-crypto`, and second copies of `hkdf` 0.12, `hmac` 0.12 and `sha2` 0.10 beside the newer ones already built, a cost taken for the stable release; `curve25519-dalek` is also named directly, to check a peer's point. `spake2` keeps its own copies of the password, its scalar `x` and the shared point `K`, none of which `zeroize` can reach and which go unwiped until freed; Suru's own copies of the code and every key it derives are wiped as they are dropped.
+SPAKE2 from RustCrypto's `spake2` 0.4.0. It is a balanced PAKE, in pure Rust on `curve25519-dalek`, and is what `magic-wormhole` uses. Its transcript hashes each identity on its own, with no ambiguous concatenation, and its messages carry their side. It has had no independent audit, as its README says, which is a risk accepted here on its small size and its wide use. The 0.5 line is still a pre-release on pre-release dependencies, so it was left until it is released. HKDF, HMAC, ChaCha20-Poly1305 and randomness come from `ring`, already built for `rustls` and `rcgen`. It newly compiles `curve25519-dalek` and `fiat-crypto`, and second copies of `hkdf` 0.12, `hmac` 0.12 and `sha2` 0.10 beside the newer ones already built, a cost taken for the stable release; `curve25519-dalek` is also named directly, to check a peer's point. `spake2` keeps its own copies of the password, its scalar `x` and the shared point `K`, none of which `zeroize` can reach and which go unwiped until freed; Shaman's own copies of the code and every key it derives are wiped as they are dropped.
 
 ## Considered Options
 

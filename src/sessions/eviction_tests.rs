@@ -145,7 +145,7 @@ fn snapshot(store: &SessionStore, session_id: SessionId) -> SessionSnapshot {
 
 fn database(data_dir: &Path) -> SqliteConnection {
     let mut connection =
-        SqliteConnection::establish(data_dir.join("suru.db").to_str().unwrap()).unwrap();
+        SqliteConnection::establish(data_dir.join("shaman.db").to_str().unwrap()).unwrap();
     connection
         .batch_execute("PRAGMA busy_timeout = 5000;")
         .unwrap();

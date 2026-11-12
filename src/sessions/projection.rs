@@ -704,7 +704,7 @@ fn stamp_output_evidence(
                         .find(|message| message.id == *message_id)
                         .map(|message| message.turn_id)
                 }),
-            // An Error is Suru's own account of a failure, not output the
+            // An Error is Shaman's own account of a failure, not output the
             // Turn produced, so it is no evidence the Turn was still at work.
             SessionChange::ActivityAdded { activity }
                 if !matches!(activity, crate::protocol::Activity::Error { .. }) =>
@@ -1307,7 +1307,7 @@ mod tests {
     fn database(directory: &std::path::Path) -> SqliteConnection {
         let mut connection = SqliteConnection::establish(
             directory
-                .join("suru.db")
+                .join("shaman.db")
                 .to_str()
                 .expect("the fixture's path is UTF-8"),
         )

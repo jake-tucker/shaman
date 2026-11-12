@@ -1,11 +1,11 @@
-//! Whether the user's Claude Code CLI can be driven at all, asked of the CLI itself before Suru
+//! Whether the user's Claude Code CLI can be driven at all, asked of the CLI itself before Shaman
 //! asks it for anything else.
 //!
-//! Two conditions leave Claude unusable until the user fixes them outside Suru, and each reaches a
+//! Two conditions leave Claude unusable until the user fixes them outside Shaman, and each reaches a
 //! Model discovery as its own typed reason rather than as a failure: a CLI that is not installed,
 //! which the harness machinery reports for every Provider alike, and one no user is signed in to,
 //! which the probe reads from the account the init handshake reports. The probe also reads the
-//! version: a known version below the one Suru has verified remains usable with advisory guidance,
+//! version: a known version below the one Shaman has verified remains usable with advisory guidance,
 //! while a CLI too old to answer that question remains incompatible.
 //!
 //! The probe is a short-lived stream-json process of its own, launched with the CLI's filesystem
@@ -134,7 +134,7 @@ async fn probe(
     }
 }
 
-/// Everything the CLI has to answer before Suru will drive it.
+/// Everything the CLI has to answer before Shaman will drive it.
 async fn ask_for_a_verdict(
     transport: &StreamJsonTransport,
     request_timeout: Duration,
@@ -144,11 +144,11 @@ async fn ask_for_a_verdict(
     Ok(warning)
 }
 
-/// Returns advisory guidance when the CLI reports a readable version older than the one Suru has
+/// Returns advisory guidance when the CLI reports a readable version older than the one Shaman has
 /// verified its wire against.
 ///
-/// A CLI that refuses the question is one Suru cannot vouch for either: nothing this Provider needs
-/// postdates the question, so a CLI old enough not to know it is one Suru still cannot vouch for.
+/// A CLI that refuses the question is one Shaman cannot vouch for either: nothing this Provider needs
+/// postdates the question, so a CLI old enough not to know it is one Shaman still cannot vouch for.
 /// A CLI that answers nothing at all is something else: a Provider that has stopped working rather
 /// than one the user updates away from, so it fails the way any unanswered request does.
 async fn verify_version(
@@ -161,7 +161,7 @@ async fn verify_version(
         .map_err(|failure| {
             if failure.is_refusal() {
                 return version_drift(format!(
-                    "the Claude Code CLI could not tell Suru its version: {}",
+                    "the Claude Code CLI could not tell Shaman its version: {}",
                     failure.into_error()
                 ));
             }
@@ -169,20 +169,20 @@ async fn verify_version(
         })?;
     let reported: NativeBinaryVersion = serde_json::from_value(reported).map_err(|error| {
         version_drift(format!(
-            "the Claude Code CLI reported a version Suru could not read: {error}"
+            "the Claude Code CLI reported a version Shaman could not read: {error}"
         ))
     })?;
     CLAUDE_SUGGESTED_VERSION
         .warning_for(&reported.version)
         .map_err(|_| {
             version_drift(format!(
-                "the Claude Code CLI reported the version `{}`, which Suru could not read",
+                "the Claude Code CLI reported the version `{}`, which Shaman could not read",
                 reported.version
             ))
         })
 }
 
-/// A CLI Suru cannot vouch for driving, as the typed condition. The user owns their own CLI, so the
+/// A CLI Shaman cannot vouch for driving, as the typed condition. The user owns their own CLI, so the
 /// version is theirs to fix: reported this way it reads as an actionable condition rather than as a
 /// Provider that broke.
 fn version_drift(message: impl AsRef<str>) -> ProviderError {
@@ -196,7 +196,7 @@ fn version_drift(message: impl AsRef<str>) -> ProviderError {
 /// right now.
 ///
 /// Authentication is entirely between the user and the Claude Code CLI — its own login, a bearer
-/// token, an API key in the environment, or a third-party cloud's credentials — so Suru neither
+/// token, an API key in the environment, or a third-party cloud's credentials — so Shaman neither
 /// asks for nor stores any of it. All a probe can do about a signed-out CLI is say so, and ask
 /// again on the next refresh.
 async fn verify_signed_in(
@@ -228,7 +228,7 @@ async fn verify_signed_in(
 ///
 /// A third-party backend authenticates outside the CLI altogether — AWS credentials, Google Cloud's
 /// application default credentials, an enterprise gateway — and reports none of the other fields,
-/// so there is nothing there for Suru to judge and the CLI is taken at its word. On an Anthropic
+/// so there is nothing there for Shaman to judge and the CLI is taken at its word. On an Anthropic
 /// login the account names whatever the credentials are: the signed-in user, the API key's source,
 /// or the bearer token's. A CLI holding none of them is one the user has to sign in to.
 fn holds_credentials(account: &NativeAccount) -> bool {
@@ -274,7 +274,7 @@ mod tests {
             }),
             serde_json::json!({ "tokenSource": "/login managed key" }),
             // A third-party cloud holds its credentials outside the CLI, so there is nothing here
-            // for Suru to judge.
+            // for Shaman to judge.
             serde_json::json!({ "apiProvider": "bedrock" }),
         ] {
             assert!(

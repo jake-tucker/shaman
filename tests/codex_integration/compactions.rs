@@ -9,7 +9,7 @@
 //!
 //! A Compaction the user asks for is Codex's own `thread/compact/start`, which Codex answers with
 //! nothing and runs as a native turn of its own: that turn's `turn/started`, item and
-//! `turn/completed` are the Turn Suru opened for the request, never a second Turn or a
+//! `turn/completed` are the Turn Shaman opened for the request, never a second Turn or a
 //! Continuation, and interrupting it is the ordinary `turn/interrupt` of that turn.
 //!
 //! The wire shapes and their order follow Codex's app-server: the token usage it reads during a
@@ -22,12 +22,12 @@ use crate::codex_integration::support::{
     opened_session_on, session_where, settled_session,
 };
 use serde_json::{Value, json};
-use suru::protocol::{
+use shaman::protocol::{
     Activity, ActivityStatus, AdmitPromptRequest, CompactSessionRequest, CompactionRequest,
     CompactionTrigger, InitialPrompt, MessageRole, PromptDelivery, PromptId, SessionError,
     SessionErrorCode, SessionSnapshot, TurnStatus,
 };
-use suru::provider::CodexRuntime;
+use shaman::provider::CodexRuntime;
 use tokio::time::Duration;
 
 /// One scripted line printing the notification `method` with `params`.
@@ -140,7 +140,7 @@ fn turn_failed(thread: &str, turn: &str, message: &str) -> String {
     .concat()
 }
 
-/// The arm answering Suru's `turn/interrupt` the way Codex does: acknowledging it, then ending the
+/// The arm answering Shaman's `turn/interrupt` the way Codex does: acknowledging it, then ending the
 /// native turn interrupted.
 fn interrupt_arm(thread: &str, turn: &str) -> String {
     let interrupted = notify(
@@ -542,7 +542,7 @@ async fn a_compaction_an_interrupt_cuts_off_is_stopped_with_its_turn() {
     assert_eq!(
         (*status, error),
         (ActivityStatus::Interrupted, &None),
-        "the Compaction Suru stopped is stopped, with no failure to explain"
+        "the Compaction Shaman stopped is stopped, with no failure to explain"
     );
     opened
         .server
@@ -732,7 +732,7 @@ fn turn_has_error(snapshot: &SessionSnapshot, turn: usize) -> bool {
 }
 
 #[tokio::test]
-async fn a_requested_compaction_is_codexs_own_compact_in_the_turn_suru_opened_for_it() {
+async fn a_requested_compaction_is_codexs_own_compact_in_the_turn_shaman_opened_for_it() {
     // Codex may announce the turn it compacts in before it answers the request, or after.
     for announced_first in [false, true] {
         a_requested_compaction_codex_announces(announced_first).await;
@@ -830,7 +830,7 @@ async fn a_requested_compaction_codex_announces(announced_first: bool) {
     assert_eq!(
         user_messages(&settled),
         user_messages(&before),
-        "no user Message is drawn for a Suru command"
+        "no user Message is drawn for a Shaman command"
     );
     assert!(
         settled.session.working_since.is_none(),
@@ -1217,7 +1217,7 @@ async fn a_compaction_codex_never_begins_a_turn_for_gives_the_connection_up() {
     let codex = compacting_on_request(
         &[
             ACCEPT_COMPACTION.to_owned(),
-            // Codex begins the turn only after Suru has stopped waiting for it, if at all.
+            // Codex begins the turn only after Shaman has stopped waiting for it, if at all.
             gate(1),
             compaction_turn_started(thread),
         ]
@@ -1252,7 +1252,7 @@ async fn a_compaction_codex_never_begins_a_turn_for_gives_the_connection_up() {
     );
     assert!(compactions(&failed).is_empty(), "{:?}", failed.activities);
 
-    // A turn Codex begins late reaches no connection Suru still reads, so it is never taken for
+    // A turn Codex begins late reaches no connection Shaman still reads, so it is never taken for
     // a turn of its own; the next Prompt begins a Turn on a connection of its own.
     codex.release_turn(1);
     prompt(&opened, "Now the lexer").await;
@@ -1283,16 +1283,16 @@ async fn a_compaction_codex_never_begins_a_turn_for_gives_the_connection_up() {
 
 /// Codex's Prompt Cache is taken not to lapse on idle, so Codex declares no Cache Lifetime: with
 /// scheduled Compaction on and hours gone by, its Session carries no lapse moment, and Codex is
-/// never asked to compact on Suru's own account.
+/// never asked to compact on Shaman's own account.
 #[tokio::test]
 async fn a_codex_session_has_no_lapse_to_get_ahead_of_and_is_never_scheduled() {
     let codex = compacting_on_request(ACCEPT_COMPACTION, "", false);
-    let (clock, hand) = suru::server::ServerClock::manual();
+    let (clock, hand) = shaman::server::ServerClock::manual();
     let opened = crate::codex_integration::support::opened_session_configured(
-        suru::provider::CodexRuntime::new(codex.executable()),
+        shaman::provider::CodexRuntime::new(codex.executable()),
         "codex-scheduled-compaction",
         "Keep going",
-        suru::server::ServerTimings::default().with_clock(clock),
+        shaman::server::ServerTimings::default().with_clock(clock),
         Some(r#"{ "compaction": { "scheduled": { "enabled": true, "minimumPenalty": 0 } } }"#),
     )
     .await;

@@ -17,11 +17,11 @@
 mod outcomes;
 mod secrets;
 
-use suru::protocol::{
+use shaman::protocol::{
     Answer, Approval, ApprovalId, ApprovalSubject, Author, QuestionAnswer, Questionnaire,
     QuestionnaireId, QuestionnaireOutcome, QuestionnaireSubmission, SessionChange,
 };
-use suru::questionnaire::{Question, QuestionChoice};
+use shaman::questionnaire::{Question, QuestionChoice};
 
 use super::*;
 use crate::session_integration::attachments::{next_change, watch_session};
@@ -417,7 +417,7 @@ async fn a_sidekicks_secret_answer_reaches_the_agent_and_is_kept_only_as_answere
             }),
             Some(sidekick_author(sidekick_id)),
         )),
-        "Suru keeps only that the secret was answered, and by whom"
+        "Shaman keeps only that the secret was answered, and by whom"
     );
     assert!(
         !serde_json::to_string(&snapshot)
@@ -545,7 +545,7 @@ async fn an_answer_a_questionnaire_cannot_take_is_refused_saying_why() {
             }),
         )
         .await,
-        "The Session does not exist on this Suru server.",
+        "The Session does not exist on this Shaman server.",
     );
     let response =
         client_answers(&descriptor, missing, questionnaire.id, &users_own_answer()).await;
@@ -555,14 +555,14 @@ async fn an_answer_a_questionnaire_cannot_take_is_refused_saying_why() {
         "a Client is refused as every act on a missing Session refuses it"
     );
     let refusal = response
-        .json::<suru::protocol::SessionError>()
+        .json::<shaman::protocol::SessionError>()
         .await
         .expect("decode the Session error");
     assert_eq!(
         (refusal.code, refusal.message.as_str()),
         (
-            suru::protocol::SessionErrorCode::SessionNotFound,
-            "The Session does not exist on this Suru server."
+            shaman::protocol::SessionErrorCode::SessionNotFound,
+            "The Session does not exist on this Shaman server."
         )
     );
 

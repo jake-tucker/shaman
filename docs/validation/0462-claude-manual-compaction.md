@@ -10,7 +10,7 @@ claude --print --input-format stream-json --output-format stream-json --verbose
 ```
 
 **Driver:** a shell pipeline, not committed. It wrote each user message to stdin
-in Suru's envelope, and waited long enough for the `result` before closing
+in Shaman's envelope, and waited long enough for the `result` before closing
 stdin.
 
 **Cases:**
@@ -84,19 +84,19 @@ aborted call's error. The CLI drops `compact_error` in some modes:
 
 The command then throws an `AbortError` reading `Compaction canceled.`. #457
 records, from a live run on 2.1.285, that the closing `result` still reads
-`subtype: "success"` with zero usage. Suru's fixture covers that `result`. It
+`subtype: "success"` with zero usage. Shaman's fixture covers that `result`. It
 also covers the CLI restating the failure as a failed `local_command_outcome`,
-and an aborted `error_during_execution` result. Suru Settles all three the
+and an aborted `error_during_execution` result. Shaman Settles all three the
 same way.
 
-### What Suru reads from this
+### What Shaman reads from this
 
 - The closing `result` reads success with zero usage whether the CLI compacted,
   refused, or was interrupted, so it does not say how the compaction went. The
   Turn a Compaction request began Settles as its Compaction did. The Compaction
   Settles from `status`, `compact_boundary`, and the synthetic message's
-  `local_command_outcome`. A refusal reports nothing else. Once Suru's
-  interrupt is acknowledged, a failure is the stop Suru asked for, and Settles
+  `local_command_outcome`. A refusal reports nothing else. Once Shaman's
+  interrupt is acknowledged, a failure is the stop Shaman asked for, and Settles
   interrupted.
 - `result.usage` meters only the loop's own model calls, and a `/compact` loop
   makes none, so its zeros state no token count. `total_cost_usd` stays

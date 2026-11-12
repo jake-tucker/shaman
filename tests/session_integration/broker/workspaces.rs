@@ -11,7 +11,7 @@
 //! Each test acts as the MCP client a Provider harness is, as the rest of the
 //! Broker suite does, and asserts on what the Broker answers it.
 
-use suru::protocol::RepositoryId;
+use shaman::protocol::RepositoryId;
 
 use super::*;
 use crate::session_integration::broker::{
@@ -26,7 +26,7 @@ use crate::session_integration::{repositories::git, workspace_discovery::AS_LONG
 
 /// What an Agent other than a Sidekick is told when it asks for any Server's
 /// Workspaces but its own.
-const THIS_SERVER_ALONE: &str = "list_workspaces answers you with this Suru server's Workspaces \
+const THIS_SERVER_ALONE: &str = "list_workspaces answers you with this Shaman server's Workspaces \
                                  alone, so it takes no `origin` from you; call it again without \
                                  `origin`.";
 
@@ -287,12 +287,12 @@ async fn an_agent_lists_the_repositories_discovered_within_the_workspace_roots()
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let projects = tempfile::tempdir().expect("create the Workspace Root");
-    let projects = suru::paths::canonical(projects.path()).expect("read the Root canonically");
+    let projects = shaman::paths::canonical(projects.path()).expect("read the Root canonically");
     let atlas = projects.join("atlas");
     std::fs::create_dir(&atlas).expect("create the atlas Repository");
     git(&atlas, &["init", "-b", "main"]);
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         json!({ "workspace": { "roots": [projects] } }).to_string(),
     )
     .expect("name the Workspace Root");

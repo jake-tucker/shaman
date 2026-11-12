@@ -1,4 +1,4 @@
-//! Suru's client over one Copilot CLI server process.
+//! Shaman's client over one Copilot CLI server process.
 //!
 //! The SDK's [`Client`] owns the transport once it has the process's stdio, so this module is what
 //! keeps the harness supervisor in charge of it: [`CopilotConnection`] hands the supervisor a
@@ -95,7 +95,7 @@ impl HarnessConnector for CopilotConnector {
                 })?;
             // `status.get` is advisory rather than part of the protocol handshake. A CLI old
             // enough not to answer it remains governed by the SDK's hard protocol check above;
-            // Suru simply has no package-version guidance to add.
+            // Shaman simply has no package-version guidance to add.
             let warning = connection
                 .client
                 .get_status()
@@ -114,7 +114,7 @@ impl HarnessConnector for CopilotConnector {
 }
 
 /// JSON-RPC's own code for a method the server does not have. The SDK keeps its copy private, so
-/// Suru names the wire constant itself.
+/// Shaman names the wire constant itself.
 const METHOD_NOT_FOUND: i32 = -32601;
 
 /// Whether `error` is the handshake refusing the CLI's protocol version rather than the transport
@@ -131,7 +131,7 @@ fn is_version_drift(error: &github_copilot_sdk::Error) -> bool {
     )
 }
 
-/// A CLI too old or too new for the protocol Suru speaks, as the typed condition. The user owns
+/// A CLI too old or too new for the protocol Shaman speaks, as the typed condition. The user owns
 /// their own CLI, so version drift is theirs to fix: reported this way it reads as an actionable
 /// condition rather than as a Provider that broke.
 fn version_drift(error: &impl std::fmt::Display) -> ProviderError {
@@ -216,7 +216,7 @@ impl CopilotConnection {
     /// with right now.
     ///
     /// Authentication is entirely between the user and the Copilot CLI — its own login, `gh`
-    /// credentials, or an environment token — so Suru neither asks for nor stores any of it. All a
+    /// credentials, or an environment token — so Shaman neither asks for nor stores any of it. All a
     /// discovery can do about a signed-out CLI is say so, and ask again on the next refresh.
     ///
     /// The query goes over the wire directly rather than through the SDK's typed method, whose
@@ -227,7 +227,7 @@ impl CopilotConnection {
             .call(CURRENT_AUTH_METHOD, Some(serde_json::json!({})))
             .await
             .map_err(|error| {
-                // A CLI that has never heard of the sign-in query is one Suru cannot ask, which is
+                // A CLI that has never heard of the sign-in query is one Shaman cannot ask, which is
                 // version drift the handshake could not catch: the SDK falls back to a legacy ping
                 // for a CLI too old to answer `connect`, so the first unknown method is where such
                 // a CLI gives itself away.
@@ -324,17 +324,17 @@ impl HarnessLink for CopilotConnection {
     }
 }
 
-/// The wire method behind the SDK's `account.getCurrentAuth`, which Suru asks for itself.
+/// The wire method behind the SDK's `account.getCurrentAuth`, which Shaman asks for itself.
 const CURRENT_AUTH_METHOD: &str = "account.getCurrentAuth";
 
-/// The CLI's answer to the sign-in query, read only as far as Suru needs it.
+/// The CLI's answer to the sign-in query, read only as far as Shaman needs it.
 ///
 /// The SDK (1.0.15-preview.3) types this answer as its credential-bearing `AuthInfo`, an
 /// untagged union whose `gh-cli`, `env`, and `token` shapes each require a `token`, while the
 /// CLI (1.0.88 onward) answers with credential-free metadata that carries none; the SDK's own
 /// schema notes as much. So a CLI signed in through the gh CLI or an environment token answers in
 /// a shape the SDK cannot read, and its typed query fails a signed-in CLI as unreadable
-/// (docs/validation/copilot-signin-credential-shape.md). Suru wants only whether credentials are
+/// (docs/validation/copilot-signin-credential-shape.md). Shaman wants only whether credentials are
 /// on file and what the CLI said when it last found none, so it reads exactly that and lets the
 /// credentials stay the CLI's own business, as ADR-0008 wants them to.
 #[derive(Deserialize)]

@@ -10,7 +10,7 @@ use crate::claude_integration::support::{
     CLAUDE_MODELS, ScriptedClaude, agent_messages, discovery_arms, interrupt_arm, on_resume,
     opened_session, session_where, settled_session, stop_task_arm, user_turn_arm,
 };
-use suru::{
+use shaman::{
     managed_client::ManagedClient,
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, AgentSelection, AgentSelectionOperationId,

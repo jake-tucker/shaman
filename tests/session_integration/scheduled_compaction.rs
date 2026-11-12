@@ -15,7 +15,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use crate::support::provider::{ControlledProvider, ControlledProviderRuntime};
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, CompactionRequest, CompactionTrigger, Cost,
         InitialPrompt, PromptDelivery, PromptId, ScheduledCompactionSessions, SessionSnapshot,
@@ -138,7 +138,7 @@ async fn idle_built(
     prepare: impl FnOnce(&ControlledProviderRuntime),
 ) -> Idle {
     let config = tempfile::tempdir().expect("create isolated config directory");
-    std::fs::write(config.path().join("suru.jsonc"), settings).expect("write Config Document");
+    std::fs::write(config.path().join("shaman.jsonc"), settings).expect("write Config Document");
     let (clock, hand) = ServerClock::manual();
     let (runtime, mut provider) = ControlledProvider::new();
     runtime.declare_cache_lifetime(lifetime);
@@ -402,8 +402,8 @@ impl Idle {
 /// reads after.
 pub(crate) async fn after_the_actor_has_judged(
     client: &reqwest::Client,
-    descriptor: &suru::protocol::RuntimeDescriptor,
-    session_id: suru::protocol::SessionId,
+    descriptor: &shaman::protocol::RuntimeDescriptor,
+    session_id: shaman::protocol::SessionId,
     provider: &mut crate::support::provider::ControlledProviderSession,
 ) {
     let client = client.clone();
@@ -437,8 +437,8 @@ fn advance(clock: &ServerClock, hand: &ManualClock, at: SessionTimestamp) {
 /// delivered as `delivery`.
 async fn admit_prompt(
     client: &reqwest::Client,
-    descriptor: &suru::protocol::RuntimeDescriptor,
-    session_id: suru::protocol::SessionId,
+    descriptor: &shaman::protocol::RuntimeDescriptor,
+    session_id: shaman::protocol::SessionId,
     delivery: PromptDelivery,
 ) {
     client
@@ -728,7 +728,7 @@ async fn a_settled_session_is_compacted_only_where_the_setting_reaches_all() {
         .send()
         .await
         .expect("list Sessions")
-        .json::<Vec<suru::protocol::SessionListItem>>()
+        .json::<Vec<shaman::protocol::SessionListItem>>()
         .await
         .expect("decode the listing");
     assert!(
@@ -784,7 +784,7 @@ async fn a_session_working_or_monitoring_when_it_falls_due_is_skipped_not_deferr
     working
         .emit([ProviderEvent::SubagentCompleted {
             subagent_id: ProviderSubagentId::new("reader"),
-            status: suru::provider::ProviderSubagentStatus::Completed,
+            status: shaman::provider::ProviderSubagentStatus::Completed,
         }])
         .await;
     working
@@ -1042,7 +1042,7 @@ async fn a_prompt_admitted_as_it_falls_due_never_shares_a_turn_with_it() {
             .prompts
             .iter()
             .any(|prompt| Some(prompt.id) == prompted.prompt_id
-                && prompt.status == suru::protocol::PromptStatus::Delivered),
+                && prompt.status == shaman::protocol::PromptStatus::Delivered),
         "the Prompt is delivered either way: {:?}",
         snapshot.prompts
     );
@@ -1137,8 +1137,8 @@ impl Idle {
                 descriptor.base_url, self.fixture.session_id
             ))
             .bearer_auth(&descriptor.token)
-            .json(&suru::protocol::UpdateAgentSelectionRequest {
-                operation_id: suru::protocol::AgentSelectionOperationId::new(),
+            .json(&shaman::protocol::UpdateAgentSelectionRequest {
+                operation_id: shaman::protocol::AgentSelectionOperationId::new(),
                 selection: controlled_selection(model, effort, "fast"),
             })
             .send()
@@ -1148,7 +1148,7 @@ impl Idle {
             .expect("the Selection is taken");
     }
 
-    async fn model(&self) -> suru::protocol::ModelId {
+    async fn model(&self) -> shaman::protocol::ModelId {
         self.snapshot()
             .await
             .session
@@ -1207,7 +1207,7 @@ async fn a_selection_changed_since_the_cache_was_written_is_skipped() {
     changed
         .fixture
         .runtime
-        .price_cache(suru::protocol::ModelId::new("gpt-other"), RATES);
+        .price_cache(shaman::protocol::ModelId::new("gpt-other"), RATES);
     changed.select("gpt-other").await;
     changed
         .until("the penalty is forecast at the new Model", |snapshot| {
@@ -1242,7 +1242,7 @@ async fn a_selection_changed_since_the_cache_was_written_is_skipped() {
     let writer = back.model().await;
     back.fixture
         .runtime
-        .price_cache(suru::protocol::ModelId::new("gpt-other"), RATES);
+        .price_cache(shaman::protocol::ModelId::new("gpt-other"), RATES);
     back.select("gpt-other").await;
     back.select(writer.as_str()).await;
     back.until("the writer's Model is selected again", |snapshot| {
@@ -1324,8 +1324,8 @@ async fn a_routing_selection_whose_calls_ran_on_another_model_has_not_changed() 
             // does from the start on a real Provider.
             fixture
                 .runtime
-                .declare_routing(suru::protocol::ModelId::new(ROUTING_MODEL), true);
-            let actual = suru::protocol::ModelId::new("routed-actual");
+                .declare_routing(shaman::protocol::ModelId::new(ROUTING_MODEL), true);
+            let actual = shaman::protocol::ModelId::new("routed-actual");
             fixture.runtime.price_cache(actual.clone(), RATES);
             fixture
                 .provider_session
@@ -1333,7 +1333,7 @@ async fn a_routing_selection_whose_calls_ran_on_another_model_has_not_changed() 
                     lapses_at: SessionTimestamp(now.0 + 10 * 60 * 1000),
                     model: Some(actual),
                     lifetime: None,
-                    write_price: suru::protocol::CacheWritePrice::Default,
+                    write_price: shaman::protocol::CacheWritePrice::Default,
                     prompt_limit_tokens: None,
                 });
         },
@@ -1424,7 +1424,7 @@ async fn a_turn_interrupted_before_any_call_begins_no_stretch_owed_a_compaction(
                     lapses_at: SessionTimestamp(now.0 + 10 * 60 * 1000),
                     model: None,
                     lifetime: None,
-                    write_price: suru::protocol::CacheWritePrice::Default,
+                    write_price: shaman::protocol::CacheWritePrice::Default,
                     prompt_limit_tokens: None,
                 });
         },
@@ -1594,7 +1594,7 @@ async fn a_session_settled_on_its_own_is_skipped_while_the_setting_keeps_to_acti
                     lapses_at: SessionTimestamp(now.0 + 3 * 24 * 60 * 60 * 1000),
                     model: None,
                     lifetime: None,
-                    write_price: suru::protocol::CacheWritePrice::Default,
+                    write_price: shaman::protocol::CacheWritePrice::Default,
                     prompt_limit_tokens: None,
                 });
         },
@@ -1617,7 +1617,7 @@ async fn a_reported_lapse_already_within_the_lead_is_never_scheduled() {
         lapses_at: SessionTimestamp(now.0 + 20_000),
         model: None,
         lifetime: None,
-        write_price: suru::protocol::CacheWritePrice::Default,
+        write_price: shaman::protocol::CacheWritePrice::Default,
         prompt_limit_tokens: None,
     };
     let state = tempfile::tempdir().unwrap();

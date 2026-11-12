@@ -2,7 +2,7 @@
 //! Subagent shares its parent's Provider connection, and with it the Broker
 //! token its parent's start carried; Codex names the thread that made each
 //! call in its `_meta.threadId`, and a native Subagent's thread id is the
-//! identity Suru knows it by. A call naming a native Subagent that connection
+//! identity Shaman knows it by. A call naming a native Subagent that connection
 //! spawned is that Subagent's, so every Tool acts for it: a spawn is recorded
 //! beneath it, and it reads and stops only what lies beneath it. A call naming
 //! nothing that connection knows stays the token's Session's (ADR 0034, ADR
@@ -17,7 +17,7 @@
 //! Subagents are known by their thread ids, and each brokered Subagent on the
 //! double hosted as Claude.
 
-use suru::provider::{ProviderEventAttribution, SubagentReportOutcome};
+use shaman::provider::{ProviderEventAttribution, SubagentReportOutcome};
 
 use super::reports::{ANSWER, held_in, report_of};
 use super::stops::acknowledge_interrupt;
@@ -29,7 +29,7 @@ use crate::support::provider::SubagentDelivery;
 pub(super) const ROOT_THREAD: &str = "019a0e25-60f7-root-thread";
 
 /// The thread a native Subagent of the Codex Session runs on, and so the
-/// identity Suru knows it by.
+/// identity Shaman knows it by.
 pub(super) const NATIVE_THREAD: &str = "019a0e25-8213-child-thread";
 
 /// A Codex Session whose first Turn is working, on a Server hosting it beside

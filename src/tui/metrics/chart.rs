@@ -246,7 +246,7 @@ pub(crate) const OTHER: &str = "Other";
 /// own in the last place kept, the key that stood there folding in its
 /// stead, so that it can be shown alone.
 ///
-/// Errands — Suru's own work, under its reserved key — are always kept
+/// Errands — Shaman's own work, under its reserved key — are always kept
 /// apart so: they never fold into Other, taking their place among the keys
 /// kept by Cost like any other. They take the Theme's colour reserved for
 /// them, which no key takes, and the keys take the palette's colours in

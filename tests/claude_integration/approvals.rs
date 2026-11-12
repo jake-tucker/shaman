@@ -7,8 +7,7 @@ use crate::claude_integration::{
     },
 };
 use serde_json::{Value, json};
-use std::path::PathBuf;
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, ApprovalId, ApprovalOutcome, ApprovalPosture,
         ApprovalSubject, ClaudePermissionMode, Decision, FileChange, InitialPrompt, PromptDelivery,
@@ -16,6 +15,7 @@ use suru::{
     },
     provider::ClaudeRuntime,
 };
+use std::path::PathBuf;
 use tokio::time::timeout;
 
 fn request(id: &str, tool: &str, input: Value, extra: Value) -> String {
@@ -194,7 +194,7 @@ async fn a_failed_live_mode_update_is_visible_and_retried_without_restarting_on_
     assert!(posture.pinned);
     assert_eq!(
         posture.application,
-        suru::protocol::ApprovalPostureApplication::Failed
+        shaman::protocol::ApprovalPostureApplication::Failed
     );
     fixture.release();
     settled_session(&live.client, live.session_id, 0).await;
@@ -265,7 +265,7 @@ async fn immediate_native_completion_waits_for_the_decision_to_be_recorded() {
         .unwrap();
     let settled = live
         .wait_for("native completion follows durable Decision", |snapshot| {
-            snapshot.turns[0].status == suru::protocol::TurnStatus::Interrupted
+            snapshot.turns[0].status == shaman::protocol::TurnStatus::Interrupted
         })
         .await;
     assert!(settled.activities.iter().any(|activity| matches!(activity,
@@ -351,7 +351,7 @@ async fn child_approval_is_attributed_to_its_tool_and_survives_the_parent_result
     fixture.release();
     let parent = live
         .wait_for("child Approval survives parent completion", |snapshot| {
-            snapshot.turns[0].status == suru::protocol::TurnStatus::Completed
+            snapshot.turns[0].status == shaman::protocol::TurnStatus::Completed
                 && snapshot.subagent_approval_count() == 1
         })
         .await;
@@ -452,12 +452,12 @@ async fn immediate_native_child_completion_waits_for_its_decision_to_be_recorded
     let parent = live
         .wait_for("native child completion settles its row", |snapshot| {
             snapshot.activities.iter().any(|activity| matches!(activity,
-                Activity::Subagent { status: suru::protocol::ActivityStatus::Completed, session_id, .. }
+                Activity::Subagent { status: shaman::protocol::ActivityStatus::Completed, session_id, .. }
                     if *session_id == child_id))
         })
         .await;
     assert!(parent.activities.iter().any(|activity| matches!(activity,
-        Activity::Subagent { status: suru::protocol::ActivityStatus::Completed, session_id, .. }
+        Activity::Subagent { status: shaman::protocol::ActivityStatus::Completed, session_id, .. }
             if *session_id == child_id)));
     let child = live.client.read_session(child_id).await.unwrap();
     assert!(child.activities.iter().any(|activity| matches!(activity,
@@ -774,8 +774,8 @@ fn turn_result(text: &str) -> String {
     }))
 }
 
-/// An arm playing `timeline` once Suru answers the control request `request_id` — an identity
-/// only the fixture's requests carry, so only Suru's answer to it names it.
+/// An arm playing `timeline` once Shaman answers the control request `request_id` — an identity
+/// only the fixture's requests carry, so only Shaman's answer to it names it.
 fn answered_arm(request_id: &str, timeline: &str) -> String {
     format!("    *'\"request_id\":\"{request_id}\"'*)\n{timeline}      ;;\n")
 }

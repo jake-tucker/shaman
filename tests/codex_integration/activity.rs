@@ -9,7 +9,7 @@ use crate::codex_integration::support::{
     OpenedSession, ScriptedCodex, conversation_codex, opened_session, session_where,
     settled_session,
 };
-use suru::protocol::{Activity, ActivityStatus, MessageRole, SessionSnapshot, TurnStatus};
+use shaman::protocol::{Activity, ActivityStatus, MessageRole, SessionSnapshot, TurnStatus};
 
 /// What a reader sees of one Tool Call: the server hosting its Tool, the Tool's name, its input,
 /// its output, how it settled, and how many parts of its result were left out.
@@ -289,8 +289,8 @@ async fn image_views_image_generations_and_sleeps_are_tool_calls() {
     worked.shutdown().await;
 }
 
-/// Every item Codex reports that is no use of a Tool Suru records nothing of: a review entered and
-/// left, a hook's prompt, a plan, and a call to a dynamic Tool, which Suru never offers. A context
+/// Every item Codex reports that is no use of a Tool Shaman records nothing of: a review entered and
+/// left, a hook's prompt, a plan, and a call to a dynamic Tool, which Shaman never offers. A context
 /// compaction is no Tool use either, but a Compaction of its own (see `compactions`).
 const ITEMS_THAT_ARE_NO_TOOL_USE: &str = r#"      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"enteredReviewMode","id":"review-in","review":"current changes"}}}'
       printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"enteredReviewMode","id":"review-in","review":"current changes"}}}'
@@ -331,10 +331,10 @@ async fn items_that_are_no_tool_use_are_still_recorded_as_nothing() {
 
 /// An MCP call that has started and holds, with progress on it, until the test releases the
 /// fixture, which then completes it and the Turn.
-const HELD_MCP_TOOL_CALL: &str = r#"      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-deploy","server":"fly","tool":"deploy","status":"inProgress","arguments":{"app":"suru-docs"},"result":null,"error":null,"durationMs":null}}}'
+const HELD_MCP_TOOL_CALL: &str = r#"      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-deploy","server":"fly","tool":"deploy","status":"inProgress","arguments":{"app":"shaman-docs"},"result":null,"error":null,"durationMs":null}}}'
       printf '%s\n' '{"method":"item/mcpToolCall/progress","params":{"threadId":"native-thread","turnId":"native-turn","itemId":"call-deploy","message":"Building the image"}}'
       wait_for "$CODEX_FIXTURE_RELEASE"
-      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-deploy","server":"fly","tool":"deploy","status":"completed","arguments":{"app":"suru-docs"},"result":{"content":[{"type":"text","text":"Deployed v12"}],"structuredContent":null},"error":null,"durationMs":1200}}}'
+      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-deploy","server":"fly","tool":"deploy","status":"completed","arguments":{"app":"shaman-docs"},"result":{"content":[{"type":"text","text":"Deployed v12"}],"structuredContent":null},"error":null,"durationMs":1200}}}'
       printf '%s\n' '{"method":"turn/completed","params":{"threadId":"native-thread","turn":{"id":"native-turn","status":"completed","items":[]}}}'
 "#;
 
@@ -355,7 +355,7 @@ async fn a_tool_call_stands_active_from_the_moment_its_item_starts() {
         [(
             Some("fly"),
             "deploy",
-            "app=suru-docs",
+            "app=shaman-docs",
             "",
             ActivityStatus::Active,
             0,
@@ -371,7 +371,7 @@ async fn a_tool_call_stands_active_from_the_moment_its_item_starts() {
         [(
             Some("fly"),
             "deploy",
-            "app=suru-docs",
+            "app=shaman-docs",
             "Deployed v12",
             ActivityStatus::Completed,
             0,
@@ -441,7 +441,7 @@ async fn a_tool_use_codex_reports_only_once_it_completed_is_still_recorded() {
             ActivityStatus::Completed,
             0,
         )],
-        "a completed item Suru never saw start opens and settles its Tool Call at once"
+        "a completed item Shaman never saw start opens and settles its Tool Call at once"
     );
 
     worked.shutdown().await;

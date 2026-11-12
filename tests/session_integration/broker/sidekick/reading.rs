@@ -7,7 +7,7 @@
 //! Each test acts as the MCP client a Sidekick's harness is and asserts on
 //! what `read_session` answers it, and on what the Session API says after.
 
-use suru::provider::{ProviderActivityId, ProviderCommandStatus};
+use shaman::provider::{ProviderActivityId, ProviderCommandStatus};
 
 use super::*;
 
@@ -147,7 +147,7 @@ async fn read_session_reads_the_latest_turns_ask_and_answer_by_default_and_reads
     assert_eq!(reading["session_id"], json!(session_id));
     assert_eq!(
         reading["workspace"],
-        json!(suru::paths::canonical(workspace.path()).expect("read the Workspace"))
+        json!(shaman::paths::canonical(workspace.path()).expect("read the Workspace"))
     );
     assert_eq!(reading["parent"], Value::Null);
     assert_eq!(reading["status"], json!("idle"));
@@ -327,20 +327,20 @@ async fn read_session_gives_an_open_questionnaire_whole_and_a_pending_approval_a
 
     let (asking, asking_provider) =
         started_session(&descriptor, &mut claude, workspace.path(), "Run the tests.").await;
-    let questionnaire = suru::protocol::Questionnaire {
-        id: suru::protocol::QuestionnaireId::new(),
-        questions: vec![suru::questionnaire::Question {
+    let questionnaire = shaman::protocol::Questionnaire {
+        id: shaman::protocol::QuestionnaireId::new(),
+        questions: vec![shaman::questionnaire::Question {
             id: "machine".to_owned(),
             title: Some("Machine".to_owned()),
             text: "Where should the tests run?".to_owned(),
             choices: vec![
-                suru::questionnaire::QuestionChoice {
+                shaman::questionnaire::QuestionChoice {
                     id: "staging".to_owned(),
                     label: "Staging".to_owned(),
                     description: Some("The shared machine".to_owned()),
                     recommended: true,
                 },
-                suru::questionnaire::QuestionChoice {
+                shaman::questionnaire::QuestionChoice {
                     id: "local".to_owned(),
                     label: "This machine".to_owned(),
                     description: None,
@@ -414,9 +414,9 @@ async fn read_session_gives_an_open_questionnaire_whole_and_a_pending_approval_a
         started_session(&descriptor, &mut claude, workspace.path(), "Build it.").await;
     approving_provider
         .emit_and_wait_until_observed(ProviderEvent::ApprovalRequested {
-            approval: suru::protocol::Approval {
-                id: suru::protocol::ApprovalId::new(),
-                subject: suru::protocol::ApprovalSubject::Command {
+            approval: shaman::protocol::Approval {
+                id: shaman::protocol::ApprovalId::new(),
+                subject: shaman::protocol::ApprovalSubject::Command {
                     command: "cargo nextest run".into(),
                     cwd: None,
                     actions: Vec::new(),
@@ -651,7 +651,7 @@ async fn read_session_refuses_what_the_session_does_not_hold_in_words_the_sideki
     for (arguments, says) in [
         (
             json!({ "session_id": unknown }),
-            format!("Suru holds no Session `{unknown}`"),
+            format!("Shaman holds no Session `{unknown}`"),
         ),
         (json!({}), "needs `session_id`".to_owned()),
         (

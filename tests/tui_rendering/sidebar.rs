@@ -21,7 +21,7 @@ use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use ratatui::{buffer::Buffer, style::Color};
-use suru::{
+use shaman::{
     managed_client::{ManagedEvent, RecoveryStatus, SessionEvent, SubagentTreeEvent},
     protocol::{
         Activity, ActivityId, ActivityStatus, AppearanceSettings, ApprovalId, AsideSettings,
@@ -99,17 +99,17 @@ fn an_active_row_is_three_lines_of_workspace_time_and_title() {
         workspace.path(),
         vec![listed(
             "Sidebar shell",
-            &workspace.path().join("suru"),
+            &workspace.path().join("shaman"),
             1,
             minutes_ago(5),
         )],
     );
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
-    let first = rendered_row(&rows, "suru");
+    let first = rendered_row(&rows, "shaman");
     let workspace_line = sidebar_column(&rows[first]);
     assert!(
-        workspace_line.starts_with("suru"),
+        workspace_line.starts_with("shaman"),
         "the row leads with the workspace the work is in: {workspace_line:?}"
     );
     assert!(
@@ -141,13 +141,13 @@ fn active_sidebar_rows_draw_their_icon_only_where_the_setting_shows_them_and_whe
             icon_listed(
                 "Sidebar shell",
                 "md-bug",
-                &workspace.path().join("suru"),
+                &workspace.path().join("shaman"),
                 2,
                 minutes_ago(5),
             ),
             listed(
                 "No Icon of its own",
-                &workspace.path().join("suru"),
+                &workspace.path().join("shaman"),
                 1,
                 minutes_ago(6),
             ),
@@ -181,7 +181,7 @@ fn active_sidebar_rows_draw_their_icon_only_where_the_setting_shows_them_and_whe
         vec![icon_listed(
             "Unresolved icon session",
             "md-not-a-glyph",
-            &workspace.path().join("suru"),
+            &workspace.path().join("shaman"),
             1,
             minutes_ago(5),
         )],
@@ -205,7 +205,7 @@ fn showing_icons_moves_the_rows_a_reader_is_already_looking_at() {
         vec![icon_listed(
             "Sidebar shell",
             "md-bug",
-            &workspace.path().join("suru"),
+            &workspace.path().join("shaman"),
             1,
             minutes_ago(5),
         )],
@@ -323,7 +323,12 @@ fn the_right_slot_says_working_and_how_long_while_the_latest_turn_is_unsettled()
     let application = sidebar_showing(
         workspace.path(),
         vec![working(
-            listed("Running a build", &workspace.path().join("suru"), 1, now()),
+            listed(
+                "Running a build",
+                &workspace.path().join("shaman"),
+                1,
+                now(),
+            ),
             seconds_ago(90),
         )],
     );
@@ -367,7 +372,12 @@ fn the_right_slot_says_monitoring_and_how_long_with_an_info_rail_while_a_watch_i
     let application = sidebar_showing(
         workspace.path(),
         vec![monitoring(
-            listed("Tailing the logs", &workspace.path().join("suru"), 1, now()),
+            listed(
+                "Tailing the logs",
+                &workspace.path().join("shaman"),
+                1,
+                now(),
+            ),
             seconds_ago(3 * 60 + 5),
         )],
     );
@@ -697,11 +707,11 @@ fn a_catalog_viewed_change_clears_another_clients_outcome_in_place() {
                 inputs: SessionStandingInputs {
                     pending_questionnaires: Vec::new(),
                     submitting_questionnaires: Vec::new(),
-                    pending_questionnaires_revision: suru::protocol::SessionRevision(0),
+                    pending_questionnaires_revision: shaman::protocol::SessionRevision(0),
                     subagent_interventions: Vec::new(),
                     pending_approvals: Vec::new(),
                     submitting_approvals: Vec::new(),
-                    pending_approvals_revision: suru::protocol::SessionRevision(0),
+                    pending_approvals_revision: shaman::protocol::SessionRevision(0),
                     latest_turn: Some(LatestTurnStatus {
                         status: TurnStatus::Completed,
                         settled_at: Some(settled_at),
@@ -763,7 +773,7 @@ fn the_right_slot_falls_back_to_the_compact_time_once_the_turn_settles() {
     // running, one with nothing running and five minutes since it last moved.
     let running = listed(
         "Running a build",
-        &workspace.path().join("suru"),
+        &workspace.path().join("shaman"),
         1,
         minutes_ago(5),
     );
@@ -1274,9 +1284,9 @@ fn the_session_content_column_recenters_inside_the_width_the_sidebar_leaves() {
                 session: SessionSettings {
                     content_width: SessionContentWidth::Maximum(70),
                 },
-                aside: suru::protocol::AsideSettings {
-                    initial_visibility: suru::protocol::AsideVisibility::Hidden,
-                    ..suru::protocol::AsideSettings::default()
+                aside: shaman::protocol::AsideSettings {
+                    initial_visibility: shaman::protocol::AsideVisibility::Hidden,
+                    ..shaman::protocol::AsideSettings::default()
                 },
                 ..EffectiveSettings::default()
             },
@@ -1749,7 +1759,7 @@ fn transcript_and_composer_drags_that_cross_the_edge_never_resize_it() {
         workspace.path(),
         EffectiveSettings {
             sidebar: shown(AutoSettle::default()),
-            text_selection: suru::protocol::TextSelectionSettings {
+            text_selection: shaman::protocol::TextSelectionSettings {
                 copy: TextSelectionCopy::Release,
                 ..Default::default()
             },
@@ -2081,7 +2091,7 @@ fn cells_beyond_the_grab_zone_keep_their_existing_pointer_behavior() {
         workspace.path(),
         EffectiveSettings {
             sidebar: shown(AutoSettle::default()),
-            text_selection: suru::protocol::TextSelectionSettings {
+            text_selection: shaman::protocol::TextSelectionSettings {
                 copy: TextSelectionCopy::Release,
                 ..Default::default()
             },
@@ -2439,7 +2449,7 @@ fn deliver_sidebar_settings(
 /// Sidebar holding the keys, so one standing without them is reached first:
 /// a Sidebar the reader is already driving takes two presses to reopen, and
 /// one the Setting revealed takes three.
-fn reopen_the_sidebar(application: &mut Application) -> suru::tui::SessionListRequest {
+fn reopen_the_sidebar(application: &mut Application) -> shaman::tui::SessionListRequest {
     for _ in 0..3 {
         let transition = press_toggle(application);
         if matches!(transition, ApplicationTransition::ListSessions(_)) {
@@ -2475,7 +2485,7 @@ fn press_toggle(application: &mut Application) -> ApplicationTransition {
 /// surface that asked for it.
 fn expect_workspace_picker_listing(
     transition: ApplicationTransition,
-) -> suru::tui::WorkspaceListRequest {
+) -> shaman::tui::WorkspaceListRequest {
     let ApplicationTransition::ListWorkspaces(request) = transition else {
         panic!(
             "opening the workspace picker asks the server for its workspaces, not {transition:?}"
@@ -2484,7 +2494,7 @@ fn expect_workspace_picker_listing(
     request
 }
 
-fn expect_sidebar_listing(transition: ApplicationTransition) -> suru::tui::SessionListRequest {
+fn expect_sidebar_listing(transition: ApplicationTransition) -> shaman::tui::SessionListRequest {
     let ApplicationTransition::ListSessions(request) = transition else {
         panic!("a sidebar coming into view asks for its sessions, not {transition:?}");
     };
@@ -2624,7 +2634,7 @@ fn the_sidebar_survives_every_terminal_the_frame_will_draw() {
         vec![
             listed(
                 "A title long enough to run past the sidebar's own columns",
-                &workspace.path().join("suru"),
+                &workspace.path().join("shaman"),
                 3,
                 days_ago(400),
             ),
@@ -2641,7 +2651,7 @@ fn the_sidebar_survives_every_terminal_the_frame_will_draw() {
             ),
             settled(
                 "A settled title long enough to run past them too",
-                &workspace.path().join("suru"),
+                &workspace.path().join("shaman"),
                 1,
                 days_ago(400),
                 days_ago(399),
@@ -2804,8 +2814,8 @@ fn enter_attaches_the_selected_session_in_place() {
 
     assert_eq!(
         press_sidebar_key(&mut application, KeyCode::Enter),
-        ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::ViewAndAttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             wanted,
         )),
         "Enter attaches the session the reader has selected"
@@ -2852,8 +2862,8 @@ fn moving_workspace_while_a_session_is_opening_reports_the_client_letting_go() {
     for workspace in [&here, &atlas] {
         std::fs::create_dir(workspace).expect("create the workspace fixture");
     }
-    let here = suru::paths::canonical(&here).expect("canonicalize the workspace fixture");
-    let atlas = suru::paths::canonical(&atlas).expect("canonicalize the workspace fixture");
+    let here = shaman::paths::canonical(&here).expect("canonicalize the workspace fixture");
+    let atlas = shaman::paths::canonical(&atlas).expect("canonicalize the workspace fixture");
     let wanted = SessionId::new();
     let mut application =
         sidebar_focused(&here, vec![listed_as(wanted, "The work wanted", &here, 1)]);
@@ -3133,7 +3143,7 @@ fn unreadable_from(title: &str, workspace: &Path, created_at: u64) -> SessionLis
 /// read is passed over in either direction while everything else keeps the
 /// established order.
 #[test]
-fn the_arrows_pass_over_a_row_suru_cannot_read() {
+fn the_arrows_pass_over_a_row_shaman_cannot_read() {
     let workspace = workspace_dir();
     let mut application = sidebar_focused(
         workspace.path(),
@@ -3286,7 +3296,7 @@ fn truncation_takes_the_title_before_it_takes_the_unreadable_marker() {
 }
 
 #[test]
-fn a_session_suru_cannot_read_is_not_attached() {
+fn a_session_shaman_cannot_read_is_not_attached() {
     let workspace = workspace_dir();
     let mut application = sidebar_focused(
         workspace.path(),
@@ -3296,7 +3306,7 @@ fn a_session_suru_cannot_read_is_not_attached() {
     assert_eq!(
         press_sidebar_key(&mut application, KeyCode::Enter),
         ApplicationTransition::Continue,
-        "there is nothing to attach to in a session Suru could not read"
+        "there is nothing to attach to in a session Shaman could not read"
     );
 }
 
@@ -4382,10 +4392,10 @@ fn a_session_unsettled_after_a_long_idle_comes_back_to_the_active_list() {
 }
 
 /// A settled Session is one a reader can prompt back to life, and a Session
-/// Suru could not read is not one: the marker never lands on it, and neither
+/// Shaman could not read is not one: the marker never lands on it, and neither
 /// does the idle the Sidebar derives.
 #[test]
-fn a_session_suru_cannot_read_never_settles_however_long_it_has_sat() {
+fn a_session_shaman_cannot_read_never_settles_however_long_it_has_sat() {
     let workspace = workspace_dir();
     let application = sidebar_showing(
         workspace.path(),
@@ -4404,7 +4414,7 @@ fn a_session_suru_cannot_read_never_settles_however_long_it_has_sat() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     assert!(
         rendered_row(&rows, "Unreadable work") < sidebar_divider(&rows),
-        "the shelf is for work a reader set down, not for a record Suru cannot open: {rows:?}"
+        "the shelf is for work a reader set down, not for a record Shaman cannot open: {rows:?}"
     );
 }
 
@@ -4705,11 +4715,11 @@ fn standing_elsewhere(
                 inputs: SessionStandingInputs {
                     pending_questionnaires: Vec::new(),
                     submitting_questionnaires: Vec::new(),
-                    pending_questionnaires_revision: suru::protocol::SessionRevision(0),
+                    pending_questionnaires_revision: shaman::protocol::SessionRevision(0),
                     subagent_interventions: Vec::new(),
                     pending_approvals: Vec::new(),
                     submitting_approvals: Vec::new(),
-                    pending_approvals_revision: suru::protocol::SessionRevision(0),
+                    pending_approvals_revision: shaman::protocol::SessionRevision(0),
                     latest_turn: Some(LatestTurnStatus {
                         status,
                         settled_at: Some(settled_at),
@@ -4811,11 +4821,11 @@ fn latest_turn(session: SessionListItem, status: TurnStatus, settled_at: u64) ->
     summary.standing_inputs = SessionStandingInputs {
         pending_questionnaires: Vec::new(),
         submitting_questionnaires: Vec::new(),
-        pending_questionnaires_revision: suru::protocol::SessionRevision(0),
+        pending_questionnaires_revision: shaman::protocol::SessionRevision(0),
         subagent_interventions: Vec::new(),
         pending_approvals: Vec::new(),
         submitting_approvals: Vec::new(),
-        pending_approvals_revision: suru::protocol::SessionRevision(0),
+        pending_approvals_revision: shaman::protocol::SessionRevision(0),
         latest_turn: Some(LatestTurnStatus {
             status,
             settled_at: Some(SessionTimestamp(settled_at)),
@@ -5085,8 +5095,8 @@ fn enter_attaches_the_result_the_reader_is_on() {
     );
     assert_eq!(
         press_sidebar_key(&mut application, KeyCode::Enter),
-        ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::ViewAndAttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             wanted,
         )),
         "Enter attaches the result the reader is on"
@@ -5352,8 +5362,8 @@ fn a_left_press_on_a_row_attaches_the_session_it_stands_on() {
 
     assert_eq!(
         press_line(&mut application, MouseButton::Left, "Wanted work"),
-        ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::ViewAndAttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             wanted,
         )),
         "the press opens the session under it, keys or no keys"
@@ -5363,7 +5373,7 @@ fn a_left_press_on_a_row_attaches_the_session_it_stands_on() {
 /// A row the client cannot read answers no press: opening it could only fail,
 /// so the press neither attaches nor carries the reader onto the row.
 #[test]
-fn a_left_press_on_a_row_suru_cannot_read_does_nothing() {
+fn a_left_press_on_a_row_shaman_cannot_read_does_nothing() {
     let workspace = workspace_dir();
     let mut application = sidebar_showing(
         workspace.path(),
@@ -5524,7 +5534,7 @@ fn a_right_press_on_a_settled_row_offers_unsettle_and_delete() {
 /// rest: the menu is capability-aware, and settling a Session that cannot be
 /// opened is an operation that cannot succeed.
 #[test]
-fn a_right_press_on_a_row_suru_cannot_read_offers_only_delete() {
+fn a_right_press_on_a_row_shaman_cannot_read_offers_only_delete() {
     let workspace = workspace_dir();
     let mut application = sidebar_showing(
         workspace.path(),
@@ -5551,7 +5561,7 @@ fn a_right_press_on_a_row_suru_cannot_read_offers_only_delete() {
 /// Deletion is untouched by unreadability: the item asks again the way it
 /// always does, and the second press acts on the Session the menu stands on.
 #[test]
-fn the_menu_deletes_a_row_suru_cannot_read_after_asking_again() {
+fn the_menu_deletes_a_row_shaman_cannot_read_after_asking_again() {
     let workspace = workspace_dir();
     let wanted = SessionId::new();
     let mut application = sidebar_showing(
@@ -5576,8 +5586,8 @@ fn the_menu_deletes_a_row_suru_cannot_read_after_asking_again() {
     );
     assert_eq!(
         press_menu_item(&mut application, anchor, 0),
-        ApplicationTransition::DeleteSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::DeleteSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             wanted,
         )),
         "and the second press takes the damaged work away"
@@ -5595,7 +5605,10 @@ fn the_menu_sets_the_row_it_stands_on_aside() {
     assert_eq!(
         press_menu_item(&mut application, anchor, 0),
         ApplicationTransition::SettleSession {
-            session: suru::protocol::SessionReference::new(suru::protocol::Outlook::Local, wanted,),
+            session: shaman::protocol::SessionReference::new(
+                shaman::protocol::Outlook::Local,
+                wanted,
+            ),
             settled: true,
         },
         "the menu acts on the session it was opened on rather than the one that is open"
@@ -5626,8 +5639,8 @@ fn the_menu_takes_a_settled_row_back_off_the_shelf() {
     assert_eq!(
         press_menu_item(&mut application, anchor, 0),
         ApplicationTransition::SettleSession {
-            session: suru::protocol::SessionReference::new(
-                suru::protocol::Outlook::Local,
+            session: shaman::protocol::SessionReference::new(
+                shaman::protocol::Outlook::Local,
                 brought_back,
             ),
             settled: false,
@@ -5659,8 +5672,8 @@ fn the_menu_asks_again_before_it_deletes() {
 
     assert_eq!(
         press_menu_item(&mut application, anchor, 2),
-        ApplicationTransition::DeleteSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::DeleteSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             wanted,
         )),
         "and the second press acts on the session the menu stands on"
@@ -5779,7 +5792,10 @@ fn a_right_press_inside_the_menu_leaves_it_where_it_is() {
     assert_eq!(
         press_menu_item(&mut application, anchor, 0),
         ApplicationTransition::SettleSession {
-            session: suru::protocol::SessionReference::new(suru::protocol::Outlook::Local, wanted,),
+            session: shaman::protocol::SessionReference::new(
+                shaman::protocol::Outlook::Local,
+                wanted,
+            ),
             settled: true,
         },
         "the menu stands where it was, on the row it was opened on"
@@ -5803,7 +5819,7 @@ fn remote(name: &str, status: RemoteStatus) -> Remote {
 
 struct EverywhereListing {
     catalog_origins: std::collections::HashSet<Outlook>,
-    requests: Vec<suru::tui::SessionListRequest>,
+    requests: Vec<shaman::tui::SessionListRequest>,
 }
 
 fn choose_everywhere(application: &mut Application, remotes: Vec<Remote>) -> EverywhereListing {
@@ -5892,7 +5908,7 @@ fn the_selector_lists_everywhere_then_all_workspaces_then_the_outlooks_workspace
         workspace.path(),
         vec![
             listed("Notes", &workspace.path().join("notes"), 2, now()),
-            listed("Suru", &workspace.path().join("suru"), 1, now()),
+            listed("Shaman", &workspace.path().join("shaman"), 1, now()),
         ],
     );
 
@@ -5905,7 +5921,7 @@ fn the_selector_lists_everywhere_then_all_workspaces_then_the_outlooks_workspace
             ALL_WORKSPACES.to_owned(),
             workspace_name(workspace.path()),
             "notes".to_owned(),
-            "suru".to_owned(),
+            "shaman".to_owned(),
         ],
         "every workspace the reader has work in, and the one they are standing in"
     );
@@ -5917,17 +5933,17 @@ fn the_selector_lists_everywhere_then_all_workspaces_then_the_outlooks_workspace
 #[test]
 fn selector_entries_draw_their_workspaces_own_icon_or_the_folder_glyph() {
     let workspace = workspace_dir();
-    let SessionListItem::Readable(mut suru_session) =
-        listed("Suru", &workspace.path().join("suru"), 1, now())
+    let SessionListItem::Readable(mut shaman_session) =
+        listed("Shaman", &workspace.path().join("shaman"), 1, now())
     else {
         unreachable!()
     };
-    suru_session.session.workspace.icon = Some("dev-rust".to_owned());
+    shaman_session.session.workspace.icon = Some("dev-rust".to_owned());
     let mut application = sidebar_focused(
         workspace.path(),
         vec![
             listed("Notes", &workspace.path().join("notes"), 2, now()),
-            SessionListItem::Readable(suru_session),
+            SessionListItem::Readable(shaman_session),
         ],
     );
     let mut settings = EffectiveSettings::default();
@@ -5943,7 +5959,7 @@ fn selector_entries_draw_their_workspaces_own_icon_or_the_folder_glyph() {
             ALL_WORKSPACES.to_owned(),
             format!("\u{ea83} {}", workspace_name(workspace.path())),
             "\u{ea83} notes".to_owned(),
-            "\u{e7a8} suru".to_owned(),
+            "\u{e7a8} shaman".to_owned(),
         ],
         "Everywhere and AllWorkspaces draw no icon; a workspace scope draws its \
          own icon or falls back to the folder glyph"
@@ -6109,7 +6125,7 @@ fn opening_a_foreign_row_keeps_the_pickers_everywhere_streams() {
     // that interest still held.
     application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::SessionList,
+            shaman::tui::SemanticCommandId::SessionList,
         )))
         .expect("open the session picker");
     let picker_ctrl_a = |application: &mut Application| {
@@ -6224,7 +6240,7 @@ fn enter_on_a_foreign_row_turns_then_opens_it_without_disturbing_everywhere() {
         session.contains("studio ·"),
         "the hydrated session's header names the remote: {session:?}"
     );
-    assert!(!session.contains("Suru"), "{session}");
+    assert!(!session.contains("Shaman"), "{session}");
 }
 
 #[test]
@@ -6486,7 +6502,7 @@ fn everywhere_with_a_remote_needing_a_login(workspace: &Path, remote_name: &str)
     everywhere_with_a_remote_unreachable_for(
         workspace,
         remote_name,
-        suru::protocol::UnreachableReason::RelayLoginNeeded {
+        shaman::protocol::UnreachableReason::RelayLoginNeeded {
             relay: "https://relay.company.example".to_owned(),
         },
     )
@@ -6496,7 +6512,7 @@ fn everywhere_with_a_remote_needing_a_login(workspace: &Path, remote_name: &str)
 fn everywhere_with_a_remote_unreachable_for(
     workspace: &Path,
     remote_name: &str,
-    reason: suru::protocol::UnreachableReason,
+    reason: shaman::protocol::UnreachableReason,
 ) -> Application {
     let mut application = sidebar_focused(workspace, Vec::new());
     let EverywhereListing { requests, .. } = choose_everywhere(
@@ -6605,9 +6621,9 @@ fn an_unreachable_row_keeps_its_mark_and_login_offer_at_the_narrowest_sidebar_an
 #[test]
 fn an_unreachable_row_whose_relay_accounts_differ_offers_to_try_again_however_narrow() {
     let workspace = workspace_dir();
-    let accounts_differ = || suru::protocol::UnreachableReason::RelayDifferentAccounts {
+    let accounts_differ = || shaman::protocol::UnreachableReason::RelayDifferentAccounts {
         relay: "https://relay.company.example".to_owned(),
-        account: suru::protocol::RelayAccount {
+        account: shaman::protocol::RelayAccount {
             provider: "github".to_owned(),
             username: "octocat".to_owned(),
         },
@@ -6649,7 +6665,7 @@ fn an_unreachable_row_whose_relay_accounts_differ_offers_to_try_again_however_na
 
 #[test]
 fn everywhere_workspace_names_use_each_rows_origin_path_style() {
-    use suru::protocol::{PathStyle, WorkspacePaths};
+    use shaman::protocol::{PathStyle, WorkspacePaths};
 
     let workspace = workspace_dir();
     let remote_id = SessionId::new();
@@ -6674,7 +6690,7 @@ fn everywhere_workspace_names_use_each_rows_origin_path_style() {
         vec![remote("studio", RemoteStatus::Available)],
     );
     // A wire path, interpreted by the Remote's syntax on every test platform.
-    let remote_path = Path::new(r"C:\Users\Remote\suru");
+    let remote_path = Path::new(r"C:\Users\Remote\shaman");
     for request in requests {
         let sessions = match request.outlook() {
             Outlook::Local => Vec::new(),
@@ -6690,7 +6706,7 @@ fn everywhere_workspace_names_use_each_rows_origin_path_style() {
         .map(|row| sidebar_column(row))
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(sidebar.contains("suru"), "{sidebar}");
+    assert!(sidebar.contains("shaman"), "{sidebar}");
     assert!(!sidebar.contains(r"C:\Users\Remote"), "{sidebar}");
 }
 
@@ -7142,11 +7158,11 @@ fn a_remote_turn_outcome_lights_that_outlooks_row_in_place() {
                 inputs: SessionStandingInputs {
                     pending_questionnaires: Vec::new(),
                     submitting_questionnaires: Vec::new(),
-                    pending_questionnaires_revision: suru::protocol::SessionRevision(0),
+                    pending_questionnaires_revision: shaman::protocol::SessionRevision(0),
                     subagent_interventions: Vec::new(),
                     pending_approvals: Vec::new(),
                     submitting_approvals: Vec::new(),
-                    pending_approvals_revision: suru::protocol::SessionRevision(0),
+                    pending_approvals_revision: shaman::protocol::SessionRevision(0),
                     latest_turn: Some(LatestTurnStatus {
                         status: TurnStatus::Failed,
                         settled_at: Some(SessionTimestamp(now())),
@@ -7249,7 +7265,7 @@ fn a_client_launched_through_a_symlink_narrows_to_the_workspace_the_server_repor
     std::fs::create_dir(&real).expect("create the workspace directory");
     let link = root.path().join("link");
     std::os::unix::fs::symlink(&real, &link).expect("reach the workspace through a symlink");
-    let canonical = suru::paths::canonical(&real).expect("canonicalize the workspace fixture");
+    let canonical = shaman::paths::canonical(&real).expect("canonicalize the workspace fixture");
 
     let application = sidebar_scoped(
         &link,
@@ -7285,7 +7301,7 @@ fn choosing_a_workspace_narrows_both_shelves() {
         "both shelves go on listing the workspace the reader narrowed to: {rows:?}"
     );
     assert!(
-        !drawn_in_sidebar(&rows, "Suru work") && !drawn_in_sidebar(&rows, "Suru history"),
+        !drawn_in_sidebar(&rows, "Shaman work") && !drawn_in_sidebar(&rows, "Shaman history"),
         "and neither lists the workspace they narrowed away from: {rows:?}"
     );
     assert_eq!(
@@ -7304,7 +7320,12 @@ fn choosing_all_workspaces_widens_the_sidebar_again() {
     choose_workspace(&mut application, ALL_WORKSPACES);
 
     let rows = rendered_application_rows_at(&application, WIDE, 20);
-    for title in ["Notes work", "Suru work", "Notes history", "Suru history"] {
+    for title in [
+        "Notes work",
+        "Shaman work",
+        "Notes history",
+        "Shaman history",
+    ] {
         assert!(
             drawn_in_sidebar(&rows, title),
             "the whole body of work is listed again: {title} is missing from {rows:?}"
@@ -7328,7 +7349,7 @@ fn a_query_answers_within_the_workspace_the_selector_is_narrowed_to() {
         "the query answers with the work in scope: {rows:?}"
     );
     assert!(
-        !drawn_in_sidebar(&rows, "Suru work"),
+        !drawn_in_sidebar(&rows, "Shaman work"),
         "and not with work the reader has narrowed away from: {rows:?}"
     );
 }
@@ -7351,7 +7372,7 @@ fn the_initial_scope_setting_narrows_the_sidebar_a_tui_launches_with() {
         "the sidebar launches narrowed to the workspace the client runs in: {rows:?}"
     );
     assert!(
-        !drawn_in_sidebar(&rows, "Notes work") && !drawn_in_sidebar(&rows, "Suru work"),
+        !drawn_in_sidebar(&rows, "Notes work") && !drawn_in_sidebar(&rows, "Shaman work"),
         "and lists nothing rooted elsewhere: {rows:?}"
     );
 }
@@ -7469,10 +7490,10 @@ fn a_move_within_the_narrowed_workspace_leaves_an_open_selector_open() {
     let (session_id, snapshot) = enter_session(&mut application, workspace.path());
     let request = expect_sidebar_listing(deliver_settings(
         &mut application,
-        suru::protocol::EffectiveSettings {
-            sidebar: suru::protocol::SidebarSettings {
+        shaman::protocol::EffectiveSettings {
+            sidebar: shaman::protocol::SidebarSettings {
                 initial_visibility: SidebarVisibility::Shown,
-                initial_scope: suru::protocol::SidebarScope::CurrentWorkspace,
+                initial_scope: shaman::protocol::SidebarScope::CurrentWorkspace,
                 ..Default::default()
             },
             ..Default::default()
@@ -7490,11 +7511,11 @@ fn a_move_within_the_narrowed_workspace_leaves_an_open_selector_open() {
 
     application
         .handle_event(ApplicationEvent::Session(
-            suru::managed_client::SessionEvent::Updated(suru::protocol::SessionUpdate {
+            shaman::managed_client::SessionEvent::Updated(shaman::protocol::SessionUpdate {
                 session_id,
-                revision: suru::protocol::SessionRevision(snapshot.revision.0 + 1),
+                revision: shaman::protocol::SessionRevision(snapshot.revision.0 + 1),
                 changes: vec![SessionChange::Moved {
-                    execution_directory: suru::protocol::ExecutionDirectory {
+                    execution_directory: shaman::protocol::ExecutionDirectory {
                         path: workspace.path().join("nested"),
                     },
                     workspace: snapshot.session.workspace.clone(),
@@ -7572,7 +7593,7 @@ fn the_arrows_reach_the_selector_above_the_list() {
 /// and the selector must give the same reading: narrowing is a claim about
 /// where work is, and a Session nobody can place is not work it can hide.
 #[test]
-fn a_session_suru_cannot_place_stands_however_narrow_the_scope() {
+fn a_session_shaman_cannot_place_stands_however_narrow_the_scope() {
     let workspace = workspace_dir();
     let mut sessions = two_workspaces(workspace.path());
     sessions.push(SessionListItem::Unreadable(UnreadableSessionSummary {
@@ -7592,7 +7613,7 @@ fn a_session_suru_cannot_place_stands_however_narrow_the_scope() {
         "a session with no workspace to read stands wherever the listing does: {rows:?}"
     );
     assert!(
-        !drawn_in_sidebar(&rows, "Suru work"),
+        !drawn_in_sidebar(&rows, "Shaman work"),
         "and the narrowing is otherwise as narrow as ever: {rows:?}"
     );
 }
@@ -7623,7 +7644,7 @@ fn sidebar_scoped(
 fn two_workspaces(root: &Path) -> Vec<SessionListItem> {
     vec![
         listed("Notes work", &root.join("notes"), 4, now()),
-        listed("Suru work", &root.join("suru"), 3, now()),
+        listed("Shaman work", &root.join("shaman"), 3, now()),
         settled(
             "Notes history",
             &root.join("notes"),
@@ -7632,8 +7653,8 @@ fn two_workspaces(root: &Path) -> Vec<SessionListItem> {
             minutes_ago(5),
         ),
         settled(
-            "Suru history",
-            &root.join("suru"),
+            "Shaman history",
+            &root.join("shaman"),
             1,
             hours_ago(4),
             minutes_ago(6),
@@ -7973,8 +7994,8 @@ fn the_workspace_the_reader_moved_to_stands_among_the_selectors_entries() {
     let mut application = sidebar_showing(
         workspace.path(),
         vec![listed(
-            "Suru work",
-            &workspace.path().join("suru"),
+            "Shaman work",
+            &workspace.path().join("shaman"),
             1,
             now(),
         )],
@@ -8006,7 +8027,7 @@ fn the_workspace_the_reader_moved_to_stands_among_the_selectors_entries() {
             EVERYWHERE.to_owned(),
             ALL_WORKSPACES.to_owned(),
             "notes".to_owned(),
-            "suru".to_owned(),
+            "shaman".to_owned(),
         ],
         "the workspace the reader moved to is where the client now runs, and the \
          one it ran in before has no work to keep it on the list"
@@ -9250,7 +9271,7 @@ fn the_shell_a_session_opens_into_fabricates_nothing_from_its_listing_row() {
         "the listing's title is drawn as though it were the session's own: {main}"
     );
     assert!(
-        !main.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"),
+        !main.contains("▄█▄▀▀█"),
         "and a session being opened is not the landing: {main}"
     );
 }
@@ -9602,8 +9623,8 @@ fn a_press_opens_a_session_the_way_enter_does_and_raises_no_row_focus() {
 
     assert_eq!(
         press_line(&mut application, MouseButton::Left, WANTED),
-        ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::ViewAndAttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             target,
         )),
         "the press opens the session under it"
@@ -9684,7 +9705,7 @@ fn pending_questionnaires_mark_both_session_listings_and_clear_when_unavailable(
     };
     summary.session.status = SessionStatus::Active;
     summary.session.working_since = Some(SessionTimestamp(now()));
-    summary.standing_inputs.pending_questionnaires = vec![suru::protocol::QuestionnaireId::new()];
+    summary.standing_inputs.pending_questionnaires = vec![shaman::protocol::QuestionnaireId::new()];
     summary.standing_inputs.pending_questionnaires_revision = SessionRevision(3);
     let mut app = sidebar_showing(workspace.path(), vec![row.clone()]);
     let screen = rendered_application_rows_at(&app, WIDE, 25).join("\n");
@@ -9803,8 +9824,8 @@ fn sidebar_selection_copies_painted_titles_with_ellipsis_and_excludes_rails() {
     );
     let settings = EffectiveSettings {
         sidebar: shown(AutoSettle::default()),
-        text_selection: suru::protocol::TextSelectionSettings {
-            copy: suru::protocol::TextSelectionCopy::Release,
+        text_selection: shaman::protocol::TextSelectionSettings {
+            copy: shaman::protocol::TextSelectionCopy::Release,
             ..Default::default()
         },
         ..EffectiveSettings::default()
@@ -9861,7 +9882,7 @@ fn sidebar_selection_copies_painted_titles_with_ellipsis_and_excludes_rails() {
 
 #[test]
 fn active_checkout_line_uses_live_branch_detachment_and_explicit_unavailability() {
-    use suru::protocol::{
+    use shaman::protocol::{
         CheckoutAssociation, CheckoutId, CheckoutKind, CheckoutRevision, CheckoutSummary,
         RepositoryId, SourceControlAvailability,
     };
@@ -9958,7 +9979,7 @@ fn active_checkout_line_uses_live_branch_detachment_and_explicit_unavailability(
 
 #[test]
 fn remote_checkout_line_keeps_its_origin_label_without_a_main_indicator() {
-    use suru::protocol::{
+    use shaman::protocol::{
         CheckoutAssociation, CheckoutId, CheckoutKind, CheckoutRevision, CheckoutSummary,
         RepositoryId, SourceControlAvailability,
     };
@@ -10000,12 +10021,12 @@ fn remote_checkout_line_keeps_its_origin_label_without_a_main_indicator() {
 
 #[test]
 fn active_sidebar_icons_follow_the_setting_and_checkout_state() {
-    use suru::protocol::{
+    use shaman::protocol::{
         CheckoutAssociation, CheckoutId, CheckoutKind, CheckoutRevision, CheckoutSummary,
         RepositoryId, SourceControlAvailability,
     };
     let workspace = workspace_dir();
-    let path = workspace.path().join("suru");
+    let path = workspace.path().join("shaman");
     for (kind, revision, availability, plain, decorated) in [
         (
             CheckoutKind::Main,
@@ -10081,9 +10102,9 @@ fn active_sidebar_icons_follow_the_setting_and_checkout_state() {
             let title = rendered_row(&rows, "Icon work");
             assert!(
                 sidebar_column(&rows[title - 1]).starts_with(if show_icons {
-                    "\u{ea83} suru"
+                    "\u{ea83} shaman"
                 } else {
-                    "suru"
+                    "shaman"
                 }),
                 "{rows:?}"
             );
@@ -10102,7 +10123,7 @@ fn active_sidebar_icons_follow_the_setting_and_checkout_state() {
 #[test]
 fn an_active_row_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph() {
     let workspace = workspace_dir();
-    let path = workspace.path().join("suru");
+    let path = workspace.path().join("shaman");
     let SessionListItem::Readable(mut summary) = listed("Iconed work", &path, now(), now()) else {
         unreachable!()
     };
@@ -10126,7 +10147,7 @@ fn an_active_row_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     let title = rendered_row(&rows, "Iconed work");
     assert!(
-        sidebar_column(&rows[title - 1]).starts_with("\u{e7a8} suru"),
+        sidebar_column(&rows[title - 1]).starts_with("\u{e7a8} shaman"),
         "the workspace's own derived icon replaces the folder glyph: {rows:?}"
     );
 
@@ -10141,7 +10162,7 @@ fn an_active_row_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     let title = rendered_row(&rows, "Unknown work");
     assert!(
-        sidebar_column(&rows[title - 1]).starts_with("\u{ea83} suru"),
+        sidebar_column(&rows[title - 1]).starts_with("\u{ea83} shaman"),
         "the folder glyph stands in for a workspace with no derived icon: {rows:?}"
     );
 }
@@ -10153,7 +10174,7 @@ fn an_active_row_draws_the_workspaces_own_icon_in_place_of_the_folder_glyph() {
 #[test]
 fn a_remote_workspaces_own_icon_survives_its_listing_into_the_sidebar() {
     let workspace = workspace_dir();
-    let path = workspace.path().join("suru");
+    let path = workspace.path().join("shaman");
     let SessionListItem::Readable(mut summary) = listed("Remote work", &path, now(), now()) else {
         unreachable!()
     };
@@ -10171,7 +10192,7 @@ fn a_remote_workspaces_own_icon_survives_its_listing_into_the_sidebar() {
     let rows = rendered_application_rows_at(&application, WIDE, 20);
     let title = rendered_row(&rows, "Remote work");
     assert!(
-        sidebar_column(&rows[title - 1]).contains("\u{e7a8} suru"),
+        sidebar_column(&rows[title - 1]).contains("\u{e7a8} shaman"),
         "a remote's own derived workspace icon reaches the merged sidebar unstripped: {rows:?}"
     );
 }
@@ -10179,7 +10200,7 @@ fn a_remote_workspaces_own_icon_survives_its_listing_into_the_sidebar() {
 #[test]
 fn active_remote_location_keeps_its_name_with_icons_off_and_in_workspace_scope() {
     let workspace = workspace_dir();
-    let path = workspace.path().join("suru");
+    let path = workspace.path().join("shaman");
     let (mut application, _) = everywhere_with_studio(
         workspace.path(),
         vec![],
@@ -10189,7 +10210,7 @@ fn active_remote_location_keeps_its_name_with_icons_off_and_in_workspace_scope()
         if workspace_scope {
             step_onto_the_list(&mut application);
             press_sidebar_key(&mut application, KeyCode::Enter);
-            choose_workspace(&mut application, "suru");
+            choose_workspace(&mut application, "shaman");
         }
         for show_icons in [false, true, false] {
             let mut settings = EffectiveSettings::default();
@@ -10199,9 +10220,9 @@ fn active_remote_location_keeps_its_name_with_icons_off_and_in_workspace_scope()
             let title = rendered_row(&rows, "Remote icons");
             assert_eq!(sidebar_column(&rows[title]), "Remote icons");
             let expected = if show_icons {
-                "\u{f0379} studio · \u{ea83} suru"
+                "\u{f0379} studio · \u{ea83} shaman"
             } else {
-                "studio · suru"
+                "studio · shaman"
             };
             assert!(
                 sidebar_column(&rows[title - 1]).starts_with(expected),
@@ -10620,7 +10641,7 @@ fn a_subsession_open_within_its_sidekicks_tree_highlights_its_own_row() {
     // through the Subsession.
     let mut tree = family.tree();
     tree.top_level.sidekick = true;
-    tree.sessions = vec![suru::protocol::SubagentTreeSession {
+    tree.sessions = vec![shaman::protocol::SubagentTreeSession {
         subagents_unshown: false,
         unconfirmed: false,
         session_id: subsession,
@@ -10740,7 +10761,7 @@ fn a_top_level_session_scoped_out_leaves_its_subagent_nothing_highlighted() {
 /// carried, as one reached through Connect would.
 #[test]
 fn the_landing_after_opening_a_remote_row_names_its_branch() {
-    use suru::protocol::{
+    use shaman::protocol::{
         CheckoutAssociation, CheckoutId, CheckoutKind, CheckoutRevision, CheckoutSummary,
         RepositoryId, SourceControlAvailability,
     };
@@ -10784,7 +10805,7 @@ fn the_landing_after_opening_a_remote_row_names_its_branch() {
 
     application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::SessionNew,
+            shaman::tui::SemanticCommandId::SessionNew,
         )))
         .expect("open the landing");
 

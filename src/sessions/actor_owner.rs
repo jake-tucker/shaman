@@ -8,7 +8,7 @@
 //! Provider of the delegating Agent's choosing, so its Session will own an
 //! actor of its own (ADR 0035).
 //!
-//! Everything Suru sends a Provider on a Session's behalf — a Decision, an
+//! Everything Shaman sends a Provider on a Session's behalf — a Decision, an
 //! Answer, an Approval Posture, an interrupt, a Watch stop — is routed through
 //! [`SessionStoreState::actor_owner_of`], and so is the posture a native
 //! Subagent inherits. What stops everything beneath a Session — an interrupt

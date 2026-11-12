@@ -12,7 +12,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 use jiff::civil::date;
 use ratatui::{buffer::Buffer, style::Style};
-use suru::{
+use shaman::{
     protocol::{
         ApprovalInsights, CacheInsights, CompactionCounts, CompactionInsights, Cost, CountedCost,
         DelegationInsights, EstimatedSaving, FreedShare, InsightsQuery, InsightsReport,
@@ -148,7 +148,7 @@ fn role(usd: f64, partial: bool) -> CountedCost {
 
 /// The mockup's $413.27 divided: 71% the user's own Sessions', 22% their
 /// Subagents', 9% of it brokered, 6% Sidekicks', 1% Subsessions', and under
-/// 1% Suru's own Errands'.
+/// 1% Shaman's own Errands'.
 fn worked_delegation() -> DelegationInsights {
     DelegationInsights {
         own_sessions: role(293.13, false),
@@ -694,9 +694,9 @@ fn a_refresh_lets_go_of_the_other_tab_s_figures_so_the_tabs_never_disagree() {
     expect_insights_reads(ctrl(&mut application, KeyCode::Right));
 }
 
-/// What Insights says of All time where Turns stored before Suru timed
+/// What Insights says of All time where Turns stored before Shaman timed
 /// them lie outside it.
-const UNTIMED_NOTE: &str = "Turns recorded before Suru timed turns are not included";
+const UNTIMED_NOTE: &str = "Turns recorded before Shaman timed turns are not included";
 
 /// [`on_insights`] of All time, its Workspace read saying `untimed_turns`
 /// Turns are untimed, and the 30 days before it read alike.
@@ -726,7 +726,7 @@ fn all_time_with_untimed(untimed_turns: u64) -> (Application, Vec<String>) {
 }
 
 #[test]
-fn all_time_says_turns_from_before_suru_timed_them_are_not_included() {
+fn all_time_says_turns_from_before_shaman_timed_them_are_not_included() {
     let (application, thirty_days) = all_time_with_untimed(3);
 
     row(&screen(&application), UNTIMED_NOTE);
@@ -1311,10 +1311,10 @@ fn the_compactions_panel_states_how_many_how_many_were_manual_and_failed_and_wha
     );
 }
 
-/// Compactions Suru began of its own accord ahead of a lapse are named, so
+/// Compactions Shaman began of its own accord ahead of a lapse are named, so
 /// what it spent unasked never reads as the Provider's own choice.
 #[test]
-fn the_compactions_panel_names_those_suru_scheduled_where_there_were_any() {
+fn the_compactions_panel_names_those_shaman_scheduled_where_there_were_any() {
     let mut report = worked();
     report.compactions.scheduled = CompactionCounts {
         completed: 2,
@@ -1450,7 +1450,7 @@ fn the_delegation_panel_divides_cost_by_role_with_brokered_subagents_beside_thei
 }
 
 #[test]
-fn the_delegation_panel_s_errands_row_states_suru_s_own_cost_in_the_errands_colour() {
+fn the_delegation_panel_s_errands_row_states_shaman_s_own_cost_in_the_errands_colour() {
     let mut report = worked();
     report.delegation.errands = role(41.33, true);
     let application = on_insights(Ok(report));

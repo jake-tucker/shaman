@@ -17,18 +17,18 @@ async fn stands_in_the_tree(
     descriptor: &RuntimeDescriptor,
     sidekick: SessionId,
     session_id: SessionId,
-) -> suru::protocol::SubagentTreeSnapshot {
+) -> shaman::protocol::SubagentTreeSnapshot {
     let (tree, mut updates) =
         crate::session_integration::subagent_tree::open_tree(descriptor, sidekick).await;
     let mut revision = tree.revision;
-    let stands = |entry: &suru::protocol::SubagentTreeSession| {
+    let stands = |entry: &shaman::protocol::SubagentTreeSession| {
         entry.session_id == session_id
             && entry.origin.as_deref() == Some(REMOTE)
             && !entry.unconfirmed
     };
     if !tree.sessions.iter().any(stands) {
         loop {
-            if let suru::protocol::SubagentTreeChange::SessionChanged { entry } =
+            if let shaman::protocol::SubagentTreeChange::SessionChanged { entry } =
                 crate::session_integration::subagent_tree::next_change(&mut updates, &mut revision)
                     .await
                 && stands(&entry)
@@ -189,7 +189,7 @@ async fn a_new_worktree_of_a_remotes_repository_is_made_there() {
     assert_eq!(
         answer["message"],
         json!(format!(
-            "Suru made a new Worktree at {} on the Remote `{REMOTE}` from the commit HEAD stands \
+            "Shaman made a new Worktree at {} on the Remote `{REMOTE}` from the commit HEAD stands \
              at now, and Session {target}'s Move there is pending: it applies once its Turn and \
              any native Subagents it has running settle, and its next Turn works there. It keeps \
              working in {} on the Remote `{REMOTE}` until then. Commits made there after this \
@@ -343,7 +343,7 @@ async fn a_remote_refuses_in_its_own_words_and_only_what_changed_is_recorded() {
         )
         .await,
         format!(
-            "The Remote `{REMOTE}` refused it: The Session does not exist on this Suru server."
+            "The Remote `{REMOTE}` refused it: The Session does not exist on this Shaman server."
         ),
     );
     assert_eq!(
@@ -353,7 +353,7 @@ async fn a_remote_refuses_in_its_own_words_and_only_what_changed_is_recorded() {
             json!({ "session_id": target, "origin": "elsewhere", "directory": there }),
         )
         .await,
-        "Suru is paired with no Remote named `elsewhere`; list_remotes names the Remotes it is \
+        "Shaman is paired with no Remote named `elsewhere`; list_remotes names the Remotes it is \
          paired with, and leaving `origin` out reaches this server.",
     );
     assert_eq!(
@@ -479,7 +479,7 @@ async fn a_move_at_a_remote_that_does_not_answer_is_refused_and_kept_for_nothing
     assert_eq!(
         refused(&mut sidekick, "move_session", moving.clone()).await,
         format!(
-            "The Remote `{REMOTE}` is not answering: Suru could not reach it at any address it \
+            "The Remote `{REMOTE}` is not answering: Shaman could not reach it at any address it \
              was paired at. Nothing was done there, and nothing is kept to do once it answers."
         ),
     );

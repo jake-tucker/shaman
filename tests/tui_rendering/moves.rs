@@ -13,11 +13,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use std::{
-    path::{Path, PathBuf},
-    time::Duration,
-};
-use suru::{
+use shaman::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
         Activity, ActivityId, ActivityStatus, AdmitPromptRequest, AgentSelection,
@@ -37,6 +33,10 @@ use suru::{
         Application, ApplicationEvent, ApplicationTransition, CommandId, DirectoryListingId,
         SemanticCommandId, WorkspaceResolutionSurface,
     },
+};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
 };
 
 const WIDE: u16 = 140;

@@ -28,7 +28,7 @@
 //! keep, alongside the rest of its ephemeral state: a Provider row reads it,
 //! and each arrival asks again rather than trusting the last answer. Enablement
 //! decides who is asked — a Provider the reader turned off is never consulted,
-//! so its row reports the choice and never a condition Suru did not look for.
+//! so its row reports the choice and never a condition Shaman did not look for.
 //!
 //! The reader may also point at the panel. Drawing is the only thing that knows
 //! how tall the box came out and which rows the window put on screen, so the
@@ -64,7 +64,7 @@ use super::{
 };
 
 /// What a row reports about a Provider the read in force asked about and the
-/// answer passed over. Nothing came back for it, which is Suru's problem to
+/// answer passed over. Nothing came back for it, which is Shaman's problem to
 /// report rather than a condition of the Provider — and reporting it is what
 /// ends the read, because a row may not wait for an answer already given.
 const UNANSWERED_PROVIDER: &str = "the model catalog answered for no such provider";
@@ -395,7 +395,7 @@ struct ProviderReading {
     message: Option<String>,
 }
 
-/// What arriving on a tab asks of Suru. Availability is a fact about the
+/// What arriving on a tab asks of Shaman. Availability is a fact about the
 /// environment rather than a choice, so the surface presenting the Providers
 /// re-reads it on arrival and every other arrival asks nothing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -409,7 +409,7 @@ pub(super) enum AvailabilityRead {
 
 /// What a Provider row says about Availability. Every state but the quiet one
 /// asks something of the reader, which is why the quiet one is what a Provider
-/// still serving its catalog gets: Suru reports a condition, not a heartbeat.
+/// still serving its catalog gets: Shaman reports a condition, not a heartbeat.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum RowAvailability {
     /// Nothing to report: a catalog that answered, a Provider nothing has been
@@ -419,13 +419,13 @@ pub(super) enum RowAvailability {
     Reading,
     /// Usable, with a compatibility condition worth fixing.
     Warning,
-    /// Unusable until the reader fixes `reason` outside Suru, which they do
+    /// Unusable until the reader fixes `reason` outside Shaman, which they do
     /// as the Provider's own `fix` says.
     Unavailable {
         reason: ProviderUnavailability,
         fix: String,
     },
-    /// The read itself failed, which is Suru's problem to report rather than a
+    /// The read itself failed, which is Shaman's problem to report rather than a
     /// condition of the Provider.
     Failed,
 }
@@ -442,7 +442,7 @@ pub(super) enum RowValue {
     /// the row says nothing beyond the Provider's name.
     ProviderEnabled,
     /// A Provider the reader turned off — the one thing a row may claim about
-    /// a Provider Suru has not consulted.
+    /// a Provider Shaman has not consulted.
     ProviderDisabled,
 }
 
@@ -469,7 +469,7 @@ pub(super) struct PanelFocus<'a> {
 /// A Provider's condition as the read in force found it, whole.
 pub(super) struct Condition<'a> {
     pub(super) message: &'a str,
-    /// Whether the read itself failed, which is Suru's problem to report
+    /// Whether the read itself failed, which is Shaman's problem to report
     /// rather than a condition the reader fixes.
     pub(super) failed: bool,
     /// What fixes the condition, where the Provider named a fix.
@@ -717,7 +717,7 @@ impl SettingsPanel {
     ///
     /// Like every other way into the panel, this does nothing at all while the
     /// panel is closed, so a click resolved somewhere the panel is not can
-    /// neither move a focus the reader cannot see nor send Suru off to consult
+    /// neither move a focus the reader cannot see nor send Shaman off to consult
     /// the Providers.
     ///
     /// The pointer mints no semantic command of its own, because it introduces
@@ -787,7 +787,7 @@ impl SettingsPanel {
     /// Takes what the awaited listing found, for the Providers this panel asked
     /// about and no others: an answer naming a Provider nothing was read about
     /// — one the reader has turned off — changes nothing here, because a row
-    /// may not claim what Suru never looked for. A Provider the answer passes
+    /// may not claim what Shaman never looked for. A Provider the answer passes
     /// over has still been answered, badly, and says so rather than waiting on.
     pub(super) fn adopt_catalog(&mut self, request: &ModelListRequest, catalog: &ModelCatalog) {
         if self.awaited_listing.as_ref() != Some(request) {
@@ -1009,7 +1009,7 @@ impl SettingsPanel {
                         reading.availability.clone()
                     }),
             ),
-            // A Provider the reader turned off is one Suru leaves entirely
+            // A Provider the reader turned off is one Shaman leaves entirely
             // alone, so its row reports that choice and never a condition
             // nothing looked for.
             Some(_) => (RowValue::ProviderDisabled, RowAvailability::Quiet),
@@ -1211,7 +1211,7 @@ impl SettingsPanel {
     /// Walks the tab bar, wrapping at either end so neither is a dead end. The
     /// tab arrived at is where the reader left it, not its top row. A closed
     /// panel walks nowhere: a command invoked from somewhere the panel is not
-    /// must not send Suru off to consult the Providers.
+    /// must not send Shaman off to consult the Providers.
     fn move_tab(&mut self, distance: isize, settings: &EffectiveSettings) -> AvailabilityRead {
         if !self.open {
             return AvailabilityRead::None;
@@ -1224,8 +1224,8 @@ impl SettingsPanel {
     /// Shows one tab, however the reader asked for it. Asking for the tab that
     /// presents the Providers themselves re-reads their Availability, which is
     /// what turning to that surface means — including from the reader already
-    /// on it, because pointing at the Providers is asking Suru to consult them,
-    /// and that gesture is how a reader who has just signed in outside Suru
+    /// on it, because pointing at the Providers is asking Shaman to consult them,
+    /// and that gesture is how a reader who has just signed in outside Shaman
     /// watches the row come good. Walking the bar never lands on the tab in
     /// view, so only a pointer can ask this.
     ///
@@ -1268,7 +1268,7 @@ impl SettingsPanel {
     }
 
     /// Puts every Provider that is about to be asked about back to waiting.
-    /// Only the ones the reader has left on: a disabled Provider is one Suru
+    /// Only the ones the reader has left on: a disabled Provider is one Shaman
     /// leaves entirely alone, so nothing is asked on its behalf and its row has
     /// nothing to wait for.
     fn begin_availability_read(&mut self, settings: &EffectiveSettings) {

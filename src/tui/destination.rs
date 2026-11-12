@@ -36,7 +36,7 @@ impl DestinationPurpose {
 #[derive(Clone, Debug)]
 pub(super) enum Destination {
     /// A Worktree of the Repository the Worktree Selector read, or a new one
-    /// Suru is to make. The one the reader already stands in is chosen like
+    /// Shaman is to make. The one the reader already stands in is chosen like
     /// any other, and the purpose decides it has nowhere to go.
     Worktree(WorktreeChoice),
     /// A Workspace chosen in the Workspace Picker, which its Server resolves

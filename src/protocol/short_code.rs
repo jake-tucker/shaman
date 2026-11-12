@@ -236,7 +236,7 @@ mod tests {
             ("h4rw-9tni", ShortCodeProblem::LookAlike),
             ("H4RW_9TN", ShortCodeProblem::NotInAlphabet),
             // Far too long to be a code with a character wrong.
-            ("k7suru-v1-eyJ3IjpbXX0", ShortCodeProblem::WrongLength),
+            ("k7shaman-v1-eyJ3IjpbXX0", ShortCodeProblem::WrongLength),
             ("H4RW-9TNé", ShortCodeProblem::NotInAlphabet),
             ("H4RW-9TNß", ShortCodeProblem::NotInAlphabet),
         ] {
@@ -270,11 +270,13 @@ mod tests {
 
     #[test]
     fn a_whole_invite_is_told_from_a_code_by_how_it_opens() {
-        assert!(crate::protocol::opens_as_an_invite("suru-v1-eyJ3IjpbXX0"));
-        assert!(crate::protocol::opens_as_an_invite("\n  suru-v2-anything"));
+        assert!(crate::protocol::opens_as_an_invite("shaman-v1-eyJ3IjpbXX0"));
+        assert!(crate::protocol::opens_as_an_invite(
+            "\n  shaman-v2-anything"
+        ));
         assert!(!crate::protocol::opens_as_an_invite("K7QF-2MXP"));
         assert!(!crate::protocol::opens_as_an_invite(
-            "k7suru-v1-eyJ3IjpbXX0"
+            "k7shaman-v1-eyJ3IjpbXX0"
         ));
     }
 
@@ -282,7 +284,7 @@ mod tests {
     /// nothing holding one prints its token.
     #[test]
     fn nothing_says_an_invites_token_by_accident() {
-        const INVITE: &str = "suru-v1-the-token-in-its-string";
+        const INVITE: &str = "shaman-v1-the-token-in-its-string";
         let text = InviteText::from(INVITE);
         assert_eq!(
             serde_json::to_string(&text).unwrap(),

@@ -10,7 +10,7 @@ use crate::copilot_integration::{
         models_arm, signed_in_arm,
     },
 };
-use suru::{
+use shaman::{
     protocol::{
         ModelAdvisory, ModelAdvisorySeverity, ModelAvailability, ModelDescriptor, ModelDetails,
         ModelId, ModelOptionChoiceId, ModelOptionId, ModelOptionKind, ModelOptionRole,
@@ -140,7 +140,7 @@ async fn copilot_models_reach_the_catalog_with_reasoning_effort_and_context_tier
             vec!["default".to_owned(), "long_context".to_owned()],
             "default".to_owned()
         ),
-        "tiered pricing is what tells Suru the Model offers an extended context tier"
+        "tiered pricing is what tells Shaman the Model offers an extended context tier"
     );
     assert_eq!(
         claude.default_agent_selection().options,
@@ -566,7 +566,7 @@ async fn a_harness_that_dies_mid_discovery_fails_the_catalog_and_the_next_refres
 #[tokio::test]
 async fn copilot_states_cache_rates_from_its_last_running_catalog_and_launches_nothing_to_answer() {
     use crate::copilot_integration::support::COPILOT_MODELS as PRICED_MODELS;
-    use suru::{pricing::CacheRates, provider::ProviderRuntime};
+    use shaman::{pricing::CacheRates, provider::ProviderRuntime};
 
     let copilot = ScriptedCopilot::with_models(PRICED_MODELS);
     let runtime = CopilotRuntime::new(copilot.executable());
@@ -642,7 +642,7 @@ const LONG_CONTEXT_MODELS: &str = concat!(
 /// the default.
 #[tokio::test]
 async fn copilot_prices_a_prompt_under_a_chosen_context_tier_at_that_tier() {
-    use suru::{pricing::CacheRates, provider::ProviderRuntime};
+    use shaman::{pricing::CacheRates, provider::ProviderRuntime};
 
     let copilot = ScriptedCopilot::with_models(LONG_CONTEXT_MODELS);
     let runtime = CopilotRuntime::new(copilot.executable());
@@ -669,8 +669,8 @@ async fn copilot_prices_a_prompt_under_a_chosen_context_tier_at_that_tier() {
             // its long one.
             rates.lapse_penalty(
                 1_000_000,
-                suru::pricing::CacheWrite {
-                    price: suru::protocol::CacheWritePrice::Default,
+                shaman::pricing::CacheWrite {
+                    price: shaman::protocol::CacheWritePrice::Default,
                     prompt_limit_tokens: Some(900_000),
                 },
             )
@@ -691,13 +691,13 @@ async fn copilot_prices_a_prompt_under_a_chosen_context_tier_at_that_tier() {
     );
     assert_eq!(
         only_tier(vec![tier("default")]).await,
-        suru::protocol::LapsePenalty::from_usd(20.0),
+        shaman::protocol::LapsePenalty::from_usd(20.0),
         "the default tier is priced at the standard tier, whatever the call could send: \
          $25 written less $5 read"
     );
     assert_eq!(
         only_tier(Vec::new()).await,
-        suru::protocol::LapsePenalty::from_usd(40.0),
+        shaman::protocol::LapsePenalty::from_usd(40.0),
         "with no tier chosen, the call's limit picks the tier: $50 written less $10 read"
     );
     runtime.shutdown().await.expect("shut Copilot down");

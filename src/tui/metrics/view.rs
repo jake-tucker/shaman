@@ -95,7 +95,7 @@ pub(super) const MIN_HEIGHT: u16 =
 const TOO_SMALL: &str = "Make the terminal larger to see usage metrics";
 /// What stands in for the chart where All time's every Turn is untimed.
 const UNCHARTED: &str =
-    "This usage was recorded before Suru timed turns, so none of it can be charted.";
+    "This usage was recorded before Shaman timed turns, so none of it can be charted.";
 
 /// Draws `view` over the whole frame, the Outlook turned toward `outlook`,
 /// whose figures alone it shows.
@@ -265,7 +265,7 @@ pub(in crate::tui) fn render(
         MetricsContent::Report { buckets, report } => {
             if chart::holds_nothing(report) {
                 // Only All time's headline holds what its chart cannot: Turns
-                // stored before Suru recorded when they ran.
+                // stored before Shaman recorded when they ran.
                 let uncharted = headed.filter(|_| range == MetricsRange::AllTime);
                 let note = if uncharted.is_some() {
                     UNCHARTED
@@ -403,9 +403,9 @@ pub(in crate::tui) fn render(
     }
 }
 
-/// What Insights says of All time where Turns stored before Suru timed them
+/// What Insights says of All time where Turns stored before Shaman timed them
 /// lie outside it.
-const UNTIMED_NOTE: &str = "Turns recorded before Suru timed turns are not included";
+const UNTIMED_NOTE: &str = "Turns recorded before Shaman timed turns are not included";
 
 /// The Insights tab beneath the tab bar: the range bar alone, the row under
 /// it saying what became of a read — or of All time, what it leaves out —

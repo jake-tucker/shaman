@@ -7,8 +7,7 @@ use crate::session_integration::{
     support::{hosted_model, hosted_selection, read_session_until, working_turn},
 };
 use crate::support::{PROGRESS_DEADLINE, provider::ErrandRequest};
-use std::time::Duration;
-use suru::{
+use shaman::{
     pricing::CacheRates,
     protocol::{
         CacheInsights, Cost, CostTotal, CountedCost, CreateSessionRequest, DelegationInsights,
@@ -25,6 +24,7 @@ use suru::{
     },
     server::{self, ServerConfig},
 };
+use std::time::Duration;
 use tokio::time::timeout;
 
 fn by_model(buckets: Vec<UsageMetricsInterval>) -> UsageMetricsQuery {
@@ -431,7 +431,7 @@ async fn errand_is_read_over_the_api(
             },
             prompt: InitialPrompt {
                 id: PromptId::new(),
-                text: "Count what Suru's own work costs".to_owned(),
+                text: "Count what Shaman's own work costs".to_owned(),
                 skill_invocations: Vec::new(),
                 attachments: Vec::new(),
             },

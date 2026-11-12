@@ -5,7 +5,7 @@ use crate::tui_rendering::support::{
     selected_session_snapshot, type_terminal_text, workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         AgentSelection, AgentSelectionOperationId, ModelAvailability, ModelCatalog,
@@ -70,13 +70,13 @@ fn cycling_selection(effort: &str) -> AgentSelection {
         provider: ProviderId::new("codex"),
         model: ModelId::new("gpt-cycle"),
         options: vec![
-            suru::protocol::ModelOptionSelection {
+            shaman::protocol::ModelOptionSelection {
                 id: ModelOptionId::new("reasoning_effort"),
                 value: ModelOptionValue::Select {
                     choice: ModelOptionChoiceId::new(effort),
                 },
             },
-            suru::protocol::ModelOptionSelection {
+            shaman::protocol::ModelOptionSelection {
                 id: ModelOptionId::new("fast"),
                 value: ModelOptionValue::Toggle { enabled: false },
             },
@@ -87,7 +87,7 @@ fn cycling_selection(effort: &str) -> AgentSelection {
 fn warm_model_catalog(application: &mut Application, model: ModelDescriptor) {
     let ApplicationTransition::ListModels(request) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelList,
+            shaman::tui::SemanticCommandId::ModelList,
         )))
         .expect("open model picker to warm the catalog")
     else {
@@ -149,11 +149,11 @@ fn ctrl_t_dispatches_one_semantic_reasoning_cycle_without_a_slash_name() {
             KeyModifiers::CONTROL,
         ))),
         Some(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::ModelOptionReasoningCycle,
+            shaman::tui::SemanticCommandId::ModelOptionReasoningCycle,
         ))
     );
     assert_eq!(
-        suru::tui::SemanticCommandId::ModelOptionReasoningCycle.as_str(),
+        shaman::tui::SemanticCommandId::ModelOptionReasoningCycle.as_str(),
         "model.option.reasoning.cycle"
     );
 
@@ -271,7 +271,7 @@ fn reasoning_cycle_without_a_cached_catalog_requests_models_and_reports() {
     assert!(matches!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionList,
+                shaman::tui::SemanticCommandId::SessionList,
             )))
             .expect("navigate after the concise report"),
         ApplicationTransition::ListSessions(_)
@@ -300,7 +300,7 @@ fn rapid_reasoning_cycles_coalesce_to_one_serialized_latest_selection() {
     else {
         panic!("the first cycle should dispatch one selection request");
     };
-    assert_eq!(first_session.origin, suru::protocol::Outlook::Local);
+    assert_eq!(first_session.origin, shaman::protocol::Outlook::Local);
     assert_eq!(first_session.session_id, session_id);
     assert_eq!(first_request.selection, cycling_selection("medium"));
     assert_reasoning_summary(&application, "Medium");
@@ -327,7 +327,7 @@ fn rapid_reasoning_cycles_coalesce_to_one_serialized_latest_selection() {
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionList,
+                shaman::tui::SemanticCommandId::SessionList,
             )))
             .expect("block session navigation while selections settle"),
         ApplicationTransition::Continue
@@ -346,7 +346,7 @@ fn rapid_reasoning_cycles_coalesce_to_one_serialized_latest_selection() {
     else {
         panic!("settling should flush the coalesced latest selection");
     };
-    assert_eq!(flushed_session.origin, suru::protocol::Outlook::Local);
+    assert_eq!(flushed_session.origin, shaman::protocol::Outlook::Local);
     assert_eq!(flushed_session.session_id, session_id);
     assert_eq!(flushed_request.selection, cycling_selection("low"));
     assert_ne!(flushed_request.operation_id, first_request.operation_id);
@@ -365,7 +365,7 @@ fn rapid_reasoning_cycles_coalesce_to_one_serialized_latest_selection() {
     assert!(matches!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionList,
+                shaman::tui::SemanticCommandId::SessionList,
             )))
             .expect("navigate once every selection settled"),
         ApplicationTransition::ListSessions(_)
@@ -461,7 +461,7 @@ fn stale_selection_results_cannot_overwrite_newer_intent_or_roll_back() {
     assert!(matches!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionList,
+                shaman::tui::SemanticCommandId::SessionList,
             )))
             .expect("navigate after the rollback"),
         ApplicationTransition::ListSessions(_)
@@ -469,7 +469,7 @@ fn stale_selection_results_cannot_overwrite_newer_intent_or_roll_back() {
     assert!(matches!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::ModelOptions,
+                shaman::tui::SemanticCommandId::ModelOptions,
             )))
             .expect("reopen rolled-back options"),
         ApplicationTransition::ListModels(_)

@@ -3,7 +3,7 @@
 //! the next Turn, with the Session Working throughout: behind a manual
 //! Compaction it begins that Turn once the Compaction completes, and is
 //! withdrawn — its text handed back to the client that wrote it — if the Turn
-//! settles any other way. Suru holds it itself, whatever the Provider would
+//! settles any other way. Shaman holds it itself, whatever the Provider would
 //! queue. Behind a scheduled one it begins the next Turn however the
 //! Compaction settles (see `scheduled`).
 
@@ -16,7 +16,7 @@ use crate::session_integration::support::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use axum::http::StatusCode;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent},
     protocol::{
         ActivityStatus, AdmitPromptRequest, InitialPrompt, Prompt, PromptDelivery, PromptId,
@@ -654,7 +654,7 @@ async fn a_prompt_held_behind_a_request_a_native_turn_overtook_is_withdrawn_leav
     // A Watch outlives the Turn, leaving the Session idle but Monitoring.
     for event in [
         ProviderEvent::WatchStarted {
-            watch_id: suru::provider::ProviderWatchId::new("monitor-1"),
+            watch_id: shaman::provider::ProviderWatchId::new("monitor-1"),
             description: "Watch the build".to_owned(),
         },
         ProviderEvent::TurnCompleted,
@@ -813,12 +813,12 @@ async fn a_withdrawn_prompt_handed_back_to_its_writer_is_sent_again_as_a_new_pro
 /// Puts the stored history back as a process that died mid-Compaction would
 /// have left it — the Compaction's Turn `turn_id` still running and `prompt`
 /// still held behind it — rather than as a graceful stop settles them.
-fn left_mid_compaction(config: &suru::server::ServerConfig, turn_id: TurnId, prompt: PromptId) {
+fn left_mid_compaction(config: &shaman::server::ServerConfig, turn_id: TurnId, prompt: PromptId) {
     use diesel::{Connection, RunQueryDsl, SqliteConnection};
     let mut database = SqliteConnection::establish(
         config
             .data_dir()
-            .join("suru.db")
+            .join("shaman.db")
             .to_str()
             .expect("UTF-8 database path"),
     )
@@ -845,7 +845,7 @@ async fn why_a_held_prompt_was_withdrawn_is_stored_and_survives_a_restart() {
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
         let channel = "compaction-held-restart-test";
         let config =
-            suru::server::ServerConfig::new(state_dir.path(), channel).expect("configure server");
+            shaman::server::ServerConfig::new(state_dir.path(), channel).expect("configure server");
         let mut fixture = idle_session(state_dir.path(), channel).await;
         let session_id = fixture.session_id;
         let (requested, prompt) =
@@ -870,7 +870,7 @@ async fn why_a_held_prompt_was_withdrawn_is_stored_and_survives_a_restart() {
         let (runtime, _provider) = crate::support::provider::ControlledProvider::new();
         let restarted = timeout(
             PROGRESS_DEADLINE,
-            suru::server::spawn_with_provider(config, runtime),
+            shaman::server::spawn_with_provider(config, runtime),
         )
         .await
         .expect("the server restarts in time")
@@ -1018,10 +1018,10 @@ async fn actor_reads_every_command_sent_so_far(fixture: &WorkingTurn) {
             "{}/v1/sessions/{}/approvals/{}/decision",
             descriptor.base_url,
             fixture.session_id,
-            suru::protocol::ApprovalId::new()
+            shaman::protocol::ApprovalId::new()
         ))
         .bearer_auth(&descriptor.token)
-        .json(&suru::protocol::Decision::Accept)
+        .json(&shaman::protocol::Decision::Accept)
         .send()
         .await
         .expect("send a Decision");

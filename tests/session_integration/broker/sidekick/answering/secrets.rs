@@ -1,5 +1,5 @@
 //! A secret Answer goes to the Agent that asked for it and nowhere else in
-//! Suru (docs/questionnaire-design.md, ADR 0019). A Sidekick's call of
+//! Shaman (docs/questionnaire-design.md, ADR 0019). A Sidekick's call of
 //! `answer_questionnaire` is a Tool Call in the Sidekick's own Transcript, so
 //! what that Tool Call records of the call's arguments is withheld — every
 //! Answer alike, since only the Questionnaire knows which are secret — and no
@@ -10,7 +10,7 @@
 //! answered — and asserts on everything a reader of either Session can see.
 
 use futures_util::StreamExt;
-use suru::provider::{ProviderActivityId, ProviderToolCallStatus, ToolCallInput};
+use shaman::provider::{ProviderActivityId, ProviderToolCallStatus, ToolCallInput};
 
 use super::*;
 
@@ -67,7 +67,7 @@ fn answered_with(result: &Value) -> String {
 /// with: whatever the Provider, it is made from the call's arguments and the
 /// Broker's Tool they were given to, as every Provider's is.
 fn recorded_input(arguments: &Value) -> ToolCallInput {
-    ToolCallInput::of(Some("suru"), "answer_questionnaire", arguments)
+    ToolCallInput::of(Some("shaman"), "answer_questionnaire", arguments)
 }
 
 /// Has the Sidekick's Provider record one call of `answer_questionnaire` as a
@@ -86,7 +86,7 @@ async fn recorded_call(
         .emit_and_wait_until_observed(ProviderEvent::ToolCallStarted {
             activity_id: activity_id.clone(),
             name: "answer_questionnaire".to_owned(),
-            server: Some("suru".to_owned()),
+            server: Some("shaman".to_owned()),
             input: opened_with_arguments.then(|| recorded_input(&arguments)),
         })
         .await;
@@ -125,7 +125,7 @@ async fn recorded_call(
 /// Every update `watched` streams until one carries a change `settles`
 /// matches, each as a Client is sent it.
 async fn streamed_until(
-    watched: &mut (impl futures_util::Stream<Item = suru::protocol::SessionUpdate> + Unpin),
+    watched: &mut (impl futures_util::Stream<Item = shaman::protocol::SessionUpdate> + Unpin),
     settles: impl Fn(&SessionChange) -> bool,
 ) -> Vec<String> {
     timeout(PROGRESS_DEADLINE, async {
@@ -531,7 +531,7 @@ async fn no_refusal_repeats_what_it_was_given() {
         assert_eq!(response.status(), status, "{submission}");
         let body = response.text().await.expect("read the refusal");
         assert!(!body.contains(SECRET), "{body}");
-        let refusal = serde_json::from_str::<suru::protocol::SessionError>(&body)
+        let refusal = serde_json::from_str::<shaman::protocol::SessionError>(&body)
             .expect("decode the Session error");
         assert_eq!(refusal.message, says, "{submission}");
     }
@@ -553,7 +553,7 @@ async fn no_refusal_repeats_what_it_was_given() {
 /// The Log at its most verbose holds no Answer a Sidekick gave, refused or
 /// taken: the Broker's MCP transport, which at its own verbose levels logs
 /// every call it receives whole, is held to its warnings and errors whatever
-/// `SURU_LOG` asks, while Suru's own lines are written as verbosely as asked.
+/// `SHAMAN_LOG` asks, while Shaman's own lines are written as verbosely as asked.
 #[tokio::test]
 async fn the_log_at_its_most_verbose_holds_no_answer_a_sidekick_gave() {
     const LOGGED: &str = "tok-l0gged-5ecret";
@@ -562,9 +562,9 @@ async fn the_log_at_its_most_verbose_holds_no_answer_a_sidekick_gave() {
     let workspace = tempfile::tempdir().expect("create a Workspace");
     let channel = "sidekick-secret-logged";
     let config = ServerConfig::new(state_dir.path(), channel).expect("configure the Log");
-    let log = suru::logging::init_with_filter_directives(
+    let log = shaman::logging::init_with_filter_directives(
         &config,
-        suru::logging::Role::Server,
+        shaman::logging::Role::Server,
         Some("trace,rmcp=trace,rmcp::service=trace".to_owned()),
     )
     .expect("initialize the Log at its most verbose");
@@ -617,7 +617,7 @@ async fn the_log_at_its_most_verbose_holds_no_answer_a_sidekick_gave() {
         .collect::<String>();
     assert!(
         logged.contains("Broker Tool called"),
-        "Suru's own lines are written as verbosely as asked: {logged}"
+        "Shaman's own lines are written as verbosely as asked: {logged}"
     );
     assert!(
         !logged.contains(LOGGED),

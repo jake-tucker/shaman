@@ -14,6 +14,6 @@ A Relay is one more way of reaching a Serving Server and not a new relationship.
 ## Consequences
 
 - Serving through a Relay means a Serving Server keeps a connection to the Relay open so that it can be reached, where direct Serving opens a listener and waits.
-- The Relay never parses what Servers say to each other, so it does not move with the Pairing protocol version, and a company's Relay need not be upgraded in step with Suru.
+- The Relay never parses what Servers say to each other, so it does not move with the Pairing protocol version, and a company's Relay need not be upgraded in step with Shaman.
 - Nothing that needs to read what Servers say can be offered from a Relay: it can record which machines connected, never what was done over the connection.
 - ADR-0017's enrollment survives a Relay in the path only because the Pairing transport is TLS 1.3 alone. The enrollment token travels in the redeeming Server's certificate, which TLS 1.3 encrypts and sends only once the Serving Server's pinned key is verified; under TLS 1.2 that certificate would cross the Relay in the clear, and a Relay could spend the token for a key of its own.

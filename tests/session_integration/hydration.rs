@@ -3,7 +3,7 @@ use crate::session_integration::{failing_provider_support::spawn_with_failing_pr
 use crate::support::PROGRESS_DEADLINE;
 use eventsource_stream::Eventsource;
 use futures_util::{StreamExt, future::join_all};
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityId, CreateSessionRequest, InitialPrompt, RuntimeDescriptor,
         SessionCatalogChange, SessionChange, SessionListItem, SessionRevision, SessionSnapshot,
@@ -32,11 +32,11 @@ impl History {
                     session_id: None,
                     preparation_id: None,
                     agent_selection: None,
-                    execution_directory: suru::protocol::ExecutionDirectory {
+                    execution_directory: shaman::protocol::ExecutionDirectory {
                         path: root.path().to_owned(),
                     },
                     prompt: InitialPrompt {
-                        id: suru::protocol::PromptId::new(),
+                        id: shaman::protocol::PromptId::new(),
                         text: format!("Keep durable history {index}"),
                         skill_invocations: Vec::new(),
                         attachments: Vec::new(),
@@ -65,7 +65,7 @@ impl History {
     fn database(&self) -> diesel::SqliteConnection {
         use diesel::Connection;
         diesel::SqliteConnection::establish(
-            self.config.data_dir().join("suru.db").to_str().unwrap(),
+            self.config.data_dir().join("shaman.db").to_str().unwrap(),
         )
         .unwrap()
     }
@@ -134,7 +134,7 @@ async fn concurrent_first_readers_and_subscribers_keep_one_history_and_every_mut
             .unwrap()
             .unwrap()
             .unwrap();
-        assert_eq!(first.event, suru::protocol::SESSION_SNAPSHOT_EVENT);
+        assert_eq!(first.event, shaman::protocol::SESSION_SNAPSHOT_EVENT);
         (
             serde_json::from_str::<SessionSnapshot>(&first.data).unwrap(),
             events,
@@ -176,7 +176,7 @@ async fn concurrent_first_readers_and_subscribers_keep_one_history_and_every_mut
                 .unwrap()
                 .unwrap()
                 .unwrap();
-            assert_eq!(event.event, suru::protocol::SESSION_UPDATED_EVENT);
+            assert_eq!(event.event, shaman::protocol::SESSION_UPDATED_EVENT);
             let update: SessionUpdate = serde_json::from_str(&event.data).unwrap();
             assert_eq!(update.revision, SessionRevision(revision.0 + 1));
             revision = update.revision;
@@ -258,7 +258,7 @@ async fn deletion_racing_first_reads_cannot_resurrect_history_or_damage_another_
 
 #[tokio::test]
 async fn prompt_identity_in_an_unopened_session_cannot_be_reused_by_creation_or_admission() {
-    use suru::protocol::{AdmitPromptRequest, PromptDelivery, SessionError, SessionErrorCode};
+    use shaman::protocol::{AdmitPromptRequest, PromptDelivery, SessionError, SessionErrorCode};
     let history = History::stored(2).await;
     let owner = &history.snapshots[0];
     let target = &history.snapshots[1];
@@ -364,7 +364,7 @@ async fn malformed_metadata_is_isolated_at_startup_without_listing_children_as_r
 async fn unreadable_child_hydration_refreshes_root_usage_and_keeps_parent_owned_deletion() {
     use crate::support::provider::ControlledProvider;
     use diesel::{Connection, RunQueryDsl};
-    use suru::{
+    use shaman::{
         protocol::Usage,
         provider::{
             ProviderEvent, ProviderEventAttribution, ProviderSubagentId, ProviderSubagentStatus,
@@ -431,14 +431,14 @@ async fn unreadable_child_hydration_refreshes_root_usage_and_keeps_parent_owned_
     drop(fixture.provider_session);
     fixture.server.shutdown().await.unwrap();
     let mut database =
-        diesel::SqliteConnection::establish(config.data_dir().join("suru.db").to_str().unwrap())
+        diesel::SqliteConnection::establish(config.data_dir().join("shaman.db").to_str().unwrap())
             .unwrap();
     // Invalid Provider-owned data is discovered only when this tree opens.
     diesel::sql_query("INSERT INTO provider_resume_states(session_id, provider, payload) VALUES (?, 'controlled', '{')")
         .bind::<diesel::sql_types::Text, _>(child_id.to_string()).execute(&mut database).unwrap();
     drop(database);
     let (runtime, _provider) = ControlledProvider::new();
-    let server = suru::server::spawn_with_provider(config.clone(), runtime)
+    let server = shaman::server::spawn_with_provider(config.clone(), runtime)
         .await
         .unwrap();
     let initial = listing(server.descriptor()).await;

@@ -18,7 +18,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         AgentSelection, ChildDirectory, DirectoryListing, DirectorySourceControl,
@@ -65,7 +65,7 @@ fn the_workspace_command_opens_a_picker_loading_its_servers_workspaces() {
     );
 }
 
-/// "Project" is vocabulary Suru avoids, so it finds the command without ever
+/// "Project" is vocabulary Shaman avoids, so it finds the command without ever
 /// being offered as one: the completion row names only the canonical spelling.
 #[test]
 fn the_project_synonym_finds_the_command_while_the_completion_names_only_workspace() {
@@ -76,7 +76,7 @@ fn the_project_synonym_finds_the_command_while_the_completion_names_only_workspa
     let offered = &rows[rendered_row(&rows, "Switch workspace")];
     assert!(
         offered.contains("/workspace"),
-        "the alias matches, and the row it matches names the command Suru calls it: {rows:?}"
+        "the alias matches, and the row it matches names the command Shaman calls it: {rows:?}"
     );
     assert!(
         !offered.contains("/project"),
@@ -1038,7 +1038,7 @@ fn enter_closes_the_picker_and_lands_in_the_workspace_chosen_before_its_server_a
     assert_eq!(request.path, atlas);
     assert_eq!(
         request.workspace_id,
-        Some(suru::protocol::WorkspaceId::directory(&atlas))
+        Some(shaman::protocol::WorkspaceId::directory(&atlas))
     );
 
     let landing = rendered_application_rows_at(&application, 120, 20).join("\n");
@@ -1483,9 +1483,9 @@ fn a_workspace_asked_for_elsewhere_supersedes_one_still_resolving() {
     application
         .handle_event(ApplicationEvent::WorkspaceResolved {
             outlook,
-            surface: suru::tui::WorkspaceResolutionSurface::Sidekick,
+            surface: shaman::tui::WorkspaceResolutionSurface::Sidekick,
             request_id,
-            result: Ok(suru::protocol::ResolvedWorkspace::directory(
+            result: Ok(shaman::protocol::ResolvedWorkspace::directory(
                 sidekick.clone(),
             )),
         })
@@ -2806,7 +2806,7 @@ fn workspace(components: &[&str]) -> PathBuf {
 fn workspace_in(root: &Path, name: &str) -> PathBuf {
     let workspace = root.join(name);
     std::fs::create_dir(&workspace).expect("create the workspace fixture");
-    suru::paths::canonical(workspace).expect("canonicalize the workspace fixture")
+    shaman::paths::canonical(workspace).expect("canonicalize the workspace fixture")
 }
 
 /// A listed Session rooted at the Workspace named, last active when the test
@@ -2821,7 +2821,7 @@ fn rooted(title: &str, workspace: &Path, updated_at: u64) -> SessionListItem {
             context_fill: None,
             prompt_cache: None,
             id: SessionId::new(),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             workspace: Workspace::directory(workspace.to_owned()),
@@ -2851,7 +2851,7 @@ fn name_sidekick_workspace(application: &mut Application, directory: &Path) {
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Connected(
             ready_health(fixture_instance_id(), 42).with_workspace_paths(
-                suru::protocol::WorkspacePaths::default().with_sidekick_workspace(directory),
+                shaman::protocol::WorkspacePaths::default().with_sidekick_workspace(directory),
             ),
         )))
         .expect("connect to a server naming its sidekick workspace");
@@ -3145,7 +3145,7 @@ fn landing_in_subdirectory(workspace: &Path, subdirectory: &Path) -> Application
             surface,
             request_id,
             result: Ok(ResolvedWorkspace {
-                execution_directory: Some(suru::protocol::ExecutionDirectory {
+                execution_directory: Some(shaman::protocol::ExecutionDirectory {
                     path: subdirectory.to_owned(),
                 }),
                 ..ResolvedWorkspace::directory(workspace.to_owned())
@@ -3213,7 +3213,7 @@ fn application_choosing_skills(workspace: &Path) -> Application {
 fn load_skills(application: &mut Application, workspace: &Path, skill: &str) {
     let request = SkillCatalogRequest {
         provider: ProviderId::new("codex"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
     };
@@ -3273,7 +3273,7 @@ fn sidebar_text(rows: &[String]) -> String {
 
 #[test]
 fn an_open_sessions_execution_context_is_independent_of_grouping_and_landing() {
-    use suru::protocol::{Activity, ActivityStatus, FileChange, PromptId};
+    use shaman::protocol::{Activity, ActivityStatus, FileChange, PromptId};
     let root = workspace_dir();
     let landing_root = workspace_in(root.path(), "landing");
     let landing = workspace_in(&landing_root, "subdirectory");
@@ -3289,7 +3289,7 @@ fn an_open_sessions_execution_context_is_independent_of_grouping_and_landing() {
     );
     snapshot.session.workspace.path = grouping;
     snapshot.session.status = SessionStatus::Active;
-    snapshot.turns[0].status = suru::protocol::TurnStatus::Active;
+    snapshot.turns[0].status = shaman::protocol::TurnStatus::Active;
     snapshot.turns[0].settled_at = None;
     snapshot.session.agent_selection = Some(AgentSelection {
         provider: ProviderId::new("codex"),
@@ -3312,7 +3312,7 @@ fn an_open_sessions_execution_context_is_independent_of_grouping_and_landing() {
 
     let request = SkillCatalogRequest {
         provider: ProviderId::new("codex"),
-        execution_directory: suru::protocol::ExecutionDirectory { path: execution },
+        execution_directory: shaman::protocol::ExecutionDirectory { path: execution },
     };
     application
         .handle_event(ApplicationEvent::SkillsListed {
@@ -3362,12 +3362,12 @@ fn an_open_sessions_execution_context_is_independent_of_grouping_and_landing() {
 /// directory and selects a Repository by identity even after its label changes.
 #[test]
 fn repository_rows_deduplicate_by_metadata_identity_and_preserve_execution_context() {
-    use suru::protocol::{
+    use shaman::protocol::{
         Repository, RepositoryId, RepositoryLocation, ResolvedWorkspace, SourceControlAvailability,
         SourceControlCapabilities,
     };
     let temporary = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temporary.path()).unwrap();
+    let root = shaman::paths::canonical(temporary.path()).unwrap();
     let main = root.join("main");
     let linked = root.join("linked");
     let metadata = root.join("metadata");
@@ -3416,9 +3416,9 @@ fn repository_rows_deduplicate_by_metadata_identity_and_preserve_execution_conte
             surface,
             request_id,
             result: Ok(ResolvedWorkspace {
-                execution_status: suru::protocol::ExecutionDirectoryStatus::Available,
+                execution_status: shaman::protocol::ExecutionDirectoryStatus::Available,
                 workspace: unknown.clone(),
-                execution_directory: Some(suru::protocol::ExecutionDirectory {
+                execution_directory: Some(shaman::protocol::ExecutionDirectory {
                     path: execution.clone(),
                 }),
                 checkout: None,
@@ -3470,7 +3470,7 @@ fn repository_rows_deduplicate_by_metadata_identity_and_preserve_execution_conte
 /// The Landing of a bare Repository at `root`, which has metadata but no
 /// working copy for a Session to execute in.
 fn bare_repository_landing(root: &Path) -> Application {
-    use suru::protocol::{
+    use shaman::protocol::{
         Repository, RepositoryId, RepositoryLocation, ResolvedWorkspace, SourceControlAvailability,
         SourceControlCapabilities,
     };
@@ -3512,7 +3512,7 @@ fn bare_repository_landing(root: &Path) -> Application {
             surface,
             request_id,
             result: Ok(ResolvedWorkspace {
-                execution_status: suru::protocol::ExecutionDirectoryStatus::RequiresWorkingCopy,
+                execution_status: shaman::protocol::ExecutionDirectoryStatus::RequiresWorkingCopy,
                 workspace,
                 execution_directory: None,
                 checkout: None,
@@ -3526,7 +3526,7 @@ fn bare_repository_landing(root: &Path) -> Application {
 #[test]
 fn bare_repository_landing_requires_working_copy_before_creating_session() {
     let temporary = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temporary.path()).unwrap();
+    let root = shaman::paths::canonical(temporary.path()).unwrap();
     let mut application = bare_repository_landing(&root);
     assert!(
         rendered_application_rows_at(&application, 160, 25)
@@ -3558,7 +3558,7 @@ fn a_long_workspace_path_gives_up_its_front_to_what_the_landing_asks() {
         .join("a-directory-name-long-enough-to-crowd-the-landing")
         .join("repository.git");
     std::fs::create_dir_all(&nested).unwrap();
-    let root = suru::paths::canonical(nested).unwrap();
+    let root = shaman::paths::canonical(nested).unwrap();
     let application = bare_repository_landing(&root);
 
     let line = rendered_application_rows_at(&application, 160, 25)

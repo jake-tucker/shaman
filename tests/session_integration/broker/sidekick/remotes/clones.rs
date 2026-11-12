@@ -16,7 +16,7 @@
 
 use std::pin::pin;
 
-use suru::protocol::{AgentSelection, CloneWorkspaceRequest, WorkspaceId};
+use shaman::protocol::{AgentSelection, CloneWorkspaceRequest, WorkspaceId};
 
 use super::acts::the_peer;
 use super::*;
@@ -295,12 +295,12 @@ async fn a_remote_refuses_a_clone_by_its_own_roots_and_rules_in_its_own_words() 
             json!({
                 "repository_url": origin,
                 "origin": REMOTE,
-                "name": ".atlas.suru-clone-deadbeef",
+                "name": ".atlas.shaman-clone-deadbeef",
             }),
         )
         .await,
         format!(
-            "The Remote `{REMOTE}` refused it: `.atlas.suru-clone-deadbeef` begins with a dot, and \
+            "The Remote `{REMOTE}` refused it: `.atlas.shaman-clone-deadbeef` begins with a dot, and \
              a Workspace's name may not be hidden, so nothing was cloned; give `name` as one that \
              does not begin with a dot."
         ),
@@ -390,7 +390,7 @@ async fn a_remote_takes_no_clone_where_its_sidekick_workspace_would_be_made_howe
     .await;
     let own = pair.own.descriptor().clone();
     let remote = pair.remote.descriptor();
-    let data = suru::paths::canonical(pair.remote.config.data_dir())
+    let data = shaman::paths::canonical(pair.remote.config.data_dir())
         .expect("read the Remote's data directory canonically");
     assert!(
         contents(&data)
@@ -412,7 +412,7 @@ async fn a_remote_takes_no_clone_where_its_sidekick_workspace_would_be_made_howe
             )
             .await,
             format!(
-                "The Remote `{REMOTE}` refused it: `{}` names Suru's own data directory, where \
+                "The Remote `{REMOTE}` refused it: `{}` names Shaman's own data directory, where \
                  the Sidekick Workspace is kept, which is not a Root a Clone may go in, so \
                  nothing was cloned; Clone into another of this server's Workspace Roots, or ask \
                  the user to name a directory of their own in the workspace.roots Setting.",
@@ -443,7 +443,7 @@ async fn a_remote_takes_no_clone_where_its_relocated_sidekick_workspace_would_ap
     let mut pair = paired("sidekick-remote-clone-relocated", ServerTimings::default()).await;
     let own = pair.own.descriptor().clone();
     let remote = pair.remote.descriptor();
-    let data = suru::paths::canonical(pair.remote.config.data_dir())
+    let data = shaman::paths::canonical(pair.remote.config.data_dir())
         .expect("read the Remote's data directory canonically");
     let (_there, there) = directory();
     let (_elsewhere, elsewhere) = directory();
@@ -521,7 +521,7 @@ async fn a_clone_on_a_remote_that_does_not_answer_or_understand_it_is_refused_an
     assert_eq!(
         refused(&mut sidekick, "clone_workspace", clone).await,
         format!(
-            "The Remote `{REMOTE}` does not understand a Clone: it runs a version of Suru that \
+            "The Remote `{REMOTE}` does not understand a Clone: it runs a version of Shaman that \
              speaks another protocol than this server's, so nothing can be asked of it until one \
              of them is updated. Nothing was cloned there, and nothing is kept to do once it \
              answers."

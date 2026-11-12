@@ -6,7 +6,7 @@
 
 use crate::codex_integration::support::{ScriptedCodex, token_usage_reading};
 use crate::codex_integration::usage::{MeteredSession, metered_session, settled_turn};
-use suru::{
+use shaman::{
     managed_client::ManagedClient,
     protocol::{
         Activity, Cost, MessageRole, ModelAttribution, ModelId, ModelShare, Outlook, ProviderId,
@@ -23,12 +23,12 @@ const REROUTED: &str = "child-priced-fixture";
 /// A Model the rate table holds no price for.
 const UNPRICED: &str = "unpriced-fixture";
 
-/// What Suru words Codex's `highRiskCyberActivity` reason as.
+/// What Shaman words Codex's `highRiskCyberActivity` reason as.
 const HIGH_RISK_CYBER_ACTIVITY: &str =
     "the account was flagged for potentially high-risk cyber activity";
 
 /// The app-server arms of one conversation on `native-thread`, whose one Turn, `native-turn`,
-/// runs on the selected Model and streams `__TURN_EVENTS__` once Suru starts it. A restart's
+/// runs on the selected Model and streams `__TURN_EVENTS__` once Shaman starts it. A restart's
 /// `thread/resume` reattaches the thread and replays nothing.
 const CONVERSATION: &str = r#"
     *'"method":"initialize"'*)
@@ -266,12 +266,12 @@ async fn a_mid_turn_reroute_stands_in_the_transcript_and_the_work_after_it_is_th
         .transcript
         .iter()
         .filter_map(|item| match item {
-            suru::protocol::TranscriptItem::Activity { activity_id }
+            shaman::protocol::TranscriptItem::Activity { activity_id }
                 if *activity_id == reroute_id =>
             {
                 Some("reroute".to_owned())
             }
-            suru::protocol::TranscriptItem::Message { message_id } => settled
+            shaman::protocol::TranscriptItem::Message { message_id } => settled
                 .messages
                 .iter()
                 .find(|message| message.id == *message_id && message.role == MessageRole::Agent)
@@ -550,7 +550,7 @@ async fn a_reroute_codex_gives_no_known_reason_for_says_so() {
             provider: codex_provider(),
             from: Some(ModelId::new(SELECTED)),
             to: ModelId::new(REROUTED),
-            reason: Some("a reason Suru does not recognise (someFutureReason)".to_owned()),
+            reason: Some("a reason Shaman does not recognise (someFutureReason)".to_owned()),
         }]
     );
     opened.shutdown().await;

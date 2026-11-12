@@ -1,7 +1,7 @@
-//! The Suru-owned Icon Catalog: the set of Nerd Font glyphs Suru knows by
+//! The Shaman-owned Icon Catalog: the set of Nerd Font glyphs Shaman knows by
 //! name, from which every Icon is chosen — by the Title Errand that derives a
 //! Session's Icon alongside its Title, or by the user through the Icon
-//! Picker. See ADR 0028 for why the Catalog is Suru's own hand-written table
+//! Picker. See ADR 0028 for why the Catalog is Shaman's own hand-written table
 //! rather than the whole of Nerd Fonts, and why an Icon is carried as this
 //! table's name rather than as a codepoint.
 //!
@@ -1466,7 +1466,7 @@ mod tests {
     use super::*;
 
     /// Nerd Fonts' published glyph names, checked in under `tests/fixtures`
-    /// so this pins against a copy Suru controls rather than the network.
+    /// so this pins against a copy Shaman controls rather than the network.
     /// Located through `CARGO_MANIFEST_DIR` rather than a relative literal so
     /// the path is correct regardless of the working directory a test runner
     /// starts in, and built with `Path::join` rather than a literal separator

@@ -4,14 +4,14 @@
 //! its reasoning effort, its context tier, and on `auto` its Routing Tier are Session state the CLI
 //! holds between Turns. A
 //! Turn whose Selection differs from the one in force therefore switches the Session onto it
-//! before delivering the Prompt, which is also how a Session created before Suru knew the
+//! before delivering the Prompt, which is also how a Session created before Shaman knew the
 //! Selection — [`ProviderSessionRequest`] carries none — arrives at the right Model. A fresh
-//! Session may report no Model at all, because Suru creates it without one and the CLI resolves
+//! Session may report no Model at all, because Shaman creates it without one and the CLI resolves
 //! nothing until asked: that is a Session with no Selection in force, not a failure, and the first
 //! Turn puts one in force by switching.
 //!
 //! Copilot addresses its own Session by the identifier the client gave it at creation and keeps
-//! the work behind it on disk, so that identifier is the whole of Suru's Resume State here: a Suru
+//! the work behind it on disk, so that identifier is the whole of Shaman's Resume State here: a Shaman
 //! Session that was restored asks Copilot to resume its Copilot Session rather than to create one,
 //! and it picks up where it stopped.
 
@@ -66,8 +66,8 @@ use crate::{
 /// watching a Turn that is never going to settle.
 pub(super) const INTERRUPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Everything Suru must remember about a Copilot Session to continue it after a restart: the
-/// identifier Copilot files it under. Suru never reads what Copilot keeps behind that identifier,
+/// Everything Shaman must remember about a Copilot Session to continue it after a restart: the
+/// identifier Copilot files it under. Shaman never reads what Copilot keeps behind that identifier,
 /// which is why this is all the Resume State carries.
 #[derive(Deserialize, Serialize)]
 struct CopilotResumeState {
@@ -86,16 +86,16 @@ fn enabled_tool_search() -> ToolSearchConfig {
 /// What a failure switching the Session's Model is reported under.
 const SWITCH_CONTEXT: &str = "Copilot Model selection failed";
 
-/// What a failure opening the Copilot Session is reported under, which is the operation Suru asked
+/// What a failure opening the Copilot Session is reported under, which is the operation Shaman asked
 /// for rather than the phase of it that went wrong.
 const STARTUP_CONTEXT: &str = "Copilot Session startup failed";
 const RESUME_CONTEXT: &str = "Copilot Session resume failed";
 
 /// Opens a Copilot Session on the shared harness process `handle` was granted from — resuming the
-/// one the Resume State names when the Suru Session was restored with one, and creating a fresh one
+/// one the Resume State names when the Shaman Session was restored with one, and creating a fresh one
 /// otherwise.
 ///
-/// Both paths install Suru's permission bridge before the native Session opens, so requests that
+/// Both paths install Shaman's permission bridge before the native Session opens, so requests that
 /// arrive during creation and after resume follow the fixed posture captured for this Session. Both
 /// hand the Session the Broker, when this start was handed it, in the server list Copilot takes on
 /// create and resume alike: a resume carries the token this start was handed, and a CLI process
@@ -134,9 +134,9 @@ pub(super) async fn start_copilot_session(
     let broker = request.broker.as_ref().map(broker_mcp_servers);
     let broker_note = request.broker.as_ref().map(broker_system_message);
     let (context, copilot_session_id, native) = match known_session_id(request.resume_state)? {
-        // A restored Suru Session keeps the identifier its Copilot Session was created under,
+        // A restored Shaman Session keeps the identifier its Copilot Session was created under,
         // because that is what Copilot filed the work under. A resume that fails is not an
-        // invitation to start over: a Suru Session that quietly opened an empty Copilot Session
+        // invitation to start over: a Shaman Session that quietly opened an empty Copilot Session
         // would read as continuous while having forgotten everything, so the failure stands and the
         // Transcript the Session was restored with stays readable.
         Some(session_id) => {
@@ -304,8 +304,8 @@ pub(super) async fn start_copilot_session(
     ))
 }
 
-/// The Copilot Session `resume_state` names, or nothing when the Suru Session has never reached
-/// Copilot. Resume State Suru cannot read is a failure rather than a reason to start over: the
+/// The Copilot Session `resume_state` names, or nothing when the Shaman Session has never reached
+/// Copilot. Resume State Shaman cannot read is a failure rather than a reason to start over: the
 /// Session it belongs to has work behind it that opening a new Copilot Session would abandon.
 fn known_session_id(
     resume_state: Option<ProviderResumeState>,
@@ -338,7 +338,7 @@ pub(super) async fn until_crash<T>(
 }
 
 /// The Agent Selection the Copilot Session is running under, read back from the CLI so the
-/// Selection Suru reports is the one Copilot actually resolved rather than the one Suru guessed —
+/// Selection Shaman reports is the one Copilot actually resolved rather than the one Shaman guessed —
 /// or nothing, for a fresh Session the CLI has resolved no Model on yet. The tier Copilot holds
 /// counts only on `auto`: it keeps one while a concrete Model is selected, which that Model does
 /// not run under.
@@ -425,7 +425,7 @@ pub(super) fn selected_context_tier(options: &[ModelOptionSelection]) -> Option<
 }
 
 /// The context tier Copilot knows `choice` by, or nothing for a choice no tier this SDK build can
-/// name — one Suru could not lower back over the wire.
+/// name — one Shaman could not lower back over the wire.
 fn context_tier(choice: &ModelOptionChoiceId) -> Option<ContextTier> {
     match serde_json::from_value(serde_json::Value::String(choice.as_str().to_owned())) {
         Ok(ContextTier::Unknown) | Err(_) => None,
@@ -601,7 +601,7 @@ impl CopilotInterrupter {
 
     /// Aborts the manual compaction Copilot runs for `session.history.compact`
     /// (`session.history.abortManualCompaction`), bounded like an interrupt. Copilot then fails
-    /// the compaction and the request as cancelled, which is the stop Suru asked for. An abort that
+    /// the compaction and the request as cancelled, which is the stop Shaman asked for. An abort that
     /// finds nothing running stopped nothing: the compaction had already ended, a failure
     /// included, and its answer settles its Turn as it ended.
     async fn abort_manual_compaction(
@@ -652,7 +652,7 @@ impl CopilotInterrupter {
     }
 }
 
-/// What Suru holds to be in force on the Copilot Session.
+/// What Shaman holds to be in force on the Copilot Session.
 struct SelectionInForce {
     /// Nothing until the CLI has resolved a Model.
     selection: Option<AgentSelection>,
@@ -774,7 +774,7 @@ impl CopilotSession {
     }
 
     /// `requested` as this Session can be asked to run it, and what the reader is told of any
-    /// Routing Tier it cannot. Suru clears one itself rather than let Copilot fail the Turn: a
+    /// Routing Tier it cannot. Shaman clears one itself rather than let Copilot fail the Turn: a
     /// resume with no assignment still reports its tier and each Prompt then errors, and a switch
     /// to one fails by RPC (docs/validation/copilot-routing-tier-selection.md).
     fn selection_on_offer(&self, requested: &AgentSelection) -> AppliedSelection {
@@ -852,7 +852,7 @@ impl CopilotSession {
         // included — where the same switch once the Session's Models have been listed goes
         // through and runs (CLI 1.0.88; docs/validation/copilot-cold-switch-effort.md). Its
         // own hosts list first, so list once here, before the first switch. Nothing in the answer
-        // is needed: the catalog Suru offers from is the flat one, and a CLI that cannot list is
+        // is needed: the catalog Shaman offers from is the flat one, and a CLI that cannot list is
         // left to judge the switch as it will.
         self.session_models_listed
             .get_or_init(|| async {
@@ -1218,11 +1218,11 @@ impl ProviderSession for CopilotSession {
 
     /// Copilot compacts a Session on request with `session.history.compact`, triggered as manual
     /// and handed the user's instructions as its `customInstructions` where there are any, which
-    /// runs no stretch of the loop and reports no turn: Suru opens the Turn the compaction
+    /// runs no stretch of the loop and reports no turn: Shaman opens the Turn the compaction
     /// runs in, and Copilot's answer to the request settles it once the compaction's own reports
     /// are in. The request is answered only once the compaction ends, so it is left running while
     /// the Session goes on, and its answer joins the Session's timeline. Copilot would take a
-    /// compaction mid-Turn, report success and lose it; Suru asks only while the Session is idle,
+    /// compaction mid-Turn, report success and lose it; Shaman asks only while the Session is idle,
     /// and while Copilot owes no report of an earlier one.
     fn compact(&self, input: ProviderCompactionInput) -> ProviderFuture<'_, AgentSelection> {
         Box::pin(async move {
@@ -1291,10 +1291,10 @@ impl ProviderSession for CopilotSession {
             //
             // Nothing here names the Turn being steered, because Copilot's send does not take one:
             // a steer that reaches the CLI after its loop has stopped falls back to that default
-            // and begins a Turn Suru is no longer expecting. Codex pins its steer to the Turn it
+            // and begins a Turn Shaman is no longer expecting. Codex pins its steer to the Turn it
             // meant and lets the Provider reject a stale one; the closest this wire comes is
-            // refusing to send once Suru's own Turn has settled, which leaves the stretch between
-            // Copilot stopping and Suru hearing about it.
+            // refusing to send once Shaman's own Turn has settled, which leaves the stretch between
+            // Copilot stopping and Shaman hearing about it.
             //
             // A Turn Copilot's compaction holds open past its loop's idle has not settled: the
             // steer runs the loop again, and the Turn is the loop's to settle from here.
@@ -1395,7 +1395,7 @@ impl ProviderSession for CopilotSession {
             // The harness process is the runtime's and hosts every other Copilot Session, so a
             // Session that is done with it lets go of its own event loop and leaves the process
             // running. Copilot keeps its own Session on disk, which is what a later resume of the
-            // Suru Session picks back up.
+            // Shaman Session picks back up.
             self.questionnaires.cancel();
             // A Route's phase carries on after its Session disconnects, spending as it goes, so
             // one still running is stopped first. A Session with none has nothing to wait for.
@@ -1522,7 +1522,7 @@ mod tests {
     }
 
     #[test]
-    fn resume_state_suru_cannot_read_fails_rather_than_opening_a_new_copilot_session() {
+    fn resume_state_shaman_cannot_read_fails_rather_than_opening_a_new_copilot_session() {
         for unusable in [
             json!({}),
             json!({ "session_id": "" }),

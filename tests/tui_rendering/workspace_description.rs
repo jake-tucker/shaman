@@ -11,7 +11,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         AppearanceSettings, EffectiveSettings, Outlook, Workspace, WorkspaceDescription,
@@ -738,9 +738,11 @@ fn a_local_description_never_reaches_a_remote_workspace_of_the_same_identity() {
     application
         .handle_event(ApplicationEvent::WorkspaceResolved {
             outlook,
-            surface: suru::tui::WorkspaceResolutionSurface::WorkspacePicker,
+            surface: shaman::tui::WorkspaceResolutionSurface::WorkspacePicker,
             request_id,
-            result: Ok(suru::protocol::ResolvedWorkspace::directory(shared.clone())),
+            result: Ok(shaman::protocol::ResolvedWorkspace::directory(
+                shared.clone(),
+            )),
         })
         .expect("land in the studio's workspace");
     open_on_studio(&mut application);

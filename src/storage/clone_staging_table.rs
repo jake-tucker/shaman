@@ -82,8 +82,8 @@ mod tests {
     #[tokio::test]
     async fn a_staging_record_lasts_until_forgotten() {
         let data = tempfile::tempdir().unwrap();
-        let staging = data.path().join(".atlas.suru-clone-0123abcd");
-        let charts = data.path().join(".charts.suru-clone-89abcdef");
+        let staging = data.path().join(".atlas.shaman-clone-0123abcd");
+        let charts = data.path().join(".charts.shaman-clone-89abcdef");
         {
             let repository = StorageRepository::open(data.path()).await.unwrap();
             for (directory, run) in [

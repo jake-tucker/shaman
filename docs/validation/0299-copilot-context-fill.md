@@ -13,7 +13,7 @@ Its usage documentation says the runtime emits this event whenever context size
 changes:
 [Usage and billing](https://github.com/github/copilot-sdk/blob/1644e74578db3637bc7527951bac227aabbc0584/docs/features/usage-and-billing.md#live-updates-with-sessionusage_info).
 The native envelope carries optional `agentId` attribution independently of the
-ephemeral flag; Suru's SDK preserves both.
+ephemeral flag; Shaman's SDK preserves both.
 
 These sources describe `tokenLimit` as the maximum context-window tokens, but do
 not say which of a Model's several limits it is. The original verification made no
@@ -66,7 +66,7 @@ persistence, presentation, and parent/child isolation. Reports attributed to an
 unknown child remain unrouted; settled known children can still receive context.
 
 The drain allocates an increasing sequence and captures the last delivered
-Prompt's Suru Turn ID before a report waits in the projection queue. Model
+Prompt's Shaman Turn ID before a report waits in the projection queue. Model
 selection and skill expansion keep the old identity until the new Prompt is ready
 for delivery. Reports already queued under an older Prompt therefore retain their
 old identity when a later Model invalidates it. Native events have no Model or
@@ -110,8 +110,8 @@ Initial combined checks: `cargo nextest run --test copilot_integration --test
 session_integration --lib --status-level fail` passed **708/708** tests (including
 shared footer tests), with `src/lib.rs` touched inside the shared cargo lock to
 force this worktree's library rebuild. `cargo fmt --check` and `git diff --check`
-also passed. All builds used `/home/jake/Projects/suru/target` under
-`/tmp/suru-198-cargo.lock`.
+also passed. All builds used `/home/jake/Projects/shaman/target` under
+`/tmp/shaman-198-cargo.lock`.
 
 After the rejected-send follow-up, a forced rebuild passed all **58/58** Copilot
 integration and shared Context Fill tests using `--test copilot_integration --test

@@ -12,7 +12,7 @@ use crate::codex_integration::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
     protocol::{
         Activity, AdmitPromptRequest, CreateSessionRequest, InitialPrompt, PromptDelivery,
@@ -140,7 +140,7 @@ fn invocation(skill: &SkillDescriptor, start: u32, end: u32) -> SkillInvocation 
 
 async fn wait_for_snapshot(
     client: &ManagedClient,
-    session_id: suru::protocol::SessionId,
+    session_id: shaman::protocol::SessionId,
     description: &str,
     predicate: impl Fn(&SessionSnapshot) -> bool,
 ) -> SessionSnapshot {
@@ -165,7 +165,7 @@ async fn codex_skill_changes_force_refresh_server_authority() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let canonical_workspace =
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
     let workspace_json = serde_json::to_string(&canonical_workspace).expect("encode Workspace");
     let fixture = ScriptedCodex::new_multiprocess(
         &CHANGING_SKILL_CODEX.replace("$SKILL_WORKSPACE", &workspace_json),
@@ -187,9 +187,9 @@ async fn codex_skill_changes_force_refresh_server_authority() {
         crate::support::next_event(&mut client).await,
         Some(ManagedEvent::SettingsSnapshot(_))
     ));
-    let request = suru::protocol::SkillCatalogRequest {
-        provider: suru::protocol::ProviderId::new("codex"),
-        execution_directory: suru::protocol::ExecutionDirectory {
+    let request = shaman::protocol::SkillCatalogRequest {
+        provider: shaman::protocol::ProviderId::new("codex"),
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.path().to_owned(),
         },
     };
@@ -210,7 +210,7 @@ async fn codex_skill_changes_force_refresh_server_authority() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -252,7 +252,7 @@ async fn codex_delivers_ordered_distinct_skills_with_visible_skill_only_transcri
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let canonical_workspace =
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
     let workspace_json = serde_json::to_string(&canonical_workspace).expect("encode Workspace");
     let fixture =
         ScriptedCodex::new_multiprocess(&SKILL_CODEX.replace("$SKILL_WORKSPACE", &workspace_json));
@@ -270,9 +270,9 @@ async fn codex_delivers_ordered_distinct_skills_with_visible_skill_only_transcri
     receive_initial_state(&mut client).await;
 
     let loading = client
-        .list_skills(suru::protocol::SkillCatalogRequest {
-            provider: suru::protocol::ProviderId::new("codex"),
-            execution_directory: suru::protocol::ExecutionDirectory {
+        .list_skills(shaman::protocol::SkillCatalogRequest {
+            provider: shaman::protocol::ProviderId::new("codex"),
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: canonical_workspace,
             },
         })
@@ -303,9 +303,9 @@ async fn codex_delivers_ordered_distinct_skills_with_visible_skill_only_transcri
     assert_eq!(
         catalog.capabilities.supported_deliveries,
         [
-            suru::protocol::SkillPromptDelivery::Initial,
-            suru::protocol::SkillPromptDelivery::Queue,
-            suru::protocol::SkillPromptDelivery::Steer,
+            shaman::protocol::SkillPromptDelivery::Initial,
+            shaman::protocol::SkillPromptDelivery::Queue,
+            shaman::protocol::SkillPromptDelivery::Steer,
         ]
     );
     let serialized = serde_json::to_string(&catalog).expect("serialize safe Skill Catalog");
@@ -338,7 +338,7 @@ async fn codex_delivers_ordered_distinct_skills_with_visible_skill_only_transcri
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -401,7 +401,7 @@ async fn codex_preserves_skill_bindings_through_queue_and_steer_delivery() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let canonical_workspace =
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
     let fixture = ScriptedCodex::new(&skill_operation_script(
         &canonical_workspace,
         DELIVER_SKILL_TURNS,
@@ -422,9 +422,9 @@ async fn codex_preserves_skill_bindings_through_queue_and_steer_delivery() {
     receive_initial_state(&mut client).await;
 
     let loading = client
-        .list_skills(suru::protocol::SkillCatalogRequest {
-            provider: suru::protocol::ProviderId::new("codex"),
-            execution_directory: suru::protocol::ExecutionDirectory {
+        .list_skills(shaman::protocol::SkillCatalogRequest {
+            provider: shaman::protocol::ProviderId::new("codex"),
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: canonical_workspace,
             },
         })
@@ -448,7 +448,7 @@ async fn codex_preserves_skill_bindings_through_queue_and_steer_delivery() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -619,7 +619,7 @@ async fn codex_receives_attachments_as_data_url_images_after_the_text_on_start_a
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let canonical_workspace =
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
     let fixture = ScriptedCodex::new(&skill_operation_script(
         &canonical_workspace,
         DELIVER_SKILL_TURNS,
@@ -639,9 +639,9 @@ async fn codex_receives_attachments_as_data_url_images_after_the_text_on_start_a
     .expect("connect client");
     receive_initial_state(&mut client).await;
     let loading = client
-        .list_skills(suru::protocol::SkillCatalogRequest {
-            provider: suru::protocol::ProviderId::new("codex"),
-            execution_directory: suru::protocol::ExecutionDirectory {
+        .list_skills(shaman::protocol::SkillCatalogRequest {
+            provider: shaman::protocol::ProviderId::new("codex"),
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: canonical_workspace,
             },
         })
@@ -666,7 +666,7 @@ async fn codex_receives_attachments_as_data_url_images_after_the_text_on_start_a
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -792,7 +792,7 @@ async fn codex_does_not_retry_rejected_structured_skills_as_plain_text() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let canonical_workspace =
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace");
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace");
     let fixture = ScriptedCodex::new(&skill_operation_script(
         &canonical_workspace,
         REJECT_SKILL_TURN,
@@ -813,9 +813,9 @@ async fn codex_does_not_retry_rejected_structured_skills_as_plain_text() {
     receive_initial_state(&mut client).await;
 
     let loading = client
-        .list_skills(suru::protocol::SkillCatalogRequest {
-            provider: suru::protocol::ProviderId::new("codex"),
-            execution_directory: suru::protocol::ExecutionDirectory {
+        .list_skills(shaman::protocol::SkillCatalogRequest {
+            provider: shaman::protocol::ProviderId::new("codex"),
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: canonical_workspace,
             },
         })
@@ -836,7 +836,7 @@ async fn codex_does_not_retry_rejected_structured_skills_as_plain_text() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

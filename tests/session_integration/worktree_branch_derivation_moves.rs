@@ -3,7 +3,7 @@
 //! from the commit the Session's Worktree stands at, through the owning Server's
 //! protocol and real Git.
 use super::*;
-use suru::source_control::{PreparationCheckpoint, PreparationObserver};
+use shaman::source_control::{PreparationCheckpoint, PreparationObserver};
 
 fn into_new_worktree(directory: impl Into<PathBuf>) -> MoveSessionRequest {
     MoveSessionRequest {
@@ -185,7 +185,7 @@ async fn a_move_makes_a_worktree_named_by_its_errand_and_started_where_the_sessi
         &fixture.main,
         &["worktree", "add", "-b", "topic", linked.to_str().unwrap()],
     );
-    let linked = suru::paths::canonical(&linked).unwrap();
+    let linked = shaman::paths::canonical(&linked).unwrap();
     std::fs::write(linked.join("committed"), "kept").unwrap();
     commit_all(&linked, "ahead of main");
     std::fs::write(linked.join("uncommitted"), "left behind").unwrap();
@@ -226,7 +226,7 @@ async fn a_move_makes_a_worktree_named_by_its_errand_and_started_where_the_sessi
     assert_on_branch(&worktree, "feature/parser-tables");
     assert_eq!(head_commit(&worktree), source_commit);
     assert_eq!(
-        suru_base(&fixture.main, "feature/parser-tables").as_deref(),
+        shaman_base(&fixture.main, "feature/parser-tables").as_deref(),
         Some(source_commit.as_str()),
         "provenance is recorded as it is for a new Session"
     );
@@ -236,7 +236,7 @@ async fn a_move_makes_a_worktree_named_by_its_errand_and_started_where_the_sessi
             &[
                 "config",
                 "--local",
-                "branch.feature/parser-tables.suru-base-branch"
+                "branch.feature/parser-tables.shaman-base-branch"
             ]
         )
         .as_deref(),
@@ -558,7 +558,7 @@ async fn a_directory_of_another_repository_starts_the_worktree_from_its_own_comm
     let mut fixture = Fixture::start("move-new-worktree-other").await;
     let main = fixture.main.clone();
     let (session_id, _session) = fixture.idle_session(&main, "Tune the parser").await;
-    let other = suru::paths::canonical(fixture.repository("other")).unwrap();
+    let other = shaman::paths::canonical(fixture.repository("other")).unwrap();
     std::fs::write(other.join("theirs"), "theirs").unwrap();
     commit_all(&other, "other's own");
 
@@ -588,7 +588,7 @@ async fn a_bare_repository_starts_the_worktree_from_its_own_head_beneath_its_roo
         &fixture.root,
         &["clone", "--bare", main.to_str().unwrap(), "vault.git"],
     );
-    let bare = suru::paths::canonical(&bare).unwrap();
+    let bare = shaman::paths::canonical(&bare).unwrap();
     let bare_head = read_git(&bare, &["rev-parse", "HEAD"]).unwrap();
 
     let moved = moved_summary(
@@ -615,13 +615,13 @@ async fn a_session_in_a_bare_repositorys_worktree_starts_from_its_own_commit() {
         &fixture.root,
         &["clone", "--bare", main.to_str().unwrap(), "vault.git"],
     );
-    let bare = suru::paths::canonical(fixture.root.join("vault.git")).unwrap();
+    let bare = shaman::paths::canonical(fixture.root.join("vault.git")).unwrap();
     let linked = fixture.root.join("feature");
     git(
         &bare,
         &["worktree", "add", "-b", "topic", linked.to_str().unwrap()],
     );
-    let linked = suru::paths::canonical(&linked).unwrap();
+    let linked = shaman::paths::canonical(&linked).unwrap();
     std::fs::write(linked.join("ahead"), "ahead").unwrap();
     commit_all(&linked, "ahead of the bare Repository's head");
     let (session_id, _session) = fixture.idle_session(&linked, "Tune the parser").await;
@@ -697,7 +697,7 @@ async fn a_session_whose_own_worktree_has_gone_is_refused_rather_than_started_el
         &main,
         &["worktree", "add", "-b", "topic", linked.to_str().unwrap()],
     );
-    let linked = suru::paths::canonical(&linked).unwrap();
+    let linked = shaman::paths::canonical(&linked).unwrap();
     let (session_id, _session) = fixture.idle_session(&linked, "Tune the parser").await;
     git(
         &main,

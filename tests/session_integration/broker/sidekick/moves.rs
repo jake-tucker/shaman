@@ -5,7 +5,7 @@
 //! Session held in the Sidekick Workspace beneath another Sidekick stay where
 //! they are. Each test acts as the MCP client a Provider harness is.
 
-use suru::provider::ProviderSubagentId;
+use shaman::provider::ProviderSubagentId;
 
 use super::super::agent_moves::{canonical, commit, head, repository};
 use super::super::sidekick_acts::{acted, refused};
@@ -235,7 +235,7 @@ async fn a_sidekick_moves_a_session_into_a_new_managed_worktree_of_any_repositor
     assert_eq!(
         answer["message"],
         json!(format!(
-            "Suru made a new Worktree at {} from the commit HEAD stands at now, and Session \
+            "Shaman made a new Worktree at {} from the commit HEAD stands at now, and Session \
              {target}'s Move there is pending: it applies once its Turn and any native Subagents \
              it has running settle, and its next Turn works there. It keeps working in {} until \
              then. Commits made there after this call, and changes left uncommitted, stay on the \
@@ -289,7 +289,7 @@ async fn a_sidekick_moves_a_session_into_a_new_managed_worktree_of_any_repositor
     assert_eq!(
         answer["message"],
         json!(format!(
-            "Session {target} now works in the new Worktree Suru made at {}, from the commit HEAD \
+            "Session {target} now works in the new Worktree Shaman made at {}, from the commit HEAD \
              stood at; its next Turn works there. Changes left uncommitted where it worked stayed \
              there.",
             last.display()
@@ -394,7 +394,7 @@ async fn a_sidekick_is_refused_its_own_session_and_a_destination_no_session_work
             json!({ "session_id": SessionId::new(), "directory": seed }),
         )
         .await,
-        "The Session does not exist on this Suru server.",
+        "The Session does not exist on this Shaman server.",
     );
     assert_eq!(
         read_session(&descriptor, target).await.session,

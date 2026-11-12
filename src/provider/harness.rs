@@ -1,6 +1,6 @@
-//! Provider-neutral machinery for the harness server processes Suru launches.
+//! Provider-neutral machinery for the harness server processes Shaman launches.
 //!
-//! A harness is the Provider-owned executable Suru drives a Provider through — the Codex
+//! A harness is the Provider-owned executable Shaman drives a Provider through — the Codex
 //! app-server, the Copilot CLI in server mode. [`process`] owns launching and supervising those
 //! child processes with one grace-then-kill discipline, and [`shared`] builds the shared-process
 //! topology on top of it: one lazily launched process per Provider runtime, hosting all of that

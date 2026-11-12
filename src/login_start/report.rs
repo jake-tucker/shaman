@@ -1,10 +1,10 @@
-//! What `suru server install` and `uninstall` tell their user.
+//! What `shaman server install` and `uninstall` tell their user.
 
 use std::path::Path;
 
 use super::{LoginStart, Removal, ShortLived};
 
-/// What `suru server install` found worth telling its user.
+/// What `shaman server install` found worth telling its user.
 pub(super) struct InstallFindings<'a> {
     pub(super) executable: &'a Path,
     pub(super) short_lived: Option<ShortLived>,
@@ -21,14 +21,14 @@ pub(super) fn install_report(
     let mut report = format!(
         "Registered a login start for the `{channel}` channel's server: {location}\n\n\
          It comes into force at the next login and changes nothing until then: a server \
-         running now is left running, and `suru server start` starts one where none is.\n\
+         running now is left running, and `shaman server start` starts one where none is.\n\
          At each login a keeper starts the server and restarts it if it crashes. A server \
-         stopped by `suru server stop` stays stopped until the next login or `suru server \
+         stopped by `shaman server stop` stays stopped until the next login or `shaman server \
          start`. So does one ended by a plain `kill`, which a server takes as a stop.\n\n{}\n\n\
-         `suru server status` reads the registration alone, and cannot see it turned off \
+         `shaman server status` reads the registration alone, and cannot see it turned off \
          in the service manager itself.\n\n\
          Providers are found on the PATH this command ran with, which the registration \
-         keeps. Run `suru server install` again after it changes.\n",
+         keeps. Run `shaman server install` again after it changes.\n",
         login_start.manager.covers()
     );
     if !findings.fleeting_path_entries.is_empty() {
@@ -49,7 +49,7 @@ pub(super) fn install_report(
     if let Some(short_lived) = findings.short_lived {
         report.push_str(&format!(
             "\nWarning: this registration names {}, which may not survive an upgrade: {}. \
-             Run `suru server install` again from wherever Suru is kept for good.\n",
+             Run `shaman server install` again from wherever Shaman is kept for good.\n",
             findings.executable.display(),
             short_lived.says()
         ));
@@ -58,7 +58,7 @@ pub(super) fn install_report(
 }
 
 pub(super) fn uninstall_report(channel: &str, removal: &Removal) -> String {
-    const LEFT_ALONE: &str = "A server running now is left running; `suru server stop` stops it.";
+    const LEFT_ALONE: &str = "A server running now is left running; `shaman server stop` stops it.";
     match removal {
         Removal::Removed { location } => format!(
             "Removed the login start for the `{channel}` channel's server: {location}\n\
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn the_install_report_says_what_was_done_and_warns_of_what_will_not_last() {
         let login_start = login_start();
-        let executable = rooted("/home/jo/target/debug/suru");
+        let executable = rooted("/home/jo/target/debug/shaman");
 
         let report = install_report(
             &login_start,

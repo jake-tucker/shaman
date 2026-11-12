@@ -1,8 +1,8 @@
 # Vary the Broker's Tools by caller, and know a Sidekick by its Workspace
 
-The Tools that work across Suru itself — listing and reading Sessions, prompting and interrupting them, changing Settings, keeping Memories — are served from the Broker's one endpoint, which answers a Sidekick's Session with more Tools than it answers any other. A Session is a Sidekick's because its Workspace is the Sidekick Workspace, a directory Suru owns beside its data, and for no other reason: the Server derives it from what a Session already stores, so no flag is stamped at creation and nothing about the request that begins a Session changes. ADR 0034's per-Session token already tells the Broker who is calling; this decision makes the answer depend on it.
+The Tools that work across Shaman itself — listing and reading Sessions, prompting and interrupting them, changing Settings, keeping Memories — are served from the Broker's one endpoint, which answers a Sidekick's Session with more Tools than it answers any other. A Session is a Sidekick's because its Workspace is the Sidekick Workspace, a directory Shaman owns beside its data, and for no other reason: the Server derives it from what a Session already stores, so no flag is stamped at creation and nothing about the request that begins a Session changes. ADR 0034's per-Session token already tells the Broker who is calling; this decision makes the answer depend on it.
 
-A brokered or native Subagent of a Sidekick is offered the ordinary Tools only, so work a Sidekick delegates cannot reach across Suru on its own.
+A brokered or native Subagent of a Sidekick is offered the ordinary Tools only, so work a Sidekick delegates cannot reach across Shaman on its own.
 
 ## Considered Options
 
@@ -12,5 +12,5 @@ A brokered or native Subagent of a Sidekick is offered the ordinary Tools only, 
 
 ## Consequences
 
-- What a Provider lists for the `suru` server is no longer one constant, so the instructions Suru appends at Session start are per caller too.
+- What a Provider lists for the `shaman` server is no longer one constant, so the instructions Shaman appends at Session start are per caller too.
 - The directory is the identity: reaching the Sidekick Workspace through the Sidebar's path entry makes a Sidekick as surely as `/sidekick` does.

@@ -4,7 +4,7 @@ Captured 2026-09-27 against Claude Code **2.1.283**: `/usr/bin/claude`, a
 wrapper that sets `DISABLE_UPDATES=1` and runs `/opt/claude-code/bin/claude`,
 signed in with a claude.ai account. The Model was `haiku`
 (`claude-haiku-4-5-20251001`). `examples/broker_harness_capture.rs claude
-<scenario>` launched one stream-json process per run, as Suru's Claude Provider
+<scenario>` launched one stream-json process per run, as Shaman's Claude Provider
 does, from an empty working directory:
 
 ```
@@ -113,10 +113,10 @@ The `--mcp-config` entry carries `"timeout": 900000`. It is a hard limit per
 call, so it must stand above the 600 s ceiling of `wait_subagents`, and 900 s
 does. It also raises the idle window and the request timer to 900 s, so a
 stretch with no progress, or a plain JSON answer, still gets through
-(runs 2 and 5). `--allowedTools 'mcp__suru__*'` keeps Broker calls from raising
+(runs 2 and 5). `--allowedTools 'mcp__shaman__*'` keeps Broker calls from raising
 Approvals, Subagents' calls included.
 
-**Fallback:** if a later Claude drops the per-server key, Suru sets
+**Fallback:** if a later Claude drops the per-server key, Shaman sets
 `MCP_TOOL_TIMEOUT` and `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` on the Session's own
 process (run 7 shows the first taking effect). Claude runs one process per
 Session, so these reach only that Session.

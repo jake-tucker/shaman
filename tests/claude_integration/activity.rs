@@ -10,7 +10,7 @@ use crate::claude_integration::support::{
     opened_session_in, session_where, settled_session,
 };
 use serde_json::{Value, json};
-use suru::protocol::{
+use shaman::protocol::{
     Activity, ActivityStatus, FileChange, SessionSnapshot, TranscriptItem, TurnStatus,
 };
 
@@ -72,7 +72,7 @@ const WRAPPED_COMMANDS_TURN: &str = r#"      emit '{"type":"stream_event","event
 "#;
 
 /// A Turn running one command that changes into a directory before its real work, and one that
-/// changes directory in a way whose effect Suru cannot know.
+/// changes directory in a way whose effect Shaman cannot know.
 const DIRECTORY_CHANGING_TURN: &str = r#"      emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_moved","name":"Bash","input":{"command":"cd /srv/app && cargo check"}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null,"session_id":"prov-session"}'
@@ -104,7 +104,7 @@ const REJECTED_COMMAND_TURN: &str = r#"      emit '{"type":"stream_event","event
       emit '{"type":"result","subtype":"success","is_error":false,"duration_ms":300,"num_turns":1,"result":"Stopped.","session_id":"prov-session"}'
 "#;
 
-/// A Turn whose one command answers with more output than Suru stores.
+/// A Turn whose one command answers with more output than Shaman stores.
 fn oversized_output_turn() -> String {
     let output = "x".repeat(70_000);
     format!(
@@ -128,7 +128,7 @@ const TOOL_CALLS_TURN: &str = r#"      emit '{"type":"stream_event","event":{"ty
       emit '{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_grep","name":"Grep","input":{"pattern":"TODO","path":"src"}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_stop","index":1},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"message_stop"},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      emit '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_read","content":[{"type":"text","text":"pub mod suru;\n"}],"is_error":false}]},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_read","content":[{"type":"text","text":"pub mod shaman;\n"}],"is_error":false}]},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_grep","content":"src/main.rs:3: // TODO\n","is_error":false}]},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"One TODO."}},"parent_tool_use_id":null,"session_id":"prov-session"}'
@@ -196,7 +196,7 @@ const ABSORBED_AND_PLUMBING_TURN: &str = r#"      emit '{"type":"stream_event","
 
 /// A Turn the CLI ends while a Tool Call still awaits its tool result.
 const DANGLING_TOOL_CALL_TURN: &str = r#"      emit '{"type":"stream_event","event":{"type":"message_start","message":{"role":"assistant"}},"parent_tool_use_id":null,"session_id":"prov-session"}'
-      emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_lost_search","name":"WebSearch","input":{"query":"suru"}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
+      emit '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_lost_search","name":"WebSearch","input":{"query":"shaman"}}},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"content_block_stop","index":0},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"stream_event","event":{"type":"message_stop"},"parent_tool_use_id":null,"session_id":"prov-session"}'
       emit '{"type":"result","subtype":"success","is_error":false,"duration_ms":300,"num_turns":1,"result":"Gave up.","session_id":"prov-session"}'
@@ -214,7 +214,7 @@ const HELD_TOOL_CALL_TURN: &str = r#"      emit '{"type":"stream_event","event":
       emit '{"type":"result","subtype":"success","is_error":false,"duration_ms":300,"num_turns":1,"result":"Globbed.","session_id":"prov-session"}'
 "#;
 
-/// A Turn whose one Tool Call is handed more input and answers with more output than Suru stores.
+/// A Turn whose one Tool Call is handed more input and answers with more output than Shaman stores.
 fn oversized_tool_call_turn() -> String {
     let input = "y".repeat(5_000);
     let output = "x".repeat(70_000);
@@ -1186,7 +1186,7 @@ async fn tool_uses_no_other_activity_records_reach_the_transcript_as_tool_calls(
     );
     assert!(!input_truncated);
     assert_eq!(
-        output, "pub mod suru;\n",
+        output, "pub mod shaman;\n",
         "the tool result's text is the output"
     );
     assert!(!output_truncated);
@@ -1445,7 +1445,7 @@ async fn a_tool_call_whose_tool_result_never_came_settles_failed_when_the_turn_e
         ActivityStatus::Failed,
         "a Tool Call with no result to match settles as failed rather than staying active"
     );
-    assert_eq!(input, "query=suru");
+    assert_eq!(input, "query=shaman");
 }
 
 #[tokio::test]

@@ -44,7 +44,10 @@ async fn settle_parent_while_child_works(
 
 /// The Continuation `snapshot` holds `text` in: its latest Turn, begun by
 /// neither a Prompt nor a Delegation.
-fn continuation_holding<'a>(snapshot: &'a SessionSnapshot, text: &str) -> &'a suru::protocol::Turn {
+fn continuation_holding<'a>(
+    snapshot: &'a SessionSnapshot,
+    text: &str,
+) -> &'a shaman::protocol::Turn {
     let message = snapshot
         .messages
         .iter()
@@ -236,7 +239,7 @@ async fn after_a_watch_starts(
 ) -> SessionSnapshot {
     provider
         .emit_and_wait_until_observed(ProviderEvent::WatchStarted {
-            watch_id: suru::provider::ProviderWatchId::new(description),
+            watch_id: shaman::provider::ProviderWatchId::new(description),
             description: description.to_owned(),
         })
         .await;

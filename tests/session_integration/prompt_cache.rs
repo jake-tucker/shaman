@@ -13,7 +13,7 @@ use crate::session_integration::{
         receive_managed_client_initial_state, working_turn, working_turn_with_timings,
     },
 };
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent, SessionSubscription},
     pricing::{CacheRates, PromptRateTier, PromptRates},
     protocol::{
@@ -66,7 +66,7 @@ fn reported(lapses_at: SessionTimestamp) -> ProviderEvent {
         lapses_at,
         model: None,
         lifetime: None,
-        write_price: suru::protocol::CacheWritePrice::Default,
+        write_price: shaman::protocol::CacheWritePrice::Default,
         prompt_limit_tokens: None,
     }
 }
@@ -105,7 +105,7 @@ fn cache(lapses_at: SessionTimestamp, written_by: &ModelId, usd: Option<f64>) ->
         written_in: None,
         written_by: written_by.clone(),
         lifetime_ms: None,
-        write_price: suru::protocol::CacheWritePrice::Default,
+        write_price: shaman::protocol::CacheWritePrice::Default,
         prompt_limit_tokens: None,
         lapse_penalty: usd.and_then(LapsePenalty::from_usd),
         compaction_due_at: None,
@@ -663,9 +663,9 @@ async fn a_turn_that_called_another_model_and_reports_nothing_leaves_no_moment_s
     fixture
         .provider_session
         .emit_and_wait_until_observed(ProviderEvent::Usage {
-            usage: suru::protocol::Usage {
+            usage: shaman::protocol::Usage {
                 fresh_input_tokens: Some(400_000),
-                ..suru::protocol::Usage::default()
+                ..shaman::protocol::Usage::default()
             },
             cost: None,
             model_shares: Vec::new(),
@@ -1217,10 +1217,10 @@ async fn a_session_not_read_in_is_left_alone_at_start_and_forecast_when_read_in(
         .expect("list Sessions")
         .error_for_status()
         .expect("the listing succeeds")
-        .json::<Vec<suru::protocol::SessionListItem>>()
+        .json::<Vec<shaman::protocol::SessionListItem>>()
         .await
         .expect("decode the listing");
-    let Some(suru::protocol::SessionListItem::Readable(summary)) =
+    let Some(shaman::protocol::SessionListItem::Readable(summary)) =
         listed.into_iter().find(|item| item.id() == id)
     else {
         panic!("the Session is listed, readable");
@@ -1330,7 +1330,7 @@ async fn the_penalty_is_priced_at_the_tier_its_context_falls_in_and_its_caches_w
             lapses_at,
             model: Some(model.clone()),
             lifetime: Some(Duration::from_secs(60 * 60)),
-            write_price: suru::protocol::CacheWritePrice::Hour,
+            write_price: shaman::protocol::CacheWritePrice::Hour,
             prompt_limit_tokens: None,
         })
         .await;
@@ -1342,7 +1342,7 @@ async fn the_penalty_is_priced_at_the_tier_its_context_falls_in_and_its_caches_w
             snapshot.session.prompt_cache.clone().map(unwritten)
                 == Some(PromptCache {
                     lifetime_ms: Some(60 * 60 * 1000),
-                    write_price: suru::protocol::CacheWritePrice::Hour,
+                    write_price: shaman::protocol::CacheWritePrice::Hour,
                     prompt_limit_tokens: None,
                     // 400,000 tokens at $6.00 written less $0.30 read.
                     ..cache(lapses_at, &model, Some(2.28))
@@ -1442,7 +1442,7 @@ const LONG_LIFETIME: Duration = Duration::from_millis(3_600);
 /// A write kept for [`LONG_LIFETIME`] at the Provider's hour-long write price.
 const HOUR_PRICED: CacheWritten = CacheWritten {
     lifetime: LONG_LIFETIME,
-    price: suru::protocol::CacheWritePrice::Hour,
+    price: shaman::protocol::CacheWritePrice::Hour,
 };
 
 /// `duration` in the milliseconds every Session moment is counted in.
@@ -1456,7 +1456,7 @@ fn refreshed(written: Option<Duration>) -> ProviderEvent {
     ProviderEvent::PromptCacheRefreshed {
         written: written.map(|lifetime| CacheWritten {
             lifetime,
-            price: suru::protocol::CacheWritePrice::Default,
+            price: shaman::protocol::CacheWritePrice::Default,
         }),
         model: None,
     }
@@ -1632,7 +1632,7 @@ async fn a_request_that_wrote_nothing_keeps_the_lifetime_last_observed_and_resta
             .prompt_cache
             .as_ref()
             .map(|cache| cache.write_price),
-        Some(suru::protocol::CacheWritePrice::Hour),
+        Some(shaman::protocol::CacheWritePrice::Hour),
         "the price that write paid is carried with its lifetime, and stored"
     );
     assert_eq!(
@@ -1704,16 +1704,16 @@ async fn under_an_inferred_lifetime_output_with_no_request_behind_it_leaves_the_
     fixture
         .provider_session
         .emit_and_wait_until_observed(ProviderEvent::Usage {
-            usage: suru::protocol::Usage {
+            usage: shaman::protocol::Usage {
                 fresh_input_tokens: Some(1_000),
-                ..suru::protocol::Usage::default()
+                ..shaman::protocol::Usage::default()
             },
             cost: None,
-            model_shares: vec![suru::protocol::ModelShare {
+            model_shares: vec![shaman::protocol::ModelShare {
                 model: ModelId::new("subagent-model"),
-                usage: suru::protocol::Usage {
+                usage: shaman::protocol::Usage {
                     fresh_input_tokens: Some(1_000),
-                    ..suru::protocol::Usage::default()
+                    ..shaman::protocol::Usage::default()
                 },
                 cost: None,
                 cost_is_partial: false,
@@ -1819,14 +1819,14 @@ async fn under_an_assumed_lifetime_a_turn_that_failed_before_any_output_leaves_t
 
 /// Usage of `model` alone, as a Turn whose native Subagent ran on it states it.
 fn usage_on(model: &str) -> ProviderEvent {
-    let usage = suru::protocol::Usage {
+    let usage = shaman::protocol::Usage {
         fresh_input_tokens: Some(1_000),
-        ..suru::protocol::Usage::default()
+        ..shaman::protocol::Usage::default()
     };
     ProviderEvent::Usage {
         usage: usage.clone(),
         cost: None,
-        model_shares: vec![suru::protocol::ModelShare {
+        model_shares: vec![shaman::protocol::ModelShare {
             model: ModelId::new(model),
             usage,
             cost: None,
@@ -1868,7 +1868,7 @@ async fn a_turn_a_stop_left_open_is_settled_by_the_providers_declaration() {
         use diesel::{Connection, RunQueryDsl, SqliteConnection};
         let config = ServerConfig::new(state.path(), channel).unwrap();
         let mut database =
-            SqliteConnection::establish(config.data_dir().join("suru.db").to_str().unwrap())
+            SqliteConnection::establish(config.data_dir().join("shaman.db").to_str().unwrap())
                 .unwrap();
         diesel::sql_query(format!(
             "UPDATE turns SET payload = json_set(payload, '$.status', 'active', '$.settled_at', json('null')) WHERE id = '{open_turn}'"
@@ -1899,7 +1899,7 @@ async fn a_turn_a_stop_left_open_is_settled_by_the_providers_declaration() {
     assert!(
         restored.activities.iter().any(|activity| matches!(
             activity,
-            suru::protocol::Activity::Error { text, .. }
+            shaman::protocol::Activity::Error { text, .. }
                 if text == "The server stopped before this Turn finished."
         )),
         "the restart, not the live Provider, settled the Turn"

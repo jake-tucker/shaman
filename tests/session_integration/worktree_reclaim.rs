@@ -76,7 +76,7 @@ struct ReclaimLayout {
 impl ReclaimLayout {
     fn new(name: &str) -> Self {
         let temp = tempfile::tempdir().unwrap();
-        let root = suru::paths::canonical(temp.path()).unwrap();
+        let root = shaman::paths::canonical(temp.path()).unwrap();
         let main = root.join("main");
         let managed = main.join(".worktrees").join(name);
         let external = root.join("external");
@@ -116,7 +116,7 @@ impl ReclaimLayout {
 
     fn pin(&self, value: &str) {
         std::fs::write(
-            self.config.join("suru.jsonc"),
+            self.config.join("shaman.jsonc"),
             format!(r#"{{ "worktree": {{ "autoReclaim": {value} }} }}"#),
         )
         .unwrap();
@@ -261,7 +261,7 @@ fn forget_registry_entry(config: &ServerConfig, workspace_id: &WorkspaceId) {
     let mut database = SqliteConnection::establish(
         config
             .data_dir()
-            .join("suru.db")
+            .join("shaman.db")
             .to_str()
             .expect("database path is UTF-8"),
     )
@@ -277,7 +277,7 @@ fn set_session_updated_at(config: &ServerConfig, session_ids: &[SessionId], upda
     let mut database = SqliteConnection::establish(
         config
             .data_dir()
-            .join("suru.db")
+            .join("shaman.db")
             .to_str()
             .expect("database path is UTF-8"),
     )
@@ -295,7 +295,7 @@ fn corrupt_session_history(config: &ServerConfig, session_id: SessionId) {
     let mut database = SqliteConnection::establish(
         config
             .data_dir()
-            .join("suru.db")
+            .join("shaman.db")
             .to_str()
             .expect("database path is UTF-8"),
     )
@@ -310,7 +310,7 @@ fn corrupt_session_location(config: &ServerConfig, session_id: SessionId) {
     let mut database = SqliteConnection::establish(
         config
             .data_dir()
-            .join("suru.db")
+            .join("shaman.db")
             .to_str()
             .expect("database path is UTF-8"),
     )
@@ -429,7 +429,7 @@ impl SourceControl for DelayedAvailableObservation {
     async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
         self.git.made_checkout(repository, checkout).await
     }
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -438,8 +438,8 @@ impl SourceControl for DelayedAvailableObservation {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -447,7 +447,7 @@ impl SourceControl for DelayedAvailableObservation {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
     async fn discover(&self, directory: &Path) -> ResolvedWorkspace {
@@ -506,7 +506,7 @@ impl SourceControl for ObservationDuringRemoval {
     async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
         self.git.made_checkout(repository, checkout).await
     }
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -515,8 +515,8 @@ impl SourceControl for ObservationDuringRemoval {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -524,7 +524,7 @@ impl SourceControl for ObservationDuringRemoval {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
     async fn discover(&self, directory: &Path) -> ResolvedWorkspace {
@@ -894,13 +894,13 @@ async fn an_observation_started_during_idle_reclaim_cannot_replace_detached_reco
     let base = read_git(&layout.main, &["rev-parse", "main"]);
     git(
         &layout.main,
-        &["config", "branch.feature/idle-merged.suru-base", &base],
+        &["config", "branch.feature/idle-merged.shaman-base", &base],
     );
     git(
         &layout.main,
         &[
             "config",
-            "branch.feature/idle-merged.suru-base-branch",
+            "branch.feature/idle-merged.shaman-base-branch",
             "main",
         ],
     );
@@ -1008,7 +1008,7 @@ impl SourceControl for PauseEagerRemoval {
     async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
         self.git.made_checkout(repository, checkout).await
     }
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -1017,8 +1017,8 @@ impl SourceControl for PauseEagerRemoval {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -1026,7 +1026,7 @@ impl SourceControl for PauseEagerRemoval {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
     async fn discover(&self, directory: &Path) -> ResolvedWorkspace {
@@ -1109,7 +1109,7 @@ impl SourceControl for CountReclaimCandidates {
     async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
         self.git.made_checkout(repository, checkout).await
     }
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -1118,8 +1118,8 @@ impl SourceControl for CountReclaimCandidates {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -1127,7 +1127,7 @@ impl SourceControl for CountReclaimCandidates {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
     async fn reclaim_candidate_observed(&self, target: &CheckoutRemovalTarget) {
@@ -1201,7 +1201,7 @@ impl SourceControl for PauseAfterCandidateObservation {
     async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
         self.git.made_checkout(repository, checkout).await
     }
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -1210,8 +1210,8 @@ impl SourceControl for PauseAfterCandidateObservation {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -1219,7 +1219,7 @@ impl SourceControl for PauseAfterCandidateObservation {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
     async fn reclaim_candidate_observed(&self, _target: &CheckoutRemovalTarget) {
@@ -1305,7 +1305,7 @@ async fn candidate_admission_leaving_a_surviving_subagent_is_rechecked_before_re
         .await
         .expect("admitted Prompt reaches the Provider")
         .succeed();
-    let child = suru::provider::ProviderSubagentId::new("reclaim-race-child");
+    let child = shaman::provider::ProviderSubagentId::new("reclaim-race-child");
     connection
         .emit_and_wait_until_observed(ProviderEvent::SubagentStarted {
             subagent_id: child,
@@ -1368,7 +1368,7 @@ async fn a_monitoring_session_idle_past_the_threshold_keeps_its_worktree_until_t
     .await
     .unwrap();
     let (session, connection) = open(&server, &mut provider, &layout.managed).await;
-    let watch_id = suru::provider::ProviderWatchId::new("reclaim-monitoring-watch");
+    let watch_id = shaman::provider::ProviderWatchId::new("reclaim-monitoring-watch");
     connection
         .emit_and_wait_until_observed(ProviderEvent::WatchStarted {
             watch_id: watch_id.clone(),
@@ -1415,7 +1415,7 @@ async fn a_monitoring_session_idle_past_the_threshold_keeps_its_worktree_until_t
     connection
         .emit_and_wait_until_observed(ProviderEvent::WatchSettled {
             watch_id,
-            outcome: suru::provider::ProviderWatchOutcome::Completed,
+            outcome: shaman::provider::ProviderWatchOutcome::Completed,
             summary: None,
             woke_agent: false,
         })
@@ -1667,7 +1667,7 @@ async fn a_working_subagent_refuses_delete_before_eager_reclaim_or_provider_shut
         .await
         .unwrap()
         .succeed();
-    let child = suru::provider::ProviderSubagentId::new("eager-working-child");
+    let child = shaman::provider::ProviderSubagentId::new("eager-working-child");
     connection
         .emit_and_wait_until_observed(ProviderEvent::SubagentStarted {
             subagent_id: child.clone(),
@@ -1711,7 +1711,7 @@ async fn a_working_subagent_refuses_delete_before_eager_reclaim_or_provider_shut
     connection
         .emit_and_wait_until_observed(ProviderEvent::SubagentCompleted {
             subagent_id: child,
-            status: suru::provider::ProviderSubagentStatus::Completed,
+            status: shaman::provider::ProviderSubagentStatus::Completed,
         })
         .await;
     support::read_session_until(
@@ -1991,7 +1991,7 @@ impl SourceControl for SilentDirectory {
     async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
         self.git.made_checkout(repository, checkout).await
     }
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -2000,8 +2000,8 @@ impl SourceControl for SilentDirectory {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -2009,7 +2009,7 @@ impl SourceControl for SilentDirectory {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
     async fn discover(&self, directory: &Path) -> ResolvedWorkspace {
@@ -2237,10 +2237,10 @@ async fn an_initialized_submodule_excludes_reclaim() {
 }
 
 /// `.worktrees` is a name people give directories of their own Worktrees too, and
-/// Reclaim takes a Worktree's ignored files with it. Only what Suru made goes.
+/// Reclaim takes a Worktree's ignored files with it. Only what Shaman made goes.
 #[tokio::test]
 async fn a_worktree_someone_made_themselves_in_the_managed_directory_is_left_alone() {
-    let layout = ReclaimLayout::new("made-by-suru");
+    let layout = ReclaimLayout::new("made-by-shaman");
     let theirs = layout.main.join(".worktrees").join("made-by-hand");
     git(
         &layout.main,
@@ -2294,7 +2294,7 @@ async fn ignored_files_do_not_exclude_nonforce_reclaim() {
 }
 
 #[tokio::test]
-async fn the_exact_suru_recovery_lock_does_not_exclude_nonforce_reclaim() {
+async fn the_exact_shaman_recovery_lock_does_not_exclude_nonforce_reclaim() {
     let layout = ReclaimLayout::new("recovery-lock");
     let (runtime, _) = ControlledProvider::new();
     let server = server::spawn_with_provider_and_timings(
@@ -2310,7 +2310,7 @@ async fn the_exact_suru_recovery_lock_does_not_exclude_nonforce_reclaim() {
         .iter()
         .find(|checkout| checkout.association.root == layout.managed)
         .unwrap();
-    let reason = format!("suru-recovery:{}", checkout.association.id.0);
+    let reason = format!("shaman-recovery:{}", checkout.association.id.0);
     git(
         &layout.main,
         &[
@@ -2326,7 +2326,7 @@ async fn the_exact_suru_recovery_lock_does_not_exclude_nonforce_reclaim() {
 }
 
 #[tokio::test]
-async fn a_suru_prefixed_but_nonmatching_lock_remains_external() {
+async fn a_shaman_prefixed_but_nonmatching_lock_remains_external() {
     excluded("false-owned-lock", |layout| {
         git(
             &layout.main,
@@ -2334,7 +2334,7 @@ async fn a_suru_prefixed_but_nonmatching_lock_remains_external() {
                 "worktree",
                 "lock",
                 "--reason",
-                "suru-recovery:not-this-checkout",
+                "shaman-recovery:not-this-checkout",
                 layout.managed.to_str().unwrap(),
             ],
         );
@@ -2368,11 +2368,11 @@ async fn a_fully_merged_recorded_branch_is_deleted() {
     let base = read_git(&layout.main, &["rev-parse", "main"]);
     git(
         &layout.main,
-        &["config", "branch.feature/merged.suru-base", &base],
+        &["config", "branch.feature/merged.shaman-base", &base],
     );
     git(
         &layout.main,
-        &["config", "branch.feature/merged.suru-base-branch", "main"],
+        &["config", "branch.feature/merged.shaman-base-branch", "main"],
     );
     let server = spawn(&layout, "reclaim-merged-branch").await;
     wait_for_path(&layout.managed, false).await;
@@ -2386,11 +2386,15 @@ async fn an_unmerged_recorded_branch_is_retained() {
     let base = read_git(&layout.main, &["rev-parse", "main"]);
     git(
         &layout.main,
-        &["config", "branch.feature/unmerged.suru-base", &base],
+        &["config", "branch.feature/unmerged.shaman-base", &base],
     );
     git(
         &layout.main,
-        &["config", "branch.feature/unmerged.suru-base-branch", "main"],
+        &[
+            "config",
+            "branch.feature/unmerged.shaman-base-branch",
+            "main",
+        ],
     );
     std::fs::write(layout.managed.join("tracked"), "committed divergence").unwrap();
     git(&layout.managed, &["add", "."]);
@@ -2462,7 +2466,7 @@ impl SourceControl for FailFirstPreparationRetirement {
     async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
         self.git.made_checkout(repository, checkout).await
     }
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -2471,8 +2475,8 @@ impl SourceControl for FailFirstPreparationRetirement {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -2480,7 +2484,7 @@ impl SourceControl for FailFirstPreparationRetirement {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
     async fn discover(&self, directory: &Path) -> ResolvedWorkspace {
@@ -2535,7 +2539,7 @@ impl SourceControl for FailFirstReclaim {
     async fn made_checkout(&self, repository: &Repository, checkout: &CheckoutAssociation) -> bool {
         self.git.made_checkout(repository, checkout).await
     }
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -2544,8 +2548,8 @@ impl SourceControl for FailFirstReclaim {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -2553,7 +2557,7 @@ impl SourceControl for FailFirstReclaim {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
     async fn discover(&self, directory: &Path) -> ResolvedWorkspace {
@@ -2707,7 +2711,7 @@ async fn failed_post_removal_metadata_retirement_retries_from_the_persisted_inte
     assert!(response.text().await.unwrap().contains("SessionPersisted"));
     let preparation = prepared.preparation;
     let intent = age_preparation(&config, &preparation);
-    let ownership = format!("refs/suru/preparations/{}", preparation.id.0.simple());
+    let ownership = format!("refs/shaman/preparations/{}", preparation.id.0.simple());
     preparing.shutdown().await.unwrap();
     let mark = log_mark();
 
@@ -2892,7 +2896,7 @@ async fn restart_reclaims_an_old_failed_preparation_without_a_catalogued_reposit
     let CheckoutPreparationPlan::Git { branch, .. } = &prepared.preparation.plan;
     let branch = format!("refs/heads/{branch}");
     let ownership = format!(
-        "refs/suru/preparations/{}",
+        "refs/shaman/preparations/{}",
         prepared.preparation.id.0.simple()
     );
     let intent = config
@@ -2945,7 +2949,7 @@ async fn restart_reclaims_an_old_branch_only_preparation_and_its_merged_branch()
     let intent = age_preparation(&config, &preparation);
     let CheckoutPreparationPlan::Git { branch, .. } = &preparation.plan;
     let branch = format!("refs/heads/{branch}");
-    let ownership = format!("refs/suru/preparations/{}", preparation.id.0.simple());
+    let ownership = format!("refs/shaman/preparations/{}", preparation.id.0.simple());
     assert!(!preparation.destination.path.exists());
     assert!(!read_git(&layout.main, &["rev-parse", &branch]).is_empty());
     assert!(!read_git(&layout.main, &["rev-parse", &ownership]).is_empty());
@@ -2986,7 +2990,7 @@ async fn branch_only_reclaim_retires_metadata_but_preserves_unmerged_commits() {
     let intent = age_preparation(&config, &preparation);
     let CheckoutPreparationPlan::Git { branch, .. } = &preparation.plan;
     let branch_ref = format!("refs/heads/{branch}");
-    let ownership = format!("refs/suru/preparations/{}", preparation.id.0.simple());
+    let ownership = format!("refs/shaman/preparations/{}", preparation.id.0.simple());
     let authoring = layout.root.join("author-unmerged");
     git(
         &layout.main,
@@ -3145,7 +3149,7 @@ async fn off_preserves_an_old_failed_preparation() {
     let preparation = fail_preparation(&server, &layout.main, "off keeps this intent").await;
     let intent = age_preparation(&config, &preparation);
     let CheckoutPreparationPlan::Git { branch, .. } = &preparation.plan;
-    let ownership = format!("refs/suru/preparations/{}", preparation.id.0.simple());
+    let ownership = format!("refs/shaman/preparations/{}", preparation.id.0.simple());
 
     tokio::time::sleep(STARTUP_DELAY + RECLAIM_INTERVAL * 3).await;
     assert!(preparation.destination.path.is_dir());
@@ -3162,7 +3166,7 @@ async fn off_preserves_an_old_failed_preparation() {
 }
 
 #[tokio::test]
-async fn an_external_lock_preserves_an_old_failed_preparation_but_its_exact_suru_lock_does_not() {
+async fn an_external_lock_preserves_an_old_failed_preparation_but_its_exact_shaman_lock_does_not() {
     let layout = ReclaimLayout::new("failed-preparation-locks");
     let config = layout.server_config("reclaim-failed-preparation-locks");
     let (runtime, _) = ControlledProvider::new();
@@ -3201,7 +3205,7 @@ async fn an_external_lock_preserves_an_old_failed_preparation_but_its_exact_suru
             .strip_prefix("gitdir: ")
             .unwrap(),
     );
-    let own_reason = std::fs::read_to_string(metadata.join("suru-preparation")).unwrap();
+    let own_reason = std::fs::read_to_string(metadata.join("shaman-preparation")).unwrap();
     git(
         &layout.main,
         &[

@@ -1,4 +1,4 @@
-//! Spawning a Server as this suite does: as [`suru::server`] spawns one, but
+//! Spawning a Server as this suite does: as [`shaman::server`] spawns one, but
 //! marked onboarded before any test attaches to it, as a Server whose user has
 //! long since taken Onboarding is, so no test here meets the flow unasked. A
 //! test that needs its Server as it comes, never onboarded — one of
@@ -9,15 +9,15 @@
 //! the one it wraps is, so it follows the Channel's last Manual stop from
 //! then; only once the Server has started is it marked.
 
-pub use suru::server::*;
+pub use shaman::server::*;
 
 /// Every way of spawning a Server, each leaving it as it comes: never
 /// onboarded, and with nothing written on that account.
-pub use suru::server as not_onboarded;
+pub use shaman::server as not_onboarded;
 
 use std::sync::Arc;
 
-use suru::{provider::ProviderRuntime, source_control::SourceControl};
+use shaman::{provider::ProviderRuntime, source_control::SourceControl};
 
 /// The Server `launch` starts, marked onboarded once it has started.
 fn onboarded(launch: impl ServerLaunch) -> impl ServerLaunch {
@@ -29,25 +29,25 @@ fn onboarded(launch: impl ServerLaunch) -> impl ServerLaunch {
 }
 
 pub fn spawn(config: ServerConfig) -> impl ServerLaunch {
-    onboarded(suru::server::spawn(config))
+    onboarded(shaman::server::spawn(config))
 }
 
 pub fn spawn_with_provider(
     config: ServerConfig,
     runtime: Arc<dyn ProviderRuntime>,
 ) -> impl ServerLaunch {
-    onboarded(suru::server::spawn_with_provider(config, runtime))
+    onboarded(shaman::server::spawn_with_provider(config, runtime))
 }
 
 pub fn spawn_with_providers(
     config: ServerConfig,
     runtimes: Vec<Arc<dyn ProviderRuntime>>,
 ) -> impl ServerLaunch {
-    onboarded(suru::server::spawn_with_providers(config, runtimes))
+    onboarded(shaman::server::spawn_with_providers(config, runtimes))
 }
 
 pub fn spawn_with_timings(config: ServerConfig, timings: ServerTimings) -> impl ServerLaunch {
-    onboarded(suru::server::spawn_with_timings(config, timings))
+    onboarded(shaman::server::spawn_with_timings(config, timings))
 }
 
 pub fn spawn_with_provider_and_timings(
@@ -55,7 +55,7 @@ pub fn spawn_with_provider_and_timings(
     runtime: Arc<dyn ProviderRuntime>,
     timings: ServerTimings,
 ) -> impl ServerLaunch {
-    onboarded(suru::server::spawn_with_provider_and_timings(
+    onboarded(shaman::server::spawn_with_provider_and_timings(
         config, runtime, timings,
     ))
 }
@@ -65,7 +65,7 @@ pub fn spawn_with_providers_and_timings(
     runtimes: Vec<Arc<dyn ProviderRuntime>>,
     timings: ServerTimings,
 ) -> impl ServerLaunch {
-    onboarded(suru::server::spawn_with_providers_and_timings(
+    onboarded(shaman::server::spawn_with_providers_and_timings(
         config, runtimes, timings,
     ))
 }
@@ -76,7 +76,7 @@ pub fn spawn_with_source_control(
     timings: ServerTimings,
     source_control: Arc<dyn SourceControl>,
 ) -> impl ServerLaunch {
-    onboarded(suru::server::spawn_with_source_control(
+    onboarded(shaman::server::spawn_with_source_control(
         config,
         runtimes,
         timings,

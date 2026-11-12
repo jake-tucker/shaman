@@ -9,7 +9,7 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use ring::digest;
-use suru::protocol::ShortCode;
+use shaman::protocol::ShortCode;
 
 /// What `bytes` reads as under each way bytes come to be written out, itself
 /// included.

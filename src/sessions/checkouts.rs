@@ -125,7 +125,7 @@ impl SessionStore {
     /// together with the checkouts Sessions themselves name. A Worktree no
     /// Session works in is watched exactly like one that several share.
     ///
-    /// Each tick re-enumerates, so a Worktree added or removed outside Suru is
+    /// Each tick re-enumerates, so a Worktree added or removed outside Shaman is
     /// picked up, and the work stays bounded: one listing per Repository, then
     /// one reading per distinct Worktree.
     pub(crate) fn observe_checkouts(
@@ -448,7 +448,7 @@ impl SessionStoreState {
 
 /// Whose reading is being recorded, which decides what it may overwrite.
 enum Recording {
-    /// Taken under source control's mutation guard, so nothing Suru does to
+    /// Taken under source control's mutation guard, so nothing Shaman does to
     /// the Worktree came between the reading and its recording. One from the
     /// Prompt execution gate `clears_reclaim` without the observation marker.
     Guarded { clears_reclaim: bool },

@@ -1,11 +1,13 @@
 //! Reconciliation is exercised through API outcomes and real Git resources.
 use super::*;
 use crate::support::PROGRESS_DEADLINE;
+use shaman::source_control::{
+    GitSourceControl, PreparationCheckpoint as Point, PreparationObserver,
+};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
 };
-use suru::source_control::{GitSourceControl, PreparationCheckpoint as Point, PreparationObserver};
 use tokio::time::{Duration, timeout};
 
 struct Fault {
@@ -69,7 +71,7 @@ async fn restart_reconciles_each_git_preparation_window_and_duplicate_edited_ret
         Point::CheckoutCreated,
     ] {
         let temp = tempfile::tempdir().unwrap();
-        let root = suru::paths::canonical(temp.path()).unwrap();
+        let root = shaman::paths::canonical(temp.path()).unwrap();
         let main = root.join("main");
         committed(&main);
         let config = ServerConfig::new(root.join("state"), "restart-preparation").unwrap();
@@ -205,7 +207,7 @@ async fn restart_reconciles_each_git_preparation_window_and_duplicate_edited_ret
 #[tokio::test]
 async fn an_unfinished_intention_keeps_its_name_from_a_later_preparation() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let (runtime, _provider) = ControlledProvider::new();
@@ -257,7 +259,7 @@ async fn an_unfinished_intention_keeps_its_name_from_a_later_preparation() {
 #[tokio::test]
 async fn interrupted_request_and_server_replacement_keep_the_same_preparation_identity() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let config = ServerConfig::new(root.join("state"), "interrupted-client").unwrap();
@@ -307,7 +309,7 @@ async fn interrupted_request_and_server_replacement_keep_the_same_preparation_id
 #[tokio::test]
 async fn persisted_initial_session_shell_resumes_original_prompt_once_after_restart() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let config = ServerConfig::new(root.join("state"), "pending-admission").unwrap();
@@ -386,7 +388,7 @@ async fn persisted_initial_session_shell_resumes_original_prompt_once_after_rest
     {
         use diesel::{Connection, connection::SimpleConnection};
         let mut database = diesel::SqliteConnection::establish(
-            config.data_dir().join("suru.db").to_str().unwrap(),
+            config.data_dir().join("shaman.db").to_str().unwrap(),
         )
         .unwrap();
         database
@@ -485,7 +487,7 @@ async fn persisted_initial_session_shell_resumes_original_prompt_once_after_rest
 #[tokio::test]
 async fn ambiguous_checkout_proof_external_locks_and_deleted_ready_branches_are_not_overwritten() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let (runtime, mut provider) = ControlledProvider::new();
@@ -508,10 +510,10 @@ async fn ambiguous_checkout_proof_external_locks_and_deleted_ready_branches_are_
         std::path::PathBuf::from(read_git(destination, &["rev-parse", "--absolute-git-dir"]));
     let own_lock = std::fs::read(metadata.join("locked")).unwrap();
     std::fs::write(destination.join("keep"), "user file").unwrap();
-    std::fs::write(metadata.join("suru-preparation"), "another intention").unwrap();
+    std::fs::write(metadata.join("shaman-preparation"), "another intention").unwrap();
     let conflict = prepare(server.descriptor(), &request).await;
     assert!(conflict.error.unwrap().contains("marker conflicts"));
-    std::fs::remove_file(metadata.join("suru-preparation")).unwrap();
+    std::fs::remove_file(metadata.join("shaman-preparation")).unwrap();
     std::fs::write(metadata.join("locked"), "external maintenance").unwrap();
     let conflict = prepare(server.descriptor(), &request).await;
     assert!(conflict.error.unwrap().contains("external lock"));
@@ -540,7 +542,7 @@ async fn ambiguous_checkout_proof_external_locks_and_deleted_ready_branches_are_
 #[tokio::test]
 async fn matching_branch_commit_and_destination_do_not_prove_external_checkout_ownership() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let (runtime, mut provider) = ControlledProvider::new();
@@ -633,7 +635,7 @@ impl PreparationObserver for FailMetadataSave {
 #[tokio::test]
 async fn real_metadata_write_failure_after_git_success_recovers_same_checkout_on_restart() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let config = ServerConfig::new(root.join("state"), "metadata-failure").unwrap();
@@ -692,7 +694,7 @@ async fn real_metadata_write_failure_after_git_success_recovers_same_checkout_on
 #[tokio::test]
 async fn lost_admission_response_rejoins_delivered_work_without_another_provider_turn() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let config = ServerConfig::new(root.join("state"), "lost-admission").unwrap();
@@ -768,7 +770,7 @@ async fn lost_admission_response_rejoins_delivered_work_without_another_provider
 #[tokio::test]
 async fn restart_reuses_checkout_without_initializing_an_unavailable_submodule() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     let module = root.join("module-source");
     committed(&main);

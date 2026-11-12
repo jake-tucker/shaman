@@ -122,7 +122,7 @@ impl Thumbnail {
         let columns = thumbnail_columns(image.width(), image.height(), cell_size);
         let rows = cells(height, cell_size.height).min(STRIP_ROWS);
         let area = Rect::new(0, 0, columns, rows);
-        // Suru never draws under a multiplexer, so nothing is wrapped for one.
+        // Shaman never draws under a multiplexer, so nothing is wrapped for one.
         let protocol = match protocol {
             GraphicsProtocol::Kitty => {
                 Protocol::Kitty(Kitty::new(scaled, area, kitty_image_id(), false)?)

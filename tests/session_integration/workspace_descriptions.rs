@@ -14,7 +14,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::json;
-use suru::{
+use shaman::{
     managed_client::ManagedClient,
     protocol::{
         CreateSessionRequest, InitialPrompt, PromptId, ProviderId, SessionError, SessionErrorCode,
@@ -36,7 +36,7 @@ fn errand_request(workspace: &std::path::Path, prompt: &str) -> CreateSessionReq
         session_id: None,
         preparation_id: None,
         agent_selection: Some(hosted_selection(PROVIDER, MODEL)),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -70,7 +70,7 @@ fn controlled_provider() -> (
 
 async fn connected_client(state_dir: &std::path::Path, channel: &str) -> ManagedClient {
     let mut client = ManagedClient::connect(
-        suru::managed_client::ManagedClientConfig::new(state_dir, channel)
+        shaman::managed_client::ManagedClientConfig::new(state_dir, channel)
             .expect("configure client"),
     )
     .await
@@ -152,10 +152,12 @@ async fn description_changes_until_the_icon_lands(
         let mut changes = Vec::new();
         loop {
             match client.next().await {
-                Some(suru::managed_client::ManagedEvent::WorkspaceIconChanged(_)) => {
+                Some(shaman::managed_client::ManagedEvent::WorkspaceIconChanged(_)) => {
                     return changes;
                 }
-                Some(suru::managed_client::ManagedEvent::WorkspaceDescriptionChanged(changed)) => {
+                Some(shaman::managed_client::ManagedEvent::WorkspaceDescriptionChanged(
+                    changed,
+                )) => {
                     changes.push(changed);
                 }
                 _ => {}
@@ -181,7 +183,7 @@ fn set(text: &str) -> Option<WorkspaceDescription> {
 }
 
 async fn set_description_response(
-    descriptor: &suru::protocol::RuntimeDescriptor,
+    descriptor: &shaman::protocol::RuntimeDescriptor,
     workspace_id: &WorkspaceId,
     path: Option<&std::path::Path>,
     description: &str,
@@ -687,7 +689,7 @@ async fn an_overlong_description_is_refused_and_changes_nothing() {
     server.shutdown().await.expect("shut down server");
 }
 
-/// The Sidekick Workspace is Suru's own, so nothing is derived for it: its
+/// The Sidekick Workspace is Shaman's own, so nothing is derived for it: its
 /// first Session asks for no Workspace Errand, and it has a Description only
 /// once one is set, which stands there as it does anywhere else.
 #[tokio::test]
@@ -722,14 +724,14 @@ async fn the_sidekick_workspace_is_described_only_by_a_description_set_for_it() 
     next_derived_title(&mut client).await;
 
     client
-        .set_workspace_description(&workspace_id, None, "My assistant for all of Suru.")
+        .set_workspace_description(&workspace_id, None, "My assistant for all of Shaman.")
         .await
         .expect("set the Sidekick Workspace's Description");
     assert_eq!(
         next_workspace_description_changed(&mut client)
             .await
             .description,
-        set("My assistant for all of Suru.")
+        set("My assistant for all of Shaman.")
     );
     assert!(
         provider.try_next_errand().is_none(),
@@ -814,8 +816,8 @@ async fn a_description_set_before_the_first_session_stands_once_one_is_begun() {
     .expect("spawn server");
     let mut client = connected_client(state_dir.path(), "workspace-description-before").await;
     let landing = client
-        .outlook(suru::protocol::Outlook::Local)
-        .resolve_workspace(suru::protocol::ResolveWorkspaceRequest {
+        .outlook(shaman::protocol::Outlook::Local)
+        .resolve_workspace(shaman::protocol::ResolveWorkspaceRequest {
             checkout_id: None,
             remembered_execution_directory: None,
             workspace_id: None,
@@ -883,7 +885,7 @@ async fn a_description_naming_its_workspace_by_another_s_path_is_refused() {
     .expect("spawn server");
 
     let named_id = WorkspaceId::directory(
-        &suru::paths::canonical(named.path()).expect("canonicalize the named Workspace"),
+        &shaman::paths::canonical(named.path()).expect("canonicalize the named Workspace"),
     );
     let response = set_description_response(
         server.descriptor(),

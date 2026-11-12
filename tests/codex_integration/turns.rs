@@ -6,8 +6,7 @@ use crate::codex_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::Value;
-use std::{process::Stdio, sync::Arc};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent},
     protocol::{
         Activity, ActivityId, ActivityStatus, AdmitPromptRequest, AgentId, CreateSessionRequest,
@@ -20,6 +19,7 @@ use suru::{
     server::{self, ServerConfig},
     tui::{Application, ApplicationEvent},
 };
+use std::{process::Stdio, sync::Arc};
 use tokio::{
     process::{Child, Command},
     time::{Duration, timeout},
@@ -181,7 +181,7 @@ async fn the_pinned_reasoning_summary_setting_is_what_a_turn_asks_codex_for() {
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{
             // Say as much about the thinking as the Model will.
             "provider": { "codex": { "reasoningSummary": "detailed" } },
@@ -208,7 +208,7 @@ async fn the_pinned_reasoning_summary_setting_is_what_a_turn_asks_codex_for() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -270,7 +270,7 @@ async fn a_mutated_reasoning_summary_setting_governs_the_next_turn() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -323,7 +323,7 @@ async fn scripted_codex_runs_initial_prompt_through_stdio_and_session_sse() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -634,7 +634,7 @@ async fn scripted_codex_runs_initial_prompt_through_stdio_and_session_sse() {
     assert_eq!(requests[1], serde_json::json!({ "method": "initialized" }));
     assert_eq!(
         requests[3]["params"]["cwd"],
-        suru::paths::canonical(workspace.path())
+        shaman::paths::canonical(workspace.path())
             .expect("canonicalize Workspace")
             .to_string_lossy()
             .as_ref()
@@ -696,7 +696,7 @@ async fn abrupt_restart_keeps_completed_turns_and_idle_coalesced_tail() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -770,7 +770,7 @@ async fn abrupt_restart_keeps_completed_turns_and_idle_coalesced_tail() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -896,14 +896,14 @@ async fn reopened_session_resumes_its_persisted_codex_thread_after_a_server_rest
     let data_dir = tempfile::tempdir().expect("create isolated data directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{"provider":{"codex":{"approvalPolicy":"never","sandboxMode":"danger-full-access"}}}"#,
     )
     .unwrap();
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let execution_directory = workspace.path().join("packages/nested agent directory");
     std::fs::create_dir_all(&execution_directory).unwrap();
-    let execution_directory = suru::paths::canonical(execution_directory).unwrap();
+    let execution_directory = shaman::paths::canonical(execution_directory).unwrap();
     let channel = "codex-persisted-resume-state";
     let config = ServerConfig::new(state_dir.path(), channel)
         .expect("configure original server")
@@ -929,7 +929,7 @@ async fn reopened_session_resumes_its_persisted_codex_thread_after_a_server_rest
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: execution_directory.clone(),
             },
             prompt: InitialPrompt {
@@ -1155,7 +1155,7 @@ async fn run_terminal_fixture(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1246,7 +1246,7 @@ async fn run_terminal_fixture(
     server.shutdown().await.expect("shut down server");
 }
 
-/// Launches a `suru __server` process under `servers` that runs `codex` as
+/// Launches a `shaman __server` process under `servers` that runs `codex` as
 /// its Codex, and no other Provider installed on the machine — into state and
 /// data directories made first, as a managed client makes them before it
 /// launches one.
@@ -1261,7 +1261,7 @@ fn spawn_server_process(
         .with_data_dir(data_root)
         .create_private_runtime_dir()
         .expect("make the server's directories");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_suru"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_shaman"));
     command
         .arg("__server")
         .arg("--state-dir")
@@ -1271,7 +1271,7 @@ fn spawn_server_process(
         .arg("--channel")
         .arg(channel)
         .envs(servers.isolated_environment())
-        .env("SURU_CODEX_PATH", codex)
+        .env("SHAMAN_CODEX_PATH", codex)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

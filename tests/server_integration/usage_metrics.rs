@@ -3,7 +3,7 @@
 //! exactly as its own Server answers it. What each read adds up is the
 //! Session store's to show.
 use super::*;
-use suru::{
+use shaman::{
     managed_client::OutlookClient,
     protocol::{
         InsightsQuery, InsightsReport, SessionError, SessionErrorCode, SessionTimestamp,

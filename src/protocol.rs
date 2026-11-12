@@ -40,7 +40,7 @@ pub use usage_metrics::*;
 /// The response header naming a [`SessionError`]'s code beside its body, so
 /// an answer that carries no body, such as one to a `HEAD`, still says why it
 /// was refused.
-pub const SESSION_ERROR_CODE_HEADER: &str = "x-suru-error-code";
+pub const SESSION_ERROR_CODE_HEADER: &str = "x-shaman-error-code";
 pub const SERVER_SHUTDOWN_EVENT: &str = "server_shutdown";
 pub const SETTINGS_SNAPSHOT_EVENT: &str = "settings_snapshot";
 pub const MODEL_CATALOG_EVENT: &str = "model_catalog";
@@ -508,8 +508,8 @@ pub enum ModelOptionValue {
 }
 
 /// Why a Provider cannot be used right now. Each reason names a condition the
-/// user fixes outside Suru — installing the Provider's CLI, signing in to it,
-/// or moving to a version Suru speaks — which the next catalog refresh
+/// user fixes outside Shaman — installing the Provider's CLI, signing in to it,
+/// or moving to a version Shaman speaks — which the next catalog refresh
 /// re-evaluates. What the user does about it is the Provider's to say, so it
 /// travels beside the reason rather than being derived from it.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -549,32 +549,32 @@ pub enum ProviderCatalogStatus {
         message: String,
     },
     /// The Provider cannot be used at all until the user fixes `reason`
-    /// outside Suru. Whatever Models the catalog still holds stay listed so
+    /// outside Shaman. Whatever Models the catalog still holds stay listed so
     /// the Provider keeps its place, but none of them may be selected.
     Unavailable {
         reason: ProviderUnavailability,
         message: String,
-        /// What the user does outside Suru to clear `reason`, as the
+        /// What the user does outside Shaman to clear `reason`, as the
         /// Provider's own Availability check names it — the page to install
         /// its CLI from, the command that signs in to it — since only that
         /// check knows what it looked for. An imperative the user can follow
         /// as written, such as "run `copilot login`".
         fix: String,
     },
-    /// The user turned this Provider off, so Suru never consulted it: it lists
+    /// The user turned this Provider off, so Shaman never consulted it: it lists
     /// no Models because none were asked for, and it reports no condition
     /// because none was looked for.
     ///
     /// Deliberately a sibling of `Unavailable` rather than a fourth
     /// [`ProviderUnavailability`] reason. That enum's contract is a condition
-    /// the user fixes *outside* Suru and which the next catalog refresh
+    /// the user fixes *outside* Shaman and which the next catalog refresh
     /// re-evaluates; Enablement is neither — it is a Setting the user changes
-    /// inside Suru and it takes effect on the next settings snapshot. Folding
+    /// inside Shaman and it takes effect on the next settings snapshot. Folding
     /// it in would make that enum's own documentation false and would wire
     /// recovery through a refresh Enablement does not need.
     ///
     /// Like `Unavailable`, it outranks every other status — a refresh
-    /// notionally in flight included — because nothing about a Provider Suru
+    /// notionally in flight included — because nothing about a Provider Shaman
     /// never consulted may be offered.
     Disabled,
 }
@@ -1044,7 +1044,7 @@ pub enum SkillPromptDelivery {
 #[serde(deny_unknown_fields)]
 pub struct SkillCatalogCapabilities {
     /// The maximum number of distinct Skills one Prompt may invoke. None means
-    /// the Provider declares no Suru-enforced limit.
+    /// the Provider declares no Shaman-enforced limit.
     pub max_distinct_invocations: Option<u32>,
     pub supported_deliveries: Vec<SkillPromptDelivery>,
 }
@@ -1318,7 +1318,7 @@ pub enum AppearanceMode {
     Light,
 }
 
-/// Whether the Landing includes the Japanese Suru banner above its composer.
+/// Whether the Landing includes the Japanese Shaman banner above its composer.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum LandingPage {
@@ -1342,7 +1342,7 @@ pub enum FoldPosture {
 /// failing that, the Model's own default — and every Model in the current
 /// catalog ships that default as `none`. A Turn that states no preference
 /// therefore gets Reasoning with no summary at all: nothing streams and the
-/// completed block carries an empty summary. Suru's default is `auto`, which
+/// completed block carries an empty summary. Shaman's default is `auto`, which
 /// lets the Model choose how much to say.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -1491,7 +1491,7 @@ impl Default for TranscriptSettings {
 }
 
 /// Which Agent Selection derives a Session's Title and a Workspace's Icon,
-/// which is also whether Suru derives either at all.
+/// which is also whether Shaman derives either at all.
 ///
 /// One Setting rather than two, because two would admit a state that
 /// contradicts itself — deriving turned off while a Model stands pinned for it
@@ -1505,11 +1505,11 @@ pub enum DerivationErrand {
     /// The built-in default: each Session's Title, and its Workspace's Icon
     /// where it has none, are derived by the Provider that Session already
     /// uses, at that Provider's Errand Selection. A Session that has selected
-    /// no Provider is left alone, because Suru will not pick one the user did
+    /// no Provider is left alone, because Shaman will not pick one the user did
     /// not choose.
     #[default]
     FollowSession,
-    /// Suru derives no Titles and no Icons, and makes no Provider call on its
+    /// Shaman derives no Titles and no Icons, and makes no Provider call on its
     /// own behalf for either.
     Off,
     /// Every Session's Title, and every Workspace's Icon, is derived by this
@@ -1623,7 +1623,7 @@ impl<'de> Deserialize<'de> for SessionContentWidth {
     }
 }
 
-/// How Suru derives a Session's Title and a Workspace's Icon.
+/// How Shaman derives a Session's Title and a Workspace's Icon.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DerivationSettings {
@@ -1920,7 +1920,7 @@ impl Default for AppearanceSettings {
     }
 }
 
-/// Whether the user wants Suru to offer a Provider at all. Every Provider
+/// Whether the user wants Shaman to offer a Provider at all. Every Provider
 /// carries one, and each spells its own built-in default by hand rather than
 /// deriving it, because a derived `bool` is `false` and a Provider is on unless
 /// the user says otherwise.
@@ -1988,7 +1988,7 @@ impl Default for CopilotSettings {
 pub enum CopilotPermissions {
     Ask,
     /// Copilot's assisted mode: its safety judge reviews each request, and
-    /// Suru approves the ones the judge recommends approving and asks for the
+    /// Shaman approves the ones the judge recommends approving and asks for the
     /// rest.
     #[default]
     Auto,
@@ -2095,14 +2095,14 @@ impl ListenerState {
     }
 }
 
-/// How Suru compacts a Session's context of its own accord.
+/// How Shaman compacts a Session's context of its own accord.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompactionSettings {
     pub scheduled: ScheduledCompactionSettings,
 }
 
-/// Whether Suru begins a scheduled Compaction of an idle Session ahead of
+/// Whether Shaman begins a scheduled Compaction of an idle Session ahead of
 /// its Prompt Cache lapsing (ADR 0073), and where. Off unless the user turns
 /// it on, since it spends on the user's behalf without being asked in the
 /// moment. Each value is read when a scheduled Compaction falls due, never
@@ -2211,9 +2211,9 @@ impl<'de> Deserialize<'de> for PenaltyThreshold {
     }
 }
 
-/// Whether Provider Sessions are offered the Broker: Suru's own Tools, served
+/// Whether Provider Sessions are offered the Broker: Shaman's own Tools, served
 /// on the Server's loopback listener, through which an Agent reaches any
-/// Provider Suru hosts. Off means no Provider start is handed the endpoint and
+/// Provider Shaman hosts. Off means no Provider start is handed the endpoint and
 /// the endpoint answers nothing; a Provider already running keeps what it was
 /// handed until its next launch.
 ///
@@ -2229,7 +2229,7 @@ pub struct BrokerSettings {
     pub max_depth: u32,
     /// How many brokered Subagents may work at once anywhere beneath one
     /// top-level Session: a spawn while that many work is refused. Native
-    /// Subagents are not counted, because Suru cannot refuse them.
+    /// Subagents are not counted, because Shaman cannot refuse them.
     pub max_concurrent_subagents: u32,
 }
 
@@ -2273,11 +2273,11 @@ impl std::fmt::Display for Way {
 }
 
 /// How every Invite's string opens, a version following.
-pub(crate) const INVITE_OPENING: &str = "suru-v";
+pub(crate) const INVITE_OPENING: &str = "shaman-v";
 
 /// Whether `text` is, by how it opens, a whole Invite rather than a short code.
 /// No code reads so unless it is typed in lower case with its separator and opens
-/// `SURU-V`, which one in some millions do and which is then only taken for the
+/// `SHAMAN-V`, which one in some millions do and which is then only taken for the
 /// Invite field.
 pub fn opens_as_an_invite(text: &str) -> bool {
     text.trim_start().starts_with(INVITE_OPENING)
@@ -2776,7 +2776,7 @@ pub struct EffectiveSettings {
     pub appearance: AppearanceSettings,
     pub transcript: TranscriptSettings,
     pub session: SessionSettings,
-    /// How Suru derives a Session's Title and a Workspace's Icon. A top-level
+    /// How Shaman derives a Session's Title and a Workspace's Icon. A top-level
     /// Setting rather than one scoped under `session`, because a Workspace
     /// outlives any one Session and the Errand this governs derives both.
     pub derivation: DerivationSettings,
@@ -3269,20 +3269,20 @@ pub enum Author {
 /// and on the Remote by its Serving listener alone, which replaces whatever
 /// the Peer claimed with the Peer it authenticated. A Client's request never
 /// carries it.
-pub const AUTHOR_HEADER: &str = "x-suru-author";
+pub const AUTHOR_HEADER: &str = "x-shaman-author";
 
 /// The header a Server carrying its own Sidekick's act to a Remote names that
 /// one act in, by an identity it chose for it: the Remote's Serving listener
 /// keeps it beside the Peer it authenticated in the act's author, so what the
 /// act left there can be told for that act's by the Peer that sent it.
-pub const ACT_HEADER: &str = "x-suru-act";
+pub const ACT_HEADER: &str = "x-shaman-act";
 
 /// The header a newly admitted Prompt's answer says how the Session took it
 /// in: `new_turn` where it begins a Turn of its own, `steer` where it steers
 /// the Turn working, and `queued` where it waits behind that Turn — which a
 /// Server carrying its Sidekick's Prompt to a Remote tells its Sidekick. A
 /// retried admission that finds its Prompt already admitted says nothing.
-pub const PROMPT_ADMISSION_HEADER: &str = "x-suru-prompt-admission";
+pub const PROMPT_ADMISSION_HEADER: &str = "x-shaman-prompt-admission";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -3321,7 +3321,7 @@ pub enum WatchOutcomeStatus {
 }
 
 /// Whether a Compaction was the Provider's choice, the user's request, or
-/// Suru's own ahead of a Prompt Cache lapse. Suru alone knows which Turns it
+/// Shaman's own ahead of a Prompt Cache lapse. Shaman alone knows which Turns it
 /// began for a request, so this is read from the Turn that holds the
 /// Compaction rather than from anything the Provider says (ADR 0041, 0073).
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -3331,13 +3331,13 @@ pub enum CompactionTrigger {
     Automatic,
     /// The user asked for it, and it began a Turn of its own.
     Manual,
-    /// Suru began it of its own accord ahead of the Session's Prompt Cache
+    /// Shaman began it of its own accord ahead of the Session's Prompt Cache
     /// lapsing, in a Turn of its own as a manual one is.
     Scheduled,
 }
 
 /// Who asked the Provider for the Compaction a Turn was begun for: the user,
-/// or Suru ahead of a Prompt Cache lapse (ADR 0041, 0073).
+/// or Shaman ahead of a Prompt Cache lapse (ADR 0041, 0073).
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompactionRequest {
@@ -3371,12 +3371,12 @@ pub enum FileChange {
 }
 
 /// The name every harness knows the Broker by among its MCP servers. It is what
-/// an Agent's Broker Tools go by — `mcp__suru__list_providers` to Claude — what
-/// Suru recognizes the Broker's calls by where a harness asks Suru to permit
+/// an Agent's Broker Tools go by — `mcp__shaman__list_providers` to Claude — what
+/// Shaman recognizes the Broker's calls by where a harness asks Shaman to permit
 /// them, and the `server` of every Tool Call of a Broker Tool, whichever
 /// Provider recorded it. It is the protocol's because a client reads it off a
 /// Tool Call, to tell a wait on Subagents from work.
-pub const BROKER_SERVER_NAME: &str = "suru";
+pub const BROKER_SERVER_NAME: &str = "shaman";
 
 /// The Broker Tool an Agent waits on its Subagents through. A Tool Call of it
 /// stays open for as long as the wait does.
@@ -3392,7 +3392,7 @@ pub enum Activity {
         /// The Tool Activity this Approval gates, when orchestration could
         /// resolve the Provider's native identity to an existing row.
         tool_activity_id: Option<ActivityId>,
-        /// The durable subject or reason reached Suru's storage cap. The live
+        /// The durable subject or reason reached Shaman's storage cap. The live
         /// Provider request remains whole and owns Decision translation.
         #[serde(default)]
         detail_truncated: bool,
@@ -3405,7 +3405,7 @@ pub enum Activity {
         /// When it was asked, on the Server's own clock — every moment it
         /// stamps is ordered against every other, across all its Sessions.
         /// Filled by the authoritative store when it commits; absent for one
-        /// asked before Suru recorded it.
+        /// asked before Shaman recorded it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         asked_at: Option<SessionTimestamp>,
     },
@@ -3423,7 +3423,7 @@ pub enum Activity {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         asked_at: Option<SessionTimestamp>,
         /// When it settled — its Answer delivered, or otherwise — on the same
-        /// clock; absent while it waits, and for one settled before Suru
+        /// clock; absent while it waits, and for one settled before Shaman
         /// recorded it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         settled_at: Option<SessionTimestamp>,
@@ -3452,7 +3452,7 @@ pub enum Activity {
         command: String,
         cwd: Option<PathBuf>,
         output: String,
-        /// Whether Suru's cap cut the stored output short of what the Provider
+        /// Whether Shaman's cap cut the stored output short of what the Provider
         /// sent, so a client can say so without reading it out of `output`.
         output_truncated: bool,
         exit_status: Option<i32>,
@@ -3476,11 +3476,11 @@ pub enum Activity {
         /// The Tool's arguments as one line of display text, rendered when
         /// they were recorded; empty until the Provider has sent them.
         input: String,
-        /// Whether Suru's cap cut the stored input short of the rendering.
+        /// Whether Shaman's cap cut the stored input short of the rendering.
         input_truncated: bool,
         /// The text the Tool's result carried.
         output: String,
-        /// Whether Suru's cap cut the stored output short of what the Provider
+        /// Whether Shaman's cap cut the stored output short of what the Provider
         /// sent, so a client can say so without reading it out of `output`.
         output_truncated: bool,
         /// How many parts of the result that were not text — images, audio,
@@ -3497,7 +3497,7 @@ pub enum Activity {
         /// with it rather than parsing it back out of the prose.
         title: Option<String>,
         content: String,
-        /// Whether Suru's cap cut the stored content short of what the Provider
+        /// Whether Shaman's cap cut the stored content short of what the Provider
         /// sent, so a client can say so without reading it out of `content`.
         content_truncated: bool,
         /// How long the Provider spent on the block, known only once it
@@ -3524,7 +3524,7 @@ pub enum Activity {
         /// The Subagent's own Session: a child of the Session this row is in,
         /// and the way into everything the Subagent did.
         session_id: SessionId,
-        /// Whether Suru spawned the Subagent through the Broker, on a Provider
+        /// Whether Shaman spawned the Subagent through the Broker, on a Provider
         /// actor of its own, rather than the delegating Agent's own Provider
         /// spawning it (ADR 0035). A brokered Subagent may always be stopped
         /// on its own, whatever the delegating Agent's Provider allows for
@@ -3532,7 +3532,7 @@ pub enum Activity {
         /// regardless.
         #[serde(default)]
         brokered: bool,
-        /// How long the Subagent worked, timed by Suru from its spawn. Known
+        /// How long the Subagent worked, timed by Shaman from its spawn. Known
         /// only once it settles — by the Provider's own settle event or by a
         /// stop the user asked for — and absent on a row that a lost Provider
         /// connection closed, there being no moment the work truly ended.
@@ -3541,7 +3541,7 @@ pub enum Activity {
         /// — every moment it stamps is ordered against every other, across
         /// all its Sessions — so which Turn had most recently set it working
         /// at any moment is known. Filled by the authoritative store when the
-        /// row commits; absent on one stood before Suru recorded it.
+        /// row commits; absent on one stood before Shaman recorded it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         delegated_at: Option<SessionTimestamp>,
     },
@@ -3591,7 +3591,7 @@ pub enum Activity {
         /// Provider gave one, less any wrapping the Provider put around it for
         /// the Agent's benefit. Only a completed Compaction carries one.
         summary: Option<String>,
-        /// Whether Suru's cap cut the stored summary short of what the
+        /// Whether Shaman's cap cut the stored summary short of what the
         /// Provider sent, so a client can say so without reading it out of
         /// `summary`.
         summary_truncated: bool,
@@ -3663,11 +3663,11 @@ pub enum Activity {
         from: MoveLocation,
         /// Where the Move takes it.
         to: MoveLocation,
-        /// Why a failed Move could not apply, in Suru's words. Only a failed
+        /// Why a failed Move could not apply, in Shaman's words. Only a failed
         /// Move carries one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
-        /// Whether Suru made the Managed Worktree `to` names for this Move.
+        /// Whether Shaman made the Managed Worktree `to` names for this Move.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         new_worktree: bool,
         /// The Worktree `to` lies in, where it lies in one. While the Move
@@ -3862,7 +3862,7 @@ pub enum RouteAction {
 pub enum RouteVerdict {
     Accepted,
     Rejected,
-    /// The review ended with a verdict Suru cannot read.
+    /// The review ended with a verdict Shaman cannot read.
     Unread,
 }
 
@@ -3877,7 +3877,7 @@ pub struct Reroute {
     pub from: Option<ModelId>,
     /// The Model the Provider runs from here on.
     pub to: ModelId,
-    /// Why the Provider switched, in words it gave or Suru gave its reason,
+    /// Why the Provider switched, in words it gave or Shaman gave its reason,
     /// where it gave one: display text, never parsed.
     pub reason: Option<String>,
 }
@@ -3988,7 +3988,7 @@ pub struct PromptCache {
     /// Provider named it, and otherwise the Model the Turn selected.
     pub written_by: ModelId,
     /// How long the Provider keeps the cache that call wrote, in
-    /// milliseconds, where it said or Suru infers or assumes it. It says only
+    /// milliseconds, where it said or Shaman infers or assumes it. It says only
     /// when the cache lapses: [`Self::write_price`] says what writing it cost.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lifetime_ms: Option<u64>,
@@ -4001,14 +4001,14 @@ pub struct PromptCache {
     /// call at the tier the limit falls in, whatever the context held.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_limit_tokens: Option<u64>,
-    /// Suru's forecast, never stored: absent where the Context Fill or the
+    /// Shaman's forecast, never stored: absent where the Context Fill or the
     /// token prices it is figured from are unknown, never zero for want of
     /// them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lapse_penalty: Option<LapsePenalty>,
-    /// When Suru's scheduled Compaction of the Session falls due, a lead
-    /// before the lapse, where one is pending: Suru would begin it then, as
-    /// things stand. Suru's judgement, never stored, and withdrawn as soon as
+    /// When Shaman's scheduled Compaction of the Session falls due, a lead
+    /// before the lapse, where one is pending: Shaman would begin it then, as
+    /// things stand. Shaman's judgement, never stored, and withdrawn as soon as
     /// anything rules it out or the Compaction begins.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compaction_due_at: Option<SessionTimestamp>,
@@ -4020,7 +4020,7 @@ pub struct PromptCache {
 /// all it states — and the generic layer never reads it off how long the
 /// cache is kept, which there only says when it lapses. A Provider
 /// reports [`Self::Default`] unless it says the write paid another price,
-/// and [`Self::Unlisted`] only where it names a price Suru has no rate for.
+/// and [`Self::Unlisted`] only where it names a price Shaman has no rate for.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CacheWritePrice {
@@ -4049,7 +4049,7 @@ impl PromptCache {
     }
 }
 
-/// Suru's forecast, in USD, of what a cold Session's next Prompt costs beyond
+/// Shaman's forecast, in USD, of what a cold Session's next Prompt costs beyond
 /// what it would have cost warm. It is a type of its own rather than a
 /// [`Cost`] so that it can never be recorded as one, nor reach Usage
 /// Metrics. Held in billionths of one USD, as a Cost is, and never negative.
@@ -4164,7 +4164,7 @@ pub enum ContextSource {
     Agents,
     /// The conversation itself.
     Messages,
-    /// A source Suru has no name of its own for, under the Provider's label.
+    /// A source Shaman has no name of its own for, under the Provider's label.
     Other {
         label: String,
     },
@@ -4456,7 +4456,7 @@ pub struct SessionSummary {
 pub enum SessionListItem {
     /// Boxed because a readable summary carries everything a Session states
     /// about itself — its Selection, its Workspace, its total Usage — while
-    /// the unreadable one carries what little survived a Session Suru could
+    /// the unreadable one carries what little survived a Session Shaman could
     /// not decode.
     Readable(Box<SessionSummary>),
     Unreadable(UnreadableSessionSummary),
@@ -4478,7 +4478,7 @@ impl SessionListItem {
     }
 
     /// The Icon Catalog name standing for this Session, when it has one. A
-    /// Session Suru could not read carries none, because an Icon is stored
+    /// Session Shaman could not read carries none, because an Icon is stored
     /// beside a Title that only a readable Session has.
     pub fn icon(&self) -> Option<&str> {
         match self {
@@ -4502,7 +4502,7 @@ impl SessionListItem {
     }
 
     /// When this Session was set aside as done for now, and `None` while it is
-    /// active. A Session Suru could not read is never settled, because settling
+    /// active. A Session Shaman could not read is never settled, because settling
     /// is a judgement about work a reader can still return to and prompting is
     /// what returns to it — neither of which an unreadable Session offers.
     pub const fn settled_at(&self) -> Option<SessionTimestamp> {
@@ -4514,7 +4514,7 @@ impl SessionListItem {
 
     /// When this Session's uninterrupted Working interval began across its
     /// whole Subagent subtree, and `None` where nothing is working. A Session
-    /// Suru could not read is never working, because work it cannot read is
+    /// Shaman could not read is never working, because work it cannot read is
     /// work it cannot run.
     pub const fn working_since(&self) -> Option<SessionTimestamp> {
         match self {
@@ -4524,7 +4524,7 @@ impl SessionListItem {
     }
 
     /// When this Session began Monitoring, and `None` where it is Working or
-    /// has no live Watch. A Session Suru could not read is never Monitoring,
+    /// has no live Watch. A Session Shaman could not read is never Monitoring,
     /// for the same reason it is never Working.
     pub const fn monitoring_since(&self) -> Option<SessionTimestamp> {
         match self {
@@ -4833,7 +4833,7 @@ pub struct SubagentTreeSession {
     pub status: Option<ActivityStatus>,
     /// How long its settled Turns worked, summed, as a Subagent's entry
     /// counts it: what its time counts up from while it works, and the whole
-    /// of it once it settles. `None` where Suru never learned when its work
+    /// of it once it settles. `None` where Shaman never learned when its work
     /// ended.
     pub worked_ms: Option<u64>,
     /// When the work it is doing now began, while it works, and `None` once
@@ -4897,7 +4897,7 @@ pub struct SubagentTreeEntry {
     pub status: ActivityStatus,
     /// How long the Subagent's settled Turns worked, summed. While it works
     /// this is the total its time counts up from; once it settles, the whole
-    /// of it. `None` where it settled without Suru learning when its work
+    /// of it. `None` where it settled without Shaman learning when its work
     /// ended.
     pub worked_ms: Option<u64>,
     /// When the Turn the Subagent works in began, while it works, and `None`
@@ -5205,7 +5205,7 @@ pub enum PromptWithdrawal {
     /// delivering it. Behind a manual Compaction any such settling withdraws
     /// it, so it never reaches a context its writer expected compacted (ADR
     /// 0041); behind a scheduled one only an interrupt that reached its Turn
-    /// before the Compaction completed does, or Suru stopping with nothing
+    /// before the Compaction completed does, or Shaman stopping with nothing
     /// left to deliver it (ADR 0073).
     CompactionUnfinished { turn_id: TurnId },
 }
@@ -5595,17 +5595,17 @@ pub struct Turn {
     /// or one a Compaction request began.
     pub prompt_id: Option<PromptId>,
     /// The request for a Compaction that began this Turn, where one did:
-    /// the user's, or Suru's own ahead of a Prompt Cache lapse (ADR 0041,
+    /// the user's, or Shaman's own ahead of a Prompt Cache lapse (ADR 0041,
     /// 0073). Such a Turn has no user Message, its only content is that
     /// Compaction, and it Settles as the Compaction does and accepts no
-    /// steer. Only Suru knows which Turns it began this way, so whether a
+    /// steer. Only Shaman knows which Turns it began this way, so whether a
     /// Compaction was manual or scheduled is read from here.
     pub compaction_requested: Option<CompactionRequest>,
     pub agent: Option<AgentIdentity>,
     pub status: TurnStatus,
     /// When the commit that delivered this Turn's opening Prompt landed, and
     /// when the commit that settled it landed. Both are absent on a Turn stored
-    /// before Suru recorded Turn timing, so a client states how long a Turn
+    /// before Shaman recorded Turn timing, so a client states how long a Turn
     /// worked only when it knows.
     pub started_at: Option<SessionTimestamp>,
     pub settled_at: Option<SessionTimestamp>,
@@ -5625,7 +5625,7 @@ pub struct Turn {
     /// each Actual Model, each a running figure on the same terms as the
     /// Turn's own; whatever they leave uncovered stays with its Agent
     /// Selection. Empty where the Provider reported no such evidence, as on
-    /// every Turn recorded before Suru kept them.
+    /// every Turn recorded before Shaman kept them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub model_shares: Vec<ModelShare>,
 }
@@ -5726,7 +5726,7 @@ impl Turn {
         !(self.compaction_requested.is_some() && self.prompt_id.is_some())
     }
 
-    /// Whether a request for a Compaction, the user's or Suru's, began this
+    /// Whether a request for a Compaction, the user's or Shaman's, began this
     /// Turn.
     pub const fn begun_for_compaction(&self) -> bool {
         self.compaction_requested.is_some()
@@ -5828,7 +5828,7 @@ pub struct Message {
     /// always carry an empty list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<AttachmentBinding>,
-    /// Whether Suru's cap cut the stored content short of what the Provider
+    /// Whether Shaman's cap cut the stored content short of what the Provider
     /// sent, so a client can say so without reading it out of `content`.
     pub truncated: bool,
     /// Who sent the Prompt a user Message was delivered from, on the user's
@@ -6796,7 +6796,7 @@ pub enum SessionErrorCode {
     InvalidDescription,
     /// A Title a user wrote is blank, or runs longer than a Title may.
     InvalidTitle,
-    /// A Title proposal was asked of a Session Suru derives none for: the
+    /// A Title proposal was asked of a Session Shaman derives none for: the
     /// derivation Setting is off, or follows a Session with no Provider.
     TitleProposalWithheld,
     /// A Title proposal's Errand failed, timed out, or answered with nothing
@@ -6824,7 +6824,7 @@ pub enum SessionErrorCode {
     /// attributes none.
     ContextBreakdownUnsupported,
     /// A Context Breakdown was requested of a Session whose Provider is not
-    /// running for it — none has started since Suru did — or whose
+    /// running for it — none has started since Shaman did — or whose
     /// conversation rides another Session's Provider, which cannot single
     /// it out.
     ContextBreakdownUnavailable,

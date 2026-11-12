@@ -31,7 +31,7 @@ that mode. `TasksSendMessageResult.sent` is documented as "delivered or
 steered", but run 5 steered nothing either.
 
 So **no fixture records a `steering` delivery to a Subagent**. The steer path
-Suru implements follows the SDK's schema for `user.message` alone and remains
+Shaman implements follows the SDK's schema for `user.message` alone and remains
 unverified live.
 
 ## What fired, and when
@@ -123,7 +123,7 @@ second `subagent.started`.
 ## Capture and sanitizing
 
 `examples/copilot_steer_capture.rs` drives the installed CLI through the SDK the
-way Suru's Provider does: streaming, sub-agent streaming events included, and
+way Shaman's Provider does: streaming, sub-agent streaming events included, and
 approve-all permissions. It writes every `session.event` as one JSON line. The
 committed fixtures keep the stream order and the event envelopes. Sanitizing
 dropped two groups of event types:
@@ -133,7 +133,7 @@ dropped two groups of event types:
   `session.tools_updated`, `system.message`, `hook.*`, `model.*` (request and
   assignment diagnostics), `prompt_cache_break`, `session.usage_checkpoint`,
   and `sandbox.decision`.
-- Bulk progress Suru does not read: `assistant.streaming_delta`,
+- Bulk progress Shaman does not read: `assistant.streaming_delta`,
   `assistant.tool_call_delta`, and `session.background_tasks_changed`. The last
   would also make a replay ask the scripted CLI for `session.tasks.list` while
   its timeline is still playing.

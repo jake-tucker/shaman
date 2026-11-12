@@ -32,7 +32,7 @@
 //! told, at the next start or change of the Roots. What a Root in force
 //! holds is known by discovery under that Root's spelling from then on, and
 //! so is what a Root a change named anew may hold, as the Root respelled
-//! may: taking that spelling away later takes it. A Root naming Suru's own
+//! may: taking that spelling away later takes it. A Root naming Shaman's own
 //! data directory is no Root in force, so what was discovered under it goes
 //! too. Only Roots the Config Document names whole — before a change and
 //! after it alike — settle anything, since those a document left that could
@@ -111,7 +111,7 @@ struct Standing {
     sessions: SessionStore,
     /// The directory a Root beginning with `~` names a directory beneath.
     home: Option<PathBuf>,
-    /// Suru's own data directory, read canonically, which no Root in force
+    /// Shaman's own data directory, read canonically, which no Root in force
     /// names.
     data_root: Option<PathBuf>,
     probe: Probe,
@@ -152,8 +152,8 @@ impl RegistryStanding {
             home,
             data_root,
             probe,
-            reads: ReadsApart::new("suru-workspace-standing-read", READS_AT_ONCE),
-            resolutions: ReadsApart::new("suru-workspace-root-resolution", RESOLUTIONS_AT_ONCE),
+            reads: ReadsApart::new("shaman-workspace-standing-read", READS_AT_ONCE),
+            resolutions: ReadsApart::new("shaman-workspace-root-resolution", RESOLUTIONS_AT_ONCE),
             wait,
             in_flight: Mutex::new(None),
             roots_changing: tokio::sync::Mutex::new(()),
@@ -399,7 +399,7 @@ impl RegistryStanding {
     /// holds is dropped, and each one does is known by discovery under that
     /// Root from then on (see [`rerooting`]). `before` holds the Roots a
     /// change took them from, so a Root it named anew may be one it took
-    /// away, respelled. A Root naming Suru's own data directory is none of
+    /// away, respelled. A Root naming Shaman's own data directory is none of
     /// the Roots in force.
     async fn reroot(&self, roots: &[String], before: Option<&[String]>, still: impl Fn() -> bool) {
         let discovered = self.0.sessions.discovered_entries();
@@ -1409,7 +1409,7 @@ mod tests {
         }
     }
 
-    /// A Root naming Suru's own data directory is none of the Roots in
+    /// A Root naming Shaman's own data directory is none of the Roots in
     /// force, so what was discovered under it is dropped, though it is
     /// still named.
     #[tokio::test]

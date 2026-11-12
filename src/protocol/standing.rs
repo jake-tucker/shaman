@@ -32,7 +32,7 @@ pub struct StandingReading {
 }
 
 impl StandingReading {
-    /// The facts `session`'s listing carries. A Session Suru could not read
+    /// The facts `session`'s listing carries. A Session Shaman could not read
     /// carries none of them, and so reads no Standing at all.
     pub fn of(session: &SessionListItem) -> Self {
         let Some(summary) = session.readable() else {
@@ -119,7 +119,7 @@ impl AutoSettle {
     /// The idle is measured from the Session's last activity, so this asks
     /// after work there was: a Session nothing has moved since it was made has
     /// set nothing aside — the reader made it and it is theirs to prompt — and
-    /// a Session Suru could not read has no activity it can see, which is the
+    /// a Session Shaman could not read has no activity it can see, which is the
     /// same reason it is never settled by the marker either. A Session Working
     /// or Monitoring is not done however long ago it last moved — a long Turn
     /// or a Watch can outlast the threshold without any output — so it is

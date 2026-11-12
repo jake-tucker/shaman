@@ -295,7 +295,7 @@ impl<'a> TextLayout<'a> {
     }
 }
 
-/// A run of a projected line drawn in one style. Chrome is decoration Suru
+/// A run of a projected line drawn in one style. Chrome is decoration Shaman
 /// draws around the text rather than the text itself — a Marker, an indent, a
 /// Fold affordance, a Code Block border, a Command prefix — so a copy of the
 /// line can leave it out while the draw keeps it.
@@ -1323,7 +1323,7 @@ mod tests {
     #[test]
     fn a_quote_rail_runs_down_every_wrapped_row() {
         let line = styled(
-            "│ Suru is a cross-platform Rust application for agentic coding, built around a terminal UI and a provider-agnostic design. It integrates Codex, GitHub Copilot, and Claude through a shared provider/runtime interface while using each provider's native harness or protocol. The executable starts the TUI by default and also exposes commands to start, inspect, and stop Suru's server.",
+            "│ Shaman is a cross-platform Rust application for agentic coding, built around a terminal UI and a provider-agnostic design. It integrates Codex, GitHub Copilot, and Claude through a shared provider/runtime interface while using each provider's native harness or protocol. The executable starts the TUI by default and also exposes commands to start, inspect, and stop Shaman's server.",
         );
         let layout = StyledLayout::new(&line, 80);
         let rows = layout.rows();

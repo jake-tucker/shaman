@@ -1,4 +1,4 @@
-//! A Copilot Session surviving a Suru restart: the Copilot Session identifier persists as the Suru
+//! A Copilot Session surviving a Shaman restart: the Copilot Session identifier persists as the Shaman
 //! Session's Resume State, and the Session that reopens carries on through Copilot's native resume
 //! rather than opening a new Copilot Session.
 
@@ -9,7 +9,7 @@ use crate::copilot_integration::support::{
     resumable_conversation_fixture, send_arm, settled_session_on,
 };
 use serde_json::Value;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionSubscription},
     protocol::{
         AdmitPromptRequest, Cost, CostBasis, CreateSessionRequest, InitialPrompt, MoveDestination,
@@ -33,7 +33,7 @@ const STREAMED_MESSAGE: &str = r#"      event e1 assistant.message_start '{"mess
       event e4 session.idle '{}'
 "#;
 
-/// A CLI that creates a Session but no longer holds it when Suru comes back for it.
+/// A CLI that creates a Session but no longer holds it when Shaman comes back for it.
 fn forgetful_fixture() -> ScriptedCopilot {
     ScriptedCopilot::new(&format!(
         "{}{}{}",
@@ -43,7 +43,7 @@ fn forgetful_fixture() -> ScriptedCopilot {
     ))
 }
 
-/// A Suru Session established on one server and reopened on its replacement, holding everything the
+/// A Shaman Session established on one server and reopened on its replacement, holding everything the
 /// reopened Session runs on for as long as the test does — the state and data directories and the
 /// Workspace included, which are only alive while this is.
 struct RestartedSession {
@@ -66,7 +66,7 @@ impl RestartedSession {
         let workspace = tempfile::tempdir().expect("create valid Workspace");
         let execution_directory = workspace.path().join("packages/nested agent directory");
         std::fs::create_dir_all(&execution_directory).unwrap();
-        let execution_directory = suru::paths::canonical(execution_directory).unwrap();
+        let execution_directory = shaman::paths::canonical(execution_directory).unwrap();
         let config = ServerConfig::new(state_dir.path(), channel)
             .expect("configure server")
             .with_data_dir(data_dir.path());
@@ -78,7 +78,7 @@ impl RestartedSession {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: execution_directory.clone(),
                 },
                 prompt: InitialPrompt {
@@ -239,7 +239,7 @@ async fn a_reopened_session_resumes_its_persisted_copilot_session_after_a_restar
         "the replacement server handshakes a fresh process and resumes rather than creating"
     );
     let requests = copilot.requests();
-    let expected = suru::paths::canonical(
+    let expected = shaman::paths::canonical(
         restarted
             ._workspace
             .path()
@@ -264,7 +264,7 @@ async fn a_reopened_session_resumes_its_persisted_copilot_session_after_a_restar
     assert_eq!(
         session_parameter(&requests, "session.create"),
         session_parameter(&requests, "session.resume"),
-        "the resume names the Copilot Session the Suru Session was created under"
+        "the resume names the Copilot Session the Shaman Session was created under"
     );
 
     restarted.shutdown().await;
@@ -325,7 +325,7 @@ fn session_parameter(requests: &[Value], method: &str) -> String {
 
 #[tokio::test]
 async fn resumed_copilot_sessions_register_and_answer_native_questionnaires() {
-    use suru::protocol::{Activity, QuestionnaireSubmission};
+    use shaman::protocol::{Activity, QuestionnaireSubmission};
     let timeline = format!(
         "      if [ \"$attempt\" -eq 1 ]; then\n        event first session.idle '{{}}'\n      else\n{}      fi\n",
         crate::copilot_integration::questionnaires::ASK
@@ -408,7 +408,7 @@ async fn a_moved_sessions_next_turn_resumes_its_copilot_session_in_the_new_direc
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let origin = tempfile::tempdir().expect("create the origin");
     let destination = tempfile::tempdir().expect("create the destination");
-    let destination_path = suru::paths::canonical(destination.path()).unwrap();
+    let destination_path = shaman::paths::canonical(destination.path()).unwrap();
     let server = spawn(
         ServerConfig::new(state_dir.path(), "copilot-moved-resume").expect("configure server"),
         &copilot,
@@ -424,7 +424,7 @@ async fn a_moved_sessions_next_turn_resumes_its_copilot_session_in_the_new_direc
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: origin.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -491,13 +491,13 @@ async fn a_moved_sessions_next_turn_resumes_its_copilot_session_in_the_new_direc
     assert_eq!(
         session_parameter(&requests, "session.create"),
         session_parameter(&requests, "session.resume"),
-        "the resume names the Copilot Session the Suru Session began under"
+        "the resume names the Copilot Session the Shaman Session began under"
     );
-    let note = suru::provider::MoveNote {
-        from: suru::protocol::ExecutionDirectory {
-            path: suru::paths::canonical(origin.path()).unwrap(),
+    let note = shaman::provider::MoveNote {
+        from: shaman::protocol::ExecutionDirectory {
+            path: shaman::paths::canonical(origin.path()).unwrap(),
         },
-        to: suru::protocol::ExecutionDirectory {
+        to: shaman::protocol::ExecutionDirectory {
             path: destination_path.clone(),
         },
         continues: false,
@@ -515,7 +515,7 @@ async fn a_moved_sessions_next_turn_resumes_its_copilot_session_in_the_new_direc
         settled
             .messages
             .iter()
-            .filter(|message| message.role == suru::protocol::MessageRole::User)
+            .filter(|message| message.role == shaman::protocol::MessageRole::User)
             .map(|message| message.content.as_str())
             .collect::<Vec<_>>(),
         [

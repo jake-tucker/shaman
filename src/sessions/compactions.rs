@@ -1,6 +1,6 @@
 //! The Turn a Compaction request begins (ADR 0041).
 //!
-//! Only an idle Session takes the request, and idle is Suru's own reading
+//! Only an idle Session takes the request, and idle is Shaman's own reading
 //! rather than the Provider's: a Provider asked to compact mid-Turn may abort
 //! the Turn, or report success and lose the Compaction. So the reading and the
 //! Turn it opens are one act under the store lock, and any Prompt admitted
@@ -16,7 +16,7 @@
 //! (ADR 0024). Behind a scheduled one its writer expected nothing of the
 //! context, so the Prompt begins the next Turn whether the Compaction
 //! completes or fails, unless an interrupt reaches it first (ADR 0073). Either
-//! kind's held Prompt is withdrawn, too, when Suru stops with nothing left to
+//! kind's held Prompt is withdrawn, too, when Shaman stops with nothing left to
 //! deliver it, as any Prompt still owed a Turn is; its text is then recovered
 //! only by a client still holding it.
 
@@ -262,7 +262,7 @@ impl SessionRecord {
     /// anything of the context, so they begin the next Turn however it
     /// settles (ADR 0073), unless an interrupt reached the Turn before its
     /// Compaction completed — whether or not it was in time to stop the
-    /// Compaction, since someone who pressed interrupt should not watch Suru
+    /// Compaction, since someone who pressed interrupt should not watch Shaman
     /// begin a Turn with a Prompt held behind it — or the process that would
     /// deliver them is gone with the Turn, leaving nothing to.
     fn withdraws_held_prompts(

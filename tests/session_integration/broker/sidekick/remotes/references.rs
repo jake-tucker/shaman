@@ -91,7 +91,7 @@ async fn every_session_a_remote_read_names_is_reached_at_that_reads_origin() {
     // The Sidekick's own Server holds a Session of its own by each of those
     // identities.
     let seed = tempfile::tempdir().expect("create a directory for the copy");
-    let seed = seed.path().join("suru.db");
+    let seed = seed.path().join("shaman.db");
     copied_sessions(&remote.config, &[theirs, scout, charting], &seed).await;
     let (own, mut claude, _directories) = own_server(
         "sidekick-remotes-references",
@@ -211,7 +211,7 @@ async fn a_subsession_a_remotes_sidekick_began_beyond_it_is_named_as_this_server
         start_sidekick(&there, &mut remote.provider).await;
     let workspace = tempfile::tempdir().expect("create a Workspace on the third Server");
     let directory =
-        suru::paths::canonical(workspace.path()).expect("read the Workspace canonically");
+        shaman::paths::canonical(workspace.path()).expect("read the Workspace canonically");
     let begun = answered(
         &mut their_sidekick,
         "begin_session",
@@ -258,7 +258,9 @@ async fn a_subsession_a_remotes_sidekick_began_beyond_it_is_named_as_this_server
     )
     .await;
     assert!(
-        elsewhere.starts_with(&format!("Suru holds no Session `{charting}` on the Remote")),
+        elsewhere.starts_with(&format!(
+            "Shaman holds no Session `{charting}` on the Remote"
+        )),
         "which is another Server, holding no such Session: {elsewhere}"
     );
 
@@ -314,7 +316,7 @@ async fn a_subsession_a_remotes_sidekick_began_on_this_server_is_named_as_this_s
         start_sidekick(&there, &mut remote.provider).await;
     let workspace = tempfile::tempdir().expect("create a Workspace on this Server");
     let directory =
-        suru::paths::canonical(workspace.path()).expect("read the Workspace canonically");
+        shaman::paths::canonical(workspace.path()).expect("read the Workspace canonically");
     let begun = answered(
         &mut their_sidekick,
         "begin_session",
@@ -357,7 +359,7 @@ async fn a_subsession_a_remotes_sidekick_began_on_this_server_is_named_as_this_s
     .await;
     assert!(
         at_the_reads_origin.starts_with(&format!(
-            "Suru holds no Session `{charting}` on the Remote `{REMOTE}`"
+            "Shaman holds no Session `{charting}` on the Remote `{REMOTE}`"
         )),
         "and the read's own origin does not reach it: {at_the_reads_origin}"
     );

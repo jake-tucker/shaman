@@ -1087,7 +1087,7 @@ fn selected(snapshot: &SessionSnapshot) -> Option<(&ProviderId, &ModelId)> {
 }
 
 /// How long the cache a lapse describes is kept, in milliseconds: as the
-/// Provider reported it, or as Suru assumes it.
+/// Provider reported it, or as Shaman assumes it.
 fn lifetime_ms(reported: Option<std::time::Duration>, declared: CacheLifetime) -> Option<u64> {
     reported
         .or(match declared {

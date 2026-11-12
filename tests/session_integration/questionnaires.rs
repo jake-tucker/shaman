@@ -1,6 +1,6 @@
 use crate::session_integration::support::{read_session_until, working_turn};
 use crate::support::PROGRESS_DEADLINE;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         Activity, Answer, Question, QuestionAnswer, QuestionChoice, Questionnaire, QuestionnaireId,
@@ -31,7 +31,7 @@ fn questionnaire() -> Questionnaire {
         }],
     }
 }
-fn outcome(snapshot: &suru::protocol::SessionSnapshot, expected: QuestionnaireOutcome) -> bool {
+fn outcome(snapshot: &shaman::protocol::SessionSnapshot, expected: QuestionnaireOutcome) -> bool {
     snapshot
         .activities
         .iter()
@@ -104,8 +104,8 @@ async fn questionnaire_answer_crosses_the_public_client_and_is_readable_in_durab
     );
     drop(client);
     live.server.shutdown().await.unwrap();
-    let server = suru::server::spawn_with_provider(
-        suru::server::ServerConfig::new(directory.path(), "questionnaire-answer").unwrap(),
+    let server = shaman::server::spawn_with_provider(
+        shaman::server::ServerConfig::new(directory.path(), "questionnaire-answer").unwrap(),
         live.runtime,
     )
     .await
@@ -171,7 +171,7 @@ async fn decline_sends_no_answer_without_ending_the_turn_and_withdrawal_disables
         snapshot
             .turns
             .iter()
-            .any(|t| t.status == suru::protocol::TurnStatus::Active)
+            .any(|t| t.status == shaman::protocol::TurnStatus::Active)
     );
     let next = questionnaire();
     live.provider_session
@@ -325,8 +325,8 @@ async fn session_batch_validation_preserves_each_question_and_only_accepts_suppo
 
 #[tokio::test]
 async fn concurrent_questionnaires_keep_ids_order_and_catalog_attention_through_client_updates() {
-    use suru::managed_client::{ManagedEvent, SessionEvent};
-    use suru::protocol::{SessionChange, TurnStatus};
+    use shaman::managed_client::{ManagedEvent, SessionEvent};
+    use shaman::protocol::{SessionChange, TurnStatus};
     let directory = tempfile::tempdir().unwrap();
     let mut live = working_turn(directory.path(), "questionnaire-concurrent").await;
     let mut client = ManagedClient::connect(
@@ -418,10 +418,10 @@ async fn concurrent_questionnaires_keep_ids_order_and_catalog_attention_through_
 }
 
 async fn streamed_outcome(
-    feed: &mut suru::managed_client::SessionSubscription,
+    feed: &mut shaman::managed_client::SessionSubscription,
     expected: QuestionnaireOutcome,
 ) {
-    use suru::{managed_client::SessionEvent, protocol::SessionChange};
+    use shaman::{managed_client::SessionEvent, protocol::SessionChange};
     timeout(PROGRESS_DEADLINE, async {
         loop {
             match feed.next().await.unwrap().unwrap() {
@@ -759,8 +759,8 @@ async fn gated_delivery_does_not_block_withdrawal_or_interruption_and_cannot_ove
 #[tokio::test]
 async fn nested_subagent_questionnaires_keep_ancestor_attention_and_answer_in_the_child_after_parent_settles()
  {
-    use suru::protocol::{SessionChange, SessionId, SessionSnapshot, TurnStatus};
-    use suru::provider::{ProviderEventAttribution, ProviderSubagentId};
+    use shaman::protocol::{SessionChange, SessionId, SessionSnapshot, TurnStatus};
+    use shaman::provider::{ProviderEventAttribution, ProviderSubagentId};
     let directory = tempfile::tempdir().unwrap();
     let mut live = working_turn(directory.path(), "nested-questionnaires").await;
     let client = ManagedClient::connect(
@@ -829,7 +829,8 @@ async fn nested_subagent_questionnaires_keep_ancestor_attention_and_answer_in_th
             .await;
     }
     let mut feed = client.subscribe_session(live.session_id).await.unwrap();
-    let suru::managed_client::SessionEvent::Snapshot(parent) = feed.next().await.unwrap().unwrap()
+    let shaman::managed_client::SessionEvent::Snapshot(parent) =
+        feed.next().await.unwrap().unwrap()
     else {
         panic!("snapshot")
     };
@@ -916,7 +917,7 @@ async fn nested_subagent_questionnaires_keep_ancestor_attention_and_answer_in_th
     );
     timeout(PROGRESS_DEADLINE, async {
         loop {
-            if let suru::managed_client::SessionEvent::Updated(update) = feed.next().await.unwrap().unwrap()
+            if let shaman::managed_client::SessionEvent::Updated(update) = feed.next().await.unwrap().unwrap()
                 && update.changes.iter().any(|c| matches!(c, SessionChange::SubagentInterventionsChanged { subagent_interventions } if subagent_interventions.iter().map(|q| q.pending_questionnaires.len()).sum::<usize>() == 1)) { break; }
         }
     }).await.unwrap();
@@ -1191,7 +1192,7 @@ async fn restart_requires_a_genuinely_reissued_live_request_and_does_not_revive_
     use crate::session_integration::{
         provider_support::ControlledProvider, support::controlled_selection,
     };
-    use suru::{
+    use shaman::{
         protocol::{
             AdmitPromptRequest, AgentId, AgentIdentity, CreateSessionRequest, InitialPrompt,
             PromptDelivery, PromptId,
@@ -1216,7 +1217,7 @@ async fn restart_requires_a_genuinely_reissued_live_request_and_does_not_revive_
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1290,7 +1291,7 @@ async fn restart_requires_a_genuinely_reissued_live_request_and_does_not_revive_
     {
         use diesel::{Connection, SqliteConnection, connection::SimpleConnection};
         let mut database =
-            SqliteConnection::establish(config.data_dir().join("suru.db").to_str().unwrap())
+            SqliteConnection::establish(config.data_dir().join("shaman.db").to_str().unwrap())
                 .unwrap();
         database
             .batch_execute("UPDATE turns SET payload = json_set(payload, '$.status', 'completed');")
@@ -1390,8 +1391,8 @@ async fn restart_requires_a_genuinely_reissued_live_request_and_does_not_revive_
 
 #[tokio::test]
 async fn secret_questionnaire_answer_is_private_in_client_updates_and_persisted_history() {
-    use suru::managed_client::SessionEvent;
-    use suru::protocol::SessionChange;
+    use shaman::managed_client::SessionEvent;
+    use shaman::protocol::SessionChange;
     const SECRET: &str = "private-cross-platform-credential";
     let directory = tempfile::tempdir().unwrap();
     let channel = "questionnaire-secret";
@@ -1459,8 +1460,8 @@ async fn secret_questionnaire_answer_is_private_in_client_updates_and_persisted_
     drop(observer);
     drop(client);
     live.server.shutdown().await.unwrap();
-    let server = suru::server::spawn_with_provider(
-        suru::server::ServerConfig::new(directory.path(), channel).unwrap(),
+    let server = shaman::server::spawn_with_provider(
+        shaman::server::ServerConfig::new(directory.path(), channel).unwrap(),
         live.runtime,
     )
     .await

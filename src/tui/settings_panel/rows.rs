@@ -243,8 +243,8 @@ impl DrawnRows {
 }
 
 /// The colour a Provider's condition takes on its row where it asks something
-/// of the reader: a failed read is Suru's error, and anything they fix outside
-/// Suru is a warning.
+/// of the reader: a failed read is Shaman's error, and anything they fix outside
+/// Shaman is a warning.
 fn tone(row: &SettingRow, theme: &Theme) -> Option<Style> {
     match row.availability {
         RowAvailability::Warning | RowAvailability::Unavailable { .. } => {

@@ -46,7 +46,7 @@ Session's composer; its Transcript shows the Prompt as sent by you, leading \
 back to your Session — or, on a Remote, as sent by a Sidekick on this \
 machine. Takes \"session_id\", a Session's id as list_sessions gives it; \
 \"origin\", the Remote it lives on as its row gives it, left out for one on \
-this Suru server; \"prompt\", everything the Session's Agent needs, since it \
+this Shaman server; \"prompt\", everything the Session's Agent needs, since it \
 sees none of your conversation; and optionally \"delivery\": \"steer\", the \
 default, to deliver it into the Turn the Session is working in, or \"queue\" \
 to have it wait behind that Turn and begin the next. A Session that is not \
@@ -68,7 +68,7 @@ Subagents it spawned and the Watches it left running, or, where it was \
 working only because a Prompt waited to begin a Turn, withdraw that Prompt \
 instead. Takes \"session_id\", a Session's id as list_sessions gives it, and \
 \"origin\", the Remote it lives on as its row gives it, left out for one on \
-this Suru server. Answers with JSON of the shape {\"session_id\": \"...\", \
+this Shaman server. Answers with JSON of the shape {\"session_id\": \"...\", \
 \"origin\": \"...\", \"outcome\": \"stopped_work\"} when it stopped work, or \
 {\"session_id\": \"...\", \"origin\": \"...\", \"outcome\": \
 \"withdrew_prompt\", \"prompt\": \"...\"} when it withdrew a Prompt, giving \
@@ -84,7 +84,7 @@ pub(super) const SETTLE_SESSION_DESCRIPTION: &str = concat!(
 Set a Session aside as done for now, as the user does to tidy their listing: \
 it is listed as settled until work reaches it again or it is unsettled. Takes \
 \"session_id\", a Session's id as list_sessions gives it, and \"origin\", the \
-Remote it lives on as its row gives it, left out for one on this Suru server. \
+Remote it lives on as its row gives it, left out for one on this Shaman server. \
 Answers with JSON of the shape {\"session_id\": \"...\", \"origin\": \"...\", \
 \"settled\": true}, the Session named as its row does, \"origin\" left out \
 for one on this server; a Session already settled stays so. Any Session of \
@@ -97,7 +97,7 @@ pub(super) const UNSETTLE_SESSION_DESCRIPTION: &str = concat!(
     "\
 Bring a settled Session back among the active ones, as the user does. Takes \
 \"session_id\", a Session's id as list_sessions gives it, and \"origin\", the \
-Remote it lives on as its row gives it, left out for one on this Suru server. \
+Remote it lives on as its row gives it, left out for one on this Shaman server. \
 Answers with JSON of the shape {\"session_id\": \"...\", \"origin\": \"...\", \
 \"settled\": false}, the Session named as its row does, \"origin\" left out \
 for one on this server; a Session already active stays so. Any Session of the \
@@ -113,7 +113,7 @@ would from that Session's answering panel, so the Turn that asked it goes \
 on; its Transcript shows the Answer as given by you, leading back to your \
 Session — or, on a Remote, as given by a Sidekick on this machine. Takes \
 \"session_id\", the Session's id; \"origin\", the Remote it lives on as its \
-row gives it, left out for one on this Suru server; \"questionnaire_id\", the \
+row gives it, left out for one on this Shaman server; \"questionnaire_id\", the \
 Questionnaire's \"id\" as read_session gives it among \"questionnaires\"; \
 and \"answers\", one Answer for each of its Questions, in the order \
 read_session gives them. Each Answer is an object \
@@ -121,7 +121,7 @@ with \"choices\", a list of the ids of the choices it picks, \"text\", free \
 text, or both where the Question takes choices with free text beside them; \
 {} leaves a Question that is not required unanswered. Pick one choice unless \
 the Question takes \"multiple\", and give text only where it takes \
-\"freeform\". A secret Question's Answer reaches the Agent, and Suru keeps \
+\"freeform\". A secret Question's Answer reaches the Agent, and Shaman keeps \
 only that it was answered; your own Session's record of the call keeps which \
 Questionnaire it answered and how many Answers it gave, never what they said. \
 Answers with JSON of the shape {\"session_id\": \

@@ -731,7 +731,7 @@ impl fmt::Display for SilentRemote {
         match &self.silence {
             Silence::Unreachable => write!(
                 formatter,
-                "The Remote `{name}` is not answering: Suru could not reach it at any address it \
+                "The Remote `{name}` is not answering: Shaman could not reach it at any address it \
                  was paired at."
             ),
             Silence::BrokeOff => write!(
@@ -745,12 +745,12 @@ impl fmt::Display for SilentRemote {
             ),
             Silence::Revoked => write!(
                 formatter,
-                "The Remote `{name}` refused this Suru server's key: its user has ended the \
+                "The Remote `{name}` refused this Shaman server's key: its user has ended the \
                  Pairing on their side, and reaching it again takes a new Invite."
             ),
             Silence::ProtocolMismatch => write!(
                 formatter,
-                "The Remote `{name}` runs a version of Suru that speaks another protocol than this \
+                "The Remote `{name}` runs a version of Shaman that speaks another protocol than this \
                  server's, so nothing can be asked of it until one of them is updated."
             ),
             Silence::PastBudget(budget) => write!(

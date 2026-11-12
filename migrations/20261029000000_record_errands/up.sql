@@ -1,4 +1,4 @@
--- Errands: Suru's own one-shot Provider calls, each recorded as it ends once
+-- Errands: Shaman's own one-shot Provider calls, each recorded as it ends once
 -- it has reached a Provider (ADR 0057). An Errand belongs to no Session, so no
 -- row names one and no Session's deletion touches one. A row says what the
 -- Errand was for, the Provider and Model it ran at, when it began and ended

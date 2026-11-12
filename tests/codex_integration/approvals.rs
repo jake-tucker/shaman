@@ -5,8 +5,7 @@ use crate::codex_integration::{
     support::{ScriptedCodex, receive_initial_state},
 };
 use serde_json::{Value, json};
-use std::{collections::HashMap, sync::Arc};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         Activity, AdmitPromptRequest, ApprovalOutcome, ApprovalPosture, ApprovalPostureApplication,
@@ -17,6 +16,7 @@ use suru::{
     provider::CodexRuntime,
     server::{self, ServerConfig},
 };
+use std::{collections::HashMap, sync::Arc};
 use tokio::time::{Duration, timeout};
 
 const APPROVALS: &str = r#"#!/bin/sh
@@ -111,9 +111,9 @@ done
 
 async fn snapshot_until(
     client: &ManagedClient,
-    session_id: suru::protocol::SessionId,
-    predicate: impl Fn(&suru::protocol::SessionSnapshot) -> bool,
-) -> suru::protocol::SessionSnapshot {
+    session_id: shaman::protocol::SessionId,
+    predicate: impl Fn(&shaman::protocol::SessionSnapshot) -> bool,
+) -> shaman::protocol::SessionSnapshot {
     let mut feed = client.subscribe_session(session_id).await.unwrap();
     timeout(PROGRESS_DEADLINE, async {
         loop {
@@ -150,7 +150,7 @@ async fn an_existing_thread_receives_the_current_policy_and_sandbox_on_every_tur
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -238,7 +238,7 @@ async fn native_approvals_preserve_subjects_callback_identity_decisions_and_inte
     let state = tempfile::tempdir().unwrap();
     let config = tempfile::tempdir().unwrap();
     std::fs::write(
-        config.path().join("suru.jsonc"),
+        config.path().join("shaman.jsonc"),
         r#"{"provider":{"codex":{"approvalPolicy":"untrusted","sandboxMode":"read-only"}}}"#,
     )
     .unwrap();
@@ -262,7 +262,7 @@ async fn native_approvals_preserve_subjects_callback_identity_decisions_and_inte
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -480,7 +480,7 @@ async fn immediate_native_completion_waits_for_definitive_decision_history() {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 prompt: InitialPrompt {
@@ -569,7 +569,7 @@ async fn permission_interrupt_rejection_and_timeout_remain_visible_after_deliver
                 session_id: None,
                 preparation_id: None,
                 agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 prompt: InitialPrompt {

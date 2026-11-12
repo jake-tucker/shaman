@@ -1,17 +1,17 @@
 //! Claude Provider runtime over the Claude Code CLI's stream-json protocol.
 //!
-//! Suru drives the user's installed Claude Code CLI directly over its stream-json wire — newline-
+//! Shaman drives the user's installed Claude Code CLI directly over its stream-json wire — newline-
 //! delimited JSON on stdio, with control requests for everything that is not conversation — rather
 //! than embedding the Claude Agent SDK (ADR 0010). The integration is layered like the Codex one:
-//! [`wire`] holds the serde types Suru exchanges with the CLI, [`transport`] carries control
+//! [`wire`] holds the serde types Shaman exchanges with the CLI, [`transport`] carries control
 //! requests and conversation over a supervised CLI process's stdio, [`projection`] turns the
 //! conversation into Provider events, [`catalog`] presents the Models the CLI reports verbatim as
-//! Suru's Model catalog, [`availability`] decides whether the CLI can be driven at all before
+//! Shaman's Model catalog, [`availability`] decides whether the CLI can be driven at all before
 //! anything asks it to work, [`session`] runs one Session per long-lived CLI process,
 //! [`turn_in_flight`] holds what a Session and its projection must agree on about the Turn in
 //! flight, [`broker`] writes the MCP config each Session launch is handed the Broker through,
-//! [`errand`] runs Suru's own one-shot work through the CLI's print mode, and [`runtime`]
-//! composes them into the Provider runtime the rest of Suru uses. What the layers share sits here:
+//! [`errand`] runs Shaman's own one-shot work through the CLI's print mode, and [`runtime`]
+//! composes them into the Provider runtime the rest of Shaman uses. What the layers share sits here:
 //! how a Claude failure reads, and the launch flags an Agent Selection lowers onto, which a
 //! Session's child and an Errand's one-shot carry alike.
 //!
@@ -23,7 +23,7 @@
 //! Session startup — as its own typed reason rather than as a failure. [`availability`] also asks
 //! the CLI for its version: one below the verified 2.1.280 suggestion remains usable with advisory
 //! guidance, while a CLI too old to answer the probe is incompatible. A catalog refresh re-runs
-//! conditions that need the user to fix something outside Suru.
+//! conditions that need the user to fix something outside Shaman.
 
 mod approval;
 mod availability;
@@ -58,10 +58,10 @@ use super::{ProviderError, concise_remote_message};
 const CLAUDE_HARNESS_NAME: &str = "Claude Code CLI";
 
 /// What they call the one-shot Claude run an Errand is, which is the same binary in a different
-/// mode from the stream-json process above — and, unlike it, one Suru never speaks a protocol to.
+/// mode from the stream-json process above — and, unlike it, one Shaman never speaks a protocol to.
 const CLAUDE_ONE_SHOT_NAME: &str = "Claude Code CLI print mode";
 
-/// What Suru knows this Provider as.
+/// What Shaman knows this Provider as.
 const CLAUDE_PROVIDER_ID: &str = "claude";
 
 /// What the Transcript attributes this Provider's Turns to.
@@ -104,7 +104,7 @@ fn canonical_model(model: &str) -> &str {
 /// What a Claude failure is called when the CLI itself said nothing usable.
 const CLAUDE_FAILURE_FALLBACK: &str = "Claude Provider failed";
 
-/// What the user does outside Suru about each way Claude can be unavailable. The install page is the
+/// What the user does outside Shaman about each way Claude can be unavailable. The install page is the
 /// Claude Code documentation's own, and the login command is the one `claude auth --help` lists.
 fn claude_fix(reason: ProviderUnavailability) -> &'static str {
     match reason {
@@ -156,7 +156,7 @@ fn result_failure_message(what: &str, result: &wire::ResultMessage) -> String {
 }
 
 /// The launch flags an Agent Selection lowers onto. The Model and its reasoning effort are
-/// spawn-time flags on the CLI rather than anything it takes over its wire, so every process Suru
+/// spawn-time flags on the CLI rather than anything it takes over its wire, so every process Shaman
 /// launches to do work — a Session's child and an Errand's one-shot alike — carries the Selection
 /// this way.
 fn selection_args(selection: &AgentSelection) -> Result<Vec<OsString>, ProviderError> {

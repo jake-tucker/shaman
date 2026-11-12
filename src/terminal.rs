@@ -83,7 +83,7 @@ impl TerminalColorProbe {
     }
 }
 
-/// A terminal graphics protocol an image may be drawn with, in the order Suru
+/// A terminal graphics protocol an image may be drawn with, in the order Shaman
 /// prefers them.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum GraphicsProtocol {
@@ -130,7 +130,7 @@ impl CellSize {
 /// Why no graphics protocol is selected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum NoGraphics {
-    /// Suru runs under tmux or screen, which stand between it and the
+    /// Shaman runs under tmux or screen, which stand between it and the
     /// terminal that would draw.
     Multiplexed,
     /// The terminal answered for no protocol.
@@ -178,7 +178,7 @@ impl GraphicsAnswers {
     };
 }
 
-/// Everything Suru knows about terminal presentation capabilities.
+/// Everything Shaman knows about terminal presentation capabilities.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TerminalFacts {
     pub probe: Option<TerminalColorProbe>,
@@ -217,7 +217,7 @@ impl TerminalFacts {
         self
     }
 
-    /// Records whether Suru runs under tmux or screen, where no image is
+    /// Records whether Shaman runs under tmux or screen, where no image is
     /// drawn.
     pub fn with_multiplexer(mut self, multiplexed: bool) -> Self {
         self.graphics_answers.multiplexed = multiplexed;
@@ -279,7 +279,7 @@ impl TerminalFacts {
         )
     }
 
-    /// Whether Suru runs under tmux or screen, as each announces itself to
+    /// Whether Shaman runs under tmux or screen, as each announces itself to
     /// the processes it hosts.
     pub(crate) fn multiplexed_from_environment() -> bool {
         std::env::var_os("TMUX").is_some() || std::env::var_os("STY").is_some()
@@ -638,7 +638,7 @@ impl TerminalInputParser {
     }
 }
 
-/// The control strings a terminal answers Suru's queries with. Each opens
+/// The control strings a terminal answers Shaman's queries with. Each opens
 /// with an escape the reader's own Alt chord also sends, so a string that
 /// turns out to begin no reply is handed back as that chord.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -684,7 +684,7 @@ impl ControlString {
         }
     }
 
-    /// Whether `payload` may still grow into a reply to one of Suru's queries.
+    /// Whether `payload` may still grow into a reply to one of Shaman's queries.
     fn could_be_reply(self, payload: &[u8]) -> bool {
         self.reply_prefixes()
             .iter()
@@ -698,7 +698,7 @@ impl ControlString {
             .any(|prefix| payload.starts_with(prefix))
     }
 
-    /// What a complete string says, if it is a reply Suru understands. Any
+    /// What a complete string says, if it is a reply Shaman understands. Any
     /// other string is swallowed, since a reply is never the reader's input.
     fn reply(self, payload: &[u8]) -> Option<TerminalInput> {
         match self {
@@ -727,12 +727,12 @@ fn parse_kitty_graphics_reply(payload: &[u8]) -> Option<TerminalInput> {
         .then_some(TerminalInput::Graphics(GraphicsReply::Kitty))
 }
 
-/// Where the CSI bytes read so far stand against the CSI replies Suru asks
+/// Where the CSI bytes read so far stand against the CSI replies Shaman asks
 /// for.
 enum CsiReply {
     /// Still a prefix of a reply.
     Partial,
-    /// A whole reply, carrying what it says if Suru understands it.
+    /// A whole reply, carrying what it says if Shaman understands it.
     Complete(Option<TerminalInput>),
     /// No reply, so the bytes are the reader's input.
     Other,
@@ -907,7 +907,7 @@ fn terminal_input_from_termina(event: termina::Event) -> Option<TerminalInput> {
     Some(TerminalInput::Event(event))
 }
 
-/// Pasted text with every line ending a newline, the only one the rest of Suru
+/// Pasted text with every line ending a newline, the only one the rest of Shaman
 /// breaks a line on: Windows Terminal pastes a lone carriage return for each, and
 /// a Windows clipboard holds a carriage return and a newline.
 pub(crate) fn with_newlines(text: String) -> String {
@@ -1348,7 +1348,7 @@ fn spawn_terminal_reader(
     };
     let (wake_read, wake) = UnixStream::pair()?;
     let thread = std::thread::Builder::new()
-        .name("suru-terminal-input".to_owned())
+        .name("shaman-terminal-input".to_owned())
         .spawn(move || {
             let mut buffer = [0; 1024];
             loop {
@@ -1429,7 +1429,7 @@ fn spawn_terminal_reader(
     let wake = Arc::new(unsafe { OwnedHandle::from_raw_handle(wake) });
     let thread_wake = Arc::clone(&wake);
     let thread = std::thread::Builder::new()
-        .name("suru-terminal-input".to_owned())
+        .name("shaman-terminal-input".to_owned())
         .spawn(move || {
             let mut records: [INPUT_RECORD; 128] = unsafe { mem::zeroed() };
             loop {

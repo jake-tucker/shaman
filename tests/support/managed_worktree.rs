@@ -1,14 +1,14 @@
 //! Real repository preparation shared by native Provider boundary checks.
 use super::PROGRESS_DEADLINE;
+use shaman::{managed_client::ManagedClient, protocol::*};
 use std::path::Path;
-use suru::{managed_client::ManagedClient, protocol::*};
 
 pub async fn prepare(client: &ManagedClient, source: &Path, provider: &str) -> PreparedCheckout {
     for args in [
         vec!["init", "-b", "main"],
         vec![
             "-c",
-            "user.name=Suru Test",
+            "user.name=Shaman Test",
             "-c",
             "user.email=test@example.invalid",
             "-c",

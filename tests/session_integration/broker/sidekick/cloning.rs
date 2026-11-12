@@ -21,7 +21,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{RepositoryId, WorkspaceId},
 };
@@ -48,14 +48,14 @@ pub(super) fn spelled(path: &Path) -> &str {
 /// A directory of the test's own, and its path as the Server reads it.
 pub(super) fn directory() -> (tempfile::TempDir, PathBuf) {
     let made = tempfile::tempdir().expect("create a directory");
-    let path = suru::paths::canonical(made.path()).expect("read the directory canonically");
+    let path = shaman::paths::canonical(made.path()).expect("read the directory canonically");
     (made, path)
 }
 
 /// Names `roots` the Workspace Roots, in a Config Document in `config_dir`.
 fn name_roots(config_dir: &Path, roots: &[&str]) {
     std::fs::write(
-        config_dir.join("suru.jsonc"),
+        config_dir.join("shaman.jsonc"),
         json!({ "workspace": { "roots": roots } }).to_string(),
     )
     .expect("name the Workspace Roots");
@@ -444,7 +444,7 @@ async fn with_several_roots_a_clone_names_its_root_and_is_refused_one_that_is_no
             json!({ "repository_url": url, "root": projects, "origin": "workstation" }),
         )
         .await,
-        "Suru is paired with no Remote named `workstation`; list_remotes names the Remotes it is \
+        "Shaman is paired with no Remote named `workstation`; list_remotes names the Remotes it is \
          paired with, and leaving `origin` out reaches this server.",
         "a Clone naming a Remote goes there or nowhere, never into this server's Roots"
     );
@@ -524,7 +524,7 @@ async fn a_clone_is_refused_where_no_root_is_configured_or_its_root_cannot_be_re
             "The Workspace Root `{}` cannot be read (",
             spelled(&unplugged)
         )) && refusal.ends_with(
-            "), so nothing was cloned; Suru never makes a Workspace Root, so ask the user to \
+            "), so nothing was cloned; Shaman never makes a Workspace Root, so ask the user to \
              make it or to name another."
         ),
         "{refusal}"
@@ -641,8 +641,8 @@ async fn a_clone_may_not_make_a_hidden_workspace_however_it_is_named() {
     let (_elsewhere, elsewhere) = directory();
     let origin = bare_repository(&elsewhere, "atlas");
     let work = elsewhere.join("atlas-work");
-    std::fs::write(work.join("suru-clone"), "a run long gone").expect("write a marker");
-    git(&work, &["add", "suru-clone"]);
+    std::fs::write(work.join("shaman-clone"), "a run long gone").expect("write a marker");
+    git(&work, &["add", "shaman-clone"]);
     git(
         &work,
         &["-c", "commit.gpgsign=false", "commit", "-m", "marked"],
@@ -655,7 +655,7 @@ async fn a_clone_may_not_make_a_hidden_workspace_however_it_is_named() {
     let (_sidekick_id, mut sidekick, _provider) =
         start_sidekick(&descriptor, &mut hosted.claude).await;
 
-    for name in [".atlas.suru-clone-deadbeef", ".atlas"] {
+    for name in [".atlas.shaman-clone-deadbeef", ".atlas"] {
         assert_eq!(
             refused(
                 &mut sidekick,
@@ -846,7 +846,7 @@ async fn no_clone_takes_the_sidekick_workspaces_place_however_its_name_is_spelle
             )
             .await,
             format!(
-                "`{}` names Suru's own data directory, where the Sidekick Workspace is kept, \
+                "`{}` names Shaman's own data directory, where the Sidekick Workspace is kept, \
                  which is not a Root a Clone may go in, so nothing was cloned; Clone into another \
                  of this server's Workspace Roots, or ask the user to name a directory of their \
                  own in the workspace.roots Setting.",
@@ -1043,9 +1043,9 @@ async fn only_a_sidekick_is_offered_clone_workspace_and_told_the_roots_that_boun
         json!(["repository_url"]),
         "{cloning}"
     );
-    let note = sidekick_handoff.instruction_note(|tool| format!("mcp__suru__{tool}"));
+    let note = sidekick_handoff.instruction_note(|tool| format!("mcp__shaman__{tool}"));
     assert!(
-        note.contains("mcp__suru__clone_workspace")
+        note.contains("mcp__shaman__clone_workspace")
             && note.contains(&serde_json::to_string(&roots).expect("the Roots as JSON")),
         "a Sidekick is told of the Tool and of the Roots that bound it: {note}"
     );
@@ -1059,7 +1059,7 @@ async fn only_a_sidekick_is_offered_clone_workspace_and_told_the_roots_that_boun
     );
     assert!(
         !ordinary_handoff
-            .instruction_note(|tool| format!("mcp__suru__{tool}"))
+            .instruction_note(|tool| format!("mcp__shaman__{tool}"))
             .contains("clone_workspace"),
         "nor told of it"
     );
@@ -1077,7 +1077,7 @@ async fn only_a_sidekick_is_offered_clone_workspace_and_told_the_roots_that_boun
     hosted.server.shutdown().await.expect("shut down server");
 }
 
-/// Suru's own data directory, where the Sidekick Workspace is kept, is no
+/// Shaman's own data directory, where the Sidekick Workspace is kept, is no
 /// Root a Clone may go in, however the Roots spell it. A Sidekick is not told
 /// of it among the Roots that bound its Clones. A Clone naming it as `root`,
 /// as the Setting spells it or as the directory it is, is refused saying it
@@ -1085,7 +1085,7 @@ async fn only_a_sidekick_is_offered_clone_workspace_and_told_the_roots_that_boun
 /// Root rather than being asked which, and where it is the only Root, a
 /// Clone is refused so. Nothing is cloned into it.
 #[tokio::test]
-async fn suru_s_own_data_directory_is_no_root_a_clone_may_go_in() {
+async fn shaman_s_own_data_directory_is_no_root_a_clone_may_go_in() {
     const CHANNEL: &str = "sidekick-clone-data-root";
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
@@ -1110,15 +1110,15 @@ async fn suru_s_own_data_directory_is_no_root_a_clone_may_go_in() {
     .await;
     let mut sidekick = McpClient::handed(&handoff);
     sidekick.initialize().await;
-    let note = handoff.instruction_note(|tool| format!("mcp__suru__{tool}"));
+    let note = handoff.instruction_note(|tool| format!("mcp__shaman__{tool}"));
     assert!(
         note.contains(&serde_json::to_string(&[spelled(&projects)]).expect("the Roots as JSON")),
         "a Sidekick is told the Roots its Clones may go in, and that one alone: {note}"
     );
-    let data_root = suru::paths::canonical(&data).expect("read the data directory canonically");
+    let data_root = shaman::paths::canonical(&data).expect("read the data directory canonically");
     let refusal = |root: &Path| {
         format!(
-            "`{}` names Suru's own data directory, where the Sidekick Workspace is kept, which \
+            "`{}` names Shaman's own data directory, where the Sidekick Workspace is kept, which \
              is not a Root a Clone may go in, so nothing was cloned; Clone into another of this \
              server's Workspace Roots, or ask the user to name a directory of their own in the \
              workspace.roots Setting.",
@@ -1170,7 +1170,7 @@ async fn suru_s_own_data_directory_is_no_root_a_clone_may_go_in() {
     );
     assert!(
         !data.join("atlas").exists() && !data.join("charts").exists(),
-        "nothing is cloned into Suru's own data directory"
+        "nothing is cloned into Shaman's own data directory"
     );
 
     hosted.server.shutdown().await.expect("shut down server");
@@ -1186,9 +1186,9 @@ async fn a_credential_in_a_repository_url_reaches_no_log() {
     const CHANNEL: &str = "sidekick-clone-credential";
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let config = ServerConfig::new(state_dir.path(), CHANNEL).expect("configure the Log");
-    let log = suru::logging::init_with_filter_directives(
+    let log = shaman::logging::init_with_filter_directives(
         &config,
-        suru::logging::Role::Server,
+        shaman::logging::Role::Server,
         Some("trace,rmcp=trace,rmcp::service=trace".to_owned()),
     )
     .expect("initialize the Log at its most verbose");
@@ -1247,7 +1247,7 @@ async fn a_credential_in_a_repository_url_reaches_no_log() {
     );
     assert!(
         logged.contains("Git command finished"),
-        "Suru's own lines are written as verbosely as asked: {logged}"
+        "Shaman's own lines are written as verbosely as asked: {logged}"
     );
     assert!(
         !logged.contains("SECRET"),
@@ -1361,14 +1361,14 @@ async fn a_clone_has_the_roots_discovered_afresh_and_its_workspace_stays_cloned(
 /// Git whose every Clone, once whole, says where it is about to land and
 /// waits there until the test lets one more go on.
 fn gated_git() -> (
-    suru::source_control::GitSourceControl,
+    shaman::source_control::GitSourceControl,
     std::sync::mpsc::Receiver<PathBuf>,
     std::sync::mpsc::Sender<()>,
 ) {
     let (landing, landings) = std::sync::mpsc::channel();
     let (release, released) = std::sync::mpsc::channel::<()>();
     let (landing, released) = (Mutex::new(landing), Mutex::new(released));
-    let git = suru::source_control::GitSourceControl::default().with_naming_observer(
+    let git = shaman::source_control::GitSourceControl::default().with_naming_observer(
         move |destination: &Path| {
             let _ = landing.lock().unwrap().send(destination.to_owned());
             let _ = released.lock().unwrap().recv();
@@ -1597,18 +1597,18 @@ async fn what_a_dead_servers_clone_recorded_and_left_in_a_root_is_removed_at_the
         std::fs::write(staging.join("clone").join("README.md"), readme("atlas"))
             .expect("write what was left");
         if let Some(marked) = marked {
-            std::fs::write(staging.join("suru-clone"), marked).expect("mark what was left");
+            std::fs::write(staging.join("shaman-clone"), marked).expect("mark what was left");
         }
         if recorded {
             record_staging(&config, &staging, GONE);
         }
         staging
     };
-    let abandoned = left(".atlas.suru-clone-0123abcd", Some(GONE), true);
-    let unmarked = left(".logs.suru-clone-44556677", None, true);
-    let unrecorded = left(".maps.suru-clone-89abcdef", Some(GONE), false);
-    let unmarked_unrecorded = left(".tiles.suru-clone-8899aabb", None, false);
-    let remarked = left(".charts.suru-clone-00112233", Some("another run"), true);
+    let abandoned = left(".atlas.shaman-clone-0123abcd", Some(GONE), true);
+    let unmarked = left(".logs.shaman-clone-44556677", None, true);
+    let unrecorded = left(".maps.shaman-clone-89abcdef", Some(GONE), false);
+    let unmarked_unrecorded = left(".tiles.shaman-clone-8899aabb", None, false);
+    let remarked = left(".charts.shaman-clone-00112233", Some("another run"), true);
     let notes = left(".notes", Some(GONE), false);
 
     let hosted = host_providers_with_timings(

@@ -19,7 +19,7 @@ pub use deadlines::PROGRESS_DEADLINE;
 
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedEvent},
     protocol::{
         CreateSessionRequest, DerivationErrand, ExecutionDirectory, Health, InitialPrompt,
@@ -40,7 +40,7 @@ pub fn loopback_client() -> reqwest::Client {
         .expect("a loopback HTTP client needs nothing that can fail")
 }
 
-/// Marks the linked Worktree at `root` as one Suru made, for a test that stands
+/// Marks the linked Worktree at `root` as one Shaman made, for a test that stands
 /// one up with Git rather than by preparing it.
 pub fn mark_managed(root: &std::path::Path) {
     let pointer = std::fs::read_to_string(root.join(".git")).expect("a linked Worktree's pointer");
@@ -48,7 +48,7 @@ pub fn mark_managed(root: &std::path::Path) {
         .trim_end()
         .strip_prefix("gitdir: ")
         .expect("a linked Worktree's pointer names its registration");
-    std::fs::write(std::path::Path::new(metadata).join("suru-managed"), "")
+    std::fs::write(std::path::Path::new(metadata).join("shaman-managed"), "")
         .expect("mark the registration");
 }
 
@@ -122,7 +122,7 @@ pub async fn receive_initial_state(client: &mut ManagedClient) -> Health {
 /// answering the Server's Relays as well, which follow its Model Catalog.
 pub async fn receive_initial_state_and_relays(
     client: &mut ManagedClient,
-) -> (Health, suru::protocol::RelayListing) {
+) -> (Health, shaman::protocol::RelayListing) {
     let (identity, relays, _) = receive_connect_state(client).await;
     (identity, relays)
 }
@@ -145,7 +145,7 @@ pub async fn next_event(client: &mut ManagedClient) -> Option<ManagedEvent> {
 /// heard first.
 pub async fn next_workspace_listing(
     mut next: impl AsyncFnMut() -> Option<ManagedEvent>,
-) -> suru::protocol::WorkspaceListing {
+) -> shaman::protocol::WorkspaceListing {
     timeout(PROGRESS_DEADLINE, async {
         loop {
             if let ManagedEvent::WorkspaceListing(listing) =
@@ -165,8 +165,8 @@ pub async fn receive_connect_state(
     client: &mut ManagedClient,
 ) -> (
     Health,
-    suru::protocol::RelayListing,
-    suru::protocol::ListenerState,
+    shaman::protocol::RelayListing,
+    shaman::protocol::ListenerState,
 ) {
     assert!(matches!(
         timeout(PROGRESS_DEADLINE, next_event(client))
@@ -218,7 +218,9 @@ pub async fn receive_onboarded(client: &mut ManagedClient) -> bool {
 
 /// Reads how the Server's Serving listener stands, which follows its Relays
 /// on every connect.
-pub async fn receive_serving_listener(client: &mut ManagedClient) -> suru::protocol::ListenerState {
+pub async fn receive_serving_listener(
+    client: &mut ManagedClient,
+) -> shaman::protocol::ListenerState {
     let event = timeout(PROGRESS_DEADLINE, next_event(client))
         .await
         .expect("the Serving listener's state arrives")
@@ -230,7 +232,7 @@ pub async fn receive_serving_listener(client: &mut ManagedClient) -> suru::proto
 }
 
 /// Reads the Server's Relays that follow every connect's Model Catalog.
-pub async fn receive_relays(client: &mut ManagedClient) -> suru::protocol::RelayListing {
+pub async fn receive_relays(client: &mut ManagedClient) -> shaman::protocol::RelayListing {
     let event = timeout(PROGRESS_DEADLINE, next_event(client))
         .await
         .expect("the Server's Relays arrive")
@@ -493,7 +495,7 @@ pub fn config_root_pinning(errand: &DerivationErrand) -> tempfile::TempDir {
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let document = serde_json::json!({ "derivation": { "errand": errand } });
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         serde_json::to_string_pretty(&document).expect("serialize the Config Document"),
     )
     .expect("write Config Document");

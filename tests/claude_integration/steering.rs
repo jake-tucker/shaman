@@ -6,7 +6,7 @@ use crate::claude_integration::support::{
     user_turn_arm,
 };
 use serde_json::Value;
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, Cost, CostBasis, InitialPrompt, MessageRole,
         MessageStatus, PromptDelivery, PromptId, PromptStatus, TurnStatus, Usage,

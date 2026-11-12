@@ -6,7 +6,7 @@ use crate::tui_rendering::support::{
     failed_session_snapshot, rendered_application_rows, workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         InitialPrompt, ModelAvailability, Prompt, PromptDelivery, PromptId, PromptOrder,
@@ -34,7 +34,7 @@ pub fn created_session_snapshot(
             context_fill: None,
             prompt_cache: None,
             id: session_id,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             workspace: Workspace::directory(workspace.to_owned()),
@@ -67,7 +67,7 @@ pub fn created_session_snapshot(
         subagent_interventions: Vec::new(),
         pending_approvals: Vec::new(),
         submitting_approvals: Vec::new(),
-        pending_approvals_revision: suru::protocol::SessionRevision(0),
+        pending_approvals_revision: shaman::protocol::SessionRevision(0),
         watches: Vec::new(),
         waiting_on_subagents: None,
         current_model: None,
@@ -842,7 +842,7 @@ mod aside {
     use crate::tui_rendering::support::{
         connected_application, deliver_settings, rendered_application_rows_at, workspace_dir,
     };
-    use suru::{
+    use shaman::{
         managed_client::SubagentTreeEvent,
         protocol::{
             ActivityStatus, EffectiveSettings, Outlook, SessionId, SessionReference,

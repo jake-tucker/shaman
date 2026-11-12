@@ -17,11 +17,11 @@
 //! is, and reads what the Sidekick's Provider double is handed.
 
 use reqwest::StatusCode;
-use suru::protocol::{
+use shaman::protocol::{
     AgentId, Approval, ApprovalId, ApprovalSubject, MessageRole, SubagentTreeChange,
     SubagentTreeSnapshot,
 };
-use suru::provider::{ProviderEventAttribution, ProviderSubagentId, Report};
+use shaman::provider::{ProviderEventAttribution, ProviderSubagentId, Report};
 
 use super::*;
 use crate::session_integration::broker::sidekick::answering::where_to_run;
@@ -98,7 +98,7 @@ impl Owed {
     /// Provider start carried on the Remote, through which a test acts as
     /// its Agent there.
     async fn begin_handing(&mut self) -> (SessionId, BrokerHandoff, ControlledProviderSession) {
-        let directory = suru::paths::canonical(self.there.path())
+        let directory = shaman::paths::canonical(self.there.path())
             .expect("read the Remote's Workspace canonically");
         let begun = acted(
             &mut self.sidekick,
@@ -234,7 +234,7 @@ async fn ask(
     remote: &RuntimeDescriptor,
     session_id: SessionId,
     provider: &ControlledProviderSession,
-    questionnaire: &suru::protocol::Questionnaire,
+    questionnaire: &shaman::protocol::Questionnaire,
 ) {
     timeout(
         PROGRESS_DEADLINE,
@@ -260,7 +260,7 @@ fn the_report(reports: &[Report]) -> String {
 /// untimed.
 fn settled_there(session_id: SessionId, title: &str, settled: &str, final_message: &str) -> String {
     format!(
-        "Sidekick Report from Suru: the Session \"{title}\" you set to work on the Remote \
+        "Sidekick Report from Shaman: the Session \"{title}\" you set to work on the Remote \
          \"{REMOTE}\" has settled its Turn, which {settled}. Its session_id is {session_id} and \
          its origin \"{REMOTE}\", which read_session takes.\n\nIts Agent's final \
          Message:\n\n{final_message}"
@@ -278,14 +278,14 @@ fn lost_there(stopped_answering: bool, sessions: &[(SessionId, &str)]) -> String
         .join(", ");
     if stopped_answering {
         format!(
-            "Sidekick Report from Suru: the Remote \"{REMOTE}\" stopped answering while you were \
+            "Sidekick Report from Shaman: the Remote \"{REMOTE}\" stopped answering while you were \
              owed Reports of the Sessions you set to work there, so none will come of them: \
              {named}. read_session with origin \"{REMOTE}\" reads them once it answers again, \
              which list_remotes tells."
         )
     } else {
         format!(
-            "Sidekick Report from Suru: the Pairing with the Remote \"{REMOTE}\" ended while you \
+            "Sidekick Report from Shaman: the Pairing with the Remote \"{REMOTE}\" ended while you \
              were owed Reports of the Sessions you set to work there, so none will come of them: \
              {named}. Nothing of them can be read unless it is paired again."
         )
@@ -373,7 +373,7 @@ async fn a_remote_answers_the_outline_of_a_tree_read_in_one_moment_and_nothing_w
     ask(&remote, child, &child_provider, &where_to_run()).await;
     writes(&provider, FIXED).await;
 
-    let outline: suru::protocol::SessionTreeOutline = crate::support::loopback_client()
+    let outline: shaman::protocol::SessionTreeOutline = crate::support::loopback_client()
         .get(format!(
             "{}/v1/remotes/{REMOTE}/v1/sessions/{child}/outline",
             owed.own.base_url
@@ -624,7 +624,7 @@ async fn each_intervention_a_remote_turn_the_sidekick_began_comes_to_owe_is_repo
         owed.steered("the Questionnaire the Remote's Session asks is reported")
             .await,
         format!(
-            "Sidekick Report from Suru: the Session \"{ASKED}\" you set to work on the Remote \
+            "Sidekick Report from Shaman: the Session \"{ASKED}\" you set to work on the Remote \
              \"{REMOTE}\" asks a Questionnaire, which waits on an Answer. Its session_id is \
              {begun} and its origin \"{REMOTE}\": read_session gives its Questions, and \
              answer_questionnaire answers it."
@@ -643,7 +643,7 @@ async fn each_intervention_a_remote_turn_the_sidekick_began_comes_to_owe_is_repo
         owed.steered("the Approval the Remote's Session asks is reported")
             .await,
         format!(
-            "Sidekick Report from Suru: the Session \"{ASKED}\" you set to work on the Remote \
+            "Sidekick Report from Shaman: the Session \"{ASKED}\" you set to work on the Remote \
              \"{REMOTE}\" asks an Approval, which waits on the user's Decision. Its session_id is \
              {begun} and its origin \"{REMOTE}\": read_session says what it asks."
         )
@@ -685,7 +685,7 @@ async fn each_intervention_a_remote_turn_the_sidekick_began_comes_to_owe_is_repo
     assert_eq!(
         asked,
         format!(
-            "Sidekick Report from Suru: a Subagent of the Session \"{ASKED}\" you set to work on \
+            "Sidekick Report from Shaman: a Subagent of the Session \"{ASKED}\" you set to work on \
              the Remote \"{REMOTE}\" asks a Questionnaire, which waits on an Answer. The \
              Session's session_id is {begun}, and the Subagent's is {subagent}, each at origin \
              \"{REMOTE}\": given the Subagent's, read_session gives its Questions, and \
@@ -739,7 +739,7 @@ async fn a_subagent_working_on_past_a_remote_turn_reports_until_the_branch_settl
         owed.steered("the Questionnaire of the Subagent the Turn left working is reported")
             .await,
         format!(
-            "Sidekick Report from Suru: a Subagent of the Session \"{ASKED}\" you set to work on \
+            "Sidekick Report from Shaman: a Subagent of the Session \"{ASKED}\" you set to work on \
              the Remote \"{REMOTE}\" asks a Questionnaire, which waits on an Answer. The \
              Session's session_id is {begun}, and the Subagent's is {child}, each at origin \
              \"{REMOTE}\": given the Subagent's, read_session gives its Questions, and \
@@ -1398,7 +1398,7 @@ async fn a_remote_subagent_belongs_to_the_turn_that_last_set_it_working() {
         owed.steered("the grandchild's Approval for the Sidekick's Turn is reported")
             .await,
         format!(
-            "Sidekick Report from Suru: a Subagent of the Session \"{ASKED}\" you set to work on \
+            "Sidekick Report from Shaman: a Subagent of the Session \"{ASKED}\" you set to work on \
              the Remote \"{REMOTE}\" asks an Approval, which waits on the user's Decision. The \
              Session's session_id is {begun}, and the Subagent's is {}, each at origin \
              \"{REMOTE}\": given the Subagent's, read_session says what it asks.",
@@ -1419,9 +1419,9 @@ async fn a_remote_subagent_belongs_to_the_turn_that_last_set_it_working() {
 async fn a_remote_branch_works_on_while_a_grandchild_does_though_no_tree_is_followed() {
     let mut owed = owed(
         "sidekick-remote-report-grandchild",
-        timings().with_remote_watch_limits(suru::server::RemoteWatchLimits {
+        timings().with_remote_watch_limits(shaman::server::RemoteWatchLimits {
             trees_per_remote: 0,
-            ..suru::server::RemoteWatchLimits::default()
+            ..shaman::server::RemoteWatchLimits::default()
         }),
     )
     .await;
@@ -1595,7 +1595,7 @@ async fn answered_subagent_settles_beside_a_sibling(
 /// The Report of the answered Subagent's Turn settling, untimed.
 fn settled_beneath(users: SessionId, answered: SessionId) -> String {
     format!(
-        "Sidekick Report from Suru: a Subagent of the Session \"Run the auth suite.\" you set to \
+        "Sidekick Report from Shaman: a Subagent of the Session \"Run the auth suite.\" you set to \
          work on the Remote \"{REMOTE}\" has settled its Turn, which completed. The Session's \
          session_id is {users}, and the Subagent's is {answered}, each at origin \"{REMOTE}\", \
          which read_session takes.\n\nIts Agent's final Message:\n\n{FIXED}"
@@ -1610,9 +1610,9 @@ fn settled_beneath(users: SessionId, answered: SessionId) -> String {
 async fn a_tree_owed_reports_with_no_stream_of_its_own_is_polled() {
     let mut owed = owed(
         "sidekick-remote-report-polled",
-        timings().with_remote_watch_limits(suru::server::RemoteWatchLimits {
+        timings().with_remote_watch_limits(shaman::server::RemoteWatchLimits {
             trees_per_remote: 0,
-            ..suru::server::RemoteWatchLimits::default()
+            ..shaman::server::RemoteWatchLimits::default()
         }),
     )
     .await;
@@ -1634,9 +1634,9 @@ async fn a_tree_owed_reports_takes_the_stream_of_one_only_a_client_watches() {
     let mut owed = owed(
         "sidekick-remote-report-preempts",
         timings()
-            .with_remote_watch_limits(suru::server::RemoteWatchLimits {
+            .with_remote_watch_limits(shaman::server::RemoteWatchLimits {
                 trees_per_remote: 1,
-                ..suru::server::RemoteWatchLimits::default()
+                ..shaman::server::RemoteWatchLimits::default()
             })
             .with_remote_report_reads(Duration::from_millis(10), Duration::from_secs(600)),
     )

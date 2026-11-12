@@ -12,7 +12,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         AgentSelection, AppearanceSettings, EffectiveSettings, ModelAvailability, ModelCatalog,
@@ -360,11 +360,11 @@ fn a_listing_of_the_remotes_says_which_icon_each_is_drawn_beside() {
     let mut application = remote_session(workspace.path());
     application
         .handle_event(ApplicationEvent::RemotesKnown(vec![
-            suru::protocol::Remote {
+            shaman::protocol::Remote {
                 name: "studio".to_owned(),
                 fingerprint: "studio-fingerprint".to_owned(),
                 ways: Vec::new(),
-                status: suru::protocol::RemoteStatus::Available,
+                status: shaman::protocol::RemoteStatus::Available,
                 icon: Some("md-bug".to_owned()),
             },
         ]))

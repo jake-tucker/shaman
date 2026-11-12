@@ -6,7 +6,7 @@ and [Hyper terminal theme](https://github.com/PandaTheme/hyperterm-panda/blob/ma
 
 Panda keeps its original dark palette in both appearance modes. The panel and
 selection grays follow Atom's lightened background; diff backgrounds are tinted
-for Suru. UI roles use the upstream blue, pink, mint, and orange accents.
+for Shaman. UI roles use the upstream blue, pink, mint, and orange accents.
 
 ## Upstream license
 

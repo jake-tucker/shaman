@@ -38,7 +38,7 @@ use crate::{
     },
 };
 
-const CLAUDE_PATH_ENV: &str = "SURU_CLAUDE_PATH";
+const CLAUDE_PATH_ENV: &str = "SHAMAN_CLAUDE_PATH";
 /// The models.dev catalog Claude's canonical Models are priced in.
 const MODELS_DEV_PROVIDER: &str = "anthropic";
 const CLAUDE_EXECUTABLE_NAME: &str = "claude";
@@ -88,7 +88,7 @@ impl ClaudeRuntime {
     }
 
     /// Sets how long Claude keeps what a request writes at each of its cache lifetimes, and the
-    /// lifetime Suru assumes for a Session that has written nothing yet; injectable so tests
+    /// lifetime Shaman assumes for a Session that has written nothing yet; injectable so tests
     /// count a Prompt Cache's lapse at a millisecond scale.
     pub fn with_cache_lifetimes(mut self, lifetimes: ClaudeCacheLifetimes) -> Self {
         self.cache_lifetimes = lifetimes;
@@ -175,7 +175,7 @@ impl ProviderRuntime for ClaudeRuntime {
         ProviderId::new(CLAUDE_PROVIDER_ID)
     }
 
-    // "Claude", deliberately not "Claude Code": Suru hosts the Provider, and
+    // "Claude", deliberately not "Claude Code": Shaman hosts the Provider, and
     // the product the user is choosing between here is the model family.
     fn display_name(&self) -> &str {
         "Claude"

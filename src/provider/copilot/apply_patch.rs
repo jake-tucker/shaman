@@ -28,7 +28,7 @@
 //!   `+`, `-`, a space, or `@@`, and one opening with a space is context — so a file the patch
 //!   merely mentions in its content is never mistaken for one it touches.
 //!
-//! Text Suru cannot be sure names every file it touches reads as nothing at all, which leaves the
+//! Text Shaman cannot be sure names every file it touches reads as nothing at all, which leaves the
 //! execution to be recorded some other way: text in no envelope, an envelope cut off before its
 //! end, one naming no file, and one holding a line in the shape of a marker the grammar does not
 //! place there — a header naming no path, a move following anything but an update's header, or

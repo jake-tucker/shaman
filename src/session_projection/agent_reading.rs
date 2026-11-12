@@ -82,7 +82,7 @@ const TITLE_CHARS: usize = 60;
 /// What stands where a line's start was cut by the cap.
 const CUT: &str = "[…]";
 
-/// What follows anything Suru's own storage cap cut short.
+/// What follows anything Shaman's own storage cap cut short.
 const STORED_CUT: &str = " [cut short when stored]";
 
 /// Where a read is made from: which Server holds the Session read, as its
@@ -710,7 +710,7 @@ impl<'a> Transcript<'a> {
     /// Whether Turn `turn` is a Continuation: one begun with nothing asked of
     /// the Agent. In a top-level Session every other Turn is begun by a
     /// Prompt. In a Subagent's Session its spawn begins the first, and a
-    /// Delegation heads any other it begins; one its Provider gave Suru no
+    /// Delegation heads any other it begins; one its Provider gave Shaman no
     /// words of leaves nothing to tell it from a Continuation, and reads as
     /// one.
     fn is_continuation(&self, turn: usize) -> bool {
@@ -919,7 +919,7 @@ impl<'a> Transcript<'a> {
             .to_string()
     }
 
-    /// Entry `number`, whole: everything Suru stores of it, its output
+    /// Entry `number`, whole: everything Shaman stores of it, its output
     /// included.
     fn whole(&self, number: EntryNumber) -> Result<Spans, ReadRefusal> {
         let turn = self.turn(number.turn)?;
@@ -1467,7 +1467,7 @@ fn subagent_interventions(session: &SessionSnapshot) -> Vec<String> {
         .collect()
 }
 
-/// Adds an Activity's output to its whole reading, saying where Suru's cap
+/// Adds an Activity's output to its whole reading, saying where Shaman's cap
 /// cut it short.
 fn push_output(whole: &mut Spans, output: &str, truncated: bool) {
     if output.is_empty() {
@@ -1483,7 +1483,7 @@ fn push_output(whole: &mut Spans, output: &str, truncated: bool) {
 
 /// Adds a Questionnaire's Questions, their choices, and the Answer it was
 /// given, to its whole reading. A secret Answer is said to be one and no
-/// more, as Suru stores it.
+/// more, as Shaman stores it.
 fn push_questionnaire(whole: &mut Spans, questionnaire: &Questionnaire, answer: Option<&Answer>) {
     for (index, question) in questionnaire.questions.iter().enumerate() {
         whole.push_str(&format!("\nQuestion {} ({}): ", index + 1, question.id));
@@ -2578,7 +2578,7 @@ mod tests {
         );
     }
 
-    /// A Compaction Suru began of its own accord says so, as an automatic
+    /// A Compaction Shaman began of its own accord says so, as an automatic
     /// one does, since nobody reading it asked for it.
     #[test]
     fn a_scheduled_compaction_reads_as_one() {
@@ -2614,7 +2614,7 @@ mod tests {
     }
 
     #[test]
-    fn what_suru_cut_short_when_it_stored_an_entry_is_said() {
+    fn what_shaman_cut_short_when_it_stored_an_entry_is_said() {
         let mut fixture = Fixture::new();
         let turn = fixture.turn(TurnStatus::Completed);
         let message = fixture.message(turn, MessageRole::Agent, "The start of it");
@@ -3361,7 +3361,7 @@ mod tests {
     }
 
     #[test]
-    fn a_file_change_and_a_subagent_read_whole_say_all_suru_holds_of_them() {
+    fn a_file_change_and_a_subagent_read_whole_say_all_shaman_holds_of_them() {
         let mut fixture = Fixture::new();
         let turn = fixture.turn(TurnStatus::Completed);
         let root = PathBuf::from(ROOT);

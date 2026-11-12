@@ -40,7 +40,7 @@ as part of your terminal. Work in Documents, Desktop or Downloads may raise a co
 waits for someone at the screen.";
 
 fn label(channel: &str) -> String {
-    format!("ai.suru.server.{channel}")
+    format!("ai.shaman.server.{channel}")
 }
 
 /// The LaunchAgent that runs `keep` in `working_directory`.
@@ -143,7 +143,7 @@ mod tests {
     fn the_agent_runs_the_keeper_once_at_each_login_at_the_screen() {
         let plist = plist("beta", &awkward_keep(), "/Users/jo smith");
         assert!(
-            plist.contains("<string>ai.suru.server.beta</string>"),
+            plist.contains("<string>ai.shaman.server.beta</string>"),
             "{plist}"
         );
         assert!(plist.contains("<key>RunAtLoad</key>\n  <true/>"), "{plist}");
@@ -177,7 +177,7 @@ mod tests {
     fn an_awkward_path_is_escaped_so_it_reads_back_as_it_was() {
         let plist = plist("beta", &awkward_keep(), "/Users/jo & co");
         assert!(
-            plist.contains("<string>/Users/jo smith/R&amp;D &lt;x&gt;/suru</string>"),
+            plist.contains("<string>/Users/jo smith/R&amp;D &lt;x&gt;/shaman</string>"),
             "{plist}"
         );
         // Neither `%` nor `$` means anything to launchd, so both are left as they are.
@@ -200,7 +200,7 @@ mod tests {
             .path()
             .join("Library")
             .join("LaunchAgents")
-            .join("ai.suru.server.beta.plist");
+            .join("ai.shaman.server.beta.plist");
 
         assert_eq!(beta.standing(), Standing::NotRegistered);
         assert_eq!(beta.remove().unwrap(), Removal::NothingRegistered);
@@ -214,10 +214,10 @@ mod tests {
         );
 
         let mut moved = awkward_keep();
-        moved.program = "/opt/moved/suru".to_owned();
+        moved.program = "/opt/moved/shaman".to_owned();
         beta.register(&moved).unwrap();
         let second = std::fs::read_to_string(&path).unwrap();
-        assert!(second.contains("/opt/moved/suru"), "{second}");
+        assert!(second.contains("/opt/moved/shaman"), "{second}");
         assert!(!second.contains("R&amp;D"), "{second}");
 
         assert_eq!(

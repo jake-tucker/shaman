@@ -322,7 +322,7 @@ struct SessionRecord {
     /// The Provider's own identity for the Subagent this Session is, on a
     /// Subagent's child Session alone.
     subagent_identity: Option<StoredSubagentIdentity>,
-    /// Whether this is a brokered Subagent's Session: one Suru spawned through
+    /// Whether this is a brokered Subagent's Session: one Shaman spawned through
     /// the Broker, on a Provider the delegating Agent chose, rather than one
     /// the delegating Agent's own Provider spawned. A brokered Subagent's
     /// conversation runs on a Provider actor of its own instead of riding the

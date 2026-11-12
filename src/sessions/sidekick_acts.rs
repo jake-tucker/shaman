@@ -858,7 +858,7 @@ mod tests {
     fn database(directory: &std::path::Path) -> SqliteConnection {
         SqliteConnection::establish(
             directory
-                .join("suru.db")
+                .join("shaman.db")
                 .to_str()
                 .expect("the fixture's path is UTF-8"),
         )

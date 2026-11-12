@@ -17,7 +17,7 @@ ALTER TABLE workspaces ADD COLUMN presentation TEXT;
 -- Every Workspace a stored Session names, as the copy of its most recently
 -- updated Session presents it, beside when the first of them was made. A
 -- Session whose metadata no longer reads as JSON says nothing of where it
--- works; one Suru cannot otherwise read still does.
+-- works; one Shaman cannot otherwise read still does.
 CREATE TEMPORARY TABLE presented_by_sessions AS
 SELECT id, path, presentation, first_seen, last_seen
 FROM (

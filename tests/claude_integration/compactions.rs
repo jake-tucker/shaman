@@ -5,7 +5,7 @@
 //! anchors, which is never a Message of the user's, and a `status` reporting
 //! `compact_result: "failed"` fails it with the CLI's `compact_error`. A child's boundary,
 //! attributed by `parent_tool_use_id`, is the Subagent's Compaction and stands in its own Session.
-//! The failure the CLI reports for a compaction Suru interrupted is the stop Suru asked for, and a
+//! The failure the CLI reports for a compaction Shaman interrupted is the stop Shaman asked for, and a
 //! compaction that starts after the Turn settled runs in a loop of its own, which an interrupt or
 //! the next Prompt stops.
 //!
@@ -18,7 +18,7 @@
 //! the compaction's `status` and boundary, or the failed `local_command_outcome` the CLI answers a
 //! refusal with, say. The `<local-command-stdout>` replay and the synthetic assistant message the
 //! CLI writes for a local command are its plumbing, recorded as nothing. Interrupting it sends
-//! Claude's own `interrupt`, and the failure the CLI then reports is the stop Suru asked for: the
+//! Claude's own `interrupt`, and the failure the CLI then reports is the stop Shaman asked for: the
 //! Compaction and its Turn Settle interrupted, measuring nothing, whatever the `result` says.
 //!
 //! The wire shapes mirror the 2.1.283 CLI's own schema for these messages, and what the 2.1.283
@@ -29,7 +29,7 @@ use crate::claude_integration::support::{
     settled_session, user_turn_arm,
 };
 use crate::support::PROGRESS_DEADLINE;
-use suru::protocol::{
+use shaman::protocol::{
     Activity, ActivityStatus, AdmitPromptRequest, CompactSessionRequest, CompactionTrigger,
     ContextFill, Cost, InitialPrompt, MessageRole, PromptDelivery, PromptId, SessionError,
     SessionErrorCode, SessionSnapshot, TurnStatus, Usage,
@@ -86,7 +86,7 @@ const CONTEXT_ARM: &str = r#"    *'"subtype":"get_context_usage"'*)
 "#;
 
 /// `timeline` played in the background once the test lets the fixture holding at `gate` carry on,
-/// so the loop keeps reading what Suru sends meanwhile.
+/// so the loop keeps reading what Shaman sends meanwhile.
 fn after(gate: &str, timeline: &str) -> String {
     format!("      (\n        wait_for \"{gate}\"\n{timeline}      ) &\n")
 }
@@ -125,7 +125,7 @@ fn compacting_after_the_turn() -> ScriptedClaude {
 async fn compacting_in_a_continuation(
     claude: &ScriptedClaude,
     opened: &crate::claude_integration::support::OpenedSession,
-    feed: &mut suru::managed_client::SessionSubscription,
+    feed: &mut shaman::managed_client::SessionSubscription,
 ) -> SessionSnapshot {
     settled_session(&opened.client, opened.session_id, 0).await;
     claude.release();
@@ -139,13 +139,13 @@ async fn compacting_in_a_continuation(
     .await
 }
 
-/// Where in the CLI's input Suru's interrupt stands, and where the user message at `index` does.
+/// Where in the CLI's input Shaman's interrupt stands, and where the user message at `index` does.
 fn interrupt_and_user_message(claude: &ScriptedClaude, index: usize) -> (usize, usize) {
     let requests = claude.requests();
     let interrupt = requests
         .iter()
         .position(|request| request["request"]["subtype"] == "interrupt")
-        .unwrap_or_else(|| panic!("Suru interrupts the CLI: {requests:?}"));
+        .unwrap_or_else(|| panic!("Shaman interrupts the CLI: {requests:?}"));
     let message = requests
         .iter()
         .enumerate()
@@ -345,7 +345,7 @@ async fn a_compaction_cut_off_by_a_failed_loop_settles_failed_with_its_turn() {
 }
 
 #[tokio::test]
-async fn a_compaction_claude_reports_failing_after_suru_interrupted_it_settles_interrupted() {
+async fn a_compaction_claude_reports_failing_after_shaman_interrupted_it_settles_interrupted() {
     let claude = ScriptedClaude::new(&format!(
         "{}{}{}{CONTEXT_ARM}",
         discovery_arms(CLAUDE_MODELS),
@@ -381,7 +381,7 @@ async fn a_compaction_claude_reports_failing_after_suru_interrupted_it_settles_i
     assert_eq!(
         *status,
         ActivityStatus::Interrupted,
-        "the failure Claude reports for the compaction Suru stopped is the stop it asked for"
+        "the failure Claude reports for the compaction Shaman stopped is the stop it asked for"
     );
     assert_eq!(*error, None);
     opened
@@ -691,7 +691,7 @@ async fn a_requested_compaction_is_claudes_compact_command_in_a_turn_that_settle
     let turn = &settled.turns[1];
     assert_eq!(
         turn.compaction_requested,
-        Some(suru::protocol::CompactionRequest::Manual)
+        Some(shaman::protocol::CompactionRequest::Manual)
     );
     assert_eq!(turn.status, TurnStatus::Completed);
     assert_eq!(
@@ -1040,7 +1040,7 @@ async fn a_requested_compaction_claude_fails_settles_failed_with_claudes_error_o
         .expect("shut the server down");
 }
 
-/// What the CLI writes once Suru's interrupt stops its `/compact`: the compaction's own failed
+/// What the CLI writes once Shaman's interrupt stops its `/compact`: the compaction's own failed
 /// `status`, carrying the error the aborted summarising call threw.
 const COMPACTION_CANCELLED_STATUS: &str = r#"      emit '{"type":"system","subtype":"status","status":null,"compact_result":"failed","compact_error":"API Error: Request was aborted.","uuid":"status-cancelled","session_id":"prov-session"}'
 "#;
@@ -1057,8 +1057,8 @@ const COMPACT_RESULT_AFTER_CANCEL: &str = r#"      emit '{"type":"result","subty
 /// The Standing inputs' latest Turn for `session_id` in the Session listing, from which a Client
 /// reads whether the Session stands Failed.
 async fn listed_latest_turn(
-    client: &suru::managed_client::ManagedClient,
-    session_id: suru::protocol::SessionId,
+    client: &shaman::managed_client::ManagedClient,
+    session_id: shaman::protocol::SessionId,
 ) -> Option<TurnStatus> {
     client
         .list_sessions(None)
@@ -1066,7 +1066,7 @@ async fn listed_latest_turn(
         .expect("list Sessions")
         .into_iter()
         .find_map(|item| match item {
-            suru::protocol::SessionListItem::Readable(summary)
+            shaman::protocol::SessionListItem::Readable(summary)
                 if summary.session.id == session_id =>
             {
                 summary
@@ -1159,12 +1159,12 @@ async fn interrupting_a_requested_compaction_stops_claudes_compact_and_settles_b
         let (interrupt, compact) = interrupt_and_user_message(&claude, 1);
         assert!(
             compact < interrupt,
-            "{described}: Suru stops the `/compact` with Claude's own interrupt"
+            "{described}: Shaman stops the `/compact` with Claude's own interrupt"
         );
         let turn = &settled.turns[1];
         assert_eq!(
             turn.compaction_requested,
-            Some(suru::protocol::CompactionRequest::Manual)
+            Some(shaman::protocol::CompactionRequest::Manual)
         );
         assert_eq!(
             turn.status,
@@ -1185,7 +1185,7 @@ async fn interrupting_a_requested_compaction_stops_claudes_compact_and_settles_b
                 summary: None,
                 summary_truncated: false,
             }],
-            "{described}: Claude's failed compaction is the stop Suru asked for, and a stopped \
+            "{described}: Claude's failed compaction is the stop Shaman asked for, and a stopped \
              Compaction left the context as it was, measuring nothing"
         );
         assert!(
@@ -1293,11 +1293,11 @@ async fn requested(claude: &ScriptedClaude, subtype: &str, count: usize) {
         }
     })
     .await
-    .unwrap_or_else(|_| panic!("Suru sends the CLI {count} {subtype} requests"));
+    .unwrap_or_else(|_| panic!("Shaman sends the CLI {count} {subtype} requests"));
 }
 
 /// Claude asking the user a question under the control request `request_id`, or asking with no
-/// questions at all, which Suru cannot present.
+/// questions at all, which Shaman cannot present.
 fn question(request_id: &str, questions: &str) -> String {
     format!(
         r#"      emit '{{"type":"control_request","request_id":"{request_id}","request":{{"subtype":"can_use_tool","tool_name":"AskUserQuestion","tool_use_id":"question-tool","input":{{"questions":{questions}}}}}}}'
@@ -1338,7 +1338,7 @@ async fn a_reading_the_boundary_prompts_waits_behind_the_completion_its_summary_
     ));
     let opened = opened_session(&claude, "claude-compaction-held-reading", "Keep going").await;
     requested(&claude, "get_context_usage", 1).await;
-    // The CLI answers the reading as it reads the request; give the answer time to reach Suru,
+    // The CLI answers the reading as it reads the request; give the answer time to reach Shaman,
     // which holds it behind the completion still waiting on its summary.
     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
     let held = opened
@@ -1617,7 +1617,7 @@ async fn a_reading_a_late_boundary_prompts_measures_the_continuation_its_complet
     claude.release();
     requested(&claude, "get_context_usage", 2).await;
     claude.release_gate("first-reading");
-    // The CLI answers each reading as soon as it may; give both answers time to reach Suru
+    // The CLI answers each reading as soon as it may; give both answers time to reach Shaman
     // before the summary does.
     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
     claude.release_gate("summary");
@@ -1675,8 +1675,8 @@ const LARGE_CONTEXT_ARM: &str = r#"    *'"subtype":"get_context_usage"'*)
 "#;
 
 /// Claude's lifetimes at a test's scale, the hour-long one long enough to hold the lead.
-const SCALED_LIFETIMES: suru::provider::ClaudeCacheLifetimes =
-    suru::provider::ClaudeCacheLifetimes {
+const SCALED_LIFETIMES: shaman::provider::ClaudeCacheLifetimes =
+    shaman::provider::ClaudeCacheLifetimes {
         five_minute_lifetime: std::time::Duration::from_millis(300),
         one_hour_lifetime: std::time::Duration::from_millis(3_600),
         unobserved: std::time::Duration::from_millis(150),
@@ -1699,14 +1699,14 @@ async fn a_scheduled_compaction_is_claudes_compact_command_ahead_of_an_inferred_
         user_turn_arm(WRITTEN_FOR_AN_HOUR),
     ));
     let (pricing, _rates) = crate::claude_integration::models::anthropic_rates().await;
-    let (clock, hand) = suru::server::ServerClock::manual();
+    let (clock, hand) = shaman::server::ServerClock::manual();
     let session = crate::claude_integration::support::DurableSession::start_configured_on(
-        suru::provider::ClaudeRuntime::new(claude.executable())
+        shaman::provider::ClaudeRuntime::new(claude.executable())
             .with_pricing_source(pricing)
             .with_cache_lifetimes(SCALED_LIFETIMES),
         None,
         "claude-compaction-scheduled",
-        suru::server::ServerTimings::default()
+        shaman::server::ServerTimings::default()
             .with_clock(clock.clone())
             .with_scheduled_compaction_lead(SCALED_LEAD)
             .with_scheduled_compaction_margin(SCALED_MARGIN),
@@ -1758,7 +1758,7 @@ async fn a_scheduled_compaction_is_claudes_compact_command_ahead_of_an_inferred_
     assert_eq!(
         (turn.compaction_requested, turn.status),
         (
-            Some(suru::protocol::CompactionRequest::Scheduled),
+            Some(shaman::protocol::CompactionRequest::Scheduled),
             TurnStatus::Completed
         )
     );
@@ -1825,14 +1825,14 @@ async fn a_scheduled_compaction_due_after_claude_stopped_for_idleness_resumes_it
         user_turn_arm(WRITTEN_FOR_AN_HOUR),
     ));
     let (pricing, _rates) = crate::claude_integration::models::anthropic_rates().await;
-    let (clock, hand) = suru::server::ServerClock::manual();
+    let (clock, hand) = shaman::server::ServerClock::manual();
     let session = crate::claude_integration::support::DurableSession::start_configured_on(
-        suru::provider::ClaudeRuntime::new(claude.executable())
+        shaman::provider::ClaudeRuntime::new(claude.executable())
             .with_pricing_source(pricing)
             .with_cache_lifetimes(SCALED_LIFETIMES),
         None,
         "claude-compaction-scheduled-stopped",
-        suru::server::ServerTimings::default()
+        shaman::server::ServerTimings::default()
             .with_clock(clock.clone())
             .with_scheduled_compaction_lead(SCALED_LEAD)
             .with_scheduled_compaction_margin(SCALED_MARGIN)
@@ -1886,7 +1886,7 @@ async fn a_scheduled_compaction_due_after_claude_stopped_for_idleness_resumes_it
     assert_eq!(
         (turn.compaction_requested, turn.status),
         (
-            Some(suru::protocol::CompactionRequest::Scheduled),
+            Some(shaman::protocol::CompactionRequest::Scheduled),
             TurnStatus::Completed
         )
     );

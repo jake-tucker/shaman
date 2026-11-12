@@ -1,4 +1,4 @@
-//! One Errand on the Copilot CLI, run through a Copilot Session Suru starts and discards.
+//! One Errand on the Copilot CLI, run through a Copilot Session Shaman starts and discards.
 //!
 //! Copilot's harness has no one-shot mode and no way to be handed an output schema, so this is
 //! ADR 0011's escape hatch taken for real, and the only way Copilot runs an Errand: it opens a
@@ -12,10 +12,10 @@
 //! and it is discarded however the Errand ends, including when the Errand's deadline passes and the
 //! whole call is dropped mid-flight. Discarding means deleting: Copilot files a Session on disk and
 //! offers it back in its own picker even with the session store turned off, and a Session per
-//! derived Title accumulating in the CLI the user works in outside Suru is the failure ADR 0011
+//! derived Title accumulating in the CLI the user works in outside Shaman is the failure ADR 0011
 //! exists to avoid rather than a trace to shrug at.
 //!
-//! Nothing here creates a Suru Session: no Session store entry, no Transcript, and no Resume State,
+//! Nothing here creates a Shaman Session: no Session store entry, no Transcript, and no Resume State,
 //! so the Copilot Session an Errand ran on can never be listed, opened, or continued.
 //!
 //! What the Errand consumed is that Session's alone, so it is read off the Session's own reports:
@@ -45,7 +45,7 @@ use crate::provider::{
     harness::SharedHarnessHandle,
 };
 
-/// What a failure running an Errand is reported under: the work Suru asked for rather than the
+/// What a failure running an Errand is reported under: the work Shaman asked for rather than the
 /// phase of it that went wrong.
 const ERRAND_CONTEXT: &str = "Copilot Errand failed";
 
@@ -96,7 +96,7 @@ pub(super) async fn run_copilot_errand(
 ///
 /// Every model call the Session makes is the Errand's, so every `assistant.usage` is added in,
 /// whichever agent made it, by the same reading and pricing a Copilot Turn's are. A report that
-/// went unread — one Suru could not decode, or one the subscription fell too far behind to deliver
+/// went unread — one Shaman could not decode, or one the subscription fell too far behind to deliver
 /// — leaves the whole consumption unknown, since a sum missing a call is a figure nobody measured.
 /// A report of zero tokens is added in as stated: each `assistant.usage` is a reading the CLI took
 /// of one call, unlike Codex's zeroed usage, which says no reading was ever received.
@@ -172,7 +172,7 @@ impl ErrandMetering {
 /// The Copilot Session one Errand runs on: the least-capable, least-persistent Session the SDK will
 /// open.
 ///
-/// An Errand is Suru's own work rather than the user's, so the Session it runs on is given nothing
+/// An Errand is Shaman's own work rather than the user's, so the Session it runs on is given nothing
 /// to work with: an empty Tool allowlist, no Skills — which are capabilities to reach for rather
 /// than instructions to read — and a refusal for anything it asks permission for anyway, against
 /// the Session path's full-auto posture. It runs in the Session's own Workspace so that project
@@ -188,7 +188,7 @@ fn errand_session_config(errand: &ProviderErrand) -> Result<SessionConfig, Provi
     Ok(config)
 }
 
-/// The least-capable, least-persistent Session the SDK will open, for one Suru opens for its own
+/// The least-capable, least-persistent Session the SDK will open, for one Shaman opens for its own
 /// purposes and discards: no Tools, no Skills, a refusal for anything it asks permission for, and
 /// nothing streamed.
 pub(super) fn least_capable_session_config() -> SessionConfig {
@@ -251,7 +251,7 @@ fn replied_json(reply: &str) -> Option<Value> {
     serde_json::from_str(reply.get(opening..=closing)?).ok()
 }
 
-/// A Copilot Session Suru opened for its own purposes, discarded however that work ends.
+/// A Copilot Session Shaman opened for its own purposes, discarded however that work ends.
 ///
 /// The [`Drop`] arm is the one that matters: an Errand that runs past its deadline is dropped where
 /// it stands, and without it the Session it opened would be left behind — which is the whole of

@@ -5,12 +5,12 @@ use crate::session_integration::{
     support,
 };
 use crate::support::PROGRESS_DEADLINE;
-use std::path::{Path, PathBuf};
-use suru::{
+use shaman::{
     protocol::*,
     provider::{ProviderEvent, ProviderResumeState},
     server::{self, ServerConfig},
 };
+use std::path::{Path, PathBuf};
 use tokio::time::{Duration, timeout};
 
 struct Layout {
@@ -22,7 +22,7 @@ struct Layout {
 impl Layout {
     fn new() -> Self {
         let temp = tempfile::tempdir().unwrap();
-        let root = suru::paths::canonical(temp.path()).unwrap();
+        let root = shaman::paths::canonical(temp.path()).unwrap();
         let main = root.join("main");
         let linked = root.join("external worktree");
         std::fs::create_dir(&main).unwrap();
@@ -458,7 +458,7 @@ async fn recovery_leaves_recursive_submodules_uninitialized_when_their_sources_a
     let git_config = layout.root.join("git-config");
     std::fs::write(&git_config, "[protocol \"file\"]\nallow = always\n").unwrap();
     let adapter = std::sync::Arc::new(
-        suru::source_control::GitSourceControl::default().with_configuration_file(&git_config),
+        shaman::source_control::GitSourceControl::default().with_configuration_file(&git_config),
     );
     let (runtime, mut provider) = ControlledProvider::new();
     let config = layout.config("recursive-recovery");
@@ -564,7 +564,7 @@ async fn interrupted_registration_retries_without_overwriting_staged_or_switched
             &layout.main,
             &["worktree", "remove", layout.linked.to_str().unwrap()],
         );
-        let token = format!("suru-recovery:{}", association.id.0);
+        let token = format!("shaman-recovery:{}", association.id.0);
         git(
             &layout.main,
             &[

@@ -5,7 +5,7 @@
 use std::time::Instant;
 
 use ratatui::{Terminal, backend::TestBackend};
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         Activity, ActivityId, ActivityStatus, Message, MessageId, MessageRole, MessageStatus,
@@ -46,7 +46,7 @@ fn session_snapshot(workspace: &std::path::Path, sections: usize) -> SessionSnap
             context_fill: None,
             prompt_cache: None,
             id: SessionId::new(),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             workspace: Workspace::directory(workspace.to_owned()),
@@ -68,7 +68,7 @@ fn session_snapshot(workspace: &std::path::Path, sections: usize) -> SessionSnap
         subagent_interventions: Vec::new(),
         pending_approvals: Vec::new(),
         submitting_approvals: Vec::new(),
-        pending_approvals_revision: suru::protocol::SessionRevision(0),
+        pending_approvals_revision: shaman::protocol::SessionRevision(0),
         watches: Vec::new(),
         waiting_on_subagents: None,
         current_model: None,
@@ -222,7 +222,7 @@ fn transcript_render_timings() {
     timed("scroll event + render", 50, || {
         application
             .handle_event(ApplicationEvent::Command(
-                suru::tui::CommandId::ScrollTranscriptPageUp,
+                shaman::tui::CommandId::ScrollTranscriptPageUp,
             ))
             .expect("scroll");
         terminal

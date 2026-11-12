@@ -1115,7 +1115,7 @@ impl WorkspacePicker {
         }
     }
 
-    /// Empties the Description, which saved as it stands clears it, so Suru
+    /// Empties the Description, which saved as it stands clears it, so Shaman
     /// may derive one again.
     pub(super) fn clear_description(&mut self) {
         if let Some(editor) = self.writable_description() {

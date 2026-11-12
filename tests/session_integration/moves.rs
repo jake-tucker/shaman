@@ -28,7 +28,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::json;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent},
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, AgentId, AgentIdentity, CheckoutKind,
@@ -110,7 +110,7 @@ fn refusal(error: &anyhow::Error) -> &SessionError {
 }
 
 fn canonical(path: &Path) -> PathBuf {
-    suru::paths::canonical(path).expect("canonicalize a directory the test made")
+    shaman::paths::canonical(path).expect("canonicalize a directory the test made")
 }
 
 async fn connected_client(state_dir: &Path, channel: &str) -> ManagedClient {
@@ -247,7 +247,7 @@ impl IdleSession {
         sessions
             .into_iter()
             .find_map(|item| match item {
-                suru::protocol::SessionListItem::Readable(summary)
+                shaman::protocol::SessionListItem::Readable(summary)
                     if summary.session.id == self.session_id =>
                 {
                     Some(*summary)
@@ -430,7 +430,7 @@ fn note(from: &Path, to: &Path) -> Report {
 /// it opens with.
 async fn following(
     fixture: &IdleSession,
-) -> (ManagedClient, suru::managed_client::SessionSubscription) {
+) -> (ManagedClient, shaman::managed_client::SessionSubscription) {
     let observer = connected_client(fixture.state_dir.path(), fixture.channel).await;
     let mut stream = observer
         .subscribe_session(fixture.session_id)
@@ -444,7 +444,9 @@ async fn following(
 }
 
 /// The next Move a Session stream carries, past whatever else it carries.
-async fn next_move_heard(stream: &mut suru::managed_client::SessionSubscription) -> SessionChange {
+async fn next_move_heard(
+    stream: &mut shaman::managed_client::SessionSubscription,
+) -> SessionChange {
     timeout(PROGRESS_DEADLINE, async {
         loop {
             let event = stream.next().await.expect("the stream stays open");
@@ -1228,14 +1230,14 @@ async fn a_native_subagents_session_is_refused_in_words_that_say_why() {
             snapshot
                 .activities
                 .iter()
-                .any(|activity| matches!(activity, suru::protocol::Activity::Subagent { .. }))
+                .any(|activity| matches!(activity, shaman::protocol::Activity::Subagent { .. }))
         })
         .await;
     let child = parent
         .activities
         .iter()
         .find_map(|activity| match activity {
-            suru::protocol::Activity::Subagent { session_id, .. } => Some(*session_id),
+            shaman::protocol::Activity::Subagent { session_id, .. } => Some(*session_id),
             _ => None,
         })
         .expect("a Subagent row");
@@ -1995,7 +1997,7 @@ async fn a_pending_move_outlives_a_restart_and_applies_as_the_stopped_turn_settl
         settled
             .turns
             .iter()
-            .all(|turn| turn.status != suru::protocol::TurnStatus::Active),
+            .all(|turn| turn.status != shaman::protocol::TurnStatus::Active),
         "the Turn the stop left open has settled"
     );
     assert_eq!(bound_for(&settled), None);
@@ -2181,7 +2183,7 @@ async fn a_queued_prompts_skill_the_destination_lacks_fails_it_naming_the_skill(
                 && snapshot
                     .turns
                     .last()
-                    .is_some_and(|turn| turn.status == suru::protocol::TurnStatus::Failed)
+                    .is_some_and(|turn| turn.status == shaman::protocol::TurnStatus::Failed)
         })
         .await;
     let failure = settled
@@ -2270,7 +2272,7 @@ async fn native_subagent_completes(fixture: &IdleSession) {
         .provider_session
         .emit_and_wait_until_observed(ProviderEvent::SubagentCompleted {
             subagent_id: ProviderSubagentId::new("task-1"),
-            status: suru::provider::ProviderSubagentStatus::Completed,
+            status: shaman::provider::ProviderSubagentStatus::Completed,
         })
         .await;
 }
@@ -2678,7 +2680,7 @@ async fn a_move_asked_as_a_watch_wakes_the_agent_waits_for_what_it_woke() {
         .provider_session
         .emit_and_wait_until_observed(ProviderEvent::WatchSettled {
             watch_id: ProviderWatchId::new("task-tests"),
-            outcome: suru::provider::ProviderWatchOutcome::Completed,
+            outcome: shaman::provider::ProviderWatchOutcome::Completed,
             summary: None,
             woke_agent: true,
         })

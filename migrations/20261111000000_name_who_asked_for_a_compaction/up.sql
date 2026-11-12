@@ -1,4 +1,4 @@
--- A Turn begun for a Compaction now names who asked for it, the user or Suru
+-- A Turn begun for a Compaction now names who asked for it, the user or Shaman
 -- ahead of a Prompt Cache lapse, where it said only that one was asked for.
 -- Every such Turn stored before was the user's.
 UPDATE turns

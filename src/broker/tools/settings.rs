@@ -21,7 +21,7 @@
 //! reaches every Client exactly as the user's does.
 //!
 //! What a Tool answers is worded here from what the operation tells it, never
-//! passed on as some other part of Suru wrote it: a failure of the Serving
+//! passed on as some other part of Shaman wrote it: a failure of the Serving
 //! listener names the address and port it could not take, which are the
 //! values of Settings no Sidekick may read, so a Sidekick is told only that
 //! Serving could not follow, and the user's own surfaces and the Log keep
@@ -34,7 +34,7 @@
 //!
 //! Turning `broker.enabled` off is allowed, as the user asked it of their
 //! Sidekick: it narrows what every Agent is offered rather than widening it,
-//! and one Setting governs everything Suru serves an Agent. It switches the
+//! and one Setting governs everything Shaman serves an Agent. It switches the
 //! Sidekick's own Tools off with the rest, so the answer says as much, for the
 //! Sidekick to tell the user who alone can turn it back on.
 //!
@@ -60,7 +60,7 @@ macro_rules! sidekick_settings_rule {
          whose effect no later change can undo — an Approval Posture's, the \
          Workspace Roots, or automatic Worktree Reclaim — and you can neither read \
          nor change the Settings governing Serving and Pairing; the user changes \
-         those in Suru's settings panel."
+         those in Shaman's settings panel."
     };
 }
 
@@ -68,16 +68,16 @@ macro_rules! sidekick_settings_rule {
 pub(in crate::broker) const SIDEKICK_SETTINGS_RULE: &str = sidekick_settings_rule!();
 
 pub(super) const LIST_SETTINGS_DESCRIPTION: &str = concat!(
-    "List Suru's Settings on this server — what governs how Suru and its \
+    "List Shaman's Settings on this server — what governs how Shaman and its \
      Providers behave and how its Clients present it — each as its key and the \
      value in force, so you can find the one to describe or set. Takes one \
      optional argument, \"group\": one of \"appearance\", \"general\", \
      \"transcript\", \"providers\", \"source_control\" or \"experimental\", the \
-     tab of Suru's settings panel by that name, to list only its Settings. \
+     tab of Shaman's settings panel by that name, to list only its Settings. \
      Answers with JSON of the shape {\"settings\": [{\"key\": \"...\", \"value\": \
      ...}, ...]}, each value as a Config Document spells it — a string, true or \
      false, a number, a list, or an object — whether the user pinned it or it is \
-     Suru's built-in default; describe_setting says which, and what else a Setting \
+     Shaman's built-in default; describe_setting says which, and what else a Setting \
      accepts. ",
     sidekick_settings_rule!(),
     " So the Settings governing Serving and Pairing are never listed. A \
@@ -86,17 +86,17 @@ pub(super) const LIST_SETTINGS_DESCRIPTION: &str = concat!(
 );
 
 pub(super) const DESCRIBE_SETTING_DESCRIPTION: &str = concat!(
-    "Describe one of Suru's Settings on this server: what it governs and what it \
+    "Describe one of Shaman's Settings on this server: what it governs and what it \
      accepts, so you set it correctly. Takes \"key\", the Setting's key as \
      list_settings gives it, such as \"appearance.mode\". Answers with JSON of the \
      shape {\"key\": \"...\", \"label\": \"...\", \"description\": \"...\", \
      \"group\": \"...\", \"scope\": \"...\", \"value\": ..., \"default\": ..., \
      \"pinned\": ..., \"accepts\": \"...\", \"settable\": ...}: \"label\", what \
-     Suru's settings panel calls it; \"description\", what choosing between its \
+     Shaman's settings panel calls it; \"description\", what choosing between its \
      values means; \"group\", the panel's tab it is on; \"scope\", \"client\" for \
-     a Setting governing how a Client presents Suru, which is the same for every \
+     a Setting governing how a Client presents Shaman, which is the same for every \
      Client attached to this server, or \"server\" for one governing this server \
-     or its Providers; \"value\", the value in force, and \"default\", Suru's \
+     or its Providers; \"value\", the value in force, and \"default\", Shaman's \
      built-in one, each as a Config Document spells it and set_setting takes it; \
      \"pinned\", true where the user's Config Document pins the value rather than \
      leaving the default in force; \"accepts\", what it takes, each string quoted \
@@ -112,7 +112,7 @@ pub(super) const DESCRIBE_SETTING_DESCRIPTION: &str = concat!(
 );
 
 pub(super) const SET_SETTING_DESCRIPTION: &str = concat!(
-    "Change one of Suru's Settings on this server, as the user does in Suru's \
+    "Change one of Shaman's Settings on this server, as the user does in Shaman's \
      settings panel: the user's Config Document is edited in place, leaving the \
      rest of it — its other Settings, comments and formatting — as they wrote it, \
      and the change takes effect at once and reaches every Client attached to this \
@@ -132,7 +132,7 @@ pub(super) const SET_SETTING_DESCRIPTION: &str = concat!(
     sidekick_settings_rule!(),
     " So setting one of those is refused, its pin left as it is. Setting \
      \"broker.enabled\" to false turns off the Broker, and with it every Tool \
-     Suru offers you and every other Agent, these included, until the user turns \
+     Shaman offers you and every other Agent, these included, until the user turns \
      it back on; the answer's \"note\" says so. Settings are this server's alone: \
      a Remote's are its own user's, and set_setting refuses an \"origin\"."
 );
@@ -147,14 +147,14 @@ const DESCRIBE_TAKES: [&str; 1] = ["key"];
 const SET_TAKES: [&str; 2] = ["key", "value"];
 
 /// What a Sidekick that turned the Broker off is told, for the user.
-const BROKER_OFF: &str = "The Broker is off now, so Suru offers you and every other Agent none \
+const BROKER_OFF: &str = "The Broker is off now, so Shaman offers you and every other Agent none \
      of its Tools, these included, from your next call on; tell the user, who alone can turn \
-     `broker.enabled` back on, in Suru's settings panel.";
+     `broker.enabled` back on, in Shaman's settings panel.";
 
 /// What a Sidekick is told where the Serving listener could not follow the
 /// Settings in force — and nothing of why, which would name the address and
 /// port of Settings no Sidekick may read.
-const SERVING_NOT_ADOPTED: &str = "The change is saved and in force, but Suru could not start \
+const SERVING_NOT_ADOPTED: &str = "The change is saved and in force, but Shaman could not start \
      Serving as its own Settings ask, which this change did not touch; tell the user, whose \
      settings panel and Log say why.";
 
@@ -172,7 +172,7 @@ pub(super) fn list_settings_schema() -> Value {
             "group": {
                 "type": "string",
                 "enum": SettingGroup::ALL.map(SettingGroup::name),
-                "description": "The tab of Suru's settings panel by this name: list only its \
+                "description": "The tab of Shaman's settings panel by this name: list only its \
                     Settings.",
             },
         },
@@ -311,24 +311,24 @@ fn named(key: &str, done: &str) -> Result<&'static SettingDescriptor, ToolRefusa
         let namespace = key.split('.').next().unwrap_or(key);
         return Err(ToolRefusal::new(format!(
             "The Settings keyed under `{namespace}` govern Serving and Pairing, which no Sidekick \
-             reads or changes, so {done}; the user may change them in Suru's settings panel."
+             reads or changes, so {done}; the user may change them in Shaman's settings panel."
         )));
     }
     match SCHEMA.iter().find(|descriptor| descriptor.key == key) {
         Some(descriptor) if descriptor.sidekick == SidekickAccess::Hidden => {
             Err(ToolRefusal::new(format!(
                 "`{key}` is a Setting no Sidekick reads or changes, so {done}; the user may \
-                 change it in Suru's settings panel."
+                 change it in Shaman's settings panel."
             )))
         }
         Some(descriptor) => Ok(descriptor),
         None => Err(ToolRefusal::new(match nearest_keys(key).as_slice() {
             [] => format!(
-                "Suru has no Setting `{key}`, so {done}; list_settings lists every key, and takes \
+                "Shaman has no Setting `{key}`, so {done}; list_settings lists every key, and takes \
                  a `group` to narrow them."
             ),
             nearest => format!(
-                "Suru has no Setting `{key}`, so {done}; did you mean {}? list_settings lists \
+                "Shaman has no Setting `{key}`, so {done}; did you mean {}? list_settings lists \
                  every key.",
                 alternatives(nearest)
             ),
@@ -407,13 +407,13 @@ fn pin(
         SidekickAccess::ReadOnly { why } => {
             return Err(ToolRefusal::new(format!(
                 "`{key}` is a setting a sidekick may read but not change, since {why}, so it was \
-                 left as it is; tell the user, who may change it in Suru's settings panel."
+                 left as it is; tell the user, who may change it in Shaman's settings panel."
             )));
         }
         SidekickAccess::Hidden => {
             return Err(ToolRefusal::new(format!(
                 "`{key}` is a Setting no Sidekick reads or changes, so nothing was changed; the \
-                 user may change it in Suru's settings panel."
+                 user may change it in Shaman's settings panel."
             )));
         }
     }
@@ -442,7 +442,7 @@ fn answered(
         Ok(changed) => changed,
         Err(SettingsMutationError::NoConfigRoot) => {
             return Err(ToolRefusal::new(format!(
-                "Nothing was changed: Suru has no config root, so there is nowhere to pin `{key}`; \
+                "Nothing was changed: Shaman has no config root, so there is nowhere to pin `{key}`; \
                  tell the user."
             )));
         }
@@ -450,7 +450,7 @@ fn answered(
             return Err(ToolRefusal::new(format!(
                 "Nothing was changed: the user's Config Document at `{}` cannot be edited in \
                  place — it does not parse, or holds something other than an object where `{key}` \
-                 belongs — and Suru never rewrites one; tell the user, who can mend it by hand.",
+                 belongs — and Shaman never rewrites one; tell the user, who can mend it by hand.",
                 path.display()
             )));
         }
@@ -711,7 +711,7 @@ mod tests {
                             Err(ToolRefusal::new(format!(
                                 "`{}` is a setting a sidekick may read but not change, since \
                                  {why}, so it was left as it is; tell the user, who may change \
-                                 it in Suru's settings panel.",
+                                 it in Shaman's settings panel.",
                                 descriptor.key
                             ))),
                         );
@@ -725,9 +725,9 @@ mod tests {
     /// A path standing for the user's Config Document, rooted for the platform.
     fn document_path() -> std::path::PathBuf {
         std::path::PathBuf::from(if cfg!(windows) {
-            r"C:\Users\ada\.config\suru\suru.jsonc"
+            r"C:\Users\ada\.config\shaman\shaman.jsonc"
         } else {
-            "/home/ada/.config/suru/suru.jsonc"
+            "/home/ada/.config/shaman/shaman.jsonc"
         })
     }
 
@@ -736,7 +736,7 @@ mod tests {
     /// names the address and port of Settings hidden from it, nor the detail
     /// a document or the filesystem gave, which no Sidekick needs.
     #[test]
-    fn a_set_tells_nothing_of_serving_nor_any_detail_another_part_of_suru_gave() {
+    fn a_set_tells_nothing_of_serving_nor_any_detail_another_part_of_shaman_gave() {
         const ADDRESS: &str = "203.0.113.7";
         const PORT: &str = "9443";
         let leaked = || anyhow::anyhow!("bind Serving listener to {ADDRESS}:{PORT}: in use");
@@ -921,7 +921,7 @@ mod tests {
         };
         assert_eq!(
             refusal("apperance.mode"),
-            "Suru has no Setting `apperance.mode`, so nothing was described; did you mean \
+            "Shaman has no Setting `apperance.mode`, so nothing was described; did you mean \
              `appearance.mode`? list_settings lists every key."
         );
         assert!(
@@ -942,7 +942,7 @@ mod tests {
         }
         assert_eq!(
             refusal("zzz"),
-            "Suru has no Setting `zzz`, so nothing was described; list_settings lists every \
+            "Shaman has no Setting `zzz`, so nothing was described; list_settings lists every \
              key, and takes a `group` to narrow them."
         );
         let near_serving = refusal("servng.enabled");

@@ -8,7 +8,7 @@ use crate::copilot_integration::{
     },
 };
 use serde_json::Value;
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, ApprovalOutcome, ApprovalPosture,
         ApprovalSubject, CopilotPermissions, CreateSessionRequest, Decision, FileChange,
@@ -36,9 +36,9 @@ fn fixture(requests: &str, response_timeline: &str) -> ScriptedCopilot {
 }
 
 fn approval(
-    snapshot: &suru::protocol::SessionSnapshot,
+    snapshot: &shaman::protocol::SessionSnapshot,
     request: &str,
-) -> (suru::protocol::ApprovalId, ApprovalSubject) {
+) -> (shaman::protocol::ApprovalId, ApprovalSubject) {
     snapshot
         .activities
         .iter()
@@ -55,8 +55,8 @@ fn approval(
         .unwrap_or_else(|| panic!("pending Approval for {request}"))
 }
 
-/// A fixture whose CLI raises `request` — a `permission.requested` event's data — once Suru asks it
-/// for `mode`: the moment a posture change has reached Copilot, and so the moment Suru has adopted
+/// A fixture whose CLI raises `request` — a `permission.requested` event's data — once Shaman asks it
+/// for `mode`: the moment a posture change has reached Copilot, and so the moment Shaman has adopted
 /// it.
 fn on_permission_mode(mode: &str, request: &str) -> ScriptedCopilot {
     let mode_arm = format!(
@@ -123,7 +123,7 @@ async fn the_next_turn_adopts_the_sessions_current_permission_posture() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -170,7 +170,7 @@ async fn the_next_turn_adopts_the_sessions_current_permission_posture() {
     server.shutdown().await.unwrap();
 }
 
-/// The modes Suru has asked Copilot's permission service for, in the order it asked.
+/// The modes Shaman has asked Copilot's permission service for, in the order it asked.
 fn permission_modes(fixture: &ScriptedCopilot) -> Vec<String> {
     fixture
         .requests()
@@ -336,9 +336,9 @@ async fn ask_projects_a_typed_command_and_native_completion_waits_for_decision_h
 
 /// The Tool row the Approval `id` links to.
 fn linked_activity(
-    snapshot: &suru::protocol::SessionSnapshot,
-    id: suru::protocol::ApprovalId,
-) -> Option<suru::protocol::ActivityId> {
+    snapshot: &shaman::protocol::SessionSnapshot,
+    id: shaman::protocol::ApprovalId,
+) -> Option<shaman::protocol::ActivityId> {
     snapshot
         .activities
         .iter()
@@ -666,7 +666,7 @@ async fn allow_all_auto_approves_only_when_managed_policy_does_not_require_anoth
 }
 
 #[tokio::test]
-async fn decline_and_interrupt_delivers_rejection_before_suru_interrupts_the_turn() {
+async fn decline_and_interrupt_delivers_rejection_before_shaman_interrupts_the_turn() {
     let arms =
         conversation_arms().replace(&permission_decision_arm(), &permission_response_arm(""));
     let copilot = ScriptedCopilot::new(&format!(
@@ -721,7 +721,7 @@ async fn decline_and_interrupt_delivers_rejection_before_suru_interrupts_the_tur
         .unwrap();
     assert!(
         rejected < aborted,
-        "native rejection precedes Suru's interrupt"
+        "native rejection precedes Shaman's interrupt"
     );
     assert_eq!(
         native_response(&copilot, "stop").await["result"]["kind"],

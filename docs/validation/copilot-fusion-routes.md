@@ -2,7 +2,7 @@
 
 Captured 2026-11-05 against GitHub Copilot CLI 1.0.105 and `github-copilot-sdk` 1.0.29-preview.5, on
 the assignment ADR 0060 writes, with `examples/copilot_fusion_capture.rs` driving ten scripted
-scenarios across 32 commits. ADR 0069 records what Suru decided from it; #604 and #605 build on it.
+scenarios across 32 commits. ADR 0069 records what Shaman decided from it; #604 and #605 build on it.
 
 Everything under a heading "Observed" was read from captures. "Inferred" is a reading of them. The
 captures themselves are not committed. `tests/copilot_integration/fixtures/fusion-*.jsonl` are
@@ -20,9 +20,9 @@ or opaque provider payload. Scratch paths read `/tmp/fusion-scratch`. Which capt
 | `fusion-route-failed` | `s11` | A failed route, its fallback running live |
 | `fusion-review-accepted`, `fusion-review-denied` | Below | A judge's Approvals under the Ask posture, Tools left out |
 
-## What a person is asked during a review (live, through Suru)
+## What a person is asked during a review (live, through Shaman)
 
-Run after the scenarios below, through Suru's own Server, projection and Approvals, with
+Run after the scenarios below, through Shaman's own Server, projection and Approvals, with
 `provider.copilot.permissions` at `ask` and every Approval decided over the client, on `hydrafusion`,
 from a scratch copy of the template. The tier was forced for the run by an uncommitted hook, since
 choosing one is #605's. All three Prompts routed `cascade` (`gpt-6.1-sol`, judge `gpt-6-luna`, repair
@@ -43,7 +43,7 @@ Observed.
   else carries, and between the solver's last Message and the verdict.
 - **Asked as any Approval:** durable `permission.requested` with no `fusion` attribution, answered by
   `session.permissions.handlePendingPermissionRequest`, and `permission.completed {kind:
-  denied-interactively-by-user}` on a denial. Suru showed and settled them with no change to its
+  denied-interactively-by-user}` on a denial. Shaman showed and settled them with no change to its
   Approval path. The review went on after each: each was answered within the 100ms the run polled at, so how long a review waits on a slow person was not measured.
 - **A denial does not mean "no":** the one denied judge answered with nothing, failed as
   `invalid_output`, and the Route treated that as a reason to escalate. It ran the repair at about 2.3
@@ -149,7 +149,7 @@ cancelled"}`, carrying that phase's usage so far; durable `session.usage_checkpo
 Inferred. The Model takes the unanswered first Prompt in history as still open, so what a follow-up after an interrupt
 costs depends on how much was asked before it.
 
-### 6. Steer mid-phase (Suru's `MessageOptions::with_mode(DeliveryMode::Immediate)`)
+### 6. Steer mid-phase (Shaman's `MessageOptions::with_mode(DeliveryMode::Immediate)`)
 
 | Run | Sent during | What happened |
 |---|---|---|

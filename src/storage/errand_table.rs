@@ -88,7 +88,7 @@ impl NewErrandRow {
 }
 
 impl ErrandRow {
-    /// The record the row spells, or none, logged, where this Suru reads
+    /// The record the row spells, or none, logged, where this Shaman reads
     /// none from it.
     fn readable(self) -> Option<ErrandRecord> {
         let id = self.id;
@@ -99,7 +99,7 @@ impl ErrandRow {
             .ok()
     }
 
-    /// The record the row spells, or why this Suru reads none from it.
+    /// The record the row spells, or why this Shaman reads none from it.
     fn into_record(self) -> Result<ErrandRecord, String> {
         let purpose = spelled(self.purpose, "purpose")?;
         let outcome = spelled(self.outcome, "outcome")?;
@@ -174,12 +174,12 @@ impl StorageRepository {
     /// connection through the index on when each began: every Errand
     /// recorded as beginning within `began`, where given — from its start, up
     /// to but not including its end — earliest first, and when the earliest
-    /// of all of them this Suru can read began.
+    /// of all of them this Shaman can read began.
     ///
-    /// A row this Suru cannot read is logged and left out rather than failing
+    /// A row this Shaman cannot read is logged and left out rather than failing
     /// the read. The schema version only guards the table's shape: a later
-    /// Suru that adds a purpose or outcome writes it without a migration, so
-    /// after a downgrade this Suru can meet a spelling it does not know, and a
+    /// Shaman that adds a purpose or outcome writes it without a migration, so
+    /// after a downgrade this Shaman can meet a spelling it does not know, and a
     /// figure missing one Errand is better than no figures at all.
     pub(crate) async fn errand_reading(
         &self,
@@ -207,7 +207,7 @@ impl StorageRepository {
 
 /// Every Errand recorded as beginning within `began` — from its start, up to
 /// but not including its end — read over `connection` through the index on
-/// when each began, earliest first. A row this Suru cannot read is logged and
+/// when each began, earliest first. A row this Shaman cannot read is logged and
 /// left out rather than failing the read; [`StorageRepository::errand_reading`]
 /// says why.
 pub(super) fn errands_began_within(
@@ -224,7 +224,7 @@ pub(super) fn errands_began_within(
     Ok(rows.into_iter().filter_map(ErrandRow::readable).collect())
 }
 
-/// When the earliest Errand this Suru can read began, none where none is:
+/// When the earliest Errand this Shaman can read began, none where none is:
 /// rows are streamed earliest first through the index on when each began
 /// until one reads, so a row left out of every count never sets where All
 /// time starts.
@@ -360,7 +360,7 @@ mod tests {
         );
     }
 
-    /// A row this Suru cannot read is left out of the records and of when
+    /// A row this Shaman cannot read is left out of the records and of when
     /// the earliest began alike, so it never pulls All time's start before
     /// any Errand counted.
     #[tokio::test]
@@ -375,7 +375,7 @@ mod tests {
                 .execute(&mut connect(&repository.database_path).unwrap())
                 .unwrap();
         };
-        unreadable(500, "outcome-from-a-later-suru");
+        unreadable(500, "outcome-from-a-later-shaman");
         assert_eq!(
             repository
                 .errand_reading(None)

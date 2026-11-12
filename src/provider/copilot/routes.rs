@@ -6,7 +6,7 @@
 //! arrive, because a Route can run for minutes. Its commit then names the phase that won and
 //! re-sends every staged item of that phase, once, in order, under the `messageId` or `toolCallId`
 //! it had. So the first copy of an item stands and any later one adds nothing: a staged row is
-//! never reopened, reset or doubled by its committed twin, whichever reaches Suru first, and a Tool
+//! never reopened, reset or doubled by its committed twin, whichever reaches Shaman first, and a Tool
 //! still running when its twin completes settles on that.
 //!
 //! Nothing retracts a losing phase. The commit's `sourcePhaseId` is the only word on it, and it
@@ -68,7 +68,7 @@ struct CommitStarted {
 
 /// What a review phase's `content` holds: a judge's `{score, rationale}`, or a critic's
 /// `{assessment, feedback, defect}`, whose `verdict` Copilot leaves null. Observed rather than
-/// contracted, so a review Suru cannot read still stands, with no account of itself.
+/// contracted, so a review Shaman cannot read still stands, with no account of itself.
 #[derive(Default, Deserialize)]
 struct Review {
     rationale: Option<String>,
@@ -338,7 +338,7 @@ impl Routes {
             .insert(tool_call_id.to_owned())
     }
 
-    /// The Route `fusion` names, whose phase is at work. One Suru never saw begin, as when it could
+    /// The Route `fusion` names, whose phase is at work. One Shaman never saw begin, as when it could
     /// not read its beginning, is known from here on as a staging Route like any other.
     fn route_of(&mut self, fusion: &FusionAttribution, stretch: u64) -> &mut Route {
         let route = self

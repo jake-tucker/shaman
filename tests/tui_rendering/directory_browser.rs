@@ -23,8 +23,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use std::time::{Duration, Instant};
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         AgentSelection, CheckoutAssociation, CheckoutId, CheckoutKind, CheckoutRevision,
@@ -43,6 +42,7 @@ use suru::{
         SemanticCommandId, TerminalFacts, WorkspaceResolutionSurface,
     },
 };
+use std::time::{Duration, Instant};
 
 const WIDTH: u16 = 100;
 const HEIGHT: u16 = 30;
@@ -4096,7 +4096,7 @@ fn browsing_a_windows_drive(drive: &str, children: &[&str]) -> Application {
 /// `parent` and plain children by name. The Remote has said its paths are
 /// Windows', so the Client names them as Windows does on every platform.
 fn browsing_on_windows(directory: &str, parent: Option<&str>, children: &[&str]) -> Application {
-    use suru::protocol::{
+    use shaman::protocol::{
         PathStyle, SessionCatalogRevision, SessionCatalogSnapshot, WorkspacePaths,
     };
 

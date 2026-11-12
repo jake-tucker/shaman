@@ -37,7 +37,7 @@ login, fails serving where you can see it rather than making a new one."
 }
 
 fn unit_name(channel: &str) -> String {
-    format!("suru-server-{channel}.service")
+    format!("shaman-server-{channel}.service")
 }
 
 /// `word` as `ExecStart` reads one word back: double quotes, within which `\`
@@ -67,7 +67,7 @@ fn exec_word(word: &str) -> String {
 /// groups outright. So the Server goes as a crash leaves it, with no Manual stop
 /// recorded; SQLite's journal keeps storage whole, its Providers go with it, and
 /// the next login's Keeper finds the election free and starts another. There is
-/// no clean way to do better here: an `ExecStop=` running `suru server stop` also
+/// no clean way to do better here: an `ExecStop=` running `shaman server stop` also
 /// runs once the Keeper has ended by itself, which it does on finding its
 /// registration gone, and would stop a Server uninstalling must leave alone.
 ///
@@ -78,7 +78,7 @@ fn unit(keep: &KeepCommand) -> String {
     format!(
         "\
 [Unit]
-Description=Suru keeper: starts this channel's server at login, and restarts it if it crashes
+Description=Shaman keeper: starts this channel's server at login, and restarts it if it crashes
 
 [Service]
 Type=simple
@@ -135,7 +135,7 @@ impl ServiceManager for UserUnit {
             bail!(
                 "could not register a login start: this machine has no systemd user instance to \
                  register it with ({unanswered}). Nothing was registered. In a container or under \
-                 another init system, have what starts things there run `suru server start`."
+                 another init system, have what starts things there run `shaman server start`."
             );
         }
         let path = self.unit_path();
@@ -254,8 +254,8 @@ mod tests {
     /// quotes, so a path holding either arrives whole only if each is doubled.
     #[test]
     fn an_awkward_path_is_quoted_so_exec_start_reads_it_back_as_it_was() {
-        assert_eq!(exec_word("/plain/suru"), "\"/plain/suru\"");
-        assert_eq!(exec_word("/jo smith/suru"), "\"/jo smith/suru\"");
+        assert_eq!(exec_word("/plain/shaman"), "\"/plain/shaman\"");
+        assert_eq!(exec_word("/jo smith/shaman"), "\"/jo smith/shaman\"");
         assert_eq!(exec_word("/100%/x"), "\"/100%%/x\"");
         assert_eq!(exec_word("/$HOME/x"), "\"/$$HOME/x\"");
         assert_eq!(exec_word("/say \"hi\""), "\"/say \\\"hi\\\"\"");
@@ -264,7 +264,7 @@ mod tests {
         let unit = unit(&awkward_keep());
         assert!(
             unit.contains(
-                "ExecStart=\"/Users/jo smith/R&D <x>/suru\" \"__keep-server\" \"--state-dir\" \
+                "ExecStart=\"/Users/jo smith/R&D <x>/shaman\" \"__keep-server\" \"--state-dir\" \
                  \"/Users/jo smith/100%%/$$HOME/\\\"quoted\\\"\\\\state\" \"--env\" \
                  \"PATH=/a b/bin:/usr/bin\"\n"
             ),
@@ -277,7 +277,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let commands = RecordingCommands::default();
         let beta = user_unit("beta", home.path(), &commands);
-        let unit = "suru-server-beta.service";
+        let unit = "shaman-server-beta.service";
 
         beta.register(&awkward_keep()).unwrap();
         assert!(beta.unit_path().is_file());
@@ -318,10 +318,10 @@ mod tests {
 
         beta.register(&awkward_keep()).unwrap();
         let mut moved = awkward_keep();
-        moved.program = "/opt/moved/suru".to_owned();
+        moved.program = "/opt/moved/shaman".to_owned();
         beta.register(&moved).unwrap();
         let contents = std::fs::read_to_string(beta.unit_path()).unwrap();
-        assert!(contents.contains("/opt/moved/suru"), "{contents}");
+        assert!(contents.contains("/opt/moved/shaman"), "{contents}");
         assert!(!contents.contains("R&D"), "{contents}");
 
         assert!(matches!(beta.remove().unwrap(), Removal::Removed { .. }));

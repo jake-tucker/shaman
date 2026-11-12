@@ -8,8 +8,8 @@
 //! The caller runs on the double hosted as Claude, whose Cost is a cumulative
 //! whole-tree amount per reporting lifetime.
 
-use suru::protocol::CostTotal;
-use suru::provider::ProviderEventAttribution;
+use shaman::protocol::CostTotal;
+use shaman::provider::ProviderEventAttribution;
 
 use super::attribution::spawn_native;
 use super::*;

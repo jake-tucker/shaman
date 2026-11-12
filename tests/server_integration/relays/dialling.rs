@@ -13,7 +13,7 @@ use std::{
     },
 };
 
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         AttachmentDescriptor, Outlook, RelayState, RemoteStatus, SessionErrorCode,
@@ -21,7 +21,7 @@ use suru::{
     },
     server::ServerTimings,
 };
-use suru_relay_protocol::{Refusal, RelayMessage, ServerMessage};
+use shaman_relay_protocol::{Refusal, RelayMessage, ServerMessage};
 use tokio::time::{Duration, timeout};
 
 use super::{
@@ -542,7 +542,7 @@ pub(super) async fn answer_as_a_relay(socket: &mut RelaySocket, said: ServerMess
             tell(
                 socket,
                 &RelayMessage::LoginDone {
-                    account: suru_relay_protocol::Account {
+                    account: shaman_relay_protocol::Account {
                         provider: "scripted".to_owned(),
                         username: "octocat".to_owned(),
                     },

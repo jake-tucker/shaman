@@ -7,7 +7,7 @@ use crate::session_integration::support::{
     open_catalog_stream_with_snapshot, read_session_until, the_subagent_row, working_turn,
 };
 use crate::support::PROGRESS_DEADLINE;
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, InitialPrompt, LatestTurnStatus, MessageRole,
         PromptDelivery, PromptId, SessionCatalogChange, SessionId, SessionListItem,
@@ -109,7 +109,7 @@ async fn a_turn_settles_at_the_providers_boundary_while_its_subagent_works_on() 
         .expect("read child Session")
         .error_for_status()
         .expect("child Session remains readable")
-        .json::<suru::protocol::SessionSnapshot>()
+        .json::<shaman::protocol::SessionSnapshot>()
         .await
         .expect("decode child Session");
     assert_eq!(
@@ -210,7 +210,7 @@ async fn working_reads_from_the_subtree_until_the_last_subagent_settles() {
             inputs: SessionStandingInputs {
                 pending_questionnaires: _,
                 submitting_questionnaires: _,
-                pending_questionnaires_revision: suru::protocol::SessionRevision(0),
+                pending_questionnaires_revision: shaman::protocol::SessionRevision(0),
                 subagent_interventions: _,
                 latest_turn: Some(LatestTurnStatus {
                     status: TurnStatus::Completed,
@@ -476,7 +476,7 @@ async fn the_next_delivered_prompt_settles_a_stale_continuation() {
     let streaming = &parent.messages[1];
     assert_eq!(
         streaming.status,
-        suru::protocol::MessageStatus::Completed,
+        shaman::protocol::MessageStatus::Completed,
         "the Continuation's streaming Message settles with it"
     );
 

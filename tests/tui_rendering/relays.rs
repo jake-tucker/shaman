@@ -13,7 +13,7 @@ use crate::tui_rendering::support::{
     rendered_application_rows_at, studio_stops_answering, type_terminal_text,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use suru::{
+use shaman::{
     protocol::{
         Outlook, Relay, RelayAccount, RelayListing, RelayLogin, RelayLoginOutcome,
         RelayLoginRefusal, RelayRemoval, RelayState, RelayUnreachable,
@@ -1060,7 +1060,7 @@ fn a_removal_armed_before_a_pin_landed_is_refused_at_the_second_press() {
     press(&mut application, KeyCode::Char('x'));
     application
         .handle_event(ApplicationEvent::Managed(
-            suru::managed_client::ManagedEvent::Relays(RelayListing {
+            shaman::managed_client::ManagedEvent::Relays(RelayListing {
                 instance: SERVER,
                 revision: LISTED + 1,
                 relays: vec![pinned(relay(COMPANY))],
@@ -1520,7 +1520,7 @@ fn relay(address: &str) -> Relay {
 
 /// The Config Document a test's pinned Relay is pinned by, as a Server spells
 /// it.
-const DOCUMENT: &str = "~/.config/suru/suru.jsonc";
+const DOCUMENT: &str = "~/.config/shaman/shaman.jsonc";
 
 fn pinned(relay: Relay) -> Relay {
     Relay {

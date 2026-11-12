@@ -11,8 +11,7 @@ use crate::tui_rendering::support::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use std::path::Path;
-use suru::{
+use shaman::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
         EffectiveSettings, Outlook, SessionId, SessionReference, SessionTitleChanged,
@@ -20,6 +19,7 @@ use suru::{
     },
     tui::{Application, ApplicationEvent, ApplicationTransition},
 };
+use std::path::Path;
 
 const WIDE: u16 = 100;
 const TALL: u16 = 24;
@@ -481,7 +481,7 @@ fn deleting_the_session_closes_the_dialog_and_lets_its_proposal_go() {
 
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SessionDeleted(
-            suru::protocol::SessionDeleted { session_id },
+            shaman::protocol::SessionDeleted { session_id },
         )))
         .expect("take the deletion");
     assert!(!dialog_is_drawn(&application));
@@ -495,9 +495,9 @@ fn the_dialog_wears_the_sessions_icon_while_icons_are_shown() {
     deliver_settings(
         &mut application,
         EffectiveSettings {
-            appearance: suru::protocol::AppearanceSettings {
+            appearance: shaman::protocol::AppearanceSettings {
                 show_icons: true,
-                ..suru::protocol::AppearanceSettings::default()
+                ..shaman::protocol::AppearanceSettings::default()
             },
             ..EffectiveSettings::default()
         },

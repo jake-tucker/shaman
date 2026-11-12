@@ -4,7 +4,7 @@ use crate::session_integration::{
     provider_support::ControlledProvider,
     support::{hosted_model, hosted_selection, receive_managed_client_initial_state},
 };
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         Activity, AdmitPromptRequest, AgentId, AgentIdentity, Approval, ApprovalId,
@@ -42,7 +42,7 @@ async fn active_posture_update_reports_next_turn_and_leaves_existing_approval_an
             session_id: None,
             preparation_id: None,
             agent_selection: Some(hosted_selection("codex", "gpt-test")),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().into(),
             },
             prompt: InitialPrompt {
@@ -188,7 +188,7 @@ async fn an_unpinned_active_session_adopts_server_posture_without_losing_its_del
             session_id: None,
             preparation_id: None,
             agent_selection: Some(hosted_selection("codex", "gpt-test")),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().into(),
             },
             prompt: InitialPrompt {
@@ -277,7 +277,7 @@ async fn a_late_settings_batch_ack_cannot_restore_a_delay_after_the_next_turn_ap
         session_id: None,
         preparation_id: None,
         agent_selection: Some(hosted_selection("codex", "gpt-test")),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.path().into(),
         },
         prompt: InitialPrompt {
@@ -420,7 +420,7 @@ async fn approval_posture_pins_resets_follows_settings_and_reaches_session_and_t
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -454,7 +454,7 @@ async fn approval_posture_pins_resets_follows_settings_and_reaches_session_and_t
         Some(SessionApprovalPosture {
             value: default,
             pinned: false,
-            application: suru::protocol::ApprovalPostureApplication::Applied,
+            application: shaman::protocol::ApprovalPostureApplication::Applied,
         }),
         "native Provider selection publishes its effective posture before the Turn"
     );
@@ -479,7 +479,7 @@ async fn approval_posture_pins_resets_follows_settings_and_reaches_session_and_t
         SessionApprovalPosture {
             value: pinned,
             pinned: true,
-            application: suru::protocol::ApprovalPostureApplication::Applied,
+            application: shaman::protocol::ApprovalPostureApplication::Applied,
         }
     );
     client
@@ -504,7 +504,7 @@ async fn approval_posture_pins_resets_follows_settings_and_reaches_session_and_t
         Some(SessionApprovalPosture {
             value: pinned,
             pinned: true,
-            application: suru::protocol::ApprovalPostureApplication::Applied,
+            application: shaman::protocol::ApprovalPostureApplication::Applied,
         })
     );
 
@@ -543,7 +543,7 @@ async fn approval_posture_pins_resets_follows_settings_and_reaches_session_and_t
         SessionApprovalPosture {
             value: followed,
             pinned: false,
-            application: suru::protocol::ApprovalPostureApplication::Applied,
+            application: shaman::protocol::ApprovalPostureApplication::Applied,
         }
     );
     drop(native);
@@ -565,7 +565,7 @@ async fn approval_posture_pins_resets_follows_settings_and_reaches_session_and_t
         Some(SessionApprovalPosture {
             value: followed,
             pinned: false,
-            application: suru::protocol::ApprovalPostureApplication::Applied,
+            application: shaman::protocol::ApprovalPostureApplication::Applied,
         })
     );
     restarted.shutdown().await.unwrap();
@@ -596,7 +596,7 @@ async fn an_override_for_another_provider_is_rejected() {
             session_id: None,
             preparation_id: None,
             agent_selection: Some(hosted_selection("codex", "gpt-test")),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().into(),
             },
             prompt: InitialPrompt {
@@ -614,7 +614,7 @@ async fn an_override_for_another_provider_is_rejected() {
                 created.session.id,
                 UpdateApprovalPostureRequest {
                     posture: Some(ApprovalPosture::Copilot {
-                        permissions: suru::protocol::CopilotPermissions::AllowAll
+                        permissions: shaman::protocol::CopilotPermissions::AllowAll
                     })
                 },
             )
@@ -652,7 +652,7 @@ async fn a_pinned_approval_posture_survives_server_restart() {
             session_id: None,
             preparation_id: None,
             agent_selection: Some(hosted_selection("codex", "gpt-test")),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().into(),
             },
             prompt: InitialPrompt {
@@ -700,7 +700,7 @@ async fn a_pinned_approval_posture_survives_server_restart() {
         Some(SessionApprovalPosture {
             value: pinned,
             pinned: true,
-            application: suru::protocol::ApprovalPostureApplication::Applied,
+            application: shaman::protocol::ApprovalPostureApplication::Applied,
         })
     );
     restarted.shutdown().await.unwrap();
@@ -735,7 +735,7 @@ async fn subagent_posture_is_inherited_and_cannot_be_independently_mutated() {
             session_id: None,
             preparation_id: None,
             agent_selection: Some(hosted_selection("codex", "gpt-test")),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().into(),
             },
             prompt: InitialPrompt {
@@ -792,7 +792,7 @@ async fn subagent_posture_is_inherited_and_cannot_be_independently_mutated() {
         Some(SessionApprovalPosture {
             value: pinned,
             pinned: true,
-            application: suru::protocol::ApprovalPostureApplication::Applied,
+            application: shaman::protocol::ApprovalPostureApplication::Applied,
         })
     );
     let error = client
@@ -835,7 +835,7 @@ async fn subagent_posture_is_inherited_and_cannot_be_independently_mutated() {
         Some(SessionApprovalPosture {
             value: pinned,
             pinned: true,
-            application: suru::protocol::ApprovalPostureApplication::Applied,
+            application: shaman::protocol::ApprovalPostureApplication::Applied,
         }),
         "global Settings do not overwrite a native posture inherited from a pinned parent"
     );
@@ -860,7 +860,7 @@ async fn subagent_posture_is_inherited_and_cannot_be_independently_mutated() {
         Some(SessionApprovalPosture {
             value: followed,
             pinned: false,
-            application: suru::protocol::ApprovalPostureApplication::Applied,
+            application: shaman::protocol::ApprovalPostureApplication::Applied,
         }),
         "resetting the owning Session refreshes every child's inherited reading"
     );

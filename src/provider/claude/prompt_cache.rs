@@ -45,7 +45,7 @@ pub(super) fn with_hour_writes(rates: CacheRates, listed_hour_write: Option<f64>
     .expect("one tier is a schedule")
 }
 
-/// The lifetimes Claude keeps a cache write for, and the one Suru assumes for a Session none of
+/// The lifetimes Claude keeps a cache write for, and the one Shaman assumes for a Session none of
 /// whose requests has yet written anything. Injectable through
 /// [`super::ClaudeRuntime::with_cache_lifetimes`] so tests count lapses at a millisecond scale;
 /// which write price each lifetime stands for is read off the usage field the write is in, never
@@ -56,7 +56,7 @@ pub struct ClaudeCacheLifetimes {
     pub five_minute_lifetime: Duration,
     /// How long a write at the API's hour-long lifetime is kept.
     pub one_hour_lifetime: Duration,
-    /// What Suru assumes where no request has written to the cache, erring toward warning early.
+    /// What Shaman assumes where no request has written to the cache, erring toward warning early.
     pub unobserved: Duration,
 }
 
@@ -73,7 +73,7 @@ impl Default for ClaudeCacheLifetimes {
 /// What a request's `message_start` usage says it did with the Prompt Cache.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum RequestCache {
-    /// The usage is absent, or in a shape Suru cannot read: no evidence the request reached the
+    /// The usage is absent, or in a shape Shaman cannot read: no evidence the request reached the
     /// cache at all.
     Unread,
     /// The usage says the request wrote nothing — it was served from the cache, or held too
@@ -121,7 +121,7 @@ impl ClaudeCacheLifetimes {
 }
 
 /// What a `message_start`'s usage says of the cache. Decoded apart from the stream event, so a
-/// usage in some shape Suru cannot read leaves the request unread rather than the event.
+/// usage in some shape Shaman cannot read leaves the request unread rather than the event.
 #[derive(Deserialize)]
 struct RequestUsage {
     #[serde(default)]

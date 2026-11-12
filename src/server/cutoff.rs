@@ -12,7 +12,7 @@
 //! managed client points at a Log in the state directory, and a directory
 //! that does not answer holds that write for as long as it does not.
 //!
-//! So a `suru __server` process also keeps a [`ProcessCutoff`]: a thread of
+//! So a `shaman __server` process also keeps a [`ProcessCutoff`]: a thread of
 //! its own, owing the runtime nothing, that hears the shutdown signals itself
 //! and ends the process outright — skipping every exit handler and lock a
 //! held thread could be keeping — should the process still be running at
@@ -82,7 +82,7 @@ impl ProcessCutoff {
         let (events, received) = mpsc::channel();
         listen_for_signals(events.clone())?;
         std::thread::Builder::new()
-            .name("suru-cutoff".to_owned())
+            .name("shaman-cutoff".to_owned())
             .spawn(move || keep(received, allowance))?;
         Ok(Self {
             events,
@@ -184,7 +184,7 @@ fn listen_for_signals(events: mpsc::Sender<CutoffEvent>) -> io::Result<()> {
     use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
     let mut signals = signal_hook::iterator::Signals::new([SIGINT, SIGTERM, SIGHUP])?;
     std::thread::Builder::new()
-        .name("suru-cutoff-signals".to_owned())
+        .name("shaman-cutoff-signals".to_owned())
         .spawn(move || {
             for number in signals.forever() {
                 let name = match number {

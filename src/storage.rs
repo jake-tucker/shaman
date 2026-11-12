@@ -50,7 +50,7 @@ use rows::{
     StoredRows, TurnRow, WorkspaceRow,
 };
 
-const DATABASE_FILE: &str = "suru.db";
+const DATABASE_FILE: &str = "shaman.db";
 const CURRENT_SCHEMA_VERSION: &str = "20261111000000";
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
@@ -501,7 +501,7 @@ impl fmt::Display for StorageError {
                 binary_version,
             } => write!(
                 formatter,
-                "Session database schema {database_version} is newer than this Suru binary (latest supported schema {binary_version})"
+                "Session database schema {database_version} is newer than this Shaman binary (latest supported schema {binary_version})"
             ),
             Self::Migration(message) => {
                 write!(formatter, "apply Session database migrations: {message}")

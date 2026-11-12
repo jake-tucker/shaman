@@ -6,9 +6,7 @@ use crate::codex_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::Value;
-use std::os::unix::fs::FileTypeExt;
-use std::sync::Arc;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         CreateSessionRequest, InitialPrompt, MessageRole, PromptId, RuntimeDescriptor, SessionId,
@@ -17,6 +15,8 @@ use suru::{
     provider::CodexRuntime,
     server::{self, ServerConfig, ServerTimings},
 };
+use std::os::unix::fs::FileTypeExt;
+use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     time::{Duration, timeout},
@@ -228,12 +228,12 @@ async fn server_shutdown_interrupts_active_codex_and_allows_cooperative_exit() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
                 id: PromptId::new(),
-                text: "Keep working until Suru shuts down".to_owned(),
+                text: "Keep working until Shaman shuts down".to_owned(),
                 skill_invocations: Vec::new(),
                 attachments: Vec::new(),
             },
@@ -272,7 +272,7 @@ async fn server_shutdown_interrupts_active_codex_and_allows_cooperative_exit() {
     );
     assert!(
         after_shutdown.turns[0].status.is_terminal(),
-        "the Turn Suru interrupted for shutdown is settled, not left running"
+        "the Turn Shaman interrupted for shutdown is settled, not left running"
     );
     assert!(after_shutdown.turns[0].settled_at.is_some());
     assert_eq!(after_shutdown.session.status, SessionStatus::Idle);
@@ -333,7 +333,7 @@ async fn server_shutdown_interrupts_a_turn_whose_start_response_is_pending() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -391,7 +391,7 @@ async fn server_shutdown_releases_pending_rpc_and_forces_an_unresponsive_codex_t
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -463,7 +463,7 @@ async fn server_shutdown_takes_down_a_codex_that_ignores_being_stopped_with_ever
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -543,7 +543,7 @@ async fn server_shutdown_closes_transport_with_a_startup_request_pending() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -604,7 +604,7 @@ async fn sigint_stops_a_server_process_and_its_codex_gracefully() {
     signal_stops_a_server_process_and_its_codex_gracefully(libc::SIGINT, "codex-sigint").await;
 }
 
-/// Sends `signal` to a `suru __server` process whose Codex is working on a
+/// Sends `signal` to a `shaman __server` process whose Codex is working on a
 /// Turn, and holds it to the shutdown a client's stop request starts: the
 /// process exits successfully rather than by the signal, having asked Codex to
 /// interrupt its Turn and then taken Codex and everything it started down.
@@ -642,7 +642,7 @@ async fn signal_stops_a_server_process_and_its_codex_gracefully(
     assert_process_exited(fixture.child_pid()).await;
 }
 
-/// A `suru __server` process whose state directory is removed from under it —
+/// A `shaman __server` process whose state directory is removed from under it —
 /// a test's temporary directory deleted while its Server runs on, say — stops
 /// the way a client's stop request stops it, rather than running on for good:
 /// it exits successfully, having asked Codex to interrupt its Turn and taken
@@ -678,7 +678,7 @@ async fn removing_its_state_directory_stops_a_server_process_and_its_codex_grace
     );
 }
 
-/// A `suru __server` process killed outright runs no shutdown and drops
+/// A `shaman __server` process killed outright runs no shutdown and drops
 /// nothing, yet the Codex it was running goes with it, along with everything
 /// Codex started — here a Codex that heeds neither its stdin closing nor
 /// anything else short of being killed, beside a descendant that heeds
@@ -774,7 +774,7 @@ async fn a_stop_held_up_by_an_upload_and_a_heedless_codex_is_cut_short_at_its_de
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -829,7 +829,7 @@ async fn a_stop_held_up_by_an_upload_and_a_heedless_codex_is_cut_short_at_its_de
     }
 }
 
-/// A second signal arriving while a `suru __server` process is stopping —
+/// A second signal arriving while a `shaman __server` process is stopping —
 /// held up by an Attachment upload that never finishes, under a deadline
 /// longer than the test waits — ends the process at once, with the status
 /// a shell reports for the second signal, rather than being absorbed while
@@ -897,7 +897,7 @@ const CUT_OFF_SOON: [&str; 6] = [
     "100",
 ];
 
-/// A `suru __server` process whose runtime has one worker, held — a Turn
+/// A `shaman __server` process whose runtime has one worker, held — a Turn
 /// settling as the stop begins waits on storage that does not answer, its
 /// database held locked by another connection, holding the worker and the
 /// Session store with it — is still ended at its cutoff: the stop's deadline
@@ -918,7 +918,7 @@ async fn a_server_process_stopped_by_a_client_while_its_runtime_is_held_is_ended
     held_server_process_is_ended_at_its_cutoff("codex-held-runtime-client", StopBy::Client).await;
 }
 
-/// How a test stops a `suru __server` process.
+/// How a test stops a `shaman __server` process.
 enum StopBy {
     /// SIGTERM, which the process's cutoff hears for itself.
     Signal,
@@ -926,7 +926,7 @@ enum StopBy {
     Client,
 }
 
-/// Launches a `suru __server` process on a runtime of one worker, its Codex
+/// Launches a `shaman __server` process on a runtime of one worker, its Codex
 /// working on a Turn, holds its database locked, stops it `by` a signal or a
 /// client, and holds it to ending at its cutoff, well before storage would
 /// answer, with Codex and everything Codex started gone.
@@ -946,7 +946,7 @@ async fn held_server_process_is_ended_at_its_cutoff(channel: &str, by: StopBy) {
         .expect("configure the server")
         .with_data_dir(roots.data.path())
         .data_dir()
-        .join("suru.db");
+        .join("shaman.db");
     let mut database = {
         use diesel::{Connection, SqliteConnection, connection::SimpleConnection};
         let mut database = SqliteConnection::establish(
@@ -979,7 +979,7 @@ async fn held_server_process_is_ended_at_its_cutoff(channel: &str, by: StopBy) {
             crate::support::loopback_client()
                 .post(format!("{}/v1/server/stop", descriptor.base_url))
                 .bearer_auth(&descriptor.token)
-                .json(&suru::protocol::ServerShutdown {
+                .json(&shaman::protocol::ServerShutdown {
                     instance_id: descriptor.identity.instance_id,
                     reason: ShutdownReason::Manual,
                 })
@@ -996,7 +996,7 @@ async fn held_server_process_is_ended_at_its_cutoff(channel: &str, by: StopBy) {
     drop(database);
     assert_eq!(
         status.code(),
-        Some(suru::server::CUT_OFF_EXIT_STATUS),
+        Some(shaman::server::CUT_OFF_EXIT_STATUS),
         "the held server process was ended at its cutoff: {status}"
     );
     assert!(
@@ -1007,7 +1007,7 @@ async fn held_server_process_is_ended_at_its_cutoff(channel: &str, by: StopBy) {
     assert_process_exited(fixture.child_pid()).await;
 }
 
-/// A `suru __server` process whose stderr does not take what it writes — a
+/// A `shaman __server` process whose stderr does not take what it writes — a
 /// pipe left full, as a Log on a mount that does not answer leaves it —
 /// still ends once its stop is over: reporting that the stop was cut short
 /// waits on stderr for good, and the process's cutoff ends it.
@@ -1043,7 +1043,7 @@ async fn a_server_process_whose_stderr_does_not_answer_still_ends() {
     drop(unread);
     assert_eq!(
         status.code(),
-        Some(suru::server::CUT_OFF_EXIT_STATUS),
+        Some(shaman::server::CUT_OFF_EXIT_STATUS),
         "the server process stuck reporting its stop was ended at its cutoff: {status}"
     );
     assert_process_exited(fixture.pid()).await;
@@ -1201,7 +1201,7 @@ async fn begin_stuck_upload(descriptor: &RuntimeDescriptor) -> tokio::net::TcpSt
     upload
 }
 
-/// The state, data, and Workspace directories of a `suru __server` process a
+/// The state, data, and Workspace directories of a `shaman __server` process a
 /// test launches, removed as the test ends — the state directory owned by a
 /// [`DetachedServers`], so a server launched into it is gone however the test
 /// ends.
@@ -1221,7 +1221,7 @@ impl ServerRoots {
     }
 }
 
-/// Launches a `suru __server` process that runs `codex` as its Codex, its
+/// Launches a `shaman __server` process that runs `codex` as its Codex, its
 /// command as `launch` leaves it, and begins a Session on it, returning once
 /// Codex is working on its Turn, with the descriptor the Server published.
 async fn serve_working_codex<'a>(
@@ -1237,7 +1237,7 @@ async fn serve_working_codex<'a>(
     config
         .create_private_runtime_dir()
         .expect("make the server's directories");
-    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_suru"));
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_shaman"));
     command
         .arg("__server")
         .arg("--state-dir")
@@ -1253,7 +1253,7 @@ async fn serve_working_codex<'a>(
         // The other Providers are pointed at nothing, so the Server never
         // launches a real Copilot or Claude installed on this machine.
         .envs(roots.state.isolated_environment())
-        .env("SURU_CODEX_PATH", codex.executable())
+        .env("SHAMAN_CODEX_PATH", codex.executable())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
@@ -1287,7 +1287,7 @@ async fn serve_working_codex<'a>(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: roots.workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1310,7 +1310,7 @@ async fn serve_working_codex<'a>(
     (server, descriptor)
 }
 
-/// A `suru __server` process a test launched, and the Codex it may have
+/// A `shaman __server` process a test launched, and the Codex it may have
 /// started. Dropped before the Server could take Codex down — the test failed
 /// — it kills both, Codex by its process group so the descendants it started
 /// go with it, rather than leaving them running past the test. It withdraws

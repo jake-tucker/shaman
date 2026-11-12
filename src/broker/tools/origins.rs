@@ -32,8 +32,8 @@ use crate::{
 };
 
 pub(super) const LIST_REMOTES_DESCRIPTION: &str = "\
-List the Remotes this Suru server is paired with — the user's other \
-machines running Suru, whose Sessions and Workspaces you reach through this \
+List the Remotes this Shaman server is paired with — the user's other \
+machines running Shaman, whose Sessions and Workspaces you reach through this \
 server — and whether each answers now. Each is asked at once, as this call is \
 made, so the answer is never what a Remote last said. Takes no arguments. \
 Answers with JSON of the shape {\"remotes\": [remote, ...]}, in the order \
@@ -109,7 +109,7 @@ fn named_origin(
 ) -> Result<Option<String>, ToolRefusal> {
     if !tool.takes_origin() {
         return Err(ToolRefusal::new(format!(
-            "{} takes no `origin`: it reaches this Suru server alone, since a Remote shares its \
+            "{} takes no `origin`: it reaches this Shaman server alone, since a Remote shares its \
              Sessions and Workspaces and nothing else.",
             tool.name()
         )));
@@ -217,7 +217,7 @@ pub(super) fn remote_act_sentence(refusal: RemoteActRefusal) -> String {
 /// What a Tool naming a Remote this server is not paired with is told.
 pub(super) fn unknown_remote(name: &str) -> String {
     format!(
-        "Suru is paired with no Remote named `{name}`; list_remotes names the Remotes it is \
+        "Shaman is paired with no Remote named `{name}`; list_remotes names the Remotes it is \
          paired with, and leaving `origin` out reaches this server."
     )
 }

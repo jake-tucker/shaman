@@ -13,7 +13,7 @@ use crate::claude_integration::support::{
     CLAUDE_MODELS, ScriptedClaude, after_probe, agent_messages, conversation_fixture,
     discovery_arms, opened_session, session_where, settled_session, stop_task_arm, user_turn_arm,
 };
-use suru::protocol::{
+use shaman::protocol::{
     Activity, ActivityStatus, InterruptOutcome, SessionId, SessionSnapshot, SessionStatus,
     TurnStatus, WatchOutcomeStatus,
 };

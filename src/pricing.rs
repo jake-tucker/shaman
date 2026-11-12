@@ -22,7 +22,7 @@ const CACHE_FILE: &str = "models-dev-pricing.json";
 const USD_PER_MILLION_TOKENS: f64 = 1_000_000.0;
 
 /// One Model as models.dev identifies it. The Provider identifier belongs to
-/// the pricing catalog rather than Suru's Provider vocabulary: for example,
+/// the pricing catalog rather than Shaman's Provider vocabulary: for example,
 /// Codex Models use models.dev's `openai` catalog.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ModelsDevModel {

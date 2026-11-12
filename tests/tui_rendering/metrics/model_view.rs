@@ -13,7 +13,7 @@ use crate::tui_rendering::support::{
     invoke, key, rendered_application_buffer, rendered_application_rows_at, text_position,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use suru::{
+use shaman::{
     protocol::{
         UsageMetricsBreakdown, UsageMetricsKey, UsageMetricsModelView, UsageMetricsQuery,
         UsageMetricsReport,
@@ -84,7 +84,7 @@ fn actual_report(query: &UsageMetricsQuery) -> UsageMetricsReport {
         "Route the planner",
         4.20,
         Some("gpt-5.5-mini-2026-10"),
-        "suru",
+        "shaman",
     )];
     report
 }
@@ -97,7 +97,7 @@ fn many_models(query: &UsageMetricsQuery, keys: u64) -> UsageMetricsReport {
         rekeyed(
             report,
             &UsageMetricsKey::Workspace {
-                workspace: suru::protocol::WorkspaceId(format!("directory:{index}")),
+                workspace: shaman::protocol::WorkspaceId(format!("directory:{index}")),
             },
             model("copilot", &format!("model-{index}")),
             &format!("model-{index}"),

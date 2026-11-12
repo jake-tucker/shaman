@@ -1,6 +1,6 @@
 //! The Broker handed to Codex (ADR 0034, docs/validation/0408-codex-per-thread-mcp-config.md).
 //!
-//! Codex takes the Broker through the per-thread `config` map: one override, `mcp_servers.suru`,
+//! Codex takes the Broker through the per-thread `config` map: one override, `mcp_servers.shaman`,
 //! naming the endpoint, the bearer token as a static header, a tool timeout above the Broker's
 //! longest call, and approve-by-default for its Tools so no call waits on a reviewer or an
 //! elicitation. Nothing of the server is kept with the thread, so every `thread/resume` carries it
@@ -23,7 +23,7 @@
 //! in the call's `_meta.threadId`, so its calls are its own Session's
 //! (docs/validation/0408-subagent-mcp-attribution.md).
 //!
-//! Codex reports each Broker call as an MCP tool call on server `suru`: one that spawns, sends to,
+//! Codex reports each Broker call as an MCP tool call on server `shaman`: one that spawns, sends to,
 //! or stops a Subagent stands only in the Subagent row it affects, and every other is a Tool Call.
 
 use std::sync::Arc;
@@ -37,7 +37,7 @@ use crate::support::{
     broker::{McpClient, untimed_sidekick_report},
 };
 use serde_json::{Value, json};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         Activity, AdmitPromptRequest, AgentId, AgentIdentity, AgentSelection, ApprovalPosture,
@@ -52,7 +52,7 @@ use tokio::time::timeout;
 
 /// An app-server whose first process takes a Turn and exits before finishing it, so the next Turn
 /// resumes the same thread on a process of its own. The process goes with its Turn open so that
-/// Suru learns of the loss as that Turn fails, which a test can wait on: a process that left between
+/// Shaman learns of the loss as that Turn fails, which a test can wait on: a process that left between
 /// Turns would be lost where no client can see it, and a Prompt racing the loss would reach the
 /// dying process and fail rather than resume. Each process answers `config/read` with `__USER_CONFIG__`, the
 /// user's own configuration as that launch finds it, and every request by the id it came with,
@@ -110,7 +110,7 @@ impl ResumedThread {
         let state_dir = tempfile::tempdir().expect("create isolated state directory");
         let config_dir = tempfile::tempdir().expect("create isolated config directory");
         let workspace = tempfile::tempdir().expect("create valid Workspace");
-        std::fs::write(config_dir.path().join("suru.jsonc"), document)
+        std::fs::write(config_dir.path().join("shaman.jsonc"), document)
             .expect("write Config Document");
         let server = server::spawn_with_provider(
             ServerConfig::new(state_dir.path(), channel)
@@ -131,7 +131,7 @@ impl ResumedThread {
                 session_id: None,
                 preparation_id: None,
                 agent_selection: None,
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 prompt: InitialPrompt {
@@ -144,7 +144,7 @@ impl ResumedThread {
             .await
             .expect("create Session");
         let session_id = created.session.id;
-        // The first Turn failing is Suru having lost the app-server, so the next Prompt
+        // The first Turn failing is Shaman having lost the app-server, so the next Prompt
         // relaunches it rather than reaching the process that left.
         turn_settles_as(&client, session_id, 0, TurnStatus::Failed).await;
 
@@ -174,13 +174,13 @@ impl ResumedThread {
         }
     }
 
-    /// The parameters of the first request Suru made for `method`.
+    /// The parameters of the first request Shaman made for `method`.
     fn params_of(&self, method: &str) -> Value {
         self.codex
             .requests()
             .into_iter()
             .find(|request| request["method"] == method)
-            .unwrap_or_else(|| panic!("Suru sent {method}: {:?}", self.codex.methods()))["params"]
+            .unwrap_or_else(|| panic!("Shaman sent {method}: {:?}", self.codex.methods()))["params"]
             .clone()
     }
 
@@ -231,10 +231,10 @@ fn broker_server<'a>(params: &'a Value, method: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("{method} carries a config map: {params}"));
     assert_eq!(
         config.keys().collect::<Vec<_>>(),
-        ["mcp_servers.suru"],
+        ["mcp_servers.shaman"],
         "{method} overrides the Broker's server entry and nothing else: {params}"
     );
-    &config["mcp_servers.suru"]
+    &config["mcp_servers.shaman"]
 }
 
 #[tokio::test]
@@ -282,10 +282,10 @@ async fn thread_start_and_thread_resume_carry_the_server_headers_timeout_and_app
 /// Asserts that `note` is the Broker's note as Codex's Agent is handed it.
 fn assert_is_the_broker_note(note: &str, method: &str) {
     for tool in [
-        "mcp__suru__list_providers",
-        "mcp__suru__spawn_subagent",
-        "mcp__suru__read_subagent",
-        "mcp__suru__stop_subagent",
+        "mcp__shaman__list_providers",
+        "mcp__shaman__spawn_subagent",
+        "mcp__shaman__read_subagent",
+        "mcp__shaman__stop_subagent",
     ] {
         assert!(
             note.contains(tool),
@@ -297,12 +297,12 @@ fn assert_is_the_broker_note(note: &str, method: &str) {
         "{method}'s note says when to prefer the Broker: {note:?}"
     );
     assert!(
-        note.contains("Suru never re-routes them"),
+        note.contains("Shaman never re-routes them"),
         "{method}'s note leaves the Agent's own subagent tools in place: {note:?}"
     );
     assert!(
         note.contains(
-            "Call mcp__suru__list_workspaces to learn where the user's other work lives: the \
+            "Call mcp__shaman__list_workspaces to learn where the user's other work lives: the \
              Workspaces they work in on this machine, each with what it is for."
         ),
         "{method}'s note says what list_workspaces is for: {note:?}"
@@ -446,7 +446,7 @@ async fn first_thread_start(channel: &str, sidekick: bool) -> (Value, Vec<String
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: execution_directory,
             },
             prompt: InitialPrompt {
@@ -509,7 +509,7 @@ async fn a_sidekicks_thread_is_handed_its_own_tools_and_note_and_another_session
         .unwrap_or_else(|| panic!("thread/start carries developer instructions: {params}"));
     assert_is_the_broker_note(note, "thread/start");
     assert!(
-        note.contains("You are a Sidekick") && note.contains("mcp__suru__list_sessions"),
+        note.contains("You are a Sidekick") && note.contains("mcp__shaman__list_sessions"),
         "a Sidekick is told it is one, and of its own Tools as Codex names them: {note:?}"
     );
     assert!(
@@ -617,7 +617,7 @@ async fn a_sidekicks_thread_started_once_memories_exist_is_told_their_titles_and
         after.contains(&format!(
             "{{\"memory_id\":{},\"title\":\"How the user reviews pull requests\"}}",
             stored["memory_id"]
-        )) && after.contains("mcp__suru__recall_memory"),
+        )) && after.contains("mcp__shaman__recall_memory"),
         "a Sidekick started once there are Memories is told their titles: {after:?}"
     );
     assert!(
@@ -680,7 +680,7 @@ async fn a_codex_subagent_of_a_claude_session_set_to_bypass_permissions_starts_i
     let config_dir = tempfile::tempdir().expect("create isolated config directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     std::fs::write(
-        config_dir.path().join("suru.jsonc"),
+        config_dir.path().join("shaman.jsonc"),
         r#"{"provider":{"claude":{"permissionMode":"bypassPermissions"}}}"#,
     )
     .expect("write Config Document");
@@ -707,7 +707,7 @@ async fn a_codex_subagent_of_a_claude_session_set_to_bypass_permissions_starts_i
             session_id: None,
             preparation_id: None,
             agent_selection: Some(opus.clone()),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -750,7 +750,7 @@ async fn a_codex_subagent_of_a_claude_session_set_to_bypass_permissions_starts_i
             "model": "gpt-fixture",
             "name": "Researcher",
             "description": "Survey the Codex seam",
-            "prompt": "Find where Codex plugs into Suru.",
+            "prompt": "Find where Codex plugs into Shaman.",
         }))
         .await;
 
@@ -760,7 +760,7 @@ async fn a_codex_subagent_of_a_claude_session_set_to_bypass_permissions_starts_i
         requests
             .iter()
             .find(|request| request["method"] == method)
-            .unwrap_or_else(|| panic!("Suru sent {method}: {:?}", codex.methods()))["params"]
+            .unwrap_or_else(|| panic!("Shaman sent {method}: {:?}", codex.methods()))["params"]
             .clone()
     };
     let thread_start = params_of("thread/start");
@@ -836,7 +836,7 @@ async fn a_report_leaves_as_the_input_of_a_turn_start_waking_the_idle_parent() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -916,7 +916,7 @@ async fn a_report_leaves_as_the_input_of_a_turn_start_waking_the_idle_parent() {
     assert_eq!(
         reporting[0]["params"]["input"],
         json!([{ "type": "text", "text": report }]),
-        "whose whole input is the Report as Suru words it"
+        "whose whole input is the Report as Shaman words it"
     );
 
     drop(client);
@@ -925,7 +925,7 @@ async fn a_report_leaves_as_the_input_of_a_turn_start_waking_the_idle_parent() {
 
 /// A Sidekick Report reaches a Sidekick on Codex as a Subagent Report does: the Session it began
 /// settling wakes the idle Sidekick with a `turn/start` on its thread whose whole input is the
-/// Report as Suru words it.
+/// Report as Shaman words it.
 #[tokio::test]
 async fn a_sidekick_report_leaves_as_the_input_of_a_turn_start_waking_the_idle_sidekick() {
     let codex = ScriptedCodex::new_multiprocess(ANSWERING_EVERY_TURN);
@@ -956,7 +956,7 @@ async fn a_sidekick_report_leaves_as_the_input_of_a_turn_start_waking_the_idle_s
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: sidekick_directory,
             },
             prompt: InitialPrompt {
@@ -1015,7 +1015,7 @@ async fn a_sidekick_report_leaves_as_the_input_of_a_turn_start_waking_the_idle_s
                 input.iter().any(|item| {
                     item["text"]
                         .as_str()
-                        .is_some_and(|text| text.starts_with("Sidekick Report from Suru"))
+                        .is_some_and(|text| text.starts_with("Sidekick Report from Shaman"))
                 })
             })
         })
@@ -1039,7 +1039,7 @@ async fn a_sidekick_report_leaves_as_the_input_of_a_turn_start_waking_the_idle_s
             " has settled its Turn, which completed. Its session_id is {begun_id}, which \
              read_session takes.\n\nIts Agent's final Message:\n\nDone."
         ),
-        "as Suru words it"
+        "as Shaman words it"
     );
 
     drop(client);
@@ -1104,7 +1104,7 @@ async fn a_report_reaching_a_working_parent_leaves_as_a_turn_steer_pinned_to_its
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1184,7 +1184,7 @@ async fn a_report_reaching_a_working_parent_leaves_as_a_turn_steer_pinned_to_its
     assert_eq!(
         steers[0]["params"]["input"],
         json!([{ "type": "text", "text": report }]),
-        "whose whole input is the Report as Suru words it"
+        "whose whole input is the Report as Shaman words it"
     );
     assert_eq!(
         steers[0]["params"]["expectedTurnId"], running,
@@ -1204,10 +1204,10 @@ async fn a_report_reaching_a_working_parent_leaves_as_a_turn_steer_pinned_to_its
 
 /// An app-server whose Session's Turn spawns a native Subagent on a thread of its own, through a
 /// collab spawn, and leaves both working: the parent thread's Turn never completes, and the child
-/// thread Suru attaches works in its own native turn until the test releases it, when that turn
+/// thread Shaman attaches works in its own native turn until the test releases it, when that turn
 /// completes. The release is awaited beside the read loop — which keeps answering meanwhile — and
 /// only while this app-server runs. A `turn/start` on the child's thread, handing it input of
-/// Suru's own, begins a native turn there whose input arrives on the thread as it would from Codex,
+/// Shaman's own, begins a native turn there whose input arrives on the thread as it would from Codex,
 /// and in which the child answers and completes. Every request is answered by the id it came with,
 /// since the Model Catalog's discovery runs a process of its own.
 const NATIVE_CHILD_WORKING: &str = r#"#!/bin/sh
@@ -1335,7 +1335,7 @@ impl NativeCodexChild {
                     model: ModelId::new("gpt-fixture"),
                     options: Vec::new(),
                 }),
-                execution_directory: suru::protocol::ExecutionDirectory {
+                execution_directory: shaman::protocol::ExecutionDirectory {
                     path: workspace.path().to_owned(),
                 },
                 prompt: InitialPrompt {
@@ -1380,7 +1380,7 @@ impl NativeCodexChild {
             .requests()
             .into_iter()
             .find(|request| request["method"] == "thread/start")
-            .expect("Suru starts the parent's thread")["params"]
+            .expect("Shaman starts the parent's thread")["params"]
             .clone();
         let broker = broker_server(&thread_start, "thread/start");
         let endpoint = broker["url"]
@@ -1449,7 +1449,7 @@ fn claude_researcher(name: &str) -> Value {
         "model": "opus",
         "name": name,
         "description": "Survey the Claude seam",
-        "prompt": "Find where Claude plugs into Suru.",
+        "prompt": "Find where Claude plugs into Shaman.",
     })
 }
 
@@ -1490,8 +1490,8 @@ async fn a_native_subagents_thread_calling_the_broker_is_attributed_to_the_subag
     assert_eq!(
         delegation,
         format!(
-            "Delegated to you through Suru by the Subagent \"{}\".\n\nFind where Claude plugs \
-             into Suru.",
+            "Delegated to you through Shaman by the Subagent \"{}\".\n\nFind where Claude plugs \
+             into Shaman.",
             native.native_name
         ),
         "the Delegation names the native Subagent as the Agent that sent it"
@@ -1585,7 +1585,7 @@ async fn a_report_to_a_settled_native_subagent_leaves_as_a_turn_start_on_its_thr
     assert_eq!(
         turn_start["input"],
         json!([{ "type": "text", "text": report }]),
-        "whose whole input is the Report as Suru words it: {turn_start}"
+        "whose whole input is the Report as Shaman words it: {turn_start}"
     );
     assert!(
         ["model", "effort", "summary"]
@@ -1645,21 +1645,21 @@ async fn a_report_to_a_settled_native_subagent_leaves_as_a_turn_start_on_its_thr
     drop(provider);
 }
 
-/// Each of the Broker's Tools called as Codex reports an MCP tool call on the Broker's server `suru`
+/// Each of the Broker's Tools called as Codex reports an MCP tool call on the Broker's server `shaman`
 /// — the longest with progress while it waits — beside a call to another MCP server.
-const BROKER_CALLS_TURN: &str = r#"      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-list","server":"suru","tool":"list_providers","status":"inProgress","arguments":{},"result":null,"error":null,"durationMs":null}}}'
-      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-list","server":"suru","tool":"list_providers","status":"completed","arguments":{},"result":{"content":[{"type":"text","text":"claude, codex, copilot"}],"structuredContent":null},"error":null,"durationMs":4}}}'
-      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-spawn","server":"suru","tool":"spawn_subagent","status":"inProgress","arguments":{"provider":"claude","model":"opus","name":"Scout","description":"Map the crates","prompt":"Map the crates."},"result":null,"error":null,"durationMs":null}}}'
-      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-spawn","server":"suru","tool":"spawn_subagent","status":"completed","arguments":{"provider":"claude","model":"opus","name":"Scout","description":"Map the crates","prompt":"Map the crates."},"result":{"content":[{"type":"text","text":"spawned"}],"structuredContent":null},"error":null,"durationMs":9}}}'
-      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-read","server":"suru","tool":"read_subagent","status":"inProgress","arguments":{"session_id":"child-session"},"result":null,"error":null,"durationMs":null}}}'
-      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-read","server":"suru","tool":"read_subagent","status":"completed","arguments":{"session_id":"child-session"},"result":{"content":[{"type":"text","text":"working"}],"structuredContent":null},"error":null,"durationMs":2}}}'
-      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-send","server":"suru","tool":"send_to_subagent","status":"inProgress","arguments":{"session_id":"child-session","prompt":"More."},"result":null,"error":null,"durationMs":null}}}'
-      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-send","server":"suru","tool":"send_to_subagent","status":"completed","arguments":{"session_id":"child-session","prompt":"More."},"result":{"content":[{"type":"text","text":"sent"}],"structuredContent":null},"error":null,"durationMs":2}}}'
-      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-wait","server":"suru","tool":"wait_subagents","status":"inProgress","arguments":{},"result":null,"error":null,"durationMs":null}}}'
+const BROKER_CALLS_TURN: &str = r#"      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-list","server":"shaman","tool":"list_providers","status":"inProgress","arguments":{},"result":null,"error":null,"durationMs":null}}}'
+      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-list","server":"shaman","tool":"list_providers","status":"completed","arguments":{},"result":{"content":[{"type":"text","text":"claude, codex, copilot"}],"structuredContent":null},"error":null,"durationMs":4}}}'
+      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-spawn","server":"shaman","tool":"spawn_subagent","status":"inProgress","arguments":{"provider":"claude","model":"opus","name":"Scout","description":"Map the crates","prompt":"Map the crates."},"result":null,"error":null,"durationMs":null}}}'
+      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-spawn","server":"shaman","tool":"spawn_subagent","status":"completed","arguments":{"provider":"claude","model":"opus","name":"Scout","description":"Map the crates","prompt":"Map the crates."},"result":{"content":[{"type":"text","text":"spawned"}],"structuredContent":null},"error":null,"durationMs":9}}}'
+      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-read","server":"shaman","tool":"read_subagent","status":"inProgress","arguments":{"session_id":"child-session"},"result":null,"error":null,"durationMs":null}}}'
+      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-read","server":"shaman","tool":"read_subagent","status":"completed","arguments":{"session_id":"child-session"},"result":{"content":[{"type":"text","text":"working"}],"structuredContent":null},"error":null,"durationMs":2}}}'
+      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-send","server":"shaman","tool":"send_to_subagent","status":"inProgress","arguments":{"session_id":"child-session","prompt":"More."},"result":null,"error":null,"durationMs":null}}}'
+      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-send","server":"shaman","tool":"send_to_subagent","status":"completed","arguments":{"session_id":"child-session","prompt":"More."},"result":{"content":[{"type":"text","text":"sent"}],"structuredContent":null},"error":null,"durationMs":2}}}'
+      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-wait","server":"shaman","tool":"wait_subagents","status":"inProgress","arguments":{},"result":null,"error":null,"durationMs":null}}}'
       printf '%s\n' '{"method":"item/mcpToolCall/progress","params":{"threadId":"native-thread","turnId":"native-turn","itemId":"call-wait","message":"30s of 60s"}}'
-      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-wait","server":"suru","tool":"wait_subagents","status":"completed","arguments":{},"result":{"content":[{"type":"text","text":"settled"}],"structuredContent":null},"error":null,"durationMs":30000}}}'
-      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-stop","server":"suru","tool":"stop_subagent","status":"inProgress","arguments":{"session_id":"child-session"},"result":null,"error":null,"durationMs":null}}}'
-      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-stop","server":"suru","tool":"stop_subagent","status":"completed","arguments":{"session_id":"child-session"},"result":{"content":[{"type":"text","text":"stopped"}],"structuredContent":null},"error":null,"durationMs":2}}}'
+      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-wait","server":"shaman","tool":"wait_subagents","status":"completed","arguments":{},"result":{"content":[{"type":"text","text":"settled"}],"structuredContent":null},"error":null,"durationMs":30000}}}'
+      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-stop","server":"shaman","tool":"stop_subagent","status":"inProgress","arguments":{"session_id":"child-session"},"result":null,"error":null,"durationMs":null}}}'
+      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-stop","server":"shaman","tool":"stop_subagent","status":"completed","arguments":{"session_id":"child-session"},"result":{"content":[{"type":"text","text":"stopped"}],"structuredContent":null},"error":null,"durationMs":2}}}'
       printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-linear","server":"linear","tool":"list_issues","status":"inProgress","arguments":{},"result":null,"error":null,"durationMs":null}}}'
       printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-linear","server":"linear","tool":"list_issues","status":"completed","arguments":{},"result":{"content":[{"type":"text","text":"No issues."}],"structuredContent":null},"error":null,"durationMs":7}}}'
       printf '%s\n' '{"method":"turn/completed","params":{"threadId":"native-thread","turn":{"id":"native-turn","status":"completed","items":[]}}}'
@@ -1696,9 +1696,9 @@ async fn the_brokers_reading_calls_are_tool_calls_and_its_subagent_calls_make_no
     assert_eq!(
         recorded,
         [
-            (Some("suru"), "list_providers", "claude, codex, copilot"),
-            (Some("suru"), "read_subagent", "working"),
-            (Some("suru"), "wait_subagents", "settled"),
+            (Some("shaman"), "list_providers", "claude, codex, copilot"),
+            (Some("shaman"), "read_subagent", "working"),
+            (Some("shaman"), "wait_subagents", "settled"),
             (Some("linear"), "list_issues", "No issues."),
         ],
         "the Broker's spawn, send and stop stand in no row of their own"
@@ -1709,11 +1709,11 @@ async fn the_brokers_reading_calls_are_tool_calls_and_its_subagent_calls_make_no
 
 /// Two calls of `answer_questionnaire` as Codex reports an MCP tool call, each carrying a secret
 /// Answer in the arguments its start and its completion both give, and one of `begin_session`.
-const ANSWERING_TURN: &str = r#"      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-answer","server":"suru","tool":"answer_questionnaire","status":"inProgress","arguments":{"session_id":"0198b27e-3a01-7c4c-a83b-a83a4787453f","questionnaire_id":"0198b27e-4b02-7c4c-a83b-a83a4787453f","answers":[{"text":"tok-5ecret-1234"},{"choices":["eu"]}]},"result":null,"error":null,"durationMs":null}}}'
-      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-answer","server":"suru","tool":"answer_questionnaire","status":"completed","arguments":{"session_id":"0198b27e-3a01-7c4c-a83b-a83a4787453f","questionnaire_id":"0198b27e-4b02-7c4c-a83b-a83a4787453f","answers":[{"text":"tok-5ecret-1234"},{"choices":["eu"]}]},"result":{"content":[{"type":"text","text":"answered"}],"structuredContent":null},"error":null,"durationMs":4}}}'
-      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-unseen","server":"suru","tool":"answer_questionnaire","status":"failed","arguments":{"session_id":"0198b27e-3a01-7c4c-a83b-a83a4787453f","questionnaire_id":"0198b27e-4b02-7c4c-a83b-a83a4787453f","answers":[{"choices":"tok-5ecret-1234"}]},"result":null,"error":{"message":"refused"},"durationMs":2}}}'
-      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-begin","server":"suru","tool":"begin_session","status":"inProgress","arguments":{"directory":"/work","prompt":"Tidy the docs."},"result":null,"error":null,"durationMs":null}}}'
-      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-begin","server":"suru","tool":"begin_session","status":"completed","arguments":{"directory":"/work","prompt":"Tidy the docs."},"result":{"content":[{"type":"text","text":"begun"}],"structuredContent":null},"error":null,"durationMs":3}}}'
+const ANSWERING_TURN: &str = r#"      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-answer","server":"shaman","tool":"answer_questionnaire","status":"inProgress","arguments":{"session_id":"0198b27e-3a01-7c4c-a83b-a83a4787453f","questionnaire_id":"0198b27e-4b02-7c4c-a83b-a83a4787453f","answers":[{"text":"tok-5ecret-1234"},{"choices":["eu"]}]},"result":null,"error":null,"durationMs":null}}}'
+      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-answer","server":"shaman","tool":"answer_questionnaire","status":"completed","arguments":{"session_id":"0198b27e-3a01-7c4c-a83b-a83a4787453f","questionnaire_id":"0198b27e-4b02-7c4c-a83b-a83a4787453f","answers":[{"text":"tok-5ecret-1234"},{"choices":["eu"]}]},"result":{"content":[{"type":"text","text":"answered"}],"structuredContent":null},"error":null,"durationMs":4}}}'
+      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-unseen","server":"shaman","tool":"answer_questionnaire","status":"failed","arguments":{"session_id":"0198b27e-3a01-7c4c-a83b-a83a4787453f","questionnaire_id":"0198b27e-4b02-7c4c-a83b-a83a4787453f","answers":[{"choices":"tok-5ecret-1234"}]},"result":null,"error":{"message":"refused"},"durationMs":2}}}'
+      printf '%s\n' '{"method":"item/started","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-begin","server":"shaman","tool":"begin_session","status":"inProgress","arguments":{"directory":"/work","prompt":"Tidy the docs."},"result":null,"error":null,"durationMs":null}}}'
+      printf '%s\n' '{"method":"item/completed","params":{"threadId":"native-thread","turnId":"native-turn","item":{"type":"mcpToolCall","id":"call-begin","server":"shaman","tool":"begin_session","status":"completed","arguments":{"directory":"/work","prompt":"Tidy the docs."},"result":{"content":[{"type":"text","text":"begun"}],"structuredContent":null},"error":null,"durationMs":3}}}'
       printf '%s\n' '{"method":"turn/completed","params":{"threadId":"native-thread","turn":{"id":"native-turn","status":"completed","items":[]}}}'
 "#;
 
@@ -1746,13 +1746,13 @@ async fn a_calls_answers_stand_nowhere_in_the_tool_call_it_is_recorded_as() {
         recorded,
         [
             (
-                Some("suru"),
+                Some("shaman"),
                 "answer_questionnaire",
                 "session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
                  answers=2 Answers withheld",
             ),
             (
-                Some("suru"),
+                Some("shaman"),
                 "answer_questionnaire",
                 "session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
                  answers=1 Answer withheld",

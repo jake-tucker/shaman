@@ -108,7 +108,7 @@ mod tests {
             "answers": [{ "text": "tok-1" }],
         });
         assert_eq!(
-            ToolCallInput::of(Some("suru"), "answer_questionnaire", &arguments).as_str(),
+            ToolCallInput::of(Some("shaman"), "answer_questionnaire", &arguments).as_str(),
             "session_id=0198b27e-3a01-7c4c-a83b-a83a4787453f questionnaire_id=0198b27e-4b02-7c4c-a83b-a83a4787453f \
              answers=1 Answer withheld"
         );
@@ -119,7 +119,12 @@ mod tests {
             );
         }
         assert_eq!(
-            ToolCallInput::of(Some("suru"), "list_sessions", &json!({ "title": "tok-1" })).as_str(),
+            ToolCallInput::of(
+                Some("shaman"),
+                "list_sessions",
+                &json!({ "title": "tok-1" })
+            )
+            .as_str(),
             "title=tok-1"
         );
     }

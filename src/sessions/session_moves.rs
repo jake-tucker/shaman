@@ -109,7 +109,7 @@ pub(super) struct MoveTarget<'a> {
     /// The Activity already recording this Move, pending until now, which it
     /// settles rather than adding one of its own.
     pub(super) settles: Option<ActivityId>,
-    /// Whether Suru made the destination's Managed Worktree for this Move.
+    /// Whether Shaman made the destination's Managed Worktree for this Move.
     pub(super) new_worktree: bool,
 }
 
@@ -181,7 +181,7 @@ struct MoveDestinationRead {
     workspace: Workspace,
     checkout: Option<CheckoutAssociation>,
     readings: Vec<CheckoutSummary>,
-    /// Whether Suru made the destination's Managed Worktree for this Move.
+    /// Whether Shaman made the destination's Managed Worktree for this Move.
     new_worktree: bool,
 }
 
@@ -971,7 +971,7 @@ fn waiting_prompts_with_skills(record: &SessionRecord) -> impl Iterator<Item = &
     })
 }
 
-/// Whether `pending`'s Activity says Suru made the Worktree it is bound for.
+/// Whether `pending`'s Activity says Shaman made the Worktree it is bound for.
 fn made_its_worktree(record: &SessionRecord, pending: &PendingMove) -> bool {
     record.snapshot.activities.iter().any(|activity| {
         matches!(
@@ -1235,7 +1235,7 @@ mod tests {
         let mut database = SqliteConnection::establish(
             data_dir
                 .path()
-                .join("suru.db")
+                .join("shaman.db")
                 .to_str()
                 .expect("the fixture's path is UTF-8"),
         )
@@ -1496,7 +1496,7 @@ mod tests {
         let mut database = SqliteConnection::establish(
             data_dir
                 .path()
-                .join("suru.db")
+                .join("shaman.db")
                 .to_str()
                 .expect("the fixture's path is UTF-8"),
         )
@@ -1663,7 +1663,7 @@ mod tests {
         let mut database = SqliteConnection::establish(
             data_dir
                 .path()
-                .join("suru.db")
+                .join("shaman.db")
                 .to_str()
                 .expect("the fixture's path is UTF-8"),
         )
@@ -1682,7 +1682,7 @@ mod tests {
             moves(&crashed, session_id),
             [(
                 ActivityStatus::Interrupted,
-                Some("Suru stopped before it could apply".to_owned())
+                Some("Shaman stopped before it could apply".to_owned())
             )]
         );
         crashed_writer.shutdown().await.expect("stop the reader");
@@ -1707,7 +1707,7 @@ mod tests {
         let mut database = SqliteConnection::establish(
             data_dir
                 .path()
-                .join("suru.db")
+                .join("shaman.db")
                 .to_str()
                 .expect("the fixture's path is UTF-8"),
         )

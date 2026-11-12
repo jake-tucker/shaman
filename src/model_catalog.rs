@@ -13,9 +13,9 @@ use crate::{
 };
 
 /// The Model Catalog one Provider served the last time discovery succeeded,
-/// as Suru remembers it across restarts. Only a successful discovery is
+/// as Shaman remembers it across restarts. Only a successful discovery is
 /// remembered: a failure or an unavailability is a fact about the environment
-/// Suru re-reads rather than replays.
+/// Shaman re-reads rather than replays.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RememberedProviderCatalog {
     pub(crate) provider: ProviderId,
@@ -99,7 +99,7 @@ impl CatalogState {
 
 /// How the last discovery failed: what it said, and — when it failed because
 /// the Provider cannot be used at all rather than because the catalog call
-/// itself went wrong — the typed condition the user fixes outside Suru.
+/// itself went wrong — the typed condition the user fixes outside Shaman.
 struct CatalogFailure {
     message: String,
     unavailable: Option<CatalogUnavailability>,
@@ -656,7 +656,7 @@ impl ProviderCatalog {
             Err(error) => {
                 // The Providers tab shows the failure to whoever is looking; the Log keeps it for
                 // whoever is not, since a Provider that cannot list its Models cannot be used. A
-                // condition the user fixes outside Suru is logged by its reason alone: what the
+                // condition the user fixes outside Shaman is logged by its reason alone: what the
                 // Provider said about its credentials is for that user, never for the Log
                 // (ADR-0008).
                 match error.unavailability() {
@@ -1106,7 +1106,7 @@ mod tests {
         }
     }
 
-    /// The Setting went off while Suru was down: the catalog remembered from when it was on offers
+    /// The Setting went off while Shaman was down: the catalog remembered from when it was on offers
     /// nothing it has since taken away, not even until the first discovery.
     #[tokio::test]
     async fn a_remembered_catalog_offers_nothing_a_setting_has_since_taken_away() {
@@ -1129,7 +1129,7 @@ mod tests {
         assert_eq!(runtime.calls.load(Ordering::SeqCst), 0);
     }
 
-    /// The Setting came on while Suru was down: no one has to ask for a refresh to be offered what
+    /// The Setting came on while Shaman was down: no one has to ask for a refresh to be offered what
     /// it makes available, because the first client to connect brings the first discovery.
     #[tokio::test]
     async fn a_remembered_catalog_shows_what_a_setting_has_since_made_available_once_a_client_connects()
@@ -1516,7 +1516,7 @@ mod tests {
         assert_eq!(first.providers[0].status, ProviderCatalogStatus::Fresh);
         assert_eq!(first.providers[0].models[0].id, ModelId::new("stub-model"));
 
-        // A later check fails; what Suru knows is then the stale catalog, and
+        // A later check fails; what Shaman knows is then the stale catalog, and
         // reading it asks nothing more of the Provider.
         service.refresh().await;
         assert_eq!(runtime.calls.load(Ordering::SeqCst), 2);
@@ -1628,7 +1628,7 @@ mod tests {
         );
     }
 
-    /// Everything Suru logged while `act` ran, as a Log file would carry it.
+    /// Everything Shaman logged while `act` ran, as a Log file would carry it.
     async fn log_of(act: impl std::future::Future<Output = ()>) -> String {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("catalog.log");
@@ -1702,7 +1702,7 @@ mod tests {
             .unwrap_or_else(|| panic!("a Provider found unavailable is logged, got: {log}"));
         assert!(
             warning.contains("provider=stub") && warning.contains("not signed in"),
-            "the Log names the Provider and the condition the user fixes outside Suru, got: {warning}"
+            "the Log names the Provider and the condition the user fixes outside Shaman, got: {warning}"
         );
         assert!(
             !warning.contains("ghp_secret"),

@@ -1,8 +1,8 @@
-//! Serde types for the Codex app-server V2 protocol and their Suru conversions.
+//! Serde types for the Codex app-server V2 protocol and their Shaman conversions.
 //!
-//! Everything Suru writes to or reads from the app-server is shaped here, together with the
-//! mappings between those native shapes and Suru's own protocol types. Modules above this one
-//! work in Suru terms and never touch raw JSON.
+//! Everything Shaman writes to or reads from the app-server is shaped here, together with the
+//! mappings between those native shapes and Shaman's own protocol types. Modules above this one
+//! work in Shaman terms and never touch raw JSON.
 
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -408,11 +408,11 @@ pub(super) struct ThreadResumeParams<'a> {
 pub(super) type ThreadConfig = serde_json::Map<String, Value>;
 
 /// The Broker as one thread's MCP server, which is all a thread's `config` carries: the entry
-/// `mcp_servers.suru`, reached over streamable HTTP with the token as a static `Authorization`
+/// `mcp_servers.shaman`, reached over streamable HTTP with the token as a static `Authorization`
 /// header — never `bearer_token`, which Codex refuses for streamable HTTP — with a per-call timeout
 /// above the Broker's longest call, since progress does not extend it, and every Tool approved by
 /// default, since otherwise a call waits on Codex's automatic reviewer or raises an elicitation
-/// Suru refuses (docs/validation/0408-codex-per-thread-mcp-config.md). Codex keeps none of it with
+/// Shaman refuses (docs/validation/0408-codex-per-thread-mcp-config.md). Codex keeps none of it with
 /// the thread, so a resume is handed it again.
 pub(super) fn broker_thread_config(handoff: &BrokerHandoff) -> ThreadConfig {
     let (header, value) = handoff.authorization_header();
@@ -431,7 +431,7 @@ pub(super) fn broker_thread_config(handoff: &BrokerHandoff) -> ThreadConfig {
 /// The developer instructions a thread handed `handoff` is started and resumed with: those the
 /// user's own configuration sets, `user`, and after them, a blank line apart, the Broker's note as
 /// the handoff writes it for its Agent, naming each Tool as Codex names an MCP server's Tools to
-/// its Agent — `mcp__suru__spawn_subagent`. A user who sets none, or only whitespace, gets the note
+/// its Agent — `mcp__shaman__spawn_subagent`. A user who sets none, or only whitespace, gets the note
 /// alone.
 ///
 /// Codex takes a thread's developer instructions in place of those the user's configuration sets
@@ -451,7 +451,7 @@ pub(super) fn broker_developer_instructions(handoff: &BrokerHandoff, user: Optio
 
 /// Asks the app-server for the configuration a thread working in `cwd` is built from: the user's
 /// `config.toml`, the project layers between `cwd` and its project root, and any managed layer,
-/// merged as Codex merges them for `thread/start` and `thread/resume`. Suru reads it for one value
+/// merged as Codex merges them for `thread/start` and `thread/resume`. Shaman reads it for one value
 /// alone — the developer instructions the user sets — because a thread's own take their place, and
 /// a Session handed the Broker appends its note to them rather than dropping them
 /// ([`broker_developer_instructions`]). It is read on each launch, just before the thread is
@@ -461,7 +461,7 @@ pub(super) struct ConfigReadParams<'a> {
     pub(super) cwd: &'a str,
 }
 
-/// What `config/read` answers with, as far as Suru reads it.
+/// What `config/read` answers with, as far as Shaman reads it.
 #[derive(Deserialize)]
 pub(super) struct NativeConfigRead {
     pub(super) config: NativeEffectiveConfig,
@@ -558,7 +558,7 @@ pub(super) struct TurnStartParams<'a> {
     pub(super) model: &'a str,
     pub(super) approval_policy: &'a str,
     /// How much detail Codex should summarize its Reasoning in. A Turn that
-    /// omits it inherits the Model's own default, which is why Suru always
+    /// omits it inherits the Model's own default, which is why Shaman always
     /// states one.
     pub(super) summary: &'static str,
     pub(super) sandbox_policy: NativeSandboxPolicy,
@@ -571,7 +571,7 @@ pub(super) struct TurnStartParams<'a> {
     pub(super) service_tier: NativeServiceTierOverride<'a>,
 }
 
-/// `turn/start` on a native Subagent's own thread, carrying input Suru hands
+/// `turn/start` on a native Subagent's own thread, carrying input Shaman hands
 /// that Subagent itself — Subagent Reports (ADR 0035). Codex begins a turn
 /// with it on a thread with none running and steers the one running
 /// otherwise, answering that turn either way; it refuses a multi-agent v2
@@ -623,7 +623,7 @@ pub(super) enum UserInput {
         name: String,
         path: PathBuf,
     },
-    /// An image inline, its bytes carried in a base64 `data:` URL. Suru never
+    /// An image inline, its bytes carried in a base64 `data:` URL. Shaman never
     /// sends Codex a remote URL or a local path for one (ADR 0037).
     Image {
         url: String,
@@ -806,7 +806,7 @@ pub(super) enum NativeItem {
     },
     /// A block of Reasoning. `summary` holds the readable sections Codex
     /// streams; the raw `content` beside it is the unsummarized form, which
-    /// Suru neither asks for nor stores.
+    /// Shaman neither asks for nor stores.
     Reasoning {
         id: String,
         #[serde(default)]
@@ -837,7 +837,7 @@ pub(super) enum NativeItem {
         agent_path: String,
     },
     /// A call to a Tool an MCP server hosts — a server the user configured,
-    /// or the Broker Suru serves.
+    /// or the Broker Shaman serves.
     McpToolCall(NativeMcpToolCall),
     /// A search Codex's own web search Tool ran, or a page it opened or
     /// looked through.
@@ -854,7 +854,7 @@ pub(super) enum NativeItem {
     ContextCompaction {},
     /// Every other item, recorded as nothing: those that are no use of a Tool
     /// — a review entered or left, a hook's prompt, a plan — and a call to a
-    /// dynamic Tool, which Suru never offers.
+    /// dynamic Tool, which Shaman never offers.
     #[serde(other)]
     Unknown,
 }
@@ -1097,7 +1097,7 @@ pub(super) fn user_message_text(content: &[NativeUserInput]) -> String {
         .join("\n")
 }
 
-/// The collab tools whose calls Suru reads something from; the rest of the
+/// The collab tools whose calls Shaman reads something from; the rest of the
 /// suite decodes as [`NativeCollabTool::Other`] and is passed over but for
 /// the lifecycle states every call reports. `resumeAgent` is one of the rest:
 /// it reloads a closed child under its thread id without starting a turn, so
@@ -1185,7 +1185,7 @@ pub(super) struct ItemDeltaParams {
 
 /// One step of a Reasoning summary: which item, which of that item's summary
 /// sections, and the text the section added. Codex names the section outright,
-/// which is what lets Suru give each section a Reasoning Activity of its own
+/// which is what lets Shaman give each section a Reasoning Activity of its own
 /// without counting the breaks between them.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1318,7 +1318,7 @@ pub(super) struct NativeTurnError {
     pub(super) additional_details: Option<String>,
 }
 
-/// The one `codexErrorInfo` Suru reads a meaning from. Codex's union mixes bare
+/// The one `codexErrorInfo` Shaman reads a meaning from. Codex's union mixes bare
 /// names (`"badRequest"`, `"flexUnavailable"`) with single-key objects that
 /// carry details (`{"httpConnectionFailed": {"httpStatusCode": 502}}`) and grows
 /// freely, so every shape other than a bad request reads as [`Self::Other`]
@@ -1429,14 +1429,14 @@ impl NativeThreadTokenUsage {
         })
     }
 
-    /// Suru's disjoint token parts for this reading's running total.
+    /// Shaman's disjoint token parts for this reading's running total.
     pub(super) fn into_cumulative(self) -> NativeCumulativeUsage {
         self.total.into_cumulative()
     }
 }
 
 impl NativeTokenBreakdown {
-    /// Suru's disjoint token parts for this breakdown. Codex's nested counts
+    /// Shaman's disjoint token parts for this breakdown. Codex's nested counts
     /// are made exclusive here — the cache parts leave `input_tokens`,
     /// Reasoning leaves `output_tokens` — so no consumer downstream ever
     /// subtracts, and a figure that cannot be represented degrades to absence
@@ -1455,7 +1455,7 @@ impl NativeTokenBreakdown {
     }
 }
 
-/// One thread's running total in Suru's own token parts. Codex meters a thread
+/// One thread's running total in Shaman's own token parts. Codex meters a thread
 /// rather than a Turn, so this is a position rather than an amount: what a Turn
 /// consumed is the distance between two of these.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1560,7 +1560,7 @@ pub(super) struct CompletedNativeAgentMessage {
     pub(super) text: String,
 }
 
-/// A Codex notification Suru understands, decoded out of its wire params.
+/// A Codex notification Shaman understands, decoded out of its wire params.
 pub(super) enum NativeNotification {
     TurnStarted {
         thread_id: String,
@@ -1803,11 +1803,11 @@ mod tests {
         serde_json::from_value(item.clone()).unwrap_or_else(|_| panic!("{item} decodes"))
     }
 
-    /// The item kinds Suru records nothing of, as Codex's app-server v2 `ThreadItem` serializes
+    /// The item kinds Shaman records nothing of, as Codex's app-server v2 `ThreadItem` serializes
     /// them, stay unknown: a review entered and left, a hook's prompt, a plan, and a call to a
-    /// dynamic Tool, which Suru never offers.
+    /// dynamic Tool, which Shaman never offers.
     #[test]
-    fn items_suru_records_nothing_of_decode_as_unknown() {
+    fn items_shaman_records_nothing_of_decode_as_unknown() {
         for unknown in [
             json!({"type": "enteredReviewMode", "id": "review", "review": "current changes"}),
             json!({"type": "exitedReviewMode", "id": "review", "review": "Looks good."}),
@@ -1920,7 +1920,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&config).expect("the config serializes"),
             json!({
-                "mcp_servers.suru": {
+                "mcp_servers.shaman": {
                     "url": "http://127.0.0.1:1/broker",
                     "http_headers": {"Authorization": handoff.token().bearer()},
                     "tool_timeout_sec": 900.0,
@@ -1941,7 +1941,7 @@ mod tests {
         assert_eq!(start["config"], serde_json::to_value(&config).unwrap());
         assert_eq!(start["developerInstructions"], note.as_str());
         assert!(
-            note.contains("mcp__suru__spawn_subagent"),
+            note.contains("mcp__shaman__spawn_subagent"),
             "the note names the Broker's Tools as Codex does: {note}"
         );
     }
@@ -1951,7 +1951,7 @@ mod tests {
     }
 
     fn codex_note() -> String {
-        handoff().instruction_note(|tool| format!("mcp__suru__{tool}"))
+        handoff().instruction_note(|tool| format!("mcp__shaman__{tool}"))
     }
 
     #[test]

@@ -11,7 +11,7 @@ use std::path::Path;
 
 use reqwest::StatusCode;
 use serde_json::{Value, json};
-use suru::protocol::{
+use shaman::protocol::{
     AgentId, AgentIdentity, ApprovalPosture, ApprovalPostureApplication, ClaudePermissionMode,
     CodexApprovalPolicy, CodexSandboxMode, RuntimeDescriptor, SessionApprovalPosture, SessionId,
     SettingMutation, UpdateApprovalPostureRequest,
@@ -124,10 +124,10 @@ async fn posture_of(
 async fn start_child(
     provider: &mut ControlledProvider,
     agent: &str,
-    selection: suru::protocol::AgentSelection,
+    selection: shaman::protocol::AgentSelection,
     posture: ApprovalPosture,
     described: &str,
-) -> (ControlledProviderSession, suru::provider::BrokerHandoff) {
+) -> (ControlledProviderSession, shaman::provider::BrokerHandoff) {
     let start = next_start(provider).await;
     assert_eq!(start.approval_posture(), Some(&posture), "{described}");
     let handoff = start
@@ -169,7 +169,7 @@ fn claude_scout() -> Value {
     })
 }
 
-fn haiku() -> suru::protocol::AgentSelection {
+fn haiku() -> shaman::protocol::AgentSelection {
     claude_models()
         .into_iter()
         .find(|model| model.id.as_str() == "haiku")
@@ -390,7 +390,7 @@ async fn a_settings_change_the_spawner_follows_is_derived_again_for_its_brokered
 
 /// Writes the Config Document the next Server opens with.
 fn write_settings(config_dir: &Path, document: &str) {
-    std::fs::write(config_dir.join("suru.jsonc"), document).expect("write Config Document");
+    std::fs::write(config_dir.join("shaman.jsonc"), document).expect("write Config Document");
 }
 
 #[tokio::test]

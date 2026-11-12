@@ -83,7 +83,7 @@ fn is_temporary(path: &Path, temporary: &Path) -> bool {
 }
 
 /// Whether a path's `component` names a version anywhere in it: digits and a dot
-/// and digits, standing apart from what is around them, so that `suru-v0.4.1-x`
+/// and digits, standing apart from what is around them, so that `shaman-v0.4.1-x`
 /// and `app-1.2.3` do and `python3.12`, `jake2` and `x86_64` do not.
 fn names_a_version(component: &str) -> bool {
     let is_number = |part: Option<&str>| {
@@ -118,7 +118,7 @@ pub(super) fn fleeting_path_entries(path_variable: &OsStr, temporary: &Path) -> 
 /// not outlast an upgrade where it may not.
 ///
 /// What this process knows itself as may be the far end of a link: on Linux
-/// `current_exe` resolves through them, so Homebrew's `bin/suru` reads as a
+/// `current_exe` resolves through them, so Homebrew's `bin/shaman` reads as a
 /// Cellar path naming one version, which the next upgrade removes while the
 /// link goes on naming whichever is current. So where `current` looks
 /// short-lived, a `PATH` entry that leads to this same binary and does not is
@@ -167,44 +167,53 @@ mod tests {
     fn paths_that_will_not_outlast_an_upgrade_are_told_from_those_that_will() {
         let temporary = rooted("/scratch/tmp");
         for (path, expected) in [
-            ("/home/jo/.local/bin/suru", None),
-            ("/usr/local/bin/suru", None),
-            ("/opt/homebrew/bin/suru", None),
-            ("/home/jo/python3.12/suru", None),
-            ("/home/jo/suru/target/debug/suru", Some(ShortLived::Build)),
-            ("/home/jo/suru/target/release/suru", Some(ShortLived::Build)),
+            ("/home/jo/.local/bin/shaman", None),
+            ("/usr/local/bin/shaman", None),
+            ("/opt/homebrew/bin/shaman", None),
+            ("/home/jo/python3.12/shaman", None),
             (
-                "/home/jo/suru/target/x86_64-unknown-linux-gnu/release/suru",
+                "/home/jo/shaman/target/debug/shaman",
                 Some(ShortLived::Build),
             ),
             (
-                "/opt/homebrew/Cellar/suru/1.2.3/bin/suru",
+                "/home/jo/shaman/target/release/shaman",
+                Some(ShortLived::Build),
+            ),
+            (
+                "/home/jo/shaman/target/x86_64-unknown-linux-gnu/release/shaman",
+                Some(ShortLived::Build),
+            ),
+            (
+                "/opt/homebrew/Cellar/shaman/1.2.3/bin/shaman",
                 Some(ShortLived::Versioned),
             ),
             (
-                "/opt/homebrew/Cellar/suru/HEAD/bin/suru",
+                "/opt/homebrew/Cellar/shaman/HEAD/bin/shaman",
                 Some(ShortLived::Versioned),
             ),
             (
-                "/home/jo/.asdf/installs/suru/v0.4.1/suru",
+                "/home/jo/.asdf/installs/shaman/v0.4.1/shaman",
                 Some(ShortLived::Versioned),
             ),
-            ("/nix/store/abc-suru/bin/suru", Some(ShortLived::Versioned)),
-            ("/scratch/tmp/unpacked/suru", Some(ShortLived::Temporary)),
             (
-                "/Users/jo/Downloads/suru-v0.4.1-aarch64-apple-darwin/suru",
+                "/nix/store/abc-shaman/bin/shaman",
                 Some(ShortLived::Versioned),
             ),
-            ("/opt/app-1.2.3/suru", Some(ShortLived::Versioned)),
-            ("/opt/suru@1.2/bin/suru", Some(ShortLived::Versioned)),
-            ("/opt/suru_0.4.1-rc1/suru", Some(ShortLived::Versioned)),
-            ("/home/jo/bin/suru-0.4.1", Some(ShortLived::Versioned)),
-            ("/home/jake2/bin/suru", None),
-            ("/home/jo/.cargo/bin/suru", None),
-            ("/usr/local/lib/python3.12/suru", None),
-            ("/home/jo/v2/suru", None),
-            ("/home/jo/x86_64/suru", None),
-            ("/home/jo/1.notes/suru", None),
+            ("/scratch/tmp/unpacked/shaman", Some(ShortLived::Temporary)),
+            (
+                "/Users/jo/Downloads/shaman-v0.4.1-aarch64-apple-darwin/shaman",
+                Some(ShortLived::Versioned),
+            ),
+            ("/opt/app-1.2.3/shaman", Some(ShortLived::Versioned)),
+            ("/opt/shaman@1.2/bin/shaman", Some(ShortLived::Versioned)),
+            ("/opt/shaman_0.4.1-rc1/shaman", Some(ShortLived::Versioned)),
+            ("/home/jo/bin/shaman-0.4.1", Some(ShortLived::Versioned)),
+            ("/home/jake2/bin/shaman", None),
+            ("/home/jo/.cargo/bin/shaman", None),
+            ("/usr/local/lib/python3.12/shaman", None),
+            ("/home/jo/v2/shaman", None),
+            ("/home/jo/x86_64/shaman", None),
+            ("/home/jo/1.notes/shaman", None),
         ] {
             assert_eq!(short_lived(&rooted(path), &temporary), expected, "{path}");
         }
@@ -214,13 +223,13 @@ mod tests {
     fn a_snaps_revision_directory_will_not_last_and_its_lasting_paths_will() {
         let temporary = rooted("/scratch/tmp");
         assert_eq!(
-            short_lived(Path::new("/snap/suru/123/bin/suru"), &temporary),
+            short_lived(Path::new("/snap/shaman/123/bin/shaman"), &temporary),
             Some(ShortLived::Versioned)
         );
         for lasting in [
-            "/snap/bin/suru",
-            "/snap/suru/current/bin/suru",
-            "/home/jo/snap/suru/suru",
+            "/snap/bin/shaman",
+            "/snap/shaman/current/bin/shaman",
+            "/home/jo/snap/shaman/shaman",
         ] {
             assert_eq!(
                 short_lived(Path::new(lasting), &temporary),
@@ -235,14 +244,14 @@ mod tests {
     #[test]
     fn the_usual_temporary_directories_count_whatever_the_temporary_directory_is() {
         let temporary = rooted("/scratch/tmp");
-        for path in ["/tmp/suru", "/private/tmp/x/suru", "/var/tmp/suru"] {
+        for path in ["/tmp/shaman", "/private/tmp/x/shaman", "/var/tmp/shaman"] {
             assert_eq!(
                 short_lived(Path::new(path), &temporary),
                 Some(ShortLived::Temporary),
                 "{path}"
             );
         }
-        assert_eq!(short_lived(Path::new("/tmpfiles/suru"), &temporary), None);
+        assert_eq!(short_lived(Path::new("/tmpfiles/shaman"), &temporary), None);
     }
 
     #[test]
@@ -279,7 +288,7 @@ mod tests {
         std::fs::create_dir_all(target.join("debug")).unwrap();
         std::fs::write(target.join("CACHEDIR.TAG"), "").unwrap();
         assert_eq!(
-            short_lived(&target.join("debug").join("suru"), elsewhere.path()),
+            short_lived(&target.join("debug").join("shaman"), elsewhere.path()),
             Some(ShortLived::Build)
         );
     }
@@ -287,7 +296,7 @@ mod tests {
     #[test]
     fn a_lasting_path_is_named_as_it_is() {
         let temporary = rooted("/scratch/tmp");
-        let current = rooted("/home/jo/.local/bin/suru");
+        let current = rooted("/home/jo/.local/bin/shaman");
         assert_eq!(
             registered_executable(&current, None, &temporary),
             (current, None)
@@ -302,21 +311,21 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let root = crate::paths::canonical(root.path()).unwrap();
         let temporary = rooted("/scratch/tmp");
-        let cellar = root.join("Cellar").join("suru").join("1.2.3").join("bin");
+        let cellar = root.join("Cellar").join("shaman").join("1.2.3").join("bin");
         let links = root.join("links");
         let other = root.join("other");
         for directory in [&cellar, &links, &other] {
             std::fs::create_dir_all(directory).unwrap();
         }
-        let binary = cellar.join("suru");
+        let binary = cellar.join("shaman");
         std::fs::write(&binary, "").unwrap();
-        std::fs::write(other.join("suru"), "another binary").unwrap();
-        std::os::unix::fs::symlink(&binary, links.join("suru")).unwrap();
+        std::fs::write(other.join("shaman"), "another binary").unwrap();
+        std::os::unix::fs::symlink(&binary, links.join("shaman")).unwrap();
 
         let path_variable = std::env::join_paths([&other, &links]).unwrap();
         assert_eq!(
             registered_executable(&binary, Some(&path_variable), &temporary),
-            (links.join("suru"), None)
+            (links.join("shaman"), None)
         );
 
         let no_link = std::env::join_paths([&other]).unwrap();

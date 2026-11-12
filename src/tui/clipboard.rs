@@ -153,7 +153,7 @@ fn safe_destination_target(destination: &str) -> Option<&str> {
 
 /// A destination the terminal and platform opener can act on without a base
 /// URL. Relative Markdown links remain copyable but keep visible destination
-/// chrome because the Session workspace, not Suru's process cwd, is their base.
+/// chrome because the Session workspace, not Shaman's process cwd, is their base.
 pub(super) fn safe_hyperlink_target(destination: &str) -> Option<&str> {
     let destination = safe_destination_target(destination)?;
     let (scheme, _) = destination.split_once(':')?;

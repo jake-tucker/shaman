@@ -6,7 +6,7 @@ use std::time::Duration;
 use crate::copilot_integration::support::{
     ScriptedCopilot, conversation_arms, opened_session_on, send_arm, settled_session,
 };
-use suru::{
+use shaman::{
     protocol::{
         ContextBreakdown, ContextFill, ContextPart, ContextSource, SessionError, SessionErrorCode,
     },

@@ -86,7 +86,7 @@ impl ManagedClientConfig {
     pub fn new(state_base_dir: impl AsRef<Path>, channel: impl Into<String>) -> Result<Self> {
         Ok(Self {
             runtime: RuntimeConfig::new(state_base_dir, channel)?,
-            server_executable: std::env::current_exe().context("find current Suru executable")?,
+            server_executable: std::env::current_exe().context("find current Shaman executable")?,
             server_environment: Vec::new(),
             startup_timeout: STARTUP_TIMEOUT,
             stop_timeout: STOP_TIMEOUT,
@@ -180,14 +180,14 @@ impl ManagedClientConfig {
     }
 
     /// Points a server this client launches at the Config Document root,
-    /// mirroring how `SURU_CONFIG_DIR` points a real run at one.
+    /// mirroring how `SHAMAN_CONFIG_DIR` points a real run at one.
     pub fn with_config_dir(mut self, config_dir: impl AsRef<Path>) -> Self {
         self.runtime = self.runtime.with_config_dir(config_dir);
         self
     }
 
     /// Has a server this client launches keep a new identity key in
-    /// `store` whatever its build, as `SURU_IDENTITY_STORE` asks of a real
+    /// `store` whatever its build, as `SHAMAN_IDENTITY_STORE` asks of a real
     /// run.
     pub fn with_identity_store(mut self, store: crate::IdentityStoreChoice) -> Self {
         self.runtime = self.runtime.with_identity_store(store);
@@ -439,31 +439,31 @@ pub enum ServerStatus {
 impl std::fmt::Display for ServerStatus {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Missing => write!(formatter, "Suru server missing (no runtime registration)"),
+            Self::Missing => write!(formatter, "Shaman server missing (no runtime registration)"),
             Self::Starting(health) => write!(
                 formatter,
-                "Suru server starting (pid {}, instance {})",
+                "Shaman server starting (pid {}, instance {})",
                 health.pid, health.instance_id
             ),
             Self::Ready(health) => write!(
                 formatter,
-                "Suru server ready (pid {}, instance {})",
+                "Shaman server ready (pid {}, instance {})",
                 health.pid, health.instance_id
             ),
             Self::Stopping(health) => write!(
                 formatter,
-                "Suru server stopping (pid {}, instance {})",
+                "Shaman server stopping (pid {}, instance {})",
                 health.pid, health.instance_id
             ),
             Self::Failed(health) => write!(
                 formatter,
-                "Suru server failed (pid {}, instance {})",
+                "Shaman server failed (pid {}, instance {})",
                 health.pid, health.instance_id
             ),
             Self::Stale(reason) => {
-                write!(formatter, "Suru server registration stale: {reason}")
+                write!(formatter, "Shaman server registration stale: {reason}")
             }
-            Self::Unreachable(reason) => write!(formatter, "Suru server unreachable: {reason}"),
+            Self::Unreachable(reason) => write!(formatter, "Shaman server unreachable: {reason}"),
         }
     }
 }
@@ -2700,7 +2700,7 @@ pub async fn server_status(config: &ManagedClientConfig) -> Result<ServerStatus>
     })
 }
 
-/// What came of a `suru server stop`.
+/// What came of a `shaman server stop`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServerStop {
     /// This Server was running, and has stopped.
@@ -2731,13 +2731,13 @@ pub async fn stop_server(config: &ManagedClientConfig) -> Result<ServerStop> {
                 return Ok(ServerStop::Stopped(registration.health));
             }
             lifecycle::RegistrationInspection::Missing => {
-                "cannot stop missing Suru server".to_owned()
+                "cannot stop missing Shaman server".to_owned()
             }
             lifecycle::RegistrationInspection::Stale(reason) => {
-                format!("cannot stop stale Suru server registration: {reason}")
+                format!("cannot stop stale Shaman server registration: {reason}")
             }
             lifecycle::RegistrationInspection::Unreachable(reason) => {
-                format!("cannot stop unreachable Suru server: {reason}")
+                format!("cannot stop unreachable Shaman server: {reason}")
             }
         };
         let now = tokio::time::Instant::now();

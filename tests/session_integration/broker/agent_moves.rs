@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use suru::{
+use shaman::{
     protocol::{ExecutionDirectory, MoveDestination, MoveOutcome, MoveSessionRequest},
     provider::{MoveNote, ProviderResumeState, Report},
 };
@@ -30,7 +30,7 @@ use crate::session_integration::repositories::git;
 const THE_SESSION_STAYS: &str = ", so the Session stays where it is.";
 
 pub(super) fn canonical(path: &Path) -> PathBuf {
-    suru::paths::canonical(path).expect("canonicalize a fixture")
+    shaman::paths::canonical(path).expect("canonicalize a fixture")
 }
 
 /// A Repository at `root`, with a first commit, where a Move can make a Worktree
@@ -169,7 +169,7 @@ impl MovingAgent {
         self.woken().await;
     }
 
-    /// The caller at work again in the Turn Suru began for it once a Move it
+    /// The caller at work again in the Turn Shaman began for it once a Move it
     /// asked for applied, its Provider started afresh with a token of its own.
     async fn woken(&mut self) {
         let start = next_start(&mut self.hosted.claude).await;
@@ -364,7 +364,7 @@ async fn the_user_moves(descriptor: &RuntimeDescriptor, session_id: SessionId, p
 }
 
 /// The note of a Move from `from` to `to`: the whole input of the Continuation
-/// Suru woke the Agent into where it `continues`, and otherwise at the head of a
+/// Shaman woke the Agent into where it `continues`, and otherwise at the head of a
 /// Turn something else began.
 fn note(from: &Path, to: &Path, continues: bool) -> Report {
     MoveNote {
@@ -393,7 +393,7 @@ const A_NATIVE_SUBAGENTS: &str = "The Session is a native Subagent's, which work
 /// An Agent moves itself into a new Worktree mid-Turn, as the feature exists
 /// for: the Worktree is made as it asks, from the commit its own stands at, its
 /// answer teaches it what that means, it keeps its Turn, and only as that Turn
-/// settles does the Move apply. Suru then wakes it, unprompted, into a
+/// settles does the Move apply. Shaman then wakes it, unprompted, into a
 /// Continuation that resumes the conversation in the new Worktree, whose whole
 /// input is the note of the Move saying it may carry on.
 #[tokio::test]
@@ -421,9 +421,9 @@ async fn an_agent_moving_itself_into_a_new_worktree_ends_its_turn_and_is_woken_t
     assert_eq!(
         answer["message"],
         json!(format!(
-            "Suru made a new Worktree at {worktree} from the commit HEAD stands at now, and your \
+            "Shaman made a new Worktree at {worktree} from the commit HEAD stands at now, and your \
              Session's Move there is pending: it applies once this Turn and any native Subagents \
-             you have running settle, and Suru then begins your next Turn there itself, for you \
+             you have running settle, and Shaman then begins your next Turn there itself, for you \
              to carry on without waiting for the user. End this Turn now rather than working on \
              in {main}. Commits you make after this call, and changes you leave uncommitted, stay \
              on the old branch and never reach the new Worktree: if it needs them, commit and \
@@ -461,7 +461,7 @@ async fn an_agent_moving_itself_into_a_new_worktree_ends_its_turn_and_is_woken_t
         .await
         .expect("the process in the directory it left stops");
 
-    // Nothing is admitted: Suru begins the Agent's next Turn itself.
+    // Nothing is admitted: Shaman begins the Agent's next Turn itself.
     let start = next_start(&mut agent.hosted.claude).await;
     assert_eq!(
         start.execution_directory(),
@@ -788,13 +788,13 @@ async fn a_destination_outside_the_callers_repository_is_refused_naming_it_and_m
 
     assert!(
         !sibling
-            .join(suru::protocol::MANAGED_WORKTREE_DIRECTORY)
+            .join(shaman::protocol::MANAGED_WORKTREE_DIRECTORY)
             .exists(),
         "no Worktree of the Repository refused was made"
     );
     assert!(
         !nested
-            .join(suru::protocol::MANAGED_WORKTREE_DIRECTORY)
+            .join(shaman::protocol::MANAGED_WORKTREE_DIRECTORY)
             .exists(),
         "nor of the one within the Worktree"
     );
@@ -1138,7 +1138,7 @@ async fn an_agent_moves_its_own_brokered_subagent_within_the_callers_own_boundar
     assert_eq!(
         answer["message"],
         json!(format!(
-            "Session {child} now works in the new Worktree Suru made at {}, from the commit \
+            "Session {child} now works in the new Worktree Shaman made at {}, from the commit \
              HEAD stood at; its next Turn works there. Changes left uncommitted where it worked \
              stayed there.",
             worktree.display()
@@ -1196,7 +1196,7 @@ async fn an_agent_moves_its_own_brokered_subagent_within_the_callers_own_boundar
         answer["message"],
         json!(format!(
             "Your Session's Move to {within} is pending: it applies once this Turn and any native \
-             Subagents you have running settle, and Suru then begins your next Turn there \
+             Subagents you have running settle, and Shaman then begins your next Turn there \
              itself, for you to carry on without waiting for the user. End this Turn now rather \
              than working on in {sibling}.",
             within = within.display(),
@@ -1219,7 +1219,7 @@ async fn an_agent_moves_its_own_brokered_subagent_within_the_callers_own_boundar
     assert_eq!(
         answer["message"],
         json!(format!(
-            "Suru made a new Worktree at {worktree} from the commit HEAD stands at now, and \
+            "Shaman made a new Worktree at {worktree} from the commit HEAD stands at now, and \
              Session {child}'s Move there is pending: it applies once its Turn and any native \
              Subagents it has running settle, and its next Turn works there. It keeps working in \
              {sibling} until then. Commits made there after this call, and changes left \
@@ -1314,7 +1314,7 @@ async fn an_agent_is_refused_another_agents_session_and_its_subagents() {
 }
 
 /// A native Subagent's Session is refused its parent, within whose tree it stands,
-/// in words that say why. Claude's calls name no Agent Suru knows: each carries
+/// in words that say why. Claude's calls name no Agent Shaman knows: each carries
 /// only the id of its own `tool_use`, the same for a native Subagent's as its
 /// parent's (`docs/validation/0408-subagent-mcp-attribution.md`). So a call its
 /// native Subagent makes arrives as its parent's and Moves its parent, whose Move
@@ -1620,7 +1620,7 @@ async fn outside_source_control_an_agent_moves_only_beneath_its_workspaces_direc
     }
     assert!(
         !repository_beneath
-            .join(suru::protocol::MANAGED_WORKTREE_DIRECTORY)
+            .join(shaman::protocol::MANAGED_WORKTREE_DIRECTORY)
             .exists(),
         "nothing was made"
     );
@@ -1810,7 +1810,7 @@ async fn a_sidekick_never_moves_and_its_subagent_moves_only_beneath_its_workspac
 /// Holds the first reading of `held`, as a Move judges its destination, until the
 /// test opens `open`, having said so through `reached`.
 struct HoldsDestination {
-    git: suru::source_control::GitSourceControl,
+    git: shaman::source_control::GitSourceControl,
     held: PathBuf,
     reached: Arc<tokio::sync::Notify>,
     open: Arc<tokio::sync::Notify>,
@@ -1818,8 +1818,8 @@ struct HoldsDestination {
 }
 
 #[async_trait::async_trait]
-impl suru::source_control::SourceControl for HoldsDestination {
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+impl shaman::source_control::SourceControl for HoldsDestination {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -1828,8 +1828,8 @@ impl suru::source_control::SourceControl for HoldsDestination {
         destination: &Path,
         branch: Option<&str>,
         timeout: Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -1837,10 +1837,10 @@ impl suru::source_control::SourceControl for HoldsDestination {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
-    async fn discover(&self, directory: &Path) -> suru::protocol::ResolvedWorkspace {
+    async fn discover(&self, directory: &Path) -> shaman::protocol::ResolvedWorkspace {
         if directory == self.held
             && self
                 .readings
@@ -1875,7 +1875,7 @@ async fn a_move_whose_client_has_gone_still_lands_whole() {
         None,
         ServerTimings::default(),
         Arc::new(HoldsDestination {
-            git: suru::source_control::GitSourceControl::default(),
+            git: shaman::source_control::GitSourceControl::default(),
             held: beside.clone(),
             reached: reached.clone(),
             open: open.clone(),
@@ -2164,7 +2164,7 @@ async fn a_destination_replaced_as_it_is_read_is_refused() {
         None,
         ServerTimings::default(),
         Arc::new(HoldsDestination {
-            git: suru::source_control::GitSourceControl::default(),
+            git: shaman::source_control::GitSourceControl::default(),
             held: beside.clone(),
             reached: reached.clone(),
             open: open.clone(),
@@ -2294,7 +2294,7 @@ async fn a_new_worktree_starting_from_another_repository_than_was_judged_is_refu
         .await;
     assert!(
         !sibling
-            .join(suru::protocol::MANAGED_WORKTREE_DIRECTORY)
+            .join(shaman::protocol::MANAGED_WORKTREE_DIRECTORY)
             .exists(),
         "no Worktree of it was made"
     );

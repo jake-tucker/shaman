@@ -12,7 +12,7 @@ use crate::session_integration::{
 };
 use eventsource_stream::{Event, Eventsource};
 use futures_util::StreamExt;
-use suru::{
+use shaman::{
     protocol::{
         MODEL_CATALOG_EVENT, ModelAvailability, ModelCatalog, ModelDescriptor, ModelId,
         ProviderCatalogStatus, ProviderId, RuntimeDescriptor, SETTINGS_SNAPSHOT_EVENT,

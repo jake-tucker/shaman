@@ -12,7 +12,7 @@ use crate::claude_integration::{
         silent_errand_preamble,
     },
 };
-use suru::{
+use shaman::{
     managed_client::ManagedClient,
     protocol::{
         AgentSelection, CreateSessionRequest, InitialPrompt, ModelId, ModelOptionChoiceId,
@@ -80,7 +80,7 @@ async fn titled_session_with_timings(
             session_id: None,
             preparation_id: None,
             agent_selection: Some(conversation_selection()),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             prompt: InitialPrompt {
@@ -96,7 +96,7 @@ async fn titled_session_with_timings(
 }
 
 /// Waits until the Errand has reached the CLI, so a test that goes on to prove no Title arrived is
-/// proving something about an Errand Suru actually made.
+/// proving something about an Errand Shaman actually made.
 async fn errand_reaches_the_cli(claude: &ScriptedClaude) {
     timeout(PROGRESS_DEADLINE, async {
         while !claude
@@ -204,7 +204,7 @@ async fn a_session_on_claude_is_titled_by_a_print_mode_errand() {
     );
     assert_eq!(
         errand.working_directory,
-        suru::paths::canonical(workspace.path()).expect("canonicalize Workspace"),
+        shaman::paths::canonical(workspace.path()).expect("canonicalize Workspace"),
         "the Errand runs in the Session's Workspace"
     );
 
@@ -248,7 +248,7 @@ async fn a_failed_claude_errand_leaves_the_prompt_derived_title_standing() {
     )
     .await;
 
-    // The Errand reaches the CLI and is refused there, so the failure is one Suru met rather than
+    // The Errand reaches the CLI and is refused there, so the failure is one Shaman met rather than
     // one it never asked for.
     errand_reaches_the_cli(&claude).await;
     assert_no_title_reaches(
@@ -285,7 +285,7 @@ async fn a_claude_errand_that_is_never_answered_leaves_the_prompt_derived_title_
     assert_no_title_reaches(
         &mut client,
         session_id,
-        "an Errand Suru stopped waiting on leaves the Prompt-derived Title standing",
+        "an Errand Shaman stopped waiting on leaves the Prompt-derived Title standing",
     )
     .await;
 

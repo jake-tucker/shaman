@@ -64,7 +64,7 @@ impl fmt::Display for SetWorkspaceDescriptionError {
 
 impl std::error::Error for SetWorkspaceDescriptionError {}
 
-/// A Model-authored Description as Suru stores it: kept on one line and cut
+/// A Model-authored Description as Shaman stores it: kept on one line and cut
 /// to [`MAX_WORKSPACE_DESCRIPTION_CHARS`], marked with an ellipsis where it
 /// was cut. A Description with nothing left to say is no Description.
 pub(super) fn derived(raw: &str) -> Option<String> {

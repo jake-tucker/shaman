@@ -2,14 +2,14 @@
 //! time through that Server's listing route, and a Client turned toward a
 //! Remote is answered by the Remote exactly as its own Server answers it.
 use super::*;
-use std::path::{Path, PathBuf};
-use suru::{
+use shaman::{
     managed_client::OutlookClient,
     protocol::{
         CheckoutRevision, DRIVE_LIST, DirectoryListing, DirectorySourceControl,
         ListDirectoryRequest,
     },
 };
+use std::path::{Path, PathBuf};
 
 /// The Serving Server asked as a Client's own Outlook, and the same Server
 /// asked through a Pairing as the connecting side's Remote.
@@ -63,7 +63,7 @@ fn names(listing: &DirectoryListing) -> Vec<&str> {
 }
 
 fn canonical(path: &Path) -> PathBuf {
-    suru::paths::canonical(path).expect("read the fixture's canonical path")
+    shaman::paths::canonical(path).expect("read the fixture's canonical path")
 }
 
 /// Runs Git at `directory` as a fixture's author, answering what it printed.
@@ -72,10 +72,10 @@ fn git(directory: &Path, args: &[&str]) -> String {
         .arg("-C")
         .arg(directory)
         .args(args)
-        .env("GIT_AUTHOR_NAME", "Suru Test")
-        .env("GIT_AUTHOR_EMAIL", "suru@example.invalid")
-        .env("GIT_COMMITTER_NAME", "Suru Test")
-        .env("GIT_COMMITTER_EMAIL", "suru@example.invalid")
+        .env("GIT_AUTHOR_NAME", "Shaman Test")
+        .env("GIT_AUTHOR_EMAIL", "shaman@example.invalid")
+        .env("GIT_COMMITTER_NAME", "Shaman Test")
+        .env("GIT_COMMITTER_EMAIL", "shaman@example.invalid")
         .output()
         .expect("run Git");
     assert!(
@@ -143,7 +143,7 @@ async fn a_root_lists_its_parent_and_child_directories_in_natural_order_without_
 #[tokio::test]
 async fn a_relative_path_is_read_from_the_base_and_a_tilde_from_the_servers_home() {
     let home = tempfile::tempdir().expect("create the Serving Server's home");
-    std::fs::create_dir_all(home.path().join("projects").join("suru"))
+    std::fs::create_dir_all(home.path().join("projects").join("shaman"))
         .expect("create a directory in the home");
     let pair = paired_servers_at_home("directory-listing-relative", home.path()).await;
     let workspace = tempfile::tempdir().expect("create the Landing's Workspace");
@@ -180,7 +180,7 @@ async fn a_relative_path_is_read_from_the_base_and_a_tilde_from_the_servers_home
             canonical(&home.path().join("projects")),
             "{way}"
         );
-        assert_eq!(names(&beneath_home), ["suru"], "{way}");
+        assert_eq!(names(&beneath_home), ["shaman"], "{way}");
     }
     pair.shutdown().await;
 }
@@ -422,7 +422,7 @@ async fn the_filesystem_root_answers_with_no_parent() {
 #[cfg(windows)]
 #[tokio::test]
 async fn a_drive_root_names_the_drive_list_as_its_parent_which_lists_every_drive() {
-    use suru::protocol::ChildDirectory;
+    use shaman::protocol::ChildDirectory;
 
     let pair = paired_servers("directory-listing-drive-list").await;
     let fixture = tempfile::tempdir().expect("create a directory on a drive");

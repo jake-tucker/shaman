@@ -3,7 +3,7 @@ use crate::tui_rendering::support::{
     rendered_application_rows_at, rendered_row, selected_session_snapshot, text_position,
     type_terminal_text, workspace_dir,
 };
-use suru::{
+use shaman::{
     protocol::{
         AgentSelection, ApprovalPosture, CodexApprovalPolicy, CodexSandboxMode, ModelId,
         ProviderId, SessionApprovalPosture, SessionId,
@@ -31,7 +31,7 @@ fn cycle_and_picker_use_the_typed_approval_posture_without_losing_the_draft() {
             sandbox_mode: CodexSandboxMode::WorkspaceWrite,
         },
         pinned: true,
-        application: suru::protocol::ApprovalPostureApplication::Applied,
+        application: shaman::protocol::ApprovalPostureApplication::Applied,
     });
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
@@ -51,11 +51,11 @@ fn cycle_and_picker_use_the_typed_approval_posture_without_losing_the_draft() {
     assert_eq!(
         transition,
         ApplicationTransition::UpdateApprovalPosture {
-            session: suru::protocol::SessionReference::new(
-                suru::protocol::Outlook::Local,
+            session: shaman::protocol::SessionReference::new(
+                shaman::protocol::Outlook::Local,
                 session_id
             ),
-            request: suru::protocol::UpdateApprovalPostureRequest {
+            request: shaman::protocol::UpdateApprovalPostureRequest {
                 posture: Some(ApprovalPosture::Codex {
                     approval_policy: CodexApprovalPolicy::Never,
                     sandbox_mode: CodexSandboxMode::WorkspaceWrite,
@@ -105,11 +105,11 @@ fn cycle_and_picker_use_the_typed_approval_posture_without_losing_the_draft() {
             )))
             .unwrap(),
         ApplicationTransition::UpdateApprovalPosture {
-            session: suru::protocol::SessionReference::new(
-                suru::protocol::Outlook::Local,
+            session: shaman::protocol::SessionReference::new(
+                shaman::protocol::Outlook::Local,
                 session_id
             ),
-            request: suru::protocol::UpdateApprovalPostureRequest { posture: None },
+            request: shaman::protocol::UpdateApprovalPostureRequest { posture: None },
         }
     );
     let frame = rendered_application_rows_at(&application, 80, 24).join("\n");
@@ -133,10 +133,10 @@ fn a_subagents_inherited_posture_has_no_independent_controls() {
     snapshot.session.parent = Some(SessionId::new());
     snapshot.session.approval_posture = Some(SessionApprovalPosture {
         value: ApprovalPosture::Claude {
-            permission_mode: suru::protocol::ClaudePermissionMode::DontAsk,
+            permission_mode: shaman::protocol::ClaudePermissionMode::DontAsk,
         },
         pinned: true,
-        application: suru::protocol::ApprovalPostureApplication::Applied,
+        application: shaman::protocol::ApprovalPostureApplication::Applied,
     });
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
@@ -182,7 +182,7 @@ fn codex_posture_delay_is_absent_from_the_composer() {
             sandbox_mode: CodexSandboxMode::DangerFullAccess,
         },
         pinned: true,
-        application: suru::protocol::ApprovalPostureApplication::NextTurn,
+        application: shaman::protocol::ApprovalPostureApplication::NextTurn,
     });
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
@@ -208,10 +208,10 @@ fn outstanding_native_posture_application_is_absent_from_the_composer() {
     );
     snapshot.session.approval_posture = Some(SessionApprovalPosture {
         value: ApprovalPosture::Claude {
-            permission_mode: suru::protocol::ClaudePermissionMode::DontAsk,
+            permission_mode: shaman::protocol::ClaudePermissionMode::DontAsk,
         },
         pinned: true,
-        application: suru::protocol::ApprovalPostureApplication::Applying,
+        application: shaman::protocol::ApprovalPostureApplication::Applying,
     });
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
@@ -241,7 +241,7 @@ fn the_pointer_focuses_a_posture_and_pressing_one_chooses_it() {
             sandbox_mode: CodexSandboxMode::WorkspaceWrite,
         },
         pinned: true,
-        application: suru::protocol::ApprovalPostureApplication::Applied,
+        application: shaman::protocol::ApprovalPostureApplication::Applied,
     });
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
@@ -252,7 +252,7 @@ fn the_pointer_focuses_a_posture_and_pressing_one_chooses_it() {
         )))
         .unwrap();
     assert!(application.wants_pointer_motion());
-    let cell = |application: &suru::tui::Application, label: &str| {
+    let cell = |application: &shaman::tui::Application, label: &str| {
         text_position(&rendered_application_buffer(application, 80, 24), label)
     };
 
@@ -265,11 +265,11 @@ fn the_pointer_focuses_a_posture_and_pressing_one_chooses_it() {
     assert_eq!(
         left_click_at(&mut application, untrusted),
         ApplicationTransition::UpdateApprovalPosture {
-            session: suru::protocol::SessionReference::new(
-                suru::protocol::Outlook::Local,
+            session: shaman::protocol::SessionReference::new(
+                shaman::protocol::Outlook::Local,
                 session_id
             ),
-            request: suru::protocol::UpdateApprovalPostureRequest {
+            request: shaman::protocol::UpdateApprovalPostureRequest {
                 posture: Some(ApprovalPosture::Codex {
                     approval_policy: CodexApprovalPolicy::Untrusted,
                     sandbox_mode: CodexSandboxMode::WorkspaceWrite,

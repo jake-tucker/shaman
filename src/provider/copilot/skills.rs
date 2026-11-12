@@ -31,7 +31,7 @@ use crate::{
 
 const METHOD_NOT_FOUND: i32 = -32601;
 const DISCOVERY_CONTEXT: &str = "Copilot Skill discovery failed";
-const INCOMPATIBLE_MESSAGE: &str = "Copilot Skills require the experimental Session command interface supported by this Suru build; update the Copilot CLI to a compatible version";
+const INCOMPATIBLE_MESSAGE: &str = "Copilot Skills require the experimental Session command interface supported by this Shaman build; update the Copilot CLI to a compatible version";
 
 #[derive(Clone, Debug)]
 pub(super) struct CopilotSkills {
@@ -420,7 +420,7 @@ fn safe_scope(source: SkillSource) -> &'static str {
 
 fn opaque_skill_id(execution_directory: &Path, skill: &Skill) -> SkillId {
     let mut hash = blake3::Hasher::new();
-    hash.update(b"suru:copilot-skill:v1\0");
+    hash.update(b"shaman:copilot-skill:v1\0");
     hash.update(execution_directory.to_string_lossy().as_bytes());
     for component in [
         serde_json::to_string(&skill.source).expect("Copilot Skill source serializes"),

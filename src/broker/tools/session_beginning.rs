@@ -16,7 +16,7 @@
 //!
 //! The Agent is settled before anything is made: the one the Sidekick chose,
 //! or the one the user's Landing would begin with, held alike to what
-//! `list_providers` offers, so a Session is never begun on an Agent Suru
+//! `list_providers` offers, so a Session is never begun on an Agent Shaman
 //! already knows cannot run it. A Provider that may be chosen and then fails
 //! to start fails in the Session, as it would for the Landing. On a Remote it
 //! is settled by what the Remote offers and its own Landing would begin with,
@@ -51,7 +51,7 @@ use crate::{
 
 /// What a Sidekick is told when the user's Landing has no Agent to begin a
 /// Session with.
-const NO_AGENT: &str = "No Provider Suru hosts can begin a Session now: each is turned off or \
+const NO_AGENT: &str = "No Provider Shaman hosts can begin a Session now: each is turned off or \
     cannot be used. Ask the user to turn one on, or call list_providers to see why.";
 
 /// What a refusal of the Landing's own Agent goes on to say the Sidekick may
@@ -99,7 +99,7 @@ working. Its Transcript shows its first Prompt as sent by you, leading back \
 to your Session, and yours gains a row leading into it — or, begun on a \
 Remote, as sent by a Sidekick on this machine. Takes \"origin\", the name of \
 the Remote to begin it on, as list_remotes gives it, left out to begin it on \
-this Suru server; \"directory\", the absolute path of the directory it is to \
+this Shaman server; \"directory\", the absolute path of the directory it is to \
 work in there, such as a Workspace's path as list_workspaces gives it with \
 the same \"origin\"; \"prompt\", everything \
 its Agent needs, since it sees none of your conversation; optionally \
@@ -108,7 +108,7 @@ its Agent needs, since it sees none of your conversation; optionally \
 and any Model Option left out taking the Model's default — left out, it \
 begins with the Agent the user's Landing there would; and optionally \
 \"new_worktree\": true to begin it in a new Worktree of the directory's \
-Repository, which Suru creates and names from the prompt, rather than in the \
+Repository, which Shaman creates and names from the prompt, rather than in the \
 directory itself. A beginning that fails once its new Worktree is made keeps \
 the Worktree and its refusal names a \"preparation\"; pass that back, with \
 the same \"directory\", to begin the Session in the kept Worktree rather \
@@ -118,7 +118,7 @@ where it was: read it there, or pass it back as \"session_id\", with the \
 same arguments, to ask again, which begins it only where it was not. Answers with JSON of the shape {\"session_id\": \"...\", \
 \"origin\": \"...\", \"directory\": \"...\", \"provider\": \"...\", \"model\": \
 \"...\"}: the new Session's id and the Remote it lives on, left out for one \
-on this Suru server — together naming it to every Tool that acts on it — \
+on this Shaman server — together naming it to every Tool that acts on it — \
 where it works, and the Agent it began with. A directory that \
 does not exist, an Agent that cannot be chosen, and a directory of the \
 Sidekick Workspace, where no Sidekick begins a Session, are refused saying \
@@ -177,7 +177,7 @@ pub(super) fn input_schema() -> Value {
             "new_worktree": {
                 "type": "boolean",
                 "description": "true to begin the Session in a new Worktree of the \
-                    directory's Repository, which Suru creates for it.",
+                    directory's Repository, which Shaman creates for it.",
             },
         },
         "required": BeginArguments::REQUIRED,
@@ -221,7 +221,7 @@ impl BrokerTools {
         if begin.session_id.is_some() {
             return Err(ToolRefusal::new(
                 "begin_session's `session_id` names a beginning on a Remote whose outcome was \
-                 never learned, which a beginning on this Suru server never is; leave it out.",
+                 never learned, which a beginning on this Shaman server never is; leave it out.",
             ));
         }
         let selection = self.beginning_agent(&Outlook::Local, &begin).await?;
@@ -515,8 +515,8 @@ fn landing_agent(
     };
     let (hosting, off) = match on {
         ChosenOn::Here => (
-            "Suru does not host.".to_owned(),
-            "is turned off in Suru.".to_owned(),
+            "Shaman does not host.".to_owned(),
+            "is turned off in Shaman.".to_owned(),
         ),
         ChosenOn::Remote(remote) => (
             format!("the Remote `{remote}` does not host."),
@@ -568,7 +568,7 @@ fn kept_worktree_refusal(why: &str, named: &str) -> ToolRefusal {
 fn preparation_for(sidekick: SessionId, named: &str) -> PreparationId {
     let mut hasher = blake3::Hasher::new();
     for part in [
-        "suru begin_session preparation".as_bytes(),
+        "shaman begin_session preparation".as_bytes(),
         sidekick.to_string().as_bytes(),
         named.as_bytes(),
     ] {
@@ -649,7 +649,7 @@ impl BeginArguments {
         }
         if *origin == Outlook::Local && !is_directory(&directory) {
             return Err(ToolRefusal::new(format!(
-                "There is no directory {} on this Suru server for a Session to work in.",
+                "There is no directory {} on this Shaman server for a Session to work in.",
                 directory.display()
             )));
         }
@@ -690,7 +690,7 @@ impl BeginArguments {
                 )));
             }
         };
-        // A name Suru gave: thirty-two hexadecimal digits, as a refusal
+        // A name Shaman gave: thirty-two hexadecimal digits, as a refusal
         // spelled it.
         let preparation = match arguments.get("preparation") {
             None | Some(Value::Null) => None,
@@ -780,7 +780,7 @@ mod tests {
     }
 
     /// A path no platform reads as absolute, for the refusal of one.
-    const RELATIVE: &str = "work/suru";
+    const RELATIVE: &str = "work/shaman";
 
     #[test]
     fn begin_arguments_leave_the_agent_and_the_worktree_to_the_landing_unless_named() {
@@ -858,7 +858,7 @@ mod tests {
             (
                 json!({ "directory": missing, "prompt": "Go" }),
                 format!(
-                    "There is no directory {} on this Suru server for a Session to work in.",
+                    "There is no directory {} on this Shaman server for a Session to work in.",
                     missing.display()
                 ),
             ),

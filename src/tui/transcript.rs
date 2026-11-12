@@ -84,7 +84,7 @@ const LIVE_TAIL_ROWS: usize = 3;
 const OUTPUT_INDENT: &str = "    ";
 
 /// The gutter for the detail rows belonging to a command or Tool Call: its
-/// directory, its output, and the lines Suru writes about them. A header's
+/// directory, its output, and the lines Shaman writes about them. A header's
 /// Marker already seats its text at the ordinary Activity-body level; these
 /// details sit one level beneath that text.
 const OUTPUT_DETAIL_INDENT: &str = "      ";
@@ -113,7 +113,7 @@ const FOLDED_FILE_CHANGE_PATHS: usize = 4;
 const SUPERSEDED_LABEL: &str = "Passed over";
 
 /// What a Reasoning Activity's header calls the block in each of its states.
-/// Suru's own word for the concept is Reasoning, but the Transcript speaks the
+/// Shaman's own word for the concept is Reasoning, but the Transcript speaks the
 /// reader's: an agent is thinking, and what it leaves behind is a thought.
 const REASONING_ACTIVE_LABEL: &str = "Thinking";
 const REASONING_COMPLETED_LABEL: &str = "Thought";
@@ -589,7 +589,7 @@ impl ActivityVisibility {
     }
 }
 
-/// A kind of Provider stream Suru stores under a cap. The kind decides what a
+/// A kind of Provider stream Shaman stores under a cap. The kind decides what a
 /// truncation marker names, so the marker ends the thing the reader was
 /// reading rather than a word that only fits one of the two.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2155,7 +2155,7 @@ struct TurnMarker {
     turn_id: TurnId,
     outcome: SettledTurn,
     /// How long the Turn ran, or `None` when it is missing either of its
-    /// timestamps — which is every Turn stored before Suru recorded them.
+    /// timestamps — which is every Turn stored before Shaman recorded them.
     duration_ms: Option<u64>,
     folded: bool,
 }
@@ -2173,7 +2173,7 @@ impl TurnMarker {
     }
 
     /// What the marker reads, which is the outcome word alone when the Turn
-    /// carries no duration: a Turn stored before Suru recorded Turn timing
+    /// carries no duration: a Turn stored before Shaman recorded Turn timing
     /// still says how it ended, just not how long it took.
     fn label(self) -> String {
         let (word, preposition) = self.outcome.phrasing();
@@ -2293,7 +2293,7 @@ impl<'a> TranscriptContent<'a> {
 
 /// Whether the Transcript shows nothing at all for an Activity. A reader who
 /// has not asked for Reasoning — which is every reader until one does, since
-/// Suru hides it by default — is shown none of it, however fully the Provider
+/// Shaman hides it by default — is shown none of it, however fully the Provider
 /// described it: the Setting decides the whole kind at once, where the rules
 /// below decide one block at a time. Either way the Activity stays stored and
 /// is simply absent from the projection, so asking for Reasoning brings back
@@ -2302,7 +2302,7 @@ impl<'a> TranscriptContent<'a> {
 /// nothing left to disclose stands for nothing. A Turn that did anything else
 /// keeps its marker, and the duration that marker reports.
 ///
-/// A reader who hid Tool Calls — which Suru shows by default — is shown none of
+/// A reader who hid Tool Calls — which Shaman shows by default — is shown none of
 /// them on exactly those terms: every one stays stored and keeps arriving, none
 /// joins or ends the run around it or leaves a gap, and a settled Turn whose
 /// only work was hidden Tool Calls has no marker while they are.
@@ -4738,7 +4738,7 @@ struct OutputFold<'a> {
     /// Lines the opened Fold shows beneath the header, ahead of the output.
     details: Vec<StyledLine>,
     output: &'a str,
-    /// The stream whose truncation marker follows the output, when Suru's cap
+    /// The stream whose truncation marker follows the output, when Shaman's cap
     /// cut it short.
     output_truncation: Option<CappedStream>,
     /// Lines the opened Fold ends on, after the output and its marker.
@@ -5031,7 +5031,7 @@ fn fold_marker_text(hidden: usize, unit: &str) -> String {
 
 /// Renders the fold marker: how much this entry's Fold hides, styled as the
 /// affordance it is so a reader never reads it as the truncation marker, which
-/// reports content Suru's storage cap dropped for good.
+/// reports content Shaman's storage cap dropped for good.
 fn fold_marker_line(hidden: usize, unit: &str, indent: &str, theme: &Theme) -> StyledLine {
     // The whole marker is the Fold's affordance, indent included: nothing on
     // the row is text the reader would copy.
@@ -5041,7 +5041,7 @@ fn fold_marker_line(hidden: usize, unit: &str, indent: &str, theme: &Theme) -> S
     )
 }
 
-/// Renders the truncation marker as its own line, so a reader can tell Suru
+/// Renders the truncation marker as its own line, so a reader can tell Shaman
 /// dropped the rest rather than the Provider ending there.
 fn push_truncation_marker(
     lines: &mut Vec<StyledLine>,
@@ -5052,9 +5052,9 @@ fn push_truncation_marker(
     push_annotation(lines, stream.truncation_marker(), indent, theme);
 }
 
-/// Renders a line Suru writes about an entry's stored content rather than any
+/// Renders a line Shaman writes about an entry's stored content rather than any
 /// of that content — a truncation marker, or a note of what a result left out
-/// — styled from Suru's typed signal rather than from anything the stream
+/// — styled from Shaman's typed signal rather than from anything the stream
 /// carried, so it never reads as the entry's own output.
 fn push_annotation(lines: &mut Vec<StyledLine>, text: &str, indent: &str, theme: &Theme) {
     let style = theme.text.subdued.add_modifier(Modifier::ITALIC);
@@ -7251,7 +7251,7 @@ mod tests {
             let style = line_style(annotation);
             assert!(
                 style.add_modifier.contains(Modifier::ITALIC) && style != output_style,
-                "what Suru writes about the result carries a style its output cannot: {annotation:?}"
+                "what Shaman writes about the result carries a style its output cannot: {annotation:?}"
             );
         }
     }
@@ -9825,7 +9825,7 @@ mod tests {
 
     #[test]
     fn the_window_records_spinner_lines_for_active_markers_only() {
-        let mut running = command("cargo build", "compiling suru");
+        let mut running = command("cargo build", "compiling shaman");
         let Activity::Command {
             status,
             exit_status,
@@ -10222,7 +10222,7 @@ mod tests {
 
     /// Output a folded row is drawn over: none, ordinary lines, the trailing
     /// newlines and blank lines a stream ends on, styles and a link the
-    /// stream carried, an escape cut short, and the most Suru stores.
+    /// stream carried, an escape cut short, and the most Shaman stores.
     fn folded_outputs() -> Vec<String> {
         [
             "",

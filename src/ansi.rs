@@ -14,7 +14,7 @@ pub(crate) enum Fragment {
 impl Fragment {
     /// Classifies what this fragment contributes to rendered output. Every
     /// fragment a reader never sees — cursor movement, terminal-private
-    /// strings, controls Suru does not act on — classifies as
+    /// strings, controls Shaman does not act on — classifies as
     /// [`FragmentRole::Invisible`], so ingest and rendering cannot drift apart
     /// over which sequences disappear.
     pub(crate) fn into_role(self) -> FragmentRole {
@@ -244,7 +244,7 @@ impl AnsiScanner {
 }
 
 /// The most SGR attributes tracked at once, comfortably above the number of
-/// attributes Suru recognizes.
+/// attributes Shaman recognizes.
 const MAX_TRACKED_SGR_ATTRIBUTES: usize = 32;
 
 const SGR_RESET: &str = "\x1b[0m";
@@ -255,7 +255,7 @@ const HYPERLINK_CLOSE: &str = "\x1b]8;;\x1b\\";
 /// normalizer raises it once, on the step that reaches the cap, so a caller
 /// publishes the truncation exactly once beside the content it kept. The
 /// content itself carries only what the Provider sent, so a client that never
-/// reads the flag still renders Provider text and nothing of Suru's.
+/// reads the flag still renders Provider text and nothing of Shaman's.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct NormalizedText {
     pub(crate) content: String,
@@ -622,7 +622,7 @@ struct SgrState {
 }
 
 /// The attribute an SGR parameter addresses. Parameters addressing the same
-/// attribute supersede one another; parameters Suru does not recognize keep
+/// attribute supersede one another; parameters Shaman does not recognize keep
 /// their own attribute so that they survive unchanged.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum SgrAttribute {

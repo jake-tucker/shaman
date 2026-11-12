@@ -3,14 +3,14 @@
 //! protocol, one unpaired while an Everywhere read was out, and the one name
 //! no Remote may take.
 
-use suru::protocol::{Peer, SessionError, SessionErrorCode};
+use shaman::protocol::{Peer, SessionError, SessionErrorCode};
 
 use super::*;
 
 /// What a Remote that ended the Pairing on its side is said to have done.
 fn revoked() -> String {
     format!(
-        "The Remote `{REMOTE}` refused this Suru server's key: its user has ended the Pairing on \
+        "The Remote `{REMOTE}` refused this Shaman server's key: its user has ended the Pairing on \
          their side, and reaching it again takes a new Invite."
     )
 }
@@ -18,7 +18,7 @@ fn revoked() -> String {
 /// What a Remote speaking another protocol is said to do.
 fn incompatible() -> String {
     format!(
-        "The Remote `{REMOTE}` runs a version of Suru that speaks another protocol than this \
+        "The Remote `{REMOTE}` runs a version of Shaman that speaks another protocol than this \
          server's, so nothing can be asked of it until one of them is updated."
     )
 }

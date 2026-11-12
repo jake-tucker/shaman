@@ -51,14 +51,14 @@ use crate::provider::{ProviderSubagentId, wait_for_shutdown};
 
 /// What the Broker tells an Agent about itself as the MCP session opens.
 const INSTRUCTIONS: &str = "\
-Suru's Broker offers Tools for working across every Provider Suru hosts, \
+Shaman's Broker offers Tools for working across every Provider Shaman hosts, \
 beside the Tools your own Provider gives you. Call list_providers to learn \
 which Providers, Models and Model Options may be chosen, and spawn_subagent to \
 delegate a piece of work to a Subagent on any of them. \
 Call read_subagent with the session_id spawn_subagent answered with to learn \
 how that Subagent is doing and read what it last wrote, send_to_subagent to \
 send it more work, and stop_subagent to stop one whose work you no longer need. \
-When a Subagent settles, Suru reports it to you as a new message that wakes you \
+When a Subagent settles, Shaman reports it to you as a new message that wakes you \
 if your turn has ended, so once you have nothing left to do but wait on one, \
 end your turn. Call wait_subagents only when you must have a Subagent's result \
 before your turn ends. Call list_workspaces to learn where the user's other \
@@ -164,7 +164,7 @@ fn caller(context: &RequestContext<RoleServer>) -> Option<BrokerCaller> {
 /// — and a native Codex Subagent is known by its thread's id. The
 /// `_meta.sessionId` beside it names the thread at the top of the tree
 /// whichever thread calls, so it is never read. Claude's and Copilot's calls
-/// name no Agent Suru knows a Session by, so they name none here
+/// name no Agent Shaman knows a Session by, so they name none here
 /// (`docs/validation/0408-subagent-mcp-attribution.md`).
 fn calling_agent(meta: &RequestMetaObject) -> Option<ProviderSubagentId> {
     meta.get("threadId")
@@ -176,7 +176,8 @@ impl ServerHandler for BrokerServer {
     fn get_info(&self) -> InitializeResult {
         InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(
-                Implementation::new("suru", env!("CARGO_PKG_VERSION")).with_title("Suru Broker"),
+                Implementation::new("shaman", env!("CARGO_PKG_VERSION"))
+                    .with_title("Shaman Broker"),
             )
             .with_instructions(INSTRUCTIONS)
     }

@@ -1,7 +1,7 @@
 # Claude native Context Fill (#300)
 
-Implementation of [#300](https://github.com/suru-ai/suru/issues/300), under
-[#198](https://github.com/suru-ai/suru/issues/198).
+Implementation of [#300](https://github.com/jake-tucker/shaman/issues/300), under
+[#198](https://github.com/jake-tucker/shaman/issues/198).
 
 ## Native compatibility evidence
 
@@ -15,7 +15,7 @@ claude --print --input-format stream-json --output-format stream-json --verbose 
 Its stdin received one request, with no user prompt:
 
 ```json
-{"type":"control_request","request_id":"suru-context-validation","request":{"subtype":"get_context_usage"}}
+{"type":"control_request","request_id":"shaman-context-validation","request":{"subtype":"get_context_usage"}}
 ```
 
 The correlated `control_response` had subtype `success`. These fields were
@@ -40,7 +40,7 @@ describe `totalTokens` as current occupancy, `rawMaxTokens` as the raw Model
 window, and `maxTokens` as effective capacity potentially reduced by the
 compaction buffer. These references were checked on 2026-09-08. The live probe
 had equal capacities; scripted native tests deliberately use unequal values to
-verify Suru reads `rawMaxTokens` exclusively.
+verify Shaman reads `rawMaxTokens` exclusively.
 
 ## Implementation and boundaries
 
@@ -95,7 +95,7 @@ macOS.
 Validation command (shared target serialized across implementation worktrees):
 
 ```sh
-CARGO_TARGET_DIR=/home/jake/Projects/suru/target cargo nextest run \
+CARGO_TARGET_DIR=/home/jake/Projects/shaman/target cargo nextest run \
   --lib --test claude_integration --test session_integration --test tui_rendering \
   -E 'binary(claude_integration) | test(provider::claude) | test(context_fill) | test(composer::)' \
   --no-fail-fast

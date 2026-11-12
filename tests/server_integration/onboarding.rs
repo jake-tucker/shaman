@@ -4,7 +4,7 @@
 //! rest of the suite takes them.
 use super::*;
 use crate::support::PROGRESS_DEADLINE;
-use suru::protocol::{ONBOARDED_EVENT, RuntimeDescriptor};
+use shaman::protocol::{ONBOARDED_EVENT, RuntimeDescriptor};
 
 async fn health(descriptor: &RuntimeDescriptor) -> Health {
     crate::support::loopback_client()
@@ -148,7 +148,7 @@ async fn an_unreadable_onboarded_record_falls_back_to_not_onboarded_without_bloc
     let config = ServerConfig::new(state_dir.path(), "unreadable-onboarded-test")
         .expect("configure server")
         .with_data_dir(data_dir.path());
-    let database_path = config.data_dir().join("suru.db");
+    let database_path = config.data_dir().join("shaman.db");
     let original = server::not_onboarded::spawn(config.clone())
         .await
         .expect("spawn server to migrate database");

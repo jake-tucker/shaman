@@ -12,7 +12,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use axum::http::StatusCode;
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, SessionCatalogChange, SessionError, SessionErrorCode, SessionId,
         SessionSnapshot, TurnStatus,
@@ -393,7 +393,7 @@ async fn interrupting_a_turn_settles_its_subagents_and_discards_their_late_echoe
         .provider_session
         .emit_and_wait_until_observed(ProviderEvent::SubagentCompleted {
             subagent_id: subagent,
-            status: suru::provider::ProviderSubagentStatus::Completed,
+            status: shaman::provider::ProviderSubagentStatus::Completed,
         })
         .await;
     fixture
@@ -648,7 +648,7 @@ async fn a_stop_the_provider_refuses_leaves_the_subagent_running_and_reports_why
         .provider_session
         .emit_and_wait_until_observed(ProviderEvent::SubagentCompleted {
             subagent_id: subagent,
-            status: suru::provider::ProviderSubagentStatus::Completed,
+            status: shaman::provider::ProviderSubagentStatus::Completed,
         })
         .await;
     let parent = read_session_until(
@@ -686,7 +686,7 @@ async fn stopping_a_resumed_subagent_settles_only_its_resumed_stretch() {
     for event in [
         ProviderEvent::SubagentCompleted {
             subagent_id: subagent.clone(),
-            status: suru::provider::ProviderSubagentStatus::Completed,
+            status: shaman::provider::ProviderSubagentStatus::Completed,
         },
         ProviderEvent::SubagentResumed {
             subagent_id: subagent.clone(),
@@ -782,7 +782,7 @@ async fn stopping_a_subagent_leaves_working_a_subagent_it_only_resumed() {
         .provider_session
         .emit_and_wait_until_observed(ProviderEvent::SubagentCompleted {
             subagent_id: writer.clone(),
-            status: suru::provider::ProviderSubagentStatus::Completed,
+            status: shaman::provider::ProviderSubagentStatus::Completed,
         })
         .await;
     fixture

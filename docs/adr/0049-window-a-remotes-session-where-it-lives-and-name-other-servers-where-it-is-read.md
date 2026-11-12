@@ -2,7 +2,7 @@
 
 A Sidekick's reading of a Session is taken by the Server holding that Session, and only the slice the reading asks for crosses a Pairing. A Remote's Session API answers `GET /v1/sessions/{session_id}/reading` with the Session's summary and an excerpt: its Turns windowed, its entries numbered and capped, the point to read on from, and every word chosen — but for the other Servers it names, which stand as typed references. The Sidekick's own Server renders those, naming a Peer's Sidekick or a Subsession's Server as it reaches them, as it already did for a whole Session it fetched. So a Remote's Session reads however large it grows, and ADR 0044's rule that a Sidekick does on a Remote only what its user's Client could still holds: the route is the Remote's own Session API, carried by the same Pairing, and it reads nothing a Client could not.
 
-The asker says how much of an answer it reads, and the Remote refuses an answer past that rather than send it, so the Sidekick is told to ask for less. A narrower read always fits but for one entry larger than the budget on its own, which Suru's own storage caps keep far from the default; that entry is read on the Remote.
+The asker says how much of an answer it reads, and the Remote refuses an answer past that rather than send it, so the Sidekick is told to ask for less. A narrower read always fits but for one entry larger than the budget on its own, which Shaman's own storage caps keep far from the default; that entry is read on the Remote.
 
 ## Considered Options
 

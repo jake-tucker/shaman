@@ -7,7 +7,7 @@ use crate::session_integration::{
 use crate::support::PROGRESS_DEADLINE;
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent},
     protocol::{
         CreateSessionRequest, InitialPrompt, Message, MessageId, MessageRole, MessageStatus,
@@ -36,7 +36,7 @@ async fn authenticated_session_stream_starts_with_a_complete_revisioned_snapshot
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -138,7 +138,7 @@ async fn real_session_stream_appends_and_completes_one_stable_agent_message() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -332,7 +332,7 @@ async fn active_session_stream_does_not_delay_graceful_server_shutdown() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

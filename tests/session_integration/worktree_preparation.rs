@@ -2,11 +2,11 @@
 use crate::session_integration::{
     provider_support::ControlledProvider, repositories::git, support,
 };
-use std::path::{Path, PathBuf};
-use suru::{
+use shaman::{
     protocol::*,
     server::{self, ServerConfig},
 };
+use std::path::{Path, PathBuf};
 
 fn committed(root: &Path) {
     std::fs::create_dir_all(root).unwrap();
@@ -126,7 +126,7 @@ fn creation(preparation: &PreparedCheckout, text: &str) -> CreateSessionRequest 
 #[tokio::test]
 async fn managed_preparation_captures_local_commit_once_and_reuses_checkout_and_creation() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("repo");
     committed(&main);
     let linked = root.join("linked");
@@ -228,7 +228,7 @@ async fn managed_preparation_captures_local_commit_once_and_reuses_checkout_and_
 #[tokio::test]
 async fn admission_deletes_the_intent_and_restart_withdraws_its_undelivered_prompt() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("repo");
     committed(&main);
     let config = ServerConfig::new(root.join("state"), "retired-admission").unwrap();
@@ -281,7 +281,7 @@ async fn admission_deletes_the_intent_and_restart_withdraws_its_undelivered_prom
 #[tokio::test]
 async fn naming_bare_storage_and_destination_validation_preserve_existing_resources() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("repo");
     committed(&main);
     let bare = root.join("bare");
@@ -339,7 +339,7 @@ async fn naming_bare_storage_and_destination_validation_preserve_existing_resour
 #[tokio::test]
 async fn local_names_leave_out_filler_and_bound_skills_but_keep_unbound_tokens_as_text() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let (runtime, mut provider) = ControlledProvider::new();
@@ -407,7 +407,7 @@ async fn local_names_leave_out_filler_and_bound_skills_but_keep_unbound_tokens_a
 #[tokio::test]
 async fn local_names_leave_out_bound_attachment_labels_but_keep_unbound_ones_as_text() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let (runtime, mut provider) = ControlledProvider::new();
@@ -459,7 +459,7 @@ async fn local_names_leave_out_bound_attachment_labels_but_keep_unbound_ones_as_
 #[tokio::test]
 async fn a_taken_name_is_numbered_and_whatever_holds_it_is_left_untouched() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let retained = read_git(&main, &["rev-parse", "HEAD"]);
@@ -543,7 +543,7 @@ async fn a_taken_name_is_numbered_and_whatever_holds_it_is_left_untouched() {
 #[tokio::test]
 async fn a_name_clashing_by_case_or_as_a_directory_is_taken() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     git(&main, &["branch", "feature/Fix-Parser"]);
@@ -570,7 +570,7 @@ async fn a_name_clashing_by_case_or_as_a_directory_is_taken() {
 #[tokio::test]
 async fn a_branch_named_as_the_prefix_does_not_refuse_every_name() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     git(&main, &["branch", "feature"]);
@@ -594,12 +594,12 @@ async fn a_branch_named_as_the_prefix_does_not_refuse_every_name() {
 #[tokio::test]
 async fn the_tui_prepares_a_worktree_named_from_its_prompt_and_starts_its_session_there() {
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-    use suru::{
+    use shaman::{
         managed_client::ManagedEvent,
         tui::{Application, ApplicationEvent, ApplicationTransition, CommandId, SemanticCommandId},
     };
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let (runtime, mut provider) = ControlledProvider::with_provider(
@@ -754,7 +754,7 @@ async fn the_tui_prepares_a_worktree_named_from_its_prompt_and_starts_its_sessio
 async fn every_provider_automatically_rebinds_selected_skill_names_to_destination_identities() {
     for provider_name in ["codex", "copilot", "claude"] {
         let temp = tempfile::tempdir().unwrap();
-        let root = suru::paths::canonical(temp.path()).unwrap();
+        let root = shaman::paths::canonical(temp.path()).unwrap();
         let main = root.join("main");
         committed(&main);
         let model = format!("{provider_name}-model");
@@ -811,7 +811,7 @@ async fn every_provider_automatically_rebinds_selected_skill_names_to_destinatio
 #[tokio::test]
 async fn missing_or_ambiguous_destination_names_block_atomically_and_explicit_choice_can_retry() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let (runtime, mut provider) = ControlledProvider::new();
@@ -901,7 +901,7 @@ async fn missing_or_ambiguous_destination_names_block_atomically_and_explicit_ch
 async fn creation_leaves_recursive_submodules_uninitialized_and_still_discovers_destination_skills()
 {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let leaf = root.join("leaf");
     committed(&leaf);
     let middle = root.join("middle");
@@ -953,7 +953,7 @@ async fn creation_leaves_recursive_submodules_uninitialized_and_still_discovers_
         vec![runtime.clone()],
         Default::default(),
         std::sync::Arc::new(
-            suru::source_control::GitSourceControl::default().with_configuration_file(&config),
+            shaman::source_control::GitSourceControl::default().with_configuration_file(&config),
         ),
     )
     .await
@@ -996,7 +996,7 @@ async fn creation_leaves_recursive_submodules_uninitialized_and_still_discovers_
 #[tokio::test]
 async fn preparation_is_durable_and_unborn_creation_returns_reason_without_mutation() {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let state = root.join("state");
@@ -1045,11 +1045,11 @@ async fn preparation_is_durable_and_unborn_creation_returns_reason_without_mutat
 }
 
 struct CollisionAdapter {
-    git: suru::source_control::GitSourceControl,
+    git: shaman::source_control::GitSourceControl,
 }
 #[async_trait::async_trait]
-impl suru::source_control::SourceControl for CollisionAdapter {
-    fn clone_capability(&self) -> suru::protocol::SourceControlCapability {
+impl shaman::source_control::SourceControl for CollisionAdapter {
+    fn clone_capability(&self) -> shaman::protocol::SourceControlCapability {
         self.git.clone_capability()
     }
     async fn clone_repository(
@@ -1058,8 +1058,8 @@ impl suru::source_control::SourceControl for CollisionAdapter {
         destination: &Path,
         branch: Option<&str>,
         timeout: std::time::Duration,
-        staging: &suru::source_control::CloneStaging,
-    ) -> Result<suru::source_control::CloneLanding, suru::source_control::CloneFailure> {
+        staging: &shaman::source_control::CloneStaging,
+    ) -> Result<shaman::source_control::CloneLanding, shaman::source_control::CloneFailure> {
         self.git
             .clone_repository(url, destination, branch, timeout, staging)
             .await
@@ -1067,7 +1067,7 @@ impl suru::source_control::SourceControl for CollisionAdapter {
     async fn settle_clones(&self) {
         self.git.settle_clones().await;
     }
-    async fn sweep_abandoned_clones(&self, staging: &suru::source_control::CloneStaging) {
+    async fn sweep_abandoned_clones(&self, staging: &shaman::source_control::CloneStaging) {
         self.git.sweep_abandoned_clones(staging).await;
     }
     async fn discover(&self, path: &Path) -> ResolvedWorkspace {
@@ -1082,7 +1082,7 @@ impl suru::source_control::SourceControl for CollisionAdapter {
     ) -> Result<PreparedCheckout, String> {
         let plan = self.git.plan_checkout(id, source, name, reserved).await?;
         let CheckoutPreparationPlan::Git { branch, .. } = &plan.plan;
-        // Another Git actor wins this name after planning, before Suru mutation.
+        // Another Git actor wins this name after planning, before Shaman mutation.
         git(&plan.source.path, &["branch", branch]);
         Ok(plan)
     }
@@ -1094,7 +1094,7 @@ impl suru::source_control::SourceControl for CollisionAdapter {
 async fn branch_collision_does_not_reset_or_duplicate_intention_and_unknown_main_disables_creation()
 {
     let temp = tempfile::tempdir().unwrap();
-    let root = suru::paths::canonical(temp.path()).unwrap();
+    let root = shaman::paths::canonical(temp.path()).unwrap();
     let main = root.join("main");
     committed(&main);
     let (runtime, mut provider) = ControlledProvider::new();

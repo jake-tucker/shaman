@@ -7,7 +7,7 @@ use crate::tui_rendering::support::{
     rendered_application_rows_at, rendered_row, text_position, type_terminal_text, workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         EffectiveSettings, ModelAvailability, Outlook, PromptId, Remote, RemoteStatus, Session,
@@ -80,7 +80,7 @@ fn session_picker_orders_marks_focuses_and_wraps_live_sessions() {
     let request = expect_session_list_request(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionList,
+                shaman::tui::SemanticCommandId::SessionList,
             )))
             .expect("open session picker"),
         SessionListScope::CurrentWorkspace((workspace.path().to_owned()).into()),
@@ -150,8 +150,8 @@ fn session_picker_orders_marks_focuses_and_wraps_live_sessions() {
                 KeyModifiers::NONE,
             )))
             .expect("select wrapped session row"),
-        ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::ViewAndAttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             newest_id,
         ))
     );
@@ -203,8 +203,8 @@ fn session_picker_requires_confirmation_and_removes_authoritatively_deleted_sess
                 KeyModifiers::CONTROL,
             )))
             .expect("confirm session deletion"),
-        ApplicationTransition::DeleteSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::DeleteSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             selected_id,
         ))
     );
@@ -320,8 +320,8 @@ fn session_picker_selection_opens_the_target_optimistically_and_keeps_the_old_dr
                 KeyModifiers::NONE,
             )))
             .expect("begin target attach"),
-        ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::ViewAndAttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             target_id,
         ))
     );
@@ -525,7 +525,7 @@ fn session_picker_scope_cycles_through_current_all_and_everywhere() {
 
     let current = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::SessionList,
+            shaman::tui::SemanticCommandId::SessionList,
         )))
         .expect("open the session picker");
     expect_session_list_request(
@@ -605,7 +605,7 @@ fn everywhere_picker_asks_each_origin_and_draws_one_tagged_recency_order() {
     let mut application = connected_application_homed(workspace.path());
     let current = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::SessionList,
+            shaman::tui::SemanticCommandId::SessionList,
         )))
         .expect("open the session picker");
     expect_session_list_request(
@@ -822,7 +822,7 @@ fn choosing_a_foreign_picker_row_turns_and_opens_without_moving_sidebar_scope() 
 
     let current = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::SessionList,
+            shaman::tui::SemanticCommandId::SessionList,
         )))
         .expect("open the session picker");
     expect_session_list_request(
@@ -878,7 +878,7 @@ fn choosing_a_foreign_picker_row_turns_and_opens_without_moving_sidebar_scope() 
     }
 
     let reference =
-        suru::protocol::SessionReference::new(Outlook::Remote("studio".to_owned()), target);
+        shaman::protocol::SessionReference::new(Outlook::Remote("studio".to_owned()), target);
     let picker = rendered_application_rows_at(&application, 120, 24);
     assert!(
         picker
@@ -909,7 +909,7 @@ fn choosing_a_foreign_picker_row_turns_and_opens_without_moving_sidebar_scope() 
     );
     let ApplicationTransition::ListEverywhereRemotes(reopened) = application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::SessionList,
+            shaman::tui::SemanticCommandId::SessionList,
         )))
         .expect("reopen the session picker")
     else {
@@ -924,7 +924,7 @@ fn an_open_everywhere_picker_catches_up_only_the_origin_whose_catalog_moved() {
     let mut application = Application::new(workspace.path(), Default::default());
     application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::SessionList,
+            shaman::tui::SemanticCommandId::SessionList,
         )))
         .expect("open the session picker");
     application
@@ -1144,7 +1144,7 @@ fn session_picker_stays_searchable_at_supported_small_terminal_sizes() {
     let request = expect_session_list_request(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionList,
+                shaman::tui::SemanticCommandId::SessionList,
             )))
             .expect("open session picker"),
         SessionListScope::CurrentWorkspace((workspace.path().to_owned()).into()),
@@ -1243,8 +1243,8 @@ fn session_picker_scroll_window_keeps_the_current_session_visible() {
                 KeyModifiers::NONE,
             )))
             .expect("select wrapped newest session"),
-        ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
-            suru::protocol::Outlook::Local,
+        ApplicationTransition::ViewAndAttachSession(shaman::protocol::SessionReference::new(
+            shaman::protocol::Outlook::Local,
             newest_id,
         ))
     );
@@ -1316,7 +1316,7 @@ fn session_picker_reserves_required_metadata_before_truncating_long_titles() {
     let current_request = expect_session_list_request(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionList,
+                shaman::tui::SemanticCommandId::SessionList,
             )))
             .expect("open session picker"),
         SessionListScope::CurrentWorkspace((workspace.path().to_owned()).into()),
@@ -1688,7 +1688,7 @@ fn session_summary(
             context_fill: None,
             prompt_cache: None,
             id: session_id,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             workspace: Workspace::directory(workspace.to_owned()),
@@ -1747,7 +1747,7 @@ fn client_showing_icons(workspace: &std::path::Path) -> Application {
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
             SettingsSnapshot {
                 settings: EffectiveSettings {
-                    appearance: suru::protocol::AppearanceSettings {
+                    appearance: shaman::protocol::AppearanceSettings {
                         show_icons: true,
                         ..EffectiveSettings::default().appearance
                     },
@@ -1787,7 +1787,7 @@ fn open_session_picker_with(application: &mut Application, sessions: Vec<Session
     let request = expect_session_list_request(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionList,
+                shaman::tui::SemanticCommandId::SessionList,
             )))
             .expect("open session picker"),
         SessionListScope::CurrentWorkspace((workspace).into()),
@@ -1855,7 +1855,7 @@ fn the_pointer_focuses_a_session_and_pressing_one_opens_it_as_enter_does() {
     let newest = cell(&application, "Newest work");
     assert_eq!(
         left_click_at(&mut application, newest),
-        ApplicationTransition::ViewAndAttachSession(suru::protocol::SessionReference::new(
+        ApplicationTransition::ViewAndAttachSession(shaman::protocol::SessionReference::new(
             Outlook::Local,
             newest_id,
         ))

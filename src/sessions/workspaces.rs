@@ -19,7 +19,7 @@ use crate::{
 
 /// Why a Repository its Registry entry presents, but which this Server has
 /// not read since it started, offers nothing yet.
-const UNREAD_REPOSITORY: &str = "Suru has not read this Repository since it started";
+const UNREAD_REPOSITORY: &str = "Shaman has not read this Repository since it started";
 
 /// The Repository an entry presented at `path` stands for, as far as how
 /// that path presents it says: where it is presented by its bare root or by

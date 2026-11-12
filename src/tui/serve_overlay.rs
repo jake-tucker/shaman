@@ -38,7 +38,7 @@
 //! not have made, says so in its place, with one key for a new one that leaves
 //! the Invite as it was.
 //!
-//! The Invite shown can be ended from elsewhere: `suru serve invite`, another
+//! The Invite shown can be ended from elsewhere: `shaman serve invite`, another
 //! Client or an Agent's shell replaces it, someone redeems it, or it runs out.
 //! The Server says so ([`InviteStanding`]), and from then on the picker says it
 //! no longer works and shows neither it nor its code, so nothing dead can be

@@ -301,7 +301,7 @@ impl FoundMachines {
             MachineState::NotServing => format!(
                 "{name} is logged in but not waiting to be reached, which may mean serving is \
                  off, it is not served through this relay, or the machine is off; run /serve \
-                 there, or `suru serve invite`, with this relay offered, then press Ctrl+R here \
+                 there, or `shaman serve invite`, with this relay offered, then press Ctrl+R here \
                  and type its code"
             ),
             MachineState::RemoteAlready(remote) => {
@@ -862,7 +862,7 @@ mod tests {
         assert_eq!(found.choose(), MachineChoice::Told);
         let note = found.note().unwrap();
         assert!(note.contains("run /serve there"), "{note}");
-        assert!(note.contains("suru serve invite"), "{note}");
+        assert!(note.contains("shaman serve invite"), "{note}");
         assert!(note.contains("Ctrl+R here and type its code"), "{note}");
         found.focus_invite();
         assert_eq!(

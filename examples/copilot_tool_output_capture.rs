@@ -1,6 +1,6 @@
 //! Records how a live Copilot CLI streams a running tool's output.
 //!
-//! Drives the installed Copilot CLI through the SDK the way Suru's Copilot Provider does, asks the
+//! Drives the installed Copilot CLI through the SDK the way Shaman's Copilot Provider does, asks the
 //! Model to run a synchronous shell that prints over a few seconds and then a few built-in Tools,
 //! and writes each `tool.*` event to stdout as one JSON line, in stream order, stamped with
 //! `_elapsed_ms`. The capture ends at `session.idle`.
@@ -9,7 +9,7 @@
 //! CAPTURE_MODEL=claude-haiku-4.5 cargo run --example copilot_tool_output_capture > tools.jsonl
 //! ```
 //!
-//! `SURU_COPILOT_PATH` names the CLI (default `copilot`), `CAPTURE_MODEL` the Model (default
+//! `SHAMAN_COPILOT_PATH` names the CLI (default `copilot`), `CAPTURE_MODEL` the Model (default
 //! `gpt-5-mini`). What the capture showed is recorded in
 //! `docs/validation/copilot-tool-output-streaming.md`.
 #[path = "support/copilot_cli.rs"]

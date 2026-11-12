@@ -91,11 +91,11 @@ macro_rules! list_workspaces_description {
         then: $then:literal $(,)?
     ) => {
         concat!(
-            "List the Workspaces this Suru server knows — the Repositories and \
+            "List the Workspaces this Shaman server knows — the Repositories and \
              directories the user works in — so you ",
             $purpose,
             ", as compact rows: first those the user's Sessions work in, most \
-             recently worked in first, then those Suru knows though no Session \
+             recently worked in first, then those Shaman knows though no Session \
              works there now, because one once did or someone described it, by \
              path. ",
             $takes,
@@ -106,9 +106,9 @@ macro_rules! list_workspaces_description {
              presented by",
             $path_used,
             "; \"description\", what it is for, as {\"text\": \"...\", \"set\": \
-             true} where the user or a Sidekick set it, \"set\": false where Suru \
+             true} where the user or a Sidekick set it, \"set\": false where Shaman \
              derived it, or null where it has none; \"icon\", the name of its Icon \
-             in Suru's Icon Catalog, or null; and, only where Suru cannot read its \
+             in Shaman's Icon Catalog, or null; and, only where Shaman cannot read its \
              directory now, \"unavailable\", saying why in plain words — its \
              directory gone, or it or the directory holding it unreadable, as on a \
              drive not mounted — so no work can begin there until it can be read. ",
@@ -119,7 +119,7 @@ macro_rules! list_workspaces_description {
 
 pub(super) const LIST_WORKSPACES_DESCRIPTION: &str = list_workspaces_description!(
     purpose: "can pick the right one for work",
-    takes: "A directory Suru has never been told of is not listed, even one the \
+    takes: "A directory Shaman has never been told of is not listed, even one the \
         user's Client stands in; set_workspace_description makes one known. Takes \
         one optional argument, \"origin\": the name of a Remote, as list_remotes \
         gives it, to list the Workspaces that Remote knows instead, or \
@@ -145,13 +145,13 @@ pub(super) const LIST_THIS_SERVERS_WORKSPACES_DESCRIPTION: &str = list_workspace
     takes: "Takes no arguments.",
     row_origin: "",
     path_used: "",
-    then: "Suru's own Workspace, the Sidekick Workspace, is among them.",
+    then: "Shaman's own Workspace, the Sidekick Workspace, is among them.",
 );
 
 pub(super) const SET_WORKSPACE_DESCRIPTION_DESCRIPTION: &str = "\
 Set a Workspace's Description: a sentence or two saying what it is for, so \
 that you, the user and later Sidekicks can tell Workspaces apart by more \
-than a name. A Description you set stands as one the user set — Suru never \
+than a name. A Description you set stands as one the user set — Shaman never \
 derives another over it — and every Client shows it. Takes \"workspace\": a \
 Workspace's \"workspace_id\" or \"path\" exactly as list_workspaces gives \
 them, or the absolute path of any directory on the server it is on, written \
@@ -161,7 +161,7 @@ Remote the Workspace is on, as list_remotes or its row gives it, left out for \
 one on this server; and \"text\", the \
 Description, kept on one line and at most \
 300 characters, where text with nothing in it, such as \"\", clears the \
-Description so Suru may derive one again. Answers with JSON of the shape \
+Description so Shaman may derive one again. Answers with JSON of the shape \
 {\"workspace_id\": \"...\", \"origin\": \"...\", \"path\": \"...\", \
 \"description\": {\"text\": \"...\", \"set\": true}}: the Workspace described \
 and the Remote that knows it, left out for one on this server, the path it is \
@@ -177,7 +177,7 @@ server's Workspace Roots — the directories the user named for their work — \
 and nowhere else, or within one of a Remote's own. Answers once the Clone is \
 done with the new Workspace as a row of list_workspaces, {\"workspace_id\": \
 \"...\", \"name\": \"...\", \"path\": \"...\", \"description\": null, \
-\"icon\": null}, ready for begin_session; Suru derives its Icon and \
+\"icon\": null}, ready for begin_session; Shaman derives its Icon and \
 Description at once, as for a Workspace a first Session begins in, and \
 list_workspaces shows them once they land. Takes \"repository_url\", the \
 address to Clone from as Git reads one: an https or ssh URL, user@host:path, \
@@ -197,7 +197,7 @@ Git's ordinary one, neither shallow nor recursing into submodules, and asks \
 no one for anything: a credential Git cannot find fails it at once. It is \
 refused, saying why — a Remote's in its own words — when no Workspace Root \
 is configured; when \"root\" is left out while several are, or names none of \
-them, naming those configured; when the Root cannot be read, since Suru \
+them, naming those configured; when the Root cannot be read, since Shaman \
 never makes one; when \"name\" is not one plain directory name, or it or the \
 name the URL ends in begins with a dot, since a Workspace's name may not be \
 hidden; when something already stands where the Clone would go, naming the \
@@ -332,7 +332,7 @@ fn listed_origins(
         BrokerRole::Agent => {
             if arguments.contains_key("origin") {
                 return Err(ToolRefusal::new(format!(
-                    "{} answers you with this Suru server's Workspaces alone, so it takes no \
+                    "{} answers you with this Shaman server's Workspaces alone, so it takes no \
                      `origin` from you; call it again without `origin`.",
                     tool.name()
                 )));
@@ -358,7 +358,7 @@ pub(super) fn set_workspace_description_schema() -> Value {
             "text": {
                 "type": "string",
                 "description": "The Description: a sentence or two, at most 300 characters. \
-                    \"\" clears it, so Suru may derive one again.",
+                    \"\" clears it, so Shaman may derive one again.",
             },
         },
         "required": DescribeArguments::REQUIRED,
@@ -403,7 +403,7 @@ impl DescribeArguments {
             None | Some(Value::Null) => {
                 return Err(ToolRefusal::new(
                     "set_workspace_description needs `text`, the Description to set; give \"\" \
-                     to clear it, so Suru may derive one again.",
+                     to clear it, so Shaman may derive one again.",
                 ));
             }
             Some(Value::String(text)) => text.clone(),
@@ -539,7 +539,7 @@ fn remote_clone_refusal(refusal: RemoteActRefusal) -> ToolRefusal {
             if silent.speaks_another_protocol() =>
         {
             ToolRefusal::new(format!(
-                "The Remote `{}` does not understand a Clone: it runs a version of Suru that \
+                "The Remote `{}` does not understand a Clone: it runs a version of Shaman that \
                  speaks another protocol than this server's, so nothing can be asked of it until \
                  one of them is updated. Nothing was cloned there, and nothing is kept to do once \
                  it answers.",
@@ -563,7 +563,7 @@ fn remote_clone_refusal(refusal: RemoteActRefusal) -> ToolRefusal {
 /// directory to find one in, is refused with.
 fn unknown_workspace(named: &str) -> ToolRefusal {
     ToolRefusal::new(format!(
-        "Suru knows no Workspace `{named}` on this server, and no directory is there to find one \
+        "Shaman knows no Workspace `{named}` on this server, and no directory is there to find one \
          in; name a Workspace by the workspace_id or the path list_workspaces gives it, or by the \
          absolute path of a directory in it."
     ))
@@ -991,7 +991,7 @@ mod tests {
             assert_eq!(
                 listed(BrokerRole::Agent, json!({ "origin": origin })),
                 Err(ToolRefusal::new(
-                    "list_workspaces answers you with this Suru server's Workspaces alone, so it \
+                    "list_workspaces answers you with this Shaman server's Workspaces alone, so it \
                      takes no `origin` from you; call it again without `origin`."
                 )),
                 "{origin}"

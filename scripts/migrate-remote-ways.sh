@@ -9,7 +9,7 @@
 #   last_answered: {...}              -> answered: [{...}]
 #
 # Only Remotes still in an old shape change, so the script is idempotent: a
-# second run migrates nothing. Runs on macOS and Linux with jq. Stop the Suru
+# second run migrates nothing. Runs on macOS and Linux with jq. Stop the Shaman
 # server for the Channel first: a running server holds its Remotes in memory
 # and would write its own copy back.
 
@@ -21,8 +21,8 @@ Usage: migrate-remote-ways.sh [--dry-run] [--channel NAME | --file PATH]
 
   --dry-run       Report what would change without writing anything.
   --channel NAME  The Channel whose remotes.json to migrate (default:
-                  $SURU_CHANNEL, else release). Honors SURU_DATA_DIR and
-                  SURU_STATE_DIR.
+                  $SHAMAN_CHANNEL, else release). Honors SHAMAN_DATA_DIR and
+                  SHAMAN_STATE_DIR.
   --file PATH     Migrate this remotes.json instead of a Channel's.
 EOF
 }
@@ -33,7 +33,7 @@ die() {
 }
 
 dry_run=false
-channel=${SURU_CHANNEL:-release}
+channel=${SHAMAN_CHANNEL:-release}
 remotes=
 while [ $# -gt 0 ]; do
     case $1 in
@@ -52,16 +52,16 @@ command -v jq >/dev/null 2>&1 || die "jq is not installed"
 # beside data, and a non-release Channel lives in a subdirectory of each.
 case $(uname -s) in
     Darwin)
-        data_base="$HOME/Library/Application Support/suru"
+        data_base="$HOME/Library/Application Support/shaman"
         state_base=$data_base
         ;;
     *)
-        data_base="${XDG_DATA_HOME:-$HOME/.local/share}/suru"
-        state_base="${XDG_STATE_HOME:-$HOME/.local/state}/suru"
+        data_base="${XDG_DATA_HOME:-$HOME/.local/share}/shaman"
+        state_base="${XDG_STATE_HOME:-$HOME/.local/state}/shaman"
         ;;
 esac
-data_base=${SURU_DATA_DIR:-$data_base}
-state_base=${SURU_STATE_DIR:-$state_base}
+data_base=${SHAMAN_DATA_DIR:-$data_base}
+state_base=${SHAMAN_STATE_DIR:-$state_base}
 channel_root() {
     if [ "$channel" = release ]; then printf '%s\n' "$1"; else printf '%s/%s\n' "$1" "$channel"; fi
 }
@@ -72,7 +72,7 @@ if [ -z "$remotes" ]; then
     if ! $dry_run && [ -f "$runtime" ]; then
         pid=$(sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p' "$runtime")
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            die "the $channel Suru server (pid $pid) is running; stop it first"
+            die "the $channel Shaman server (pid $pid) is running; stop it first"
         fi
     fi
 fi
@@ -99,7 +99,7 @@ if $dry_run || [ "$pending" = 0 ]; then
     exit 0
 fi
 
-scratch=$(mktemp -d "${TMPDIR:-/tmp}/suru-migrate.XXXXXX")
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/shaman-migrate.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
 
 backup="$remotes.bak-$(date -u +%Y%m%dT%H%M%S)"

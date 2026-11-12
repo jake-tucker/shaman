@@ -138,7 +138,7 @@ impl CopilotApprovals {
 
     /// Answers requests under `permissions` from now on, and asks Copilot for the mode they
     /// need: Auto needs Copilot's safety judge to review each request, and every other posture
-    /// needs it idle, since Suru decides those requests alone. A refusal is not the posture's
+    /// needs it idle, since Shaman decides those requests alone. A refusal is not the posture's
     /// failure: without the judge's recommendation every request asks, which is where a posture
     /// Copilot cannot honour should err.
     pub(super) async fn adopt_posture(
@@ -172,7 +172,7 @@ impl CopilotApprovals {
             Ok(result) => {
                 if result.mode != mode {
                     tracing::warn!(
-                        "Copilot applied permission mode {:?} where Suru asked for {mode:?}",
+                        "Copilot applied permission mode {:?} where Shaman asked for {mode:?}",
                         result.mode
                     );
                 }
@@ -253,7 +253,7 @@ impl PermissionHandler for CopilotApprovals {
         data: PermissionRequestData,
     ) -> PermissionResult {
         // A Broker Tool never asks an Approval (ADR 0035), whatever the Session's posture: its
-        // calls are Suru's own to permit, and Copilot asks this handler before every one of them,
+        // calls are Shaman's own to permit, and Copilot asks this handler before every one of them,
         // a native Subagent's included (docs/validation/0408-copilot-mcp-tool-timeout.md). Only a
         // managed policy demanding an explicit human decision still takes the path it always has.
         if is_broker_call(&data) && data.managed_approval_required != Some(true) {
@@ -347,7 +347,7 @@ fn request(data: &PermissionRequestData) -> &Value {
     data.extra.get("permissionRequest").unwrap_or(&data.extra)
 }
 
-/// Whether `data` asks to call one of the Broker's Tools: an MCP call to the server Suru handed
+/// Whether `data` asks to call one of the Broker's Tools: an MCP call to the server Shaman handed
 /// every Session the Broker as.
 fn is_broker_call(data: &PermissionRequestData) -> bool {
     data.kind == Some(PermissionRequestKind::Mcp)

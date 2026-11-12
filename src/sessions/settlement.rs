@@ -122,7 +122,7 @@ pub(crate) enum OpenInterventions {
     /// The Turn ended while the Provider was still there to be answered: the
     /// request simply outlived its Turn.
     TurnEnded,
-    /// The process that could have answered is gone — Suru stopped, or is
+    /// The process that could have answered is gone — Shaman stopped, or is
     /// starting again — so a request still waiting becomes Unavailable and a
     /// decision in delivery becomes DeliveryUncertain, which no restart can
     /// tell from delivered. Nor is anything left to deliver a Prompt held
@@ -204,7 +204,7 @@ impl SessionStore {
     }
 
     /// Begins a Continuation: the one kind of Turn that starts without a
-    /// Prompt, begun by Suru itself when Provider output arrives while no Turn
+    /// Prompt, begun by Shaman itself when Provider output arrives while no Turn
     /// is active — a native loop resumed, or earlier Subagents still owed
     /// output past their Turn's settle (ADR 0015). It settles like any Turn,
     /// so nothing else about settlement knows it exists.

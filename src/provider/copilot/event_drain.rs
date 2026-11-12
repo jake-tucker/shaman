@@ -5,7 +5,7 @@
 //! the child exit while those tasks still hold complete frames that were written before it died.
 //! This module keeps a ledger of the last event identifier read for each Session and the last one
 //! delivered by the SDK. Once stdout ends, matching those identifiers is the barrier that says every
-//! preceding event has reached Suru's own queue.
+//! preceding event has reached Shaman's own queue.
 //!
 //! The SDK also stops routing a Session's events the moment the connection closes, dropping those
 //! it had read but not yet delivered. So for each Session a checkpoint tracks, the ledger holds the
@@ -143,7 +143,7 @@ impl CopilotEventDrain {
     }
 }
 
-/// One Session's position when Suru subscribed to its SDK timeline.
+/// One Session's position when Shaman subscribed to its SDK timeline.
 #[derive(Clone)]
 pub(super) struct EventDrainCheckpoint {
     tracking: Arc<Tracking>,
@@ -173,7 +173,7 @@ impl Drop for Tracking {
 }
 
 impl EventDrainCheckpoint {
-    /// Records an event only after it has entered Suru's unbounded projection queue.
+    /// Records an event only after it has entered Shaman's unbounded projection queue.
     pub(super) fn delivered(&self, event_id: String) {
         self.tracking
             .drain
@@ -200,7 +200,7 @@ impl EventDrainCheckpoint {
             .unwrap_or_default()
     }
 
-    /// Waits for stdout to end and for its final event after this checkpoint to reach Suru.
+    /// Waits for stdout to end and for its final event after this checkpoint to reach Shaman.
     pub(super) async fn wait_until_drained(&self) {
         let session_id = &self.tracking.session_id;
         let mut changed = self.tracking.drain.changed.subscribe();
@@ -398,7 +398,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_crash_barrier_waits_until_the_final_on_wire_event_reaches_suru() {
+    async fn a_crash_barrier_waits_until_the_final_on_wire_event_reaches_shaman() {
         let drain = CopilotEventDrain::new();
         let checkpoint = drain.checkpoint("session-1");
         let (mut writer, reader) = tokio::io::duplex(1024);

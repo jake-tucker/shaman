@@ -4,7 +4,7 @@ use crate::claude_integration::support::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use serde_json::{Value, json};
-use suru::{
+use shaman::{
     protocol::{
         Activity, Answer, QuestionAnswer, Questionnaire, QuestionnaireOutcome,
         QuestionnaireSubmission, TurnStatus,
@@ -167,7 +167,7 @@ async fn claude_batches_preserve_metadata_and_deliver_multiple_choices_with_cust
         snapshot
             .messages
             .iter()
-            .filter(|m| m.role == suru::protocol::MessageRole::User)
+            .filter(|m| m.role == shaman::protocol::MessageRole::User)
             .count(),
         1
     );
@@ -361,7 +361,7 @@ async fn native_child_questionnaire_is_correlated_to_its_tool_call_and_survives_
             _ => None,
         })
         .unwrap();
-    let answer = suru::protocol::Answer {
+    let answer = shaman::protocol::Answer {
         questions: vec![
             QuestionAnswer::Freeform {
                 text: "Child environment".into(),

@@ -6,7 +6,7 @@ use crate::claude_integration::support::{
     interrupt_arm, silent_interrupt_arm, stop_task_arm, user_turn_arm,
 };
 use crate::support::PROGRESS_DEADLINE;
-use suru::{
+use shaman::{
     protocol::{
         Activity, ActivityStatus, AdmitPromptRequest, InitialPrompt, MessageStatus, PromptDelivery,
         PromptId, PromptStatus, SessionStatus, TurnStatus,

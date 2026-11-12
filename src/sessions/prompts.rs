@@ -170,7 +170,7 @@ impl SessionStoreState {
     /// no reader can be asked to wait on an Agent that will never be asked to
     /// answer — so restoring one is withdrawing it, exactly as interrupting it
     /// would have (ADR 0024). One held behind a requested Compaction, manual
-    /// or scheduled, is withdrawn saying behind which, as Suru stopping
+    /// or scheduled, is withdrawn saying behind which, as Shaman stopping
     /// gracefully mid-Compaction withdraws it: the restart leaves the
     /// Compaction unfinished and nothing to deliver the Prompt (ADR 0041,
     /// 0073). Withdrawing it only marks it so; its text is recovered only by

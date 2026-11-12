@@ -8,7 +8,7 @@
 //! `stops::interrupting_a_monitoring_parent_stops_the_watches_its_brokered_subagent_left_running_through_the_subagents_own_provider`;
 //! what follows is the rest of the tree's Watches.
 
-use suru::provider::{ProviderWatchId, ProviderWatchOutcome};
+use shaman::provider::{ProviderWatchId, ProviderWatchOutcome};
 
 use super::stops::interrupt;
 use super::*;
@@ -20,7 +20,7 @@ fn watch_started(watch: &str, description: &str) -> ProviderEvent {
     }
 }
 
-/// A Watch settling the way one Suru stopped does: with nothing woken.
+/// A Watch settling the way one Shaman stopped does: with nothing woken.
 fn watch_stopped(watch: &str) -> ProviderEvent {
     ProviderEvent::WatchSettled {
         watch_id: ProviderWatchId::new(watch),

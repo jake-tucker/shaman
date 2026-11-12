@@ -1,4 +1,4 @@
-//! The stream-json transport Suru speaks over a Claude Code CLI process's stdio.
+//! The stream-json transport Shaman speaks over a Claude Code CLI process's stdio.
 //!
 //! [`StreamJsonTransport::launch`] is the only way to obtain one: it spawns a supervised CLI
 //! process in stream-json mode and returns the control-request channel. Control requests correlate
@@ -110,7 +110,7 @@ const MAINTAIN_PROJECT_WORKING_DIR: (&str, &str) =
 
 /// Why a control request produced no answer.
 ///
-/// The two are told apart because they say different things about the CLI: one Suru asked
+/// The two are told apart because they say different things about the CLI: one Shaman asked
 /// something it will not serve, against one that said nothing at all — a request it ignored, or a
 /// process that went down under it. Only the first is the CLI's own account of itself, which is
 /// what a caller reading the CLI's capabilities — the availability probe — has to go on.
@@ -289,7 +289,7 @@ impl StreamJsonTransport {
                 claude_error("Claude Code CLI transport has ended").mark_session_lost(),
             ));
         }
-        let key = format!("suru-{}", self.next_id.fetch_add(1, Ordering::Relaxed));
+        let key = format!("shaman-{}", self.next_id.fetch_add(1, Ordering::Relaxed));
         let (response_tx, response_rx) = oneshot::channel();
         self.state
             .pending
@@ -510,7 +510,7 @@ async fn route_message(message: Value, state: &Arc<TransportState>) -> Result<()
         Ok(response) => response,
         Err(error) => {
             // A subtype this build does not know is wire drift to ride out
-            // (ADR 0010); a known subtype that fails to decode is a CLI Suru
+            // (ADR 0010); a known subtype that fails to decode is a CLI Shaman
             // cannot trust.
             let known_subtype = matches!(
                 response.get("subtype").and_then(Value::as_str),

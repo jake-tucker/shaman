@@ -10,7 +10,7 @@ use ratatui::{
     layout::Position,
     style::Color,
 };
-use suru::{
+use shaman::{
     managed_client::{ManagedEvent, SessionEvent},
     protocol::{
         Activity, ActivityId, AgentSelection, Approval, ApprovalId, ApprovalOutcome,
@@ -39,7 +39,7 @@ pub use crate::support::drawn::{
 /// A raw tempdir path is canonical on Linux only by luck: macOS spells
 /// `/var/folders/…` for `/private/var/folders/…`, and Windows resolves the
 /// short 8.3 names a temporary directory is often reached through. It reads
-/// through [`suru::paths::canonical`] so the fixture cannot answer a spelling
+/// through [`shaman::paths::canonical`] so the fixture cannot answer a spelling
 /// the Server would never store.
 pub struct WorkspaceDir {
     /// Held only to keep the directory on disk for the fixture's lifetime.
@@ -56,14 +56,14 @@ impl WorkspaceDir {
 /// `workspaces` as a Server lists them, at a revision any other listing
 /// the test gives of the same run replaces.
 pub fn workspace_listing(
-    workspaces: Vec<suru::protocol::Workspace>,
-) -> suru::protocol::WorkspaceListing {
-    suru::protocol::WorkspaceListing {
-        revision: suru::protocol::WorkspaceListingRevision {
+    workspaces: Vec<shaman::protocol::Workspace>,
+) -> shaman::protocol::WorkspaceListing {
+    shaman::protocol::WorkspaceListing {
+        revision: shaman::protocol::WorkspaceListingRevision {
             run: uuid::Uuid::nil(),
             changes: 0,
         },
-        workspace_paths: suru::protocol::WorkspacePaths::default(),
+        workspace_paths: shaman::protocol::WorkspacePaths::default(),
         workspaces,
     }
 }
@@ -73,7 +73,7 @@ pub fn workspace_listing(
 pub fn workspace_dir() -> WorkspaceDir {
     let directory = tempfile::tempdir().expect("create workspace");
     let canonical =
-        suru::paths::canonical(directory.path()).expect("canonicalize the workspace fixture");
+        shaman::paths::canonical(directory.path()).expect("canonicalize the workspace fixture");
     WorkspaceDir {
         _directory: directory,
         canonical,
@@ -83,7 +83,7 @@ pub fn workspace_dir() -> WorkspaceDir {
 /// A spelling of `workspace` that is not its canonical reading on any
 /// platform — `..` survives `Path` comparison where `.` does not — the way a
 /// path reached through a symlink, or Windows's own `current_dir`, never
-/// matches what [`suru::paths::canonical`] answers.
+/// matches what [`shaman::paths::canonical`] answers.
 pub fn noncanonical_spelling(workspace: &WorkspaceDir) -> std::path::PathBuf {
     std::fs::create_dir_all(workspace.path().join("sub")).expect("create the spelling's waypoint");
     workspace.path().join("sub").join("..")
@@ -213,7 +213,7 @@ pub fn ready_health(instance_id: Uuid, pid: u32) -> Health {
             instance_id,
             pid,
             protocol_version: 1,
-            build_identity: "suru@test".to_owned(),
+            build_identity: "shaman@test".to_owned(),
         },
         LifecycleState::Ready,
     )
@@ -330,7 +330,7 @@ pub fn deliver_settings(
 
 /// The Server tells the Client its Serving listener stands as `state`, as it
 /// does after every connect and as that changes.
-pub fn deliver_listener(application: &mut Application, state: suru::protocol::ListenerState) {
+pub fn deliver_listener(application: &mut Application, state: shaman::protocol::ListenerState) {
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::ServingListener(
             state,
@@ -339,8 +339,8 @@ pub fn deliver_listener(application: &mut Application, state: suru::protocol::Li
 }
 
 /// A Serving listener listening at `port` of every address.
-pub fn open_at(port: u16) -> suru::protocol::ListenerState {
-    suru::protocol::ListenerState::Open {
+pub fn open_at(port: u16) -> shaman::protocol::ListenerState {
+    shaman::protocol::ListenerState::Open {
         address: std::net::SocketAddr::from((std::net::Ipv6Addr::UNSPECIFIED, port)),
     }
 }
@@ -455,11 +455,11 @@ pub fn answer_workspace_resolution(
         .base
         .unwrap_or_else(|| std::env::current_dir().expect("read test current directory"));
     let named = base.join(request.path);
-    let result = suru::paths::canonical(named)
+    let result = shaman::paths::canonical(named)
         .map_err(|_| "No directory there".to_owned())
         .and_then(|path| {
             path.is_dir()
-                .then_some(suru::protocol::ResolvedWorkspace::directory(path))
+                .then_some(shaman::protocol::ResolvedWorkspace::directory(path))
                 .ok_or_else(|| "Not a directory".to_owned())
         });
     application
@@ -579,7 +579,7 @@ pub fn failed_session_snapshot(
             context_fill: None,
             prompt_cache: None,
             id: session_id,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             workspace: Workspace::directory(workspace.to_owned()),
@@ -601,7 +601,7 @@ pub fn failed_session_snapshot(
         subagent_interventions: Vec::new(),
         pending_approvals: Vec::new(),
         submitting_approvals: Vec::new(),
-        pending_approvals_revision: suru::protocol::SessionRevision(0),
+        pending_approvals_revision: shaman::protocol::SessionRevision(0),
         watches: Vec::new(),
         waiting_on_subagents: None,
         current_model: None,
@@ -645,7 +645,7 @@ pub fn selected_session_snapshot(
             context_fill: None,
             prompt_cache: None,
             id: session_id,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             workspace: Workspace::directory(workspace.to_owned()),
@@ -667,7 +667,7 @@ pub fn selected_session_snapshot(
         subagent_interventions: Vec::new(),
         pending_approvals: Vec::new(),
         submitting_approvals: Vec::new(),
-        pending_approvals_revision: suru::protocol::SessionRevision(0),
+        pending_approvals_revision: shaman::protocol::SessionRevision(0),
         watches: Vec::new(),
         waiting_on_subagents: None,
         current_model: None,
@@ -692,7 +692,7 @@ pub fn navigable_session_snapshot(
             context_fill: None,
             prompt_cache: None,
             id: session_id,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.to_owned(),
             },
             workspace: Workspace::directory(workspace.to_owned()),
@@ -714,7 +714,7 @@ pub fn navigable_session_snapshot(
         subagent_interventions: Vec::new(),
         pending_approvals: Vec::new(),
         submitting_approvals: Vec::new(),
-        pending_approvals_revision: suru::protocol::SessionRevision(0),
+        pending_approvals_revision: shaman::protocol::SessionRevision(0),
         watches: Vec::new(),
         waiting_on_subagents: None,
         current_model: None,
@@ -1029,13 +1029,13 @@ pub fn application_looking_at_studio() -> Application {
     key(&mut application, KeyCode::Enter);
     application
         .handle_event(ApplicationEvent::RemotesListed(vec![
-            suru::protocol::Remote {
+            shaman::protocol::Remote {
                 name: "studio".to_owned(),
                 fingerprint: "studio-fingerprint".to_owned(),
-                ways: vec![suru::protocol::Way::Direct(
+                ways: vec![shaman::protocol::Way::Direct(
                     "10.0.0.8:7777".parse().expect("parse the remote address"),
                 )],
-                status: suru::protocol::RemoteStatus::Available,
+                status: shaman::protocol::RemoteStatus::Available,
                 icon: None,
             },
         ]))
@@ -1043,9 +1043,9 @@ pub fn application_looking_at_studio() -> Application {
     application
         .handle_event(ApplicationEvent::RemoteProbed {
             name: "studio".to_owned(),
-            result: Ok(suru::protocol::RemoteHealth {
-                protocol_version: Some(suru::protocol::PROTOCOL_VERSION),
-                status: suru::protocol::RemoteStatus::Available,
+            result: Ok(shaman::protocol::RemoteHealth {
+                protocol_version: Some(shaman::protocol::PROTOCOL_VERSION),
+                status: shaman::protocol::RemoteStatus::Available,
                 unreachable: None,
             }),
         })
@@ -1070,12 +1070,12 @@ pub fn studio_stops_answering_because(
     application: &mut Application,
     attempt: u32,
     retry_in: std::time::Duration,
-    unreachable: Option<suru::protocol::UnreachableReason>,
+    unreachable: Option<shaman::protocol::UnreachableReason>,
 ) {
     application
         .handle_event(ApplicationEvent::OriginCatalog {
-            outlook: suru::protocol::Outlook::Remote("studio".to_owned()),
-            event: ManagedEvent::Recovering(suru::managed_client::RecoveryStatus {
+            outlook: shaman::protocol::Outlook::Remote("studio".to_owned()),
+            event: ManagedEvent::Recovering(shaman::managed_client::RecoveryStatus {
                 attempt,
                 retry_in,
                 unreachable,
@@ -1086,7 +1086,7 @@ pub fn studio_stops_answering_because(
 
 /// The grace period for one Origin's loss runs out, which is what lets the
 /// loss be drawn at all.
-pub fn grace_elapses(application: &mut Application, outlook: suru::protocol::Outlook) {
+pub fn grace_elapses(application: &mut Application, outlook: shaman::protocol::Outlook) {
     application
         .handle_event(ApplicationEvent::ReconnectGraceElapsed(outlook))
         .expect("elapse the reconnect grace period");

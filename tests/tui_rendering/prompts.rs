@@ -7,11 +7,7 @@ use crate::tui_rendering::support::{
     type_terminal_text, workspace_dir,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use std::{
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
-use suru::{
+use shaman::{
     managed_client::SessionEvent,
     protocol::{
         Activity, ActivityId, ActivityStatus, CompactionTrigger, InitialPrompt, Message, MessageId,
@@ -23,6 +19,10 @@ use suru::{
     tui::{
         Application, ApplicationEvent, ApplicationTransition, CommandId, command_for_terminal_event,
     },
+};
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 #[test]
@@ -60,7 +60,7 @@ fn new_session_keybinding_defers_creation_until_the_next_prompt() {
         )))
         .expect("ignore a queued event from the detached session");
     let landing = rendered_application_rows(&application).join("\n");
-    assert!(!landing.contains("▀▀▀▀▀▀▀▀█▀▀▀▀▀"));
+    assert!(!landing.contains("▄█▄▀▀█"));
     assert!(landing.contains("Type a prompt"));
     assert!(!landing.contains("discard this draft"));
     assert!(!landing.contains("Long-running work"));
@@ -74,7 +74,7 @@ fn new_session_keybinding_defers_creation_until_the_next_prompt() {
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionNew,
+                shaman::tui::SemanticCommandId::SessionNew,
             )))
             .expect("return to landing through the same semantic command"),
         ApplicationTransition::DetachSession
@@ -115,7 +115,7 @@ fn new_session_releases_a_detached_prompt_after_its_admission_succeeds() {
     assert_eq!(
         application
             .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                suru::tui::SemanticCommandId::SessionNew,
+                shaman::tui::SemanticCommandId::SessionNew,
             )))
             .expect("detach while admission remains in flight"),
         ApplicationTransition::DetachSession
@@ -161,7 +161,7 @@ fn provisional_steer_is_immediate_single_and_reconciles_in_place() {
     else {
         panic!("a session steer should request prompt admission");
     };
-    assert_eq!(admitted_to.origin, suru::protocol::Outlook::Local);
+    assert_eq!(admitted_to.origin, shaman::protocol::Outlook::Local);
     assert_eq!(admitted_to.session_id, session_id);
     let prompt_id = request.prompt.id;
     let provisional = rendered_application_rows(&application).join("\n");
@@ -432,7 +432,7 @@ fn escape_confirmation_is_local_and_targets_the_observed_active_turn() {
     else {
         panic!("the second Esc should issue the session's interruption");
     };
-    assert_eq!(session_id.origin, suru::protocol::Outlook::Local);
+    assert_eq!(session_id.origin, shaman::protocol::Outlook::Local);
     assert_eq!(session_id.session_id, expected_session_id);
 }
 
@@ -790,7 +790,7 @@ fn compacting_unseen(application: &mut Application) -> CompactingSession {
     let workspace = workspace_dir();
     let (_, mut snapshot) = enter_session(application, workspace.path());
     let started_at = SessionTimestamp::now();
-    let mut turn = Turn::requested_compaction(None, suru::protocol::CompactionRequest::Manual);
+    let mut turn = Turn::requested_compaction(None, shaman::protocol::CompactionRequest::Manual);
     turn.started_at = Some(started_at);
     let turn_id = turn.id;
     let compaction_id = ActivityId::new();
@@ -823,7 +823,7 @@ fn compacting_unseen(application: &mut Application) -> CompactingSession {
 
 struct CompactingSession {
     _workspace: crate::tui_rendering::support::WorkspaceDir,
-    snapshot: suru::protocol::SessionSnapshot,
+    snapshot: shaman::protocol::SessionSnapshot,
     turn_id: TurnId,
     compaction_id: ActivityId,
 }
@@ -919,7 +919,7 @@ impl CompactingSession {
         &self,
         prompt: &InitialPrompt,
         status: TurnStatus,
-    ) -> suru::protocol::SessionSnapshot {
+    ) -> shaman::protocol::SessionSnapshot {
         let mut snapshot = self.snapshot.clone();
         snapshot.prompts.push(Prompt {
             id: prompt.id,
@@ -1164,7 +1164,7 @@ fn a_held_prompt_whose_admission_was_answered_elsewhere_comes_back_on_return() {
     let prompt = send_steer(&mut application, "Now the lexer");
     application
         .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-            suru::tui::SemanticCommandId::SessionNew,
+            shaman::tui::SemanticCommandId::SessionNew,
         )))
         .expect("leave for the landing before the server answers");
     application
@@ -1347,7 +1347,7 @@ fn a_prompt_sent_from_an_idle_view_comes_back_however_little_of_the_hold_its_wri
             if left {
                 writer
                     .handle_event(ApplicationEvent::Command(CommandId::InvokeSemantic(
-                        suru::tui::SemanticCommandId::SessionNew,
+                        shaman::tui::SemanticCommandId::SessionNew,
                     )))
                     .expect("leave for the landing");
             }

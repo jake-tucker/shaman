@@ -4,7 +4,7 @@
 //! The Copilot SDK offers no one-shot mode and no way to hand a Provider a schema, so every Errand
 //! here takes ADR 0011's escape hatch: the runtime opens a Copilot Session of its own, delivers the
 //! one Prompt with the schema written into it, drains for the reply, and discards the Session. What
-//! these tests hold it to is that nothing of that Session survives — not in Suru's own Session
+//! these tests hold it to is that nothing of that Session survives — not in Shaman's own Session
 //! listing, and not on the CLI as something still open.
 
 use crate::support::PROGRESS_DEADLINE;
@@ -19,7 +19,7 @@ use crate::copilot_integration::{
         signed_in_arm, skills_reload_arm, switch_model_arm,
     },
 };
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
     protocol::{
         AdmitPromptRequest, AgentSelection, Cost, CostBasis, CreateSessionRequest, InitialPrompt,
@@ -131,7 +131,7 @@ fn create_request(workspace: &std::path::Path, prompt: &str) -> CreateSessionReq
         session_id: None,
         preparation_id: None,
         agent_selection: Some(conversation_selection()),
-        execution_directory: suru::protocol::ExecutionDirectory {
+        execution_directory: shaman::protocol::ExecutionDirectory {
             path: workspace.to_owned(),
         },
         prompt: InitialPrompt {
@@ -209,7 +209,7 @@ async fn errand_send(copilot: &ScriptedCopilot) -> serde_json::Value {
 ///
 /// Both halves are the discard: closing severs the connection, and deleting is what stops Copilot
 /// offering the Session back in its own picker — which it does even with its session store turned
-/// off, so a Title-per-Session left behind in the CLI the user works in outside Suru is exactly
+/// off, so a Title-per-Session left behind in the CLI the user works in outside Shaman is exactly
 /// what closing alone would leave.
 async fn discarded_session(copilot: &ScriptedCopilot) -> String {
     let closed = copilot.wait_for_request("session.detach").await["params"]["sessionId"]
@@ -347,12 +347,12 @@ async fn an_errand_runs_at_copilots_declared_selection_carrying_no_tools_and_sto
     )
     .await;
     assert!(
-        conversation["params"]["mcpServers"]["suru"].is_object(),
+        conversation["params"]["mcpServers"]["shaman"].is_object(),
         "while the Session's own Copilot Session beside it is handed the Broker: {conversation}"
     );
     assert_eq!(
         params["workingDirectory"].as_str(),
-        suru::paths::canonical(workspace.path())
+        shaman::paths::canonical(workspace.path())
             .expect("canonicalize Workspace")
             .to_str(),
         "an Errand runs in the Session's own Workspace"
@@ -454,7 +454,7 @@ async fn an_errand_that_runs_out_of_time_still_discards_the_session_it_opened() 
 
 #[tokio::test]
 async fn an_errand_leaves_a_restart_nothing_of_its_own_to_resume() {
-    // A CLI that answers a resume as well as a creation, so a Copilot Session Suru had filed a
+    // A CLI that answers a resume as well as a creation, so a Copilot Session Shaman had filed a
     // Resume State for would be picked back up here — and the Errand's, if one existed, with it.
     let copilot = ScriptedCopilot::new(&format!(
         "{}{}{}{}{}{}{}{}{}{}{}{}{}",
@@ -596,7 +596,7 @@ const TWO_CALLS: &str = r#"        event u1 assistant.usage '{"model":"gpt-5.6-l
         event u2 assistant.usage '{"model":"gpt-5.6-luna","inputTokens":500,"cacheReadTokens":50,"cacheWriteTokens":0,"outputTokens":100,"reasoningTokens":0,"cost":0.5}'
 "#;
 
-/// What those two calls consumed, summed into Suru's own disjoint parts.
+/// What those two calls consumed, summed into Shaman's own disjoint parts.
 fn two_calls_usage() -> Usage {
     Usage {
         fresh_input_tokens: Some(1_300),
@@ -680,7 +680,7 @@ async fn a_copilot_errand_answers_with_its_sessions_summed_usage_and_cost() {
 }
 
 /// A Session that reported no usage has its Errand's consumption unknown rather than zero, and
-/// the Errand still answers. So does one with a usage report Suru could not read, since a sum
+/// the Errand still answers. So does one with a usage report Shaman could not read, since a sum
 /// missing a call is a figure nobody measured.
 #[tokio::test]
 async fn a_copilot_errand_whose_session_reports_no_readable_usage_answers_unmeasured() {

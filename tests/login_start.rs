@@ -1,4 +1,4 @@
-//! `suru server install`, `uninstall` and `status`, and the Keeper a Login start
+//! `shaman server install`, `uninstall` and `status`, and the Keeper a Login start
 //! runs, through the real binary and against real Servers.
 //!
 //! Nothing here reaches the real user's launchd, systemd or Task Scheduler. Each
@@ -14,7 +14,7 @@ use std::{
     process::Stdio,
 };
 
-use suru::{
+use shaman::{
     login_start::{KeeperArguments, ServiceManagerStandIn},
     managed_client::{ManagedClient, ManagedEvent},
     protocol::{RuntimeDescriptor, ShutdownReason},
@@ -69,7 +69,7 @@ impl Machine {
         crate::support::detached_servers::isolated_command(program, self.home.path())
     }
 
-    /// `suru server <subcommand>` for `channel`, as a user's shell runs it.
+    /// `shaman server <subcommand>` for `channel`, as a user's shell runs it.
     fn server_cli(&self, channel: &str, subcommand: &[&str]) -> Command {
         crate::cli_integration::server_cli_with_home(
             &self.servers,
@@ -86,23 +86,23 @@ impl Machine {
             self.server_cli(channel, subcommand).output(),
         )
         .await
-        .unwrap_or_else(|_| panic!("`suru server {subcommand:?}` did not settle"))
+        .unwrap_or_else(|_| panic!("`shaman server {subcommand:?}` did not settle"))
         .expect("run the server CLI")
     }
 
-    /// Runs `suru server <subcommand>` and answers what it printed, failing the
+    /// Runs `shaman server <subcommand>` and answers what it printed, failing the
     /// test should it fail.
     async fn succeed(&self, channel: &str, subcommand: &[&str]) -> String {
         let output = self.run(channel, subcommand).await;
         assert!(
             output.status.success(),
-            "`suru server {subcommand:?}` failed: {}",
+            "`shaman server {subcommand:?}` failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
         String::from_utf8(output.stdout).expect("the CLI prints UTF-8")
     }
 
-    /// What `suru server status` says of the Login start, the Server's own
+    /// What `shaman server status` says of the Login start, the Server's own
     /// standing being none of this.
     async fn login_start_standing(&self, channel: &str) -> String {
         let output = self.run(channel, &["status"]).await;
@@ -134,7 +134,7 @@ impl Machine {
             channel: channel.to_owned(),
             // As every process a test runs here keeps it: no Server of its may
             // depend on a desktop session, or touch the real keyring.
-            identity_store: Some(suru::IdentityStoreChoice::File),
+            identity_store: Some(shaman::IdentityStoreChoice::File),
             carried: self
                 .servers
                 .isolated_environment()
@@ -146,7 +146,7 @@ impl Machine {
             },
             look_interval_ms: Some(look_interval_ms),
         };
-        let mut command = self.sparse(env!("CARGO_BIN_EXE_suru"));
+        let mut command = self.sparse(env!("CARGO_BIN_EXE_shaman"));
         command
             .args(arguments.words().expect("spell the keeper's command line"))
             .stdout(Stdio::null())
@@ -236,7 +236,7 @@ impl Machine {
     }
 }
 
-/// A stand-in for what `suru server` tells a service manager, which remembers a
+/// A stand-in for what `shaman server` tells a service manager, which remembers a
 /// registration the way the real one would: as the link `systemctl enable`
 /// makes, which is what a Linux `status` reads, or as a Task `schtasks /Query`
 /// would answer for.
@@ -300,7 +300,7 @@ const WINDOWS_TASK_PREFIX: &str = "stand-in-task-";
 /// XML, then a command line as a program splits it.
 #[cfg(windows)]
 fn registered_words(home: &Path, channel: &str) -> Vec<String> {
-    let prefix = format!("{WINDOWS_TASK_PREFIX}suru-server-{channel} (");
+    let prefix = format!("{WINDOWS_TASK_PREFIX}shaman-server-{channel} (");
     let definition = std::fs::read_dir(home)
         .expect("read the home")
         .flatten()
@@ -363,7 +363,7 @@ fn registered_words(home: &Path, channel: &str) -> Vec<String> {
 fn registered_words(home: &Path, channel: &str) -> Vec<String> {
     let plist = std::fs::read_to_string(
         home.join("Library/LaunchAgents")
-            .join(format!("ai.suru.server.{channel}.plist")),
+            .join(format!("ai.shaman.server.{channel}.plist")),
     )
     .expect("read the LaunchAgent");
     let (_, arguments) = plist
@@ -388,7 +388,7 @@ fn registered_words(home: &Path, channel: &str) -> Vec<String> {
 fn registered_words(home: &Path, channel: &str) -> Vec<String> {
     let unit = std::fs::read_to_string(
         home.join(".config/systemd/user")
-            .join(format!("suru-server-{channel}.service")),
+            .join(format!("shaman-server-{channel}.service")),
     )
     .expect("read the unit");
     let exec_start = unit
@@ -481,7 +481,7 @@ async fn installing_and_uninstalling_are_each_harmless_twice_and_status_follows(
                 .home
                 .path()
                 .join("Library/LaunchAgents")
-                .join(format!("ai.suru.server.{channel}.plist"))
+                .join(format!("ai.shaman.server.{channel}.plist"))
                 .is_file()
         );
     }
@@ -492,7 +492,7 @@ async fn installing_and_uninstalling_are_each_harmless_twice_and_status_follows(
             machine
                 .config_home()
                 .join("systemd/user")
-                .join(format!("suru-server-{channel}.service"))
+                .join(format!("shaman-server-{channel}.service"))
                 .is_file()
         );
     }
@@ -529,7 +529,7 @@ async fn installing_from_a_build_directory_warns_that_it_will_not_survive_an_upg
     assert!(installed.contains("build directory"), "{installed}");
     // As the running binary names itself, which on Linux has every link in its
     // path resolved, and a target directory may be reached through one.
-    let executable = Path::new(env!("CARGO_BIN_EXE_suru"));
+    let executable = Path::new(env!("CARGO_BIN_EXE_shaman"));
     let resolved = std::fs::canonicalize(executable).expect("resolve the binary's path");
     let resolved = resolved.to_string_lossy();
     assert!(
@@ -600,7 +600,7 @@ async fn a_keeper_starts_the_server_though_an_earlier_login_had_stopped_it() {
     assert!(machine.last_stop_path(channel).exists());
 
     machine.succeed(channel, &["install"]).await;
-    let _keeper = machine.keeper(channel, Path::new(env!("CARGO_BIN_EXE_suru")));
+    let _keeper = machine.keeper(channel, Path::new(env!("CARGO_BIN_EXE_shaman")));
     machine.server_other_than(channel, None).await;
 }
 
@@ -609,7 +609,7 @@ async fn a_keeper_restarts_a_crashed_server() {
     let machine = Machine::new();
     let channel = "keeper-crash";
     machine.succeed(channel, &["install"]).await;
-    let _keeper = machine.keeper(channel, Path::new(env!("CARGO_BIN_EXE_suru")));
+    let _keeper = machine.keeper(channel, Path::new(env!("CARGO_BIN_EXE_shaman")));
 
     let first = machine.server_other_than(channel, None).await;
     machine.crash(&first).await;
@@ -629,7 +629,7 @@ async fn a_stopped_server_stays_stopped_until_it_is_started_and_is_then_kept() {
     let machine = Machine::new();
     let channel = "keeper-stop";
     machine.succeed(channel, &["install"]).await;
-    let mut keeper = machine.keeper(channel, Path::new(env!("CARGO_BIN_EXE_suru")));
+    let mut keeper = machine.keeper(channel, Path::new(env!("CARGO_BIN_EXE_shaman")));
     let first = machine.server_other_than(channel, None).await;
 
     machine.succeed(channel, &["stop"]).await;
@@ -672,7 +672,7 @@ async fn a_keeper_and_a_client_starting_together_leave_one_server() {
     let machine = Machine::new();
     let channel = "keeper-election";
     machine.succeed(channel, &["install"]).await;
-    let _keeper = machine.keeper(channel, Path::new(env!("CARGO_BIN_EXE_suru")));
+    let _keeper = machine.keeper(channel, Path::new(env!("CARGO_BIN_EXE_shaman")));
     machine.succeed(channel, &["start"]).await;
 
     let standing = machine.server_other_than(channel, None).await;
@@ -698,7 +698,7 @@ async fn a_server_outlives_its_keeper() {
     let machine = Machine::new();
     let channel = "keeper-ended";
     machine.succeed(channel, &["install"]).await;
-    let mut keeper = machine.keeper(channel, Path::new(env!("CARGO_BIN_EXE_suru")));
+    let mut keeper = machine.keeper(channel, Path::new(env!("CARGO_BIN_EXE_shaman")));
     let standing = machine.server_other_than(channel, None).await;
 
     keeper.kill().await.expect("end the keeper");
@@ -714,7 +714,7 @@ async fn a_keeper_whose_registration_is_gone_restarts_nothing_and_ends() {
     let machine = Machine::new();
     let channel = "keeper-uninstalled";
     machine.succeed(channel, &["install"]).await;
-    let mut keeper = machine.keeper(channel, Path::new(env!("CARGO_BIN_EXE_suru")));
+    let mut keeper = machine.keeper(channel, Path::new(env!("CARGO_BIN_EXE_shaman")));
     let standing = machine.server_other_than(channel, None).await;
 
     machine.succeed(channel, &["uninstall"]).await;
@@ -741,8 +741,8 @@ async fn a_keeper_leaves_a_server_of_another_build_to_the_clients_that_replace_t
     let machine = Machine::new();
     let channel = "keeper-other-build";
     machine.succeed(channel, &["install"]).await;
-    let executable = machine.home.path().join("suru-at-a-lasting-path");
-    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_suru"), &executable).expect("link the binary");
+    let executable = machine.home.path().join("shaman-at-a-lasting-path");
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_shaman"), &executable).expect("link the binary");
     let _keeper = machine.keeper(channel, &executable);
     let standing = machine.server_other_than(channel, None).await;
 
@@ -777,14 +777,14 @@ async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does(
     let mut started = machine.server_cli(from_shell, &["start"]);
     started
         .env("PATH", &shell_path)
-        .env_remove("SURU_CLAUDE_PATH");
+        .env_remove("SHAMAN_CLAUDE_PATH");
     let output = started.output().await.expect("start from the shell");
     assert!(output.status.success(), "{output:?}");
 
     let mut installed = machine.server_cli(from_registration, &["install"]);
     installed
         .env("PATH", &shell_path)
-        .env_remove("SURU_CLAUDE_PATH")
+        .env_remove("SHAMAN_CLAUDE_PATH")
         .env("ANTHROPIC_API_KEY", "a-secret-of-the-shells")
         .env("AWS_SECRET_ACCESS_KEY", "another-secret-of-the-shells");
     let output = installed.output().await.expect("install from the shell");
@@ -811,7 +811,7 @@ async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does(
     let _keeper = registered.spawn().expect("run what is registered");
 
     // With what a service manager gives and nothing carried, no Provider is there.
-    let mut unassisted_keeper = machine.sparse(env!("CARGO_BIN_EXE_suru"));
+    let mut unassisted_keeper = machine.sparse(env!("CARGO_BIN_EXE_shaman"));
     let nothing_carried = format!("PATH={}", empty.display());
     unassisted_keeper
         .args(words[1..].iter().map(|word| {
@@ -832,14 +832,14 @@ async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does(
         let machine = &machine;
         async move {
             machine.server_other_than(channel, None).await;
-            let client = suru::managed_client::ManagedClient::connect(
-                suru::managed_client::ManagedClientConfig::new(
+            let client = shaman::managed_client::ManagedClient::connect(
+                shaman::managed_client::ManagedClientConfig::new(
                     machine.servers.state_dir(),
                     channel,
                 )
                 .expect("configure a client")
                 .with_data_dir(machine.servers.state_dir())
-                .with_server_executable(env!("CARGO_BIN_EXE_suru")),
+                .with_server_executable(env!("CARGO_BIN_EXE_shaman")),
             )
             .await
             .expect("attach a client");
@@ -847,7 +847,7 @@ async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does(
             catalog
                 .providers
                 .into_iter()
-                .find(|provider| provider.provider == suru::protocol::ProviderId::new("claude"))
+                .find(|provider| provider.provider == shaman::protocol::ProviderId::new("claude"))
                 .expect("the catalog lists Claude")
                 .status
         }
@@ -861,8 +861,8 @@ async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does(
     assert!(
         !matches!(
             shell,
-            suru::protocol::ProviderCatalogStatus::Unavailable {
-                reason: suru::protocol::ProviderUnavailability::NotInstalled,
+            shaman::protocol::ProviderCatalogStatus::Unavailable {
+                reason: shaman::protocol::ProviderUnavailability::NotInstalled,
                 ..
             }
         ),
@@ -871,8 +871,8 @@ async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does(
     assert!(
         matches!(
             unaided,
-            suru::protocol::ProviderCatalogStatus::Unavailable {
-                reason: suru::protocol::ProviderUnavailability::NotInstalled,
+            shaman::protocol::ProviderCatalogStatus::Unavailable {
+                reason: shaman::protocol::ProviderUnavailability::NotInstalled,
                 ..
             }
         ),
@@ -880,7 +880,7 @@ async fn a_server_started_by_its_registration_finds_the_providers_a_shells_does(
     );
 }
 
-/// `kill -9`, then `suru server stop` at once: the Server is gone but its
+/// `kill -9`, then `shaman server stop` at once: the Server is gone but its
 /// descriptor is not, and the stop is still the user's word. It leaves a record,
 /// with the stale descriptor gone, and exits as a stop that took.
 #[tokio::test]
@@ -894,7 +894,7 @@ async fn a_stop_after_a_crash_is_recorded_and_says_none_was_running() {
     assert!(!machine.last_stop_path(channel).exists());
 
     let said = machine.succeed(channel, &["stop"]).await;
-    assert!(said.contains("No Suru server was running"), "{said}");
+    assert!(said.contains("No Shaman server was running"), "{said}");
     assert!(machine.last_stop_path(channel).exists());
     assert!(
         !machine.descriptor_path(channel).exists(),
@@ -916,7 +916,7 @@ async fn a_stop_racing_a_keeper_answering_a_crash_stands() {
     // Slow enough that the stop usually lands in the gap the review found, and
     // the outcome is the same if it does not.
     let mut keeper =
-        machine.keeper_looking_every(channel, Path::new(env!("CARGO_BIN_EXE_suru")), 100);
+        machine.keeper_looking_every(channel, Path::new(env!("CARGO_BIN_EXE_shaman")), 100);
     let crashed = machine.server_other_than(channel, None).await;
 
     machine.crash(&crashed).await;
@@ -950,7 +950,7 @@ async fn a_server_launched_before_a_stop_with_no_server_there_stands_down() {
     machine.succeed(channel, &["stop"]).await;
 
     let launched = machine
-        .sparse(env!("CARGO_BIN_EXE_suru"))
+        .sparse(env!("CARGO_BIN_EXE_shaman"))
         .arg("__server")
         .arg("--state-dir")
         .arg(machine.servers.state_dir())
@@ -1021,7 +1021,7 @@ async fn a_stop_of_a_hung_server_says_so_and_records_nothing() {
     };
     signal(libc::SIGSTOP);
 
-    let stopped = suru::managed_client::stop_server(
+    let stopped = shaman::managed_client::stop_server(
         &machine
             .servers
             .client_config(channel)
@@ -1038,7 +1038,7 @@ async fn a_stop_of_a_hung_server_says_so_and_records_nothing() {
 }
 
 /// A Server that dies each time it is launched never comes to publish anything,
-/// and `suru server stop` still ends the loop.
+/// and `shaman server stop` still ends the loop.
 #[cfg(unix)]
 #[tokio::test]
 async fn a_stop_ends_a_crash_loop() {
@@ -1074,7 +1074,7 @@ async fn a_stop_ends_a_crash_loop() {
     .expect("the keeper goes on launching");
 
     let said = machine.succeed(channel, &["stop"]).await;
-    assert!(said.contains("No Suru server was running"), "{said}");
+    assert!(said.contains("No Shaman server was running"), "{said}");
     // One launch may have been under way as the stop landed.
     tokio::time::sleep(Duration::from_millis(100)).await;
     let settled = launch_count();

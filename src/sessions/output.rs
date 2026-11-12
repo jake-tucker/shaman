@@ -148,7 +148,7 @@ impl SessionStore {
 }
 
 /// The changes that carry one step of normalized Agent Message content into a
-/// Session: the content the Provider sent, and the truncation if Suru's cap
+/// Session: the content the Provider sent, and the truncation if Shaman's cap
 /// ended the stream there. Both travel as data, so no client has to read a
 /// marker back out of the content.
 pub(crate) fn message_content_changes(

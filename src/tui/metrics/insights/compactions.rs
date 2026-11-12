@@ -1,5 +1,5 @@
 //! The Compactions panel: how many the range's Turns held, how many of
-//! those the user asked for, how many Suru began of its own accord ahead of
+//! those the user asked for, how many Shaman began of its own accord ahead of
 //! a Prompt Cache lapse where it began any, how many failed, and the share of
 //! the context they freed on average, where any could say — more briefly
 //! where its column is narrow.
@@ -44,7 +44,7 @@ pub(super) fn render(
         compactions.automatic.failed + compactions.manual.failed + compactions.scheduled.failed,
     );
     let manual = grouped_count(compactions.manual.total());
-    // What Suru spent unasked is named wherever it spent any, so it is never
+    // What Shaman spent unasked is named wherever it spent any, so it is never
     // read as the Provider's own; where the column is narrowest the words
     // give way before any count does.
     let scheduled = compactions.scheduled.total();

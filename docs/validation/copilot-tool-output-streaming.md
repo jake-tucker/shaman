@@ -8,7 +8,7 @@ github-copilot-sdk 1.0.29-preview.5 by `examples/copilot_tool_output_capture.rs`
 
 A running Copilot Command showed its output repeated: a shell printing `one`, `two` and `three`
 streamed into the Transcript as `one one two one two three one two three`, and settled on the
-same, because Suru appended every `tool.execution_partial_result` it received as a new piece of
+same, because Shaman appended every `tool.execution_partial_result` it received as a new piece of
 output.
 
 ## What the CLI sends
@@ -37,7 +37,7 @@ synchronous shell, then `glob` and `web_fetch`. The shell's events, in stream or
 The older captures in `tests/copilot_integration/fixtures/` show the same snapshot sent twice
 (`"one\n"`, `"one\n"`) on the CLI they were recorded on, so the doubling predates 1.0.105.
 
-## What Suru does
+## What Shaman does
 
 The Copilot projection streams a running Command's output from `tool.shell_output` and takes
 nothing from `tool.execution_partial_result`. Its completion still adds whatever the result
@@ -46,7 +46,7 @@ reports beyond what streamed.
 ## The marker closing a shell's result
 
 A shell's result ends with a marker addressed to the Model, which reached the output a reader
-sees until Suru took it out. A second capture on the same CLI ran shells ending in each way:
+sees until Shaman took it out. A second capture on the same CLI ran shells ending in each way:
 
 | Shell | `success` | Result | `shell_exit` |
 | --- | --- | --- | --- |
@@ -57,7 +57,7 @@ sees until Suru took it out. A second capture on the same CLI ran shells ending 
 
 - The marker stands on a line of its own: Copilot breaks the line itself after output that left it
   open, including output that was empty.
-- The `shell_exit` part names the same shell and exit, so Suru spells the marker from it and takes
+- The `shell_exit` part names the same shell and exit, so Shaman spells the marker from it and takes
   off exactly that, along with a line break the stream never carried. A result with no such part,
   or one ending in anything else, is output, even if it reads like a marker.
 - A Command keeps the exit as its exit status. A `read_bash` is a Tool Call, which has no exit

@@ -1,6 +1,6 @@
-//! Suru's integration tests, built as one binary.
+//! Shaman's integration tests, built as one binary.
 //!
-//! Every test binary links the whole of Suru, so each suite built as a binary
+//! Every test binary links the whole of Shaman, so each suite built as a binary
 //! of its own was another link of it after every change to the library. Each
 //! suite is instead the module its binary's crate root once was: a test's path
 //! still begins with its suite's name, so `cargo nextest run -E

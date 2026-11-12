@@ -1,5 +1,5 @@
 //! Probes which of Copilot's context limits `session.usage_info`'s `tokenLimit` reports, the
-//! capacity Suru's Context Fill takes from it.
+//! capacity Shaman's Context Fill takes from it.
 //!
 //! For each Model named, prints its catalog limits, runs one short Turn, and prints every
 //! `session.usage_info` and `assistant.usage` report beside the Session's
@@ -11,7 +11,7 @@
 //! cargo run --example copilot_context_probe -- gpt-5-mini claude-haiku-4.5
 //! ```
 //!
-//! `SURU_COPILOT_PATH` names the CLI (default `copilot`). What the probe showed is recorded in
+//! `SHAMAN_COPILOT_PATH` names the CLI (default `copilot`). What the probe showed is recorded in
 //! `docs/validation/0299-copilot-context-fill.md`.
 #[path = "support/copilot_cli.rs"]
 mod copilot_cli;

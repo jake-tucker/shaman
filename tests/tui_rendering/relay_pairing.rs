@@ -19,7 +19,7 @@ use crate::tui_rendering::support::{
     rendered_application_rows_at, type_terminal_text,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         EffectiveSettings, InvitePreview, IssueInviteRequest, IssuedInvite, ListenerState,
@@ -38,7 +38,7 @@ const OTHER: &str = "https://other.example.org";
 const VISIT: &str = "https://github.com/login/device";
 const CODE: &str = "WDJB-MJHT";
 const LATER_CODE: &str = "KQTR-VXZB";
-const INVITE: &str = "suru-v1-through-the-relay";
+const INVITE: &str = "shaman-v1-through-the-relay";
 const FINGERPRINT: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 /// The run of the Client's own Server the tests' Relays come from.
 const SERVER: uuid::Uuid = uuid::Uuid::from_u128(7);
@@ -668,7 +668,7 @@ fn a_late_invite_lands_nowhere() {
         .handle_event(ApplicationEvent::InviteIssued {
             request: earlier,
             invite: IssuedInvite {
-                invite: "suru-v1-superseded".into(),
+                invite: "shaman-v1-superseded".into(),
                 serial: 1,
                 ways: vec![direct()],
                 short_code: None,
@@ -677,7 +677,7 @@ fn a_late_invite_lands_nowhere() {
         })
         .expect("take the late invite");
     let shown = prose(&application);
-    assert!(!shown.contains("suru-v1-superseded"), "{shown}");
+    assert!(!shown.contains("shaman-v1-superseded"), "{shown}");
     assert!(shown.contains("Preparing serving…"), "{shown}");
 }
 
@@ -1632,8 +1632,8 @@ fn a_relay_a_push_removes_above_the_keys_leaves_them_on_the_way_they_were_on() {
 fn a_late_preview_lands_nowhere() {
     let mut application = Application::default();
     push(&mut application, 1, vec![relay(COMPANY)]);
-    begin_pairing_with(&mut application, "suru-v1-first");
-    let first = inspecting(press(&mut application, KeyCode::Enter), "suru-v1-first");
+    begin_pairing_with(&mut application, "shaman-v1-first");
+    let first = inspecting(press(&mut application, KeyCode::Enter), "shaman-v1-first");
     press(&mut application, KeyCode::Esc);
     let (second, _) = pair(&mut application, vec![Way::Relay(COMPANY.to_owned())]);
     let beginning = beginning(refused_for_login(&mut application, second), COMPANY);
@@ -1643,14 +1643,14 @@ fn a_late_preview_lands_nowhere() {
     previewed(
         &mut application,
         first,
-        "suru-v1-first",
+        "shaman-v1-first",
         "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         vec![direct()],
     );
     application
         .handle_event(ApplicationEvent::InvitePreviewFailed {
             request: first,
-            invite: "suru-v1-first".to_owned().into(),
+            invite: "shaman-v1-first".to_owned().into(),
             error: "Invite is malformed".to_owned(),
         })
         .expect("take the late refusal");

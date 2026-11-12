@@ -106,7 +106,7 @@ pub(super) async fn shutdown_registered_instance(
     match response {
         Ok(Ok(response)) if response.status() == reqwest::StatusCode::CONFLICT => {
             if !policy.transition_races_are_expected {
-                bail!("registered Suru server changed before it could be stopped");
+                bail!("registered Shaman server changed before it could be stopped");
             }
         }
         Ok(Ok(response)) if response.status().is_server_error() => {
@@ -221,7 +221,7 @@ fn shutdown_policy(
             wait_for_channel_release: false,
             action: "manual stop",
             timeout_message: format!(
-                "Suru server did not stop before the manual-stop deadline ({:?})",
+                "Shaman server did not stop before the manual-stop deadline ({:?})",
                 deadline.saturating_duration_since(tokio::time::Instant::now())
             ),
             health_check_timeout,
@@ -233,7 +233,7 @@ fn shutdown_policy(
             wait_for_channel_release: true,
             action: "replacement stop",
             timeout_message:
-                "mismatched Suru server did not release the channel before startup timed out"
+                "mismatched Shaman server did not release the channel before startup timed out"
                     .to_owned(),
             health_check_timeout,
             missing_registration_settles_target: true,
@@ -282,7 +282,7 @@ async fn inspect_health(
 
 fn read_descriptor(path: &Path) -> Result<RuntimeDescriptor> {
     let file = File::open(path)
-        .with_context(|| format!("no running Suru server was found at {path:?}"))?;
+        .with_context(|| format!("no running Shaman server was found at {path:?}"))?;
     serde_json::from_reader(file).context("decode runtime descriptor")
 }
 

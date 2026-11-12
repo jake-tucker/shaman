@@ -1,6 +1,6 @@
 #!/bin/sh
 # Rewrites stored Sessions and Worktree preparation intents written in formats
-# Suru no longer reads into the shape the current build writes. Run it before
+# Shaman no longer reads into the shape the current build writes. Run it before
 # upgrading past the build that dropped the read-time fallbacks for them, or
 # the Sessions affected list as unreadable.
 #
@@ -10,7 +10,7 @@
 # left alone.
 #
 # Runs on macOS and Linux with the sqlite3 CLI (JSON functions built in since
-# SQLite 3.38). Stop the Suru server for the Channel first: a running server
+# SQLite 3.38). Stop the Shaman server for the Channel first: a running server
 # holds Sessions in memory and would write its own copies back.
 
 set -eu
@@ -20,9 +20,9 @@ usage() {
 Usage: migrate-legacy-storage.sh [--dry-run] [--channel NAME | --db PATH]
 
   --dry-run       Migrate a throwaway copy and report what would change.
-  --channel NAME  The Channel whose database to migrate (default: $SURU_CHANNEL,
-                  else release). Honors SURU_DATA_DIR and SURU_STATE_DIR.
-  --db PATH       Migrate this suru.db, and the Worktree preparations beside
+  --channel NAME  The Channel whose database to migrate (default: $SHAMAN_CHANNEL,
+                  else release). Honors SHAMAN_DATA_DIR and SHAMAN_STATE_DIR.
+  --db PATH       Migrate this shaman.db, and the Worktree preparations beside
                   it, instead of a Channel's.
 EOF
 }
@@ -33,7 +33,7 @@ die() {
 }
 
 dry_run=false
-channel=${SURU_CHANNEL:-release}
+channel=${SHAMAN_CHANNEL:-release}
 database=
 while [ $# -gt 0 ]; do
     case $1 in
@@ -54,27 +54,27 @@ command -v sqlite3 >/dev/null 2>&1 || die "sqlite3 is not installed"
 # beside data, and a non-release Channel lives in a subdirectory of each.
 case $(uname -s) in
     Darwin)
-        data_base="$HOME/Library/Application Support/suru"
+        data_base="$HOME/Library/Application Support/shaman"
         state_base=$data_base
         ;;
     *)
-        data_base="${XDG_DATA_HOME:-$HOME/.local/share}/suru"
-        state_base="${XDG_STATE_HOME:-$HOME/.local/state}/suru"
+        data_base="${XDG_DATA_HOME:-$HOME/.local/share}/shaman"
+        state_base="${XDG_STATE_HOME:-$HOME/.local/state}/shaman"
         ;;
 esac
-data_base=${SURU_DATA_DIR:-$data_base}
-state_base=${SURU_STATE_DIR:-$state_base}
+data_base=${SHAMAN_DATA_DIR:-$data_base}
+state_base=${SHAMAN_STATE_DIR:-$state_base}
 channel_root() {
     if [ "$channel" = release ]; then printf '%s\n' "$1"; else printf '%s/%s\n' "$1" "$channel"; fi
 }
 
 if [ -z "$database" ]; then
-    database="$(channel_root "$data_base")/suru.db"
+    database="$(channel_root "$data_base")/shaman.db"
     runtime="$(channel_root "$state_base")/runtime.json"
     if ! $dry_run && [ -f "$runtime" ]; then
         pid=$(sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p' "$runtime")
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            die "the $channel Suru server (pid $pid) is running; stop it first"
+            die "the $channel Shaman server (pid $pid) is running; stop it first"
         fi
     fi
 fi
@@ -218,7 +218,7 @@ SELECT printf('pending=%d', total(rows)) FROM report WHERE migrated = 1;
 SQL
 }
 
-scratch=$(mktemp -d "${TMPDIR:-/tmp}/suru-migrate.XXXXXX")
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/shaman-migrate.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
 
 # Worktree preparation intents are JSON files beside the database. An intent
@@ -275,9 +275,9 @@ migrate() {
 }
 
 if $dry_run; then
-    sqlite3 "$database" ".backup '$scratch/suru.db'"
+    sqlite3 "$database" ".backup '$scratch/shaman.db'"
     printf 'Dry run against a copy of %s:\n' "$database"
-    migrate "$scratch/suru.db"
+    migrate "$scratch/shaman.db"
     migrate_preparations
     exit 0
 fi

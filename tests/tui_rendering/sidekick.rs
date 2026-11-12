@@ -20,7 +20,7 @@ use crate::tui_rendering::{
 use crossterm::event::{
     Event as InputEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use suru::{
+use shaman::{
     managed_client::ManagedEvent,
     protocol::{
         Activity, ActivityId, Answer, Author, EffectiveSettings, Message, MessageId, MessageRole,
@@ -46,8 +46,8 @@ struct Home {
 
 fn home() -> Home {
     let directory = tempfile::tempdir().expect("create a home");
-    let root = suru::paths::canonical(directory.path()).expect("read the home");
-    let workspace = root.join("Projects").join("suru");
+    let root = shaman::paths::canonical(directory.path()).expect("read the home");
+    let workspace = root.join("Projects").join("shaman");
     let sidekick = root.join("data").join("sidekick");
     std::fs::create_dir_all(&workspace).expect("create the workspace");
     std::fs::create_dir_all(&sidekick).expect("create the sidekick workspace");
@@ -155,7 +155,7 @@ fn the_sidekick_command_is_semantic_and_typed_as_a_slash_with_no_arguments() {
     assert_eq!(outlook, Outlook::Local);
     assert_eq!(
         landing_location(&application),
-        label(&["Projects", "suru"]),
+        label(&["Projects", "shaman"]),
         "nothing moves until the server answers"
     );
 }
@@ -241,7 +241,10 @@ fn a_refused_sidekick_workspace_leaves_the_reader_where_they_were_saying_why() {
         screen.contains("Could not open the sidekick workspace: the disk is full"),
         "{screen}"
     );
-    assert_eq!(landing_location(&application), label(&["Projects", "suru"]));
+    assert_eq!(
+        landing_location(&application),
+        label(&["Projects", "shaman"])
+    );
 }
 
 #[test]
@@ -270,7 +273,10 @@ fn an_answer_to_a_superseded_sidekick_command_is_ignored() {
             .expect("deliver the stale answer"),
         ApplicationTransition::Continue
     );
-    assert_eq!(landing_location(&application), label(&["Projects", "suru"]));
+    assert_eq!(
+        landing_location(&application),
+        label(&["Projects", "shaman"])
+    );
 }
 
 /// Answers a `/sidekick` the reader asked for earlier with the Sidekick
@@ -315,7 +321,10 @@ fn a_late_answer_after_the_reader_went_to_a_fresh_landing_leaves_their_new_draft
         ApplicationTransition::Continue,
         "the reader went elsewhere, so the answer has nothing left to answer"
     );
-    assert_eq!(landing_location(&application), label(&["Projects", "suru"]));
+    assert_eq!(
+        landing_location(&application),
+        label(&["Projects", "shaman"])
+    );
     let screen = rendered_application_rows_at(&application, 200, 30).join("\n");
     assert!(screen.contains("a different thought"), "{screen}");
 }
@@ -736,7 +745,7 @@ fn a_sidekicks_session_that_cannot_be_opened_leaves_the_reader_where_they_were_s
     application
         .handle_event(ApplicationEvent::OriginSessionAttachFailed {
             reference,
-            error: "The session does not exist on this Suru server.".to_owned(),
+            error: "The session does not exist on this Shaman server.".to_owned(),
         })
         .expect("deliver the failed attach");
     let text = rendered_application_rows_at(&application, 160, 22).join("\n");

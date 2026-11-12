@@ -5547,7 +5547,7 @@ fn enable_terminal_features(output: &mut impl TerminalSink) -> std::io::Result<(
     output.apply(EnableMouseButtonReporting)?;
     ignore_unsupported(output.apply(PushModifiedKeyReporting))?;
     ignore_unsupported(output.apply(EnableTerminalThemeUpdates))?;
-    // So the caret Suru draws can stand steady and muted while the window is
+    // So the caret Shaman draws can stand steady and muted while the window is
     // without the keys, as a terminal's own cursor does (ADR 0075). A terminal
     // that reports nothing is taken to hold them always.
     ignore_unsupported(output.apply(EnableFocusChange))
@@ -5970,13 +5970,13 @@ mod tests {
             .expect("a counting Terminal always starts");
 
         draw_frame(&mut terminal, false, |frame| {
-            a_busy_frame(frame, "suru\nis\nhere")
+            a_busy_frame(frame, "shaman\nis\nhere")
         })
         .expect("a counting console never fails");
         assert_eq!(writes.get(), 1, "a busy frame took more than one write");
 
         draw_frame(&mut terminal, false, |frame| {
-            a_busy_frame(frame, "suru\nis\nhere")
+            a_busy_frame(frame, "shaman\nis\nhere")
         })
         .expect("a counting console never fails");
         assert_eq!(writes.get(), 2, "an idle frame took more than one write");
@@ -5986,7 +5986,7 @@ mod tests {
         let mut unbuffered = Terminal::new(FrameBackend::new(AnsiTranscriptBackend::over(console)))
             .expect("a counting Terminal always starts");
         draw_frame(&mut unbuffered, false, |frame| {
-            a_busy_frame(frame, "suru\nis\nhere")
+            a_busy_frame(frame, "shaman\nis\nhere")
         })
         .expect("a counting console never fails");
         assert!(
@@ -6003,7 +6003,7 @@ mod tests {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
 
         draw_frame(&mut terminal, false, |frame| {
-            frame.render_widget("suru", frame.area());
+            frame.render_widget("shaman", frame.area());
             frame.set_cursor_position(Position::new(3, 2));
         })
         .expect("an ANSI transcript never fails to record");
@@ -6043,7 +6043,7 @@ mod tests {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::refusing_to_draw());
 
         let failure = draw_frame(&mut terminal, false, |frame| {
-            frame.render_widget("suru", frame.area());
+            frame.render_widget("shaman", frame.area());
             frame.set_cursor_position(Position::new(3, 2));
         })
         .expect_err("a terminal that refuses to draw fails the frame");
@@ -6095,8 +6095,8 @@ mod tests {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
         let caret = Some(Position::new(3, 2));
 
-        draw_recorded_frame(&mut terminal, caret, "suru");
-        let second = draw_recorded_frame(&mut terminal, caret, "suru");
+        draw_recorded_frame(&mut terminal, caret, "shaman");
+        let second = draw_recorded_frame(&mut terminal, caret, "shaman");
 
         assert_eq!(
             second, "\x1b[?2026h\x1b[?2026l",
@@ -6223,7 +6223,7 @@ mod tests {
         assert!(!frame.contains("\x1b]8;;"));
     }
 
-    /// The terminal's cursor is hidden once and stays hidden: Suru draws the
+    /// The terminal's cursor is hidden once and stays hidden: Shaman draws the
     /// caret itself (ADR 0075), so no frame -- with a caret or without, changed
     /// or not -- ever shows it, and none hides it a second time.
     #[test]
@@ -6231,11 +6231,11 @@ mod tests {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
         let caret = Some(Position::new(3, 2));
 
-        let mut frames = draw_recorded_frame(&mut terminal, caret, "suru");
+        let mut frames = draw_recorded_frame(&mut terminal, caret, "shaman");
         frames += &draw_recorded_frame(&mut terminal, caret, "sura");
         frames += &draw_recorded_frame(&mut terminal, None, "sura");
-        frames += &draw_recorded_frame(&mut terminal, None, "suru");
-        frames += &draw_recorded_frame(&mut terminal, caret, "suru");
+        frames += &draw_recorded_frame(&mut terminal, None, "shaman");
+        frames += &draw_recorded_frame(&mut terminal, caret, "shaman");
 
         assert_eq!(
             frames.matches("\x1b[?25l").count(),
@@ -6255,9 +6255,9 @@ mod tests {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
         let caret = Some(Position::new(3, 2));
 
-        draw_recorded_frame(&mut terminal, caret, "suru");
+        draw_recorded_frame(&mut terminal, caret, "shaman");
         terminal.backend_mut().forget_cursor();
-        let resumed = draw_recorded_frame(&mut terminal, caret, "suru");
+        let resumed = draw_recorded_frame(&mut terminal, caret, "shaman");
 
         assert_eq!(
             resumed, "\x1b[?2026h\x1b[?25l\x1b[3;4H\x1b[?2026l",
@@ -6272,8 +6272,8 @@ mod tests {
     fn a_moved_caret_over_unchanged_content_writes_only_the_move() {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
 
-        draw_recorded_frame(&mut terminal, Some(Position::new(3, 2)), "suru");
-        let moved = draw_recorded_frame(&mut terminal, Some(Position::new(4, 2)), "suru");
+        draw_recorded_frame(&mut terminal, Some(Position::new(3, 2)), "shaman");
+        let moved = draw_recorded_frame(&mut terminal, Some(Position::new(4, 2)), "shaman");
 
         assert_eq!(
             moved, "\x1b[?2026h\x1b[3;5H\x1b[?2026l",
@@ -6289,7 +6289,7 @@ mod tests {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
         let caret = Some(Position::new(3, 2));
 
-        draw_recorded_frame(&mut terminal, caret, "suru");
+        draw_recorded_frame(&mut terminal, caret, "shaman");
         let repainted = draw_recorded_frame(&mut terminal, caret, "sura");
 
         let positions = AnsiTranscript::positions(
@@ -6318,7 +6318,7 @@ mod tests {
     fn the_first_frame_hides_the_cursor_ahead_of_its_repaint() {
         let mut terminal = recording_terminal(AnsiTranscriptBackend::new());
 
-        let first = draw_recorded_frame(&mut terminal, Some(Position::new(3, 2)), "suru");
+        let first = draw_recorded_frame(&mut terminal, Some(Position::new(3, 2)), "shaman");
 
         let positions = AnsiTranscript::positions(
             &first,
@@ -6737,10 +6737,10 @@ mod tests {
     fn copying_an_invite_writes_the_same_text_to_both_clipboards() {
         let mut native = RecordingClipboard::default();
         let mut terminal = AnsiTranscript(String::new());
-        copy_to_clipboard(&mut terminal, &mut native, "suru-v1-example");
+        copy_to_clipboard(&mut terminal, &mut native, "shaman-v1-example");
 
-        assert_eq!(terminal.0, "\x1b]52;c;c3VydS12MS1leGFtcGxl\x07");
-        assert_eq!(native.0, ["suru-v1-example"]);
+        assert_eq!(terminal.0, "\x1b]52;c;c2hhbWFuLXYxLWV4YW1wbGU=\x07");
+        assert_eq!(native.0, ["shaman-v1-example"]);
     }
 
     #[test]
@@ -6933,7 +6933,7 @@ mod tests {
                 Ok(())
             });
             copy_to_clipboard(&mut terminal, &mut native, "Hello\n界🙂");
-            copy_to_clipboard(&mut terminal, &mut native, "suru-v1-example");
+            copy_to_clipboard(&mut terminal, &mut native, "shaman-v1-example");
         }
 
         assert_eq!(
@@ -6941,13 +6941,13 @@ mod tests {
             [
                 (Clipboard, "Hello\n界🙂".to_owned()),
                 (Primary, "Hello\n界🙂".to_owned()),
-                (Clipboard, "suru-v1-example".to_owned()),
-                (Primary, "suru-v1-example".to_owned()),
+                (Clipboard, "shaman-v1-example".to_owned()),
+                (Primary, "shaman-v1-example".to_owned()),
             ]
         );
         assert_eq!(
             terminal.0,
-            "\x1b]52;c;SGVsbG8K55WM8J+Zgg==\x07\x1b]52;c;c3VydS12MS1leGFtcGxl\x07"
+            "\x1b]52;c;SGVsbG8K55WM8J+Zgg==\x07\x1b]52;c;c2hhbWFuLXYxLWV4YW1wbGU=\x07"
         );
     }
 
@@ -7004,8 +7004,8 @@ mod tests {
         let log = record_log(|| {
             let mut terminal = FailedTerminal(std::io::ErrorKind::Unsupported);
             let mut native = RecordingClipboard::default();
-            copy_to_clipboard(&mut terminal, &mut native, "suru-v1-example");
-            assert_eq!(native.0, ["suru-v1-example"]);
+            copy_to_clipboard(&mut terminal, &mut native, "shaman-v1-example");
+            assert_eq!(native.0, ["shaman-v1-example"]);
         });
         assert!(log.is_empty(), "{log}");
     }

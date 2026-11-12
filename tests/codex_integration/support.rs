@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::support::PROGRESS_DEADLINE;
 use crate::support::scripted_binary::{captured_methods, captured_requests, write_executable};
 use serde_json::Value;
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
     protocol::{
         CreateSessionRequest, InitialPrompt, PromptId, SessionId, SessionSnapshot, TurnStatus,
@@ -28,7 +28,7 @@ while IFS= read -r line; do
   case "$line" in
 "#;
 
-/// What a scripted Codex with nothing to say about Errands does when Suru
+/// What a scripted Codex with nothing to say about Errands does when Shaman
 /// invokes it as `codex exec`: refuse before reading a byte, so the Prompt an
 /// Errand delivers never reaches the app-server request log the rest of these
 /// fixtures are read through. A Provider that will not run an Errand leaves the
@@ -44,7 +44,7 @@ fi
 const SHEBANG: &str = "#!/bin/sh\n";
 
 /// The app-server arms of a conversation on thread `native-thread` whose one Turn, `native-turn`,
-/// streams `__TURN_EVENTS__` — the native lines a test splices in — once Suru starts it.
+/// streams `__TURN_EVENTS__` — the native lines a test splices in — once Shaman starts it.
 const CONVERSATION: &str = r#"
     *'"method":"initialize"'*)
       printf '%s\n' '{"id":1,"result":{}}'
@@ -123,7 +123,7 @@ pub async fn opened_session_configured(
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let config_dir = document.map(|document| {
         let directory = tempfile::tempdir().expect("create isolated config directory");
-        std::fs::write(directory.path().join("suru.jsonc"), document)
+        std::fs::write(directory.path().join("shaman.jsonc"), document)
             .expect("write Config Document");
         directory
     });
@@ -145,7 +145,7 @@ pub async fn opened_session_configured(
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -240,7 +240,7 @@ pub async fn receive_initial_state(client: &mut ManagedClient) {
 }
 
 /// Waits for the process `pid` names to be gone, and fails if it outlives the
-/// deadline. Used wherever Suru claims to have taken a Codex process down —
+/// deadline. Used wherever Shaman claims to have taken a Codex process down —
 /// server shutdown, and a wait abandoned at an Errand's deadline.
 pub async fn assert_process_exited(pid: u32) {
     if timeout(PROGRESS_DEADLINE, async {
@@ -258,7 +258,7 @@ pub async fn assert_process_exited(pid: u32) {
         if let Some(process) = system.process(Pid::from_u32(pid)) {
             let _ = process.kill();
         }
-        panic!("scripted Codex process {pid} outlived the wait Suru gave it");
+        panic!("scripted Codex process {pid} outlived the wait Shaman gave it");
     }
 }
 
@@ -433,7 +433,7 @@ impl ScriptedCodex {
     }
 
     /// Where the scripted Codex records its PID once launched — also the ID of
-    /// its process group, since Suru launches every Provider as the leader of
+    /// its process group, since Shaman launches every Provider as the leader of
     /// one — so a test may look for it without waiting for it to have started.
     pub fn pid_file(&self) -> &std::path::Path {
         &self.pid

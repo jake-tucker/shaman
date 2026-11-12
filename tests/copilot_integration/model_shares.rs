@@ -7,7 +7,7 @@ use crate::copilot_integration::support::{
 };
 use crate::support::usage::tokens;
 use serde_json::Value;
-use suru::protocol::{Cost, ModelId, ModelShare, SessionSnapshot, Usage};
+use shaman::protocol::{Cost, ModelId, ModelShare, SessionSnapshot, Usage};
 
 /// An Auto Turn whose calls ran on two priced Models, the first called twice.
 const AUTO_TWO_MODELS: &str = r#"      event r1 session.auto_mode_resolved '{"chosenModel":"claude-fixture"}'
@@ -173,7 +173,7 @@ async fn a_late_report_counts_as_a_share_of_the_turn_it_lands_in() {
 }
 
 /// What the Turn's Usage holds of the `assistant.usage` reports of `capture` that name `model`,
-/// in Suru's disjoint parts.
+/// in Shaman's disjoint parts.
 fn reported_by(capture: &str, model: &str) -> Usage {
     let reports = capture
         .lines()
@@ -196,7 +196,7 @@ fn reported_by(capture: &str, model: &str) -> Usage {
         cache_write_tokens: Some(sum("cacheWriteTokens")),
         output_tokens: Some(sum("outputTokens") - sum("reasoningTokens")),
         reasoning_tokens: Some(sum("reasoningTokens")),
-        native_meter: suru::protocol::NativeMeter::from_units(
+        native_meter: shaman::protocol::NativeMeter::from_units(
             reports
                 .iter()
                 .map(|report| report["cost"].as_f64().unwrap_or_default())

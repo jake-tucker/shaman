@@ -5,7 +5,7 @@
 
 use crate::{protocol::ProviderId, provider::built_in_providers};
 
-/// A Provider's Nerd Font glyph where Suru knows one. Unknown Provider IDs
+/// A Provider's Nerd Font glyph where Shaman knows one. Unknown Provider IDs
 /// keep their text-only presentation, which lets future Providers participate
 /// in the shared surfaces before choosing an icon of their own.
 pub(super) fn provider_icon(provider: &ProviderId) -> Option<char> {

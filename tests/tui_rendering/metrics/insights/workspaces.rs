@@ -10,7 +10,7 @@ use crate::tui_rendering::{
     support::{invoke, key, rendered_application_buffer, text_position},
 };
 use crossterm::event::KeyCode;
-use suru::{
+use shaman::{
     protocol::{
         Cost, CountedCost, KeyedUsageMetrics, UsageMetricsAggregate, UsageMetricsBreakdown,
         UsageMetricsBucket, UsageMetricsKey, UsageMetricsKeyLabel, UsageMetricsQuery,
@@ -108,7 +108,7 @@ pub(super) const MOCKUP: [(&str, f64, bool); 8] = [
     ("notes", 10.0, false),
     ("recipes", 5.59, false),
     ("relay-infra", 96.10, false),
-    ("suru", 211.40, false),
+    ("shaman", 211.40, false),
     ("zines", 3.0, false),
 ];
 
@@ -154,7 +154,7 @@ fn workspaces_are_ranked_by_cost_with_a_plus_on_partial_figures_and_the_rest_fol
     assert_eq!(
         lines,
         vec![
-            "suru $211.40",
+            "shaman $211.40",
             "relay-infra $96.10",
             "dotfiles $41.75+",
             "blog $30.02",
@@ -253,7 +253,7 @@ fn enter_on_a_workspace_opens_overview_by_workspace_showing_only_it() {
     assert!(row(&rows, "Overview").contains("▐Overview▌"), "{rows:#?}");
     answer_overview_by_workspace(&mut application, opened);
     assert_eq!(
-        dimmed(&application, ["suru", "relay-infra", "dotfiles", "blog"]),
+        dimmed(&application, ["shaman", "relay-infra", "dotfiles", "blog"]),
         [Some(true), Some(false), Some(true), Some(true)],
         "relay-infra, the second row, shown alone"
     );
@@ -269,7 +269,7 @@ fn a_click_on_a_workspace_opens_it_alone_on_overview_too() {
 
     answer_overview_by_workspace(&mut application, opened);
     assert_eq!(
-        dimmed(&application, ["suru", "relay-infra", "dotfiles", "blog"]),
+        dimmed(&application, ["shaman", "relay-infra", "dotfiles", "blog"]),
         [Some(true), Some(true), Some(true), Some(false)]
     );
 }
@@ -289,7 +289,7 @@ fn a_workspace_overview_would_fold_into_other_is_kept_apart_to_be_shown_alone() 
 
     answer_overview_by_workspace(&mut application, opened);
     assert_eq!(
-        dimmed(&application, ["zines", "suru", "Other"]),
+        dimmed(&application, ["zines", "shaman", "Other"]),
         [Some(false), Some(true), Some(true)],
         "zines in a row of its own, shown alone"
     );
@@ -322,7 +322,7 @@ fn opening_a_workspace_while_overview_shows_workspaces_already_reads_nothing() {
 
     assert_eq!(opened, ApplicationTransition::Continue);
     assert_eq!(
-        dimmed(&application, ["suru", "relay-infra", "dotfiles"]),
+        dimmed(&application, ["shaman", "relay-infra", "dotfiles"]),
         [Some(true), Some(true), Some(false)]
     );
 }
@@ -344,13 +344,13 @@ fn a_workspace_opened_into_a_report_without_it_is_not_shown_alone_by_a_later_one
     answer(&mut application, request_id, Ok(spent(&query, &MOCKUP)));
 
     assert_eq!(
-        dimmed(&application, ["suru", "relay-infra", "dotfiles"]),
+        dimmed(&application, ["shaman", "relay-infra", "dotfiles"]),
         [Some(false); 3],
         "the report the workspace was opened into had none of it to show alone"
     );
 }
 
-/// `report` with Suru's Errands beside its Workspaces in every bucket,
+/// `report` with Shaman's Errands beside its Workspaces in every bucket,
 /// costing `usd`, as the Server counts them under their reserved key.
 fn with_errands(mut report: UsageMetricsReport, usd: f64) -> UsageMetricsReport {
     let errands = UsageMetricsAggregate {
@@ -386,7 +386,7 @@ fn the_panel_lists_errands_as_a_row_and_opening_it_shows_errands_alone_on_overvi
     assert_eq!(
         workspaces_panel(&application).0,
         vec![
-            "suru $211.40",
+            "shaman $211.40",
             "relay-infra $96.10",
             "Errands $50.00",
             "dotfiles $41.75+",
@@ -411,7 +411,10 @@ fn the_panel_lists_errands_as_a_row_and_opening_it_shows_errands_alone_on_overvi
         Ok(with_errands(spent(&query, &MOCKUP), 50.0)),
     );
     assert_eq!(
-        dimmed(&application, ["suru", "relay-infra", "Errands", "dotfiles"]),
+        dimmed(
+            &application,
+            ["shaman", "relay-infra", "Errands", "dotfiles"]
+        ),
         [Some(true), Some(true), Some(false), Some(true)],
         "the errands shown alone"
     );

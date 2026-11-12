@@ -248,7 +248,7 @@ async fn run_managed_client(
                 tracing::info!(
                     instance_id = %connection.health.instance_id,
                     pid = connection.health.pid,
-                    "connected to Suru server"
+                    "connected to Shaman server"
                 );
                 if events
                     .send(ManagedEvent::Connected(connection.health))
@@ -371,7 +371,7 @@ async fn run_managed_client(
                 }
                 ConnectionWait::TimedOut => {
                     let message = format!(
-                        "replacement Suru server did not become ready within {:?}",
+                        "replacement Shaman server did not become ready within {:?}",
                         config.startup_timeout
                     );
                     tracing::error!("{message}");
@@ -436,7 +436,9 @@ async fn run_managed_client(
                         let _ = events.send(ManagedEvent::Fatal(message)).await;
                         return;
                     }
-                    ConnectionWait::TimedOut => Err(anyhow!("compatible Suru server is not ready")),
+                    ConnectionWait::TimedOut => {
+                        Err(anyhow!("compatible Shaman server is not ready"))
+                    }
                 }
             };
             match recovery {

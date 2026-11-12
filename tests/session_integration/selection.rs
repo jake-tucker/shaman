@@ -6,7 +6,7 @@ use crate::session_integration::{
 };
 use crate::support::PROGRESS_DEADLINE;
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
-use suru::{
+use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, SessionEvent},
     protocol::{
         Activity, AdmitPromptRequest, AgentId, AgentIdentity, AgentSelection,
@@ -49,7 +49,7 @@ async fn agent_selection_changes_do_not_rewrite_an_active_turn_identity() {
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -197,7 +197,7 @@ async fn confirmed_landing_agent_selection_defaults_new_sessions_after_a_restart
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: first_workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -267,7 +267,7 @@ async fn confirmed_landing_agent_selection_defaults_new_sessions_after_a_restart
             session_id: None,
             preparation_id: None,
             agent_selection: None,
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: second_workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -328,7 +328,7 @@ async fn agent_selection_commands_are_idempotent_and_converge_across_clients() {
             session_id: None,
             preparation_id: None,
             agent_selection: Some(initial),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -541,7 +541,7 @@ async fn rapid_reasoning_cycles_serialize_coalesce_and_converge_across_clients()
             session_id: None,
             preparation_id: None,
             agent_selection: Some(opaque_cycling_selection("low")),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -759,7 +759,7 @@ async fn concurrent_clients_converge_in_server_acceptance_order() {
                 model: ModelId::new("initial"),
                 options: Vec::new(),
             }),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -874,7 +874,7 @@ async fn turn_boundaries_capture_the_latest_selection_while_steers_keep_the_acti
             session_id: None,
             preparation_id: None,
             agent_selection: Some(first_selection.clone()),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1020,7 +1020,7 @@ async fn provider_effective_selection_reconciles_the_active_turn_with_visible_ac
             session_id: None,
             preparation_id: None,
             agent_selection: Some(requested.clone()),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {
@@ -1157,7 +1157,7 @@ async fn rejected_selection_fails_visibly_and_prepares_a_fresh_prompt_for_retry(
             session_id: None,
             preparation_id: None,
             agent_selection: Some(selection.clone()),
-            execution_directory: suru::protocol::ExecutionDirectory {
+            execution_directory: shaman::protocol::ExecutionDirectory {
                 path: workspace.path().to_owned(),
             },
             prompt: InitialPrompt {

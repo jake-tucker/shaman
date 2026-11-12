@@ -6,7 +6,7 @@ use std::fs;
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::style::Color;
 use serde_json::json;
-use suru::{
+use shaman::{
     protocol::{
         AppearanceMode, AppearanceSettings, EffectiveSettings, Outlook, Remote, RemoteHealth,
         RemoteStatus, SettingMutation, SidebarSettings, SidebarVisibility, Way,
@@ -34,7 +34,7 @@ fn themed_in_mode(name: &str, mode: AppearanceMode) -> EffectiveSettings {
         appearance: AppearanceSettings {
             theme: name.to_owned(),
             mode,
-            landing_page: suru::protocol::LandingPage::Fancy,
+            landing_page: shaman::protocol::LandingPage::Fancy,
             show_icons: false,
         },
         ..EffectiveSettings::default()
@@ -891,10 +891,7 @@ fn a_named_theme_paints_ordinary_text_with_its_own_foreground() {
         .expect("type sample text");
     let landing = rendered_application_buffer(&application, 100, 20);
     assert_eq!(
-        landing
-            .cell(text_position(&landing, "▀▀▀▀▀▀▀▀█▀▀▀▀▀"))
-            .unwrap()
-            .fg,
+        landing.cell(text_position(&landing, "▄█▄▀▀█")).unwrap().fg,
         Color::Rgb(137, 180, 250),
         "the landing logo keeps the primary accent"
     );
@@ -1303,9 +1300,9 @@ fn a_missing_theme_falls_back_to_system_and_notices_the_preserved_pin_in_an_open
             initial_visibility: SidebarVisibility::Hidden,
             ..SidebarSettings::default()
         },
-        aside: suru::protocol::AsideSettings {
-            initial_visibility: suru::protocol::AsideVisibility::Hidden,
-            ..suru::protocol::AsideSettings::default()
+        aside: shaman::protocol::AsideSettings {
+            initial_visibility: shaman::protocol::AsideVisibility::Hidden,
+            ..shaman::protocol::AsideSettings::default()
         },
         ..EffectiveSettings::default()
     };
