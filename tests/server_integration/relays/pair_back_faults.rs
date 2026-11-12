@@ -20,7 +20,10 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use futures_util::{StreamExt as _, stream};
-use hyper_util::{rt::TokioIo, service::TowerToHyperService};
+use hyper_util::{
+    rt::{TokioExecutor, TokioIo},
+    service::TowerToHyperService,
+};
 use rcgen::{KeyPair, PublicKeyData};
 use shaman::{
     protocol::{
@@ -56,9 +59,14 @@ struct Hold {
 
 /// A route to a Serving listener carrying everything it is given, except that on
 /// the connection numbered `held`, from 1, it stops carrying what the listener
-/// says from the moment the dialler's second flight comes: so what that dialler
+/// says once the dialler has asked something over it: so what that dialler
 /// asked is done there, and its answer waits on the test. A redemption dials one
 /// connection to prepare and another to commit.
+///
+/// The dialler asks only once HTTP/2 is under way, which takes the listener's
+/// own opening words after the TLS handshake. So the listener is held from the
+/// dialler's first words after those: its acknowledgement of them, with what it
+/// asks behind it.
 struct HoldingRoute {
     address: SocketAddr,
     hold: Arc<Hold>,
@@ -116,6 +124,12 @@ impl HoldingRoute {
     }
 }
 
+/// How long the listener is given to finish its opening words once the dialler
+/// speaks after the first of them, before it is held. They come together, so
+/// this is far longer than they take; it is waited out each time a connection
+/// comes to be held.
+const OPENING_GRACE: Duration = Duration::from_millis(25);
+
 async fn carry(
     dialler: TcpStream,
     target: SocketAddr,
@@ -128,49 +142,66 @@ async fn carry(
     };
     let (mut from_dialler, mut to_dialler) = dialler.into_split();
     let (mut from_server, mut to_server) = server.into_split();
-    let holds_now = Arc::new(AtomicBool::new(false));
-    let noting = holds_now.clone();
-    let asking = tokio::spawn(async move {
-        let mut buffer = vec![0_u8; 64 * 1024];
-        let mut flights = 0;
-        loop {
-            match from_dialler.read(&mut buffer).await {
-                Ok(0) | Err(_) => return,
-                Ok(read) => {
-                    flights += 1;
-                    if held && flights == 2 {
-                        noting.store(true, Ordering::SeqCst);
-                        holding.store(true, Ordering::SeqCst);
+    let (mut asked, mut answered) = (vec![0_u8; 64 * 1024], vec![0_u8; 64 * 1024]);
+    // The dialler's flights so far, whether the listener has spoken since the
+    // second — the end of the dialler's TLS handshake — and whether what the
+    // listener says is held.
+    let (mut flights, mut opened, mut holds) = (0, false, false);
+    loop {
+        let waits = holds && !hold.released.load(Ordering::SeqCst);
+        if waits && hold.cut.load(Ordering::SeqCst) {
+            return;
+        }
+        tokio::select! {
+            read = from_dialler.read(&mut asked) => {
+                let Ok(read @ 1..) = read else {
+                    return;
+                };
+                flights += 1;
+                if held && opened && !holds {
+                    // Whatever is left of the listener's opening words is
+                    // carried first, so the dialler is never left waiting on
+                    // them with what it asks unsent.
+                    let grace = tokio::time::sleep(OPENING_GRACE);
+                    tokio::pin!(grace);
+                    loop {
+                        tokio::select! {
+                            () = &mut grace => break,
+                            read = from_server.read(&mut answered) => {
+                                let Ok(read @ 1..) = read else {
+                                    return;
+                                };
+                                if to_dialler.write_all(&answered[..read]).await.is_err() {
+                                    return;
+                                }
+                            }
+                        }
                     }
-                    if to_server.write_all(&buffer[..read]).await.is_err() {
-                        return;
-                    }
+                    holds = true;
+                    holding.store(true, Ordering::SeqCst);
+                }
+                if to_server.write_all(&asked[..read]).await.is_err() {
+                    return;
                 }
             }
-        }
-    });
-    let mut buffer = vec![0_u8; 64 * 1024];
-    loop {
-        let read = match from_server.read(&mut buffer).await {
-            Ok(0) | Err(_) => break,
-            Ok(read) => read,
-        };
-        while holds_now.load(Ordering::SeqCst) && !hold.released.load(Ordering::SeqCst) {
-            if hold.cut.load(Ordering::SeqCst) {
-                asking.abort();
-                return;
+            read = from_server.read(&mut answered), if !waits => {
+                let Ok(read @ 1..) = read else {
+                    return;
+                };
+                opened |= flights >= 2;
+                if to_dialler.write_all(&answered[..read]).await.is_err() {
+                    return;
+                }
             }
-            let released = hold.release.notified();
-            tokio::select! {
-                () = released => {}
-                () = tokio::time::sleep(Duration::from_millis(5)) => {}
-            }
-        }
-        if to_dialler.write_all(&buffer[..read]).await.is_err() {
-            break;
+            // Looked at again shortly, for the test letting it go or cutting it.
+            () = async {
+                tokio::select! {
+                    () = hold.release.notified() => {}
+                    () = tokio::time::sleep(Duration::from_millis(5)) => {}
+                }
+            }, if waits => {}
         }
     }
-    asking.abort();
 }
 
 /// An address nothing listens at.
@@ -196,14 +227,14 @@ fn invite_offering(key: &KeyPair, ways: serde_json::Value) -> String {
     )
 }
 
-/// Runs `app` over the Pairing's TLS holding `identity`, speaking HTTP/1.1 as a
+/// Runs `app` over the Pairing's TLS holding `identity`, speaking HTTP/2 as a
 /// direct way's connection does, and answers where it is reached.
 async fn standing_in(identity: &KeyPair, app: Router) -> SocketAddr {
     let certificate = rcgen::CertificateParams::new(vec!["shaman-server".to_owned()])
         .unwrap()
         .self_signed(identity)
         .unwrap();
-    let tls = rustls::ServerConfig::builder_with_provider(Arc::new(
+    let mut tls = rustls::ServerConfig::builder_with_provider(Arc::new(
         rustls::crypto::ring::default_provider(),
     ))
     .with_protocol_versions(&[&rustls::version::TLS13])
@@ -216,6 +247,7 @@ async fn standing_in(identity: &KeyPair, app: Router) -> SocketAddr {
         )),
     )
     .unwrap();
+    tls.alpn_protocols = vec![b"h2".to_vec()];
     let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
         .await
@@ -227,7 +259,7 @@ async fn standing_in(identity: &KeyPair, app: Router) -> SocketAddr {
             let app = app.clone();
             tokio::spawn(async move {
                 if let Ok(stream) = acceptor.accept(stream).await {
-                    let _ = hyper::server::conn::http1::Builder::new()
+                    let _ = hyper::server::conn::http2::Builder::new(TokioExecutor::new())
                         .serve_connection(TokioIo::new(stream), TowerToHyperService::new(app))
                         .await;
                 }

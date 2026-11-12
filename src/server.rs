@@ -281,7 +281,7 @@ pub struct ServerTimings {
     /// How much keeping Remotes in view for Sidekicks' trees takes on.
     pub remote_watch_limits: RemoteWatchLimits,
     /// How many requests may await one Remote's answer at once — carried to
-    /// it, probing it, or waiting their turn on its joined stream — past
+    /// it, probing it, or waiting their turn on its connection — past
     /// which another is refused at once rather than waiting.
     pub remote_requests_at_once: usize,
     /// How long one connection of a Pairing may take to finish its TLS
@@ -302,9 +302,6 @@ pub struct ServerTimings {
     /// that falling back costs no noticeable wait, and long enough for a
     /// direct way on the same network to answer first.
     pub direct_head_start: Duration,
-    /// How long a direct connection to a Remote kept for the next request
-    /// may stand idle before it is closed.
-    pub direct_idle_timeout: Duration,
     /// How long, at least, a Remote whose requests ride a joined stream goes
     /// between tries of its direct ways in the background, so a direct way
     /// that answers again is found without anything waiting on it, and one
@@ -361,17 +358,17 @@ pub struct ServerTimings {
     /// How long that Relay may take to answer before the Server holds it as
     /// having stopped answering, reads it Unreachable, and connects again.
     pub relay_heartbeat_timeout: Duration,
-    /// How long a joined stream may carry nothing in before either Server
-    /// asks, inside its pinned-key TLS, whether the other still answers.
-    pub joined_stream_keepalive_interval: Duration,
-    /// How long the other Server may take to answer before the joined stream
-    /// is given up. Only the answer counts, not whatever else comes
-    /// meanwhile, so a healthy joined stream is given up too where the ask
-    /// or the answer waits behind more than this much of what is already on
-    /// its way: up to the little over 25 MiB a joined stream's windows let
-    /// either side send ahead, which the default 30 s carries over a link of
-    /// about 7 Mbit/s and no slower.
-    pub joined_stream_keepalive_timeout: Duration,
+    /// How long a Pairing's connection — dialled to a direct way, or joined
+    /// at a Relay — may carry nothing in before either Server asks, inside
+    /// its pinned-key TLS, whether the other still answers.
+    pub pairing_keepalive_interval: Duration,
+    /// How long the other Server may take to answer before the connection is
+    /// given up. Only the answer counts, not whatever else comes meanwhile,
+    /// so a healthy connection is given up too where the ask or the answer
+    /// waits behind more than this much of what is already on its way: up to
+    /// the little over 25 MiB its windows let either side send ahead, which
+    /// the default 30 s carries over a link of about 7 Mbit/s and no slower.
+    pub pairing_keepalive_timeout: Duration,
     /// How long a starting server waits for the channel's election lock to
     /// come free before conceding that another server owns the channel. See
     /// `ElectionLock::take` for why a stopped server's lock can outlive it.
@@ -460,7 +457,6 @@ impl Default for ServerTimings {
             short_invite_reading_timeout: Duration::from_secs(2),
             short_invite_timeout: Duration::from_secs(10),
             direct_head_start: Duration::from_millis(250),
-            direct_idle_timeout: Duration::from_secs(90),
             direct_retry_interval: Duration::from_secs(5),
             remote_report_read_interval: Duration::from_millis(250),
             remote_report_poll_interval: Duration::from_secs(5),
@@ -477,8 +473,8 @@ impl Default for ServerTimings {
             relay_retry_max: Duration::from_secs(60),
             relay_heartbeat_interval: Duration::from_secs(30),
             relay_heartbeat_timeout: Duration::from_secs(10),
-            joined_stream_keepalive_interval: Duration::from_secs(15),
-            joined_stream_keepalive_timeout: Duration::from_secs(30),
+            pairing_keepalive_interval: Duration::from_secs(15),
+            pairing_keepalive_timeout: Duration::from_secs(30),
             election_handoff: Duration::from_secs(1),
             state_dir_check_interval: STATE_DIR_CHECK_INTERVAL,
             config_document_check_interval: Duration::from_secs(1),
@@ -703,14 +699,6 @@ impl ServerTimings {
         self
     }
 
-    /// Sets how long a direct connection kept for the next request may stand
-    /// idle before it is closed; injectable so tests see one closed without
-    /// waiting out the default.
-    pub fn with_direct_idle_timeout(mut self, timeout: Duration) -> Self {
-        self.direct_idle_timeout = timeout;
-        self
-    }
-
     /// Sets how long, at least, a Remote whose requests ride a joined stream
     /// goes between tries of its direct ways in the background; injectable
     /// so tests see the direct way found again, and the tries paced, without
@@ -752,13 +740,13 @@ impl ServerTimings {
         self
     }
 
-    /// Paces how each Server on a joined stream makes sure the other still
-    /// answers: asking once it has carried nothing in for `interval`, and
-    /// giving the other `timeout` to answer; injectable so tests see a
+    /// Paces how each Server on a Pairing's connection makes sure the other
+    /// still answers: asking once it has carried nothing in for `interval`,
+    /// and giving the other `timeout` to answer; injectable so tests see a
     /// silent Server given up on without waiting out the defaults.
-    pub fn with_joined_stream_keepalive(mut self, interval: Duration, timeout: Duration) -> Self {
-        self.joined_stream_keepalive_interval = interval;
-        self.joined_stream_keepalive_timeout = timeout;
+    pub fn with_pairing_keepalive(mut self, interval: Duration, timeout: Duration) -> Self {
+        self.pairing_keepalive_interval = interval;
+        self.pairing_keepalive_timeout = timeout;
         self
     }
 
@@ -1752,7 +1740,6 @@ async fn start(
     )
     .with_direct_head_start(timings.direct_head_start)
     .with_awaited_at_once(timings.remote_requests_at_once)
-    .with_direct_idle_timeout(timings.direct_idle_timeout)
     .with_direct_retry_interval(timings.direct_retry_interval)
     .with_told_relays_store_interval(timings.told_relays_store_interval)
     .with_pair_back_timings(
@@ -1760,9 +1747,9 @@ async fn start(
         timings.pair_back_retry_interval,
     )
     .offering_loopback(timings.pair_back_offers_loopback)
-    .with_joined_keepalive(crate::serving::JoinedKeepalive {
-        interval: timings.joined_stream_keepalive_interval,
-        timeout: timings.joined_stream_keepalive_timeout,
+    .with_keepalive(crate::serving::Keepalive {
+        interval: timings.pairing_keepalive_interval,
+        timeout: timings.pairing_keepalive_timeout,
     })
     .with_direct_proxies(timings.direct_proxies.clone())
     .with_identity_keeping(crate::serving::IdentityKeeping {

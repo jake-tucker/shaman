@@ -432,16 +432,13 @@ async fn a_direct_way_that_does_not_answer_holds_the_relay_back_for_the_head_sta
     paired.shutdown().await;
 }
 
-/// A direct connection kept for the next request is closed once it has stood
-/// idle for the time it is given, though what else is open to the Remote —
-/// its catalog's stream — keeps the Remote in view meanwhile.
+/// Everything asked of a Remote by a direct way travels together over the
+/// one connection dialled to it — its catalog's stream, the stream the Remote
+/// tells its Relays over, and each request asked beside them — and that
+/// connection ends with the last interest in the Remote.
 #[tokio::test]
-async fn a_direct_connection_kept_for_the_next_request_is_closed_once_idle() {
-    let mut paired = PairedBothWays::start(
-        "relay-dialling-idle-kept",
-        relay_timings().with_direct_idle_timeout(Duration::from_millis(200)),
-    )
-    .await;
+async fn everything_asked_by_a_direct_way_travels_over_one_connection() {
+    let mut paired = PairedBothWays::start("relay-dialling-one-direct", relay_timings()).await;
     let remote = paired
         .laptop
         .client
@@ -451,15 +448,28 @@ async fn a_direct_connection_kept_for_the_next_request_is_closed_once_idle() {
         next_catalog_event(&mut catalog).await,
         Some(ManagedEvent::SessionCatalogReconciled(_))
     ));
+    paired.direct.wait_for_connections(1).await;
+    let dialled = paired.direct.opened_connections();
 
-    remote
-        .list_sessions(None)
-        .await
-        .expect("the Remote answers directly");
-    // The catalog's stream, the one the Remote tells its Relays over, and the
-    // connection kept from the listing.
-    paired.direct.wait_for_connections(3).await;
-    paired.direct.wait_for_connections(2).await;
+    for _ in 0..3 {
+        remote
+            .list_sessions(None)
+            .await
+            .expect("the Remote answers directly");
+    }
+    assert_eq!(
+        (
+            paired.direct.connections(),
+            paired.direct.opened_connections()
+        ),
+        (1, dialled),
+        "what is asked beside the catalog's stream dials nothing more"
+    );
+    assert_eq!(
+        paired.relay.route.opened_connections(),
+        paired.unjoined,
+        "and no join is asked at the Relay while the direct way answers"
+    );
 
     drop(catalog);
     paired.direct.wait_for_connections(0).await;

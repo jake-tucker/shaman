@@ -54,8 +54,24 @@ impl ObservedTcpProxy {
             // waits on it exactly as it would on a machine that accepts and
             // then says nothing.
             let mut held = Vec::new();
+            let mut returning = online_rx.clone();
             loop {
-                let Ok((mut inbound, _)) = listener.accept().await else {
+                let accepted = tokio::select! {
+                    accepted = listener.accept() => accepted,
+                    // A route that comes back lets go of what it held, as a
+                    // machine answering again knows nothing of what was
+                    // dialled while it was silent.
+                    changed = returning.changed() => {
+                        if changed.is_err() {
+                            break;
+                        }
+                        if *returning.borrow_and_update() {
+                            held.clear();
+                        }
+                        continue;
+                    }
+                };
+                let Ok((mut inbound, _)) = accepted else {
                     break;
                 };
                 opened.send_modify(|count| *count += 1);
@@ -161,7 +177,8 @@ impl ObservedTcpProxy {
 
     /// Keeps every connection open and carries nothing more over it, as a
     /// machine that falls silent mid-conversation would, and takes new ones
-    /// and answers nothing. Going offline then online again ends the stall.
+    /// and answers nothing. Going offline then online again ends the stall,
+    /// and going online drops the new ones it held.
     pub async fn stall(&mut self) {
         self.stalled.send_replace(true);
     }
@@ -175,7 +192,8 @@ impl ObservedTcpProxy {
     }
 
     /// Accepts connections and answers nothing, so a dialer's own budget is
-    /// the only thing that ends the attempt.
+    /// the only thing that ends the attempt while it lasts. Going online
+    /// again ends it, dropping the connections it held.
     pub async fn swallow_connections(&mut self) {
         self.hold.send_replace(true);
         self.set_online(false).await;

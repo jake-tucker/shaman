@@ -1921,7 +1921,7 @@ async fn a_stream_through_a_relay_that_falls_silent_ends_and_the_remote_answers_
         relay_timings()
             .with_relay_answer_timeout(Duration::from_secs(1))
             .with_relay_heartbeat(Duration::from_millis(20), Duration::from_millis(100))
-            .with_joined_stream_keepalive(KEEPALIVE.0, KEEPALIVE.1),
+            .with_pairing_keepalive(KEEPALIVE.0, KEEPALIVE.1),
     )
     .await;
     let mut catalog = paired
@@ -3004,7 +3004,7 @@ async fn a_remote_silent_behind_a_relay_that_answers_reads_unreachable_and_answe
         "relay-pairing-silent-serving-leg",
         relay_timings()
             .with_serving_handshake_timeout(Duration::from_millis(200))
-            .with_joined_stream_keepalive(KEEPALIVE.0, KEEPALIVE.1),
+            .with_pairing_keepalive(KEEPALIVE.0, KEEPALIVE.1),
     )
     .await;
     let (interception, _intercepting) = intercepted(&paired, false).await;
@@ -3056,7 +3056,7 @@ async fn an_idle_joined_connection_whose_far_end_falls_silent_is_let_go_by_the_s
         "relay-pairing-idle-silent",
         relay_timings()
             .with_serving_handshake_timeout(Duration::from_millis(200))
-            .with_joined_stream_keepalive(KEEPALIVE.0, KEEPALIVE.1),
+            .with_pairing_keepalive(KEEPALIVE.0, KEEPALIVE.1),
     )
     .await;
     let (interception, _intercepting) = intercepted(&paired, false).await;
@@ -3097,7 +3097,7 @@ async fn a_relay_carrying_only_empty_frames_and_taking_in_nothing_is_found_silen
         relay_timings()
             .with_relay_heartbeat(Duration::from_millis(20), Duration::from_millis(100))
             .with_serving_handshake_timeout(Duration::from_millis(200))
-            .with_joined_stream_keepalive(KEEPALIVE.0, KEEPALIVE.1),
+            .with_pairing_keepalive(KEEPALIVE.0, KEEPALIVE.1),
     )
     .await;
     let (interception, _intercepting) = intercepted(&paired, false).await;
@@ -3131,7 +3131,7 @@ async fn an_attachment_its_relay_holds_up_for_a_while_is_fetched_whole() {
         "relay-pairing-relay-held-up",
         relay_timings()
             .with_relay_heartbeat(Duration::from_millis(20), Duration::from_millis(100))
-            .with_joined_stream_keepalive(KEEPALIVE.0, Duration::from_secs(5)),
+            .with_pairing_keepalive(KEEPALIVE.0, Duration::from_secs(5)),
     )
     .await;
     let (interception, _intercepting) = intercepted(&paired, false).await;

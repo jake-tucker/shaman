@@ -1360,8 +1360,9 @@ async fn remote_proxy_creates_prompts_and_streams_a_session_on_the_serving_serve
         .error_for_status()
         .expect("Remote Session stream succeeds");
     let mut events = response.bytes_stream().eventsource();
-    // The Session's stream, and the one the Remote tells its Relays over.
-    pair.wire.wait_for_connections(2).await;
+    // The Session's stream, and the one the Remote tells its Relays over,
+    // over the one connection.
+    pair.wire.wait_for_connections(1).await;
     let snapshot = timeout(PROGRESS_DEADLINE, events.next())
         .await
         .expect("Remote Session snapshot arrives")
@@ -1639,8 +1640,9 @@ async fn disabling_serving_ends_a_live_peer_stream_without_disturbing_local_clie
         .expect("Remote Session stream remains open")
         .expect("decode Remote Session snapshot event");
     assert_eq!(snapshot.event, SESSION_SNAPSHOT_EVENT);
-    // The Session's stream, and the one the Remote tells its Relays over.
-    pair.wire.wait_for_connections(2).await;
+    // The Session's stream, and the one the Remote tells its Relays over,
+    // over the one connection.
+    pair.wire.wait_for_connections(1).await;
     let (_, serving_certificate) = dial_with_unknown_certificate(serving_address).await;
     let mut in_flight_request = open_paired_health_connection(
         serving_address,
@@ -2134,8 +2136,9 @@ async fn successive_remote_requests_reuse_transport_while_an_outlook_holds_inter
         .await
         .expect("Remote catalog snapshot arrives")
         .expect("Remote catalog interest remains live");
-    // The catalog's stream, and the one the Remote tells its Relays over.
-    pair.wire.wait_for_connections(2).await;
+    // The catalog's stream, and the one the Remote tells its Relays over,
+    // over the one connection.
+    pair.wire.wait_for_connections(1).await;
 
     remote
         .list_sessions(None)
@@ -2321,9 +2324,10 @@ async fn catalog_subscriptions_hold_independent_interest_in_two_remotes() {
             Some(ManagedEvent::SessionCatalogReconciled(_))
         ));
     }
-    // Each catalog's stream, and the one each Remote tells its Relays over.
-    pair.wire.wait_for_connections(2).await;
-    laptop_wire.wait_for_connections(2).await;
+    // Each catalog's stream, and the one each Remote tells its Relays over,
+    // over one connection to each.
+    pair.wire.wait_for_connections(1).await;
+    laptop_wire.wait_for_connections(1).await;
 
     pair.wire.set_online(false).await;
     assert!(matches!(
@@ -2335,7 +2339,7 @@ async fn catalog_subscriptions_hold_independent_interest_in_two_remotes() {
         .expect("workstation catalog announces recovery"),
         Some(ManagedEvent::Recovering(_))
     ));
-    laptop_wire.wait_for_connections(2).await;
+    laptop_wire.wait_for_connections(1).await;
     let workspace = tempfile::tempdir().expect("create laptop Workspace");
     let created = laptop_outlook
         .create_session(CreateSessionRequest {
@@ -2376,7 +2380,7 @@ async fn catalog_subscriptions_hold_independent_interest_in_two_remotes() {
         recovered,
         Some(ManagedEvent::SessionCatalogReconciled(_))
     ));
-    pair.wire.wait_for_connections(2).await;
+    pair.wire.wait_for_connections(1).await;
 
     drop(workstation_catalog);
     pair.wire.wait_for_connections(0).await;
@@ -2477,8 +2481,9 @@ async fn a_remote_catalog_interest_retries_a_transient_drop_with_injected_backof
             .expect("Remote catalog snapshot arrives"),
         Some(ManagedEvent::SessionCatalogReconciled(_))
     ));
-    // The catalog's stream, and the one the Remote tells its Relays over.
-    pair.wire.wait_for_connections(2).await;
+    // The catalog's stream, and the one the Remote tells its Relays over,
+    // over the one connection.
+    pair.wire.wait_for_connections(1).await;
 
     pair.wire.set_online(false).await;
     assert_eq!(
@@ -2517,7 +2522,7 @@ async fn a_remote_catalog_interest_retries_a_transient_drop_with_injected_backof
             .expect("reconnect presentation clears after catalog hydration"),
         Some(ManagedEvent::RemoteRecovered)
     ));
-    pair.wire.wait_for_connections(2).await;
+    pair.wire.wait_for_connections(1).await;
 
     drop(catalog);
     pair.wire.wait_for_connections(0).await;
@@ -2535,8 +2540,9 @@ async fn dropping_remote_catalog_interest_stops_its_retry_loop() {
         .await
         .expect("Remote catalog snapshot arrives")
         .expect("Remote catalog interest remains live");
-    // The catalog's stream, and the one the Remote tells its Relays over.
-    pair.wire.wait_for_connections(2).await;
+    // The catalog's stream, and the one the Remote tells its Relays over,
+    // over the one connection.
+    pair.wire.wait_for_connections(1).await;
 
     pair.wire.set_online(false).await;
     assert!(matches!(
@@ -2569,8 +2575,9 @@ async fn revocation_stops_remote_catalog_retries_and_surfaces_a_terminal_status(
         .await
         .expect("Remote catalog snapshot arrives")
         .expect("Remote catalog interest remains live");
-    // The catalog's stream, and the one the Remote tells its Relays over.
-    pair.wire.wait_for_connections(2).await;
+    // The catalog's stream, and the one the Remote tells its Relays over,
+    // over the one connection.
+    pair.wire.wait_for_connections(1).await;
 
     let peer = pair.serving_client.list_peers().await.unwrap().remove(0);
     pair.serving_client.remove_peer(&peer.id).await.unwrap();
@@ -2650,8 +2657,9 @@ async fn revocation_stops_retries_when_a_remote_session_is_the_only_interest() {
             .expect("decode Remote Session snapshot"),
         shaman::managed_client::SessionEvent::Snapshot(_)
     ));
-    // The Session's stream, and the one the Remote tells its Relays over.
-    pair.wire.wait_for_connections(2).await;
+    // The Session's stream, and the one the Remote tells its Relays over,
+    // over the one connection.
+    pair.wire.wait_for_connections(1).await;
 
     let peer = pair.serving_client.list_peers().await.unwrap().remove(0);
     pair.serving_client.remove_peer(&peer.id).await.unwrap();
@@ -2708,8 +2716,9 @@ async fn a_remote_session_as_the_only_interest_recovers_with_the_injected_backof
         .expect("Remote Session snapshot arrives")
         .expect("Remote Session interest remains live")
         .expect("decode Remote Session snapshot");
-    // The Session's stream, and the one the Remote tells its Relays over.
-    pair.wire.wait_for_connections(2).await;
+    // The Session's stream, and the one the Remote tells its Relays over,
+    // over the one connection.
+    pair.wire.wait_for_connections(1).await;
 
     pair.wire.set_online(false).await;
     let opened_before_recovery = pair.wire.opened_connections();
@@ -2725,7 +2734,7 @@ async fn a_remote_session_as_the_only_interest_recovers_with_the_injected_backof
             .expect("decode rehydrated Remote Session snapshot"),
         shaman::managed_client::SessionEvent::Snapshot(_)
     ));
-    pair.wire.wait_for_connections(2).await;
+    pair.wire.wait_for_connections(1).await;
 
     drop(session);
     pair.wire.wait_for_connections(0).await;

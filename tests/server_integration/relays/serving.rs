@@ -395,7 +395,7 @@ impl Multiplexed {
 }
 
 /// Asks the Serving Server at the far end of `stream` for its health over
-/// HTTP/1.1, as a paired Server does over a direct way: the status line it
+/// HTTP/1.1, as the listener still answers a connection agreeing nothing: the status line it
 /// answered, or why it answered nothing.
 async fn health<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> std::io::Result<String> {
     stream
@@ -770,7 +770,8 @@ async fn a_carried_connection_meets_the_acceptor_the_listener_feeds() {
 /// way's always asks, so the keepalive a joined stream is judged by end to
 /// end holds for every connection that comes through a Relay: one asking to
 /// speak anything else, or nothing in particular, is refused in its
-/// handshake. One dialled to the listener speaks HTTP/1.1 as ever.
+/// handshake. One dialled to the listener that agrees nothing speaks
+/// HTTP/1.1.
 #[tokio::test]
 async fn a_connection_a_relay_carries_is_taken_only_to_speak_http2() {
     let serving = ServingThrough::start("relay-carried-http2-only").await;

@@ -435,26 +435,19 @@ async fn a_relay_learned_that_this_server_holds_no_login_at_is_listed_and_never_
 }
 
 /// The telling ends with the Pairing on either side: a Remote its user
-/// removes is no longer told anything, its told stream closing though
-/// something else open to the Remote holds on, and a Peer the Serving user
-/// removes learns nothing more.
+/// removes is no longer told anything, its told stream closing so that the
+/// connection carrying it ends with whatever else is open to the Remote,
+/// and a Peer the Serving user removes learns nothing more.
 #[tokio::test]
 async fn the_telling_ends_with_the_pairing_on_either_side() {
-    // A connection kept once the request it carried is answered is closed
-    // soon after, so what stays open is what the test holds.
-    let mut paired = PairedDirectly::with_timings(
-        "relay-offering-removed",
-        false,
-        relay_timings().with_direct_idle_timeout(Duration::from_millis(50)),
-    )
-    .await;
+    let mut paired = PairedDirectly::start("relay-offering-removed", false).await;
     let workspace = tempfile::tempdir().expect("create a Workspace on the workstation");
     let api = RemoteApi::of(&paired.laptop);
     let session = api.begin_session(workspace.path()).await;
     let events = api.session_events(&session).await;
     // The Session's stream, and the one the workstation tells its Relays
-    // over.
-    paired.direct.wait_for_connections(2).await;
+    // over, travel over the one connection.
+    paired.direct.wait_for_connections(1).await;
 
     paired
         .laptop
@@ -462,7 +455,10 @@ async fn the_telling_ends_with_the_pairing_on_either_side() {
         .remove_remote(REMOTE)
         .await
         .expect("remove the Remote");
-    paired.direct.wait_for_connections(1).await;
+    // The Session's stream holds the connection on. That the told stream
+    // closed shows only once that stream goes: the connection, which either
+    // would hold open, ends.
+    assert_eq!(paired.direct.connections(), 1);
     drop(events);
     paired.direct.wait_for_connections(0).await;
 

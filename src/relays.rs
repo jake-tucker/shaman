@@ -2357,7 +2357,7 @@ impl Stop {
 /// not judged here: what a Relay echoes of a join shows only that it read
 /// this far of what this Server sent, which waits on its passing on all
 /// before, however healthy it is. The two Servers judge it end to end, inside
-/// their pinned-key TLS, as [`crate::serving::JoinedKeepalive`] says — until
+/// their pinned-key TLS, as [`crate::serving::Keepalive`] says — until
 /// that is under way, their TLS handshake and then HTTP/2's start are each
 /// bounded by the handshake timeout — and either drops the join, whatever it
 /// was still sending, once it has stalled past that keepalive's verdict.
