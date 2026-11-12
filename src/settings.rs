@@ -1311,7 +1311,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: TRANSCRIPT_GROUPS,
         label: "Groups",
-        description: "How a session view opens its groups of commands, tool calls, and reasoning: collapsed, expanded, or not grouped at all",
+        description: "How a session view opens its groups of work (commands, tool calls, and edits) and of reasoning: collapsed, expanded, or not grouped at all",
         group: SettingGroup::Transcript,
         scope: SettingScope::Client,
         sidekick: SidekickAccess::ReadAndChange,

@@ -5010,8 +5010,8 @@ fn a_wide_panel_details_the_focused_setting_in_a_pane_beside_its_rows() {
     let text = pane_text(&application);
     assert!(
         text.contains(
-            "How a session view opens its groups of commands, tool calls, and reasoning: \
-             collapsed, expanded, or not grouped at all"
+            "How a session view opens its groups of work (commands, tool calls, and edits) and \
+             of reasoning: collapsed, expanded, or not grouped at all"
         ),
         "the description is given whole, however many rows it takes: {details:#?}"
     );

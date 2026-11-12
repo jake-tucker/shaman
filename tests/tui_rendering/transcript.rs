@@ -1099,6 +1099,7 @@ fn file_change_activities_render_active_successful_and_failed_states_at_responsi
             ],
         };
         let mut application = connected_application(workspace.path());
+        ungroup(&mut application);
         application
             .handle_event(ApplicationEvent::SessionAttached(snapshot))
             .expect("attach session with file-change activity");
@@ -1149,6 +1150,7 @@ fn a_long_file_change_row_end_truncates_instead_of_wrapping() {
         }],
     };
     let mut application = connected_application(workspace.path());
+    ungroup(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
         .expect("attach a session with an overlong file change row");
@@ -3198,11 +3200,11 @@ fn session_opened_under(
 }
 
 /// Turns grouping off for a client that has not received Settings yet, so a
-/// test about how one command or Tool Call folds, selects, or colors reads
+/// test about how one command, Tool Call or File Change folds, selects, or colors reads
 /// that entry's own row rather than the Group of one it would otherwise stand
 /// in. The Sidebar and Aside stay hidden, as they are before any Settings
 /// arrive, so the frame keeps the width the test was written against.
-fn ungroup(application: &mut Application) {
+pub(super) fn ungroup(application: &mut Application) {
     ungroup_with_theme(application, None);
 }
 
@@ -3464,6 +3466,7 @@ fn file_change_activities_fold_past_the_path_budget_and_expand_on_click() {
             .collect(),
     };
     let mut application = connected_application(workspace.path());
+    ungroup(&mut application);
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
         .expect("attach a session with many file changes");
@@ -6479,7 +6482,7 @@ fn a_run_of_successful_commands_collapses_to_one_group_row() {
     let rendered = buffer_rows(&buffer).join("\n");
 
     assert!(
-        rendered.contains("✓ Ran 3 commands"),
+        rendered.contains("✓ 3 commands"),
         "a run of three successful commands is one group row: {rendered}"
     );
     for member in ["command 1", "command 2", "command 3", "output of command 1"] {
@@ -6488,7 +6491,7 @@ fn a_run_of_successful_commands_collapses_to_one_group_row() {
             "a collapsed group hides its member rows, but {member:?} rendered: {rendered}"
         );
     }
-    let affordance = text_cell(&buffer, "Ran 3 commands");
+    let affordance = text_cell(&buffer, "3 commands");
     assert_eq!(
         affordance.fg, PANDA.primary,
         "the count is the expand affordance, styled action-primary"
@@ -6503,25 +6506,20 @@ fn a_run_of_successful_commands_collapses_to_one_group_row() {
         "the header keeps the settled activity-header marker"
     );
     let rows = buffer_rows(&buffer);
-    let header = &rows[rendered_row(&rows, "Ran 3 commands")];
+    let header = &rows[rendered_row(&rows, "3 commands")];
     assert!(
-        header.contains("  ✓ Ran 3 commands"),
+        header.contains("  ✓ 3 commands"),
         "the group header sits in the activity-header gutter: {header:?}"
     );
 }
 
 #[test]
-fn every_other_entry_kind_breaks_a_command_run() {
+fn every_entry_that_is_not_work_ends_a_work_run() {
     let workspace = workspace_dir();
-    let breakers: [(RunEntry, &str); 8] = [
+    let breakers: [(RunEntry, &str); 6] = [
         (
             RunEntry::AgentMessage("A breaking message"),
             "A breaking message",
-        ),
-        // A Tool Call is groupable too, but never into a command's Group.
-        (
-            RunEntry::ToolCall(ActivityStatus::Completed),
-            "✓ Used 1 tool",
         ),
         (
             RunEntry::UserMessage("A breaking user message"),
@@ -6535,7 +6533,6 @@ fn every_other_entry_kind_breaks_a_command_run() {
             )),
             "Thought: Weighing options",
         ),
-        (RunEntry::FileChange, "✓ Created src/new.rs"),
         (
             RunEntry::Status("Agent Selection changed"),
             "Agent Selection changed",
@@ -6567,7 +6564,7 @@ fn every_other_entry_kind_breaks_a_command_run() {
         let rows = rendered_application_rows_at(&application, 80, 24);
         let rendered = rows.join("\n");
         assert_eq!(
-            rendered.matches("Ran 2 commands").count(),
+            rendered.matches("2 commands").count(),
             2,
             "{visible:?} splits the run into two Groups: {rendered}"
         );
@@ -6575,7 +6572,7 @@ fn every_other_entry_kind_breaks_a_command_run() {
             rendered.contains(visible),
             "the breaking entry renders as its own row: {rendered}"
         );
-        let first_group = rendered_row(&rows, "Ran 2 commands");
+        let first_group = rendered_row(&rows, "2 commands");
         let breaker_row = rendered_row(&rows, visible);
         assert!(
             first_group < breaker_row,
@@ -6584,7 +6581,7 @@ fn every_other_entry_kind_breaks_a_command_run() {
         assert!(
             rows[breaker_row + 1..]
                 .iter()
-                .any(|row| row.contains("Ran 2 commands")),
+                .any(|row| row.contains("2 commands")),
             "the second Group renders after the breaking entry: {rendered}"
         );
     }
@@ -6612,7 +6609,7 @@ fn an_empty_reasoning_block_neither_breaks_a_command_run_nor_leaves_a_gap() {
         .expect("attach a session whose command run is interleaved with empty reasoning");
     let rows = rendered_application_rows_at(&application, 80, 24);
     assert!(
-        rows.join("\n").contains("✓ Ran 2 commands"),
+        rows.join("\n").contains("✓ 2 commands"),
         "an invisible block neither joins nor ends the run around it: {}",
         rows.join("\n")
     );
@@ -6667,7 +6664,7 @@ fn hidden_reasoning_neither_breaks_a_command_run_nor_leaves_a_gap() {
     );
     let rows = rendered_application_rows_at(&hiding, 80, 24);
     assert!(
-        rows.join("\n").contains("✓ Ran 2 commands"),
+        rows.join("\n").contains("✓ 2 commands"),
         "a hidden block neither joins nor ends the run around it: {}",
         rows.join("\n")
     );
@@ -6760,7 +6757,7 @@ fn model_calls_neither_break_command_groups_nor_leave_a_gap() {
         }
         let grouped = rendered_application_rows_at(&application, 80, 24);
         assert!(
-            grouped.join("\n").contains("✓ Ran 2 commands"),
+            grouped.join("\n").contains("✓ 2 commands"),
             "Model calls do not split the command group: {grouped:?}"
         );
         assert_eq!(
@@ -6812,7 +6809,7 @@ fn interrupting_a_turn_does_not_split_a_command_group_at_hidden_reasoning() {
 
     let live = rendered_application_rows_at(&application, 80, 24).join("\n");
     assert!(
-        live.contains("✓ Ran 2 commands"),
+        live.contains("✓ 2 commands"),
         "the live turn starts with its command group intact: {live}"
     );
 
@@ -6840,7 +6837,7 @@ fn interrupting_a_turn_does_not_split_a_command_group_at_hidden_reasoning() {
 
     let interrupted = rendered_application_rows_at(&application, 80, 24).join("\n");
     assert!(
-        interrupted.contains("✓ Ran 2 commands"),
+        interrupted.contains("✓ 2 commands"),
         "opening the interrupted turn preserves the command group: {interrupted}"
     );
     for member in ["command 1", "command 2"] {
@@ -6866,7 +6863,7 @@ fn groups_have_no_size_cap() {
     let rendered = rendered_application_rows_at(&application, 80, 18).join("\n");
 
     assert!(
-        rendered.contains("✓ Ran 40 commands"),
+        rendered.contains("✓ 40 commands"),
         "a forty-command run is one row, not several groups: {rendered}"
     );
     assert!(
@@ -6876,7 +6873,7 @@ fn groups_have_no_size_cap() {
 }
 
 #[test]
-fn a_running_member_settling_turns_its_group_to_the_past_tense_in_place() {
+fn a_running_member_settling_settles_its_groups_marker_in_place() {
     let workspace = workspace_dir();
     let session_id = SessionId::new();
     let snapshot = live_command_run_snapshot(session_id, workspace.path());
@@ -6888,7 +6885,7 @@ fn a_running_member_settling_turns_its_group_to_the_past_tense_in_place() {
         .expect("attach a session with a running command after a run");
 
     let before = rendered_application_rows_at(&application, 80, 18);
-    let header = rendered_row(&before, "Running 3 commands · command 3");
+    let header = rendered_row(&before, "3 commands · command 3");
 
     application
         .handle_event(command_settles(
@@ -6903,7 +6900,7 @@ fn a_running_member_settling_turns_its_group_to_the_past_tense_in_place() {
     let after = rendered_application_rows_at(&application, 80, 18);
     let rendered = after.join("\n");
     assert_eq!(
-        rendered_row(&after, "✓ Ran 3 commands"),
+        rendered_row(&after, "✓ 3 commands"),
         header,
         "the group row stands where it stood while its member ran: {rendered}"
     );
@@ -6949,7 +6946,7 @@ fn an_interrupted_command_stays_in_its_group_and_opens_at_the_peek_it_was_watche
     let collapsed_rows = rendered_application_rows_at(&application, 80, 40);
     let collapsed = collapsed_rows.join("\n");
     assert!(
-        collapsed.contains("× Ran 3 commands · 1 stopped"),
+        collapsed.contains("× 3 commands · 1 stopped"),
         "the interrupted command stays in its group and is counted as stopped: {collapsed}"
     );
     assert!(
@@ -6959,7 +6956,7 @@ fn an_interrupted_command_stays_in_its_group_and_opens_at_the_peek_it_was_watche
 
     left_click_at(
         &mut application,
-        rendered_row(&collapsed_rows, "Ran 3 commands") as u16,
+        rendered_row(&collapsed_rows, "3 commands") as u16,
     )
     .expect("expand the group");
     let rendered = rendered_application_rows_at(&application, 80, 40).join("\n");
@@ -7023,14 +7020,14 @@ fn clicking_a_collapsed_group_expands_it_into_indented_folded_members() {
 
     left_click_at(
         &mut application,
-        rendered_row(&collapsed_rows, "Ran 3 commands") as u16,
+        rendered_row(&collapsed_rows, "3 commands") as u16,
     )
     .expect("click the collapsed group row");
 
     let rows = rendered_application_rows_at(&application, 80, 30);
     let rendered = rows.join("\n");
     assert!(
-        rendered.contains("✓ Ran 3 commands"),
+        rendered.contains("✓ 3 commands"),
         "the header stays when the group expands: {rendered}"
     );
     for member in ["✓ command 1", "✓ command 2", "✓ command 3"] {
@@ -7040,7 +7037,7 @@ fn clicking_a_collapsed_group_expands_it_into_indented_folded_members() {
             "members render indented one gutter past a standalone row, missing {member:?}: {rendered}"
         );
     }
-    let header = rendered_row(&rows, "Ran 3 commands");
+    let header = rendered_row(&rows, "3 commands");
     assert!(
         rendered_row(&rows, "✓ command 1") > header,
         "members render beneath the header: {rendered}"
@@ -7068,7 +7065,7 @@ fn a_members_fold_toggles_independently_within_an_expanded_group() {
     let collapsed_rows = rendered_application_rows_at(&application, 80, 36);
     left_click_at(
         &mut application,
-        rendered_row(&collapsed_rows, "Ran 2 commands") as u16,
+        rendered_row(&collapsed_rows, "2 commands") as u16,
     )
     .expect("expand the group");
     let expanded_rows = rendered_application_rows_at(&application, 80, 36);
@@ -7097,7 +7094,7 @@ fn a_members_fold_toggles_independently_within_an_expanded_group() {
         "the sibling member's fold is untouched: {rendered}"
     );
     assert!(
-        rendered.contains("✓ Ran 2 commands"),
+        rendered.contains("✓ 2 commands"),
         "a member's fold never collapses the group: {rendered}"
     );
 
@@ -7105,7 +7102,7 @@ fn a_members_fold_toggles_independently_within_an_expanded_group() {
         .expect("fold the member back from its header");
     let refolded = rendered_application_rows_at(&application, 80, 36).join("\n");
     assert!(
-        !refolded.contains("first line") && refolded.contains("✓ Ran 2 commands"),
+        !refolded.contains("first line") && refolded.contains("✓ 2 commands"),
         "the member folds back while the group stays expanded: {refolded}"
     );
 }
@@ -7126,7 +7123,7 @@ fn a_members_fold_override_survives_collapse_and_re_expansion() {
     let collapsed_rows = rendered_application_rows_at(&application, 80, 36);
     left_click_at(
         &mut application,
-        rendered_row(&collapsed_rows, "Ran 2 commands") as u16,
+        rendered_row(&collapsed_rows, "2 commands") as u16,
     )
     .expect("expand the group");
     let expanded_rows = rendered_application_rows_at(&application, 80, 36);
@@ -7145,13 +7142,13 @@ fn a_members_fold_override_survives_collapse_and_re_expansion() {
 
     left_click_at(
         &mut application,
-        rendered_row(&unfolded_rows, "Ran 2 commands") as u16,
+        rendered_row(&unfolded_rows, "2 commands") as u16,
     )
     .expect("collapse the group over the unfolded member");
     let recollapsed_rows = rendered_application_rows_at(&application, 80, 36);
     left_click_at(
         &mut application,
-        rendered_row(&recollapsed_rows, "Ran 2 commands") as u16,
+        rendered_row(&recollapsed_rows, "2 commands") as u16,
     )
     .expect("expand the group again");
 
@@ -7178,7 +7175,7 @@ fn an_expanded_group_recollapses_only_from_its_header_row() {
     let collapsed_rows = rendered_application_rows_at(&application, 80, 30);
     left_click_at(
         &mut application,
-        rendered_row(&collapsed_rows, "Ran 3 commands") as u16,
+        rendered_row(&collapsed_rows, "3 commands") as u16,
     )
     .expect("expand the group");
     let expanded_rows = rendered_application_rows_at(&application, 80, 30);
@@ -7196,12 +7193,12 @@ fn an_expanded_group_recollapses_only_from_its_header_row() {
 
     left_click_at(
         &mut application,
-        rendered_row(&expanded_rows, "Ran 3 commands") as u16,
+        rendered_row(&expanded_rows, "3 commands") as u16,
     )
     .expect("click the group header");
     let collapsed = rendered_application_rows_at(&application, 80, 30).join("\n");
     assert!(
-        collapsed.contains("✓ Ran 3 commands"),
+        collapsed.contains("✓ 3 commands"),
         "the header remains after re-collapse: {collapsed}"
     );
     assert!(
@@ -7229,7 +7226,7 @@ fn group_state_stays_local_to_the_client_that_flipped_it() {
 
     left_click_at(
         &mut reader,
-        rendered_row(&collapsed_rows, "Ran 3 commands") as u16,
+        rendered_row(&collapsed_rows, "3 commands") as u16,
     )
     .expect("one client expands the group");
 
@@ -7241,7 +7238,7 @@ fn group_state_stays_local_to_the_client_that_flipped_it() {
     );
     let observed = rendered_application_rows_at(&observer, 80, 30).join("\n");
     assert!(
-        observed.contains("✓ Ran 3 commands") && !observed.contains("command 1"),
+        observed.contains("✓ 3 commands") && !observed.contains("command 1"),
         "Group state is client-local view state and never reaches another client: {observed}"
     );
 }
@@ -7260,7 +7257,7 @@ fn a_running_member_of_an_expanded_group_settles_in_its_place() {
     let collapsed_rows = rendered_application_rows_at(&application, 80, 30);
     left_click_at(
         &mut application,
-        rendered_row(&collapsed_rows, "Running 3 commands") as u16,
+        rendered_row(&collapsed_rows, "3 commands") as u16,
     )
     .expect("expand the group while the turn runs");
     let expanded_rows = rendered_application_rows_at(&application, 80, 30);
@@ -7283,8 +7280,8 @@ fn a_running_member_of_an_expanded_group_settles_in_its_place() {
     let rows = rendered_application_rows_at(&application, 80, 30);
     let rendered = rows.join("\n");
     assert!(
-        rendered.contains("✓ Ran 3 commands"),
-        "the expanded group's header settles into the past tense: {rendered}"
+        rendered.contains("✓ 3 commands"),
+        "the expanded group's header settles with its member: {rendered}"
     );
     assert!(
         rows.iter().any(|row| row.starts_with("      ✓ command 3")),
@@ -7317,14 +7314,14 @@ fn toggling_the_group_posture_flips_every_group_and_clears_per_group_overrides()
     let collapsed_rows = rendered_application_rows_at(&application, 80, 36);
     left_click_at(
         &mut application,
-        rendered_row(&collapsed_rows, "Ran 2 commands") as u16,
+        rendered_row(&collapsed_rows, "2 commands") as u16,
     )
     .expect("expand the first group by hand");
 
     press_leader_chord(&mut application, 'g');
     let expanded = rendered_application_rows_at(&application, 80, 36).join("\n");
     assert_eq!(
-        expanded.matches("Ran 2 commands").count(),
+        expanded.matches("2 commands").count(),
         2,
         "both group headers stay when the posture expands: {expanded}"
     );
@@ -7338,7 +7335,7 @@ fn toggling_the_group_posture_flips_every_group_and_clears_per_group_overrides()
     press_leader_chord(&mut application, 'g');
     let recollapsed = rendered_application_rows_at(&application, 80, 36).join("\n");
     assert_eq!(
-        recollapsed.matches("Ran 2 commands").count(),
+        recollapsed.matches("2 commands").count(),
         2,
         "both groups collapse back to their single rows: {recollapsed}"
     );
@@ -7380,9 +7377,9 @@ fn a_lone_running_command_is_a_collapsed_group_with_no_member_row() {
     let rows = buffer_rows(&buffer);
     let rendered = rows.join("\n");
 
-    let header = &rows[rendered_row(&rows, "Running 1 command")];
+    let header = &rows[rendered_row(&rows, "1 command")];
     assert!(
-        header.contains("  ⠋ Running 1 command · command 1"),
+        header.contains("  ⠋ 1 command · command 1"),
         "a lone running command is a group of one, its header spinning and naming it: {rendered}"
     );
     assert_eq!(
@@ -7392,7 +7389,7 @@ fn a_lone_running_command_is_a_collapsed_group_with_no_member_row() {
     );
     assert!(!rendered.contains("output of command 1"), "{rendered}");
     assert_eq!(
-        text_cell(&buffer, "Running 1 command").fg,
+        text_cell(&buffer, "1 command").fg,
         PANDA.primary,
         "the count stays the expand affordance while the group runs"
     );
@@ -7404,11 +7401,12 @@ fn a_lone_running_command_is_a_collapsed_group_with_no_member_row() {
 }
 
 #[test]
-fn a_lone_settled_command_or_tool_call_reads_as_a_group_of_one() {
+fn a_lone_settled_command_tool_call_or_file_change_reads_as_a_group_of_one() {
     let workspace = workspace_dir();
     for (entry, header, member) in [
-        (SUCCESSFUL_COMMAND, "✓ Ran 1 command", "command 1"),
-        (COMPLETED_TOOL_CALL, "✓ Used 1 tool", "tool_1"),
+        (SUCCESSFUL_COMMAND, "✓ 1 command", "command 1"),
+        (COMPLETED_TOOL_CALL, "✓ 1 tool", "tool_1"),
+        (RunEntry::FileChange, "✓ 1 edit", "src/new.rs"),
     ] {
         let snapshot = command_run_snapshot(SessionId::new(), workspace.path(), &[entry]);
         let mut application = connected_application(workspace.path());
@@ -7429,24 +7427,37 @@ fn a_lone_settled_command_or_tool_call_reads_as_a_group_of_one() {
 }
 
 #[test]
-fn a_command_run_beside_a_tool_call_run_forms_two_groups() {
+fn adjacent_commands_tool_calls_and_file_changes_share_one_group_counted_by_kind() {
     let workspace = workspace_dir();
     let snapshot = command_run_snapshot(
         SessionId::new(),
         workspace.path(),
-        &[SUCCESSFUL_COMMAND, COMPLETED_TOOL_CALL],
+        &[
+            SUCCESSFUL_COMMAND,
+            RunEntry::FileChange,
+            COMPLETED_TOOL_CALL,
+            RunEntry::FileChange,
+            COMPLETED_TOOL_CALL,
+            COMPLETED_TOOL_CALL,
+        ],
     );
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a session with a command beside a tool call");
+        .expect("attach a session whose run mixes commands, tool calls and file changes");
 
     let rows = rendered_application_rows_at(&application, 80, 18);
     let rendered = rows.join("\n");
     assert!(
-        rendered_row(&rows, "✓ Ran 1 command") < rendered_row(&rows, "✓ Used 1 tool"),
-        "commands and tool calls never share a group, even as runs of one: {rendered}"
+        rendered.contains("  ✓ 3 tools · 1 command · 2 edits"),
+        "the run is one group whose marker counts each kind in a fixed order: {rendered}"
     );
+    for member in ["command 1", "tool_1", "src/new.rs"] {
+        assert!(
+            !rendered.contains(member),
+            "a collapsed group hides its member rows, but {member:?} rendered: {rendered}"
+        );
+    }
 }
 
 #[test]
@@ -7469,14 +7480,14 @@ fn a_failed_member_stays_in_its_group_and_opens_at_its_peek() {
     let collapsed_rows = rendered_application_rows_at(&application, 80, 30);
     let collapsed = collapsed_rows.join("\n");
     assert!(
-        collapsed.contains("× Ran 2 commands · 1 failed"),
+        collapsed.contains("× 2 commands · 1 failed"),
         "the failed command is counted in its group rather than standing outside it: {collapsed}"
     );
     assert!(!collapsed.contains("command 2"), "{collapsed}");
 
     left_click_at(
         &mut application,
-        rendered_row(&collapsed_rows, "Ran 2 commands") as u16,
+        rendered_row(&collapsed_rows, "2 commands") as u16,
     )
     .expect("expand the group");
     let expanded = rendered_application_rows_at(&application, 80, 30).join("\n");
@@ -7501,7 +7512,7 @@ fn a_groups_header_counts_failed_and_stopped_members_and_marks_the_worst() {
                 RunEntry::Command(ActivityStatus::Failed, Some(1)),
                 RunEntry::Command(ActivityStatus::Interrupted, None),
             ],
-            "× Ran 3 commands · 1 failed · 1 stopped",
+            "× 3 commands · 1 failed · 1 stopped",
             PANDA.error,
         ),
         (
@@ -7509,7 +7520,7 @@ fn a_groups_header_counts_failed_and_stopped_members_and_marks_the_worst() {
                 SUCCESSFUL_COMMAND,
                 RunEntry::Command(ActivityStatus::Interrupted, None),
             ],
-            "× Ran 2 commands · 1 stopped",
+            "× 2 commands · 1 stopped",
             PANDA.warning,
         ),
         (
@@ -7517,7 +7528,7 @@ fn a_groups_header_counts_failed_and_stopped_members_and_marks_the_worst() {
                 COMPLETED_TOOL_CALL,
                 RunEntry::ToolCall(ActivityStatus::Failed),
             ],
-            "× Used 2 tools · 1 failed",
+            "× 2 tools · 1 failed",
             PANDA.error,
         ),
     ] {
@@ -7539,7 +7550,7 @@ fn a_groups_header_counts_failed_and_stopped_members_and_marks_the_worst() {
 }
 
 #[test]
-fn a_running_group_names_its_running_member_and_settles_into_the_past_tense() {
+fn a_running_group_names_its_running_member_and_settles_onto_its_counts() {
     let workspace = workspace_dir();
     let session_id = SessionId::new();
     let snapshot = live_command_run_snapshot(session_id, workspace.path());
@@ -7552,7 +7563,7 @@ fn a_running_group_names_its_running_member_and_settles_into_the_past_tense() {
 
     let live = rendered_application_rows_at(&application, 80, 18).join("\n");
     assert!(
-        live.contains("⠋ Running 3 commands · command 3"),
+        live.contains("⠋ 3 commands · command 3"),
         "a running group counts every member and names the one still running: {live}"
     );
     assert!(!live.contains("✓ command"), "{live}");
@@ -7568,7 +7579,7 @@ fn a_running_group_names_its_running_member_and_settles_into_the_past_tense() {
         .expect("project the command settling failed");
     let settled = rendered_application_rows_at(&application, 80, 18).join("\n");
     assert!(
-        settled.contains("× Ran 3 commands · 1 failed"),
+        settled.contains("× 3 commands · 1 failed"),
         "the group stands in the same place as its member settles: {settled}"
     );
 
@@ -7579,8 +7590,8 @@ fn a_running_group_names_its_running_member_and_settles_into_the_past_tense() {
         .expect("attach a session with a running tool call after a run");
     let live = rendered_application_rows_at(&application, 80, 18).join("\n");
     assert!(
-        live.contains("⠋ Using 3 tools · tool_3 query=3"),
-        "a running tool call group reads the same way: {live}"
+        live.contains("⠋ 3 tools · tool_3 query=3"),
+        "a running group of tool calls reads the same way: {live}"
     );
 }
 
@@ -7601,7 +7612,7 @@ fn the_expanded_groups_setting_opens_every_group_onto_its_members() {
 
     let expanded = rendered_application_rows_at(&application, 80, 18).join("\n");
     assert!(
-        expanded.contains("✓ Ran 2 commands")
+        expanded.contains("✓ 2 commands")
             && expanded.contains("✓ command 1")
             && expanded.contains("✓ command 2"),
         "a view opening expanded shows each group's members under its header: {expanded}"
@@ -7610,7 +7621,7 @@ fn the_expanded_groups_setting_opens_every_group_onto_its_members() {
     press_leader_chord(&mut application, 'g');
     let collapsed = rendered_application_rows_at(&application, 80, 18).join("\n");
     assert!(
-        collapsed.contains("✓ Ran 2 commands") && !collapsed.contains("command 1"),
+        collapsed.contains("✓ 2 commands") && !collapsed.contains("command 1"),
         "the toggle flips the view to collapsed from the posture it opened at: {collapsed}"
     );
 }
@@ -7652,7 +7663,7 @@ fn the_off_groups_setting_forms_no_groups_and_leaves_the_toggle_nothing_to_do() 
             "with grouping off every activity is its own row, missing {row:?}: {rendered}"
         );
     }
-    for header in ["Ran ", "Used ", "steps"] {
+    for header in ["2 commands", "1 tool", "steps"] {
         assert!(!rendered.contains(header), "no group forms: {rendered}");
     }
 
@@ -7672,7 +7683,7 @@ fn the_off_groups_setting_forms_no_groups_and_leaves_the_toggle_nothing_to_do() 
     );
     let grouped = rendered_application_rows_at(&application, 80, 18).join("\n");
     assert!(
-        grouped.contains("✓ Ran 2 commands") && grouped.contains("✓ Used 1 tool"),
+        grouped.contains("✓ 1 tool · 2 commands"),
         "turning grouping back on gathers the transcript already on screen: {grouped}"
     );
 }
@@ -7707,7 +7718,7 @@ fn auto_expansion_never_promotes_a_member_hidden_in_a_collapsed_group() {
 
     left_click_at(
         &mut application,
-        rendered_row(&collapsed_rows, "Running 3 commands") as u16,
+        rendered_row(&collapsed_rows, "3 commands") as u16,
     )
     .expect("expand the running group");
     let expanded = rendered_application_rows_at(&application, 80, 30).join("\n");
@@ -7750,7 +7761,7 @@ fn each_disclosure_toggle_leaves_the_other_axis_untouched() {
     let collapsed_rows = rendered_application_rows_at(&application, 80, 50);
     left_click_at(
         &mut application,
-        rendered_row(&collapsed_rows, "Ran 2 commands") as u16,
+        rendered_row(&collapsed_rows, "2 commands") as u16,
     )
     .expect("expand the first group by hand");
     let member_rows = rendered_application_rows_at(&application, 80, 50);
@@ -7782,7 +7793,7 @@ fn each_disclosure_toggle_leaves_the_other_axis_untouched() {
     let collapsed_again = rendered_application_rows_at(&application, 80, 50);
     left_click_at(
         &mut application,
-        rendered_row(&collapsed_again, "Ran 2 commands") as u16,
+        rendered_row(&collapsed_again, "2 commands") as u16,
     )
     .expect("expand the first group by hand again");
 
@@ -7801,8 +7812,7 @@ fn each_disclosure_toggle_leaves_the_other_axis_untouched() {
         "the folds toggle leaves the collapsed group collapsed: {folds_expanded}"
     );
     assert!(
-        folds_expanded.contains("Ran 2 commands")
-            && folds_expanded.contains("× Ran 3 commands · 1 failed"),
+        folds_expanded.contains("2 commands") && folds_expanded.contains("× 3 commands · 1 failed"),
         "both group headers survive the folds toggle: {folds_expanded}"
     );
 }
@@ -7870,7 +7880,7 @@ fn set_tool_call_output(
 }
 
 #[test]
-fn a_run_of_completed_tool_calls_collapses_to_one_used_tools_row() {
+fn a_run_of_completed_tool_calls_collapses_to_one_group_row() {
     let workspace = workspace_dir();
     let snapshot = command_run_snapshot(
         SessionId::new(),
@@ -7891,7 +7901,7 @@ fn a_run_of_completed_tool_calls_collapses_to_one_used_tools_row() {
     let rendered = rows.join("\n");
 
     assert!(
-        rendered.contains("✓ Used 3 tools"),
+        rendered.contains("✓ 3 tools"),
         "a run of three completed tool calls is one group row: {rendered}"
     );
     for member in ["tool_1", "tool_2", "tool_3", "result of tool"] {
@@ -7900,7 +7910,7 @@ fn a_run_of_completed_tool_calls_collapses_to_one_used_tools_row() {
             "a collapsed group hides its member rows, but {member:?} rendered: {rendered}"
         );
     }
-    let affordance = text_cell(&buffer, "Used 3 tools");
+    let affordance = text_cell(&buffer, "3 tools");
     assert_eq!(
         affordance.fg, PANDA.primary,
         "the count is the expand affordance, styled action-primary"
@@ -7914,73 +7924,198 @@ fn a_run_of_completed_tool_calls_collapses_to_one_used_tools_row() {
         PANDA.success,
         "the header keeps the settled activity-header marker"
     );
-    let header = &rows[rendered_row(&rows, "Used 3 tools")];
+    let header = &rows[rendered_row(&rows, "3 tools")];
     assert!(
-        header.contains("  ✓ Used 3 tools"),
+        header.contains("  ✓ 3 tools"),
         "the group header sits in the activity-header gutter: {header:?}"
     );
 }
 
 #[test]
-fn tool_calls_and_commands_never_share_a_group() {
+fn a_group_names_its_running_file_change_by_the_first_path_it_reports() {
+    let workspace = workspace_dir();
+    let mut snapshot = command_run_snapshot(
+        SessionId::new(),
+        workspace.path(),
+        &[
+            SUCCESSFUL_COMMAND,
+            COMPLETED_TOOL_CALL,
+            RunEntry::FileChange,
+        ],
+    );
+    snapshot.session.status = SessionStatus::Active;
+    snapshot.turns[0].status = TurnStatus::Active;
+    let Activity::FileChange {
+        status, changes, ..
+    } = &mut snapshot.activities[2]
+    else {
+        panic!("the run ends on its file change");
+    };
+    *status = ActivityStatus::Active;
+    *changes = vec![
+        FileChange::Update {
+            path: workspace.path().join("src").join("lib.rs"),
+            moved_to: None,
+        },
+        FileChange::Add {
+            path: workspace.path().join("src").join("new.rs"),
+        },
+    ];
+    let mut application = connected_application(workspace.path());
+    application
+        .handle_event(ApplicationEvent::SessionAttached(snapshot))
+        .expect("attach a session whose run ends on a running file change");
+
+    let rendered = rendered_application_rows_at(&application, 80, 18).join("\n");
+    let path = std::path::Path::new("src").join("lib.rs");
+    let header = format!("⠋ 1 tool · 1 command · 1 edit · {}", path.display());
+    assert!(
+        rendered.contains(&header),
+        "one file change over two files is one edit, named while it runs by its first path as \
+         its own row spells it: {rendered}"
+    );
+}
+
+#[test]
+fn a_group_counts_the_members_that_failed_or_were_stopped_whatever_their_kind() {
+    let workspace = workspace_dir();
+    let snapshot = command_run_snapshot(
+        SessionId::new(),
+        workspace.path(),
+        &[
+            RunEntry::Command(ActivityStatus::Failed, Some(1)),
+            COMPLETED_TOOL_CALL,
+            RunEntry::FileChange,
+            RunEntry::ToolCall(ActivityStatus::Interrupted),
+        ],
+    );
+    let mut application = connected_application(workspace.path());
+    application
+        .handle_event(ApplicationEvent::SessionAttached(snapshot))
+        .expect("attach a session whose run failed in one kind and was stopped in another");
+
+    let rendered = rendered_application_rows_at(&application, 80, 18).join("\n");
+    assert!(
+        rendered.contains("× 2 tools · 1 command · 1 edit · 1 failed · 1 stopped"),
+        "the outcomes trail the kind counts and count across every kind: {rendered}"
+    );
+}
+
+#[test]
+fn a_group_row_too_narrow_for_its_outcomes_keeps_its_kind_counts() {
+    let workspace = workspace_dir();
+    let snapshot = command_run_snapshot(
+        SessionId::new(),
+        workspace.path(),
+        &[
+            RunEntry::Command(ActivityStatus::Failed, Some(1)),
+            COMPLETED_TOOL_CALL,
+            RunEntry::FileChange,
+            RunEntry::ToolCall(ActivityStatus::Interrupted),
+        ],
+    );
+    let mut application = connected_application(workspace.path());
+    application
+        .handle_event(ApplicationEvent::SessionAttached(snapshot))
+        .expect("attach a session whose group header outruns a narrow frame");
+
+    let rows = rendered_application_rows_at(&application, 50, 18);
+    let header = &rows[rendered_row(&rows, "× 2 tools")];
+    assert!(
+        header.contains("× 2 tools · 1 command · 1 edit")
+            && header.contains('…')
+            && !header.contains("1 stopped"),
+        "the outcomes trail the kind counts, so they are what a narrow row loses: {header:?}"
+    );
+}
+
+#[test]
+fn shown_reasoning_ends_a_run_of_mixed_work() {
     let workspace = workspace_dir();
     let snapshot = command_run_snapshot(
         SessionId::new(),
         workspace.path(),
         &[
             SUCCESSFUL_COMMAND,
-            SUCCESSFUL_COMMAND,
+            RunEntry::FileChange,
+            RunEntry::Reasoning(ReasoningBlock::thought(
+                "Weighing options",
+                "Weighed the options.",
+                4_000,
+            )),
             COMPLETED_TOOL_CALL,
-            COMPLETED_TOOL_CALL,
-            SUCCESSFUL_COMMAND,
-            SUCCESSFUL_COMMAND,
+            RunEntry::FileChange,
         ],
     );
-    let mut application = connected_application(workspace.path());
+    let mut application = client_showing_reasoning(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a session alternating runs of commands and tool calls");
+        .expect("attach a session whose work has reasoning in the middle of it");
 
     let rows = rendered_application_rows_at(&application, 80, 24);
-    let rendered = rows.join("\n");
-    assert_eq!(
-        rendered.matches("Ran 2 commands").count(),
-        2,
-        "the tool calls end the command run on either side of them: {rendered}"
-    );
-    assert_eq!(
-        rendered.matches("Used 2 tools").count(),
-        1,
-        "the tool calls form a group of their own: {rendered}"
-    );
-    let tools = rendered_row(&rows, "Used 2 tools");
+    let thought = rendered_row(&rows, "Thought: Weighing options");
     assert!(
-        rendered_row(&rows, "Ran 2 commands") < tools
-            && rows[tools + 1..]
-                .iter()
-                .any(|row| row.contains("Ran 2 commands")),
-        "presentation order is preserved: {rendered}"
+        rendered_row(&rows, "✓ 1 command · 1 edit") < thought
+            && thought < rendered_row(&rows, "✓ 1 tool · 1 edit"),
+        "reasoning a reader asked to see never joins a work group, so it splits the run: {}",
+        rows.join("\n")
     );
+}
 
-    let interleaved = command_run_snapshot(
+#[test]
+fn work_of_different_kinds_interleaved_stays_one_group() {
+    let workspace = workspace_dir();
+    let snapshot = command_run_snapshot(
         SessionId::new(),
         workspace.path(),
         &[
             SUCCESSFUL_COMMAND,
             COMPLETED_TOOL_CALL,
             SUCCESSFUL_COMMAND,
+            RunEntry::FileChange,
             COMPLETED_TOOL_CALL,
+            SUCCESSFUL_COMMAND,
         ],
     );
     let mut application = connected_application(workspace.path());
     application
-        .handle_event(ApplicationEvent::SessionAttached(interleaved))
-        .expect("attach a session interleaving commands and tool calls one by one");
-    let rendered = rendered_application_rows_at(&application, 80, 24).join("\n");
+        .handle_event(ApplicationEvent::SessionAttached(snapshot))
+        .expect("attach a session interleaving commands, tool calls and a file change");
+
+    let collapsed_rows = rendered_application_rows_at(&application, 80, 24);
+    let collapsed = collapsed_rows.join("\n");
+    assert_eq!(
+        collapsed.matches("✓ 2 tools · 3 commands · 1 edit").count(),
+        1,
+        "a change of kind does not end the run: {collapsed}"
+    );
+    assert_eq!(
+        collapsed.matches('✓').count(),
+        1,
+        "the run is the one group and nothing beside it: {collapsed}"
+    );
+
+    left_click_at(
+        &mut application,
+        rendered_row(&collapsed_rows, "2 tools · 3 commands") as u16,
+    )
+    .expect("click the collapsed group row");
+    let rows = rendered_application_rows_at(&application, 80, 24);
+    let members: Vec<usize> = [
+        "✓ command 1",
+        "✓ tool_1",
+        "✓ command 2",
+        "✓ Created src/new.rs",
+        "✓ tool_2",
+        "✓ command 3",
+    ]
+    .into_iter()
+    .map(|member| rendered_row(&rows, member))
+    .collect();
     assert!(
-        rendered.matches("✓ Ran 1 command").count() == 2
-            && rendered.matches("✓ Used 1 tool").count() == 2,
-        "no two of these are adjacent members of one kind, so each is a group of one: {rendered}"
+        members.is_sorted(),
+        "opening the group shows its members in the order they happened, not kind by kind: {}",
+        rows.join("\n")
     );
 }
 
@@ -8005,14 +8140,14 @@ fn a_failed_tool_call_stays_in_its_run() {
 
     let rendered = rendered_application_rows_at(&application, 80, 24).join("\n");
     assert!(
-        rendered.contains("× Used 5 tools · 1 failed"),
+        rendered.contains("× 5 tools · 1 failed"),
         "the failure stays in the run, which is one group: {rendered}"
     );
     assert!(!rendered.contains("tool_3"), "{rendered}");
 }
 
 #[test]
-fn a_running_tool_call_group_settles_into_the_past_tense_in_place() {
+fn a_running_group_of_tool_calls_settles_in_place() {
     let workspace = workspace_dir();
     let session_id = SessionId::new();
     let snapshot = live_tool_call_run_snapshot(session_id, workspace.path());
@@ -8025,7 +8160,7 @@ fn a_running_tool_call_group_settles_into_the_past_tense_in_place() {
 
     let rows = rendered_application_rows_at(&application, 80, 18);
     let rendered = rows.join("\n");
-    let header = rendered_row(&rows, "⠋ Using 3 tools · tool_3 query=3");
+    let header = rendered_row(&rows, "⠋ 3 tools · tool_3 query=3");
     assert!(
         !rendered.contains("tool_1") && !rendered.contains("tool_2"),
         "no member escapes the collapsed group: {rendered}"
@@ -8042,7 +8177,7 @@ fn a_running_tool_call_group_settles_into_the_past_tense_in_place() {
 
     let after = rendered_application_rows_at(&application, 80, 18);
     assert_eq!(
-        rendered_row(&after, "✓ Used 3 tools"),
+        rendered_row(&after, "✓ 3 tools"),
         header,
         "the group row stands where it stood while its member ran: {}",
         after.join("\n")
@@ -8072,7 +8207,7 @@ fn a_running_tool_call_that_fails_is_counted_by_its_group() {
 
     let rendered = rendered_application_rows_at(&application, 80, 18).join("\n");
     assert!(
-        rendered.contains("× Used 3 tools · 1 failed"),
+        rendered.contains("× 3 tools · 1 failed"),
         "a failure stays in the group and is counted there: {rendered}"
     );
     assert!(!rendered.contains("tool_3"), "{rendered}");
@@ -8099,13 +8234,13 @@ fn opening_a_tool_call_group_reveals_each_member_in_its_own_fold() {
 
     left_click_at(
         &mut application,
-        rendered_row(&collapsed_rows, "Used 3 tools") as u16,
+        rendered_row(&collapsed_rows, "3 tools") as u16,
     )
     .expect("click the collapsed group row");
 
     let rows = rendered_application_rows_at(&application, 80, 36);
     let rendered = rows.join("\n");
-    let header = rendered_row(&rows, "✓ Used 3 tools");
+    let header = rendered_row(&rows, "✓ 3 tools");
     for member in ["✓ tool_1 query=1", "✓ tool_2 query=2", "✓ tool_3 query=3"] {
         let row = rendered_row(&rows, member);
         assert!(
@@ -8129,7 +8264,7 @@ fn opening_a_tool_call_group_reveals_each_member_in_its_own_fold() {
         "the member opens to its Peek, as a standalone tool call does: {peek}"
     );
     assert!(
-        peek.contains("✓ Used 3 tools") && !peek.contains("result of tool"),
+        peek.contains("✓ 3 tools") && !peek.contains("result of tool"),
         "a member's fold leaves the group and its siblings as they were: {peek}"
     );
 
@@ -8147,18 +8282,18 @@ fn opening_a_tool_call_group_reveals_each_member_in_its_own_fold() {
     let unfolded_rows = rendered_application_rows_at(&application, 80, 36);
     left_click_at(
         &mut application,
-        rendered_row(&unfolded_rows, "Used 3 tools") as u16,
+        rendered_row(&unfolded_rows, "3 tools") as u16,
     )
     .expect("collapse the group from its header");
     let recollapsed = rendered_application_rows_at(&application, 80, 36).join("\n");
     assert!(
-        recollapsed.contains("✓ Used 3 tools") && !recollapsed.contains("tool_2"),
+        recollapsed.contains("✓ 3 tools") && !recollapsed.contains("tool_2"),
         "the header folds the group back to its single row: {recollapsed}"
     );
 }
 
 #[test]
-fn the_group_posture_opens_and_closes_tool_call_groups_beside_command_groups() {
+fn the_group_posture_opens_and_closes_a_group_of_mixed_work() {
     let workspace = workspace_dir();
     let snapshot = command_run_snapshot(
         SessionId::new(),
@@ -8173,7 +8308,7 @@ fn the_group_posture_opens_and_closes_tool_call_groups_beside_command_groups() {
     let mut application = connected_application(workspace.path());
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
-        .expect("attach a session with a command group and a tool call group");
+        .expect("attach a session with a group of commands and tool calls");
 
     press_leader_chord(&mut application, 'g');
     let rows = rendered_application_rows_at(&application, 80, 36);
@@ -8187,18 +8322,17 @@ fn the_group_posture_opens_and_closes_tool_call_groups_beside_command_groups() {
         );
     }
     assert!(
-        expanded.contains("✓ Ran 2 commands") && expanded.contains("✓ Used 2 tools"),
-        "both headers stay to fold back from: {expanded}"
+        expanded.contains("✓ 2 tools · 2 commands"),
+        "the header stays to fold back from: {expanded}"
     );
 
     press_leader_chord(&mut application, 'g');
     let collapsed = rendered_application_rows_at(&application, 80, 36).join("\n");
     assert!(
-        collapsed.contains("✓ Ran 2 commands")
-            && collapsed.contains("✓ Used 2 tools")
+        collapsed.contains("✓ 2 tools · 2 commands")
             && !collapsed.contains("command 1")
             && !collapsed.contains("tool_1"),
-        "flipping back collapses both kinds of group: {collapsed}"
+        "flipping back collapses the group over both kinds of member: {collapsed}"
     );
 }
 
@@ -8244,7 +8378,7 @@ fn hidden_tool_calls_neither_join_nor_break_the_runs_around_them_nor_leave_a_gap
                 SUCCESSFUL_COMMAND,
                 RunEntry::AgentMessage("The workflow is green."),
             ],
-            "✓ Ran 2 commands",
+            "✓ 2 commands",
         ),
         (
             &[
@@ -8331,7 +8465,7 @@ fn tool_calls_are_shown_by_default_and_the_setting_hides_and_restores_them() {
     );
     let shown = rendered_application_rows_at(&application, 80, 24).join("\n");
     assert!(
-        shown.contains("× Used 3 tools · 1 failed"),
+        shown.contains("× 3 tools · 1 failed"),
         "the built-in default draws every tool call: {shown}"
     );
 
@@ -8838,12 +8972,9 @@ fn every_other_visible_entry_kind_ends_a_reasoning_run() {
             RunEntry::UserMessage("A breaking user message"),
             "A breaking user message",
         ),
-        (SUCCESSFUL_COMMAND, "✓ Ran 1 command"),
-        (
-            RunEntry::ToolCall(ActivityStatus::Completed),
-            "✓ Used 1 tool",
-        ),
-        (RunEntry::FileChange, "✓ Created src/new.rs"),
+        (SUCCESSFUL_COMMAND, "✓ 1 command"),
+        (RunEntry::ToolCall(ActivityStatus::Completed), "✓ 1 tool"),
+        (RunEntry::FileChange, "✓ 1 edit"),
         (
             RunEntry::Status("Agent Selection changed"),
             "Agent Selection changed",
@@ -9317,7 +9448,7 @@ fn a_settled_turn_renders_as_one_marker_between_its_prompt_and_its_answer() {
         rows.contains("✓ Worked"),
         "a settled turn stands as its marker: {rows}"
     );
-    for hidden in ["Ran 2 commands", "command 1", "Thought"] {
+    for hidden in ["2 commands", "command 1", "Thought"] {
         assert!(
             !rows.contains(hidden),
             "the turn fold hides the work it stands for, but {hidden:?} rendered: {rows}"
@@ -9628,7 +9759,7 @@ fn a_compaction_stays_outside_its_folded_turn() {
     let rows = rendered_application_rows_at(&application, 80, 24);
     let text = rows.join("\n");
     assert!(
-        !text.contains("Ran 1 command"),
+        !text.contains("1 command"),
         "the turn fold hides the work around the compaction: {text}"
     );
     let order = [
@@ -9753,7 +9884,7 @@ fn clicking_a_turn_fold_marker_opens_the_turn_and_folds_it_back() {
 
     let expanded_rows = rendered_application_rows_at(&application, 80, 24);
     let expanded = expanded_rows.join("\n");
-    for revealed in ["Ran 2 commands", "Reading the workflow"] {
+    for revealed in ["2 commands", "Reading the workflow"] {
         assert!(
             expanded.contains(revealed),
             "clicking the marker reveals the work the turn fold hid, but {revealed:?} is \
@@ -9789,7 +9920,7 @@ fn clicking_a_turn_fold_marker_opens_the_turn_and_folds_it_back() {
     .expect("click the turn fold marker again");
 
     let refolded = rendered_application_rows_at(&application, 80, 24).join("\n");
-    for hidden in ["Ran 2 commands", "Reading the workflow"] {
+    for hidden in ["2 commands", "Reading the workflow"] {
         assert!(
             !refolded.contains(hidden),
             "clicking the marker again folds the turn back, but {hidden:?} rendered: {refolded}"
@@ -9834,7 +9965,7 @@ fn toggling_the_turn_posture_flips_every_turn_fold_and_clears_per_turn_overrides
 
     let expanded = rendered_application_rows_at(&application, 80, 36).join("\n");
     for revealed in [
-        "Ran 2 commands",
+        "2 commands",
         "Reading the workflow",
         "Checking the release notes",
     ] {
@@ -9852,7 +9983,7 @@ fn toggling_the_turn_posture_flips_every_turn_fold_and_clears_per_turn_overrides
 
     let refolded = rendered_application_rows_at(&application, 80, 36).join("\n");
     for hidden in [
-        "Ran 2 commands",
+        "2 commands",
         "Reading the workflow",
         "Checking the release notes",
     ] {
@@ -10001,7 +10132,7 @@ fn interrupting_a_turn_holds_its_fold_open_until_a_newer_turn_begins() {
         interrupted.contains("× Stopped"),
         "the interrupted turn marks how it settled: {interrupted}"
     );
-    for kept in ["Ran 2 commands", "Reading the workflow"] {
+    for kept in ["2 commands", "Reading the workflow"] {
         assert!(
             interrupted.contains(kept),
             "interrupting the turn holds its fold open so the reader keeps their place, but \
@@ -10018,7 +10149,7 @@ fn interrupting_a_turn_holds_its_fold_open_until_a_newer_turn_begins() {
         .expect("begin a newer turn");
 
     let moved_on = rendered_application_rows_at(&application, 80, 40).join("\n");
-    for hidden in ["Ran 2 commands", "Reading the workflow"] {
+    for hidden in ["2 commands", "Reading the workflow"] {
         assert!(
             !moved_on.contains(hidden),
             "a newer turn re-folds the turn the interrupt opened, but {hidden:?} rendered: \
@@ -10096,7 +10227,7 @@ fn a_queued_prompt_starting_in_the_settle_commit_refolds_the_interrupted_turn_at
         rendered.contains("× Stopped") && rendered.contains("Ship it anyway"),
         "the stopped turn stands as its marker above the turn that displaced it: {rendered}"
     );
-    for hidden in ["Ran 2 commands", "Reading the workflow"] {
+    for hidden in ["2 commands", "Reading the workflow"] {
         assert!(
             !rendered.contains(hidden),
             "the reader's own queued prompt is the newer turn that re-folds the one they \

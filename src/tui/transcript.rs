@@ -4,7 +4,7 @@
 //! render as one block, and is what keying, memoization, and click hit-testing
 //! address, so which entries share a unit is answered in one walk rather than
 //! in each of those four places. Most units hold exactly one entry; a Group
-//! holds a run of adjacent Activities of one groupable kind; a Turn Fold's
+//! holds a run of adjacent Activities that form one sort of Group; a Turn Fold's
 //! marker holds none, standing instead where the entries its Turn hides
 //! would have been. Which entries a folded Turn hides is decided before the
 //! walk, in [`TurnFolding`], because a Turn Fold keys on the Turn's Settle
@@ -1681,9 +1681,9 @@ enum RenderUnit<'a> {
     /// how a user Message presents its Attachments beneath its text.
     Message(&'a Message, Option<SessionId>, AttachmentRows),
     Activity(&'a Activity),
-    /// A Group: a run of one or more adjacent Activities of one groupable
-    /// kind. Collapsed it is the run's single row; expanded it is the header
-    /// the run re-collapses from, followed by whatever its kind opens onto.
+    /// A Group: a run of one or more adjacent Activities that form one sort
+    /// of Group. Collapsed it is the run's single row; expanded it is the header
+    /// the run re-collapses from, followed by whatever its sort opens onto.
     /// Never empty; [`close_run`] holds that invariant.
     Group {
         kind: GroupableKind,
@@ -1943,6 +1943,7 @@ impl RenderUnit<'_> {
                 theme,
                 width,
                 hyperlinks,
+                workspace,
             )),
             Self::GroupMember(activity) => {
                 let start = projection.lines.len();
@@ -2535,21 +2536,19 @@ impl TurnFolding {
     }
 }
 
-/// A kind of Activity a Transcript gathers runs of into a Group. Everything a
-/// Group's presentation depends on hangs off its kind — which Activities join
+/// A sort of Group a Transcript gathers runs of Activities into. Everything a
+/// Group's presentation depends on hangs off its sort — which Activities join
 /// a run, what the marker reads, and what expanding it opens onto — so adding
-/// a kind is a matter of answering those three questions rather than of
-/// finding every place that quietly assumed another.
+/// one is a matter of answering those three questions rather than of finding
+/// every place that quietly assumed another.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum GroupableKind {
-    /// Commands, every one of which belongs to its run's Group from the moment
-    /// it starts, however it settles.
-    Command,
-    /// Tool Calls, gathered on exactly the command rules but never into a
-    /// command's Group.
-    ToolCall,
-    /// Reasoning blocks, which join a run from the moment they start too; a
-    /// Group of one reads exactly as a lone block does.
+    /// A work Group: commands, Tool Calls and File Changes, whatever their
+    /// mix, every one of which belongs to its run's Group from the moment it
+    /// starts, however it settles.
+    Work,
+    /// Reasoning blocks, which join a run from the moment they start too but
+    /// never a work Group; a Group of one reads exactly as a lone block does.
     Reasoning,
 }
 
@@ -2559,46 +2558,48 @@ impl GroupableKind {
     /// alone, never the status: an Activity joins its run as it starts and
     /// stays there however it settles — failed and interrupted included — so
     /// a Group stands in one place for its whole run and the Transcript's
-    /// shape holds still while a Turn works. A Tool Call extends a run of its
-    /// own kind, so a run of Tool Calls and a run of commands never share a
-    /// Group. An entry the reader sees nothing for never reaches here at all,
-    /// because the walk resolves it to no entry.
+    /// shape holds still while a Turn works. Commands, Tool Calls and File
+    /// Changes extend one another's run, so a stretch of work is one Group
+    /// however many kinds of Tool it took; Reasoning extends only its own. An
+    /// entry the reader sees nothing for never reaches here at all, because
+    /// the walk resolves it to no entry.
     const fn joined_by(activity: &Activity) -> Option<Self> {
         match activity {
-            Activity::Command { .. } => Some(Self::Command),
-            Activity::ToolCall { .. } => Some(Self::ToolCall),
             Activity::Reasoning { .. } => Some(Self::Reasoning),
+            _ if WorkKind::of(activity).is_some() => Some(Self::Work),
             _ => None,
         }
     }
 
     /// The line of a Group's header carrying a Spinner in its Marker cell, or
-    /// `None` when the Group stands for no work in progress. A command or Tool
-    /// Call Group spins while any member runs, since its header is the only
-    /// row a collapsed Group draws; a Reasoning Group does whenever its latest
+    /// `None` when the Group stands for no work in progress. A work Group
+    /// spins while any member runs, since its header is the only row a
+    /// collapsed Group draws; a Reasoning Group does whenever its latest
     /// member is still thinking. Either way the Marker leads the header's
     /// first line.
     fn header_spinner_line(self, members: &[&Activity]) -> Option<usize> {
         let live = match self {
-            Self::Command | Self::ToolCall => running_member(members).is_some(),
+            Self::Work => running_member(members).is_some(),
             Self::Reasoning => reasoning_group_is_live(members),
         };
         live.then_some(0)
     }
 
     /// What a Group's header reads off one member, and so what its rendering
-    /// must re-key on when the member changes (ADR 0007). A command or Tool
-    /// Call Group's header counts its members by how they settled and names
-    /// the one still running, so which Activities they are, their status, and
-    /// that summary are the whole of it; a kind whose header speaks for its
-    /// members' content keys on that content here instead.
+    /// must re-key on when the member changes (ADR 0007). A work Group's
+    /// header counts its members by kind and by how they settled and names
+    /// the one still running, so which Activities they are, their kind, their
+    /// status, and that summary are the whole of it; a sort whose header
+    /// speaks for its members' content keys on that content here instead.
     fn member_fingerprint(self, member: &Activity) -> u64 {
         let mut hasher = std::hash::DefaultHasher::new();
         match self {
-            Self::Command | Self::ToolCall => {
+            Self::Work => {
                 member.id().hash(&mut hasher);
                 member.status().map(|status| status as u8).hash(&mut hasher);
-                member_summary(member).hash(&mut hasher);
+                WorkKind::of(member).hash(&mut hasher);
+                invocation_summary(member).hash(&mut hasher);
+                first_changed_path(member).hash(&mut hasher);
             }
             // A Reasoning Group's header leads with the latest member's title
             // and sums every member's duration, its wording turns on whether
@@ -2618,14 +2619,14 @@ impl GroupableKind {
         hasher.finish()
     }
 
-    /// The units an expanded Group plans after its header. A command or Tool
-    /// Call Group opens onto its members, each as its own unit, so a member's
-    /// Fold, its cached lines, and its click target need no Group-specific
-    /// machinery. A kind whose expansion is the header's own content plans
-    /// nothing here and renders it in [`render_group`] instead.
+    /// The units an expanded Group plans after its header. A work Group opens
+    /// onto its members in the order they happened, each as its own unit, so
+    /// a member's Fold, its cached lines, and its click target need no
+    /// Group-specific machinery. A sort whose expansion is the header's own
+    /// content plans nothing here and renders it in [`render_group`] instead.
     fn expansion_units<'a>(self, members: &[&'a Activity]) -> Vec<RenderUnit<'a>> {
         match self {
-            Self::Command | Self::ToolCall => members
+            Self::Work => members
                 .iter()
                 .copied()
                 .map(RenderUnit::GroupMember)
@@ -2638,9 +2639,9 @@ impl GroupableKind {
     }
 }
 
-/// The run of adjacent Activities a walk is gathering: the groupable kind they
-/// share and the members so far. A run only ever holds one kind, because an
-/// Activity of another kind ends it before starting its own.
+/// The run of adjacent Activities a walk is gathering: the sort of Group they
+/// form and the members so far. A run only ever holds one sort, because an
+/// Activity of another ends it before starting its own.
 struct GroupRun<'a> {
     kind: GroupableKind,
     /// Whether an expanded Turn Fold disclosed the run's members, which the
@@ -4152,10 +4153,11 @@ pub(super) fn client_error_lines(text: &str, theme: &Theme) -> Vec<Line<'static>
     lines.iter().map(StyledLine::to_line).collect()
 }
 
-/// Projects a Group, which each groupable kind words and opens in its own way.
-/// What every kind shares is the shape: a header row that stands in for the
-/// run while collapsed and heads it while expanded, being the one row the
-/// Group re-collapses from. `members` is never empty.
+/// Projects a Group, which each sort words and opens in its own way. What
+/// every sort shares is the shape: a header row that stands in for the run
+/// while collapsed and heads it while expanded, being the one row the Group
+/// re-collapses from. `members` is never empty.
+#[allow(clippy::too_many_arguments)]
 fn render_group(
     lines: &mut Vec<StyledLine>,
     kind: GroupableKind,
@@ -4164,51 +4166,56 @@ fn render_group(
     theme: &Theme,
     width: u16,
     hyperlinks: bool,
+    workspace: &Path,
 ) -> UnitAnchor {
     match kind {
-        GroupableKind::Command => render_counted_group(
-            lines,
-            CountedNoun {
-                running: "Running",
-                settled: "Ran",
-                one: "command",
-                many: "commands",
-            },
-            members,
-            expanded,
-            theme,
-            width,
-        ),
-        GroupableKind::ToolCall => render_counted_group(
-            lines,
-            CountedNoun {
-                running: "Using",
-                settled: "Used",
-                one: "tool",
-                many: "tools",
-            },
-            members,
-            expanded,
-            theme,
-            width,
-        ),
+        GroupableKind::Work => render_work_group(lines, members, expanded, theme, width, workspace),
         GroupableKind::Reasoning => {
             render_reasoning_group(lines, members, expanded, theme, width, hyperlinks)
         }
     }
 }
 
-/// How a counted Group's header words its members: the verb in each tense and
-/// the noun in each number, so `Running 1 command` and `Used 3 tools` come
-/// out of one rule.
-struct CountedNoun {
-    running: &'static str,
-    settled: &'static str,
-    one: &'static str,
-    many: &'static str,
+/// A kind of Activity a work Group counts, in the order its header names
+/// them. The order is fixed rather than the order the kinds first appeared
+/// in, so a header reads the same way in every Group and never reshuffles
+/// while a Turn works.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum WorkKind {
+    ToolCall,
+    Command,
+    FileChange,
 }
 
-/// The member a counted Group's header names while the run works: the latest
+impl WorkKind {
+    const ALL: [Self; 3] = [Self::ToolCall, Self::Command, Self::FileChange];
+
+    const fn of(member: &Activity) -> Option<Self> {
+        match member {
+            Activity::ToolCall { .. } => Some(Self::ToolCall),
+            Activity::Command { .. } => Some(Self::Command),
+            Activity::FileChange { .. } => Some(Self::FileChange),
+            _ => None,
+        }
+    }
+
+    /// How a header counts `count` members of this kind. A File Change reads
+    /// as an edit: the count is of Activities, so one covering several files
+    /// is still one edit.
+    fn counted(self, count: usize) -> String {
+        let noun = match (self, count) {
+            (Self::ToolCall, 1) => "tool",
+            (Self::ToolCall, _) => "tools",
+            (Self::Command, 1) => "command",
+            (Self::Command, _) => "commands",
+            (Self::FileChange, 1) => "edit",
+            (Self::FileChange, _) => "edits",
+        };
+        format!("{count} {noun}")
+    }
+}
+
+/// The member a work Group's header names while the run works: the latest
 /// one still running, which is where the run is now.
 fn running_member<'a>(members: &[&'a Activity]) -> Option<&'a Activity> {
     members
@@ -4218,10 +4225,11 @@ fn running_member<'a>(members: &[&'a Activity]) -> Option<&'a Activity> {
         .find(|member| member.status() == Some(crate::protocol::ActivityStatus::Active))
 }
 
-/// The one-line account of a command or Tool Call a Group's header gives for
-/// its running member: the command, or the Tool and its input, exactly as the
-/// member's own row leads with them, cut at the first line break.
-fn member_summary(member: &Activity) -> String {
+/// The one-line account of a command or Tool Call a work Group's header gives
+/// for its running member: the command, or the Tool and its input, exactly as
+/// the member's own row leads with them, cut at the first line break. Empty
+/// for any other Activity.
+fn invocation_summary(member: &Activity) -> String {
     let summary = match member {
         Activity::Command { command, .. } => sanitize_content(command).into_owned(),
         Activity::ToolCall {
@@ -4235,10 +4243,35 @@ fn member_summary(member: &Activity) -> String {
     summary.lines().next().unwrap_or_default().to_owned()
 }
 
+/// The first path a File Change reports, which is what a work Group's header
+/// names it by while it runs.
+fn first_changed_path(member: &Activity) -> Option<&Path> {
+    let Activity::FileChange { changes, .. } = member else {
+        return None;
+    };
+    changes.first().map(|change| match change {
+        FileChange::Add { path }
+        | FileChange::Delete { path }
+        | FileChange::Update { path, .. } => path.as_path(),
+    })
+}
+
+/// What a work Group's header says of its running member: a command or Tool
+/// Call as its own row leads, and a File Change by the first path it
+/// reports, spelled as its own rows spell it.
+fn member_summary(member: &Activity, workspace: &Path) -> String {
+    match first_changed_path(member) {
+        Some(path) => {
+            sanitize_content(&transcript_path(path, workspace).to_string_lossy()).replace('\n', " ")
+        }
+        None => invocation_summary(member),
+    }
+}
+
 /// How many members of a Group settled short of success, told apart the way
 /// ADR 0039 tells them apart: the ones that went wrong, and the ones a stop cut
 /// off. A Group's Marker and the counts its header ends on both read this, so
-/// every groupable kind reports its members' outcomes alike.
+/// every sort of Group reports its members' outcomes alike.
 struct SettledTally {
     failed: usize,
     stopped: usize,
@@ -4288,26 +4321,30 @@ impl SettledTally {
     }
 }
 
-/// Projects the header of a Group that counts its members — `Ran 4 commands`,
-/// `Used 1 tool`: one row in the Activity-header idiom, clamped to the width,
-/// with the count styled as the toggle affordance it is. Collapsed, the row
-/// stands in for every member and the count doubles as the hidden-ness
-/// indicator, so no fold-marker line follows; expanded, the same header leads
-/// the member units.
+/// Projects the header of a work Group, which counts its members kind by
+/// kind — `3 tools · 1 command · 6 edits`: one row in the Activity-header
+/// idiom, clamped to the width, with each count styled as the toggle
+/// affordance it is. A kind the Group holds none of is left out, so a run of
+/// commands alone reads `4 commands`. Collapsed, the row stands in for every
+/// member and the counts double as the hidden-ness indicator, so no
+/// fold-marker line follows; expanded, the same header leads the member
+/// units.
 ///
-/// While any member runs the row speaks in the present tense behind a
-/// Spinner, and names the running member in a dim suffix, so a reader
-/// watching a collapsed Group still sees what it is doing. Once every member
-/// has settled it speaks in the past tense and counts the members that failed
-/// and the ones a stop cut off; its Marker is the worst of how they settled —
-/// a failure over a stop, and either over success.
-fn render_counted_group(
+/// The row carries no verb: its Marker says where the run stands. While any
+/// member runs that is a Spinner, and the row names the running member in a
+/// dim suffix, so a reader watching a collapsed Group still sees what it is
+/// doing. Once every member has settled the row counts the members that
+/// failed and the ones a stop cut off, whatever their kind; its Marker is the
+/// worst of how they settled — a failure over a stop, and either over
+/// success. Everything after the kind counts trails them, so a row too narrow
+/// for the whole of it loses that first.
+fn render_work_group(
     lines: &mut Vec<StyledLine>,
-    noun: CountedNoun,
     members: &[&Activity],
     expanded: bool,
     theme: &Theme,
     width: u16,
+    workspace: &Path,
 ) -> UnitAnchor {
     let tally = SettledTally::of(members);
     let running = running_member(members);
@@ -4317,20 +4354,23 @@ fn render_counted_group(
             .cut_short_marker(theme)
             .unwrap_or(("✓ ", theme.feedback.success)),
     };
-    let verb = if running.is_some() {
-        noun.running
-    } else {
-        noun.settled
-    };
-    let count = members.len();
-    let noun = if count == 1 { noun.one } else { noun.many };
-    let mut row = vec![
-        SlotText::new(format!("  {marker}"), marker_style),
-        SlotText::new(format!("{verb} {count} {noun}"), theme.action.primary),
-    ];
+    let mut row = vec![SlotText::new(format!("  {marker}"), marker_style)];
+    let counts = WorkKind::ALL.into_iter().filter_map(|kind| {
+        let count = members
+            .iter()
+            .filter(|member| WorkKind::of(member) == Some(kind))
+            .count();
+        (count > 0).then(|| kind.counted(count))
+    });
+    for (index, count) in counts.enumerate() {
+        if index > 0 {
+            row.push(SlotText::new(" · ", theme.text.subdued));
+        }
+        row.push(SlotText::new(count, theme.action.primary));
+    }
     if let Some(member) = running {
         row.push(SlotText::new(
-            format!(" · {}", member_summary(member)),
+            format!(" · {}", member_summary(member, workspace)),
             theme.text.subdued,
         ));
     } else {
@@ -4366,7 +4406,7 @@ fn render_counted_group(
 /// set out; a latest member the Provider never headed leaves the row with no
 /// description to give, and it gives none rather than reaching back for an
 /// earlier heading. It then counts its steps — the toggle affordance, the way a
-/// command Group's count is — counts the members that failed or were stopped,
+/// work Group's counts are — counts the members that failed or were stopped,
 /// and sums what its members spent. A latest member a Turn cut short reads as
 /// interrupted, exactly as it would alone. A Group of one is the exception: it
 /// keeps the header-and-fold row a lone block has instead of gaining a count
@@ -5272,7 +5312,7 @@ struct ReasoningActivity<'a> {
 impl<'a> ReasoningActivity<'a> {
     /// The Reasoning an Activity holds, or `None` for an Activity of another
     /// kind. Every member of a Reasoning Group is a Reasoning Activity,
-    /// because the groupable kind is what gathered it; reading that back out
+    /// because the sort of Group is what gathered it; reading that back out
     /// as an Option keeps the guarantee a fact about the walk rather than a
     /// panic waiting in a renderer.
     fn of(activity: &'a Activity) -> Option<Self> {
@@ -7863,7 +7903,7 @@ mod tests {
         assert_eq!(
             rows,
             [
-                "  ✓ Ran 2 commands",
+                "  ✓ 2 commands",
                 "    ✓ cargo fmt",
                 "        reformatted 3 files",
                 "        reformatted 1 file",
@@ -8814,7 +8854,7 @@ mod tests {
                 "┃ tidy the tree",
                 "",
                 "  ✓ Worked",
-                "    ✓ Ran 2 commands",
+                "    ✓ 2 commands",
                 "      ✓ cargo fmt",
                 "          reformatted 1 file",
                 "",

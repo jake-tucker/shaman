@@ -1896,7 +1896,7 @@ const SEMANTIC_COMMANDS: &[SemanticCommandDescriptor] = &[
         id: SemanticCommandId::TranscriptGroupsToggle,
         title: "Toggle transcript groups",
         reach: SemanticReach::Client,
-        description: "Expand every command group into its members, or collapse them back down",
+        description: "Expand every group into its members, or collapse them back down",
         slash: None,
         keybinding: Some(SemanticKeybinding {
             prefix: Some(LEADER_PREFIX),

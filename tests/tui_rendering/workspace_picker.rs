@@ -3307,6 +3307,8 @@ fn an_open_sessions_execution_context_is_independent_of_grouping_and_landing() {
     application
         .handle_event(ApplicationEvent::SessionAttached(snapshot))
         .unwrap();
+    // The file's own row is what spells its path, so read it ungrouped.
+    crate::tui_rendering::transcript::ungroup(&mut application);
     let transcript = rendered_application_rows(&application).join("\n");
     assert!(transcript.contains("Created created.rs"), "{transcript}");
 

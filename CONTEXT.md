@@ -336,7 +336,7 @@ The Activity recording one shell command a Provider ran while working a Turn; a 
 _Avoid_: Shell invocation, exec
 
 **File Change**:
-The Activity recording one Provider-reported operation over one or more files in the Workspace, whichever Tool the Provider performed it with.
+The Activity recording one Provider-reported operation over one or more files in the Workspace, whichever Tool the Provider performed it with. Shaman's own name for the concept is File Change everywhere except the words a Group's marker counts it in, which deliberately say _edit_.
 _Avoid_: Patch, file edit
 
 **Tool Call**:
@@ -416,7 +416,7 @@ The compact presentation a client's Transcript gives an entry whose full stored 
 _Avoid_: Collapse, elision, hide; preview (for Peek)
 
 **Group**:
-The reversible, client-local presentation a Transcript gives a run of one or more adjacent Activities of the same groupable kind — commands, Tool Calls, or Reasoning — without changing stored content or presentation order. An Activity belongs to its Group from the moment it starts and stays in it however it settles, so a Group stands in one place for its whole run and a lone command reads _Ran 1 command_. A Group's marker counts every member, names the work still running while any member runs, and says how many of its members failed; Tool Calls and commands never share a Group. Opening a Group reveals its members in their kind's own Fold presentation. Whether a Transcript opens its Groups collapsed or expanded, or forms none at all, is a Setting.
+The reversible, client-local presentation a Transcript gives a run of one or more adjacent Activities, without changing stored content or presentation order. A Group is one of two sorts. A **work Group** gathers the commands, Tool Calls and File Changes that stand next to one another, whatever their mix, so a run of work reads as one row however many kinds of Tool it took; a **Reasoning Group** gathers Reasoning alone, and the two never share a Group, so Reasoning a reader has asked to see ends the work Group it follows. Anything else a Transcript shows — a Message, a Subagent row, an Approval, a Questionnaire, an Error — ends a run too. An Activity belongs to its Group from the moment it starts and stays in it however it settles, so a Group stands in one place for its whole run and a lone command forms a Group of one that reads _1 command_. A work Group's marker counts its members kind by kind, in an order that never changes and leaving out a kind it holds none of — _3 tools · 1 command · 6 edits_ — where each count is of Activities, so a File Change over several files is one edit. The marker names the work still running while any member runs, and says how many of its members failed or were stopped. Opening a work Group reveals its members in the order they happened, each in its kind's own Fold presentation. Whether a Transcript opens its Groups collapsed or expanded, or forms none at all, is a Setting.
 _Avoid_: Batch, merge, cell
 
 **Turn Fold**:
