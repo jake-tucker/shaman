@@ -5200,7 +5200,7 @@ fn push_file_change_activity(
                 edit: "Edited",
             },
         ),
-        ActivityStatus::Failed | ActivityStatus::Interrupted => (
+        ActivityStatus::Failed => (
             "× ",
             theme.feedback.error,
             FileChangeActions {
@@ -5208,6 +5208,19 @@ fn push_file_change_activity(
                 delete: "Failed to delete",
                 rename: "Failed to rename",
                 edit: "Failed to edit",
+            },
+        ),
+        // Cut off by an interrupt: the face an interrupted Turn wears, so the
+        // stop reads as a stop rather than as the change going wrong, and
+        // agrees with the Group header counting it as stopped.
+        ActivityStatus::Interrupted => (
+            "× ",
+            theme.feedback.warning,
+            FileChangeActions {
+                create: "Stopped creating",
+                delete: "Stopped deleting",
+                rename: "Stopped renaming",
+                edit: "Stopped editing",
             },
         ),
     };

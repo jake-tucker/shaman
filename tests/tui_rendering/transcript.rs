@@ -1032,7 +1032,8 @@ fn command_activities_render_active_successful_and_failed_states_at_responsive_w
 }
 
 #[test]
-fn file_change_activities_render_active_successful_and_failed_states_at_responsive_widths() {
+fn file_change_activities_render_active_successful_failed_and_stopped_states_at_responsive_widths()
+{
     let workspace = workspace_dir();
     let cases = [
         (
@@ -1064,6 +1065,17 @@ fn file_change_activities_render_active_successful_and_failed_states_at_responsi
                 "× Failed to edit src/lib.rs",
             ],
             PANDA.error,
+        ),
+        // Cut off by an interrupt, which is a stop rather than a failure.
+        (
+            ActivityStatus::Interrupted,
+            [
+                "× Stopped renaming src/a.rs → src/b.rs",
+                "× Stopped creating tests/new.rs",
+                "× Stopped deleting old.rs",
+                "× Stopped editing src/lib.rs",
+            ],
+            PANDA.warning,
         ),
     ];
 
