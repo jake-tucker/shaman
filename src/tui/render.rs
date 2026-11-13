@@ -7914,9 +7914,7 @@ fn session_footer_metrics_text(snapshot: &SessionSnapshot, width: u16) -> Option
 
 /// What the line above a Session's composer opens with where the Agent
 /// Selection standing is not the one its Prompt Cache was written under. It
-/// names no change of the user's, since a Provider's fallback is none, and
-/// suggests no `/compact`, since compacting would itself read the context
-/// cold.
+/// names no change of the user's, since a Provider's fallback is none.
 const SELECTION_CHANGED: &str = "Prompt cache does not cover this selection";
 
 /// What the line above a Session's composer says, part by part. In the
@@ -7925,7 +7923,7 @@ const SELECTION_CHANGED: &str = "Prompt cache does not cover this selection";
 /// to that in its place, saying nothing of why. Once the cache has lapsed,
 /// in the warning colour, that it lapsed, what the next Prompt costs beyond
 /// what it would have warm — or that it re-reads the whole context,
-/// where that cannot be priced — and how to shrink it. While it is warm under
+/// where that cannot be priced. While it is warm under
 /// a Selection it was not written under, in the warning colour, that it does
 /// not cover it and what the next Prompt costs for that, shaped as the cold
 /// line is. It is a line about the Session rather than a Notice: no
@@ -7947,7 +7945,6 @@ fn composer_top_parts(line: Option<ComposerTopLine>, theme: &Theme) -> Vec<SlotT
         Some(ComposerTopLine::Lapsed { penalty }) => warning(vec![
             "Prompt cache lapsed".to_owned(),
             cold_prompt_cost(penalty),
-            "/compact first to shrink it".to_owned(),
         ]),
         Some(ComposerTopLine::SelectionChanged { penalty }) => warning(vec![
             SELECTION_CHANGED.to_owned(),

@@ -31,10 +31,8 @@ const HEIGHT: u16 = 20;
 /// When every frame here is drawn, unless a test moves the clock on.
 const NOW: SessionTimestamp = SessionTimestamp(1_800_000_000_000);
 
-const PRICED: &str =
-    "Prompt cache lapsed · next prompt costs ~$1.65 more · /compact first to shrink it";
-const UNPRICED: &str =
-    "Prompt cache lapsed · next prompt re-reads the whole context · /compact first to shrink it";
+const PRICED: &str = "Prompt cache lapsed · next prompt costs ~$1.65 more";
+const UNPRICED: &str = "Prompt cache lapsed · next prompt re-reads the whole context";
 
 /// An idle Session whose Prompt Cache lapses at `lapses_at`, at
 /// `lapse_penalty`, its Cache Lifetime unknown.
@@ -156,16 +154,8 @@ fn a_cold_session_states_its_lapse_penalty_in_the_warning_colour_just_above_the_
     let application = open(&workspace, snapshot, clock_at(NOW));
 
     assert_eq!(composer_top_line(&application).as_deref(), Some(PRICED));
-    assert_eq!(
-        composer_top_rows(&application),
-        [
-            "Prompt cache lapsed · next prompt costs ~$1.65 more",
-            "/compact first to shrink it",
-        ],
-        "a column too narrow for the whole line breaks it between its parts, cutting none"
-    );
     let buffer = drawn(&application);
-    let (column, row) = text_position(&buffer, "/compact first to shrink it");
+    let (column, row) = text_position(&buffer, "next prompt costs ~$1.65 more");
     assert_eq!(
         composer_row(&buffer).checked_sub(row),
         Some(2),
@@ -187,7 +177,14 @@ fn a_cold_session_states_its_lapse_penalty_in_the_warning_colour_just_above_the_
 #[test]
 fn a_column_wide_enough_holds_the_whole_line_on_one_row() {
     let workspace = workspace_dir();
-    let snapshot = session(&workspace, SessionTimestamp(NOW.0 - 1), Some(1.65));
+    // The longest line there is, which the default column breaks in two.
+    let snapshot = written_under(
+        &workspace,
+        claude("opus", "medium"),
+        claude("haiku", "medium"),
+        SessionTimestamp(NOW.0 + 240_000),
+        None,
+    );
     let mut application = open(&workspace, snapshot, clock_at(NOW));
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::SettingsSnapshot(
@@ -215,7 +212,7 @@ fn a_column_wide_enough_holds_the_whole_line_on_one_row() {
 
     assert_eq!(
         composer_top_rows(&application),
-        [PRICED],
+        [selection_changed(None)],
         "{}",
         screen(&application)
     );
@@ -248,7 +245,7 @@ fn a_known_penalty_under_five_cents_draws_no_line_and_five_cents_does() {
     );
     assert_eq!(
         composer_top_line(&enough).as_deref(),
-        Some("Prompt cache lapsed · next prompt costs ~$0.05 more · /compact first to shrink it"),
+        Some("Prompt cache lapsed · next prompt costs ~$0.05 more"),
     );
 }
 
@@ -904,10 +901,6 @@ fn a_warm_session_selecting_another_model_warns_in_the_warning_colour_just_above
     assert_eq!(
         buffer.cell((column, row)).map(|cell| cell.fg),
         Some(PANDA.warning)
-    );
-    assert!(
-        !screen(&application).contains("/compact"),
-        "compacting would itself read the context cold, so nothing suggests it"
     );
 }
 
