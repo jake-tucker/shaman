@@ -1,0 +1,33 @@
+# Hold what a Peer and a Serving Server say to each other to compatibility
+
+_Amends ADR-0017's refusal of a Pairing whose protocol version differs: a Pairing is refused only where one side is older than the other still speaks. Amends ADR-0047: what a Shaman upgrade carries forward gains enrolled Peers and known Remotes, and the Pairing's own structures no longer reject what they do not recognize. The promise for the Relay stands as ADR-0047 made it._
+
+A thin Client's app and the Servers it pairs with are updated apart (ADR-0077), and one phone paired with two Servers cannot match both once they are on different releases. Under the exact-match rule the protocol version moved 115 times in three months, so an installed app would have been refused after nearly every Server release. So, from the release that lands the mechanism below, everything a Peer may ask of a Serving Server stays backward compatible, in both directions: an older Peer works against a newer Serving Server, and a newer Peer against an older one. The Serving side is not told whether its Peer is a phone or a Server, so the one rule covers thin Clients and paired Servers alike, the ceremony that forms a Pairing included. Until that release the wire breaks as freely as it does today, and the version that release carries is the first floor.
+
+- **One number and a floor.** Each side states its protocol version on every request and every answer, and accepts the other where that version is at or above its own floor, the oldest version it still speaks. The version goes on moving with every change to the wire, so "the other side is at least N" is the only test of what it knows; no capability is named apart from it. Raising a floor is a deliberate, recorded act.
+- **Change by addition.** Nothing a Peer may ask is removed, renamed or retyped, no request gains a field it requires, and no field comes to mean something else, while a version that relies on it is at or above the floor. A reader requires only what existed at its floor; anything added since is optional or defaulted until the floor passes it. A change that cannot be made by addition is raised and decided rather than simply made, which is how a floor comes to rise.
+- **Readers tolerate what they do not know.** An unknown field is ignored and an unknown event is skipped. An unknown error code reads as a generic one, with the message that travels beside it shown. An unknown kind of Activity holds its place in the Transcript as a placeholder. An unknown change on a stream is skipped and remembered, and the reader says once, quietly, that this Server is newer and some things may not show. A new kind is therefore never the only carrier of a change to something an older reader already shows.
+- **Ask and be refused.** A newer Client asks an older Server for what it wants; where the Server answers that it knows no such thing, the Client says that Server is too old for it. A feature is hidden by the other side's version only where a refusal partway through would confuse.
+- **A gap that cannot be bridged names who is behind.** Each end says which side to upgrade, and the Serving side shows the refused Peer as behind. The Pairing is kept while it is refused, so upgrading heals it with no second ceremony.
+- **Neither side's upgrade costs a Pairing.** A Server's upgrade carries forward its enrolled Peers and known Remotes beside its identity key, and a thin Client's upgrade carries forward its identity key and its Pairings.
+- **Breaks are caught before they ship.** A schema of the wire, generated from its types and checked in, is compared on every change, and a removal, a rename, a retype, a newly required request field or a dropped default fails unless the floor rises with it. A test runs the floor release's own binary against the current build, in both directions, through pairing, listing Sessions, a Session's stream, a Prompt and an Intervention.
+
+## Considered Options
+
+- **A promise for a thin Client's part of the wire alone.** Rejected: the Peer would have to say which rule it wanted, which rests on the redeemer's word as ADR-0077 refused to. Two paired Servers also gain from no longer reading "Protocol mismatch" after every release.
+- **The loopback wire held too.** Rejected: a Client that finds its machine's Server at a different build replaces it, so the two are never apart for long. That wire keeps its exact match, and what only a machine's own Client may ask, administration, stays free to break.
+- **A fixed window of versions or months.** Rejected for now: with one user deploying from Xcode there is nothing to measure a window against. A floor says the same thing and moves when someone decides it should.
+- **An offered list of versions, as a Server and a Relay agree one.** Rejected: Shaman has one linear history, so two numbers describe everything a side speaks.
+- **Named capabilities.** Rejected: they earn their cost where independent implementations each support a different part. Every Server is built from one history, and a thin Client asks only for what it knows.
+- **Strict on one wire and tolerant on the other.** Not possible as built: a Peer speaks the loopback API proxied, in the same types.
+- **Read the Session again on meeting an unknown change.** Rejected: a kind that arrives often would have an older reader reloading without end.
+- **Recorded samples from each version since the floor.** Rejected: they prove one direction only, and the cross-version test covers it.
+
+## Consequences
+
+- A machine's own Client reads a Remote through its Server's proxy, so the TUI is itself a reader of Servers at other versions. The placeholder, the skipped change and its note, and the wording that names who is behind are the TUI's work as much as a phone's.
+- One number covers what Clients ask and what two Servers say only to each other. Between floors that refuses nobody, but a floor raised for a break a phone never sees still refuses an older phone.
+- A new field in an answer is optional to its reader until the floor passes the version that added it, which is when it may become required. Code that tolerates older Peers looks dead by the project's usual standard and is not, until then.
+- The schema check cannot see a field whose meaning changed while its shape did not; five of the last forty-five versions did that. The cross-version test catches it only on the flows it runs, and review catches the rest.
+- The Session database is promised nothing new: it is migrated forward as it has been, and a database newer than its binary is still refused.
+- `CLAUDE.md` goes on saying that nothing accounts for earlier versions until the mechanism lands, and changes with it.
