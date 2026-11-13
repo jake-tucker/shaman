@@ -1,5 +1,7 @@
 # Let a Client with no Server of its own pair as an ordinary Peer
 
+_Extended by ADR-0079, which decides how a thin Client stands at a Relay._
+
 _Amends ADR-0017's clause that a Client never dials a Remote itself, for a thin Client alone. Leaves ADR-0045 and ADR-0046 as they are: a Relay still carries bytes and holds no trust, and a Pairing is still formed only by redeeming an Invite._
 
 A phone runs no Server, so the app on it cannot see anything remote "through its own Server" as ADR-0017 has every Client do. Such a Client, a **thin Client**, holds an identity key of its own, redeems an Invite itself, and stands as the redeeming side of an ordinary Pairing: every Server it knows is a Remote, and each of them holds it as a Peer, by key and by the name it gave itself. Nothing about the Pairing is new. The Serving side is not told which kind redeemed, gives a thin Client what it gives any Peer, everything short of its administration, and removes it the same way. This was chosen because the trust a phone needs is exactly what a Pairing already is — an Invite spent once, two pinned keys, removal from either side — and because nothing the Serving side could be told about its Peer is anything it could check.

@@ -1,5 +1,7 @@
 # Let a Relay list the Logins under an Account as a hint that opens nothing
 
+_Extended by ADR-0079: a thin Client holds a Login too, and is listed as one that is not waiting._
+
 A Pairing through a Relay asked for a long string to be carried between two machines, often with no good channel between them, which is usually why they wanted a Relay. A Server whose Login stands may now ask its Relay which other Logins stand under its Account, and `/pair` opens on what its Relays answer. This is the convenience ADR-0046 left room for: logged-in machines find each other, and a Pairing is still formed only by redeeming an Invite. Finding is not trusting.
 
 The list shows every other Login under the Account, whether or not its Server Serves, each by its identity key, the hostname it reported, and whether it waits to be reached now. "Not Serving, run `/serve` there" is the most useful thing the list can say, and it can say that only of a machine that is not waiting. So a Server appears once it has logged in, and being listed opens nothing, which keeps "holding a Login opens nothing" true: being reached still takes Serving through the Relay, and being trusted still takes an Invite.
