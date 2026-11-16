@@ -1,4 +1,5 @@
-// PROTOTYPE — throwaway. Variant B, "Chat": a messaging app. What was said reads as a
+// PROTOTYPE — throwaway. The open Session that won ticket 643 ("Chat"), kept as what a begun
+// Session opens into, and taught the Provisional Session. What was said reads as a
 // conversation, and a Turn's work is one card between the ask and the answer. Nothing opens
 // in place: the card pushes a screen listing the work, and each Activity pushes a screen of
 // its own with room to scroll sideways. Live work rides a bar above the composer, where the
@@ -9,7 +10,7 @@ import SwiftUI
 private struct WorkRoute: Hashable { let turn: Int }
 private struct EntryRoute: Hashable { let turn: Int; let entry: Int }
 
-struct VariantB: View {
+struct OpenSession: View {
     @Environment(Store.self) private var store
     let live: Live
     let session: SessionRow
@@ -53,7 +54,18 @@ struct VariantB: View {
         ForEach(turn.opening) { bubble(headline($0)) }
         let closing = turn.closing
         let work = turn.middle.filter { !$0.isUser }
-        if !work.isEmpty || turn.outcome == nil {
+        if case .refused(let why) = live.phase {
+            // Where the Working Indicator was: the Client's own row, never the Server's.
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Could not create session: \(why)", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Button("Try again") { store.retry(live.id) }.buttonStyle(.bordered).controlSize(.small)
+            }
+            .font(.footnote)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+        } else if live.phase == nil, !work.isEmpty || turn.outcome == nil {
             NavigationLink(value: WorkRoute(turn: turn.id)) { workCard(turn, work) }.buttonStyle(.plain)
         }
         ForEach(turn.middle.filter(\.isUser)) { bubble(headline($0)) }
@@ -141,7 +153,15 @@ struct VariantB: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if !live.pending.isEmpty {
+            if live.phase == .creatingWorktree || live.phase == .starting {
+                // No elapsed time and no Stop: only the Server knows when Working began.
+                liveBar(color: .blue) {
+                    ProgressView().controlSize(.mini)
+                    Shimmer(text: live.phase == .starting ? "Starting" : "Creating worktree").fontWeight(.medium)
+                } trailing: {
+                    Color.clear.frame(width: 1, height: 28)
+                }
+            } else if !live.pending.isEmpty {
                 liveBar(color: .orange) {
                     Image(systemName: "hand.raised.fill")
                     Text(live.pending[0].isApprovalRow ? "Approval waiting" : "Questionnaire waiting").fontWeight(.medium)
@@ -161,7 +181,7 @@ struct VariantB: View {
                 }
             }
             HStack(alignment: .bottom, spacing: 8) {
-                TextField(live.working ? "Steer, or hold send to queue" : "Message", text: Bindable(live).draft, axis: .vertical)
+                TextField(placeholder, text: Bindable(live).draft, axis: .vertical)
                     .lineLimit(1...6)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
@@ -174,15 +194,29 @@ struct VariantB: View {
                 } label: {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 34))
                 } primaryAction: {
-                    live.send()
+                    if case .refused = live.phase {
+                        // Text submitted replaces the refused Prompt as a new one.
+                        store.retry(live.id, with: live.draft)
+                        live.draft = ""
+                    } else {
+                        live.send()
+                    }
                 }
-                .disabled(live.draft.isEmpty)
+                .disabled(live.draft.isEmpty || live.phase == .starting || live.phase == .creatingWorktree)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.bar)
         .disabled(unreachable)
+    }
+
+    private var placeholder: String {
+        switch live.phase {
+        case .refused: "Write a new prompt instead"
+        case .some: "Message"
+        case nil: live.working ? "Steer, or hold send to queue" : "Message"
+        }
     }
 
     private func liveBar(

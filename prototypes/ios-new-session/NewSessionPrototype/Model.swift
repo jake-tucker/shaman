@@ -1,5 +1,5 @@
-// PROTOTYPE — throwaway. Canned data and the in-memory state every variant reads.
-// Answers https://github.com/jake-tucker/shaman/issues/642; kept as the host of the open Session.
+// PROTOTYPE — throwaway. Canned data and the in-memory state every variant reads, and the toy
+// Server that answers when a Session is begun.
 
 import SwiftUI
 
@@ -71,27 +71,54 @@ struct Workspace: Identifiable, Hashable {
     let name: String
     let symbol: String?
     let remote: String
+    var about: String? = nil  // its Description
+    var unavailable: String? = nil  // why its Server cannot read it now
+    var repo = true  // a directory outside source control has no Worktrees
     var glyph: String { symbol ?? "folder" }
+    var isSidekick: Bool { name == "Sidekick" }
 }
 
 struct SessionRow: Identifiable, Hashable {
     let id: String
-    let title: String
-    let symbol: String?
+    var title: String
+    var symbol: String?
     var standing: Standing
     let workspace: String
-    let checkout: String?
-    let linked: Bool  // a linked Worktree rather than the main one
+    var checkout: String?
+    var linked: Bool  // a linked Worktree rather than the main one
     let running: Int  // seconds Working or Monitoring
     let moved: Int  // seconds since it last moved
     var settled: Bool
     let hint: String?  // what the Intervention asks; the listing does not carry this today
+    var provisional = false  // the Client's own claim: its Server has not yet answered with the Session
+}
+
+/// How the toy Server answers a Session being begun; the pill chooses.
+enum StartMode: String, CaseIterable, Identifiable {
+    case quick, slow, refused
+    var id: Self { self }
+    var label: String {
+        switch self {
+        case .quick: "The server answers at once"
+        case .slow: "The server takes its time"
+        case .refused: "The server refuses"
+        }
+    }
 }
 
 enum Scope: Hashable {
     case everywhere
     case server(String)
     case workspace(String)
+}
+
+/// The Title a Prompt gives until its Server derives one.
+func firstLine(_ text: String) -> String {
+    String(text.split(separator: "\n").first ?? "").trimmingCharacters(in: .whitespaces)
+}
+
+func slug(_ text: String) -> String {
+    text.lowercased().split { !$0.isLetter && !$0.isNumber }.prefix(4).joined(separator: "-")
 }
 
 func compact(_ seconds: Int) -> String {
@@ -114,6 +141,15 @@ final class Store {
     // The pill's switches. Held here rather than in @AppStorage: a launch argument pins a
     // default for the life of the process, so a write to it never reaches the views reading it.
     var variant = UserDefaults.standard.string(forKey: "variant") ?? "A"
+    var startMode = StartMode(rawValue: UserDefaults.standard.string(forKey: "start") ?? "") ?? .quick
+    /// The Landing's draft and its Worktree intent: one of each, whichever variant draws them.
+    var draft = UserDefaults.standard.string(forKey: "draft") ?? ""
+    var newWorktree = UserDefaults.standard.bool(forKey: "worktree")
+    /// For driving the prototype without a finger: each flips once, from a launch argument.
+    var composeAsk = false
+    var pickerAsk = false
+    var sendAsk = false
+    private var begun = 0
     var reasoning = UserDefaults.standard.bool(forKey: "reasoning")
     var diffs = UserDefaults.standard.bool(forKey: "diffs")
     /// The Sessions opened so far, each with its Transcript and toy engine.
@@ -135,6 +171,93 @@ final class Store {
     }
 
     func row(_ id: String) -> SessionRow { sessions.first { $0.id == id }! }
+
+    // MARK: Beginning a Session
+
+    var outlook: Workspace { workspace(outlookWorkspace) }
+    var outlookUnreachable: Bool { reach(outlook.remote) != .reachable }
+    var fresh: Bool { newWorktree && outlook.repo }
+    var canBegin: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !outlookUnreachable
+    }
+    /// The Agent Selection a Session begun with none gets: its Server's own.
+    var agent: String { Canned.agents[outlook.remote] ?? "the server's default" }
+
+    /// The Workspaces a picker offers: a Server's Registry, never its Sidekick Workspace.
+    func choices(on remote: String) -> [Workspace] { workspaces(on: remote).filter { !$0.isSidekick } }
+
+    /// Choosing where the next Session begins turns the Outlook, as narrowing the listing does.
+    func choose(_ workspace: Workspace) {
+        guard workspace.unavailable == nil else { return }
+        outlookWorkspace = workspace.id
+    }
+
+    /// A Session this Client began, while this Client still holds it.
+    func begun(_ id: String) -> Live? { lives[id] }
+
+    /// Submits the first Prompt: the Provisional Session stands at once, and the toy Server
+    /// answers after a while with the Session, or refuses.
+    @discardableResult
+    func begin() -> String {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = ""
+        begun += 1
+        let id = "n\(begun)"
+        sessions.append(SessionRow(
+            id: id, title: firstLine(text), symbol: nil, standing: .working, workspace: outlookWorkspace,
+            checkout: fresh ? nil : "main", linked: fresh, running: 0, moved: 0, settled: false, hint: nil,
+            provisional: true))
+        lives[id] = Live(provisional: text, id: id, phase: fresh ? .creatingWorktree : .starting)
+        answer(id, startMode)
+        return id
+    }
+
+    private func answer(_ id: String, _ mode: StartMode) {
+        guard let live = lives[id] else { return }
+        Task { @MainActor in
+            if live.phase == .creatingWorktree {
+                try? await Task.sleep(for: .seconds(mode == .slow ? 5 : 2.2))
+                guard self.lives[id] === live else { return }
+                live.phase = .starting
+                self.update(id) { $0.checkout = "shaman/" + slug($0.title) }
+            }
+            try? await Task.sleep(for: .seconds(mode == .slow ? 5 : 0.9))
+            guard self.lives[id] === live else { return }
+            if mode == .refused {
+                live.phase = .refused("The workspace's directory could not be read.")
+                return
+            }
+            live.arrive()
+            self.update(id) { $0.provisional = false }
+            // The Icon its Server derives arrives a little after the Session does.
+            try? await Task.sleep(for: .seconds(2.5))
+            self.update(id) { $0.symbol = "sparkles" }
+        }
+    }
+
+    /// A refused Provisional Session tried again, with the same Prompt or a new one in its place.
+    func retry(_ id: String, with text: String = "") {
+        guard let live = lives[id] else { return }
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty {
+            live.replacePrompt(text)
+            update(id) { $0.title = firstLine(text) }
+        }
+        live.phase = .starting  // any Worktree made for it was retained
+        answer(id, .quick)
+    }
+
+    /// Leaving a refused Provisional Session discards it and keeps its text as the draft.
+    func discard(_ id: String) {
+        if let live = lives[id] { draft = live.prompt }
+        sessions.removeAll { $0.id == id }
+        lives[id] = nil
+    }
+
+    private func update(_ id: String, _ change: (inout SessionRow) -> Void) {
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        change(&sessions[index])
+    }
 
     /// Opens straight into one of the canned states.
     func open(_ state: String) {
@@ -228,6 +351,8 @@ final class Store {
                 case .workspace(let id): session.workspace == id
                 }
             }
+            // A Provisional Session is never listed, except where variant C lists it.
+            .filter { !$0.provisional || variant == "C" }
             .filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
             .map { row in
                 // A Session opened here stands as its Transcript now says.
@@ -271,14 +396,31 @@ enum Canned {
     ]
 
     static let workspaces = [
-        Workspace(id: "studio/shaman", name: "shaman", symbol: "flame", remote: "studio"),
-        Workspace(id: "studio/dotfiles", name: "dotfiles", symbol: "gearshape.2", remote: "studio"),
+        Workspace(id: "studio/shaman", name: "shaman", symbol: "flame", remote: "studio",
+                  about: "A terminal client for coding agents across Codex, Copilot and Claude."),
+        Workspace(id: "studio/dotfiles", name: "dotfiles", symbol: "gearshape.2", remote: "studio",
+                  about: "Shell, editor and terminal configuration."),
         Workspace(id: "studio/sidekick", name: "Sidekick", symbol: "figure.wave", remote: "studio"),
-        Workspace(id: "work/billing-api", name: "billing-api", symbol: "creditcard", remote: "work-laptop"),
-        Workspace(id: "work/shaman", name: "shaman", symbol: "flame", remote: "work-laptop"),
+        // Known to the Registry, though no Session has begun there: a directory outside source control.
+        Workspace(id: "studio/notes", name: "notes", symbol: "note.text", remote: "studio",
+                  about: "Loose notes and drafts.", repo: false),
+        Workspace(id: "studio/photo-archive", name: "photo-archive", symbol: "externaldrive", remote: "studio",
+                  unavailable: "Its drive is not mounted."),
+        Workspace(id: "work/billing-api", name: "billing-api", symbol: "creditcard", remote: "work-laptop",
+                  about: "Invoices, rounding and the ledger export."),
+        Workspace(id: "work/shaman", name: "shaman", symbol: "flame", remote: "work-laptop",
+                  about: "A terminal client for coding agents across Codex, Copilot and Claude."),
         Workspace(id: "work/design-system", name: "design-system", symbol: nil, remote: "work-laptop"),
-        Workspace(id: "lab/relay-infra", name: "relay-infra", symbol: "antenna.radiowaves.left.and.right", remote: "homelab"),
+        Workspace(id: "lab/relay-infra", name: "relay-infra", symbol: "antenna.radiowaves.left.and.right", remote: "homelab",
+                  about: "Deploy scripts for the relay."),
         Workspace(id: "lab/home-assistant", name: "home-assistant", symbol: "house", remote: "homelab"),
+    ]
+
+    /// Each Server's own Agent Selection for a Session begun with none.
+    static let agents = [
+        "studio": "Claude · Fable 5.2 · high",
+        "work-laptop": "Copilot · Sonnet 5.5",
+        "homelab": "Codex · GPT-5.5 · medium",
     ]
 
     private static func row(

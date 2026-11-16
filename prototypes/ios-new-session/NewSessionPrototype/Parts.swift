@@ -172,7 +172,8 @@ struct SessionTitle: View {
     var body: some View {
         VStack(spacing: 1) {
             Text(session.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-            Text([store.place(session.workspace), session.checkout].compactMap { $0 }.joined(separator: " · "))
+            Text([store.place(session.workspace), session.checkout ?? (session.linked ? "new worktree" : nil)]
+                .compactMap { $0 }.joined(separator: " · "))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

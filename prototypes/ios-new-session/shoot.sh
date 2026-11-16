@@ -1,5 +1,5 @@
 #!/bin/sh
-# PROTOTYPE — throwaway. ./shoot.sh <name> <variant> <state> [launch arguments…]: build, launch, screenshot.
+# PROTOTYPE — throwaway. ./shoot.sh <name> <variant> [launch arguments…]: build, launch, screenshot.
 set -eu
 cd "$(dirname "$0")"
 name="$1"; shift

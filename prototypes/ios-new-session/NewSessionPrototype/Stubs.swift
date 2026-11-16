@@ -1,42 +1,7 @@
-// PROTOTYPE — throwaway. The screens the listing leads to, stubbed just far enough to show
-// where each way in lands. Beginning a Session is still fog.
+// PROTOTYPE — throwaway. The screens the listing leads to besides a Session, stubbed just far
+// enough to show where each way in lands.
 
 import SwiftUI
-
-/// Where a new Session would begin, and what the way in already decided for the reader.
-struct NewSessionStub: View {
-    @Environment(Store.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    let workspace: String
-    var prompt = ""
-    var decided = "Nothing: the reader picks a server, then a workspace."
-
-    var body: some View {
-        let place = store.workspace(workspace)
-        NavigationStack {
-            Form {
-                Section("Begins in") {
-                    LabeledContent("Server", value: place.remote)
-                    LabeledContent("Workspace", value: place.name)
-                    LabeledContent("Agent", value: "the default selection")
-                }
-                Section("First prompt") {
-                    Text(prompt.isEmpty ? "The composer stands here." : prompt)
-                        .foregroundStyle(prompt.isEmpty ? .secondary : .primary)
-                }
-                Section("What the way in decided") {
-                    Text(decided).font(.footnote).foregroundStyle(.secondary)
-                }
-            }
-            .navigationTitle("New session")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            }
-        }
-        .presentationDetents([.medium, .large])
-    }
-}
 
 /// The Remotes the phone holds, their ways, and the way into pairing another.
 struct ServersList: View {

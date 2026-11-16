@@ -1,5 +1,5 @@
-// PROTOTYPE — throwaway. The listing that won ticket 642, kept as the host an open Session is
-// pushed from. Nothing here is under test.
+// PROTOTYPE — throwaway. The listing that won ticket 642, kept as the host a Session is begun
+// from. Only what its compose button does is under test, and the row variant C adds.
 // "Inbox": the TUI's Sidebar turned into a phone screen.
 // One flat list by recency under Everywhere, a scope menu in the title, the settled shelf
 // beneath, an Unreachable server as a slim row at the foot of the active list, and one
@@ -13,7 +13,8 @@ struct Listing: View {
     @State private var query = ""
     @State private var shelfShown = 4
     @State private var showServers = false
-    @State private var showNew = false
+    @State private var showNew = false  // A's sheet
+    @State private var composing = false  // C's composer, in the bottom bar's place
     @State private var tappedUnreachable: Remote?
 
     private var rows: [SessionRow] { store.sessions(in: scope, query: query) }
@@ -76,15 +77,21 @@ struct Listing: View {
                     }
                 }
                 ToolbarItem(placement: .bottomBar) {
-                    Button { showNew = true } label: { Image(systemName: "square.and.pencil") }
+                    Button { compose() } label: { Image(systemName: "square.and.pencil") }
                 }
             }
+            .toolbar(composing ? .hidden : .automatic, for: .bottomBar)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if composing { VariantC(composing: $composing) }
+            }
             .navigationDestination(for: String.self) { SessionScreen(id: $0) }
+            .navigationDestination(for: DraftRoute.self) { _ in VariantB().toolbar(.hidden, for: .bottomBar) }
             .sheet(isPresented: $showServers) { ServersSheet() }
-            .sheet(isPresented: $showNew) {
-                NewSessionStub(
-                    workspace: store.outlookWorkspace,
-                    decided: "Server and workspace: wherever the scope menu last pointed. Change either here.")
+            .sheet(isPresented: $showNew) { VariantA() }
+            .onChange(of: store.composeAsk) { compose() }
+            .onChange(of: store.variant) {
+                showNew = false
+                composing = false
             }
             .sheet(item: $tappedUnreachable) { UnreachableSheet(remote: $0) }
             .onChange(of: scope) {
@@ -94,6 +101,15 @@ struct Listing: View {
                 case .workspace(let id): store.outlookWorkspace = id
                 }
             }
+        }
+    }
+
+    /// What the compose button does is the question; each variant answers it differently.
+    private func compose() {
+        switch store.variant {
+        case "B": store.path.append(DraftRoute())
+        case "C": composing = true
+        default: showNew = true
         }
     }
 
@@ -144,7 +160,12 @@ struct Listing: View {
         }
         .opacity(store.isUnreachable(session) ? 0.45 : 1)
         .swipeActions(edge: .trailing) {
-            Button(session.settled ? "Unsettle" : "Settle") { store.toggleSettled(session) }.tint(.indigo)
+            if session.provisional {
+                // The Prompt goes back to the composer.
+                Button("Discard", role: .destructive) { store.discard(session.id) }
+            } else {
+                Button(session.settled ? "Unsettle" : "Settle") { store.toggleSettled(session) }.tint(.indigo)
+            }
         }
     }
 
@@ -168,7 +189,7 @@ struct Listing: View {
                         }
                         Text(session.title).font(.body.weight(.medium)).lineLimit(2)
                     }
-                    if let checkout = session.checkout {
+                    if let checkout = session.checkout ?? (session.linked ? "new worktree" : nil) {
                         Label(checkout, systemImage: session.linked ? "arrow.triangle.branch" : "point.topleft.down.to.point.bottomright.curvepath")
                             .labelStyle(.titleAndIcon)
                             .font(.caption)
@@ -181,6 +202,22 @@ struct Listing: View {
         }
 
         @ViewBuilder private var rightSlot: some View {
+            if session.provisional {
+                // C only: a Session this phone began and its Server has not yet answered for.
+                switch store.begun(session.id)?.phase {
+                case .refused:
+                    Text("Could not start").font(.caption.weight(.medium)).foregroundStyle(.red)
+                case .creatingWorktree:
+                    Shimmer(text: "Creating worktree").font(.caption.weight(.medium)).foregroundStyle(.blue)
+                default:
+                    Shimmer(text: "Starting").font(.caption.weight(.medium)).foregroundStyle(.blue)
+                }
+            } else {
+                settledSlot
+            }
+        }
+
+        @ViewBuilder private var settledSlot: some View {
             switch session.standing {
             case .working, .monitoring:
                 Text("\(session.standing.word!) \(compact(session.running))")

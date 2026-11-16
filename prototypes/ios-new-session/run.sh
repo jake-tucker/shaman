@@ -1,17 +1,24 @@
 #!/bin/sh
-# PROTOTYPE — throwaway. Builds the open-Session prototype and runs it on a simulator.
+# PROTOTYPE — throwaway. Builds the beginning-a-Session prototype and runs it on a simulator.
 #   ./run.sh                  # variant A, on the Session listing
-#   ./run.sh B working        # variant A|B|C, then a state from Canned.swift to open straight into:
-#                             #   working approval fileApproval questionnaire settled failed unreachable
-#   ./run.sh C settled -reasoning YES -groups expanded   # anything after is passed as launch arguments
+#   ./run.sh B                # variant A|B|C; flip between them with the yellow pill too
+#   ./run.sh A -compose YES -draft "Trim the QR code's quiet zone" -send YES -start slow
+# Anything after the variant is passed as launch arguments:
+#   -compose YES              do what the compose button does
+#   -draft "<text>"           the first Prompt, already written
+#   -worktree YES             ask for a new Worktree
+#   -picker YES               open the Workspace picker (A and B)
+#   -send YES                 send the draft
+#   -start quick|slow|refused how the toy Server answers
+#   -scenario oneServer|threeServers|unreachable|empty   -outlook lab/relay-infra
 set -eu
 cd "$(dirname "$0")"
 
 # A simulator's UDID; the first iPhone 18 Pro unless DEVICE names another.
 DEVICE="${DEVICE:-$(xcrun simctl list devices available | sed -n 's/^ *iPhone 18 Pro (\([0-9A-F-]*\)).*/\1/p' | head -1)}"
-BUNDLE=dev.shaman.prototype.transcript
-BUILD="${TMPDIR:-/tmp}/shaman-transcript-prototype"
-t=TranscriptPrototype
+BUNDLE=dev.shaman.prototype.newsession
+BUILD="${TMPDIR:-/tmp}/shaman-new-session-prototype"
+t=NewSessionPrototype
 
 if [ ! -d $t.xcodeproj ]; then
   xcrun xcodeproj init $t.xcodeproj
@@ -35,6 +42,5 @@ xcodebuild build -quiet -project $t.xcodeproj -scheme $t \
 xcrun simctl install "$DEVICE" "$BUILD/Build/Products/Debug-iphonesimulator/$t.app"
 xcrun simctl terminate "$DEVICE" $BUNDLE 2>/dev/null || true
 variant="${1:-A}"
-state="${2:-none}"
-[ $# -ge 2 ] && shift 2 || shift $#
-xcrun simctl launch "$DEVICE" $BUNDLE -variant "$variant" -open "$state" "$@"
+[ $# -ge 1 ] && shift
+xcrun simctl launch "$DEVICE" $BUNDLE -variant "$variant" "$@"

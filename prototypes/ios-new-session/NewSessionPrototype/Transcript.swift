@@ -1,6 +1,6 @@
 // PROTOTYPE — throwaway. What an open Session holds, the Transcript's own rules every variant
 // shares (what a Group gathers, what a Turn Fold hides), and a toy engine that plays a Turn.
-// Answers https://github.com/jake-tucker/shaman/issues/643 and nothing else.
+// Carried from ticket 643, with the Provisional Session added for ticket 651.
 
 import SwiftUI
 
@@ -105,6 +105,7 @@ struct Entry: Identifiable {
     var isAgent: Bool { if case .agent = body { true } else { false } }
     var isError: Bool { if case .error = body { true } else { false } }
     var isReasoning: Bool { if case .reasoning = body { true } else { false } }
+    var isApprovalRow: Bool { if case .approval = body { true } else { false } }
     var isWork: Bool {
         switch body {
         case .command, .fileChange, .tool: true
@@ -334,9 +335,32 @@ final class Live {
     var setAside = false  // the reader dismissed the Interventions pending just now
     var allowed: [Step] = []  // what plays once an Intervention is approved or answered
     var denied: [Step] = []
+    /// Set while this is a Provisional Session: the Client's own claim, drawn from what it
+    /// already knows, until its Server answers with the Session it made.
+    enum Phase: Equatable { case creatingWorktree, starting, refused(String) }
+    var phase: Phase?
     private var script: [Step] = []
     private var task: Task<Void, Never>?
     private var nextID = 10_000
+
+    convenience init(provisional text: String, id: String, phase: Phase) {
+        self.init(id: id, turns: [Turn(id: 1, entries: [Entry(id: 2, body: .user(text))])])
+        self.phase = phase
+        began = nil  // only the Server knows when Working began
+    }
+
+    /// The Prompt a Provisional Session was begun with.
+    var prompt: String { turns.first?.entries.first.map(headline) ?? "" }
+
+    func replacePrompt(_ text: String) { turns[0].entries[0].body = .user(text) }
+
+    /// The Server answered with the Session: the claim is replaced in place by the real thing.
+    func arrive() {
+        phase = nil
+        began = .now
+        script = Canned.reply
+        play()
+    }
 
     init(id: String, turns: [Turn], elapsed: Int = 0, watch: String? = nil, script: [Step] = [],
          allowed: [Step] = [], denied: [Step] = []) {
@@ -350,7 +374,7 @@ final class Live {
         if working { play() }
     }
 
-    var working: Bool { !turns.isEmpty && turns.last?.outcome == nil }
+    var working: Bool { phase == nil && !turns.isEmpty && turns.last?.outcome == nil }
     var monitoring: Bool { !working && watch != nil }
 
     /// The open Session's own Interventions, oldest first in Transcript order.
@@ -361,6 +385,8 @@ final class Live {
     var running: Entry? { working ? turns[turns.count - 1].entries.last { $0.state == .running } : nil }
 
     var standing: Standing {
+        if case .refused = phase { return .failed }
+        if phase != nil { return .working }
         if !pending.isEmpty { return .needsIntervention }
         if working { return .working }
         if turns.last?.outcome == .failed { return .failed }
@@ -432,7 +458,7 @@ final class Live {
     /// Turn, or waits its turn in the queue.
     func send(queue: Bool = false) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty, phase == nil else { return }
         draft = ""
         if working && queue {
             queued.append(text)
