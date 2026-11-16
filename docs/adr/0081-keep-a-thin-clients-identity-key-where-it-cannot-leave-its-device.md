@@ -1,0 +1,35 @@
+# Keep a thin Client's identity key where it cannot leave its device
+
+_Follows ADR-0077, which left where a thin Client keeps its key to a decision of its own, and ADR-0080, which has the app hand the core a way to sign with it. Leaves ADR-0050 as it is: a Server's key stays in the platform credential store, and a Server key that never leaves hardware remains #513._
+
+A thin Client's identity key is what each of its Remotes pins and the whole of each Relay Login it holds, and what it opens includes Agents running commands on every Serving machine. On a phone that key is made inside the device's secure hardware, the Secure Enclave on iOS, and never exists outside it. The app keeps only a blob that the same chip alone can use, as a Keychain item that stays on the device, and the core signs by asking the app. This was chosen because it is the one property that cannot be added later: a key that was ever readable cannot be made unreadable, so changing it means a new key and pairing again with every Server. Its cost also falls where it is cheapest. ADR-0080 already has the core sign through the app, and pairing again is one scan for each Server.
+
+So a thin Client's identity does not travel. A phone that is new, erased, or restored from another phone's backup is a new Peer and pairs again with each Server it is to see.
+
+- **Nothing asks for Face ID or a passcode before the key signs.** Such a condition is fixed when a key is made, and every reconnection signs, so it would prompt each time the app came back to the front. The iOS simulator can make no such key at all, so a simulator build would run a different key policy from a phone's. The device's own lock is the gate, as it is for a TUI on an unlocked machine. A gate wanted later belongs on the app, as a Setting, where it can come and go without touching a Pairing.
+- **The key may sign at any time after the device was first unlocked since it started**, not only while it is unlocked. This too is fixed when the key is made. The first cut does nothing unless it is open, but an effort that has the app act when a push arrives would otherwise begin by ending every Pairing.
+- **The key and the records kept beside it are reconciled when the app starts.** The records of its Remotes, its Relay entries and the Outlook it remembers are kept out of backups. Records found without the key they were made under are discarded: the app makes a new key, opens at pairing, and says once that this device must pair again. A key found without records is used again, which is the case after the app is deleted and installed again, since a Keychain item outlives that. Pairing then replaces the Peer each Server already holds, and a Login still stands.
+- **A new key is made on the app's own motion only where the Keychain says the item is not there.** Any other failure is shown and nothing is made, which is ADR-0050's rule that a store which will not answer never costs its holder an identity. Where the Keychain gives up a blob the chip will not take, that is shown too, with the offer to start again under a new key, and it is the user who takes it.
+- **The pairing and Relay code signs through a signer on every platform**, never from the key's bytes. A Server wraps the bytes it keeps under ADR-0050 in a software signer, which is also what the core's tests use. The app's signer is written in Swift over a CryptoKit key, and an Android app would write the same over its Keystore.
+- **A lost phone is ended by removing its Peer on each Serving Server, and by nothing else.** Removal drops the Peer's connections and lets its key back only by a new Invite.
+
+## Considered Options
+
+- **A Keychain item holding the key's bytes, kept to this device.** Rejected: it does not travel either, so all it saves is the signer, which ADR-0080 already asks for, and it leaves the key readable by whatever can read the app's memory or a compromised device's Keychain.
+- **A Keychain item that moves with a backup or syncs.** Rejected: Pairings would follow their user to a new phone, but a restored old phone and the new one would then hold one identity at once, where a device holds one identity, and a backup would hold what opens every Remote.
+- **A condition of Face ID or a passcode on the key.** Rejected as above. It is also the one gate that could never be taken off again without pairing again.
+- **A key that signs only while the device is unlocked.** Rejected as above. What it adds is protection against code already running as the app on a locked phone, and the chip gives the key up in neither case.
+- **Signing in Rust, through the `security-framework` crate.** Rejected: it puts one platform's key code inside the shared core, and an Android Keystore key can be reached only from the app's side, so the two apps would differ where they need not.
+- **Shared code that takes either the key's bytes or a signer.** Rejected: it keeps two paths through TLS client authentication, certificate minting and the Relay proof where one serves.
+- **Keeping the names of the Servers a restored phone must pair with again.** Rejected for now: it is a screen of its own for records that name Servers which will refuse the new key, and the first cut is for its author alone.
+- **A wider way to end a lost phone**, through a Relay Account or by one Peer removing another. Rejected: a Relay holds no trust (ADR-0045), and a Peer reaches none of a Serving Server's administration (ADR-0077).
+
+## Consequences
+
+- Replacing a phone leaves behind a Peer on each of its Servers and a Login at each of its Relays that nothing will use again. The Peer is the Serving user's to remove, and the Login only the Relay's operator's (ADR-0079).
+- Deleting the app ends no Pairing and removes no key. A user who means to end them removes each Remote first, which withdraws the Peer.
+- What a lost phone holds is its key's reach and the list of its Remotes. The first cut keeps nothing of a Session on disk, and a cache added later is a decision of its own that touches no Pairing.
+- Removing a Peer is done from the TUI's `/serve` alone, so ending a lost phone from elsewhere means reaching a TUI on each Serving machine. A command for it is its own issue (#654).
+- `IdentityMaterial` stops carrying the private key's bytes. Its three uses each take the signer, and #513 becomes a matter of writing one more.
+- A signature is a blocking call from the core into the app. rustls expects a key that answers quickly, which a Secure Enclave does.
+- Shown when this was written: a CryptoKit Secure Enclave key signed a certificate and a TLS 1.3 handshake that rustls verified, on a Mac and through swift-nio-ssl, and an app in the iOS 27.2 simulator made such a key, signed with it, and made it again from its blob on a later launch. Not shown: such a key on a phone signing a handshake through rustls. The simulator's enclave is software and its blob holds the key in the clear, so nothing run there says anything of what a phone protects.
