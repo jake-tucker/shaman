@@ -1,0 +1,4 @@
+build/
+app/ffi/
+app/Spike/Generated/
+app/Spike.xcodeproj/
