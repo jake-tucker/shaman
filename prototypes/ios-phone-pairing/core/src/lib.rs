@@ -30,8 +30,8 @@ use crate::{
     identity::RemoteKey,
     pairing::{Paired, Reach},
     protocol::{
-        PROTOCOL_VERSION, SESSION_SNAPSHOT_EVENT, SESSION_UPDATED_EVENT, SessionSnapshot,
-        SessionSummary, SessionUpdate, Way,
+        PROTOCOL_VERSION, SESSION_SNAPSHOT_EVENT, SESSION_UPDATED_EVENT, SessionListItem,
+        SessionSnapshot, SessionUpdate, Way,
     },
     relay::Conversation,
 };
@@ -470,9 +470,9 @@ impl Connection {
                 .paired
                 .fetch("/v1/sessions", self.protocol_version)
                 .await?;
-            let typed = match serde_json::from_slice::<Vec<SessionSummary>>(&body) {
+            let typed = match serde_json::from_slice::<Vec<SessionListItem>>(&body) {
                 Ok(sessions) => format!(
-                    "read as {} of the wire's own SessionSummary",
+                    "read as {} of the wire's own SessionListItem",
                     sessions.len()
                 ),
                 Err(error) => format!("NOT read as the wire's own types: {error}"),
@@ -487,8 +487,11 @@ impl Connection {
             Ok(rows
                 .iter()
                 .map(|row| SessionRow {
-                    id: row["id"].as_str().unwrap_or_default().to_owned(),
-                    title: row["title"].as_str().unwrap_or_default().to_owned(),
+                    id: row["summary"]["id"].as_str().unwrap_or_default().to_owned(),
+                    title: row["summary"]["title"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned(),
                 })
                 .collect())
         })

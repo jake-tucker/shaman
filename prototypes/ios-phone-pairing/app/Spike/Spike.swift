@@ -60,6 +60,8 @@ final class Spike {
     @ObservationIgnored private var core: Core?
     @ObservationIgnored private var connections: [Connection] = []
     @ObservationIgnored private var streams: [Task<Void, Never>] = []
+    /// What each connection made so far was asked for by, so all can be made again after a suspension.
+    @ObservationIgnored private var asked: [String] = []
     @ObservationIgnored private let sheet = LoginSheet()
     @ObservationIgnored private var running = false
     private let name = "phone-spike"
@@ -83,7 +85,7 @@ final class Spike {
                     self.log.line("lifecycle: \(label); background time remaining "
                         + (left > 1e6 ? "unbounded" : String(format: "%.1fs", left)))
                     if notification == UIApplication.willEnterForegroundNotification, !self.connections.isEmpty {
-                        self.run("probe")
+                        self.run("probe,wait:3,reconnect")
                     }
                 }
             }
@@ -130,6 +132,19 @@ final class Spike {
                 + "\(record.ways.count) ways kept")
         case "connect":
             try await connect(matching: argument)
+            asked.append(argument)
+        case "reconnect":
+            log.line("making \(asked.count) connection(s) again")
+            streams.forEach { $0.cancel() }
+            streams = []
+            connections = []
+            for wanted in asked {
+                do {
+                    try await connect(matching: wanted)
+                } catch {
+                    log.line("FAILED to connect again by \(wanted): \(error)")
+                }
+            }
         case "probe":
             await probe()
         case "standing":
