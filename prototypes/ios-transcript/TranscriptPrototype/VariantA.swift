@@ -10,8 +10,8 @@ struct VariantA: View {
     @Environment(Store.self) private var store
     let live: Live
     let session: SessionRow
-    @AppStorage("reasoning") private var reasoning = false
-    @AppStorage("diffs") private var diffs = false
+    private var reasoning: Bool { store.reasoning }
+    private var diffs: Bool { store.diffs }
     @State private var openTurns: Set<Int> = []
     @State private var openGroups: Set<Int> = []
     @State private var stages: [Int: Int] = [:]  // an Activity's Fold: 0 folded, 1 Peek, 2 open

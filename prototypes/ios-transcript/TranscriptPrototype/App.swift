@@ -27,36 +27,41 @@ struct TranscriptPrototypeApp: App {
 
 struct Root: View {
     @Environment(Store.self) private var store
-    @AppStorage("variant") private var variant = "A"
+    // Read once at launch and never written, so a launch argument is safe to read this way.
     @AppStorage("open") private var open = "none"
     @AppStorage("pill") private var pill = true
 
     var body: some View {
         ZStack {
             Listing()
-            if pill { PrototypeSwitcher(variant: $variant) }
+            if pill { PrototypeSwitcher() }
         }
         .onAppear { store.open(open) }
+        .task {
+            // For checking the pill without a finger: `-cycle YES` steps to the next variant.
+            guard UserDefaults.standard.bool(forKey: "cycle") else { return }
+            try? await Task.sleep(for: .seconds(2))
+            PrototypeSwitcher.cycle(store, 1)
+        }
     }
 }
 
 /// An open Session, drawn by whichever variant the pill names.
 struct SessionScreen: View {
     @Environment(Store.self) private var store
-    @AppStorage("variant") private var variant = "A"
     let id: String
 
     var body: some View {
         let live = store.live(id)
         let session = store.row(id)
         Group {
-            switch variant {
+            switch store.variant {
             case "B": VariantB(live: live, session: session)
             case "C": VariantC(live: live, session: session)
             default: VariantA(live: live, session: session)
             }
         }
-        .id(variant)
+        .id(store.variant)
         .toolbar(.hidden, for: .bottomBar)
     }
 }
@@ -65,22 +70,23 @@ struct SessionScreen: View {
 /// Drag it out of the way of whatever it covers.
 struct PrototypeSwitcher: View {
     @Environment(Store.self) private var store
-    @Binding var variant: String
-    @AppStorage("reasoning") private var reasoning = false
-    @AppStorage("diffs") private var diffs = false
     @State private var settled: CGSize = .zero
     @GestureState private var drag: CGSize = .zero
 
     static let variants = [("A", "Terminal"), ("B", "Chat"), ("C", "Timeline")]
 
-    private var index: Int { Self.variants.firstIndex { $0.0 == variant } ?? 0 }
+    private var index: Int { Self.variants.firstIndex { $0.0 == store.variant } ?? 0 }
 
-    private func cycle(_ step: Int) {
-        let count = Self.variants.count
-        variant = Self.variants[(index + step + count) % count].0
+    static func cycle(_ store: Store, _ step: Int) {
+        let count = variants.count
+        let index = variants.firstIndex { $0.0 == store.variant } ?? 0
+        store.variant = variants[(index + step + count) % count].0
     }
 
+    private func cycle(_ step: Int) { Self.cycle(store, step) }
+
     var body: some View {
+        @Bindable var store = store
         VStack {
             HStack(spacing: 10) {
                 Button { cycle(-1) } label: { Image(systemName: "chevron.left") }
@@ -94,8 +100,8 @@ struct PrototypeSwitcher: View {
                         }
                     }
                     Section("Settings a reader could turn") {
-                        Toggle("Reasoning shown", isOn: $reasoning)
-                        Toggle("Diffs (not on the wire today)", isOn: $diffs)
+                        Toggle("Reasoning shown", isOn: $store.reasoning)
+                        Toggle("Diffs (not on the wire today)", isOn: $store.diffs)
                     }
                 } label: {
                     Image(systemName: "slider.horizontal.3")

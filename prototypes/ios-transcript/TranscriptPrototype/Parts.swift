@@ -184,9 +184,10 @@ struct SessionTitle: View {
 
 /// The facts of an Approval, in the TUI panel's own lines.
 struct ApprovalFacts: View {
+    @Environment(Store.self) private var store
     let approval: Approval
     var wrap = true
-    @AppStorage("diffs") private var diffs = false
+    private var diffs: Bool { store.diffs }
 
     private func fact(_ name: String, _ value: String, mono: Bool = true) -> some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -272,9 +273,10 @@ final class Answers {
 
 /// The whole of one Activity, for variants that open it somewhere of its own.
 struct ActivityDetail: View {
+    @Environment(Store.self) private var store
     let entry: Entry
     var wrap = false
-    @AppStorage("diffs") private var diffs = false
+    private var diffs: Bool { store.diffs }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

@@ -11,7 +11,7 @@ struct VariantC: View {
     @Environment(Store.self) private var store
     let live: Live
     let session: SessionRow
-    @AppStorage("reasoning") private var reasoning = false
+    private var reasoning: Bool { store.reasoning }
     @State private var inspected: Entry?
     @State private var composing = false
     @State private var confirmStop = false

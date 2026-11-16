@@ -205,9 +205,10 @@ struct VariantB: View {
 /// A Turn's work on a screen of its own: every Activity in the order it happened, each one
 /// leading to its whole content.
 private struct WorkScreen: View {
+    @Environment(Store.self) private var store
     let live: Live
     let turn: Int
-    @AppStorage("reasoning") private var reasoning = false
+    private var reasoning: Bool { store.reasoning }
 
     var body: some View {
         if let turn = live.turns.first(where: { $0.id == turn }) {

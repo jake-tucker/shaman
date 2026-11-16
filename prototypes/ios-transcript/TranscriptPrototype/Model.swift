@@ -111,6 +111,11 @@ final class Store {
     var healed: Set<String> = []
     var outlookWorkspace = "studio/shaman"
     var path = NavigationPath()
+    // The pill's switches. Held here rather than in @AppStorage: a launch argument pins a
+    // default for the life of the process, so a write to it never reaches the views reading it.
+    var variant = UserDefaults.standard.string(forKey: "variant") ?? "A"
+    var reasoning = UserDefaults.standard.bool(forKey: "reasoning")
+    var diffs = UserDefaults.standard.bool(forKey: "diffs")
     /// The Sessions opened so far, each with its Transcript and toy engine.
     @ObservationIgnored private var lives: [String: Live] = [:]
 
