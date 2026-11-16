@@ -1,36 +1,7 @@
 // PROTOTYPE — throwaway. The screens the listing leads to, stubbed just far enough to show
-// where each way in lands. An open Session is ticket 643's; beginning one is still fog.
+// where each way in lands. Beginning a Session is still fog.
 
 import SwiftUI
-
-struct SessionStub: View {
-    @Environment(Store.self) private var store
-    let session: SessionRow
-
-    var body: some View {
-        let origin = store.origin(session)
-        List {
-            if store.isUnreachable(session) {
-                Label(
-                    "\(origin.id) is unreachable. This can be read, but nothing sent goes anywhere until it answers.",
-                    systemImage: "wifi.slash"
-                )
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            }
-            Section("Stub") {
-                LabeledContent("Origin", value: origin.id)
-                LabeledContent("Workspace", value: store.workspace(session.workspace).name)
-                LabeledContent("Standing", value: session.standing.word ?? "nothing")
-                Text("The transcript, live work and interventions are the next prototype's.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .navigationTitle(session.title)
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
 
 /// Where a new Session would begin, and what the way in already decided for the reader.
 struct NewSessionStub: View {

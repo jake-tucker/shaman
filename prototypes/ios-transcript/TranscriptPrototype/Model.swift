@@ -1,5 +1,5 @@
 // PROTOTYPE — throwaway. Canned data and the in-memory state every variant reads.
-// Answers https://github.com/jake-tucker/shaman/issues/642 and nothing else.
+// Answers https://github.com/jake-tucker/shaman/issues/642; kept as the host of the open Session.
 
 import SwiftUI
 
@@ -78,7 +78,7 @@ struct SessionRow: Identifiable, Hashable {
     let id: String
     let title: String
     let symbol: String?
-    let standing: Standing
+    var standing: Standing
     let workspace: String
     let checkout: String?
     let linked: Bool  // a linked Worktree rather than the main one
@@ -110,12 +110,40 @@ final class Store {
     var sessions: [SessionRow] = Canned.sessions
     var healed: Set<String> = []
     var outlookWorkspace = "studio/shaman"
+    var path = NavigationPath()
+    /// The Sessions opened so far, each with its Transcript and toy engine.
+    @ObservationIgnored private var lives: [String: Live] = [:]
 
     func apply(_ next: Scenario) {
         scenario = next
         sessions = Canned.sessions
         healed = []
         outlookWorkspace = "studio/shaman"
+        lives = [:]
+    }
+
+    func live(_ id: String) -> Live {
+        if let live = lives[id] { return live }
+        let live = Canned.live(id)
+        lives[id] = live
+        return live
+    }
+
+    func row(_ id: String) -> SessionRow { sessions.first { $0.id == id }! }
+
+    /// Opens straight into one of the canned states.
+    func open(_ state: String) {
+        guard let state = Canned.states.first(where: { $0.key == state }) else { return }
+        apply(state.key == "unreachable" ? .unreachable : .threeServers)
+        path = NavigationPath([state.session])
+        // For checking the engine without a finger: `-decide YES` accepts or answers after a moment.
+        guard UserDefaults.standard.bool(forKey: "decide") else { return }
+        let live = live(state.session)
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard let entry = live.pending.first else { return }
+            if entry.isApprovalRow { live.decide(entry.id, .acceptOnce) } else { live.answer(entry.id, ["palette": ["Neutral"], "states": ["Hover", "Pressed"]]) }
+        }
     }
 
     var remotes: [Remote] {
@@ -196,6 +224,13 @@ final class Store {
                 }
             }
             .filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
+            .map { row in
+                // A Session opened here stands as its Transcript now says.
+                guard let live = lives[row.id] else { return row }
+                var row = row
+                row.standing = live.standing
+                return row
+            }
             .sorted { $0.moved < $1.moved }
     }
 
@@ -268,8 +303,8 @@ enum Canned {
             "fix/serve-link-local", linked: true, moved: 3 * 3600),
         row(8, "Find the workspace that holds the relay deploy scripts", nil, .nothing, "studio/sidekick", nil,
             moved: 5 * 3600),
-        row(9, "Upgrade Home Assistant to 2026.11", "house", .working, "lab/home-assistant", "main",
-            running: 740, moved: 12),
+        row(9, "Upgrade Home Assistant to 2026.11", "house", .needsIntervention, "lab/home-assistant", "main",
+            moved: 12, hint: "Approval: configuration.yaml"),
         row(10, "Sketch the thin client glossary entry", "text.book.closed", .nothing, "work/shaman", "main",
             moved: 26 * 3600),
         row(11, "Drop the /compact hint from the cache warning", "exclamationmark.triangle", .nothing,

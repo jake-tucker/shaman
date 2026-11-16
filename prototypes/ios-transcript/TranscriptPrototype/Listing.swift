@@ -1,11 +1,13 @@
-// PROTOTYPE — throwaway. Variant A, "Inbox": the TUI's Sidebar turned into a phone screen.
+// PROTOTYPE — throwaway. The listing that won ticket 642, kept as the host an open Session is
+// pushed from. Nothing here is under test.
+// "Inbox": the TUI's Sidebar turned into a phone screen.
 // One flat list by recency under Everywhere, a scope menu in the title, the settled shelf
 // beneath, an Unreachable server as a slim row at the foot of the active list, and one
 // compose button that begins a Session wherever the Outlook stands.
 
 import SwiftUI
 
-struct VariantA: View {
+struct Listing: View {
     @Environment(Store.self) private var store
     @State private var scope: Scope = .everywhere
     @State private var query = ""
@@ -17,7 +19,8 @@ struct VariantA: View {
     private var rows: [SessionRow] { store.sessions(in: scope, query: query) }
 
     var body: some View {
-        NavigationStack {
+        @Bindable var store = store
+        NavigationStack(path: $store.path) {
             List {
                 if !query.isEmpty {
                     ForEach(rows) { link($0) }
@@ -76,7 +79,7 @@ struct VariantA: View {
                     Button { showNew = true } label: { Image(systemName: "square.and.pencil") }
                 }
             }
-            .navigationDestination(for: SessionRow.self) { SessionStub(session: $0) }
+            .navigationDestination(for: String.self) { SessionScreen(id: $0) }
             .sheet(isPresented: $showServers) { ServersSheet() }
             .sheet(isPresented: $showNew) {
                 NewSessionStub(
@@ -123,7 +126,7 @@ struct VariantA: View {
 
     @ViewBuilder
     private func link(_ session: SessionRow) -> some View {
-        NavigationLink(value: session) {
+        NavigationLink(value: session.id) {
             if session.settled {
                 HStack(spacing: 8) {
                     if let symbol = session.symbol {
