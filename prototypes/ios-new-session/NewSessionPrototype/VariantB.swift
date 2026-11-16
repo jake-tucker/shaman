@@ -11,6 +11,8 @@ struct DraftRoute: Hashable {}
 
 struct VariantB: View {
     @Environment(Store.self) private var store
+    /// What was chosen: this screen, with A's one searchable list pushed over it as the picker.
+    var chosen = false
     @State private var begun: String?
     @State private var picking = false
     @FocusState private var focused: Bool
@@ -62,7 +64,7 @@ struct VariantB: View {
                     .pickerStyle(.segmented)
                     .padding(.top, 14)
                 }
-                Text(store.agent).font(.caption).foregroundStyle(.tertiary).padding(.top, 2)
+                Label(store.agent, systemImage: "sparkle").font(.caption).foregroundStyle(.secondary).padding(.top, 4)
             }
             .padding(.horizontal, 32)
             .padding(.top, 20)
@@ -86,7 +88,10 @@ struct VariantB: View {
                 .buttonStyle(.plain)
             }
         }
-        .sheet(isPresented: $picking) { PlaceSheet() }
+        .sheet(isPresented: Binding(get: { picking && !chosen }, set: { picking = $0 })) { PlaceSheet() }
+        .navigationDestination(isPresented: Binding(get: { picking && chosen }, set: { picking = $0 })) {
+            PlaceList().toolbar(.hidden, for: .bottomBar)
+        }
         .onAppear { focused = true }
     }
 

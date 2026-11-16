@@ -85,7 +85,9 @@ struct Listing: View {
                 if composing { VariantC(composing: $composing) }
             }
             .navigationDestination(for: String.self) { SessionScreen(id: $0) }
-            .navigationDestination(for: DraftRoute.self) { _ in VariantB().toolbar(.hidden, for: .bottomBar) }
+            .navigationDestination(for: DraftRoute.self) { _ in
+                VariantB(chosen: store.variant == "W").toolbar(.hidden, for: .bottomBar)
+            }
             .sheet(isPresented: $showServers) { ServersSheet() }
             .sheet(isPresented: $showNew) { VariantA() }
             .onChange(of: store.composeAsk) { compose() }
@@ -107,7 +109,7 @@ struct Listing: View {
     /// What the compose button does is the question; each variant answers it differently.
     private func compose() {
         switch store.variant {
-        case "B": store.path.append(DraftRoute())
+        case "B", "W": store.path.append(DraftRoute())
         case "C": composing = true
         default: showNew = true
         }

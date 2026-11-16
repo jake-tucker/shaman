@@ -1,7 +1,7 @@
 #!/bin/sh
 # PROTOTYPE — throwaway. Builds the beginning-a-Session prototype and runs it on a simulator.
 #   ./run.sh                  # variant A, on the Session listing
-#   ./run.sh B                # variant A|B|C; flip between them with the yellow pill too
+#   ./run.sh B                # variant A|B|C, or W for what won; the yellow pill flips them too
 #   ./run.sh A -compose YES -draft "Trim the QR code's quiet zone" -send YES -start slow
 # Anything after the variant is passed as launch arguments:
 #   -compose YES              do what the compose button does

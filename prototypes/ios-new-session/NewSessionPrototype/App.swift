@@ -12,6 +12,8 @@
 //   C · In the listing   nothing opens: the bottom bar becomes a composer with chips for
 //                        where it begins. Sending leaves the reader in the listing, and the
 //                        Session appears as a row, starting.
+//   W · Chosen           what won: B's screen, with A's one searchable list pushed over it
+//                        as the Workspace picker.
 
 import SwiftUI
 
@@ -80,7 +82,7 @@ struct PrototypeSwitcher: View {
     @State private var settled: CGSize = .zero
     @GestureState private var drag: CGSize = .zero
 
-    static let variants = [("A", "Sheet"), ("B", "Screen"), ("C", "In the listing")]
+    static let variants = [("A", "Sheet"), ("B", "Screen"), ("C", "In the listing"), ("W", "Chosen")]
 
     private var index: Int { Self.variants.firstIndex { $0.0 == store.variant } ?? 0 }
 

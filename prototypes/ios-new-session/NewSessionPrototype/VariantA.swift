@@ -149,7 +149,8 @@ struct VariantA: View {
 }
 
 /// A's Workspace picker: every Server's Workspaces as one searchable list, pushed in the sheet.
-private struct PlaceList: View {
+/// The chosen design pushes the same list over B's screen.
+struct PlaceList: View {
     @Environment(Store.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
