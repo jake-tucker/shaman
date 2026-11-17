@@ -7498,10 +7498,6 @@ mod compaction_refusal_tests {
             refused(SessionErrorCode::SessionNotFound),
             "the server's own words"
         );
-        assert_eq!(
-            compaction_refusal(&anyhow::anyhow!("connection refused")),
-            "connection refused"
-        );
     }
 }
 
@@ -7511,8 +7507,8 @@ mod attachment_upload_tests {
 
     use super::upload_failure_reason;
 
-    #[test]
-    fn a_refused_upload_is_worded_as_the_server_refused_it_and_any_other_failure_plainly() {
+    #[tokio::test]
+    async fn a_refused_upload_is_worded_as_the_server_refused_it_and_any_other_failure_plainly() {
         let refused = anyhow::Error::new(SessionError {
             code: SessionErrorCode::UnsupportedAttachment,
             message: "Only PNG, JPEG, GIF, and WebP images can be attached".to_owned(),
@@ -7524,11 +7520,88 @@ mod attachment_upload_tests {
             "Only PNG, JPEG, GIF, and WebP images can be attached"
         );
 
-        let unreachable = anyhow::anyhow!("connection refused").context("send attachment upload");
+        let unreachable = crate::managed_client::ManagedClient::offline()
+            .session_commands()
+            .upload_attachment(vec![0_u8; 8])
+            .await
+            .expect_err("no Server answers an offline client");
         assert_eq!(
             upload_failure_reason(&unreachable),
             "Could not upload the image"
         );
+    }
+}
+
+/// A local Server that cannot be reached at all refused nothing: each read
+/// or command asked of it fails as one that could not be asked, with the
+/// cause its transport gave, rather than in the words of a refusal.
+#[cfg(test)]
+mod unreached_server_tests {
+    use super::{compaction_refusal, context_breakdown_refusal, usage_metrics_refusal};
+    use crate::{
+        managed_client::{ManagedClient, SessionCommands},
+        protocol::{
+            CompactSessionRequest, InsightsQuery, SessionId, SessionTimestamp, UsageMetricsInterval,
+        },
+        tui::{ContextBreakdownRefusal, MetricsReadRefusal},
+    };
+
+    fn commands() -> SessionCommands {
+        ManagedClient::offline().session_commands()
+    }
+
+    /// Whether `words` say the request could not be sent, and why beneath.
+    fn says_why_it_was_not_sent(words: &str) -> bool {
+        words
+            .split_once("error sending request for url (")
+            .and_then(|(_, rest)| rest.split_once("): "))
+            .is_some_and(|(_, cause)| !cause.is_empty())
+    }
+
+    #[tokio::test]
+    async fn a_metrics_read_that_reaches_no_server_failed_rather_than_was_refused() {
+        let error = commands()
+            .insights(&InsightsQuery {
+                interval: UsageMetricsInterval {
+                    start: SessionTimestamp(0),
+                    end: SessionTimestamp(1),
+                },
+            })
+            .await
+            .expect_err("no Server answers an offline client");
+
+        let MetricsReadRefusal::Failed(reason) = usage_metrics_refusal(&error) else {
+            panic!("a read no Server answered was refused by none: {error:#}");
+        };
+        assert!(
+            reason.starts_with("send Insights read command: "),
+            "{reason}"
+        );
+        assert!(says_why_it_was_not_sent(&reason), "{reason}");
+    }
+
+    #[tokio::test]
+    async fn a_context_breakdown_that_reaches_no_server_says_why_it_failed() {
+        let error = commands()
+            .context_breakdown(SessionId::new())
+            .await
+            .expect_err("no Server answers an offline client");
+
+        let ContextBreakdownRefusal::Failed(reason) = context_breakdown_refusal(&error) else {
+            panic!("a read no Server answered is no unsupported Provider: {error:#}");
+        };
+        assert!(reason.starts_with("send Context Breakdown: "), "{reason}");
+        assert!(says_why_it_was_not_sent(&reason), "{reason}");
+    }
+
+    #[tokio::test]
+    async fn a_compaction_that_reaches_no_server_is_said_as_it_came() {
+        let error = commands()
+            .compact_session(SessionId::new(), CompactSessionRequest::default())
+            .await
+            .expect_err("no Server answers an offline client");
+
+        assert_eq!(compaction_refusal(&error), "send Session compaction");
     }
 }
 

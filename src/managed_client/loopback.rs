@@ -103,7 +103,7 @@ impl Transport for LoopbackTransport {
             .body(body)
             .send()
             .await
-            .map_err(|error| unreachable(error.to_string()))?;
+            .map_err(|error| unreachable(with_causes(&error)))?;
         Ok(response_of(response))
     }
 
@@ -121,6 +121,19 @@ impl Transport for LoopbackTransport {
 /// `response` as a transport answers it.
 pub(super) fn response_of(response: reqwest::Response) -> TransportResponse {
     http::Response::from(response).map(|body| body.map_err(Into::into).boxed_unsync())
+}
+
+/// `error` in its own words, followed by each cause beneath it, as a reader
+/// of the failure would want them: reqwest's own words name only the URL.
+fn with_causes(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut words = error.to_string();
+    let mut cause = error.source();
+    while let Some(beneath) = cause {
+        words.push_str(": ");
+        words.push_str(&beneath.to_string());
+        cause = beneath.source();
+    }
+    words
 }
 
 fn unreachable(message: String) -> SessionError {
@@ -244,6 +257,16 @@ mod tests {
 
         assert_eq!(error.code, SessionErrorCode::ServerUnreachable);
         assert_eq!(error.unreachable, None);
+        assert!(
+            error
+                .message
+                .strip_prefix(
+                    "error sending request for url (http://127.0.0.1:9/v1/session-events)"
+                )
+                .is_some_and(|causes| causes.starts_with(": ")),
+            "the failure says why the request was not sent: {}",
+            error.message
+        );
     }
 
     #[tokio::test]

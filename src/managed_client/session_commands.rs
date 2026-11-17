@@ -691,7 +691,7 @@ impl SessionCommands {
         self.transport
             .send(request)
             .await
-            .map_err(|error| anyhow::Error::new(error).context(format!("send {operation}")))
+            .map_err(|failure| unanswered(failure).context(format!("send {operation}")))
     }
 
     async fn get_json<T: DeserializeOwned>(&self, path: &str, operation: &str) -> Result<T> {
@@ -738,6 +738,34 @@ impl SessionCommands {
             )
             .await?;
         decode_api_response(response, operation).await
+    }
+}
+
+/// A failure the transport answers in a Server's place: no Server was
+/// reached to answer at all, so nothing refused the command. It is no
+/// [`SessionError`], so a caller telling a Server's refusal from a failure
+/// to ask finds none here, as it found none where loopback was asked
+/// directly. Its message carries the cause the transport gave.
+#[derive(Debug)]
+pub(crate) struct NotReached(SessionError);
+
+impl std::fmt::Display for NotReached {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0.message)
+    }
+}
+
+impl std::error::Error for NotReached {}
+
+/// A transport's `failure` as a command's error: one it answered in a
+/// Server's place is [`NotReached`], and any other is the refusal it says,
+/// as a Pairing's, answered for a Remote, is today through the proxy.
+fn unanswered(failure: SessionError) -> anyhow::Error {
+    match failure.code {
+        SessionErrorCode::ServerUnreachable | SessionErrorCode::ServerReplaced => {
+            anyhow::Error::new(NotReached(failure))
+        }
+        _ => anyhow::Error::new(failure),
     }
 }
 

@@ -674,14 +674,20 @@ mod tests {
             crate::protocol::Outlook::Local,
         );
         let hour = Duration::from_secs(3600);
-        let mut subscription = SessionSubscription::open_attached(
-            Arc::new(transport.pinned()),
-            session_id,
-            hour,
-            hour,
-        )
-        .await
-        .expect("the stream opens");
+        // Attached as a Client attaches, through the commands over a loopback
+        // transport, which pins the attached stream itself.
+        let commands = crate::managed_client::SessionCommands::new(
+            Arc::new(transport),
+            crate::managed_client::SessionCommandTimings {
+                initial_recovery_backoff: hour,
+                max_recovery_backoff: hour,
+                attachment_fetch_timeout: hour,
+            },
+        );
+        let mut subscription = commands
+            .attach_session(session_id)
+            .await
+            .expect("the stream opens");
         assert!(matches!(
             next_event(&mut subscription).await,
             Some(Ok(SessionEvent::Snapshot(_)))
