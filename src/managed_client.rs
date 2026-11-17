@@ -39,6 +39,7 @@ mod event_stream;
 mod keeper;
 mod launcher;
 mod lifecycle;
+mod loopback;
 mod recovery;
 mod remote_connection;
 mod session_catalog_stream;
@@ -47,6 +48,7 @@ mod session_stream;
 #[cfg(test)]
 mod stream_fixture;
 mod subagent_tree_stream;
+mod transport;
 
 pub use keeper::{KeeperTimings, keep_server};
 pub use launcher::StoppedDuringLaunch;
@@ -1389,11 +1391,18 @@ impl SessionCommandClient {
         (self.initial_recovery_backoff, self.max_recovery_backoff)
     }
 
-    pub(crate) fn subscribe_catalog(&self) -> SessionCatalogSubscription {
-        SessionCatalogSubscription::open_attached(
+    /// The transport to this Outlook's work through the local Server.
+    fn transport(&self) -> loopback::LoopbackTransport {
+        loopback::LoopbackTransport::new(
             self.http.clone(),
             self.descriptor.clone(),
             self.outlook.clone(),
+        )
+    }
+
+    pub(crate) fn subscribe_catalog(&self) -> SessionCatalogSubscription {
+        SessionCatalogSubscription::open_attached(
+            std::sync::Arc::new(self.transport()),
             self.initial_recovery_backoff,
             self.max_recovery_backoff,
         )
@@ -1404,9 +1413,7 @@ impl SessionCommandClient {
         session_id: SessionId,
     ) -> SubagentTreeSubscription {
         SubagentTreeSubscription::open(
-            self.http.clone(),
-            self.descriptor.clone(),
-            self.outlook.clone(),
+            std::sync::Arc::new(self.transport()),
             session_id,
             self.initial_recovery_backoff,
             self.max_recovery_backoff,
@@ -2324,8 +2331,7 @@ impl SessionCommandClient {
         &self,
         session_id: SessionId,
     ) -> Result<SessionSubscription> {
-        let descriptor = self.descriptor.borrow().clone();
-        SessionSubscription::open(&self.http, &descriptor, &self.outlook, session_id).await
+        SessionSubscription::open(&self.transport(), session_id).await
     }
 
     pub(crate) async fn read_session(&self, session_id: SessionId) -> Result<SessionSnapshot> {
@@ -2621,10 +2627,10 @@ impl SessionCommandClient {
         &self,
         session_id: SessionId,
     ) -> Result<SessionSubscription> {
+        // Bound to the local Server as it stands, so the stream ends once that
+        // Server is replaced and its reader attaches afresh.
         SessionSubscription::open_attached(
-            &self.http,
-            self.descriptor.clone(),
-            self.outlook.clone(),
+            std::sync::Arc::new(self.transport().pinned()),
             session_id,
             self.initial_recovery_backoff,
             self.max_recovery_backoff,

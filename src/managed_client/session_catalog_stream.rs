@@ -1,12 +1,13 @@
 //! Snapshot-first Session catalog stream and reconnect reconciliation.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use anyhow::{Context, Result, bail};
 use eventsource_stream::{Event, EventStreamError, Eventsource};
 use futures_util::StreamExt;
+use http_body_util::BodyExt;
 use tokio::{
-    sync::{mpsc, oneshot, watch},
+    sync::{mpsc, oneshot},
     task::JoinHandle,
     time::Duration,
 };
@@ -24,6 +25,7 @@ use super::{
     ManagedEvent, RecoveryBackoff,
     remote_connection::{self, RemoteConnectionFailure},
     server_url,
+    transport::{self, Transport, TransportResponse, TryNow},
 };
 
 pub(super) async fn open(
@@ -39,18 +41,18 @@ pub(super) async fn open(
         .error_for_status()
 }
 
-async fn open_for_outlook(
-    http: &reqwest::Client,
-    descriptor: &RuntimeDescriptor,
-    outlook: &Outlook,
-) -> std::result::Result<reqwest::Response, RemoteConnectionFailure> {
-    let mut url = server_url(&descriptor.base_url, outlook, "/v1/session-events")
-        .expect("a validated runtime descriptor builds a Server URL");
-    url.query_pairs_mut().append_pair("warm_models", "true");
-    remote_connection::classify(http.get(url).bearer_auth(&descriptor.token).send().await).await
+async fn open_over(
+    transport: &dyn Transport,
+) -> std::result::Result<TransportResponse, RemoteConnectionFailure> {
+    remote_connection::classify(
+        transport
+            .send(transport::get("/v1/session-events?warm_models=true"))
+            .await,
+    )
+    .await
 }
 
-/// A reconnecting catalog stream for the Server named by one Client Outlook.
+/// A reconnecting catalog stream for the Server one transport reaches.
 /// Its lifetime is the interest: dropping it aborts the task and releases the
 /// Remote proxy connection.
 pub struct SessionCatalogSubscription {
@@ -60,17 +62,13 @@ pub struct SessionCatalogSubscription {
 
 impl SessionCatalogSubscription {
     pub(super) fn open_attached(
-        http: reqwest::Client,
-        descriptor: watch::Receiver<RuntimeDescriptor>,
-        outlook: Outlook,
+        transport: Arc<dyn Transport>,
         initial_backoff: Duration,
         max_backoff: Duration,
     ) -> Self {
         let (events_tx, events_rx) = mpsc::channel(32);
         let task = tokio::spawn(run_attached(
-            http,
-            descriptor,
-            outlook,
+            transport,
             events_tx,
             RecoveryBackoff::new(initial_backoff, max_backoff),
         ));
@@ -111,7 +109,7 @@ impl RemoteRecovery {
     async fn wait_after_failure(
         &mut self,
         events: &mpsc::Sender<ManagedEvent>,
-        descriptor: &mut watch::Receiver<RuntimeDescriptor>,
+        try_now: &mut TryNow,
         unreachable: Option<UnreachableReason>,
     ) -> bool {
         let retry_in = self.backoff.next();
@@ -128,7 +126,9 @@ impl RemoteRecovery {
         {
             return false;
         }
-        if wait_to_reconnect(descriptor, retry_in).await {
+        // Told to try now, the Server is likely a new one, so it is tried on
+        // a fresh schedule.
+        if try_now.or_after(retry_in).await {
             self.reset_schedule();
         }
         true
@@ -150,12 +150,11 @@ impl RemoteRecovery {
 }
 
 async fn run_attached(
-    http: reqwest::Client,
-    mut descriptor: watch::Receiver<RuntimeDescriptor>,
-    outlook: Outlook,
+    transport: Arc<dyn Transport>,
     events: mpsc::Sender<ManagedEvent>,
     backoff: RecoveryBackoff,
 ) {
+    let mut try_now = transport.try_now();
     // An attached Outlook has no separately hydrated local catalog. Treat its
     // first snapshot as reconciliation so the TUI refreshes any listing that
     // raced with opening the stream.
@@ -165,9 +164,9 @@ async fn run_attached(
         if events.is_closed() {
             return;
         }
-        let active_descriptor = descriptor.borrow().clone();
-        let response = match open_for_outlook(&http, &active_descriptor, &outlook).await {
+        let response = match open_over(transport.as_ref()).await {
             Ok(response) => response,
+            Err(RemoteConnectionFailure::Replaced) => return,
             Err(RemoteConnectionFailure::Terminal { status, message }) => {
                 let _ = events
                     .send(ManagedEvent::RemoteFailed { status, message })
@@ -176,7 +175,7 @@ async fn run_attached(
             }
             Err(RemoteConnectionFailure::Transient(unreachable)) => {
                 if !recovery
-                    .wait_after_failure(&events, &mut descriptor, unreachable)
+                    .wait_after_failure(&events, &mut try_now, unreachable)
                     .await
                 {
                     return;
@@ -185,7 +184,7 @@ async fn run_attached(
             }
             Err(RemoteConnectionFailure::Rejected(_) | RemoteConnectionFailure::Missing(_)) => {
                 if !recovery
-                    .wait_after_failure(&events, &mut descriptor, None)
+                    .wait_after_failure(&events, &mut try_now, None)
                     .await
                 {
                     return;
@@ -231,25 +230,13 @@ async fn run_attached(
             Ok(StreamOutcome::ReceiverClosed) => return,
             Ok(StreamOutcome::Disconnected) | Err(_) => {
                 if !recovery
-                    .wait_after_failure(&events, &mut descriptor, None)
+                    .wait_after_failure(&events, &mut try_now, None)
                     .await
                 {
                     return;
                 }
             }
         }
-    }
-}
-
-/// Waits for the retry delay or a replacement local Server descriptor. A new
-/// descriptor starts a fresh retry schedule because it names a new proxy.
-async fn wait_to_reconnect(
-    descriptor: &mut watch::Receiver<RuntimeDescriptor>,
-    retry_in: Duration,
-) -> bool {
-    tokio::select! {
-        changed = descriptor.changed(), if descriptor.has_changed().is_ok() => changed.is_ok(),
-        _ = tokio::time::sleep(retry_in) => false,
     }
 }
 
@@ -265,14 +252,14 @@ pub(super) enum StreamOutcome {
 /// says the connection the snapshot hydrates has been announced, so a reader
 /// hears it is connected before anything the stream pushes.
 pub(super) async fn consume(
-    response: reqwest::Response,
+    response: TransportResponse,
     events: &mpsc::Sender<ManagedEvent>,
     known_session_ids: &mut Option<HashSet<SessionId>>,
     hydrated: oneshot::Sender<Vec<crate::protocol::CheckoutSummary>>,
     forward_models: bool,
     mut announced: Option<oneshot::Receiver<()>>,
 ) -> Result<StreamOutcome> {
-    let mut stream = response.bytes_stream().eventsource();
+    let mut stream = response.into_body().into_data_stream().eventsource();
     let mut revision = None;
     let mut hydrated = Some(hydrated);
     while let Some(next) = stream.next().await {
@@ -787,5 +774,50 @@ mod tests {
         );
         assert_eq!(received.recv().await, None);
         assert_eq!(known, Some(HashSet::from([listed, created])));
+    }
+
+    #[tokio::test]
+    async fn a_subscription_told_to_try_now_skips_its_backoff() {
+        use crate::managed_client::stream_fixture::{
+            ScriptedTransport, open_stream_of, unreachable,
+        };
+
+        let listed = SessionId::new();
+        let snapshot = SessionCatalogSnapshot {
+            workspace_paths: Default::default(),
+            revision: SessionCatalogRevision(2),
+            session_ids: vec![listed],
+            checkout_states: Vec::new(),
+        };
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            Err(unreachable()),
+            Ok(open_stream_of(&[(
+                SESSION_CATALOG_SNAPSHOT_EVENT,
+                Some(2),
+                serde_json::to_string(&snapshot).expect("encode the snapshot"),
+            )])),
+        ]));
+        let hour = Duration::from_secs(3600);
+        let mut subscription =
+            SessionCatalogSubscription::open_attached(transport.clone(), hour, hour);
+        let deadline = Duration::from_secs(10);
+        let mut next = async || {
+            tokio::time::timeout(deadline, subscription.next())
+                .await
+                .expect("the subscription answers in time")
+        };
+
+        assert!(
+            matches!(next().await, Some(ManagedEvent::Recovering(status)) if status.retry_in == hour),
+            "the first try fails, and the next is an hour off"
+        );
+        transport.say_try_now();
+
+        assert_eq!(
+            next().await,
+            Some(ManagedEvent::SessionCatalogReconciled(snapshot)),
+            "the catalog is read again at once rather than an hour on"
+        );
+        assert_eq!(next().await, Some(ManagedEvent::RemoteRecovered));
     }
 }

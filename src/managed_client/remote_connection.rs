@@ -1,6 +1,8 @@
-//! Classification shared by every stream crossing a Remote proxy.
+//! Classification shared by every stream a reader opens over a transport.
 
 use crate::protocol::{RemoteStatus, SessionError, SessionErrorCode, UnreachableReason};
+
+use super::transport::{self, TransportResponse};
 
 pub(super) enum RemoteConnectionFailure {
     /// The Remote could not be reached just now, and is tried again later;
@@ -15,44 +17,55 @@ pub(super) enum RemoteConnectionFailure {
     /// longer does. A subscription that has already heard from that Session
     /// reads it as the Session having been deleted.
     Missing(String),
+    /// The Server the transport was bound to has been replaced, so the
+    /// reading ends without complaint, for its reader to open afresh.
+    Replaced,
 }
 
+/// What came of a request a reader sent: the answer to read on, or what
+/// failed, whether the transport could not reach the Server or the Server
+/// refused.
 pub(super) async fn classify(
-    response: reqwest::Result<reqwest::Response>,
-) -> Result<reqwest::Response, RemoteConnectionFailure> {
-    let response = response.map_err(|_| RemoteConnectionFailure::Transient(None))?;
-    if response.status().is_success() {
+    response: Result<TransportResponse, SessionError>,
+) -> Result<TransportResponse, RemoteConnectionFailure> {
+    let response = match response {
+        Ok(response) => response,
+        // Not reaching the Server is, like a Server failing, worth trying
+        // again, unless the transport says why it never will be.
+        Err(error) => return Err(failure_of(error, true)),
+    };
+    let status = response.status();
+    if status.is_success() {
         return Ok(response);
     }
-    let status = response.status();
-    let error = response.json::<SessionError>().await.ok();
-    match error {
-        Some(error) if error.code == SessionErrorCode::PairingAuthenticationFailed => {
-            Err(RemoteConnectionFailure::Terminal {
-                status: RemoteStatus::Revoked,
-                message: "Remote revoked this pairing".to_owned(),
-            })
-        }
-        Some(error) if error.code == SessionErrorCode::PairingProtocolMismatch => {
-            Err(RemoteConnectionFailure::Terminal {
-                status: RemoteStatus::ProtocolMismatch,
-                message: error.message,
-            })
-        }
-        Some(error)
-            if error.code == SessionErrorCode::PairingConnectionFailed
-                || status.is_server_error() =>
-        {
-            Err(RemoteConnectionFailure::Transient(error.unreachable))
-        }
+    match transport::read_json::<SessionError>(response).await {
+        Some(error) => Err(failure_of(error, status.is_server_error())),
         None if status.is_server_error() => Err(RemoteConnectionFailure::Transient(None)),
-        Some(error) if error.code == SessionErrorCode::SessionNotFound => {
-            Err(RemoteConnectionFailure::Missing(error.message))
-        }
-        Some(error) => Err(RemoteConnectionFailure::Rejected(error.message)),
         None => Err(RemoteConnectionFailure::Rejected(format!(
-            "Remote proxy rejected the request with {status}"
+            "Server rejected the request with {status}"
         ))),
+    }
+}
+
+/// What `error` failed a request for, `server_error` saying whether it is a
+/// failure to be tried again whatever its code.
+fn failure_of(error: SessionError, server_error: bool) -> RemoteConnectionFailure {
+    match error.code {
+        SessionErrorCode::PairingAuthenticationFailed => RemoteConnectionFailure::Terminal {
+            status: RemoteStatus::Revoked,
+            message: "Remote revoked this pairing".to_owned(),
+        },
+        SessionErrorCode::PairingProtocolMismatch => RemoteConnectionFailure::Terminal {
+            status: RemoteStatus::ProtocolMismatch,
+            message: error.message,
+        },
+        SessionErrorCode::ServerReplaced => RemoteConnectionFailure::Replaced,
+        SessionErrorCode::PairingConnectionFailed | SessionErrorCode::ServerUnreachable => {
+            RemoteConnectionFailure::Transient(error.unreachable)
+        }
+        _ if server_error => RemoteConnectionFailure::Transient(error.unreachable),
+        SessionErrorCode::SessionNotFound => RemoteConnectionFailure::Missing(error.message),
+        _ => RemoteConnectionFailure::Rejected(error.message),
     }
 }
 
@@ -61,10 +74,10 @@ mod tests {
     use super::*;
 
     /// What a Remote proxy answers with `status` and `body`.
-    fn answered(status: u16, body: serde_json::Value) -> reqwest::Result<reqwest::Response> {
-        let mut response = axum::http::Response::new(body.to_string());
-        *response.status_mut() = axum::http::StatusCode::from_u16(status).expect("a status");
-        Ok(reqwest::Response::from(response))
+    fn answered(status: u16, body: serde_json::Value) -> Result<TransportResponse, SessionError> {
+        let mut response = http::Response::new(transport::full_body(body.to_string()));
+        *response.status_mut() = http::StatusCode::from_u16(status).expect("a status");
+        Ok(response)
     }
 
     #[tokio::test]

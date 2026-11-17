@@ -29,6 +29,9 @@ anyhow = "1.0.99"
 arboard = { version = "3.6.1", default-features = false, features = ["image-data", "wayland-data-control"] }
 axum = "0.8.4"
 base64 = "0.22.1"
+# The transport under the Client's readers speaks the `http` crate's requests and responses, with `bytes` bodies, so one
+# set of readers runs over loopback and, later, a Pairing.
+bytes = "1.12.1"
 blake3 = "1.8.2"
 clap = { version = "4.5.46", features = ["derive"] }
 crossterm = "0.28.1"
@@ -41,6 +44,7 @@ eventsource-stream = "0.2.3"
 fs2 = "0.4.3"
 futures-util = "0.3.31"
 hostname = "0.4.1"
+http = "1.5.0"
 # The Pairing's pinned-key client: HTTP over a connection it is handed, rather than one it dials itself —
 # HTTP/1.1 over a direct way, and HTTP/2 over a Relay way, carrying everything asked by it on one join — and the
 # Serving side's server for each.

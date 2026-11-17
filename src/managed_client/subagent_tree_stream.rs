@@ -1,24 +1,23 @@
 //! The per-tree Subagent stream: a snapshot of the tree a top-level Session
 //! heads, then every change to it, reconnecting on its own.
 
+use std::sync::Arc;
+
 use anyhow::{Context, Result, bail};
 use eventsource_stream::{EventStreamError, Eventsource};
 use futures_util::StreamExt;
-use tokio::{
-    sync::{mpsc, watch},
-    task::JoinHandle,
-    time::Duration,
-};
+use http_body_util::BodyExt;
+use tokio::{sync::mpsc, task::JoinHandle, time::Duration};
 
 use crate::protocol::{
-    Outlook, RuntimeDescriptor, SUBAGENT_TREE_SNAPSHOT_EVENT, SUBAGENT_TREE_UPDATED_EVENT,
-    SessionId, SubagentTreeChange, SubagentTreeRevision, SubagentTreeSnapshot, SubagentTreeUpdate,
+    SUBAGENT_TREE_SNAPSHOT_EVENT, SUBAGENT_TREE_UPDATED_EVENT, SessionId, SubagentTreeChange,
+    SubagentTreeRevision, SubagentTreeSnapshot, SubagentTreeUpdate,
 };
 
 use super::{
     RecoveryBackoff,
     remote_connection::{self, RemoteConnectionFailure},
-    server_url,
+    transport::{self, Transport, TransportResponse},
 };
 
 /// What a per-tree subscription tells its reader.
@@ -43,7 +42,7 @@ pub enum SubagentTreeEvent {
 }
 
 /// A reconnecting subscription to the tree one Session belongs to, on the
-/// Server one Outlook names. Its lifetime is the interest: dropping it aborts
+/// Server one transport reaches. Its lifetime is the interest: dropping it aborts
 /// the task and releases the connection.
 pub struct SubagentTreeSubscription {
     events: mpsc::Receiver<SubagentTreeEvent>,
@@ -52,18 +51,14 @@ pub struct SubagentTreeSubscription {
 
 impl SubagentTreeSubscription {
     pub(super) fn open(
-        http: reqwest::Client,
-        descriptor: watch::Receiver<RuntimeDescriptor>,
-        outlook: Outlook,
+        transport: Arc<dyn Transport>,
         session_id: SessionId,
         initial_backoff: Duration,
         max_backoff: Duration,
     ) -> Self {
         let (events_tx, events_rx) = mpsc::channel(32);
         let task = tokio::spawn(run(
-            http,
-            descriptor,
-            outlook,
+            transport,
             session_id,
             events_tx,
             RecoveryBackoff::new(initial_backoff, max_backoff),
@@ -87,13 +82,12 @@ impl Drop for SubagentTreeSubscription {
 }
 
 async fn run(
-    http: reqwest::Client,
-    mut descriptor: watch::Receiver<RuntimeDescriptor>,
-    outlook: Outlook,
+    transport: Arc<dyn Transport>,
     session_id: SessionId,
     events: mpsc::Sender<SubagentTreeEvent>,
     mut backoff: RecoveryBackoff,
 ) {
+    let mut try_now = transport.try_now();
     // Whether any connection has delivered the tree. Once one has, the tree
     // missing on a later connection was deleted while this one was away;
     // missing from the first, it was never there to subscribe to.
@@ -102,8 +96,7 @@ async fn run(
         if events.is_closed() {
             return;
         }
-        let active_descriptor = descriptor.borrow().clone();
-        match open(&http, &active_descriptor, &outlook, session_id).await {
+        match open(transport.as_ref(), session_id).await {
             Ok(response) => match consume(response, &events).await {
                 StreamOutcome::Ended => return,
                 StreamOutcome::Disconnected { hydrated } => {
@@ -125,40 +118,29 @@ async fn run(
                 let _ = events.send(SubagentTreeEvent::Failed(message)).await;
                 return;
             }
+            Err(RemoteConnectionFailure::Replaced) => return,
             Err(RemoteConnectionFailure::Transient(_)) => {}
         }
-        if wait_to_reconnect(&mut descriptor, backoff.next()).await {
+        // Told to try now, the Server is likely a new one, so it is tried on
+        // a fresh schedule.
+        if try_now.or_after(backoff.next()).await {
             backoff.reset();
         }
     }
 }
 
 async fn open(
-    http: &reqwest::Client,
-    descriptor: &RuntimeDescriptor,
-    outlook: &Outlook,
+    transport: &dyn Transport,
     session_id: SessionId,
-) -> std::result::Result<reqwest::Response, RemoteConnectionFailure> {
-    let url = server_url(
-        &descriptor.base_url,
-        outlook,
-        &format!("/v1/sessions/{session_id}/subagent-tree"),
+) -> std::result::Result<TransportResponse, RemoteConnectionFailure> {
+    remote_connection::classify(
+        transport
+            .send(transport::get(&format!(
+                "/v1/sessions/{session_id}/subagent-tree"
+            )))
+            .await,
     )
-    .expect("a validated runtime descriptor builds a Server URL");
-    remote_connection::classify(http.get(url).bearer_auth(&descriptor.token).send().await).await
-}
-
-/// Waits for the retry delay or a replacement local Server descriptor,
-/// answering whether the descriptor was replaced: a new one names a new
-/// Server, which starts a fresh retry schedule.
-async fn wait_to_reconnect(
-    descriptor: &mut watch::Receiver<RuntimeDescriptor>,
-    retry_in: Duration,
-) -> bool {
-    tokio::select! {
-        changed = descriptor.changed(), if descriptor.has_changed().is_ok() => changed.is_ok(),
-        _ = tokio::time::sleep(retry_in) => false,
-    }
+    .await
 }
 
 enum StreamOutcome {
@@ -172,10 +154,10 @@ enum StreamOutcome {
 }
 
 async fn consume(
-    response: reqwest::Response,
+    response: TransportResponse,
     events: &mpsc::Sender<SubagentTreeEvent>,
 ) -> StreamOutcome {
-    let mut stream = response.bytes_stream().eventsource();
+    let mut stream = response.into_body().into_data_stream().eventsource();
     let mut revision = None;
     while let Some(next) = stream.next().await {
         let hydrated = revision.is_some();
@@ -507,9 +489,11 @@ mod tests {
 
     fn subscribe(server: &TreeServer) -> SubagentTreeSubscription {
         SubagentTreeSubscription::open(
-            crate::runtime::loopback_http_client(),
-            server.descriptor.clone(),
-            Outlook::Local,
+            Arc::new(crate::managed_client::loopback::LoopbackTransport::new(
+                crate::runtime::loopback_http_client(),
+                server.descriptor.clone(),
+                crate::protocol::Outlook::Local,
+            )),
             SessionId::new(),
             Duration::from_millis(1),
             Duration::from_millis(5),
@@ -726,6 +710,41 @@ mod tests {
     fn a_change_before_any_snapshot_is_refused() {
         assert!(
             decode_event(event(SUBAGENT_TREE_UPDATED_EVENT, 2, &settle(2)), &mut None).is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_subscription_told_to_try_now_skips_its_backoff() {
+        use crate::managed_client::stream_fixture::{
+            ScriptedTransport, open_stream_of, unreachable,
+        };
+
+        let opened = snapshot(1);
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            Err(unreachable()),
+            Ok(open_stream_of(&[(
+                SUBAGENT_TREE_SNAPSHOT_EVENT,
+                Some(1),
+                serde_json::to_string(&opened).expect("encode the snapshot"),
+            )])),
+        ]));
+        let hour = Duration::from_secs(3600);
+        let mut subscription =
+            SubagentTreeSubscription::open(transport.clone(), SessionId::new(), hour, hour);
+
+        tokio::time::timeout(DEADLINE, async {
+            while transport.asked() < 1 {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("the subscription asks in time");
+        transport.say_try_now();
+
+        assert_eq!(
+            next_event(&mut subscription).await,
+            Some(SubagentTreeEvent::Snapshot(opened)),
+            "the tree is read again at once rather than an hour on"
         );
     }
 }

@@ -14,7 +14,7 @@ use super::{
     event_stream::{self, StreamOutcome},
     launcher,
     lifecycle::{self, Registration},
-    session_catalog_stream,
+    loopback, session_catalog_stream,
 };
 
 /// One exponential retry schedule shared by managed, Remote catalog, and
@@ -220,7 +220,7 @@ async fn run_managed_client(
         let (catalog_hydrated, catalog_hydration) = tokio::sync::oneshot::channel();
         let (connection_announced, catalog_announced) = tokio::sync::oneshot::channel();
         let catalog = session_catalog_stream::consume(
-            connection.catalog_response,
+            loopback::response_of(connection.catalog_response),
             &events,
             &mut known_session_ids,
             catalog_hydrated,

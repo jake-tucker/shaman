@@ -1,24 +1,22 @@
-//! Authenticated Session stream transport and provider-neutral event decoding.
+//! The Session stream over a transport, and provider-neutral event decoding.
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use eventsource_stream::{EventStreamError, Eventsource};
 use futures_util::StreamExt;
-use tokio::{
-    sync::{mpsc, watch},
-    task::JoinHandle,
-};
+use http_body_util::BodyExt;
+use tokio::{sync::mpsc, task::JoinHandle};
 
 use crate::protocol::{
-    Outlook, RemoteStatus, RuntimeDescriptor, SESSION_SNAPSHOT_EVENT, SESSION_UPDATED_EVENT,
-    SessionError, SessionErrorCode, SessionId, SessionSnapshot, SessionUpdate,
+    RemoteStatus, SESSION_SNAPSHOT_EVENT, SESSION_UPDATED_EVENT, SessionId, SessionSnapshot,
+    SessionUpdate,
 };
 
 use super::{
     RecoveryBackoff,
     remote_connection::{self, RemoteConnectionFailure},
-    server_url,
+    transport::{self, BodyError, Transport, TransportResponse, TryNow},
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -44,6 +42,12 @@ impl SessionStreamError {
         }
     }
 
+    /// The stream's transport was bound to a Server replaced before the
+    /// stream opened, which a fresh attach reaches the new one past.
+    fn replaced() -> Self {
+        Self::transport("The Server this stream was opened against has been replaced")
+    }
+
     fn protocol(error: anyhow::Error) -> Self {
         Self {
             kind: SessionStreamErrorKind::Protocol,
@@ -51,7 +55,7 @@ impl SessionStreamError {
         }
     }
 
-    fn event_source(error: EventStreamError<reqwest::Error>) -> Self {
+    fn event_source(error: EventStreamError<BodyError>) -> Self {
         let message = format!("Session event stream failed: {error}");
         match error {
             EventStreamError::Transport(_) => Self::transport(message),
@@ -134,14 +138,12 @@ pub struct SessionSubscription {
 }
 
 impl SessionSubscription {
-    pub(super) async fn open(
-        http: &reqwest::Client,
-        descriptor: &RuntimeDescriptor,
-        outlook: &Outlook,
-        session_id: SessionId,
-    ) -> Result<Self> {
-        let response = open_response(http, descriptor, outlook, session_id)
+    /// The Session's stream as `transport` opens it, read to its end and not
+    /// reopened.
+    pub(super) async fn open(transport: &dyn Transport, session_id: SessionId) -> Result<Self> {
+        let response = open_response(transport, session_id)
             .await
+            .map_err(|error| error.unwrap_or_else(SessionStreamError::replaced))
             .context("server rejected the Session event stream")?;
         let (events_tx, events_rx) = mpsc::channel(SESSION_EVENT_CAPACITY);
         let task = tokio::spawn(consume_once(response, session_id, events_tx));
@@ -151,28 +153,26 @@ impl SessionSubscription {
         })
     }
 
+    /// The Session's stream as `transport` opens it, opened again whenever
+    /// it drops, and sooner where the transport says to try now. It ends
+    /// once the transport says it never will be again, as a loopback
+    /// transport bound to a local Server since replaced does.
     pub(super) async fn open_attached(
-        http: &reqwest::Client,
-        descriptor: watch::Receiver<RuntimeDescriptor>,
-        outlook: Outlook,
+        transport: Arc<dyn Transport>,
         session_id: SessionId,
         initial_backoff: Duration,
         max_backoff: Duration,
     ) -> Result<Self> {
-        let initial_descriptor = descriptor.borrow().clone();
-        let response = open_response(http, &initial_descriptor, &outlook, session_id)
+        let try_now = transport.try_now();
+        let response = open_response(transport.as_ref(), session_id)
             .await
+            .map_err(|error| error.unwrap_or_else(SessionStreamError::replaced))
             .context("server rejected the Session event stream")?;
         let (events_tx, events_rx) = mpsc::channel(SESSION_EVENT_CAPACITY);
-        let target = AttachedSession {
-            outlook,
-            instance_id: initial_descriptor.instance_id,
-            session_id,
-        };
         let task = tokio::spawn(run_attached(
-            http.clone(),
-            descriptor,
-            target,
+            transport,
+            try_now,
+            session_id,
             response,
             events_tx,
             RecoveryBackoff::new(initial_backoff, max_backoff),
@@ -217,58 +217,34 @@ impl SessionSubscription {
     }
 }
 
+/// The Session's stream as `transport` opens it, or why it would not open:
+/// `None` where the transport will never open it again.
 async fn open_response(
-    http: &reqwest::Client,
-    descriptor: &RuntimeDescriptor,
-    outlook: &Outlook,
+    transport: &dyn Transport,
     session_id: SessionId,
-) -> std::result::Result<reqwest::Response, SessionStreamError> {
-    let url = server_url(
-        &descriptor.base_url,
-        outlook,
-        &format!("/v1/sessions/{session_id}/events"),
-    )
-    .expect("a validated runtime descriptor builds a Server URL");
-    let response = http.get(url).bearer_auth(&descriptor.token).send().await;
-    if matches!(outlook, Outlook::Remote(_)) {
-        return remote_connection::classify(response)
-            .await
-            .map_err(|error| match error {
-                RemoteConnectionFailure::Transient(_) => {
-                    SessionStreamError::transport("Remote Session stream is unavailable")
-                }
-                RemoteConnectionFailure::Terminal { status, message } => {
-                    SessionStreamError::remote(status, message)
-                }
-                RemoteConnectionFailure::Missing(message) => {
-                    SessionStreamError::missing(session_id, message)
-                }
-                RemoteConnectionFailure::Rejected(message) => {
-                    SessionStreamError::protocol(anyhow::anyhow!(message))
-                }
-            });
-    }
-    let response = response.map_err(|error| SessionStreamError::transport(error.to_string()))?;
-    let status = response.status();
-    if status.is_success() {
-        return Ok(response);
-    }
-    if status.is_server_error() {
-        return Err(SessionStreamError::transport(format!(
-            "server rejected the Session event stream with {status}"
-        )));
-    }
-    match response.json::<SessionError>().await {
-        Ok(error) if error.code == SessionErrorCode::SessionNotFound => {
-            Err(SessionStreamError::missing(session_id, error.message))
-        }
-        // Whatever its code, a code this build does not know among them, the
-        // refusal says why in its own words.
-        Ok(error) => Err(SessionStreamError::protocol(anyhow::anyhow!(error.message))),
-        Err(_) => Err(SessionStreamError::protocol(anyhow::anyhow!(
-            "server rejected the Session event stream with {status}"
-        ))),
-    }
+) -> std::result::Result<TransportResponse, Option<SessionStreamError>> {
+    let response = transport
+        .send(transport::get(&format!("/v1/sessions/{session_id}/events")))
+        .await;
+    remote_connection::classify(response)
+        .await
+        .map_err(|error| match error {
+            RemoteConnectionFailure::Transient(_) => Some(SessionStreamError::transport(
+                "Session stream is unavailable",
+            )),
+            RemoteConnectionFailure::Terminal { status, message } => {
+                Some(SessionStreamError::remote(status, message))
+            }
+            RemoteConnectionFailure::Missing(message) => {
+                Some(SessionStreamError::missing(session_id, message))
+            }
+            // Whatever its code, a code this build does not know among
+            // them, the refusal says why in its own words.
+            RemoteConnectionFailure::Rejected(message) => {
+                Some(SessionStreamError::protocol(anyhow::anyhow!(message)))
+            }
+            RemoteConnectionFailure::Replaced => None,
+        })
 }
 
 impl Drop for SessionSubscription {
@@ -288,14 +264,8 @@ enum StreamOutcome {
     },
 }
 
-struct AttachedSession {
-    outlook: Outlook,
-    instance_id: uuid::Uuid,
-    session_id: SessionId,
-}
-
 async fn consume_once(
-    response: reqwest::Response,
+    response: TransportResponse,
     session_id: SessionId,
     events: mpsc::Sender<Result<SessionEvent, SessionStreamError>>,
 ) {
@@ -308,53 +278,35 @@ async fn consume_once(
 }
 
 async fn run_attached(
-    http: reqwest::Client,
-    mut descriptor: watch::Receiver<RuntimeDescriptor>,
-    target: AttachedSession,
-    initial_response: reqwest::Response,
+    transport: Arc<dyn Transport>,
+    mut try_now: TryNow,
+    session_id: SessionId,
+    initial_response: TransportResponse,
     events: mpsc::Sender<Result<SessionEvent, SessionStreamError>>,
     mut backoff: RecoveryBackoff,
 ) {
     let mut response = Some(initial_response);
     let mut last_revision = None;
     loop {
-        let active_descriptor = descriptor.borrow().clone();
-        if active_descriptor.instance_id != target.instance_id {
-            return;
-        }
         let next_response = match response.take() {
             Some(response) => Ok(response),
-            None => {
-                open_response(
-                    &http,
-                    &active_descriptor,
-                    &target.outlook,
-                    target.session_id,
-                )
-                .await
-            }
+            None => open_response(transport.as_ref(), session_id).await,
         };
         let next_response = match next_response {
             Ok(response) => response,
-            Err(error) if !error.is_recoverable() => {
+            // The transport will not open it again: the stream ends, and its
+            // reader attaches afresh.
+            Err(None) => return,
+            Err(Some(error)) if !error.is_recoverable() => {
                 let _ = events.send(Err(error)).await;
                 return;
             }
-            Err(_) => {
-                if !wait_to_reconnect(&mut descriptor, target.instance_id, backoff.next()).await {
-                    return;
-                }
+            Err(Some(_)) => {
+                try_now.or_after(backoff.next()).await;
                 continue;
             }
         };
-        let hydrated = match consume(
-            next_response,
-            target.session_id,
-            &events,
-            &mut last_revision,
-        )
-        .await
-        {
+        let hydrated = match consume(next_response, session_id, &events, &mut last_revision).await {
             StreamOutcome::Disconnected { hydrated } => hydrated,
             StreamOutcome::ReceiverClosed => return,
             StreamOutcome::Failed { error, hydrated } if error.is_recoverable() => hydrated,
@@ -366,34 +318,17 @@ async fn run_attached(
         if hydrated {
             backoff.reset();
         }
-        if !wait_to_reconnect(&mut descriptor, target.instance_id, backoff.next()).await {
-            return;
-        }
-    }
-}
-
-async fn wait_to_reconnect(
-    descriptor: &mut watch::Receiver<RuntimeDescriptor>,
-    attached_instance_id: uuid::Uuid,
-    retry_in: Duration,
-) -> bool {
-    tokio::select! {
-        changed = descriptor.changed() => {
-            changed.is_ok() && descriptor.borrow().instance_id == attached_instance_id
-        }
-        _ = tokio::time::sleep(retry_in) => {
-            descriptor.borrow().instance_id == attached_instance_id
-        }
+        try_now.or_after(backoff.next()).await;
     }
 }
 
 async fn consume(
-    response: reqwest::Response,
+    response: TransportResponse,
     session_id: SessionId,
     events: &mpsc::Sender<Result<SessionEvent, SessionStreamError>>,
     last_revision: &mut Option<crate::protocol::SessionRevision>,
 ) -> StreamOutcome {
-    let mut stream = response.bytes_stream().eventsource();
+    let mut stream = response.into_body().into_data_stream().eventsource();
     let mut saw_snapshot = false;
     while let Some(next) = stream.next().await {
         let event = match next {
@@ -494,10 +429,10 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::managed_client::stream_fixture::stream_of;
+    use crate::managed_client::stream_fixture::{ScriptedTransport, stream_of, unreachable};
     use crate::protocol::{
-        ExecutionDirectory, ModelAvailability, Session, SessionChange, SessionRevision,
-        SessionStatus, Workspace,
+        ExecutionDirectory, ModelAvailability, Session, SessionChange, SessionError,
+        SessionErrorCode, SessionRevision, SessionStatus, Workspace,
     };
 
     fn snapshot(session_id: SessionId, revision: u64) -> SessionSnapshot {
@@ -596,5 +531,171 @@ mod tests {
             ],
             "the events this build knows arrive in order, the others not at all"
         );
+    }
+
+    /// The stream of a Session's snapshot at `revision` alone, as a Server
+    /// sends it before the Server ends it.
+    fn snapshot_stream(session_id: SessionId, revision: u64) -> TransportResponse {
+        stream_of(&[(
+            SESSION_SNAPSHOT_EVENT,
+            Some(revision),
+            serde_json::to_string(&snapshot(session_id, revision)).expect("encode the snapshot"),
+        )])
+    }
+
+    const DEADLINE: Duration = Duration::from_secs(10);
+
+    async fn next_event(
+        subscription: &mut SessionSubscription,
+    ) -> Option<Result<SessionEvent, SessionStreamError>> {
+        tokio::time::timeout(DEADLINE, subscription.next())
+            .await
+            .expect("the subscription answers in time")
+    }
+
+    /// Waits until `transport` has been sent `count` requests.
+    async fn until_asked(transport: &ScriptedTransport, count: usize) {
+        tokio::time::timeout(DEADLINE, async {
+            while transport.asked() < count {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("the reader asks in time");
+    }
+
+    #[tokio::test]
+    async fn an_attached_stream_told_to_try_now_skips_its_backoff() {
+        let session_id = SessionId::new();
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            Ok(snapshot_stream(session_id, 3)),
+            Err(unreachable()),
+            Ok(snapshot_stream(session_id, 4)),
+        ]));
+        let hour = Duration::from_secs(3600);
+        let mut subscription =
+            SessionSubscription::open_attached(transport.clone(), session_id, hour, hour)
+                .await
+                .expect("the stream opens");
+        assert!(matches!(
+            next_event(&mut subscription).await,
+            Some(Ok(SessionEvent::Snapshot(_)))
+        ));
+
+        // Each wait is an hour long, and each is cut short.
+        until_asked(&transport, 1).await;
+        transport.say_try_now();
+        until_asked(&transport, 2).await;
+        transport.say_try_now();
+
+        let Some(Ok(SessionEvent::Snapshot(reopened))) = next_event(&mut subscription).await else {
+            panic!("the stream reopens without waiting out its backoff");
+        };
+        assert_eq!(reopened.revision, SessionRevision(4));
+    }
+
+    #[tokio::test]
+    async fn an_attached_stream_whose_transport_will_not_reopen_it_ends_without_complaint() {
+        let session_id = SessionId::new();
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            Ok(snapshot_stream(session_id, 3)),
+            Err(SessionError {
+                code: SessionErrorCode::ServerReplaced,
+                message: "replaced".to_owned(),
+                unreachable: None,
+            }),
+        ]));
+        let backoff = Duration::from_millis(1);
+        let mut subscription =
+            SessionSubscription::open_attached(transport, session_id, backoff, backoff)
+                .await
+                .expect("the stream opens");
+
+        assert!(matches!(
+            next_event(&mut subscription).await,
+            Some(Ok(SessionEvent::Snapshot(_)))
+        ));
+        assert_eq!(
+            next_event(&mut subscription).await,
+            None,
+            "the stream ends, for its reader to attach afresh, rather than fail"
+        );
+    }
+
+    /// A stand-in local Server answering a Session's stream with its snapshot
+    /// and then ending it, as a Server shutting down does.
+    async fn ending_server(session_id: SessionId) -> (String, tokio::task::JoinHandle<()>) {
+        use axum::{Router, http::header::CONTENT_TYPE, response::IntoResponse, routing::get};
+
+        let body = format!(
+            "event: {SESSION_SNAPSHOT_EVENT}\nid: 3\ndata: {}\n\n",
+            serde_json::to_string(&snapshot(session_id, 3)).expect("encode the snapshot")
+        );
+        let app = Router::new().route(
+            "/v1/sessions/{session_id}/events",
+            get(move || {
+                let body = body.clone();
+                async move { ([(CONTENT_TYPE, "text/event-stream")], body).into_response() }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind the Session stream fixture");
+        let address = listener.local_addr().expect("read the fixture address");
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .expect("serve the Session stream fixture");
+        });
+        (format!("http://{address}"), server)
+    }
+
+    fn descriptor(base_url: &str) -> crate::protocol::RuntimeDescriptor {
+        crate::protocol::RuntimeDescriptor::new(
+            base_url.to_owned(),
+            "session-stream-fixture-token".to_owned(),
+            crate::protocol::ServerIdentity {
+                instance_id: uuid::Uuid::new_v4(),
+                pid: std::process::id(),
+                protocol_version: crate::protocol::PROTOCOL_VERSION,
+                build_identity: "session-stream-fixture".to_owned(),
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn an_attached_stream_over_loopback_ends_once_its_local_server_is_replaced() {
+        let session_id = SessionId::new();
+        let (base_url, server) = ending_server(session_id).await;
+        let (found, watched) = tokio::sync::watch::channel(descriptor(&base_url));
+        let transport = crate::managed_client::loopback::LoopbackTransport::new(
+            crate::runtime::loopback_http_client(),
+            watched,
+            crate::protocol::Outlook::Local,
+        );
+        let hour = Duration::from_secs(3600);
+        let mut subscription = SessionSubscription::open_attached(
+            Arc::new(transport.pinned()),
+            session_id,
+            hour,
+            hour,
+        )
+        .await
+        .expect("the stream opens");
+        assert!(matches!(
+            next_event(&mut subscription).await,
+            Some(Ok(SessionEvent::Snapshot(_)))
+        ));
+
+        // Another local Server is found where this one stood: the same
+        // address answers, but it is not the Server the stream opened on.
+        found.send_replace(descriptor(&base_url));
+
+        assert_eq!(
+            next_event(&mut subscription).await,
+            None,
+            "the stream ends at once, for its reader to attach to the new Server"
+        );
+        server.abort();
     }
 }
