@@ -17,7 +17,7 @@ use rustls::{
     SignatureAlgorithm, SignatureScheme,
     client::ResolvesClientCert,
     pki_types::{CertificateDer, SubjectPublicKeyInfoDer},
-    sign::CertifiedKey,
+    sign::{CertifiedKey, SingleCertAndKey},
 };
 use x509_parser::{
     oid_registry::{OID_EC_P256, OID_KEY_TYPE_EC_PUBLIC_KEY},
@@ -121,7 +121,9 @@ impl IdentitySigner {
         &self,
         certificate: Vec<u8>,
     ) -> Result<Arc<dyn ResolvesClientCert>> {
-        Ok(Arc::new(PresentedAlways(self.tls_identity(certificate)?)))
+        Ok(Arc::new(SingleCertAndKey::from(
+            self.tls_identity(certificate)?,
+        )))
     }
 
     /// The uncompressed point of the key, as a certificate names its key by.
@@ -220,24 +222,6 @@ impl rustls::sign::Signer for TlsKey {
 
     fn scheme(&self) -> SignatureScheme {
         SignatureScheme::ECDSA_NISTP256_SHA256
-    }
-}
-
-/// Presents the one identity to every server that asks for one.
-#[derive(Debug)]
-struct PresentedAlways(Arc<CertifiedKey>);
-
-impl ResolvesClientCert for PresentedAlways {
-    fn resolve(
-        &self,
-        _root_hint_subjects: &[&[u8]],
-        _sigschemes: &[SignatureScheme],
-    ) -> Option<Arc<CertifiedKey>> {
-        Some(self.0.clone())
-    }
-
-    fn has_certs(&self) -> bool {
-        true
     }
 }
 
@@ -361,7 +345,6 @@ mod tests {
         client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
         pki_types::{ServerName, UnixTime},
         server::danger::{ClientCertVerified, ClientCertVerifier},
-        sign::SingleCertAndKey,
     };
     use tokio_rustls::{TlsAcceptor, TlsConnector};
     use x509_parser::prelude::{FromDer, X509Certificate};
