@@ -6848,6 +6848,16 @@ pub enum SessionErrorCode {
     /// the key was done; none was made in its place, and the next use tries
     /// again.
     IdentityKeyUnavailable,
+    /// The Server a request was for could not be reached: nothing answered
+    /// where it was looked for, or the connection to it broke before it
+    /// answered. No Server sends it; a Client's transport answers it in the
+    /// Server's place, and what was asked may be asked again.
+    ServerUnreachable,
+    /// The Server an attached Session stream was opened against has been
+    /// replaced by another, or nothing is left to name its successor, so
+    /// the stream ends rather than carry on against a Server it did not
+    /// open on. No Server sends it; a Client's transport answers it.
+    ServerReplaced,
     /// A code this reader does not know, from a Server newer than it: what
     /// went wrong is whatever the message beside it says (ADR-0078). No
     /// Server sends it; a reader reads every code it was built without as
