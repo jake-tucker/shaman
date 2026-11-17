@@ -28,7 +28,7 @@ So a thin Client's identity does not travel. A phone that is new, erased, or res
 
 - Replacing a phone leaves behind a Peer on each of its Servers and a Login at each of its Relays that nothing will use again. The Peer is the Serving user's to remove, and the Login only the Relay's operator's (ADR-0079).
 - Deleting the app ends no Pairing and removes no key. A user who means to end them removes each Remote first, which withdraws the Peer.
-- What a lost phone holds is its key's reach and the list of its Remotes. The first cut keeps nothing of a Session on disk, and a cache added later is a decision of its own that touches no Pairing.
+- What a lost phone holds is its key's reach, the list of its Remotes, and the text of any Prompt its user wrote and had not sent. That text is its user's own and is kept on the device beside those records, out of backups, so that the app being ended while it is out of sight costs nobody what they wrote. The first cut keeps nothing else of a Session on disk, and a cache of what a Server holds, added later, is a decision of its own that touches no Pairing.
 - Removing a Peer is done from the TUI's `/serve` alone, so ending a lost phone from elsewhere means reaching a TUI on each Serving machine. A command for it is its own issue (#654).
 - `IdentityMaterial` stops carrying the private key's bytes. Its three uses each take the signer, and #513 becomes a matter of writing one more.
 - A signature is a blocking call from the core into the app. rustls expects a key that answers quickly, which a Secure Enclave does.
