@@ -27,6 +27,7 @@ mod sessions;
 pub mod settings;
 mod shown_text;
 mod sidekick;
+mod signer;
 mod skill_catalog;
 pub mod source_control;
 mod storage;

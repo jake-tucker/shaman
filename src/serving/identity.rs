@@ -25,6 +25,7 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use rcgen::{CertificateParams, KeyPair, PublicKeyData};
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 use super::{
     SERVING_IDENTITY_NAME, fingerprint,
@@ -33,7 +34,10 @@ use super::{
         Selection, StoreUnavailable, Stored,
     },
 };
-use crate::runtime::{protect_current_user_file, replace_private_file};
+use crate::{
+    runtime::{protect_current_user_file, replace_private_file},
+    signer::{IdentitySigner, SoftwareSigner},
+};
 
 /// The owner-only file in a data directory its Server's identity key is kept
 /// in, where it is not kept in the platform credential store.
@@ -90,7 +94,7 @@ impl IdentityKeeping {
 /// it fails, and the next tries again. It is got off the async workers, so
 /// a store slow to answer holds up only what needs the key, and one use at
 /// a time gets it, the rest waiting for what that use gets. Its private key
-/// never leaves the Serving module.
+/// is read only into the [`SoftwareSigner`] every use signs through.
 #[derive(Clone)]
 pub(crate) struct IdentityKey(Arc<KeptKey>);
 
@@ -152,17 +156,26 @@ impl IdentityKey {
         }))
     }
 
-    /// The key, as the DER SubjectPublicKeyInfo its Pairings pin.
-    pub(crate) async fn public_key(&self) -> Result<Vec<u8>> {
-        Ok(self.material().await?.public_key)
+    /// An identity key `signer` signs with, handed in rather than kept: it
+    /// is never got from, or kept in, the data directory `data_dir` or any
+    /// store.
+    #[cfg(test)]
+    pub(super) fn given(data_dir: &Path, signer: IdentitySigner) -> Result<Self> {
+        let key = Self::new(data_dir);
+        let material = IdentityMaterial::minted(signer)?;
+        let _ = key.0.fingerprint.set(fingerprint(material.public_key()));
+        let _ = key.0.material.set(material);
+        Ok(key)
     }
 
-    /// Signs `message` with the key, as the Server proves it to a Relay.
-    pub(crate) async fn sign(&self, message: &[u8]) -> Result<Vec<u8>> {
-        let identity = self.material().await?;
-        let signing_key = KeyPair::try_from(identity.private_key.as_slice())
-            .context("read Server identity key")?;
-        rcgen::SigningKey::sign(&signing_key, message).context("sign with Server identity key")
+    /// The key, as the DER SubjectPublicKeyInfo its Pairings pin.
+    pub(crate) async fn public_key(&self) -> Result<Vec<u8>> {
+        Ok(self.material().await?.public_key().to_vec())
+    }
+
+    /// What signs with the key, as the Server proves it to a Relay.
+    pub(crate) async fn signer(&self) -> Result<IdentitySigner> {
+        Ok(self.material().await?.signer)
     }
 
     /// The key's fingerprint, as a Peer's name uses it, where this Server
@@ -178,7 +191,7 @@ impl IdentityKey {
         let got = kept
             .material
             .get()
-            .map(|material| fingerprint(&material.public_key));
+            .map(|material| fingerprint(material.public_key()));
         let known = match got {
             Some(known) => known,
             None => match Marker::read(&kept.marker)? {
@@ -223,18 +236,11 @@ impl KeptKey {
         if let Some(material) = got.as_ref() {
             return Ok(material.clone());
         }
-        let private_key = self.private_key()?;
-        let signing_key =
-            KeyPair::try_from(private_key.as_slice()).context("read Server identity key")?;
-        let certificate = CertificateParams::new(vec![SERVING_IDENTITY_NAME.to_owned()])
-            .context("describe Server identity certificate")?
-            .self_signed(&signing_key)
-            .context("mint Server identity certificate")?;
-        let material = IdentityMaterial {
-            public_key: signing_key.subject_public_key_info(),
-            private_key,
-            certificate: certificate.der().as_ref().to_vec(),
-        };
+        let private_key = Zeroizing::new(self.private_key()?);
+        let signer = IdentitySigner::new(
+            SoftwareSigner::from_pkcs8(&private_key).context("read Server identity key")?,
+        )?;
+        let material = IdentityMaterial::minted(signer)?;
         *got = Some(material.clone());
         Ok(material)
     }
@@ -511,11 +517,35 @@ impl KeptKey {
     }
 }
 
+/// What a Server proves its identity key by: what signs with the key, and
+/// the identity certificate of the key its pinned-key TLS presents. It holds
+/// none of the key's private bytes.
 #[derive(Clone)]
 pub(super) struct IdentityMaterial {
-    pub(super) private_key: Vec<u8>,
+    pub(super) signer: IdentitySigner,
     pub(super) certificate: Vec<u8>,
-    pub(super) public_key: Vec<u8>,
+}
+
+impl IdentityMaterial {
+    /// The material of the key `signer` signs with, its identity
+    /// certificate minted by the key itself.
+    pub(super) fn minted(signer: IdentitySigner) -> Result<Self> {
+        let certificate = signer
+            .self_signed(
+                CertificateParams::new(vec![SERVING_IDENTITY_NAME.to_owned()])
+                    .context("describe Server identity certificate")?,
+            )
+            .context("mint Server identity certificate")?;
+        Ok(Self {
+            signer,
+            certificate,
+        })
+    }
+
+    /// The key, as the DER SubjectPublicKeyInfo its Pairings pin.
+    pub(super) fn public_key(&self) -> &[u8] {
+        self.signer.public_key()
+    }
 }
 
 /// The fingerprint of the PKCS#8 private key `key`, as a Peer's name uses
@@ -909,12 +939,14 @@ mod tests {
         assert_eq!(public_key, public_key_of(&kept));
         let nonce = [7; shaman_relay_protocol::NONCE_LEN];
         let proof = identity
+            .signer()
+            .await
+            .unwrap()
             .sign(&shaman_relay_protocol::proof_message(
                 "wss://relay.example",
                 &nonce,
                 &public_key,
             ))
-            .await
             .unwrap();
         assert_eq!(
             shaman_relay_protocol::verify_proof("wss://relay.example", &public_key, &nonce, &proof),
@@ -1299,7 +1331,7 @@ mod tests {
 
         let (public_key, log) = record_log(async {
             let public_key = identity.public_key().await.unwrap();
-            identity.sign(b"message").await.unwrap();
+            identity.signer().await.unwrap().sign(b"message").unwrap();
             public_key
         })
         .await;
@@ -1358,7 +1390,7 @@ mod tests {
 
         let (public_key, log) = record_log(async {
             let public_key = identity.public_key().await.unwrap();
-            identity.sign(b"message").await.unwrap();
+            identity.signer().await.unwrap().sign(b"message").unwrap();
             identity.public_key().await.unwrap();
             public_key
         })
@@ -1481,7 +1513,7 @@ mod tests {
         );
         #[cfg(target_os = "macos")]
         assert!(told.contains("security unlock-keychain"), "{told}");
-        assert!(identity.sign(b"message").await.is_err());
+        assert!(identity.signer().await.is_err());
         assert!(
             !directory.path().join("server-identity.pk8").exists(),
             "no key is written to the file"

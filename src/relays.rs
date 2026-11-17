@@ -1894,7 +1894,8 @@ impl Dialer {
                 None => "the Server could not use its identity key".to_owned(),
             })
         };
-        let key = identity.public_key().await.map_err(identity_failure)?;
+        let signer = identity.signer().await.map_err(identity_failure)?;
+        let key = signer.public_key().to_vec();
         let mut conversation =
             tokio::time::timeout(answer_timeout, self.websocket(address, answer_timeout))
                 .await
@@ -1951,9 +1952,8 @@ impl Dialer {
             }
             Ok(None) | Err(_) => return Err(unanswered()),
         };
-        let signature = identity
+        let signature = signer
             .sign(&relay_protocol::proof_message(address, &nonce, &key))
-            .await
             .map_err(identity_failure)?;
         conversation
             .say(&ServerMessage::Proof {

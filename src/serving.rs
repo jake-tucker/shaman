@@ -64,9 +64,7 @@ use hyper_util::{
     rt::{TokioExecutor, TokioIo, TokioTimer},
     service::TowerToHyperService,
 };
-use rcgen::{
-    CertificateParams, DistinguishedName as CertificateDistinguishedName, DnType, KeyPair,
-};
+use rcgen::{CertificateParams, DistinguishedName as CertificateDistinguishedName, DnType};
 use rustls::{
     ClientConfig, DigitallySignedStruct, DistinguishedName, Error as TlsError, RootCertStore,
     ServerConfig, SignatureScheme,
@@ -74,7 +72,7 @@ use rustls::{
         HandshakeSignatureValid as ServerHandshakeSignatureValid, ServerCertVerifier,
     },
     client::{WebPkiServerVerifier, danger::ServerCertVerified},
-    pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName, UnixTime},
+    pki_types::{CertificateDer, ServerName, UnixTime},
     server::danger::ClientCertVerifier,
     server::{ClientHello, ResolvesServerCert, WebPkiClientVerifier, danger::ClientCertVerified},
     sign::CertifiedKey,
@@ -1199,6 +1197,14 @@ impl ServingController {
         self
     }
 
+    /// Has this Server sign with the identity key `signer` signs with, handed
+    /// in rather than kept.
+    #[cfg(test)]
+    pub(crate) fn with_identity_signer(mut self, signer: crate::signer::IdentitySigner) -> Self {
+        self.identity = IdentityKey::given(&self.data_dir, signer).expect("mint an identity");
+        self
+    }
+
     /// Where the listener listens, if anywhere.
     pub(crate) fn address(&self) -> Option<SocketAddr> {
         match *self.listening.borrow() {
@@ -1980,7 +1986,7 @@ impl ServingController {
     /// of Serving for the Relays to wait in.
     async fn start_serving(&self, settings: ServingSettings) -> Result<ActiveServing> {
         let identity = self.identity().await?;
-        let own_key = Arc::<[u8]>::from(identity.public_key.as_slice());
+        let own_key = Arc::<[u8]>::from(identity.public_key());
         let tls = self.serving_tls(identity)?;
         let connections = Arc::new(RevocableConnections::default());
         let (dialled, dialled_arrivals) = mpsc::channel(DIALLED_ARRIVALS_QUEUED);
@@ -2206,14 +2212,10 @@ impl ServingController {
     /// The pinned-key TLS the Serving side runs over each connection it
     /// accepts, by where the connection came from, proving `identity`.
     fn serving_tls(&self, identity: IdentityMaterial) -> Result<ServingTls> {
-        let certified = Arc::new(
-            CertifiedKey::from_der(
-                vec![CertificateDer::from(identity.certificate)],
-                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(identity.private_key)),
-                &crypto_provider(),
-            )
-            .context("configure Serving TLS identity")?,
-        );
+        let certified = identity
+            .signer
+            .tls_identity(identity.certificate)
+            .context("configure Serving TLS identity")?;
         let tls = |identity: Arc<dyn ResolvesServerCert>, protocols: &[&[u8]]| {
             let mut tls = ServerConfig::builder_with_provider(crypto_provider())
                 .with_protocol_versions(&[&rustls::version::TLS13])
@@ -5965,11 +5967,12 @@ fn paired_http_client(
             expected: server_key.to_vec(),
             rejected: server_key_rejections.clone(),
         }))
-        .with_client_auth_cert(
-            vec![CertificateDer::from(certificate)],
-            PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(identity.private_key.clone())),
-        )
-        .context("configure Pairing client identity")?;
+        .with_client_cert_resolver(
+            identity
+                .signer
+                .tls_client_identity(certificate)
+                .context("configure Pairing client identity")?,
+        );
     // The Serving Server is known by its pinned key, not by a name, so none
     // is said in the clear to whatever carries the connection.
     tls.enable_sni = false;
@@ -5988,19 +5991,15 @@ fn paired_http_client(
 }
 
 fn enrollment_certificate(identity: &IdentityMaterial, token: &str) -> Result<Vec<u8>> {
-    let signing_key =
-        KeyPair::try_from(identity.private_key.as_slice()).context("read Server identity key")?;
     let mut params = CertificateParams::new(Vec::new()).context("describe enrollment identity")?;
     params.distinguished_name = CertificateDistinguishedName::new();
     params
         .distinguished_name
         .push(DnType::CommonName, format!("shaman-invite-{token}"));
-    Ok(params
-        .self_signed(&signing_key)
-        .context("mint enrollment identity certificate")?
-        .der()
-        .as_ref()
-        .to_vec())
+    identity
+        .signer
+        .self_signed(params)
+        .context("mint enrollment identity certificate")
 }
 
 async fn decode_pairing_response(response: Answer) -> PairingFailure {
@@ -6022,7 +6021,7 @@ fn invite_text(
 ) -> std::result::Result<String, PairingFailure> {
     let payload = InvitePayload {
         ways: ways.to_vec(),
-        server_key: URL_SAFE_NO_PAD.encode(&identity.public_key),
+        server_key: URL_SAFE_NO_PAD.encode(identity.public_key()),
         token: URL_SAFE_NO_PAD.encode(token),
         hostname: machine_hostname(),
     };
@@ -6327,7 +6326,7 @@ mod tests {
         let dialer = WayDialer {
             proxies: DirectProxies::given("", ""),
             relays: given,
-            server: identity.public_key.clone().into(),
+            server: identity.public_key().into(),
             handshake_timeout: tokio::time::Duration::from_secs(60),
             direct_head_start: tokio::time::Duration::from_millis(250),
             direct_retry_interval: tokio::time::Duration::from_secs(5),
@@ -6336,7 +6335,7 @@ mod tests {
                 timeout: tokio::time::Duration::from_secs(30),
             },
         };
-        let client = paired_http_client(&identity.public_key, &identity, None, dialer).unwrap();
+        let client = paired_http_client(identity.public_key(), &identity, None, dialer).unwrap();
         let interest = client.interest.subscribe();
         let way = Way::Relay("http://relay.invalid".to_owned());
         let connector = WayConnector {
@@ -6374,11 +6373,12 @@ mod tests {
             .with_protocol_versions(&[&rustls::version::TLS13])
             .unwrap()
             .with_no_client_auth()
-            .with_single_cert(
-                vec![CertificateDer::from(identity.certificate.clone())],
-                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(identity.private_key.clone())),
-            )
-            .unwrap();
+            .with_cert_resolver(Arc::new(rustls::sign::SingleCertAndKey::from(
+                identity
+                    .signer
+                    .tls_identity(identity.certificate.clone())
+                    .unwrap(),
+            )));
         tls.alpn_protocols = vec![MULTIPLEXED.to_vec()];
         TlsAcceptor::from(Arc::new(tls))
     }
@@ -6422,7 +6422,7 @@ mod tests {
         WayDialer {
             proxies: DirectProxies::given("", ""),
             relays: given,
-            server: identity.public_key.clone().into(),
+            server: identity.public_key().into(),
             handshake_timeout,
             direct_head_start: tokio::time::Duration::from_millis(250),
             direct_retry_interval: tokio::time::Duration::from_secs(5),
@@ -6444,7 +6444,7 @@ mod tests {
             tls: standing_in(&identity),
         });
         let dialer = dialling(&identity, relays, tokio::time::Duration::from_millis(100));
-        let client = paired_http_client(&identity.public_key, &identity, None, dialer).unwrap();
+        let client = paired_http_client(identity.public_key(), &identity, None, dialer).unwrap();
         let connector = client.connector(&Way::Relay("http://relay.invalid".to_owned()));
 
         let joined = tokio::time::timeout(
@@ -6677,7 +6677,7 @@ mod tests {
         });
         let mut dialer = dialling(&identity, relays, tokio::time::Duration::from_secs(5));
         dialer.keepalive = TEST_KEEPALIVE;
-        let client = paired_http_client(&identity.public_key, &identity, None, dialer).unwrap();
+        let client = paired_http_client(identity.public_key(), &identity, None, dialer).unwrap();
         let connector = client.connector(&Way::Relay("http://relay.invalid".to_owned()));
         let Carrier { mut sender, .. } = make_connection(connector)
             .await
@@ -6785,13 +6785,13 @@ mod tests {
         let dialer = WayDialer {
             proxies: DirectProxies::given("", ""),
             relays: GivenRelays::default(),
-            server: identity.public_key.clone().into(),
+            server: identity.public_key().into(),
             handshake_timeout: tokio::time::Duration::from_secs(5),
             direct_head_start: tokio::time::Duration::from_millis(250),
             direct_retry_interval: tokio::time::Duration::from_secs(5),
             keepalive: TEST_KEEPALIVE,
         };
-        Arc::new(paired_http_client(&identity.public_key, identity, None, dialer).unwrap())
+        Arc::new(paired_http_client(identity.public_key(), identity, None, dialer).unwrap())
     }
 
     /// Judges an answer as answered where it says it succeeded, reading it
@@ -8302,6 +8302,98 @@ mod tests {
                 .collect::<Vec<_>>(),
             [own],
             "the Serving Server pins the key the redeeming one kept all along"
+        );
+
+        serving.shutdown().await;
+        redeeming.shutdown().await;
+    }
+
+    /// A Pairing is made, and then asked over, by two Servers neither of
+    /// which holds its identity key's bytes: each signs by calling back to
+    /// a thread that holds its key, as a phone's core calls its app. The
+    /// redeeming one proves its key in the enrollment certificate and then
+    /// in its identity certificate, and the Serving one proves its own to
+    /// each.
+    #[tokio::test]
+    async fn a_pairing_is_made_and_asked_over_by_servers_that_sign_through_callbacks() {
+        use crate::signer::{IdentitySigner, testing::CallbackSigner};
+
+        let (serving_data, redeeming_data) =
+            (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let controller = |data: &Path, signer: CallbackSigner| {
+            ServingController::new(
+                data,
+                tokio::time::Duration::from_secs(60),
+                crate::protocol::PROTOCOL_VERSION,
+                "http://127.0.0.1:9".to_owned(),
+                "token".to_owned(),
+            )
+            .unwrap()
+            .with_identity_signer(IdentitySigner::new(signer).unwrap())
+        };
+        let (serving_signs, redeeming_signs) =
+            (CallbackSigner::elsewhere(), CallbackSigner::elsewhere());
+        let (serving_signed, redeeming_signed) = (serving_signs.signed(), redeeming_signs.signed());
+        let serving = controller(serving_data.path(), serving_signs);
+        let redeeming = controller(redeeming_data.path(), redeeming_signs);
+        serving
+            .adopt(ServingSettings {
+                enabled: true,
+                listener: true,
+                port: 0,
+                bind_address: std::net::Ipv4Addr::LOCALHOST.into(),
+                relays: Vec::new(),
+            })
+            .await
+            .unwrap();
+        let invite = serving
+            .issue_invite(IssueInviteRequest {
+                ways: vec![Way::Direct(serving.address().unwrap())],
+            })
+            .await
+            .unwrap_or_else(|failure| panic!("{}", failure.message))
+            .invite;
+        let (serving_before, redeeming_before) = (
+            serving_signed.load(Ordering::Acquire),
+            redeeming_signed.load(Ordering::Acquire),
+        );
+
+        let remote = redeeming
+            .redeem_invite(RedeemInviteRequest {
+                invite,
+                name: Some("workstation".to_owned()),
+                ways: Vec::new(),
+                pair_back: false,
+            })
+            .await
+            .unwrap_or_else(|failure| panic!("{}", failure.message));
+        let health = redeeming
+            .probe_remote(&remote.name)
+            .await
+            .unwrap_or_else(|failure| panic!("{}", failure.message));
+
+        assert_eq!(health.status, RemoteStatus::Available);
+        assert_eq!(remote.fingerprint, serving.own_fingerprint().unwrap());
+        let own = redeeming.identity_key().public_key().await.unwrap();
+        assert_eq!(
+            serving
+                .peers
+                .read()
+                .unwrap()
+                .iter()
+                .map(|peer| peer.public_key.clone())
+                .collect::<Vec<_>>(),
+            [own],
+            "the Serving Server pins the key the callback signs with"
+        );
+        assert!(
+            redeeming_signed.load(Ordering::Acquire) >= redeeming_before + 3,
+            "the redeeming Server signs its enrollment certificate and both handshakes through \
+             its callback"
+        );
+        assert!(
+            serving_signed.load(Ordering::Acquire) >= serving_before + 2,
+            "the Serving Server signs both handshakes through its callback"
         );
 
         serving.shutdown().await;
