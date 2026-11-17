@@ -24,11 +24,12 @@ use tokio::sync::watch;
 
 use super::{AppState, decode_session_command, is_authenticated, session_error_response};
 use crate::{
+    pairing::relay::RelayFailure,
     protocol::{
         AddRelayRequest, RELAY_LOGIN_EVENT, RelayLogin, RelayLoginNeededNotice,
         RelayLoginNeededNoticeClaim, RelayLoginRequest, RelayServeThroughRequest, ServerShutdown,
     },
-    relays::RelayFailure,
+    relays::failure_status,
 };
 
 pub(super) fn routes() -> Router<AppState> {
@@ -218,5 +219,5 @@ fn login_events(
 }
 
 fn failure_response(failure: RelayFailure) -> Response {
-    session_error_response(failure.status(), failure.code, failure.message)
+    session_error_response(failure_status(&failure), failure.code, failure.message)
 }

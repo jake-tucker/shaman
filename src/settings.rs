@@ -43,6 +43,7 @@ use jsonc_parser::{
 };
 use serde_json::Value;
 
+use crate::pairing::relay::holdable_address;
 use crate::protocol::{
     AfterWorktreeCreation, AgentSelection, AppearanceMode, AsideVisibility, AutoReclaim,
     AutoSettle, ClaudePermissionMode, CodexApprovalPolicy, CodexSandboxMode, CommandAutoExpand,
@@ -53,7 +54,6 @@ use crate::protocol::{
     SettingsDiagnostic, SettingsDiagnosticSeverity, SettingsSnapshot, SidebarScope,
     SidebarVisibility, TextSelectionCopy, TextSelectionPlainText, ToolCallVisibility,
 };
-use crate::relays::holdable_address;
 
 /// The Config Document Shaman prefers when both accepted names exist.
 pub const PRIMARY_CONFIG_FILE: &str = "shaman.jsonc";

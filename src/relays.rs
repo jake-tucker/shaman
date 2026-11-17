@@ -1,19 +1,17 @@
-//! The Server's Relays (ADR-0045, ADR-0048): the entries its user adds and
-//! removes, the logins it carries out at them on that user's behalf, and the
-//! connection it keeps to each Relay it has logged in at — on which, while
-//! it is Serving and its user has chosen to Serve through that Relay, it
-//! waits to be reached, taking up each join asked of it and handing what the
-//! join carries to the Serving side. As a Client asks, it asks a Relay it has
-//! logged in at which other machines stand there under its Account
-//! ([`machines`]), a hint that changes nothing here. As the redeeming side of a Pairing, it
-//! asks at a Relay it has logged in at to be joined to the Serving Server a
-//! Relay way names, whenever that way is dialled. The Server proves itself
-//! by its identity key every time it connects and holds no other credential
-//! for a Relay; only the Relay ever speaks to an identity provider.
-//!
-//! Entries are kept beside the Server's Remotes and Peers, owner-only, and
-//! nothing of them — an address, a code, an Account — reaches a Log
-//! (ADR-0008).
+//! The Server's Relays as its Serving side uses them (ADR-0045, ADR-0048),
+//! built over their redeeming half ([`crate::pairing::relay`]), which holds
+//! the entries its user adds and removes, the logins it carries out at them
+//! on that user's behalf, and the joins it asks there as the redeeming side
+//! of a Pairing. Here is the rest: its user's choice to Serve through a
+//! Relay, and the connection it keeps to each Relay it has logged in at — on
+//! which, while it is Serving and its user has chosen to Serve through that
+//! Relay, it waits to be reached, taking up each join asked of it and handing
+//! what the join carries to the Serving side; the Notice a Client raises of a
+//! Login there that lapsed; and the Relays a Config Document pins. As a
+//! Client asks, it asks a Relay it has logged in at which other machines
+//! stand there under its Account ([`machines`]), a hint that changes nothing
+//! here. What this keeps of each entry rides on it, stored ([`ServingStored`])
+//! and held ([`Beside`]).
 //!
 //! A Config Document may pin Relays. A pin makes an entry and nothing more: it
 //! logs in to nothing, connects to nothing, and leaves the choice to Serve
@@ -23,66 +21,42 @@
 //! its Login and its choice, and refuses its removal no longer.
 
 use std::{
-    path::{Path, PathBuf},
-    pin::Pin,
+    path::Path,
     sync::{
-        Arc, Mutex as StdMutex, OnceLock, Weak,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
-    task::{Context as TaskContext, Poll, ready},
     time::Duration,
 };
 
 use anyhow::Result;
 use axum::http::StatusCode;
-use futures_util::{Sink, SinkExt, StreamExt, task::AtomicWaker};
-use reqwest::header;
 use serde::{Deserialize, Serialize};
-use shaman_relay_protocol::{
-    self as relay_protocol, Bytes, Cap, ENDPOINT_PATH, MAX_MESSAGE_LEN, Refusal, RelayMessage,
-    SPOKEN, ServerMessage, Side,
-};
+use shaman_relay_protocol::{self as relay_protocol, Bytes, Refusal, RelayMessage, ServerMessage};
 use tokio::{
-    io::{AsyncRead, AsyncWrite, ReadBuf},
-    sync::{Mutex as AsyncMutex, Notify, watch},
+    sync::{Notify, watch},
     task::{JoinHandle, JoinSet},
-};
-use tokio_tungstenite::{
-    WebSocketStream,
-    tungstenite::{
-        self, Message,
-        protocol::{Role, WebSocketConfig},
-    },
 };
 use uuid::Uuid;
 
-#[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
-use crate::pairing::SOCKET_USER_TIMEOUT;
 use crate::{
     pairing::{
-        ByteStream, MAX_TOLD_RELAY_LEN, MAX_TOLD_RELAYS, RelayJoin, RelayRefusal, RelayWays,
-        SOCKET_KEEPALIVE, SOCKET_KEEPALIVE_PROBES, Wanted, machine_hostname, no_longer_wanted,
-        read_records,
+        MAX_TOLD_RELAYS, RelayJoin, RelayWays, Wanted,
+        relay::{
+            Conversation, Ending, HeldRelay, LoginStanding, Observed, RelayClient,
+            RelayClientTimings, RelayFailure, RelayHooks, RelayJoiner, StoredRelay,
+            records_failure, relay_address, relay_not_found,
+        },
     },
     protocol::{
-        Relay, RelayAccount, RelayListing, RelayLogin, RelayLoginLead, RelayLoginOutcome,
-        RelayLoginRefusal, RelayLoginStanding, RelayMachines, RelayMachinesAnswer, RelayRemoval,
-        RelaySide, RelayState, RelayUnreachable, SessionErrorCode, UnreachableReason,
+        Relay, RelayAccount, RelayListing, RelayLogin, RelayLoginLead, RelayLoginStanding,
+        RelayMachines, RelayMachinesAnswer, RelayRemoval, RelayUnreachable, SessionErrorCode,
         WorkspacePaths, relay_pinned_message,
     },
-    runtime::replace_private_file,
-    serving::{IdentityKey, IdentityKeyUnavailable, ServingController, ServingStretch},
-    shown_text::shown,
+    serving::{ServingController, ServingStretch},
 };
 
-mod intake;
 mod machines;
-
-const RELAYS_FILE: &str = "relays.json";
-
-/// The longest the Server waits on a login, whatever its Relay says the login
-/// may take: a device login lasts minutes.
-const LONGEST_LOGIN: Duration = Duration::from_secs(60 * 60);
 
 /// How many joins asked of the Server at one Relay it takes up at once; a
 /// Relay asking more is ignored until one is taken up, so no Relay can have
@@ -108,47 +82,30 @@ pub(crate) struct RelayTimings {
     pub(crate) heartbeat_timeout: Duration,
 }
 
+/// The Server's Relays: their redeeming half, with the Serving layer
+/// attached. Cloning it shares the one.
 #[derive(Clone)]
 pub(crate) struct RelayController {
-    data_dir: PathBuf,
+    client: RelayClient<ServingLayer>,
+}
+
+/// What the Serving layer holds of the Server, and attaches to its Relays'
+/// redeeming half by: it holds the Relays only as each hook is handed them.
+#[derive(Clone)]
+struct ServingLayer {
     /// How a Config Document pinning a Relay is spelled to whoever reads of it.
     paths: WorkspacePaths,
     serving: ServingController,
-    /// The identity key the Server proves itself by.
-    identity: IdentityKey,
-    dialer: Dialer,
     timings: RelayTimings,
-    relays: Arc<StdMutex<Vec<HeldRelay>>>,
     /// The Relays as the Server's Clients are told of them, published anew,
     /// at the next revision, as any of them changes. Published with the
     /// Relays held, so each revision is one state of them.
     published: Arc<watch::Sender<RelayListing>>,
-    /// Whether what the Server holds of its Relays has yet to be stored, the
-    /// latest write of it having failed: it is written again as the Server
-    /// next hears from a Relay, until a write succeeds. Read and written with
-    /// the Relays held, as every write is made.
-    unstored: Arc<AtomicBool>,
-    /// The joins the Relays carry for the Server, which end as it stops.
-    carrying: Arc<Carrying>,
 }
 
-/// A Relay entry as it is stored. Beside the identity key, a Server's Logins
-/// are the one part of what it stores that a Shaman upgrade carries forward
-/// (ADR-0047), so this tolerates fields a later Shaman adds.
-#[derive(Clone, Deserialize, Serialize)]
-struct StoredRelay {
-    address: String,
-    /// Whether the Server has logged in at the Relay, and so connects to it on
-    /// its own. A Login the Relay comes to refuse leaves this so, since one
-    /// fresh login from any Server of its Account may restore it.
-    #[serde(default)]
-    logged_in: bool,
-    /// Whether the Relay was last found to refuse the Server's Login there,
-    /// so that it needs renewing however the Relay answers meanwhile: set as
-    /// the Relay refuses it, and cleared only as the Relay takes the Server's
-    /// proof with a Login that stands, or a login there is done.
-    #[serde(default)]
-    login_needed: bool,
+/// What the Serving layer stores on each Relay entry.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+struct ServingStored {
     /// Whether the Server Serves through the Relay, as its user chose.
     #[serde(default)]
     serve_through: bool,
@@ -176,34 +133,29 @@ struct GivenNotice {
     claimant: Uuid,
 }
 
-struct HeldRelay {
-    stored: StoredRelay,
+/// What the Serving layer holds beside each Relay entry.
+struct Beside {
     /// Says whether the Server Serves through the Relay to the connection
     /// kept to it, and which making of that choice it is, as the stored
     /// choice changes.
     serve_through: watch::Sender<ServeThrough>,
-    state: RelayState,
-    unreachable: Option<RelayUnreachable>,
-    account: Option<RelayAccount>,
-    login: Option<HeldLogin>,
     connection: Option<KeptConnection>,
-    /// Held across beginning a login and across a removal, so neither runs
-    /// while the other does: no login can be begun once removal has, and
-    /// none begun before it can finish once removal asks the Relay to forget.
-    operations: Arc<AsyncMutex<()>>,
     /// The Config Document pinning the Relay, as the Settings last adopted say
     /// and as its reader spells it. Never stored.
     pinned_in: Option<String>,
 }
 
-struct HeldLogin {
-    progress: watch::Sender<RelayLogin>,
-    /// Ends once the login has, and is taken by what waits on it.
-    task: Option<JoinHandle<()>>,
-    /// Has the login given up: its conversation ended, and the Relay heard
-    /// out until it lets it go.
-    give_up: Arc<Notify>,
+impl Beside {
+    fn first(serve_through: bool, pinned_in: Option<String>) -> Self {
+        Self {
+            serve_through: watch::Sender::new(ServeThrough::first(serve_through)),
+            connection: None,
+            pinned_in,
+        }
+    }
 }
+
+type Held = HeldRelay<ServingLayer>;
 
 /// The connection the Server keeps to a Relay it has logged in at.
 struct KeptConnection {
@@ -213,50 +165,23 @@ struct KeptConnection {
     retry_now: Arc<Notify>,
 }
 
-/// Why something asked of a Relay failed.
-#[derive(Debug)]
-pub(crate) struct RelayFailure {
-    pub(crate) code: SessionErrorCode,
-    pub(crate) message: String,
-}
-
-impl RelayFailure {
-    fn new(code: SessionErrorCode, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            message: message.into(),
+/// The HTTP status a Client is answered with where something asked of a
+/// Relay failed so.
+pub(crate) fn failure_status(failure: &RelayFailure) -> StatusCode {
+    match failure.code {
+        SessionErrorCode::RelayNotFound | SessionErrorCode::RelayLoginNotFound => {
+            StatusCode::NOT_FOUND
         }
-    }
-
-    pub(crate) fn status(&self) -> StatusCode {
-        match self.code {
-            SessionErrorCode::RelayNotFound | SessionErrorCode::RelayLoginNotFound => {
-                StatusCode::NOT_FOUND
-            }
-            SessionErrorCode::RelayAlreadyAdded
-            | SessionErrorCode::RelayPinned
-            | SessionErrorCode::RelayProtocolMismatch
-            | SessionErrorCode::RelayServeThroughLimitReached => StatusCode::CONFLICT,
-            SessionErrorCode::RelayUnreachable | SessionErrorCode::RelayRefused => {
-                StatusCode::BAD_GATEWAY
-            }
-            SessionErrorCode::InvalidRelayAddress => StatusCode::BAD_REQUEST,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        SessionErrorCode::RelayAlreadyAdded
+        | SessionErrorCode::RelayPinned
+        | SessionErrorCode::RelayProtocolMismatch
+        | SessionErrorCode::RelayServeThroughLimitReached => StatusCode::CONFLICT,
+        SessionErrorCode::RelayUnreachable | SessionErrorCode::RelayRefused => {
+            StatusCode::BAD_GATEWAY
         }
+        SessionErrorCode::InvalidRelayAddress => StatusCode::BAD_REQUEST,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
-}
-
-fn relay_not_found() -> RelayFailure {
-    RelayFailure::new(SessionErrorCode::RelayNotFound, "Relay not found")
-}
-
-fn records_failure(_error: anyhow::Error) -> RelayFailure {
-    // Paths and what the records hold are not copied into an outward error a
-    // caller might later Log.
-    RelayFailure::new(
-        SessionErrorCode::RelayRecordsUnwritable,
-        "the Server could not store its Relays",
-    )
 }
 
 impl RelayController {
@@ -269,85 +194,74 @@ impl RelayController {
         timings: RelayTimings,
         instance: Uuid,
     ) -> Result<Self> {
-        let stored: Vec<StoredRelay> = read_records(&data_dir.join(RELAYS_FILE))?;
-        let relays: Vec<HeldRelay> = stored
-            .into_iter()
-            .map(|stored| HeldRelay {
-                // A Login last known to stand is taken to stand until the
-                // Relay says otherwise or stops answering.
-                state: if stored.logged_in && !stored.login_needed {
-                    RelayState::LoggedIn
-                } else {
-                    RelayState::LoginNeeded
-                },
-                serve_through: watch::Sender::new(ServeThrough::first(stored.serve_through)),
-                stored,
-                unreachable: None,
-                account: None,
-                login: None,
-                connection: None,
-                operations: Arc::default(),
-                pinned_in: None,
-            })
-            .collect();
-        let listing = RelayListing {
-            instance,
-            revision: 0,
-            relays: relays.iter().map(HeldRelay::relay).collect(),
-        };
-        let controller = Self {
-            data_dir: data_dir.to_path_buf(),
+        let layer = ServingLayer {
             paths,
-            identity: serving.identity_key(),
-            serving,
-            dialer: Dialer::default(),
+            serving: serving.clone(),
             timings,
-            relays: Arc::new(StdMutex::new(relays)),
-            published: Arc::new(watch::Sender::new(listing)),
-            unstored: Arc::default(),
-            carrying: Arc::default(),
+            published: Arc::new(watch::Sender::new(RelayListing {
+                instance,
+                revision: 0,
+                relays: Vec::new(),
+            })),
         };
-        controller.serving.reach_relays_through(Arc::new(Joining {
-            relays: controller.relays.clone(),
-            identity: controller.identity.clone(),
-            dialer: controller.dialer.clone(),
-            timings,
-            carrying: controller.carrying.clone(),
+        let client = RelayClient::new(
+            data_dir,
+            Arc::new(serving.identity_key()),
+            RelayClientTimings {
+                answer_timeout: timings.answer_timeout,
+            },
+            layer,
+        )?;
+        {
+            let relays = client.lock();
+            client
+                .hooks()
+                .published
+                .send_modify(|listing| listing.relays = relays.iter().map(relay).collect());
+            serving.offer_relays(told(&relays));
+        }
+        serving.reach_relays_through(Arc::new(Joining {
+            joiner: client.joiner(),
         }));
-        controller.serving.offer_relays(told(&controller.lock()));
-        Ok(controller)
+        Ok(Self { client })
+    }
+
+    fn layer(&self) -> &ServingLayer {
+        self.client.hooks()
     }
 
     /// Connects to every Relay the Server has logged in at, and goes on
     /// connecting on its own whenever a connection ends.
     pub(crate) fn start(&self) {
-        let mut relays = self.lock();
-        for held in relays.iter_mut().filter(|held| held.stored.logged_in) {
-            held.connection = Some(self.keep_connected(held));
+        let mut relays = self.client.lock();
+        for held in relays.iter_mut().filter(|held| held.stored().logged_in()) {
+            held.beside.connection = Some(self.keep_connected(held));
         }
     }
 
     /// Ends every connection to a Relay, every join a Relay carries for the
     /// Server, and every login under way.
     pub(crate) fn shutdown(&self) {
-        self.carrying.stop_all();
-        for held in self.lock().iter_mut() {
-            stop(held);
+        self.client.shutdown();
+        for held in self.client.lock().iter_mut() {
+            if let Some(connection) = held.beside.connection.take() {
+                connection.task.abort();
+            }
         }
     }
 
     /// The Server's Relays as they stand now, at the revision they are
     /// published at.
     pub(crate) fn list(&self) -> RelayListing {
-        let relays = self.lock();
-        self.publish(&relays);
-        self.published.borrow().clone()
+        let relays = self.client.lock();
+        self.layer().publish(&relays);
+        self.layer().published.borrow().clone()
     }
 
     /// The Relays as they are published: as they stand now, then each
     /// revision of them.
     pub(crate) fn subscribe(&self) -> watch::Receiver<RelayListing> {
-        self.published.subscribe()
+        self.layer().published.subscribe()
     }
 
     /// What the Relay at `address` says of the other machines logged in there
@@ -363,15 +277,19 @@ impl RelayController {
     ) -> std::result::Result<RelayMachines, RelayFailure> {
         let address = relay_address(address)?;
         let logged_in = self
+            .client
             .lock()
             .iter()
-            .find(|held| held.stored.address == address)
-            .map(|held| held.stored.logged_in)
+            .find(|held| held.address() == address)
+            .map(|held| held.stored().logged_in())
             .ok_or_else(relay_not_found)?;
         let answer = if logged_in {
-            tokio::time::timeout(self.timings.answer_timeout, self.ask_for_machines(&address))
-                .await
-                .unwrap_or_else(|_| machines::unreachable("the Relay did not answer in time"))
+            tokio::time::timeout(
+                self.layer().timings.answer_timeout,
+                self.ask_for_machines(&address),
+            )
+            .await
+            .unwrap_or_else(|_| machines::unreachable("the Relay did not answer in time"))
         } else {
             RelayMachinesAnswer::LoginNeeded
         };
@@ -379,12 +297,7 @@ impl RelayController {
     }
 
     async fn ask_for_machines(&self, address: &str) -> RelayMachinesAnswer {
-        let answer_timeout = self.timings.answer_timeout;
-        let mut conversation = match self
-            .dialer
-            .open(address, &self.identity, answer_timeout)
-            .await
-        {
+        let mut conversation = match self.client.dial(address).await {
             Ok((conversation, Some(_))) => conversation,
             Ok((conversation, None)) => {
                 conversation.close().await;
@@ -400,13 +313,12 @@ impl RelayController {
         // Relay from before the list gives whatever it does not recognize.
         let answer = match conversation.hear().await {
             Some(RelayMessage::Logins { logins, cut_short }) => {
-                let own_key = self.identity.public_key().await;
-                match own_key {
+                match self.client.public_key().await {
                     Ok(own_key) => RelayMachinesAnswer::Listed {
                         machines: machines::listed(
                             logins,
                             &own_key,
-                            &self.serving.redeemer().list_remotes(),
+                            &self.layer().serving.redeemer().list_remotes(),
                         ),
                         cut_short,
                     },
@@ -444,49 +356,33 @@ impl RelayController {
         claimant: Uuid,
     ) -> std::result::Result<bool, RelayFailure> {
         let address = relay_address(address)?;
-        let mut relays = self.lock();
+        let mut relays = self.client.lock();
         let index = relays
             .iter()
-            .position(|held| held.stored.address == address)
+            .position(|held| held.address() == address)
             .ok_or_else(relay_not_found)?;
-        if let Some(given) = relays[index].stored.given_notice
+        let stored = &relays[index].stored().extension;
+        if let Some(given) = stored.given_notice
             && given.lapse == lapse
         {
             return Ok(given.claimant == claimant);
         }
-        if relays[index].stored.untold_lapse != Some(lapse) {
+        if stored.untold_lapse != Some(lapse) {
             return Ok(false);
         }
-        let given = Some(GivenNotice { lapse, claimant });
-        let mut stored = relays
-            .iter()
-            .map(|held| held.stored.clone())
-            .collect::<Vec<_>>();
-        stored[index].untold_lapse = None;
-        stored[index].given_notice = given;
-        self.write(&stored).map_err(records_failure)?;
-        relays[index].stored.untold_lapse = None;
-        relays[index].stored.given_notice = given;
-        self.publish(&relays);
+        self.client
+            .change_stored(&mut relays, |stored| {
+                let stored = &mut stored[index].extension;
+                stored.untold_lapse = None;
+                stored.given_notice = Some(GivenNotice { lapse, claimant });
+            })
+            .map_err(records_failure)?;
+        self.layer().publish(&relays);
         Ok(true)
     }
 
     pub(crate) fn add(&self, address: &str) -> std::result::Result<Relay, RelayFailure> {
-        let address = relay_address(address)?;
-        let mut relays = self.lock();
-        if relays.iter().any(|held| held.stored.address == address) {
-            return Err(RelayFailure::new(
-                SessionErrorCode::RelayAlreadyAdded,
-                format!("the Relay at {address} is already added"),
-            ));
-        }
-        relays.push(HeldRelay::first_at(address, None));
-        if let Err(error) = self.persist(&relays) {
-            relays.pop();
-            return Err(records_failure(error));
-        }
-        self.publish(&relays);
-        Ok(relays.last().expect("the Relay was just added").relay())
+        self.client.add(address, relay)
     }
 
     /// Has the Relays the Settings in force pin be those at `addresses`, each
@@ -499,23 +395,19 @@ impl RelayController {
     /// with whatever is next written of the Relays, or adopted, and until then
     /// is made again by each start while the document still pins it.
     pub(crate) fn adopt_pins(&self, addresses: &[String], document: Option<&Path>) {
-        let mut relays = self.lock();
+        let mut relays = self.client.lock();
         for held in relays.iter_mut() {
-            held.pinned_in = None;
+            held.beside.pinned_in = None;
         }
         let mut added = false;
-        if let Some(document) = document.map(|document| self.paths.label(document)) {
+        if let Some(document) = document.map(|document| self.layer().paths.label(document)) {
             for address in addresses {
                 added |= pin_entry(&mut relays, address, &document);
             }
         }
-        if (added || self.unstored.load(Ordering::Acquire))
-            && let Err(error) = self.persist(&relays)
-        {
-            self.unstored.store(true, Ordering::Release);
-            tracing::warn!("could not store a Relay a Config Document pins: {error:#}");
-        }
-        self.publish(&relays);
+        self.client
+            .note_stored(&relays, added, "a Relay a Config Document pins");
+        self.layer().publish(&relays);
     }
 
     /// Chooses whether the Server Serves through the Relay at `address`: while
@@ -528,19 +420,16 @@ impl RelayController {
         serve_through: bool,
     ) -> std::result::Result<Relay, RelayFailure> {
         let address = relay_address(address)?;
-        let mut relays = self.lock();
+        let mut relays = self.client.lock();
         let index = relays
             .iter()
-            .position(|held| held.stored.address == address)
+            .position(|held| held.address() == address)
             .ok_or_else(relay_not_found)?;
+        let chosen = |held: &Held| held.stored().extension.serve_through;
         // Every Relay it Serves through is told to its Peers, whole.
         if serve_through
-            && !relays[index].stored.serve_through
-            && relays
-                .iter()
-                .filter(|held| held.stored.serve_through)
-                .count()
-                >= MAX_TOLD_RELAYS
+            && !chosen(&relays[index])
+            && relays.iter().filter(|held| chosen(held)).count() >= MAX_TOLD_RELAYS
         {
             return Err(RelayFailure::new(
                 SessionErrorCode::RelayServeThroughLimitReached,
@@ -550,146 +439,42 @@ impl RelayController {
                 ),
             ));
         }
-        if relays[index].stored.serve_through != serve_through {
-            let mut stored = relays
-                .iter()
-                .map(|held| held.stored.clone())
-                .collect::<Vec<_>>();
-            stored[index].serve_through = serve_through;
-            self.write(&stored).map_err(records_failure)?;
-            let held = &mut relays[index];
-            held.stored.serve_through = serve_through;
-            held.serve_through
+        if chosen(&relays[index]) != serve_through {
+            self.client
+                .change_stored(&mut relays, |stored| {
+                    stored[index].extension.serve_through = serve_through;
+                })
+                .map_err(records_failure)?;
+            relays[index]
+                .beside
+                .serve_through
                 .send_modify(|choice| *choice = choice.made_again(serve_through));
-            self.publish(&relays);
+            self.layer().publish(&relays);
         }
-        Ok(relays[index].relay())
+        Ok(relay(&relays[index]))
     }
 
     /// Has the Server log in at the Relay at `address`: a login under way there
     /// is left to go on and answered, whatever is asked; a Login that stands is
     /// answered unless `afresh` asks for one regardless; and only otherwise is
-    /// one begun, which outlives the Client that asked. It is decided with the
-    /// entry's `operations` held, so two asking at once share one login rather
-    /// than the second giving up the first.
+    /// one begun, which outlives the Client that asked.
     pub(crate) async fn log_in(
         &self,
         address: &str,
         afresh: bool,
     ) -> std::result::Result<RelayLoginLead, RelayFailure> {
-        let address = relay_address(address)?;
-        let operations = self.operations(&address)?;
-        self.log_in_holding(address, afresh, operations).await
-    }
-
-    /// Has the Server log in at the Relay at `address`, as [`Self::log_in`] does,
-    /// once nothing else holds the entry's `operations`.
-    async fn log_in_holding(
-        &self,
-        address: String,
-        afresh: bool,
-        operations: Arc<AsyncMutex<()>>,
-    ) -> std::result::Result<RelayLoginLead, RelayFailure> {
-        let _serialised = operations.lock().await;
-        let standing = {
-            let mut relays = self.lock();
-            // A removal this waited on has taken the entry with it, whatever
-            // has been added at its address since.
-            let held = owning(&mut relays, &address, &operations).ok_or_else(relay_not_found)?;
-            let under_way = held
-                .login
-                .as_ref()
-                .map(|login| login.progress.borrow().clone())
-                .filter(|login| !login.outcome.is_settled());
-            match under_way {
-                Some(login) => Some(RelayLoginStanding::UnderWay { login }),
-                None if afresh || held.state == RelayState::LoginNeeded => None,
-                None => Some(RelayLoginStanding::Standing {
-                    relay: Box::new(held.relay()),
-                }),
-            }
-        };
-        let standing = match standing {
-            Some(standing) => standing,
-            None => RelayLoginStanding::Begun {
-                login: self.begin_login(&address, &operations).await?,
+        let lead = self
+            .client
+            .log_in(address, afresh, |held| Box::new(relay(held)))
+            .await?;
+        Ok(RelayLoginLead {
+            address: lead.address,
+            standing: match lead.standing {
+                LoginStanding::UnderWay(login) => RelayLoginStanding::UnderWay { login },
+                LoginStanding::Begun(login) => RelayLoginStanding::Begun { login },
+                LoginStanding::Standing(relay) => RelayLoginStanding::Standing { relay },
             },
-        };
-        Ok(RelayLoginLead { address, standing })
-    }
-
-    /// Begins a login at the Relay at `address`, proving the Server's key and
-    /// reporting its hostname there, and answers where its user goes to log in
-    /// and what they enter. The caller holds the entry's `operations`, and found
-    /// none under way, so this ends no login.
-    async fn begin_login(
-        &self,
-        address: &str,
-        operations: &Arc<AsyncMutex<()>>,
-    ) -> std::result::Result<RelayLogin, RelayFailure> {
-        let answer_timeout = self.timings.answer_timeout;
-        let (mut conversation, _) = self
-            .dialer
-            .open(address, &self.identity, answer_timeout)
-            .await
-            .map_err(DialFailure::into_failure)?;
-        conversation
-            .say(&ServerMessage::BeginLogin {
-                hostname: machine_hostname(),
-            })
-            .await
-            .map_err(|_| stopped_answering())?;
-        let (verification_uri, user_code, expires_in) =
-            match tokio::time::timeout(answer_timeout, conversation.hear()).await {
-                Ok(Some(RelayMessage::LoginStarted {
-                    verification_uri,
-                    user_code,
-                    expires_in_seconds,
-                })) => (
-                    verification_uri,
-                    user_code,
-                    Duration::from_secs(expires_in_seconds).min(LONGEST_LOGIN),
-                ),
-                Ok(Some(RelayMessage::Refused { message, .. })) => {
-                    return Err(RelayFailure::new(SessionErrorCode::RelayRefused, message));
-                }
-                Ok(Some(_)) => {
-                    return Err(RelayFailure::new(
-                        SessionErrorCode::RelayRefused,
-                        "the Relay answered a login with something else",
-                    ));
-                }
-                Ok(None) | Err(_) => return Err(stopped_answering()),
-            };
-        let login = RelayLogin {
-            verification_uri,
-            user_code,
-            outcome: RelayLoginOutcome::Pending,
-        };
-        let budget = expires_in.saturating_add(answer_timeout);
-        let progress = watch::Sender::new(login.clone());
-        let give_up = Arc::new(Notify::new());
-        let mut relays = self.lock();
-        let Some(held) = owning(&mut relays, address, operations) else {
-            return Err(relay_not_found());
-        };
-        // The one before has ended, or this would not have begun.
-        if let Some(task) = held.login.take().and_then(|previous| previous.task) {
-            task.abort();
-        }
-        held.login = Some(HeldLogin {
-            task: Some(tokio::spawn(self.clone().finish_login(
-                address.to_owned(),
-                conversation,
-                progress.clone(),
-                budget,
-                give_up.clone(),
-            ))),
-            progress,
-            give_up,
-        });
-        self.publish(&relays);
-        Ok(login)
+        })
     }
 
     /// Follows the latest login begun at the Relay at `address`.
@@ -697,252 +482,22 @@ impl RelayController {
         &self,
         address: &str,
     ) -> std::result::Result<watch::Receiver<RelayLogin>, RelayFailure> {
-        let address = relay_address(address)?;
-        let relays = self.lock();
-        let held = relays
-            .iter()
-            .find(|held| held.stored.address == address)
-            .ok_or_else(relay_not_found)?;
-        held.login
-            .as_ref()
-            .map(|login| login.progress.subscribe())
-            .ok_or_else(|| {
-                RelayFailure::new(
-                    SessionErrorCode::RelayLoginNotFound,
-                    "no login has been begun at this Relay",
-                )
-            })
+        self.client.follow_login(address)
     }
 
     /// Removes the Relay at `address`, unless a Config Document pins it, which
     /// is refused, naming the document, with nothing asked of the Relay: it
-    /// would only come back. Any login under way there is given up first, and
-    /// heard out until the Relay lets it go, so nothing it finishes can follow
-    /// what comes next: the Relay is asked to forget the Server's Login. The
-    /// entry then goes whether or not it answered, since a Relay that cannot
-    /// be reached is forgotten here all the same; where the entry cannot be
-    /// forgotten here, it stays and goes on as before. A pin landing after all
-    /// that was begun leaves an entry at the address, with nothing of the one
-    /// removed.
+    /// would only come back. Otherwise it goes as the redeeming half removes
+    /// an entry, the Server first ceasing to Serve through it and letting go
+    /// of the connection kept there, so nothing reconnects while the Relay is
+    /// asked to forget, and nothing taken up there is handed on, however far
+    /// it has got. A pin landing after all that was begun leaves an entry at
+    /// the address, with nothing of the one removed.
     pub(crate) async fn remove(
         &self,
         address: &str,
     ) -> std::result::Result<RelayRemoval, RelayFailure> {
-        let address = relay_address(address)?;
-        let operations = self.operations(&address)?;
-        self.remove_holding(address, operations).await
-    }
-
-    /// Removes the Relay at `address` once nothing else holds the entry's
-    /// `operations`.
-    async fn remove_holding(
-        &self,
-        address: String,
-        operations: Arc<AsyncMutex<()>>,
-    ) -> std::result::Result<RelayRemoval, RelayFailure> {
-        let _serialised = operations.lock().await;
-        let (login, held_login) = {
-            let mut relays = self.lock();
-            let held = owning(&mut relays, &address, &operations).ok_or_else(relay_not_found)?;
-            if let Some(document) = &held.pinned_in {
-                return Err(RelayFailure::new(
-                    SessionErrorCode::RelayPinned,
-                    relay_pinned_message(&address, document),
-                ));
-            }
-            // A Login the Relay came to refuse is one it may still hold, and a
-            // login begun may have formed one nothing here has heard of.
-            let held_login = held.stored.logged_in || held.login.is_some();
-            let login = held
-                .login
-                .as_mut()
-                .and_then(|login| Some((login.give_up.clone(), login.task.take()?)));
-            (login, held_login)
-        };
-        if let Some((give_up, task)) = login {
-            give_up.notify_one();
-            let _ = task.await;
-        }
-        // Nothing reconnects while the Relay is asked to forget, and nothing
-        // taken up there is handed on, however far it has got.
-        if let Some(held) = owning(&mut self.lock(), &address, &operations) {
-            held.serve_through
-                .send_modify(|choice| *choice = choice.made_again(false));
-            if let Some(connection) = held.connection.take() {
-                connection.task.abort();
-            }
-        }
-        // Where it never held a Login there is nothing to ask of it, and an
-        // address that is dead costs nothing and leaves nothing.
-        let acknowledged = !held_login
-            || tokio::time::timeout(self.timings.answer_timeout, self.ask_to_forget(&address))
-                .await
-                .unwrap_or(false);
-        let mut relays = self.lock();
-        let Some(index) = relays.iter().position(|held| {
-            held.stored.address == address && Arc::ptr_eq(&held.operations, &operations)
-        }) else {
-            return Err(relay_not_found());
-        };
-        let removed = relays.remove(index);
-        if let Some(document) = &removed.pinned_in {
-            pin_entry(&mut relays, &address, document);
-        }
-        if let Err(error) = self.persist(&relays) {
-            if removed.pinned_in.is_some() {
-                relays.pop();
-            }
-            relays.insert(index, removed);
-            let held = &mut relays[index];
-            let serve_through = held.stored.serve_through;
-            held.serve_through
-                .send_modify(|choice| *choice = choice.made_again(serve_through));
-            if held_login && acknowledged {
-                held.refused();
-            }
-            if held.stored.logged_in {
-                held.connection = Some(self.keep_connected(held));
-            }
-            self.publish(&relays);
-            return Err(records_failure(error));
-        }
-        self.publish(&relays);
-        Ok(RelayRemoval {
-            address,
-            acknowledged,
-            held_login,
-        })
-    }
-
-    async fn ask_to_forget(&self, address: &str) -> bool {
-        let Ok((mut conversation, _)) = self
-            .dialer
-            .open(address, &self.identity, self.timings.answer_timeout)
-            .await
-        else {
-            return false;
-        };
-        conversation.say(&ServerMessage::Forget).await.is_ok()
-            && matches!(conversation.hear().await, Some(RelayMessage::Forgotten))
-    }
-
-    /// Waits for the login begun over `conversation` to end, within `budget`,
-    /// and reports how it did — or, told to give up, ends the conversation
-    /// and hears the Relay out until it lets it go.
-    async fn finish_login(
-        self,
-        address: String,
-        mut conversation: Conversation,
-        progress: watch::Sender<RelayLogin>,
-        budget: Duration,
-        give_up: Arc<Notify>,
-    ) {
-        let heard = tokio::select! {
-            heard = tokio::time::timeout(budget, conversation.hear()) => heard,
-            () = give_up.notified() => {
-                conversation.end(self.timings.answer_timeout).await;
-                settle_abandoned(&progress, "the login was given up as its Relay was being removed");
-                self.publish(&self.lock());
-                return;
-            }
-        };
-        let outcome = match heard {
-            Ok(Some(RelayMessage::LoginDone { account })) => {
-                let account = RelayAccount {
-                    provider: account.provider,
-                    username: account.username,
-                };
-                match self.logged_in(&address, account.clone()) {
-                    Ok(()) => RelayLoginOutcome::Done { account },
-                    Err(error) => {
-                        tracing::warn!("could not record a Relay's Login: {error:#}");
-                        RelayLoginOutcome::Refused {
-                            reason: RelayLoginRefusal::Unrecorded,
-                            message: "the Relay logged this Server in, but the Server could not \
-                                      record its Login there; log in again"
-                                .to_owned(),
-                        }
-                    }
-                }
-            }
-            Ok(Some(RelayMessage::Refused {
-                refusal:
-                    Refusal::CapReached {
-                        cap: Cap::Logins,
-                        limit,
-                    },
-                ..
-            })) => RelayLoginOutcome::Refused {
-                reason: RelayLoginRefusal::LoginsCapReached {
-                    limit: u32::try_from(limit).unwrap_or(u32::MAX),
-                },
-                message: logins_capped(&address, limit),
-            },
-            Ok(Some(RelayMessage::Refused { refusal, message })) => RelayLoginOutcome::Refused {
-                reason: match refusal {
-                    Refusal::LoginDenied => RelayLoginRefusal::Denied,
-                    Refusal::NotAdmitted => RelayLoginRefusal::NotAdmitted,
-                    Refusal::LoginExpired => RelayLoginRefusal::Expired,
-                    _ => RelayLoginRefusal::Unavailable,
-                },
-                message,
-            },
-            Ok(Some(_)) => RelayLoginOutcome::Refused {
-                reason: RelayLoginRefusal::Unavailable,
-                message: "the Relay answered the login with something else".to_owned(),
-            },
-            Ok(None) | Err(_) => RelayLoginOutcome::Refused {
-                reason: RelayLoginRefusal::Interrupted,
-                message: "the Relay stopped answering before the login ended".to_owned(),
-            },
-        };
-        conversation.close().await;
-        // Settled with the Relays held, so the revision published with it
-        // says how the login ended and how the Relay then stood together.
-        let relays = self.lock();
-        progress.send_modify(|login| login.outcome = outcome);
-        self.publish(&relays);
-    }
-
-    /// Records that the Server's Login at the Relay at `address` stands under
-    /// `account`, and connects there from now on. Nothing changes where the
-    /// Login cannot be stored, so a later login stores it.
-    fn logged_in(&self, address: &str, account: RelayAccount) -> Result<()> {
-        let mut relays = self.lock();
-        let Some(index) = relays
-            .iter()
-            .position(|held| held.stored.address == address)
-        else {
-            return Ok(());
-        };
-        if !relays[index].stored.logged_in
-            || relays[index].stored.login_needed
-            || relays[index].stored.untold_lapse.is_some()
-            || relays[index].stored.given_notice.is_some()
-        {
-            let mut stored = relays
-                .iter()
-                .map(|held| held.stored.clone())
-                .collect::<Vec<_>>();
-            stored[index].logged_in = true;
-            stored[index].login_needed = false;
-            stored[index].untold_lapse = None;
-            stored[index].given_notice = None;
-            self.write(&stored)?;
-            relays[index].stored.logged_in = true;
-            relays[index].stored.login_needed = false;
-            relays[index].stored.untold_lapse = None;
-            relays[index].stored.given_notice = None;
-        }
-        let held = &mut relays[index];
-        held.state = RelayState::LoggedIn;
-        held.unreachable = None;
-        held.account = Some(account);
-        match &held.connection {
-            Some(connection) => connection.retry_now.notify_one(),
-            None => held.connection = Some(self.keep_connected(held)),
-        }
-        Ok(())
+        self.client.remove(address).await
     }
 
     /// Keeps a connection to the Relay `held` names, trying again with
@@ -950,32 +505,27 @@ impl RelayController {
     /// refuses the Server's Login, since one fresh login elsewhere may
     /// restore it — and waiting on it to be reached while the Server Serves
     /// through that Relay.
-    fn keep_connected(&self, held: &HeldRelay) -> KeptConnection {
-        let address = held.stored.address.clone();
+    fn keep_connected(&self, held: &Held) -> KeptConnection {
+        let address = held.address().to_owned();
         let mut wish = WaitingWish {
-            serve_through: held.serve_through.subscribe(),
-            serving: self.serving.serving(),
+            serve_through: held.beside.serve_through.subscribe(),
+            serving: self.layer().serving.serving(),
         };
         let retry_now = Arc::new(Notify::new());
         let controller = self.clone();
         let retry = retry_now.clone();
         let task = tokio::spawn(async move {
             let RelayTimings {
-                answer_timeout,
                 retry_initial,
                 retry_max,
                 ..
-            } = controller.timings;
+            } = controller.layer().timings;
             let mut backoff = retry_initial;
             loop {
                 let waiting = wish.now();
-                let rewished = match controller
-                    .dialer
-                    .open(&address, &controller.identity, answer_timeout)
-                    .await
-                {
+                let rewished = match controller.client.dial(&address).await {
                     Ok((conversation, Some(account))) => {
-                        controller.observe(
+                        controller.client.observe(
                             &address,
                             Observed::LoggedIn(RelayAccount {
                                 provider: account.provider,
@@ -989,11 +539,13 @@ impl RelayController {
                     }
                     Ok((conversation, None)) => {
                         conversation.close().await;
-                        controller.observe(&address, Observed::LoginNeeded);
+                        controller.client.observe(&address, Observed::LoginNeeded);
                         false
                     }
                     Err(failure) => {
-                        controller.observe(&address, Observed::Unreachable(failure.unreachable()));
+                        controller
+                            .client
+                            .observe(&address, Observed::Unreachable(failure.unreachable()));
                         false
                     }
                 };
@@ -1029,12 +581,12 @@ impl RelayController {
             heartbeat_interval,
             heartbeat_timeout,
             ..
-        } = self.timings;
+        } = self.layer().timings;
         if waiting.is_some()
-            && let Err(observed) = conversation.wait(answer_timeout).await
+            && let Err(observed) = wait(&mut conversation, answer_timeout).await
         {
             conversation.close().await;
-            self.observe(address, observed);
+            self.client.observe(address, observed);
             return false;
         }
         let mut session =
@@ -1060,7 +612,7 @@ impl RelayController {
                     ..
                 } => {
                     heard_refusal = true;
-                    self.observe(address, Observed::LoginNeeded);
+                    self.client.observe(address, Observed::LoginNeeded);
                     refused.notify_one();
                 }
                 _ => {}
@@ -1085,7 +637,7 @@ impl RelayController {
         // A Relay that went away is tried again before it is called
         // Unreachable; one that fell silent already is.
         if ending == Ending::Silent {
-            self.observe(
+            self.client.observe(
                 address,
                 Observed::Unreachable(RelayUnreachable {
                     behind: None,
@@ -1119,12 +671,8 @@ impl RelayController {
     /// does a connection dialled to its listener — where `hand_off` still
     /// stands once the join is made.
     async fn accept_join(&self, address: &str, join: Vec<u8>, hand_off: HandOff) {
-        let answer_timeout = self.timings.answer_timeout;
-        let Ok((mut conversation, _)) = self
-            .dialer
-            .open(address, &self.identity, answer_timeout)
-            .await
-        else {
+        let answer_timeout = self.layer().timings.answer_timeout;
+        let Ok((mut conversation, _)) = self.client.dial(address).await else {
             tracing::debug!("a join a Relay asked of this Server could not be taken up");
             return;
         };
@@ -1139,10 +687,11 @@ impl RelayController {
             Ok(Some(RelayMessage::Joined)) => {
                 // Judged and handed on while the Relays are held, so no change
                 // to the choice to Serve through the Relay comes between.
-                let _relays = self.lock();
+                let _relays = self.client.lock();
                 if hand_off.stands() {
-                    let carried = conversation.carried(self.carrying.stop());
-                    self.serving
+                    let carried = self.client.carry(conversation);
+                    self.layer()
+                        .serving
                         .accept_carried(carried, hand_off.waited.stretch, address);
                 } else {
                     tracing::debug!(
@@ -1153,95 +702,16 @@ impl RelayController {
             _ => tracing::debug!("a Relay did not make the join this Server took up"),
         }
     }
+}
 
-    /// Records how the Relay at `address` now stands. Whether its Login there
-    /// needs renewing is kept apart from whether the Relay answers, and
-    /// stored, so a Relay found to refuse the Login reads **login needed** —
-    /// and is offered by no Invite — however it fails to answer afterwards,
-    /// across a restart too, until it takes the Server's proof with a Login
-    /// that stands again.
-    fn observe(&self, address: &str, observed: Observed) {
-        let mut relays = self.lock();
-        let Some(index) = relays
-            .iter()
-            .position(|held| held.stored.address == address)
-        else {
-            return;
-        };
-        let login_needed = match &observed {
-            Observed::LoggedIn(_) => false,
-            Observed::LoginNeeded => true,
-            Observed::Unreachable(_) => relays[index].stored.login_needed,
-        };
-        // A Login that stood and is now refused is a lapse a Client raises
-        // its Notice of — not a Relay merely Unreachable, nor one never
-        // logged in at — once, until the Login stands again and a later
-        // refusal makes another.
-        // The Notice given of a lapse goes as the lapse does.
-        let stored = &relays[index].stored;
-        let (untold_lapse, given_notice) = match &observed {
-            Observed::LoggedIn(_) => (None, None),
-            Observed::LoginNeeded if stored.logged_in && !stored.login_needed => {
-                (Some(Uuid::new_v4()), None)
-            }
-            Observed::LoginNeeded | Observed::Unreachable(_) => {
-                (stored.untold_lapse, stored.given_notice)
-            }
-        };
-        let changed = stored.login_needed != login_needed
-            || stored.untold_lapse != untold_lapse
-            || stored.given_notice != given_notice;
-        relays[index].stored.login_needed = login_needed;
-        relays[index].stored.untold_lapse = untold_lapse;
-        relays[index].stored.given_notice = given_notice;
-        // What the Relay last said governs this run whether or not it can be
-        // stored. Where it cannot, it is stored as the Server next hears from
-        // a Relay — as one that refuses the Login goes on refusing it each
-        // time the Server tries it — until it is, so a Login refused is never
-        // taken to stand across a restart.
-        if (changed || self.unstored.load(Ordering::Acquire))
-            && let Err(error) = self.persist(&relays)
-        {
-            self.unstored.store(true, Ordering::Release);
-            tracing::warn!("could not store whether a Relay needs a login: {error:#}");
-        }
-        let held = &mut relays[index];
-        match observed {
-            Observed::LoggedIn(account) => {
-                held.state = RelayState::LoggedIn;
-                held.unreachable = None;
-                held.account = Some(account);
-            }
-            Observed::LoginNeeded => held.refused(),
-            // A Login known to need renewing still does while its Relay
-            // cannot be spoken to, which only a login can change; any other
-            // stands meanwhile.
-            Observed::Unreachable(_) if login_needed => {}
-            Observed::Unreachable(why) => {
-                held.state = RelayState::Unreachable;
-                held.unreachable = Some(why);
-            }
-        }
-        self.publish(&relays);
-    }
-
-    /// What serialises beginning a login and removal at the Relay at
-    /// `address`, where the Server holds an entry for it.
-    fn operations(&self, address: &str) -> std::result::Result<Arc<AsyncMutex<()>>, RelayFailure> {
-        self.lock()
-            .iter()
-            .find(|held| held.stored.address == address)
-            .map(|held| held.operations.clone())
-            .ok_or_else(relay_not_found)
-    }
-
+impl ServingLayer {
     /// Publishes `relays`, which the caller holds, at the next revision,
     /// where they differ from what was last published; and has Serving tell
     /// the Server's Peers which of them it Serves through, where that
     /// differs from what they were last told.
-    fn publish(&self, relays: &[HeldRelay]) {
+    fn publish(&self, relays: &[Held]) {
         self.serving.offer_relays(told(relays));
-        let relays = relays.iter().map(HeldRelay::relay).collect::<Vec<_>>();
+        let relays = relays.iter().map(relay).collect::<Vec<_>>();
         self.published.send_if_modified(|listing| {
             if listing.relays == relays {
                 return false;
@@ -1251,31 +721,127 @@ impl RelayController {
             true
         });
     }
+}
 
-    fn persist(&self, relays: &[HeldRelay]) -> Result<()> {
-        self.write(
-            &relays
-                .iter()
-                .map(|held| held.stored.clone())
-                .collect::<Vec<_>>(),
-        )
+impl RelayHooks for ServingLayer {
+    type Stored = ServingStored;
+    type Beside = Beside;
+
+    fn beside(&self, stored: &StoredRelay<ServingStored>) -> Beside {
+        Beside::first(stored.extension.serve_through, None)
     }
 
-    /// Stores `stored` as the Server's Relays, replacing what was stored
-    /// whole or not at all. What is stored is all the Server holds of them,
-    /// so once it is, nothing it holds is yet to be stored.
-    fn write(&self, stored: &[StoredRelay]) -> Result<()> {
-        let mut contents = serde_json::to_vec(stored)?;
-        contents.push(b'\n');
-        replace_private_file(&self.data_dir.join(RELAYS_FILE), &contents)?;
-        self.unstored.store(false, Ordering::Release);
-        Ok(())
+    fn changed(&self, relays: &[Held]) {
+        self.publish(relays);
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<HeldRelay>> {
-        self.relays
-            .lock()
-            .expect("Relay record lock is not poisoned")
+    /// A Login that stood and is now refused is a lapse a Client raises its
+    /// Notice of — not a Relay merely Unreachable, nor one never logged in
+    /// at — once, until the Login stands again and a later refusal makes
+    /// another. The Notice given of a lapse goes as the lapse does.
+    fn observing(
+        &self,
+        before: &StoredRelay<ServingStored>,
+        observed: &Observed,
+        stored: &mut ServingStored,
+    ) {
+        match observed {
+            Observed::LoggedIn(_) => {
+                stored.untold_lapse = None;
+                stored.given_notice = None;
+            }
+            Observed::LoginNeeded if before.logged_in() && !before.login_needed() => {
+                stored.untold_lapse = Some(Uuid::new_v4());
+                stored.given_notice = None;
+            }
+            Observed::LoginNeeded | Observed::Unreachable(_) => {}
+        }
+    }
+
+    /// The Server connects to a Relay from the moment it logs in there.
+    fn logged_in(&self, client: &RelayClient<Self>, held: &mut Held) {
+        match &held.beside.connection {
+            Some(connection) => connection.retry_now.notify_one(),
+            None => {
+                let controller = RelayController {
+                    client: client.clone(),
+                };
+                held.beside.connection = Some(controller.keep_connected(held));
+            }
+        }
+    }
+
+    fn refuses_removal(&self, held: &Held) -> Option<RelayFailure> {
+        held.beside.pinned_in.as_ref().map(|document| {
+            RelayFailure::new(
+                SessionErrorCode::RelayPinned,
+                relay_pinned_message(held.address(), document),
+            )
+        })
+    }
+
+    /// Nothing reconnects while the Relay is asked to forget, and nothing
+    /// taken up there is handed on, however far it has got.
+    fn letting_go(&self, held: &mut Held) {
+        held.beside
+            .serve_through
+            .send_modify(|choice| *choice = choice.made_again(false));
+        if let Some(connection) = held.beside.connection.take() {
+            connection.task.abort();
+        }
+    }
+
+    fn taken_back(&self, client: &RelayClient<Self>, held: &mut Held) {
+        let serve_through = held.stored().extension.serve_through;
+        held.beside
+            .serve_through
+            .send_modify(|choice| *choice = choice.made_again(serve_through));
+        if held.stored().logged_in() {
+            let controller = RelayController {
+                client: client.clone(),
+            };
+            held.beside.connection = Some(controller.keep_connected(held));
+        }
+    }
+
+    /// A pin landing as the entry was removed leaves an entry at its
+    /// address, with nothing of the one removed.
+    fn in_place_of(&self, removed: &Held) -> Option<Held> {
+        removed
+            .beside
+            .pinned_in
+            .as_ref()
+            .map(|document| fresh(removed.address().to_owned(), Some(document.clone())))
+    }
+}
+
+/// Asks the Relay on `conversation` to have the Server wait on it to be
+/// reached: where the Relay does not take that up within `answer_timeout`,
+/// how it then stands for the Server.
+async fn wait(
+    conversation: &mut Conversation,
+    answer_timeout: Duration,
+) -> std::result::Result<(), Observed> {
+    let unreachable = |message: &str| {
+        Observed::Unreachable(RelayUnreachable {
+            behind: None,
+            message: message.to_owned(),
+        })
+    };
+    if conversation.say(&ServerMessage::Wait).await.is_err() {
+        return Err(unreachable("the Relay stopped answering"));
+    }
+    match tokio::time::timeout(answer_timeout, conversation.hear()).await {
+        Ok(Some(RelayMessage::Waiting)) => Ok(()),
+        Ok(Some(RelayMessage::Refused {
+            refusal: Refusal::LoginNeeded,
+            ..
+        })) => Err(Observed::LoginNeeded),
+        Ok(Some(RelayMessage::Refused { message, .. })) => Err(unreachable(&message)),
+        Ok(Some(_)) => Err(unreachable(
+            "the Relay answered the Server's waiting with something else",
+        )),
+        Ok(None) | Err(_) => Err(unreachable("the Relay stopped answering")),
     }
 }
 
@@ -1283,241 +849,27 @@ impl RelayController {
 /// Relays, as Serving and its Pairings ask: the Relays it Serves through, and
 /// the joins it asks at those it holds a Login at. It holds the Server's
 /// Relays and never Serving itself, which holds it.
-#[derive(Clone)]
 struct Joining {
-    relays: Arc<StdMutex<Vec<HeldRelay>>>,
-    identity: IdentityKey,
-    dialer: Dialer,
-    timings: RelayTimings,
-    carrying: Arc<Carrying>,
+    joiner: RelayJoiner<ServingLayer>,
 }
 
 impl RelayWays for Joining {
     fn served_through(&self, relay: &str) -> Option<String> {
         let address = relay_protocol::canonical_address(relay)?;
-        self.lock()
+        self.joiner
+            .lock()
             .iter()
-            .any(|held| held.stored.address == address && held.offered())
+            .any(|held| held.address() == address && offered(held))
             .then_some(address)
     }
 
     fn chosen(&self, relay: &str) -> bool {
-        self.lock().iter().any(|held| held.stored.address == relay)
+        self.joiner.chosen(relay)
     }
 
     fn join(&self, relay: String, server: Vec<u8>, wanted: Wanted) -> RelayJoin {
-        let joining = self.clone();
-        Box::pin(async move {
-            let carried = joining.join(&relay, server, &wanted).await?;
-            Ok(Box::new(carried) as Box<dyn ByteStream>)
-        })
+        RelayWays::join(&self.joiner, relay, server, wanted)
     }
-}
-
-impl Joining {
-    /// Joins this Server, at the Relay at `relay`, to the Serving Server whose
-    /// identity key is `server`, proving the Server's key there, each step
-    /// within the answer timeout: what the join then carries. The Server must
-    /// hold a Login at the Relay as it asks, and still hold it as the join is
-    /// made, or nothing is carried; and the join is asked only while the
-    /// connection is still `wanted`.
-    async fn join(
-        &self,
-        relay: &str,
-        server: Vec<u8>,
-        wanted: &Wanted,
-    ) -> std::io::Result<CarriedStream> {
-        let Some(entry) = self.login_at(relay, None) else {
-            return Err(no_login(relay));
-        };
-        let (mut conversation, login) = self
-            .dialer
-            .open(relay, &self.identity, self.timings.answer_timeout)
-            .await
-            .map_err(|failure| std::io::Error::other(failure.into_failure().message))?;
-        let refused = match login {
-            None => Some(login_refused(relay)),
-            // Let go of while the Relay took the proof, however soon it
-            // answered: no join is asked for a connection nothing wants.
-            Some(_) if !wanted.still() => Some(no_longer_wanted()),
-            Some(account) => {
-                if conversation
-                    .say(&ServerMessage::Join {
-                        server: Bytes(server),
-                    })
-                    .await
-                    .is_err()
-                {
-                    return Err(std::io::Error::other("the Relay stopped answering"));
-                }
-                match tokio::time::timeout(self.timings.answer_timeout, conversation.hear()).await {
-                    Ok(Some(RelayMessage::Joined)) => None,
-                    Ok(Some(RelayMessage::Refused {
-                        refusal: Refusal::LoginNeeded,
-                        ..
-                    })) => Some(login_refused(relay)),
-                    Ok(Some(RelayMessage::Refused {
-                        refusal: Refusal::DifferentAccounts,
-                        ..
-                    })) => Some(different_accounts(relay, &account)),
-                    Ok(Some(RelayMessage::Refused {
-                        refusal: Refusal::CapReached { cap, limit },
-                        message,
-                    })) => Some(cap_reached(relay, cap, limit, &message)),
-                    Ok(Some(RelayMessage::Refused { message, .. })) => {
-                        Some(std::io::Error::other(message))
-                    }
-                    Ok(Some(_)) => Some(std::io::Error::other(
-                        "the Relay answered a join with something else",
-                    )),
-                    Ok(None) | Err(_) => Some(std::io::Error::other("the Relay stopped answering")),
-                }
-            }
-        };
-        if let Some(refused) = refused {
-            conversation.close().await;
-            return Err(refused);
-        }
-        // A Login given up as the join was made — the Relay removed, however
-        // soon it was added again — has the join carry nothing.
-        if self.login_at(relay, Some(&entry)).is_none() {
-            return Err(no_login(relay));
-        }
-        Ok(conversation.carried(self.carrying.stop()))
-    }
-
-    /// What serialises what is asked of the entry for the Relay at `relay`,
-    /// where the Server has logged in there — and, where `entry` is given,
-    /// where that entry is the one it serialises.
-    fn login_at(
-        &self,
-        relay: &str,
-        entry: Option<&Arc<AsyncMutex<()>>>,
-    ) -> Option<Arc<AsyncMutex<()>>> {
-        self.lock()
-            .iter()
-            .find(|held| {
-                held.stored.address == relay
-                    && held.stored.logged_in
-                    && entry.is_none_or(|entry| Arc::ptr_eq(&held.operations, entry))
-            })
-            .map(|held| held.operations.clone())
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<HeldRelay>> {
-        self.relays
-            .lock()
-            .expect("Relay record lock is not poisoned")
-    }
-}
-
-/// The refusal of a join at the Relay at `relay`, where the Server has not
-/// logged in.
-fn no_login(relay: &str) -> std::io::Error {
-    std::io::Error::other(RelayRefusal {
-        code: SessionErrorCode::RelayLoginNeeded,
-        message: format!(
-            "this Server holds no Login at the Relay at {relay}; log in there, then try again"
-        ),
-        unreachable: Some(UnreachableReason::RelayLoginNeeded {
-            relay: relay.to_owned(),
-        }),
-    })
-}
-
-/// The refusal of a join at the Relay at `relay`, which refuses the Login the
-/// Server holds there.
-fn login_refused(relay: &str) -> std::io::Error {
-    std::io::Error::other(RelayRefusal {
-        code: SessionErrorCode::RelayLoginNeeded,
-        message: format!(
-            "the Relay at {relay} no longer admits this Server's Login there; log in there \
-             again, then try again"
-        ),
-        unreachable: Some(UnreachableReason::RelayLoginNeeded {
-            relay: relay.to_owned(),
-        }),
-    })
-}
-
-/// The refusal of a join at the Relay at `relay`, where the Server's Login
-/// stands under `account` and the Serving Server's under another.
-fn different_accounts(relay: &str, account: &relay_protocol::Account) -> std::io::Error {
-    let relay_protocol::Account { provider, username } = account;
-    std::io::Error::other(RelayRefusal {
-        code: SessionErrorCode::RelayDifferentAccounts,
-        message: format!(
-            "this Server is logged in at the Relay at {relay} as {username} ({provider}), and \
-             the Server it would reach there under another Account; a Relay joins only Servers \
-             logged in under the same one, so log this Server in there as the user that Server \
-             is logged in as, or pair the two directly"
-        ),
-        unreachable: Some(UnreachableReason::RelayDifferentAccounts {
-            relay: relay.to_owned(),
-            account: RelayAccount {
-                provider: provider.clone(),
-                username: username.clone(),
-            },
-        }),
-    })
-}
-
-/// What a login at the Relay at `address` is told where the Account it would
-/// stand under already has as many Servers logged in there as `limit`.
-fn logins_capped(address: &str, limit: u64) -> String {
-    let servers = if limit == 1 { "Server" } else { "Servers" };
-    format!(
-        "the Relay at {address} allows {limit} {servers} logged in under one Account, and \
-         yours has as many; remove the Relay from a Server of yours that no longer needs it, \
-         or ask the Relay's operator to remove a Login or to raise the cap"
-    )
-}
-
-/// The refusal of a join at the Relay at `relay`, where the Account the
-/// Server's Login stands under there has reached `cap`, which allows `limit`,
-/// as the Relay says in `message`: named first, ahead of where, so whatever
-/// shows only the start of it still says which cap.
-fn cap_reached(relay: &str, cap: Cap, limit: u64, message: &str) -> std::io::Error {
-    let (message, unreachable) = match cap {
-        Cap::JoinedConnections => {
-            let connections = if limit == 1 {
-                "connection"
-            } else {
-                "connections"
-            };
-            (
-                format!(
-                    "this Server's Account has reached the cap of {limit} {connections} joined \
-                     at once that the Relay at {relay} sets for each Account, so it joins no \
-                     more until one ends; if that is too few, ask the Relay's operator to raise \
-                     the cap"
-                ),
-                Some(UnreachableReason::RelayCapReached {
-                    relay: relay.to_owned(),
-                    limit: u32::try_from(limit).unwrap_or(u32::MAX),
-                }),
-            )
-        }
-        Cap::Logins | Cap::Unrecognized => (
-            format!(
-                "the Relay at {relay} joins no more for this Server's Account, which has reached \
-                 a cap its operator sets: {message}"
-            ),
-            None,
-        ),
-    };
-    std::io::Error::other(RelayRefusal {
-        code: SessionErrorCode::RelayCapReached,
-        message,
-        unreachable,
-    })
-}
-
-/// What the Server found of a Relay as it tried to speak to it.
-enum Observed {
-    LoggedIn(RelayAccount),
-    LoginNeeded,
-    Unreachable(RelayUnreachable),
 }
 
 /// The user's choice to Serve through a Relay, and which making of that
@@ -1646,856 +998,76 @@ impl WaitingWish {
 
 /// The addresses of the Relays among `relays` the Server tells its Peers it
 /// Serves through.
-fn told(relays: &[HeldRelay]) -> Vec<String> {
+fn told(relays: &[Held]) -> Vec<String> {
     relays
         .iter()
-        .filter(|held| held.told())
-        .map(|held| held.stored.address.clone())
+        .filter(|held| is_told(held))
+        .map(|held| held.address().to_owned())
         .collect()
 }
 
-impl HeldRelay {
-    /// The entry for a Relay the Server has yet to do anything at.
-    fn first_at(address: String, pinned_in: Option<String>) -> Self {
-        Self {
-            stored: StoredRelay {
-                address,
-                logged_in: false,
-                login_needed: false,
-                serve_through: false,
-                untold_lapse: None,
-                given_notice: None,
-            },
-            serve_through: watch::Sender::new(ServeThrough::first(false)),
-            state: RelayState::LoginNeeded,
-            unreachable: None,
-            account: None,
-            login: None,
-            connection: None,
-            operations: Arc::default(),
-            pinned_in,
-        }
-    }
+/// Whether an Invite may offer the Relay of `held`: where its user has
+/// chosen that the Server Serves through it and its Login there stands. A
+/// Login the Relay was last found to refuse is offered to nobody, however
+/// the Relay has answered since, though the Server goes on connecting there
+/// in case it is restored; one merely Unreachable still is, as the Server
+/// goes on waiting there.
+fn offered(held: &Held) -> bool {
+    is_told(held) && !held.stored().login_needed()
+}
 
-    /// Whether an Invite may offer the Relay: where its user has chosen that
-    /// the Server Serves through it and its Login there stands. A Login the
-    /// Relay was last found to refuse is offered to nobody, however the
-    /// Relay has answered since, though the Server goes on connecting there
-    /// in case it is restored; one merely Unreachable still is, as the Server
-    /// goes on waiting there.
-    fn offered(&self) -> bool {
-        self.told() && !self.stored.login_needed
-    }
+/// Whether the Server tells its Peers it Serves through the Relay of `held`:
+/// where its user has chosen that it does, and it has logged in there. A
+/// Login the Relay comes to refuse withdraws nothing, since one fresh login
+/// from any Server of its Account restores it, and the Peers that rely on the
+/// Relay then recover through it on their own; only its user's choice
+/// withdraws it — no longer to Serve through it, or to remove it.
+fn is_told(held: &Held) -> bool {
+    held.stored().extension.serve_through && held.stored().logged_in()
+}
 
-    /// Whether the Server tells its Peers it Serves through the Relay: where
-    /// its user has chosen that it does, and it has logged in there. A Login
-    /// the Relay comes to refuse withdraws nothing, since one fresh login
-    /// from any Server of its Account restores it, and the Peers that rely
-    /// on the Relay then recover through it on their own; only its user's
-    /// choice withdraws it — no longer to Serve through it, or to remove it.
-    fn told(&self) -> bool {
-        self.stored.serve_through && self.stored.logged_in
+/// The Relay of `held`, as the Server's Clients are told of it.
+fn relay(held: &Held) -> Relay {
+    let stored = held.stored();
+    Relay {
+        address: held.address().to_owned(),
+        state: held.state(),
+        unreachable: held.unreachable().cloned(),
+        account: held.account().cloned(),
+        login: held.login(),
+        serve_through: stored.extension.serve_through,
+        login_needed_notice: stored.extension.untold_lapse,
+        pinned_in: held.beside.pinned_in.clone(),
     }
+}
 
-    fn relay(&self) -> Relay {
-        Relay {
-            address: self.stored.address.clone(),
-            state: self.state,
-            unreachable: self.unreachable.clone(),
-            account: self.account.clone(),
-            login: self
-                .login
-                .as_ref()
-                .map(|login| login.progress.borrow().clone()),
-            serve_through: self.stored.serve_through,
-            login_needed_notice: self.stored.untold_lapse,
-            pinned_in: self.pinned_in.clone(),
-        }
-    }
-
-    /// Holds that the Relay refuses the Server's Login there, which needs
-    /// renewing from now on, whatever the Relay answers meanwhile.
-    fn refused(&mut self) {
-        self.stored.login_needed = true;
-        self.state = RelayState::LoginNeeded;
-        self.unreachable = None;
-        self.account = None;
-    }
+/// The entry for a Relay at `address` the Server has yet to do anything at,
+/// pinned in `pinned_in` where it is.
+fn fresh(address: String, pinned_in: Option<String>) -> Held {
+    HeldRelay::first_at(address, Beside::first(false, pinned_in))
 }
 
 /// Pins the entry at `address` as `document` does, making one after those there
 /// are where there is none, and answers whether it made one.
-fn pin_entry(relays: &mut Vec<HeldRelay>, address: &str, document: &str) -> bool {
-    match relays
-        .iter_mut()
-        .find(|held| held.stored.address == address)
-    {
+fn pin_entry(relays: &mut Vec<Held>, address: &str, document: &str) -> bool {
+    match relays.iter_mut().find(|held| held.address() == address) {
         Some(held) => {
-            held.pinned_in = Some(document.to_owned());
+            held.beside.pinned_in = Some(document.to_owned());
             false
         }
         None => {
-            relays.push(HeldRelay::first_at(
-                address.to_owned(),
-                Some(document.to_owned()),
-            ));
+            relays.push(fresh(address.to_owned(), Some(document.to_owned())));
             true
         }
-    }
-}
-
-/// The entry at `address` that `operations` serialises. An entry removed and
-/// added again at the same address is another, with operations of its own,
-/// so what was asked of the one before finds no entry here.
-fn owning<'relays>(
-    relays: &'relays mut [HeldRelay],
-    address: &str,
-    operations: &Arc<AsyncMutex<()>>,
-) -> Option<&'relays mut HeldRelay> {
-    relays
-        .iter_mut()
-        .find(|held| held.stored.address == address && Arc::ptr_eq(&held.operations, operations))
-}
-
-/// Ends the connection kept to `held` and any login under way there.
-fn stop(held: &mut HeldRelay) {
-    if let Some(connection) = held.connection.take() {
-        connection.task.abort();
-    }
-    if let Some(task) = held.login.as_mut().and_then(|login| login.task.take()) {
-        task.abort();
-    }
-}
-
-/// Says a login still pending was given up, and why, so whatever follows it
-/// learns it has ended.
-fn settle_abandoned(progress: &watch::Sender<RelayLogin>, message: &str) {
-    progress.send_if_modified(|login| {
-        if login.outcome.is_settled() {
-            return false;
-        }
-        login.outcome = RelayLoginOutcome::Refused {
-            reason: RelayLoginRefusal::Interrupted,
-            message: message.to_owned(),
-        };
-        true
-    });
-}
-
-fn stopped_answering() -> RelayFailure {
-    RelayFailure::new(
-        SessionErrorCode::RelayUnreachable,
-        "the Relay stopped answering",
-    )
-}
-
-/// The address `address` names a Relay by, written the one way a Relay's
-/// address is, where it is one a Server can hold an entry for: what a Config
-/// Document's list is held to, as everything asked of a Relay by its address is.
-pub(crate) fn holdable_address(address: &str) -> Option<String> {
-    relay_protocol::canonical_address(address).filter(|address| address.len() <= MAX_TOLD_RELAY_LEN)
-}
-
-/// The address `address` names a Relay by, written the one way a Relay's
-/// address is (see [`relay_protocol::canonical_address`]).
-pub(crate) fn relay_address(address: &str) -> std::result::Result<String, RelayFailure> {
-    holdable_address(address).ok_or_else(|| {
-        // A Relay the Server Serves through is told to its Peers by its
-        // address, whole, which bounds how long one may run.
-        RelayFailure::new(
-            SessionErrorCode::InvalidRelayAddress,
-            format!(
-                "a Relay's address is an https:// or http:// address naming its host, of at most \
-                 {MAX_TOLD_RELAY_LEN} characters"
-            ),
-        )
-    })
-}
-
-/// Opens connections to Relays: WebSockets over HTTP or HTTPS, taken through
-/// the system's HTTP proxy and verified against the operating system's trust
-/// store. Its HTTP clients are made at their first dial, so a Server holding
-/// no Relay never reads the trust store.
-#[derive(Clone, Default)]
-struct Dialer {
-    /// Reaches a Relay elsewhere, through the system's HTTP proxy.
-    proxied: Arc<OnceLock<reqwest::Client>>,
-    /// Reaches a Relay on this machine's loopback, which no proxy elsewhere
-    /// could reach.
-    direct: Arc<OnceLock<reqwest::Client>>,
-}
-
-/// Why a connection to a Relay could not be made.
-enum DialFailure {
-    /// The Relay did not answer, saying why.
-    Unreachable(String),
-    /// The Relay and the Server share no version, and `behind` is the side
-    /// to upgrade.
-    Mismatch { behind: Side, message: String },
-    /// The Relay refused the Server, saying why.
-    Refused(String),
-}
-
-impl DialFailure {
-    /// Why the Relay reads Unreachable, failing so.
-    fn unreachable(self) -> RelayUnreachable {
-        match self {
-            Self::Unreachable(message) | Self::Refused(message) => RelayUnreachable {
-                behind: None,
-                message,
-            },
-            Self::Mismatch { behind, message } => RelayUnreachable {
-                behind: Some(match behind {
-                    Side::Server => RelaySide::Server,
-                    Side::Relay => RelaySide::Relay,
-                }),
-                message,
-            },
-        }
-    }
-
-    fn into_failure(self) -> RelayFailure {
-        match self {
-            Self::Unreachable(message) => {
-                RelayFailure::new(SessionErrorCode::RelayUnreachable, message)
-            }
-            Self::Mismatch { message, .. } => {
-                RelayFailure::new(SessionErrorCode::RelayProtocolMismatch, message)
-            }
-            Self::Refused(message) => RelayFailure::new(SessionErrorCode::RelayRefused, message),
-        }
-    }
-}
-
-impl Dialer {
-    /// The HTTP client the Relay at `address` is reached with.
-    fn http(&self, address: &str) -> &reqwest::Client {
-        if on_loopback(address) {
-            self.direct.get_or_init(|| relay_http_client(false))
-        } else {
-            self.proxied.get_or_init(|| relay_http_client(true))
-        }
-    }
-
-    /// Opens a connection to the Relay at `address` and proves the Server's
-    /// identity key there, for that Relay alone, each step within
-    /// `answer_timeout`: what the Relay then says of the Server's Login — the
-    /// Account it stands under, where it stands. Nothing is signed for a Relay
-    /// that chose a version the Server did not offer, or that names itself by
-    /// another address than the Server knows it at.
-    async fn open(
-        &self,
-        address: &str,
-        identity: &IdentityKey,
-        answer_timeout: Duration,
-    ) -> std::result::Result<(Conversation, Option<relay_protocol::Account>), DialFailure> {
-        let unanswered = || DialFailure::Unreachable("the Relay did not answer in time".to_owned());
-        // Where the key could not be got from where it is kept, the user is
-        // told why, and that none was made in its place.
-        let identity_failure = |error: anyhow::Error| {
-            DialFailure::Refused(match error.downcast_ref::<IdentityKeyUnavailable>() {
-                Some(unavailable) => unavailable.to_string(),
-                None => "the Server could not use its identity key".to_owned(),
-            })
-        };
-        let signer = identity.signer().await.map_err(identity_failure)?;
-        let key = signer.public_key().to_vec();
-        let mut conversation =
-            tokio::time::timeout(answer_timeout, self.websocket(address, answer_timeout))
-                .await
-                .map_err(|_| unanswered())??;
-        conversation
-            .say(&ServerMessage::Hello {
-                versions: SPOKEN.to_vec(),
-                key: Bytes(key.clone()),
-            })
-            .await
-            .map_err(|_| unanswered())?;
-        let nonce = match tokio::time::timeout(answer_timeout, conversation.hear()).await {
-            Ok(Some(RelayMessage::Challenge {
-                version,
-                nonce,
-                relay,
-            })) => {
-                if !SPOKEN.contains(&version) {
-                    let behind = if SPOKEN.iter().max().is_some_and(|ours| version > *ours) {
-                        Side::Server
-                    } else {
-                        Side::Relay
-                    };
-                    return Err(DialFailure::Mismatch {
-                        behind,
-                        message: mismatch(&[version], behind),
-                    });
-                }
-                if relay_protocol::canonical_address(&relay).as_deref() != Some(address) {
-                    let relay = shown(&relay, intake::MAX_REASON_CHARS);
-                    return Err(DialFailure::Refused(format!(
-                        "the Relay at {address} names itself {relay}, so this Server proves \
-                         nothing to it; add the Relay by the address it names"
-                    )));
-                }
-                nonce.0
-            }
-            Ok(Some(RelayMessage::Refused {
-                refusal: Refusal::VersionNotSupported { versions, behind },
-                ..
-            })) => {
-                return Err(DialFailure::Mismatch {
-                    behind,
-                    message: mismatch(&versions, behind),
-                });
-            }
-            Ok(Some(RelayMessage::Refused { message, .. })) => {
-                return Err(DialFailure::Refused(message));
-            }
-            Ok(Some(_)) => {
-                return Err(DialFailure::Refused(
-                    "the Relay did not challenge the Server to prove its key".to_owned(),
-                ));
-            }
-            Ok(None) | Err(_) => return Err(unanswered()),
-        };
-        let signature = signer
-            .sign(&relay_protocol::proof_message(address, &nonce, &key))
-            .map_err(identity_failure)?;
-        conversation
-            .say(&ServerMessage::Proof {
-                signature: Bytes(signature),
-            })
-            .await
-            .map_err(|_| unanswered())?;
-        match tokio::time::timeout(answer_timeout, conversation.hear()).await {
-            Ok(Some(RelayMessage::Proven { login })) => Ok((conversation, login)),
-            Ok(Some(RelayMessage::Refused { message, .. })) => Err(DialFailure::Refused(message)),
-            Ok(Some(_)) => Err(DialFailure::Refused(
-                "the Relay answered the Server's proof with something else".to_owned(),
-            )),
-            Ok(None) | Err(_) => Err(unanswered()),
-        }
-    }
-
-    /// Opens a WebSocket to the Relay at `address` by upgrading an HTTP
-    /// request, so it goes wherever the HTTP client's proxy and trust send
-    /// it.
-    async fn websocket(
-        &self,
-        address: &str,
-        send_timeout: Duration,
-    ) -> std::result::Result<Conversation, DialFailure> {
-        let key = tungstenite::handshake::client::generate_key();
-        let response = self
-            .http(address)
-            .get(format!("{address}{ENDPOINT_PATH}"))
-            .header(header::CONNECTION, "Upgrade")
-            .header(header::UPGRADE, "websocket")
-            .header(header::SEC_WEBSOCKET_VERSION, "13")
-            .header(header::SEC_WEBSOCKET_KEY, &key)
-            .send()
-            .await
-            .map_err(|error| DialFailure::Unreachable(unreachable_reason(&error)))?;
-        if response.status() != StatusCode::SWITCHING_PROTOCOLS {
-            return Err(DialFailure::Unreachable(format!(
-                "the Relay's address answered HTTP {} rather than opening a connection",
-                response.status()
-            )));
-        }
-        let accepted = response
-            .headers()
-            .get(header::SEC_WEBSOCKET_ACCEPT)
-            .is_some_and(|accept| {
-                accept.as_bytes()
-                    == tungstenite::handshake::derive_accept_key(key.as_bytes()).as_bytes()
-            });
-        if !accepted {
-            return Err(DialFailure::Unreachable(
-                "the Relay's address did not open a WebSocket".to_owned(),
-            ));
-        }
-        let upgraded = response.upgrade().await.map_err(|_| {
-            DialFailure::Unreachable("the Relay's connection ended as it opened".to_owned())
-        })?;
-        // What the Relay sends and what it has yet to take in are both held to
-        // a bound, so one that pings without reading, or sends without end,
-        // costs the Server no more than that.
-        let limits = WebSocketConfig::default()
-            .write_buffer_size(0)
-            .max_write_buffer_size(2 * MAX_MESSAGE_LEN)
-            .max_message_size(Some(MAX_MESSAGE_LEN))
-            .max_frame_size(Some(MAX_MESSAGE_LEN));
-        Ok(Conversation {
-            socket: WebSocketStream::from_raw_socket(upgraded, Role::Client, Some(limits)).await,
-            send_timeout,
-        })
-    }
-}
-
-/// Whether the Relay at `address` is on this machine's loopback.
-fn on_loopback(address: &str) -> bool {
-    let Ok(url) = reqwest::Url::parse(address) else {
-        return false;
-    };
-    let Some(host) = url.host_str() else {
-        return false;
-    };
-    let host = host.trim_start_matches('[').trim_end_matches(']');
-    host.eq_ignore_ascii_case("localhost")
-        || host
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|ip| ip.is_loopback())
-}
-
-/// The HTTP client a Server reaches its Relays with: through the system's HTTP
-/// proxy, as reqwest finds it, where `proxied`, and trusting what the operating
-/// system's trust store trusts. A trust store that cannot be read trusts
-/// nothing, so every HTTPS Relay is refused rather than the Server failing.
-fn relay_http_client(proxied: bool) -> reqwest::Client {
-    use rustls_platform_verifier::BuilderVerifierExt as _;
-
-    let builder = rustls::ClientConfig::builder_with_provider(Arc::new(
-        rustls::crypto::ring::default_provider(),
-    ))
-    .with_safe_default_protocol_versions()
-    .expect("ring speaks every TLS version rustls deems safe");
-    let mut tls = match builder.clone().with_platform_verifier() {
-        Ok(verified) => verified.with_no_client_auth(),
-        Err(error) => {
-            tracing::warn!("no HTTPS Relay is trusted: the trust store is unreadable: {error}");
-            builder
-                .with_root_certificates(rustls::RootCertStore::empty())
-                .with_no_client_auth()
-        }
-    };
-    // A WebSocket is opened by upgrading an HTTP/1.1 request.
-    tls.alpn_protocols = vec![b"http/1.1".to_vec()];
-    // A Relay that vanished, with whatever join it carried, is found out as a
-    // direct way's Serving Server is.
-    // A Relay is known by its address, so one answering with a redirect is
-    // not followed anywhere else: where it points is nowhere its user chose,
-    // and is asked nothing. A Relay that moves is added again where it went.
-    let client = reqwest::Client::builder()
-        .use_preconfigured_tls(tls)
-        .redirect(reqwest::redirect::Policy::none())
-        .http1_only()
-        .tcp_keepalive(SOCKET_KEEPALIVE)
-        .tcp_keepalive_interval(SOCKET_KEEPALIVE)
-        .tcp_keepalive_retries(SOCKET_KEEPALIVE_PROBES);
-    #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
-    let client = client.tcp_user_timeout(SOCKET_USER_TIMEOUT);
-    if proxied { client } else { client.no_proxy() }
-        .build()
-        .expect("a Relay HTTP client over rustls needs nothing that can fail")
-}
-
-/// Says why a Relay could not be reached, telling a certificate this machine
-/// does not trust apart from a Relay that does not answer at all.
-fn unreachable_reason(error: &reqwest::Error) -> String {
-    if untrusted_certificate(error) {
-        "the Relay's certificate is not one this machine's trust store trusts".to_owned()
-    } else {
-        "could not reach the Relay".to_owned()
-    }
-}
-
-/// Whether `error` came of a certificate the TLS handshake refused. The TLS
-/// error lies wrapped in I/O errors, whose own `source` passes over what they
-/// wrap, so each one is looked inside as well as past.
-fn untrusted_certificate(error: &(dyn std::error::Error + 'static)) -> bool {
-    if let Some(rustls::Error::InvalidCertificate(_)) = error.downcast_ref::<rustls::Error>() {
-        return true;
-    }
-    let wrapped = error
-        .downcast_ref::<std::io::Error>()
-        .and_then(std::io::Error::get_ref);
-    if let Some(wrapped) = wrapped
-        && untrusted_certificate(wrapped)
-    {
-        return true;
-    }
-    error.source().is_some_and(untrusted_certificate)
-}
-
-/// Says which side of a version mismatch is behind, and so which to upgrade.
-fn mismatch(relay_versions: &[relay_protocol::Version], behind: Side) -> String {
-    let ours = SPOKEN
-        .iter()
-        .max()
-        .map_or_else(|| "none".to_owned(), ToString::to_string);
-    let theirs = relay_versions
-        .iter()
-        .max()
-        .map_or_else(|| "none".to_owned(), ToString::to_string);
-    match behind {
-        Side::Server => format!(
-            "this Server speaks Relay protocol {ours} and the Relay {theirs}: this Server is \
-             behind, so upgrade Shaman"
-        ),
-        Side::Relay => format!(
-            "this Server speaks Relay protocol {ours} and the Relay {theirs}: the Relay is \
-             behind, so its operator must upgrade it"
-        ),
-    }
-}
-
-/// How a connection to a Relay ended.
-#[derive(Debug, Eq, PartialEq)]
-enum Ending {
-    /// It closed.
-    Closed,
-    /// The Relay stopped answering while it stood open.
-    Silent,
-}
-
-/// A WebSocket to a Relay, carrying one JSON message to a text frame.
-struct Conversation {
-    socket: WebSocketStream<reqwest::Upgraded>,
-    /// How long the Relay may take to take in what is sent it.
-    send_timeout: Duration,
-}
-
-impl Conversation {
-    /// Sends `message` once whatever is queued ahead of it — answers to the
-    /// Relay's pings among them — has gone, so it fits however much was, all
-    /// within the send timeout.
-    async fn say(&mut self, message: &ServerMessage) -> std::result::Result<(), ()> {
-        let text = serde_json::to_string(message).expect("a Server message always encodes");
-        let said = tokio::time::timeout(self.send_timeout, async {
-            self.socket.flush().await?;
-            self.socket.send(Message::Text(text.into())).await
-        });
-        match said.await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(_)) | Err(_) => Err(()),
-        }
-    }
-
-    /// The next thing the Relay says that this Server recognizes, or `None`
-    /// once the connection has ended.
-    async fn hear(&mut self) -> Option<RelayMessage> {
-        loop {
-            match self.socket.next().await? {
-                Ok(Message::Text(text)) => {
-                    if let Some(message) = intake::told(text.as_str()) {
-                        return Some(message);
-                    }
-                }
-                Ok(Message::Close(_)) | Err(_) => return None,
-                Ok(_) => {}
-            }
-        }
-    }
-
-    /// Asks the Relay to have the Server wait on this connection to be
-    /// reached: where the Relay does not take that up within
-    /// `answer_timeout`, how it then stands for the Server.
-    async fn wait(&mut self, answer_timeout: Duration) -> std::result::Result<(), Observed> {
-        let unreachable = |message: &str| {
-            Observed::Unreachable(RelayUnreachable {
-                behind: None,
-                message: message.to_owned(),
-            })
-        };
-        if self.say(&ServerMessage::Wait).await.is_err() {
-            return Err(unreachable("the Relay stopped answering"));
-        }
-        match tokio::time::timeout(answer_timeout, self.hear()).await {
-            Ok(Some(RelayMessage::Waiting)) => Ok(()),
-            Ok(Some(RelayMessage::Refused {
-                refusal: Refusal::LoginNeeded,
-                ..
-            })) => Err(Observed::LoginNeeded),
-            Ok(Some(RelayMessage::Refused { message, .. })) => Err(unreachable(&message)),
-            Ok(Some(_)) => Err(unreachable(
-                "the Relay answered the Server's waiting with something else",
-            )),
-            Ok(None) | Err(_) => Err(unreachable("the Relay stopped answering")),
-        }
-    }
-
-    /// Waits for the connection to end, handing `heard` each thing the Relay
-    /// says that this Server recognizes and asking every `interval` that the
-    /// Relay answer within `timeout`: how it ended. Only the Relay echoing
-    /// what this Server asked shows it answers — it cannot without reading —
-    /// so a Relay that keeps talking and never reads is found silent all the
-    /// same.
-    async fn attend(
-        &mut self,
-        interval: Duration,
-        timeout: Duration,
-        mut heard: impl FnMut(RelayMessage),
-    ) -> Ending {
-        let mut ask_at = tokio::time::Instant::now() + interval;
-        let mut asked: Option<(Vec<u8>, tokio::time::Instant)> = None;
-        loop {
-            let wake = asked.as_ref().map_or(ask_at, |(_, answer_by)| *answer_by);
-            tokio::select! {
-                frame = self.socket.next() => match frame {
-                    Some(Ok(Message::Close(_)) | Err(_)) | None => return Ending::Closed,
-                    Some(Ok(Message::Pong(echo)))
-                        if asked.as_ref().is_some_and(|(asking, _)| echo[..] == asking[..]) =>
-                    {
-                        asked = None;
-                        ask_at = tokio::time::Instant::now() + interval;
-                    }
-                    Some(Ok(Message::Text(text))) => {
-                        if let Some(message) = intake::told(text.as_str()) {
-                            heard(message);
-                        }
-                    }
-                    Some(Ok(_)) => {}
-                },
-                () = tokio::time::sleep_until(wake) => {
-                    if asked.is_some() {
-                        return Ending::Silent;
-                    }
-                    let asking = uuid::Uuid::new_v4().as_bytes().to_vec();
-                    let ping = Message::Ping(asking.clone().into());
-                    let sent = tokio::time::timeout(timeout, async {
-                        self.socket.flush().await?;
-                        self.socket.send(ping).await
-                    });
-                    if !matches!(sent.await, Ok(Ok(()))) {
-                        return Ending::Silent;
-                    }
-                    asked = Some((asking, tokio::time::Instant::now() + timeout));
-                }
-            }
-        }
-    }
-
-    /// Ends the conversation and hears the Relay out until it lets it go, so
-    /// whatever the Relay was doing for it is done, all within `timeout`.
-    async fn end(mut self, timeout: Duration) {
-        let _ = tokio::time::timeout(timeout, async {
-            let _ = self.socket.close(None).await;
-            while self.hear().await.is_some() {}
-        })
-        .await;
-    }
-
-    async fn close(mut self) {
-        let _ = tokio::time::timeout(self.send_timeout, self.socket.close(None)).await;
-    }
-
-    /// The join this conversation carries, once the Relay has made it, ended
-    /// by `stop`.
-    fn carried(self, stop: Arc<Stop>) -> CarriedStream {
-        CarriedStream::new(self.socket, stop)
-    }
-}
-
-/// The joins Relays carry for this Server, each ended as the Server stops.
-#[derive(Default)]
-struct Carrying {
-    carried: StdMutex<Carried>,
-}
-
-#[derive(Default)]
-struct Carried {
-    stopped: bool,
-    stops: Vec<Weak<Stop>>,
-}
-
-impl Carrying {
-    /// What ends one more join as the Server stops — at once, where it
-    /// already has.
-    fn stop(&self) -> Arc<Stop> {
-        let stop = Arc::new(Stop::default());
-        let mut carried = self
-            .carried
-            .lock()
-            .expect("carried join lock is not poisoned");
-        if carried.stopped {
-            stop.stop();
-        } else {
-            carried.stops.retain(|stop| stop.strong_count() > 0);
-            carried.stops.push(Arc::downgrade(&stop));
-        }
-        stop
-    }
-
-    /// Ends every join carried, and every one carried from now on.
-    fn stop_all(&self) {
-        let stops = {
-            let mut carried = self
-                .carried
-                .lock()
-                .expect("carried join lock is not poisoned");
-            carried.stopped = true;
-            std::mem::take(&mut carried.stops)
-        };
-        for stop in stops.iter().filter_map(Weak::upgrade) {
-            stop.stop();
-        }
-    }
-}
-
-/// Says one join a Relay carries is to end, waking whatever reads or writes
-/// it.
-#[derive(Default)]
-struct Stop {
-    stopped: AtomicBool,
-    waker: AtomicWaker,
-}
-
-impl Stop {
-    fn stop(&self) {
-        self.stopped.store(true, Ordering::Release);
-        self.waker.wake();
-    }
-
-    fn poll(&self, context: &TaskContext<'_>) -> bool {
-        self.waker.register(context.waker());
-        self.stopped.load(Ordering::Acquire)
-    }
-}
-
-/// A join a Relay carries, as the byte stream the Pairing's pinned-key TLS
-/// runs over: what is written goes to the Relay in binary frames of at most
-/// [`MAX_MESSAGE_LEN`] bytes, and the bytes of each binary frame the Relay
-/// carries back are read as they come, no more than one frame held unread at
-/// once. The Relay closing the join or saying anything else ends it, and so
-/// does the Server stopping.
-///
-/// Whether the Relay, and the Server it joins this one to, still answer is
-/// not judged here: what a Relay echoes of a join shows only that it read
-/// this far of what this Server sent, which waits on its passing on all
-/// before, however healthy it is. The two Servers judge it end to end, inside
-/// their pinned-key TLS, as [`crate::pairing::Keepalive`] says — until
-/// that is under way, their TLS handshake and then HTTP/2's start are each
-/// bounded by the handshake timeout — and either drops the join, whatever it
-/// was still sending, once it has stalled past that keepalive's verdict.
-struct CarriedStream<Socket = reqwest::Upgraded> {
-    socket: WebSocketStream<Socket>,
-    /// What is left unread of the latest frame the Relay carried.
-    unread: tungstenite::Bytes,
-    /// Whether the Relay has closed the join.
-    ended: bool,
-    stop: Arc<Stop>,
-}
-
-impl<Socket: AsyncRead + AsyncWrite + Unpin> CarriedStream<Socket> {
-    /// The join `socket` carries, ended by `stop`.
-    fn new(socket: WebSocketStream<Socket>, stop: Arc<Stop>) -> Self {
-        Self {
-            socket,
-            unread: tungstenite::Bytes::new(),
-            ended: false,
-            stop,
-        }
-    }
-
-    /// Takes in what the Relay has carried until bytes are held unread:
-    /// `true` where they are, `false` once the join has ended, and pending
-    /// where nothing more has come yet. No more than one frame is held at
-    /// once.
-    fn poll_take_in(&mut self, context: &mut TaskContext<'_>) -> Poll<std::io::Result<bool>> {
-        loop {
-            if !self.unread.is_empty() {
-                return Poll::Ready(Ok(true));
-            }
-            if self.ended {
-                return Poll::Ready(Ok(false));
-            }
-            match ready!(self.socket.poll_next_unpin(context)) {
-                Some(Ok(Message::Binary(bytes))) => self.unread = bytes,
-                Some(Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_))) => {}
-                Some(Ok(Message::Close(_))) | None => self.ended = true,
-                Some(Ok(Message::Text(_))) => {
-                    return Poll::Ready(Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "the Relay said something that is no part of the join it carries",
-                    )));
-                }
-                Some(Err(error)) => return Poll::Ready(Err(std::io::Error::other(error))),
-            }
-        }
-    }
-
-    /// An error where the Server is stopping, which ends every join.
-    fn stopping(&self, context: &TaskContext<'_>) -> std::io::Result<()> {
-        if self.stop.poll(context) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::ConnectionAborted,
-                "the Server is stopping",
-            ));
-        }
-        Ok(())
-    }
-}
-
-impl<Socket: AsyncRead + AsyncWrite + Unpin> AsyncRead for CarriedStream<Socket> {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        context: &mut TaskContext<'_>,
-        buffer: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        let this = &mut *self;
-        this.stopping(context)?;
-        if ready!(this.poll_take_in(context))? {
-            let length = this.unread.len().min(buffer.remaining());
-            let read = this.unread.split_to(length);
-            buffer.put_slice(&read);
-        }
-        Poll::Ready(Ok(()))
-    }
-}
-
-impl<Socket: AsyncRead + AsyncWrite + Unpin> AsyncWrite for CarriedStream<Socket> {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        context: &mut TaskContext<'_>,
-        buffer: &[u8],
-    ) -> Poll<std::io::Result<usize>> {
-        if buffer.is_empty() {
-            return Poll::Ready(Ok(0));
-        }
-        let this = &mut *self;
-        this.stopping(context)?;
-        ready!(Pin::new(&mut this.socket).poll_ready(context)).map_err(std::io::Error::other)?;
-        let length = buffer.len().min(MAX_MESSAGE_LEN);
-        let frame = Message::Binary(tungstenite::Bytes::copy_from_slice(&buffer[..length]));
-        Pin::new(&mut this.socket)
-            .start_send(frame)
-            .map_err(std::io::Error::other)?;
-        Poll::Ready(Ok(length))
-    }
-
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        context: &mut TaskContext<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        let this = &mut *self;
-        this.stopping(context)?;
-        Pin::new(&mut this.socket)
-            .poll_flush(context)
-            .map_err(std::io::Error::other)
-    }
-
-    /// Closes the join, waiting on none once the Server stops.
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        context: &mut TaskContext<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        if self.stop.poll(context) {
-            return Poll::Ready(Ok(()));
-        }
-        Pin::new(&mut self.socket)
-            .poll_close(context)
-            .map_err(std::io::Error::other)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::serving::IdentityKey;
 
     fn controller(directory: &Path) -> RelayController {
-        controller_answering_within(directory, Duration::from_secs(1))
-    }
-
-    /// The same, waiting `answer_timeout` for each answer a Relay owes.
-    fn controller_answering_within(directory: &Path, answer_timeout: Duration) -> RelayController {
         let serving = ServingController::for_tests(
             directory,
             IdentityKey::new(directory),
@@ -2505,16 +1077,20 @@ mod tests {
             directory,
             WorkspacePaths::default(),
             serving,
-            RelayTimings {
-                answer_timeout,
-                retry_initial: Duration::from_millis(5),
-                retry_max: Duration::from_millis(25),
-                heartbeat_interval: Duration::from_secs(30),
-                heartbeat_timeout: Duration::from_secs(10),
-            },
+            test_timings(),
             Uuid::new_v4(),
         )
         .unwrap()
+    }
+
+    fn test_timings() -> RelayTimings {
+        RelayTimings {
+            answer_timeout: Duration::from_secs(1),
+            retry_initial: Duration::from_millis(5),
+            retry_max: Duration::from_millis(25),
+            heartbeat_interval: Duration::from_secs(30),
+            heartbeat_timeout: Duration::from_secs(10),
+        }
     }
 
     /// An address at which nothing listens, so whatever is asked of a Relay
@@ -2549,18 +1125,12 @@ mod tests {
                 directory.path(),
                 WorkspacePaths::default(),
                 serving,
-                RelayTimings {
-                    answer_timeout: Duration::from_secs(1),
-                    retry_initial: Duration::from_millis(5),
-                    retry_max: Duration::from_millis(25),
-                    heartbeat_interval: Duration::from_secs(30),
-                    heartbeat_timeout: Duration::from_secs(10),
-                },
+                test_timings(),
                 Uuid::new_v4(),
             )
             .unwrap()
         };
-        relays().identity.public_key().await.unwrap();
+        assert!(relays().client.public_key().await.is_ok());
 
         store.set_available(false);
         let relays = relays();
@@ -2578,38 +1148,45 @@ mod tests {
         );
     }
 
-    /// A removal or a login queued behind a removal holds the operations of
-    /// the entry it was asked of. Where that entry has gone and its address
-    /// has been added again by the time it runs, it is of no Relay the
-    /// Server holds: the entry added again is another, and is left alone.
-    #[tokio::test]
-    async fn what_was_asked_of_a_relay_removed_and_added_again_leaves_the_new_entry_alone() {
+    /// What the Serving layer stores on an entry is written beside the
+    /// redeeming half's own fields, as one entry, and read back as it was.
+    #[test]
+    fn what_the_serving_layer_stores_rides_on_each_entry() {
         let directory = tempfile::tempdir().unwrap();
+        let lapse = Uuid::new_v4();
+        let address = "https://relay.example.com";
+        std::fs::write(
+            directory.path().join(crate::pairing::relay::RELAYS_FILE),
+            serde_json::to_vec(&serde_json::json!([{
+                "address": address,
+                "logged_in": true,
+                "login_needed": true,
+                "serve_through": true,
+                "untold_lapse": lapse,
+            }]))
+            .unwrap(),
+        )
+        .unwrap();
         let relays = controller(directory.path());
-        let address = unanswered_address();
-        relays.add(&address).unwrap();
-        let removed_entry = relays.operations(&address).unwrap();
-        relays.remove(&address).await.expect("remove the Relay");
-        relays.add(&address).expect("add the Relay again");
+        let listed = relays.list().relays;
+        assert_eq!(listed.len(), 1);
+        assert!(listed[0].serve_through);
+        assert_eq!(listed[0].login_needed_notice, Some(lapse));
 
-        let stale_removal = relays
-            .remove_holding(address.clone(), removed_entry.clone())
-            .await;
+        relays.set_serve_through(address, false).unwrap();
+        let stored: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(directory.path().join(crate::pairing::relay::RELAYS_FILE)).unwrap(),
+        )
+        .unwrap();
         assert_eq!(
-            stale_removal.err().map(|failure| failure.code),
-            Some(SessionErrorCode::RelayNotFound)
-        );
-        let stale_login = relays
-            .log_in_holding(address.clone(), false, removed_entry)
-            .await;
-        assert_eq!(
-            stale_login.err().map(|failure| failure.code),
-            Some(SessionErrorCode::RelayNotFound)
-        );
-        assert_eq!(
-            relays.list().relays.len(),
-            1,
-            "the entry added again stands, whatever was queued on the one before"
+            stored,
+            serde_json::json!([{
+                "address": address,
+                "logged_in": true,
+                "login_needed": true,
+                "serve_through": false,
+                "untold_lapse": lapse,
+            }])
         );
     }
 
@@ -2657,10 +1234,12 @@ mod tests {
         relays.add(&address).unwrap();
         relays.set_serve_through(&address, true).unwrap();
         let serve_through = relays
+            .client
             .lock()
             .iter()
-            .find(|held| held.stored.address == address)
+            .find(|held| held.address() == address)
             .unwrap()
+            .beside
             .serve_through
             .subscribe();
         let making = serve_through.borrow().making;
@@ -2710,357 +1289,5 @@ mod tests {
             }
         });
         assert!(wish.departs_from(waiting).now_or_never().is_some());
-    }
-
-    #[test]
-    fn an_address_no_relay_is_reached_at_is_refused_as_such() {
-        for written in [
-            "",
-            "ftp://relay.example.com",
-            "https://relay.example.com/?x=1",
-        ] {
-            assert_eq!(
-                relay_address(written).err().map(|failure| failure.code),
-                Some(SessionErrorCode::InvalidRelayAddress),
-                "{written:?}"
-            );
-        }
-        assert_eq!(
-            relay_address("Relay.Example.com/").ok().as_deref(),
-            Some("https://relay.example.com")
-        );
-    }
-
-    /// A stand-in Relay that proves every Server it is reached by, under an
-    /// Account, without looking at its proof — saying it has the proof, and
-    /// holding its answer until it is released — and tells the test the
-    /// first thing each Server says once proven, `None` where it says nothing
-    /// more.
-    struct ProvingRelay {
-        address: String,
-        heard: tokio::sync::mpsc::UnboundedReceiver<Option<ServerMessage>>,
-        /// Says the stand-in has a Server's proof, and holds its answer.
-        proving: Arc<tokio::sync::Notify>,
-        /// Releases the answer held.
-        release: Arc<tokio::sync::Notify>,
-    }
-
-    async fn proving_relay() -> ProvingRelay {
-        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-            .await
-            .unwrap();
-        let address = format!("http://{}", listener.local_addr().unwrap());
-        let (heard, hearing) = tokio::sync::mpsc::unbounded_channel();
-        let proving = Arc::new(tokio::sync::Notify::new());
-        let release = Arc::new(tokio::sync::Notify::new());
-        let relay = address.clone();
-        let (proved, released) = (proving.clone(), release.clone());
-        tokio::spawn(async move {
-            while let Ok((socket, _)) = listener.accept().await {
-                let (heard, relay) = (heard.clone(), relay.clone());
-                let (proved, released) = (proved.clone(), released.clone());
-                tokio::spawn(async move {
-                    let Ok(mut socket) = tokio_tungstenite::accept_async(socket).await else {
-                        return;
-                    };
-                    let said = |message: RelayMessage| {
-                        Message::Text(serde_json::to_string(&message).unwrap().into())
-                    };
-                    let Some(ServerMessage::Hello { .. }) = next_said(&mut socket).await else {
-                        return;
-                    };
-                    let challenge = said(RelayMessage::Challenge {
-                        version: SPOKEN[0],
-                        nonce: Bytes(vec![0; relay_protocol::NONCE_LEN]),
-                        relay,
-                    });
-                    if socket.send(challenge).await.is_err() {
-                        return;
-                    }
-                    let Some(ServerMessage::Proof { .. }) = next_said(&mut socket).await else {
-                        return;
-                    };
-                    proved.notify_one();
-                    released.notified().await;
-                    let proven = said(RelayMessage::Proven {
-                        login: Some(relay_protocol::Account {
-                            provider: "scripted".to_owned(),
-                            username: "octocat".to_owned(),
-                        }),
-                    });
-                    if socket.send(proven).await.is_err() {
-                        return;
-                    }
-                    let _ = heard.send(next_said(&mut socket).await);
-                });
-            }
-        });
-        ProvingRelay {
-            address,
-            heard: hearing,
-            proving,
-            release,
-        }
-    }
-
-    /// The next thing a Server says to the stand-in Relay on `socket`, or
-    /// `None` once it says nothing more.
-    async fn next_said(
-        socket: &mut WebSocketStream<tokio::net::TcpStream>,
-    ) -> Option<ServerMessage> {
-        loop {
-            match socket.next().await {
-                Some(Ok(Message::Text(text))) => return serde_json::from_str(text.as_str()).ok(),
-                Some(Ok(Message::Ping(_) | Message::Pong(_))) => {}
-                _ => return None,
-            }
-        }
-    }
-
-    /// A connection let go of while the Relay takes the Server's proof asks
-    /// no join there, however soon the Relay answers: whether it is still
-    /// wanted is asked again just before the join would be. The Relay holds
-    /// its answer until the connection has been let go, and the Server waits
-    /// for it far longer than the test could take, so nothing but the letting
-    /// go decides what comes of the join.
-    #[tokio::test]
-    async fn no_join_is_asked_for_a_connection_no_longer_wanted_once_proven() {
-        // Waited on only where the Server or the stand-in fails.
-        const STALLED: Duration = Duration::from_secs(60);
-        let directory = tempfile::tempdir().unwrap();
-        let relays = controller_answering_within(directory.path(), Duration::from_secs(600));
-        let mut relay = proving_relay().await;
-        relays.add(&relay.address).unwrap();
-        relays
-            .lock()
-            .iter_mut()
-            .find(|held| held.stored.address == relay.address)
-            .unwrap()
-            .stored
-            .logged_in = true;
-        let joining = Joining {
-            relays: relays.relays.clone(),
-            identity: relays.identity.clone(),
-            dialer: relays.dialer.clone(),
-            timings: relays.timings,
-            carrying: relays.carrying.clone(),
-        };
-        let interest = tokio::sync::watch::Sender::new(());
-        let wanted = Wanted::while_held(&interest);
-        let address = relay.address.clone();
-        let joined =
-            tokio::spawn(async move { joining.join(&address, vec![7; 32], &wanted).await });
-
-        tokio::time::timeout(STALLED, relay.proving.notified())
-            .await
-            .expect("the Server proves itself to the stand-in");
-        drop(interest);
-        relay.release.notify_one();
-        let joined = tokio::time::timeout(STALLED, joined)
-            .await
-            .expect("the join ends once the Relay answers")
-            .expect("the join runs to its end");
-        assert_eq!(
-            joined.as_ref().err().map(std::io::Error::kind),
-            Some(std::io::ErrorKind::Interrupted),
-            "the join ends as no longer wanted, not as {:?}",
-            joined.as_ref().err()
-        );
-        let after_proof = tokio::time::timeout(STALLED, relay.heard.recv())
-            .await
-            .expect("the stand-in proved the Server")
-            .expect("the stand-in is still listening");
-        assert!(
-            !matches!(after_proof, Some(ServerMessage::Join { .. })),
-            "no join is asked for a connection nothing wants: {after_proof:?}"
-        );
-    }
-
-    /// A join over one end of a pipe, ended by `stop`; and the Relay's end.
-    async fn carried_pair(
-        stop: Arc<Stop>,
-    ) -> (
-        CarriedStream<tokio::io::DuplexStream>,
-        WebSocketStream<tokio::io::DuplexStream>,
-    ) {
-        let (ours, theirs) = tokio::io::duplex(64 * 1024);
-        (
-            CarriedStream::new(
-                WebSocketStream::from_raw_socket(ours, Role::Client, None).await,
-                stop,
-            ),
-            WebSocketStream::from_raw_socket(theirs, Role::Server, None).await,
-        )
-    }
-
-    /// The error reading `carried` ends in, once it ends within a second.
-    async fn ending(carried: &mut CarriedStream<tokio::io::DuplexStream>) -> std::io::Error {
-        use tokio::io::AsyncReadExt as _;
-        let read = tokio::time::timeout(Duration::from_secs(1), async {
-            let mut buffer = [0_u8; 64];
-            loop {
-                if let Err(error) = carried.read(&mut buffer).await {
-                    return error;
-                }
-            }
-        });
-        read.await.expect("the join ends in time")
-    }
-
-    /// What `inner` carries, taken in no more than a kilobyte at a time and
-    /// a while apart.
-    struct Slowly<S> {
-        inner: S,
-        next: Pin<Box<tokio::time::Sleep>>,
-    }
-
-    impl<S: AsyncRead + Unpin> AsyncRead for Slowly<S> {
-        fn poll_read(
-            mut self: Pin<&mut Self>,
-            context: &mut TaskContext<'_>,
-            buffer: &mut ReadBuf<'_>,
-        ) -> Poll<std::io::Result<()>> {
-            ready!(self.next.as_mut().poll(context));
-            let mut chunk = [0_u8; 1024];
-            let room = chunk.len().min(buffer.remaining());
-            let mut chunk = ReadBuf::new(&mut chunk[..room]);
-            ready!(Pin::new(&mut self.inner).poll_read(context, &mut chunk))?;
-            buffer.put_slice(chunk.filled());
-            let next = tokio::time::Instant::now() + Duration::from_millis(5);
-            self.next.as_mut().reset(next);
-            Poll::Ready(Ok(()))
-        }
-    }
-
-    impl<S: AsyncWrite + Unpin> AsyncWrite for Slowly<S> {
-        fn poll_write(
-            mut self: Pin<&mut Self>,
-            context: &mut TaskContext<'_>,
-            buffer: &[u8],
-        ) -> Poll<std::io::Result<usize>> {
-            Pin::new(&mut self.inner).poll_write(context, buffer)
-        }
-
-        fn poll_flush(
-            mut self: Pin<&mut Self>,
-            context: &mut TaskContext<'_>,
-        ) -> Poll<std::io::Result<()>> {
-            Pin::new(&mut self.inner).poll_flush(context)
-        }
-
-        fn poll_shutdown(
-            mut self: Pin<&mut Self>,
-            context: &mut TaskContext<'_>,
-        ) -> Poll<std::io::Result<()>> {
-            Pin::new(&mut self.inner).poll_shutdown(context)
-        }
-    }
-
-    /// A Relay that takes in what this Server sends slowly but steadily,
-    /// each frame taking it a while, ends no transfer: how long a frame
-    /// takes to go is no sign the Relay has stopped answering. What the
-    /// Relay takes in is counted as the bytes the frames carry, not those
-    /// framing them.
-    #[tokio::test]
-    async fn a_relay_taking_in_slowly_but_steadily_ends_no_transfer() {
-        use tokio::io::AsyncWriteExt as _;
-        const SENT: usize = 128 * 1024;
-        let (ours, theirs) = tokio::io::duplex(1024);
-        let mut carried = CarriedStream::new(
-            WebSocketStream::from_raw_socket(ours, Role::Client, None).await,
-            Arc::default(),
-        );
-        let taking_in = tokio::spawn(async move {
-            let slowly = Slowly {
-                inner: theirs,
-                next: Box::pin(tokio::time::sleep(Duration::ZERO)),
-            };
-            let mut relay = WebSocketStream::from_raw_socket(slowly, Role::Server, None).await;
-            let mut taken = 0;
-            while taken < SENT {
-                match relay.next().await {
-                    Some(Ok(Message::Binary(carried))) => taken += carried.len(),
-                    Some(Ok(_)) => {}
-                    Some(Err(_)) | None => break,
-                }
-            }
-            (relay, taken)
-        });
-
-        let sent = tokio::time::timeout(Duration::from_secs(10), async {
-            carried.write_all(&vec![7; SENT]).await?;
-            carried.flush().await
-        })
-        .await
-        .expect("the transfer finishes in time");
-        sent.expect("the transfer goes on however slowly the Relay takes it in");
-        let (_relay, taken) = taking_in.await.unwrap();
-        assert_eq!(taken, SENT, "the Relay took in all that was sent");
-    }
-
-    #[tokio::test]
-    async fn every_join_carried_ends_as_the_server_stops_and_any_carried_after() {
-        let carrying = Carrying::default();
-        let (mut carried, _relay) = carried_pair(carrying.stop()).await;
-        carrying.stop_all();
-        assert_eq!(
-            ending(&mut carried).await.kind(),
-            std::io::ErrorKind::ConnectionAborted
-        );
-        let (mut late, _relay) = carried_pair(carrying.stop()).await;
-        assert_eq!(
-            ending(&mut late).await.kind(),
-            std::io::ErrorKind::ConnectionAborted
-        );
-    }
-
-    #[test]
-    fn a_relay_on_this_machines_loopback_is_told_apart_from_one_elsewhere() {
-        for address in [
-            "http://127.0.0.1:8080",
-            "https://127.4.5.6",
-            "http://[::1]:8080",
-            "https://LocalHost",
-        ] {
-            assert!(on_loopback(address), "{address}");
-        }
-        for address in [
-            "https://relay.example.com",
-            "http://10.0.0.8:8080",
-            "https://[2001:db8::1]",
-            "https://localhost.example.com",
-        ] {
-            assert!(!on_loopback(address), "{address}");
-        }
-    }
-
-    #[test]
-    fn a_refused_certificate_is_told_apart_however_deeply_it_is_wrapped() {
-        let refused = std::io::Error::other(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            rustls::Error::InvalidCertificate(rustls::CertificateError::UnknownIssuer),
-        ));
-        assert!(untrusted_certificate(&refused));
-        assert!(!untrusted_certificate(&std::io::Error::other(
-            "connection refused"
-        )));
-        assert!(!untrusted_certificate(&std::io::Error::other(
-            rustls::Error::HandshakeNotComplete
-        )));
-    }
-
-    #[test]
-    fn a_mismatch_says_which_side_is_behind() {
-        let behind_server = mismatch(&[relay_protocol::Version::Unstable(99)], Side::Server);
-        assert!(
-            behind_server.contains("this Server is behind")
-                && behind_server.contains("unstable-99"),
-            "{behind_server}"
-        );
-        let behind_relay = mismatch(&[relay_protocol::Version::Unstable(0)], Side::Relay);
-        assert!(
-            behind_relay.contains("the Relay is behind"),
-            "{behind_relay}"
-        );
     }
 }

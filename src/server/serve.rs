@@ -17,13 +17,14 @@ use super::{
     operations::ServingNotAdopted, session_error_response, settings_mutation_response,
 };
 use crate::{
+    pairing::relay::relay_address,
     protocol::{
         InviteOfferAnswer, InviteRelays, IssueInviteRequest, ListenerState, OfferInviteRequest,
         OfferedInvite, Relay, RelayState, ServingChange, ServingPreparation, ServingSettings,
         ServingStanding, SessionErrorCode, SettingMutation, SettingsSnapshot, Way, WayLeftOut,
     },
     relay_said::RelayWithheld,
-    relays::relay_address,
+    relays::failure_status,
 };
 
 pub(super) fn routes() -> Router<AppState> {
@@ -183,7 +184,7 @@ fn chosen_relays(asked: &InviteRelays, held: &[Relay]) -> Result<ChosenRelays, R
             let mut refusals = Vec::new();
             for asked in addresses {
                 let address = relay_address(asked).map_err(|failure| {
-                    session_error_response(failure.status(), failure.code, failure.message)
+                    session_error_response(failure_status(&failure), failure.code, failure.message)
                 })?;
                 if chosen.ways.contains(&Way::Relay(address.clone())) {
                     continue;

@@ -8,8 +8,11 @@
 //! `remotes.json`, dials their ways — directly first on every new dial,
 //! through their Relays after a short head start — over the pinned-key
 //! client, and keeps up with what each tells of the Relays it Serves
-//! through. The Serving side, the offer to pair back and the short code
-//! stay in [`crate::serving`], built over this.
+//! through. The redeeming half of the Relays — their entries, the logins
+//! that form Logins there, forgetting one, and dialling, proving and joining
+//! at them — is [`relay`]. The Serving side, the offer to pair back and the
+//! short code stay in [`crate::serving`], and the Serving layer of the Relays
+//! in [`crate::relays`], built over these.
 //!
 //! Nothing here names a web framework, a Server's storage or its Settings:
 //! what crosses its seams is in the `http` crate's types, and what a Server
@@ -48,6 +51,7 @@ use crate::{
 
 mod client;
 mod redeemer;
+pub(crate) mod relay;
 
 pub use client::DirectProxies;
 #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]

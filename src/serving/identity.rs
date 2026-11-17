@@ -176,7 +176,8 @@ impl IdentityKey {
         Ok(self.material().await?.public_key().to_vec())
     }
 
-    /// What signs with the key, as the Server proves it to a Relay.
+    /// What signs with the key.
+    #[cfg(test)]
     pub(crate) async fn signer(&self) -> Result<IdentitySigner> {
         Ok(self.material().await?.signer)
     }

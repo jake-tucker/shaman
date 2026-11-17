@@ -4,7 +4,7 @@
 //! The Relay may lie, and a Login's hostname is whatever its Server reported,
 //! so this is where what a Relay lists is held to what can be passed on, each
 //! hostname having been held to what a reader can be shown as it was taken in
-//! ([`super::intake`]): an entry whose key no Server could hold, this Server's
+//! (`crate::pairing::relay`'s intake): an entry whose key no Server could hold, this Server's
 //! own, or a second of one key goes; a hostname with nothing left of it goes by
 //! the key's fingerprint; and a key is matched against the Pairings this Server holds to name a Remote, which
 //! opens nothing, so the most a lying Relay can do is mislabel a row.
