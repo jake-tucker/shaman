@@ -1941,6 +1941,15 @@ fn canonical_forward_path(uri: &axum::http::Uri) -> Option<String> {
         .map(|url| url.path().to_owned())
 }
 
+/// Whether the Serving listener lets a Peer ask `method` `uri` of this
+/// Server's Session API, judging it as it judges what a Peer sends: classed
+/// as the API rather than administration or the loopback listener's alone.
+#[cfg(test)]
+pub(crate) fn a_peer_may_ask(method: &Method, uri: &axum::http::Uri) -> bool {
+    canonical_forward_path(uri)
+        .is_some_and(|path| peer_route_class(method, &path) == PeerRouteClass::Api)
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum PeerRouteClass {
     Api,

@@ -6,8 +6,7 @@ use anyhow::{Result, anyhow};
 use tokio::sync::{mpsc, watch};
 
 use crate::protocol::{
-    Health, LifecycleState, Outlook, PROTOCOL_VERSION, RuntimeDescriptor, ServerShutdown,
-    ShutdownReason,
+    Health, LifecycleState, PROTOCOL_VERSION, RuntimeDescriptor, ServerShutdown, ShutdownReason,
 };
 
 use super::{
@@ -188,9 +187,7 @@ async fn open_catalog(
     http: &reqwest::Client,
     descriptor: &RuntimeDescriptor,
 ) -> reqwest::Result<reqwest::Response> {
-    let url = super::server_url(&descriptor.base_url, &Outlook::Local, "/v1/session-events")
-        .expect("a validated runtime descriptor builds a Server URL");
-    http.get(url)
+    http.get(format!("{}/v1/session-events", descriptor.base_url))
         .bearer_auth(&descriptor.token)
         .send()
         .await?

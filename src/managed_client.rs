@@ -6,8 +6,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context, Result, anyhow, bail};
-use serde::{Serialize, de::DeserializeOwned};
+use anyhow::{Context, Result, bail};
 use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
@@ -16,25 +15,23 @@ use tokio::{
 use crate::{
     RuntimeConfig,
     protocol::{
-        AddRelayRequest, AdmitPromptRequest, AgentSelection, AttachmentDescriptor, AttachmentId,
+        AdmitPromptRequest, AgentSelection, AttachmentDescriptor, AttachmentId,
         CheckoutStateChanged, CreateSessionRequest, Health, InterruptOutcome, InvitePreview,
         IssueInviteRequest, IssuedInvite, LifecycleState, ModelCatalog, MoveOutcome,
-        MoveSessionRequest, Outlook, Peer, PreviewInviteRequest, Prompt, PromptId,
-        RedeemInviteRequest, Relay, RelayListing, RelayLogin, RelayMachines, RelayRemoval,
-        RelayServeThroughRequest, Remote, RemoteHealth, RemoteRemoval, ResolveWorkspaceRequest,
-        RuntimeDescriptor, SESSION_ERROR_CODE_HEADER, ServerShutdown, SessionApprovalPosture,
-        SessionCatalogSnapshot, SessionCreated, SessionDeleted, SessionError, SessionErrorCode,
-        SessionId, SessionListItem, SessionMonitoringChanged, SessionRemoteSubsessionsChanged,
-        SessionSettlementChanged, SessionSnapshot, SessionStandingInputsChanged, SessionSummary,
-        SessionTitleChanged, SessionTitleProposal, SessionTitleProposalOffer, SessionUsageChanged,
-        SessionWorkingChanged, SetRemoteIconRequest, SetSessionIconRequest, SetSessionTitleRequest,
-        SetWorkspaceDescriptionRequest, SetWorkspaceIconRequest, SettingMutation, SettingsSnapshot,
-        SettleSessionRequest, ShutdownReason, SkillCatalog, SkillCatalogRequest,
-        UpdateAgentSelectionRequest, UpdateApprovalPostureRequest, ViewSessionRequest,
-        WorkspaceDescriptionChanged, WorkspaceIconChanged, WorkspaceId, WorkspaceListing,
+        MoveSessionRequest, Outlook, Peer, Prompt, PromptId, RedeemInviteRequest, Relay,
+        RelayListing, RelayLogin, RelayMachines, RelayRemoval, Remote, RemoteHealth, RemoteRemoval,
+        ResolveWorkspaceRequest, RuntimeDescriptor, ServerShutdown, SessionApprovalPosture,
+        SessionCatalogSnapshot, SessionCreated, SessionDeleted, SessionId, SessionListItem,
+        SessionMonitoringChanged, SessionRemoteSubsessionsChanged, SessionSettlementChanged,
+        SessionSnapshot, SessionStandingInputsChanged, SessionSummary, SessionTitleChanged,
+        SessionUsageChanged, SessionWorkingChanged, SettingMutation, SettingsSnapshot,
+        ShutdownReason, SkillCatalog, SkillCatalogRequest, UpdateAgentSelectionRequest,
+        UpdateApprovalPostureRequest, ViewSessionRequest, WorkspaceDescriptionChanged,
+        WorkspaceIconChanged, WorkspaceId, WorkspaceListing,
     },
 };
 
+mod administration;
 mod event_stream;
 mod keeper;
 mod launcher;
@@ -43,6 +40,7 @@ mod loopback;
 mod recovery;
 mod remote_connection;
 mod session_catalog_stream;
+mod session_commands;
 mod session_projection;
 mod session_stream;
 #[cfg(test)]
@@ -50,12 +48,14 @@ mod stream_fixture;
 mod subagent_tree_stream;
 mod transport;
 
+pub(crate) use administration::Administration;
 pub use keeper::{KeeperTimings, keep_server};
 pub use launcher::StoppedDuringLaunch;
 #[doc(hidden)]
 pub use launcher::launch_detached;
 pub(crate) use recovery::RecoveryBackoff;
 pub use session_catalog_stream::SessionCatalogSubscription;
+pub(crate) use session_commands::{SessionCommandTimings, SessionCommands};
 pub(crate) use session_projection::SessionProjection;
 pub(crate) use session_stream::SESSION_EVENT_CAPACITY;
 pub use session_stream::{SessionEvent, SessionStreamError, SessionSubscription};
@@ -411,22 +411,12 @@ enum Upkeep {
     },
 }
 
-#[derive(Clone)]
-pub(crate) struct SessionCommandClient {
-    http: reqwest::Client,
-    descriptor: watch::Receiver<RuntimeDescriptor>,
-    outlook: Outlook,
-    initial_recovery_backoff: Duration,
-    max_recovery_backoff: Duration,
-    attachment_fetch_timeout: Duration,
-}
-
 /// Commands addressed to the one Server a Client's Outlook names. Remote
 /// requests are encoded beneath the local Server's explicit proxy route; the
 /// caller never needs to construct or understand that route.
 #[derive(Clone)]
 pub struct OutlookClient {
-    commands: SessionCommandClient,
+    commands: SessionCommands,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -631,29 +621,29 @@ impl ManagedClient {
     /// effective-settings snapshot the edit leaves in force, which every
     /// attached client — this one included — also receives on its event stream.
     pub async fn mutate_setting(&self, mutation: SettingMutation) -> Result<SettingsSnapshot> {
-        self.session_commands().mutate_setting(mutation).await
+        self.administration().mutate_setting(mutation).await
     }
 
     /// Marks the Client's own Server onboarded, whichever way the Outlook is
     /// turned. Every attached Client — this one included — hears
     /// [`ManagedEvent::Onboarded`] the first time it is.
     pub async fn mark_onboarded(&self) -> Result<()> {
-        self.session_commands().mark_onboarded().await
+        self.administration().mark_onboarded().await
     }
 
     pub async fn issue_invite(&self, request: IssueInviteRequest) -> Result<IssuedInvite> {
-        self.session_commands().issue_invite(request).await
+        self.administration().issue_invite(request).await
     }
 
     /// Makes the Client's own Server ready to issue an Invite: Serving turned on
     /// where it was off, or asked for again where it could not start.
     pub async fn prepare_serving(&self) -> Result<crate::protocol::ServingPreparation> {
-        self.session_commands().prepare_serving().await
+        self.administration().prepare_serving().await
     }
 
     /// Whether the Client's own Server is Serving, changing nothing.
     pub async fn serving_standing(&self) -> Result<crate::protocol::ServingStanding> {
-        self.session_commands().serving_standing().await
+        self.administration().serving_standing().await
     }
 
     /// An Invite from the Client's own Server offering the kinds of way asked
@@ -662,13 +652,13 @@ impl ManagedClient {
         &self,
         request: crate::protocol::OfferInviteRequest,
     ) -> Result<crate::protocol::InviteOfferAnswer> {
-        self.session_commands().offer_invite(request).await
+        self.administration().offer_invite(request).await
     }
 
     /// A fresh short code for the Invite that stands, leaving that Invite as
     /// it is.
     pub async fn new_short_code(&self) -> Result<crate::protocol::IssuedShortCode> {
-        self.session_commands().new_short_code().await
+        self.administration().new_short_code().await
     }
 
     /// Asks a machine chosen from a Relay's list for its Invite by its code.
@@ -676,53 +666,53 @@ impl ManagedClient {
         &self,
         request: crate::protocol::FetchShortInviteRequest,
     ) -> Result<crate::protocol::DeliveredInvite> {
-        self.session_commands().fetch_short_invite(request).await
+        self.administration().fetch_short_invite(request).await
     }
 
     pub async fn preview_invite(
         &self,
         invite: impl Into<crate::protocol::InviteText>,
     ) -> Result<InvitePreview> {
-        self.session_commands().preview_invite(invite.into()).await
+        self.administration().preview_invite(invite.into()).await
     }
 
     pub async fn redeem_invite(&self, request: RedeemInviteRequest) -> Result<Remote> {
-        self.session_commands().redeem_invite(request).await
+        self.administration().redeem_invite(request).await
     }
 
     pub async fn list_peers(&self) -> Result<Vec<Peer>> {
-        self.session_commands().list_peers().await
+        self.administration().list_peers().await
     }
 
     pub async fn list_remotes(&self) -> Result<Vec<Remote>> {
-        self.session_commands().list_remotes().await
+        self.administration().list_remotes().await
     }
 
     pub async fn probe_remote(&self, name: &str) -> Result<RemoteHealth> {
-        self.session_commands().probe_remote(name).await
+        self.administration().probe_remote(name).await
     }
 
     pub async fn remove_peer(&self, peer_id: &str) -> Result<()> {
-        self.session_commands().remove_peer(peer_id).await
+        self.administration().remove_peer(peer_id).await
     }
 
     pub async fn remove_remote(&self, name: &str) -> Result<RemoteRemoval> {
-        self.session_commands().remove_remote(name).await
+        self.administration().remove_remote(name).await
     }
 
     pub async fn set_remote_icon(&self, name: &str, icon: &str) -> Result<()> {
-        self.session_commands().set_remote_icon(name, icon).await
+        self.administration().set_remote_icon(name, icon).await
     }
 
     /// The Relays the Client's own Server holds entries for, whichever way
     /// the Outlook is turned, as they stand at the listing's revision.
     pub async fn list_relays(&self) -> Result<RelayListing> {
-        self.session_commands().list_relays().await
+        self.administration().list_relays().await
     }
 
     /// The offers to pair back the Client's own Server holds and has made.
     pub async fn list_offers(&self) -> Result<crate::protocol::PairBackOffers> {
-        self.session_commands().list_offers().await
+        self.administration().list_offers().await
     }
 
     /// Answers an offer the Client's own Server holds, as its user.
@@ -731,21 +721,19 @@ impl ManagedClient {
         id: uuid::Uuid,
         answer: crate::protocol::AnswerOfferRequest,
     ) -> Result<()> {
-        self.session_commands().answer_offer(id, answer).await
+        self.administration().answer_offer(id, answer).await
     }
 
     /// Withdraws an offer the Client's own Server made, as its user.
     pub async fn withdraw_offer(&self, id: uuid::Uuid) -> Result<()> {
-        self.session_commands().withdraw_offer(id).await
+        self.administration().withdraw_offer(id).await
     }
 
     /// Claims of the Client's own Server, as the Client run `claimant`, the
     /// Notice of the offer `id`: whether it gave this Client that Notice, to
     /// raise, as it gives it the first Client to claim it and no other.
     pub async fn claim_offer_notice(&self, id: uuid::Uuid, claimant: uuid::Uuid) -> Result<bool> {
-        self.session_commands()
-            .claim_offer_notice(id, claimant)
-            .await
+        self.administration().claim_offer_notice(id, claimant).await
     }
 
     /// Claims of the Client's own Server, as the Client run `claimant`, the
@@ -758,20 +746,20 @@ impl ManagedClient {
         lapse: uuid::Uuid,
         claimant: uuid::Uuid,
     ) -> Result<bool> {
-        self.session_commands()
+        self.administration()
             .claim_relay_login_needed_notice(address, lapse, claimant)
             .await
     }
 
     pub async fn add_relay(&self, address: impl Into<String>) -> Result<Relay> {
-        self.session_commands().add_relay(address.into()).await
+        self.administration().add_relay(address.into()).await
     }
 
     /// Has the Client's own Server ask the Relay at `address` which other
     /// machines are logged in there, answering how it answered within the
     /// Server's bound on that.
     pub async fn list_relay_machines(&self, address: &str) -> Result<RelayMachines> {
-        self.session_commands().list_relay_machines(address).await
+        self.administration().list_relay_machines(address).await
     }
 
     /// A login at the Relay at `address`, as a reader asks for one where a Login
@@ -794,19 +782,17 @@ impl ManagedClient {
         address: &str,
         afresh: bool,
     ) -> Result<crate::protocol::RelayLoginLead> {
-        self.session_commands()
-            .log_in_at_relay(address, afresh)
-            .await
+        self.administration().log_in_at_relay(address, afresh).await
     }
 
     /// Waits for the latest login begun at the Relay at `address` to end,
     /// answering how it did.
     pub async fn follow_relay_login(&self, address: &str) -> Result<RelayLogin> {
-        self.session_commands().follow_relay_login(address).await
+        self.administration().follow_relay_login(address).await
     }
 
     pub async fn remove_relay(&self, address: &str) -> Result<RelayRemoval> {
-        self.session_commands().remove_relay(address).await
+        self.administration().remove_relay(address).await
     }
 
     /// Chooses whether the Client's own Server Serves through the Relay at
@@ -816,7 +802,7 @@ impl ManagedClient {
         address: &str,
         serve_through: bool,
     ) -> Result<Relay> {
-        self.session_commands()
+        self.administration()
             .set_relay_serve_through(address, serve_through)
             .await
     }
@@ -1058,19 +1044,31 @@ impl ManagedClient {
         self.session_commands().subscribe_subagent_tree(session_id)
     }
 
-    pub(crate) fn session_commands(&self) -> SessionCommandClient {
+    /// The commands a Peer may ask, sent to this Client's own Server.
+    pub(crate) fn session_commands(&self) -> SessionCommands {
         self.session_commands_for(Outlook::Local)
     }
 
-    pub(crate) fn session_commands_for(&self, outlook: Outlook) -> SessionCommandClient {
-        SessionCommandClient {
-            http: self.http.clone(),
-            descriptor: self.descriptor.clone(),
-            outlook,
-            initial_recovery_backoff: self.initial_recovery_backoff,
-            max_recovery_backoff: self.max_recovery_backoff,
-            attachment_fetch_timeout: self.attachment_fetch_timeout,
-        }
+    /// The commands a Peer may ask, sent to the Server `outlook` names over
+    /// a loopback transport through this Client's own Server.
+    pub(crate) fn session_commands_for(&self, outlook: Outlook) -> SessionCommands {
+        SessionCommands::new(
+            std::sync::Arc::new(loopback::LoopbackTransport::new(
+                self.http.clone(),
+                self.descriptor.clone(),
+                outlook,
+            )),
+            SessionCommandTimings {
+                initial_recovery_backoff: self.initial_recovery_backoff,
+                max_recovery_backoff: self.max_recovery_backoff,
+                attachment_fetch_timeout: self.attachment_fetch_timeout,
+            },
+        )
+    }
+
+    /// The administration of this Client's own Server.
+    pub(crate) fn administration(&self) -> Administration {
+        Administration::new(self.http.clone(), self.descriptor.clone())
     }
 }
 
@@ -1386,1301 +1384,6 @@ impl OutlookClient {
     }
 }
 
-impl SessionCommandClient {
-    pub(crate) fn recovery_backoff(&self) -> (Duration, Duration) {
-        (self.initial_recovery_backoff, self.max_recovery_backoff)
-    }
-
-    /// The transport to this Outlook's work through the local Server.
-    fn transport(&self) -> loopback::LoopbackTransport {
-        loopback::LoopbackTransport::new(
-            self.http.clone(),
-            self.descriptor.clone(),
-            self.outlook.clone(),
-        )
-    }
-
-    pub(crate) fn subscribe_catalog(&self) -> SessionCatalogSubscription {
-        SessionCatalogSubscription::open_attached(
-            std::sync::Arc::new(self.transport()),
-            self.initial_recovery_backoff,
-            self.max_recovery_backoff,
-        )
-    }
-
-    pub(crate) fn subscribe_subagent_tree(
-        &self,
-        session_id: SessionId,
-    ) -> SubagentTreeSubscription {
-        SubagentTreeSubscription::open(
-            std::sync::Arc::new(self.transport()),
-            session_id,
-            self.initial_recovery_backoff,
-            self.max_recovery_backoff,
-        )
-    }
-
-    pub(crate) async fn resolve_workspace(
-        &self,
-        request: ResolveWorkspaceRequest,
-    ) -> Result<crate::protocol::ResolvedWorkspace> {
-        self.post_session_command("/v1/workspaces/resolve", &request, "Workspace resolution")
-            .await
-    }
-
-    pub(crate) async fn list_directory(
-        &self,
-        request: crate::protocol::ListDirectoryRequest,
-    ) -> Result<crate::protocol::DirectoryListing> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .get(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/workspaces/directory",
-            )?)
-            .bearer_auth(&descriptor.token)
-            .query(&request)
-            .send()
-            .await
-            .context("send directory listing")?;
-        decode_api_response(response, "Directory listing").await
-    }
-
-    /// The Usage Metrics of the Server this Outlook names. The query rides
-    /// the body, as the Server's route asks.
-    pub(crate) async fn usage_metrics(
-        &self,
-        query: &crate::protocol::UsageMetricsQuery,
-    ) -> Result<crate::protocol::UsageMetricsReport> {
-        self.post_session_command("/v1/usage-metrics", query, "Usage Metrics read")
-            .await
-    }
-
-    /// The Insights of the Server this Outlook names, asked as its Usage
-    /// Metrics are.
-    pub(crate) async fn insights(
-        &self,
-        query: &crate::protocol::InsightsQuery,
-    ) -> Result<crate::protocol::InsightsReport> {
-        self.post_session_command("/v1/usage-metrics/insights", query, "Insights read")
-            .await
-    }
-
-    /// The Sidekick Workspace of the Server this Outlook names, which that
-    /// Server makes the first time it is asked for.
-    pub(crate) async fn sidekick_workspace(&self) -> Result<crate::protocol::ResolvedWorkspace> {
-        self.post_session_command_without_body("/v1/workspaces/sidekick", "Sidekick Workspace")
-            .await
-    }
-
-    pub(crate) async fn list_skills(&self, request: SkillCatalogRequest) -> Result<SkillCatalog> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/skills",
-            )?)
-            .bearer_auth(&descriptor.token)
-            .json(&request)
-            .send()
-            .await
-            .context("send Skill Catalog listing")?;
-        decode_api_response(response, "Skill Catalog listing").await
-    }
-
-    pub(crate) async fn refresh_skills(
-        &self,
-        request: SkillCatalogRequest,
-    ) -> Result<SkillCatalog> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/skills/refresh",
-            )?)
-            .bearer_auth(&descriptor.token)
-            .json(&request)
-            .send()
-            .await
-            .context("send Skill Catalog refresh")?;
-        decode_api_response(response, "Skill Catalog refresh").await
-    }
-
-    pub(crate) async fn list_models(&self) -> Result<ModelCatalog> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .get(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/models",
-            )?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Model listing")?;
-        decode_api_response(response, "Model listing").await
-    }
-
-    pub(crate) async fn refresh_models(&self) -> Result<ModelCatalog> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/models/refresh",
-            )?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Model catalog refresh")?;
-        decode_api_response(response, "Model catalog refresh").await
-    }
-
-    pub(crate) async fn warm_models(&self) -> Result<()> {
-        let descriptor = self.descriptor.borrow().clone();
-        self.http
-            .post(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/models/warm",
-            )?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Model catalog warm-up")?
-            .error_for_status()
-            .context("Model catalog warm-up")?;
-        Ok(())
-    }
-    pub(crate) async fn preview_checkout_removal(
-        &self,
-        target: crate::protocol::CheckoutRemovalTarget,
-    ) -> Result<crate::protocol::CheckoutRemovalPreview> {
-        self.post_session_command(
-            "/v1/checkouts/removal-preview",
-            &target,
-            "Worktree removal preview",
-        )
-        .await
-    }
-    pub(crate) async fn remove_checkout(
-        &self,
-        request: crate::protocol::RemoveCheckoutRequest,
-    ) -> Result<crate::protocol::RemoveCheckoutResult> {
-        self.post_session_command("/v1/checkouts/remove", &request, "Worktree removal")
-            .await
-    }
-    pub(crate) async fn prepare_checkout(
-        &self,
-        request: crate::protocol::PrepareCheckoutRequest,
-    ) -> Result<crate::protocol::PrepareCheckoutResult> {
-        self.post_session_command("/v1/checkouts/prepare", &request, "Worktree preparation")
-            .await
-    }
-
-    pub(crate) async fn create_session(
-        &self,
-        request: CreateSessionRequest,
-    ) -> Result<SessionSnapshot> {
-        self.post_session_command("/v1/sessions", &request, "Session creation")
-            .await
-    }
-
-    pub(crate) async fn admit_prompt(
-        &self,
-        session_id: SessionId,
-        request: AdmitPromptRequest,
-    ) -> Result<Prompt> {
-        self.post_session_command(
-            &format!("/v1/sessions/{session_id}/prompts"),
-            &request,
-            "Prompt admission",
-        )
-        .await
-    }
-
-    /// Runs one Attachment request, `action` naming it, within the client's
-    /// Attachment deadline. The deadline covers the whole request — its
-    /// headers and all of its body — so a Server that takes it and then
-    /// stalls fails it rather than leaving it pending for good.
-    async fn within_attachment_deadline<T>(
-        &self,
-        action: &str,
-        request: impl Future<Output = Result<T>>,
-    ) -> Result<T> {
-        let deadline = self.attachment_fetch_timeout;
-        tokio::time::timeout(deadline, request)
-            .await
-            .unwrap_or_else(|_| Err(anyhow!("{action} timed out after {deadline:?}")))
-    }
-
-    /// Uploads an image's PNG bytes as an Attachment on the Server this
-    /// client's Outlook names, answering with what it was stored as. A
-    /// refusal is the Server's own `SessionError`, whose message a client can
-    /// show as it stands.
-    pub(crate) async fn upload_attachment(&self, png: Vec<u8>) -> Result<AttachmentDescriptor> {
-        self.within_attachment_deadline("Attachment upload", async {
-            let descriptor = self.descriptor.borrow().clone();
-            let response = self
-                .http
-                .post(server_url(
-                    &descriptor.base_url,
-                    &self.outlook,
-                    "/v1/attachments",
-                )?)
-                .bearer_auth(&descriptor.token)
-                .header(reqwest::header::CONTENT_TYPE, "image/png")
-                .body(png)
-                .send()
-                .await
-                .context("send Attachment upload")?;
-            decode_api_response(response, "Attachment upload").await
-        })
-        .await
-    }
-
-    /// Fetches a stored Attachment's bytes, with the type they were stored as.
-    /// A body past the 5 MiB an Attachment may be is refused as it arrives,
-    /// rather than read to its end: nothing the Server admitted is that large,
-    /// so nothing that large is taken for an Attachment.
-    pub(crate) async fn fetch_attachment(
-        &self,
-        attachment_id: &AttachmentId,
-    ) -> Result<(String, Vec<u8>)> {
-        self.within_attachment_deadline("Attachment fetch", self.read_attachment(attachment_id))
-            .await
-    }
-
-    async fn read_attachment(&self, attachment_id: &AttachmentId) -> Result<(String, Vec<u8>)> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .get(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                &format!("/v1/attachments/{attachment_id}"),
-            )?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Attachment fetch")?;
-        if !response.status().is_success() {
-            return Err(decode_api_error(response, "Attachment fetch").await);
-        }
-        let mime_type = response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .ok_or_else(|| anyhow!("Attachment fetch answered without a content type"))?
-            .to_owned();
-        let limit = crate::attachments::MAX_ATTACHMENT_BYTES;
-        if response
-            .content_length()
-            .is_some_and(|length| length > limit as u64)
-        {
-            bail!("the fetched Attachment is larger than an Attachment may be");
-        }
-        let mut response = response;
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .context("read the fetched Attachment")?
-        {
-            if bytes.len() + chunk.len() > limit {
-                bail!("the fetched Attachment is larger than an Attachment may be");
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        Ok((mime_type, bytes))
-    }
-
-    /// Whether the Server stores an Attachment under `attachment_id`, asked
-    /// with a `HEAD` of its fetch route so none of its bytes are sent. Only a
-    /// Not Found whose code header says `attachment_not_found` means it is
-    /// not stored there: any other refusal, a Remote this Server no longer
-    /// knows among them, is an error, so the Attachment is not taken for gone.
-    pub(crate) async fn attachment_exists(&self, attachment_id: &AttachmentId) -> Result<bool> {
-        let response = self
-            .within_attachment_deadline("Attachment check", async {
-                let descriptor = self.descriptor.borrow().clone();
-                self.http
-                    .head(server_url(
-                        &descriptor.base_url,
-                        &self.outlook,
-                        &format!("/v1/attachments/{attachment_id}"),
-                    )?)
-                    .bearer_auth(&descriptor.token)
-                    .send()
-                    .await
-                    .context("send Attachment check")
-            })
-            .await?;
-        let status = response.status();
-        if status.is_success() {
-            return Ok(true);
-        }
-        let code = response
-            .headers()
-            .get(SESSION_ERROR_CODE_HEADER)
-            .and_then(|code| code.to_str().ok())
-            .unwrap_or("none");
-        if status == reqwest::StatusCode::NOT_FOUND
-            && code == SessionErrorCode::AttachmentNotFound.wire_name()
-        {
-            return Ok(false);
-        }
-        Err(anyhow!(
-            "Attachment check failed with HTTP {status} (error code {code})"
-        ))
-    }
-
-    pub(crate) async fn update_agent_selection(
-        &self,
-        session_id: SessionId,
-        request: UpdateAgentSelectionRequest,
-    ) -> Result<AgentSelection> {
-        self.post_session_command(
-            &format!("/v1/sessions/{session_id}/agent-selection"),
-            &request,
-            "Agent Selection update",
-        )
-        .await
-    }
-
-    pub(crate) async fn update_approval_posture(
-        &self,
-        session_id: SessionId,
-        request: UpdateApprovalPostureRequest,
-    ) -> Result<SessionApprovalPosture> {
-        self.post_session_command(
-            &format!("/v1/sessions/{session_id}/approval-posture"),
-            &request,
-            "Approval Posture update",
-        )
-        .await
-    }
-
-    pub(crate) async fn confirm_landing_agent_selection(
-        &self,
-        selection: AgentSelection,
-    ) -> Result<AgentSelection> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .put(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/landing-agent-selection",
-            )?)
-            .bearer_auth(&descriptor.token)
-            .json(&selection)
-            .send()
-            .await
-            .context("send landing Agent Selection update command")?;
-        decode_api_response(response, "Landing Agent Selection update").await
-    }
-
-    pub(crate) async fn promote_prompt(
-        &self,
-        session_id: SessionId,
-        prompt_id: PromptId,
-    ) -> Result<Prompt> {
-        self.post_session_command_without_body(
-            &format!("/v1/sessions/{session_id}/prompts/{prompt_id}/promote"),
-            "Prompt promotion",
-        )
-        .await
-    }
-
-    pub(crate) async fn cancel_prompt(
-        &self,
-        session_id: SessionId,
-        prompt_id: PromptId,
-    ) -> Result<Prompt> {
-        self.post_session_command_without_body(
-            &format!("/v1/sessions/{session_id}/prompts/{prompt_id}/cancel"),
-            "Prompt cancellation",
-        )
-        .await
-    }
-
-    pub(crate) async fn submit_questionnaire(
-        &self,
-        session_id: SessionId,
-        id: crate::protocol::QuestionnaireId,
-        submission: crate::protocol::QuestionnaireSubmission,
-    ) -> Result<()> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                &format!("/v1/sessions/{session_id}/questionnaires/{id}"),
-            )?)
-            .bearer_auth(&descriptor.token)
-            .json(&submission)
-            .send()
-            .await
-            .context("send Questionnaire submission")?;
-        decode_empty_api_response(response, "Questionnaire submission").await
-    }
-
-    pub(crate) async fn submit_decision(
-        &self,
-        session_id: SessionId,
-        id: crate::protocol::ApprovalId,
-        decision: crate::protocol::Decision,
-    ) -> Result<()> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                &format!("/v1/sessions/{session_id}/approvals/{id}/decision"),
-            )?)
-            .bearer_auth(&descriptor.token)
-            .json(&decision)
-            .send()
-            .await
-            .context("send Approval Decision")?;
-        decode_empty_api_response(response, "Approval Decision").await
-    }
-
-    pub(crate) async fn interrupt_session(&self, session_id: SessionId) -> Result<()> {
-        self.interrupt_session_reporting_outcome(session_id)
-            .await
-            .map(|_| ())
-    }
-
-    pub(crate) async fn compact_session(
-        &self,
-        session_id: SessionId,
-        request: crate::protocol::CompactSessionRequest,
-    ) -> Result<()> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                &format!("/v1/sessions/{session_id}/compact"),
-            )?)
-            .bearer_auth(&descriptor.token)
-            .json(&request)
-            .send()
-            .await
-            .context("send Session compaction request")?;
-        decode_empty_api_response(response, "Session compaction").await
-    }
-
-    /// Interrupts the Session and reports what the interrupt did, so a client
-    /// that withdrew an undelivered Prompt can return its text to the composer
-    /// it was submitted from (ADR 0024). Stopping work answers with no body at
-    /// all, which is [`InterruptOutcome::StoppedWork`].
-    pub(crate) async fn interrupt_session_reporting_outcome(
-        &self,
-        session_id: SessionId,
-    ) -> Result<InterruptOutcome> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                &format!("/v1/sessions/{session_id}/interrupt"),
-            )?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Session interruption command")?;
-        if !response.status().is_success() {
-            return Err(decode_api_error(response, "Session interruption").await);
-        }
-        let body = response
-            .bytes()
-            .await
-            .context("read Session interruption outcome")?;
-        if body.is_empty() {
-            return Ok(InterruptOutcome::StoppedWork);
-        }
-        serde_json::from_slice(&body).context("decode Session interruption outcome")
-    }
-
-    async fn post_session_command<RequestBody, ResponseBody>(
-        &self,
-        path: &str,
-        request: &RequestBody,
-        operation: &str,
-    ) -> Result<ResponseBody>
-    where
-        RequestBody: Serialize + ?Sized,
-        ResponseBody: DeserializeOwned,
-    {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(server_url(&descriptor.base_url, &self.outlook, path)?)
-            .bearer_auth(&descriptor.token)
-            .json(request)
-            .send()
-            .await
-            .with_context(|| format!("send {operation} command"))?;
-        decode_api_response(response, operation).await
-    }
-
-    async fn post_session_command_without_body<ResponseBody>(
-        &self,
-        path: &str,
-        operation: &str,
-    ) -> Result<ResponseBody>
-    where
-        ResponseBody: DeserializeOwned,
-    {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(server_url(&descriptor.base_url, &self.outlook, path)?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .with_context(|| format!("send {operation} command"))?;
-        decode_api_response(response, operation).await
-    }
-
-    pub(crate) async fn mutate_setting(
-        &self,
-        mutation: SettingMutation,
-    ) -> Result<SettingsSnapshot> {
-        self.post_session_command("/v1/settings", &mutation, "Setting mutation")
-            .await
-    }
-
-    pub(crate) async fn mark_onboarded(&self) -> Result<()> {
-        let descriptor = self.descriptor.borrow().clone();
-        self.http
-            .put(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/onboarded",
-            )?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send the mark that this Server is onboarded")?
-            .error_for_status()
-            .context("mark this Server onboarded")?;
-        Ok(())
-    }
-
-    pub(crate) async fn issue_invite(&self, request: IssueInviteRequest) -> Result<IssuedInvite> {
-        self.post_session_command("/v1/pairing/invites", &request, "Invite issuance")
-            .await
-    }
-
-    pub(crate) async fn prepare_serving(&self) -> Result<crate::protocol::ServingPreparation> {
-        self.post_session_command_without_body("/v1/pairing/serving", "Serving preparation")
-            .await
-    }
-
-    pub(crate) async fn serving_standing(&self) -> Result<crate::protocol::ServingStanding> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .get(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/pairing/serving",
-            )?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("ask how Serving stands")?;
-        decode_api_response(response, "Serving standing").await
-    }
-
-    pub(crate) async fn offer_invite(
-        &self,
-        request: crate::protocol::OfferInviteRequest,
-    ) -> Result<crate::protocol::InviteOfferAnswer> {
-        self.post_session_command("/v1/pairing/invites/offered", &request, "Invite issuance")
-            .await
-    }
-
-    pub(crate) async fn new_short_code(&self) -> Result<crate::protocol::IssuedShortCode> {
-        self.post_session_command_without_body("/v1/pairing/invites/short-code", "New short code")
-            .await
-    }
-
-    pub(crate) async fn fetch_short_invite(
-        &self,
-        request: crate::protocol::FetchShortInviteRequest,
-    ) -> Result<crate::protocol::DeliveredInvite> {
-        self.post_session_command(
-            "/v1/pairing/invites/delivery",
-            &request,
-            "Short Invite delivery",
-        )
-        .await
-    }
-
-    pub(crate) async fn preview_invite(
-        &self,
-        invite: crate::protocol::InviteText,
-    ) -> Result<InvitePreview> {
-        self.post_session_command(
-            "/v1/pairing/invites/preview",
-            &PreviewInviteRequest { invite },
-            "Invite preview",
-        )
-        .await
-    }
-
-    pub(crate) async fn redeem_invite(&self, request: RedeemInviteRequest) -> Result<Remote> {
-        self.post_session_command("/v1/pairing/remotes", &request, "Invite redemption")
-            .await
-    }
-
-    pub(crate) async fn list_peers(&self) -> Result<Vec<Peer>> {
-        self.get_pairing_resource("/v1/pairing/peers", "Peer listing")
-            .await
-    }
-
-    pub(crate) async fn list_remotes(&self) -> Result<Vec<Remote>> {
-        self.get_pairing_resource("/v1/pairing/remotes", "Remote listing")
-            .await
-    }
-
-    pub(crate) async fn probe_remote(&self, name: &str) -> Result<RemoteHealth> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(remote_probe_url(&descriptor.base_url, name)?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Remote probe command")?;
-        decode_api_response(response, "Remote probe").await
-    }
-
-    pub(crate) async fn remove_peer(&self, peer_id: &str) -> Result<()> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .delete(format!(
-                "{}/v1/pairing/peers/{peer_id}",
-                descriptor.base_url
-            ))
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Peer removal")?;
-        decode_empty_api_response(response, "Peer removal").await
-    }
-
-    pub(crate) async fn remove_remote(&self, name: &str) -> Result<RemoteRemoval> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .delete(remote_removal_url(&descriptor.base_url, name)?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Remote removal")?;
-        decode_api_response(response, "Remote removal").await
-    }
-
-    /// Sets the Icon the user chose for the Remote `name` on the Client's own
-    /// Server, which keeps it beside the Remote's name.
-    pub(crate) async fn set_remote_icon(&self, name: &str, icon: &str) -> Result<()> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(remote_icon_url(&descriptor.base_url, name)?)
-            .bearer_auth(&descriptor.token)
-            .json(&SetRemoteIconRequest {
-                icon: icon.to_owned(),
-            })
-            .send()
-            .await
-            .context("send Remote Icon command")?;
-        decode_empty_api_response(response, "Remote Icon").await
-    }
-
-    pub(crate) async fn list_offers(&self) -> Result<crate::protocol::PairBackOffers> {
-        self.get_pairing_resource("/v1/pairing/offers", "Offer listing")
-            .await
-    }
-
-    pub(crate) async fn answer_offer(
-        &self,
-        id: uuid::Uuid,
-        answer: crate::protocol::AnswerOfferRequest,
-    ) -> Result<()> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(format!(
-                "{}/v1/pairing/offers/{id}/answer",
-                descriptor.base_url
-            ))
-            .bearer_auth(&descriptor.token)
-            .json(&answer)
-            .send()
-            .await
-            .context("send Offer answer")?;
-        decode_empty_api_response(response, "Offer answer").await
-    }
-
-    pub(crate) async fn withdraw_offer(&self, id: uuid::Uuid) -> Result<()> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .delete(format!("{}/v1/pairing/offers/{id}", descriptor.base_url))
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Offer withdrawal")?;
-        decode_empty_api_response(response, "Offer withdrawal").await
-    }
-
-    pub(crate) async fn claim_offer_notice(
-        &self,
-        id: uuid::Uuid,
-        claimant: uuid::Uuid,
-    ) -> Result<bool> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(format!(
-                "{}/v1/pairing/offers/{id}/notice",
-                descriptor.base_url
-            ))
-            .bearer_auth(&descriptor.token)
-            .json(&crate::protocol::OfferNoticeClaim { claimant })
-            .send()
-            .await
-            .context("send Offer Notice claim")?;
-        let claim: crate::protocol::OfferNoticeClaimed =
-            decode_api_response(response, "Offer Notice claim").await?;
-        Ok(claim.claimed)
-    }
-
-    pub(crate) async fn list_relays(&self) -> Result<RelayListing> {
-        self.get_pairing_resource("/v1/relays", "Relay listing")
-            .await
-    }
-
-    pub(crate) async fn claim_relay_login_needed_notice(
-        &self,
-        address: &str,
-        lapse: uuid::Uuid,
-        claimant: uuid::Uuid,
-    ) -> Result<bool> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(relay_url(
-                &descriptor.base_url,
-                &[address, "login-needed-notice"],
-            )?)
-            .bearer_auth(&descriptor.token)
-            .json(&crate::protocol::RelayLoginNeededNotice { lapse, claimant })
-            .send()
-            .await
-            .context("send Relay login-needed Notice claim")?;
-        let claim: crate::protocol::RelayLoginNeededNoticeClaim =
-            decode_api_response(response, "Relay login-needed Notice claim").await?;
-        Ok(claim.claimed)
-    }
-
-    pub(crate) async fn add_relay(&self, address: String) -> Result<Relay> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(relay_url(&descriptor.base_url, &[])?)
-            .bearer_auth(&descriptor.token)
-            .json(&AddRelayRequest { address })
-            .send()
-            .await
-            .context("send Relay addition")?;
-        decode_api_response(response, "Relay addition").await
-    }
-
-    pub(crate) async fn list_relay_machines(&self, address: &str) -> Result<RelayMachines> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .get(relay_url(&descriptor.base_url, &[address, "machines"])?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Relay machine listing")?;
-        decode_api_response(response, "Relay machine listing").await
-    }
-
-    pub(crate) async fn log_in_at_relay(
-        &self,
-        address: &str,
-        afresh: bool,
-    ) -> Result<crate::protocol::RelayLoginLead> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .put(relay_url(&descriptor.base_url, &[address, "login"])?)
-            .bearer_auth(&descriptor.token)
-            .json(&crate::protocol::RelayLoginRequest { afresh })
-            .send()
-            .await
-            .context("ask for a Relay login")?;
-        decode_api_response(response, "Relay login").await
-    }
-
-    pub(crate) async fn follow_relay_login(&self, address: &str) -> Result<RelayLogin> {
-        use eventsource_stream::Eventsource;
-        use futures_util::StreamExt;
-
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .get(relay_url(&descriptor.base_url, &[address, "login"])?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("follow Relay login")?;
-        if !response.status().is_success() {
-            return Err(decode_api_error(response, "Relay login").await);
-        }
-        let mut events = response.bytes_stream().eventsource();
-        while let Some(event) = events.next().await {
-            let event = event.context("read Relay login progress")?;
-            if event.event != crate::protocol::RELAY_LOGIN_EVENT {
-                continue;
-            }
-            let login = serde_json::from_str::<RelayLogin>(&event.data)
-                .context("decode Relay login progress")?;
-            if login.outcome.is_settled() {
-                return Ok(login);
-            }
-        }
-        bail!("the Relay login was given up before it ended")
-    }
-
-    pub(crate) async fn set_relay_serve_through(
-        &self,
-        address: &str,
-        serve_through: bool,
-    ) -> Result<Relay> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .put(relay_url(
-                &descriptor.base_url,
-                &[address, "serve-through"],
-            )?)
-            .bearer_auth(&descriptor.token)
-            .json(&RelayServeThroughRequest { serve_through })
-            .send()
-            .await
-            .context("send Relay Serve-through choice")?;
-        decode_api_response(response, "Relay Serve-through choice").await
-    }
-
-    pub(crate) async fn remove_relay(&self, address: &str) -> Result<RelayRemoval> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .delete(relay_url(&descriptor.base_url, &[address])?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Relay removal")?;
-        decode_api_response(response, "Relay removal").await
-    }
-
-    async fn get_pairing_resource<ResponseBody>(
-        &self,
-        path: &str,
-        operation: &str,
-    ) -> Result<ResponseBody>
-    where
-        ResponseBody: DeserializeOwned,
-    {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .get(format!("{}{path}", descriptor.base_url))
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .with_context(|| format!("send {operation}"))?;
-        decode_api_response(response, operation).await
-    }
-
-    pub(crate) async fn subscribe_session(
-        &self,
-        session_id: SessionId,
-    ) -> Result<SessionSubscription> {
-        SessionSubscription::open(&self.transport(), session_id).await
-    }
-
-    pub(crate) async fn read_session(&self, session_id: SessionId) -> Result<SessionSnapshot> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .get(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                &format!("/v1/sessions/{session_id}"),
-            )?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Session read")?;
-        decode_api_response(response, "Session read").await
-    }
-
-    pub(crate) async fn context_breakdown(
-        &self,
-        session_id: SessionId,
-    ) -> Result<crate::protocol::ContextBreakdown> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .get(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                &format!("/v1/sessions/{session_id}/context"),
-            )?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Context Breakdown request")?;
-        decode_api_response(response, "Context Breakdown").await
-    }
-
-    pub(crate) async fn delete_session(&self, session_id: SessionId) -> Result<()> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .delete(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                &format!("/v1/sessions/{session_id}"),
-            )?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Session deletion")?;
-        decode_empty_api_response(response, "Session deletion").await
-    }
-
-    /// Sets a Session aside as done for now, or brings it back. Which of the
-    /// two is stated rather than toggled, so a client acting on a listing that
-    /// has moved on cannot flip a Session it meant to leave alone.
-    pub(crate) async fn settle_session(
-        &self,
-        session_id: SessionId,
-        settled: bool,
-    ) -> Result<SessionSummary> {
-        self.post_session_command(
-            &format!("/v1/sessions/{session_id}/settlement"),
-            &SettleSessionRequest { settled },
-            "Session settlement",
-        )
-        .await
-    }
-
-    /// Sets a Session's Icon to a user's own choice from the Icon Catalog by
-    /// name. Routed like every other Session command: against this Client's
-    /// own Outlook, which is the Session's Origin wherever a caller reached
-    /// this through [`ManagedClient::session_commands_for`].
-    pub(crate) async fn set_session_icon(
-        &self,
-        session_id: SessionId,
-        icon: &str,
-    ) -> Result<SessionSummary> {
-        self.post_session_command(
-            &format!("/v1/sessions/{session_id}/icon"),
-            &SetSessionIconRequest {
-                icon: icon.to_owned(),
-            },
-            "Session Icon",
-        )
-        .await
-    }
-
-    /// Renames a Session to a Title the user wrote. Routed like every other
-    /// Session command, to the Session's Origin.
-    pub(crate) async fn set_session_title(
-        &self,
-        session_id: SessionId,
-        title: &str,
-    ) -> Result<SessionSummary> {
-        self.post_session_command(
-            &format!("/v1/sessions/{session_id}/title"),
-            &SetSessionTitleRequest {
-                title: title.to_owned(),
-            },
-            "Session Title",
-        )
-        .await
-    }
-
-    /// Moves a Session to another directory of its Server. Routed like every
-    /// other Session command, to the Session's Origin, which reads the
-    /// destination against its own directories.
-    pub(crate) async fn move_session(
-        &self,
-        session_id: SessionId,
-        request: &MoveSessionRequest,
-    ) -> Result<MoveOutcome> {
-        self.post_session_command(
-            &format!("/v1/sessions/{session_id}/move"),
-            request,
-            "Session Move",
-        )
-        .await
-    }
-
-    /// Asks the Session's Origin whether it would derive a Title proposal
-    /// for it, as the derivation Setting in force there decides.
-    pub(crate) async fn session_title_proposal_offered(
-        &self,
-        session_id: SessionId,
-    ) -> Result<bool> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .get(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                &format!("/v1/sessions/{session_id}/title/proposal"),
-            )?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Title proposal offer request")?;
-        decode_api_response::<SessionTitleProposalOffer>(response, "Title proposal offer")
-            .await
-            .map(|offer| offer.offered)
-    }
-
-    /// Asks the Session's Origin to derive a Title proposal from its Prompts
-    /// so far. Dropping the future abandons the request, and the Errand
-    /// behind it with it.
-    pub(crate) async fn propose_session_title(&self, session_id: SessionId) -> Result<String> {
-        self.post_session_command_without_body::<SessionTitleProposal>(
-            &format!("/v1/sessions/{session_id}/title/proposal"),
-            "Title proposal",
-        )
-        .await
-        .map(|proposal| proposal.title)
-    }
-
-    /// Sets a Workspace's Icon to a user's own choice from the Icon Catalog by
-    /// name. Routed like every other Session-adjacent command: against this
-    /// Client's own Outlook, which is the Workspace's Origin wherever a
-    /// caller reached this through [`ManagedClient::session_commands_for`].
-    /// The Workspace's identity travels in the request body rather than a URL
-    /// path segment, since a `WorkspaceId`'s inner string may itself contain
-    /// path characters.
-    pub(crate) async fn set_workspace_icon(
-        &self,
-        workspace_id: &WorkspaceId,
-        icon: &str,
-    ) -> Result<()> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/workspaces/icon",
-            )?)
-            .bearer_auth(&descriptor.token)
-            .json(&SetWorkspaceIconRequest {
-                workspace_id: workspace_id.clone(),
-                icon: icon.to_owned(),
-            })
-            .send()
-            .await
-            .context("send Workspace Icon command")?;
-        decode_empty_api_response(response, "Workspace Icon").await
-    }
-
-    /// Sets a Workspace's Description, or clears it where the text is blank.
-    /// Routed exactly like [`Self::set_workspace_icon`]: against this
-    /// Client's own Outlook, which is the Workspace's Origin wherever a
-    /// caller reached this through [`ManagedClient::session_commands_for`].
-    pub(crate) async fn set_workspace_description(
-        &self,
-        workspace_id: &WorkspaceId,
-        path: Option<&std::path::Path>,
-        description: &str,
-    ) -> Result<()> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .post(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/workspaces/description",
-            )?)
-            .bearer_auth(&descriptor.token)
-            .json(&SetWorkspaceDescriptionRequest {
-                workspace_id: workspace_id.clone(),
-                path: path.map(std::path::Path::to_path_buf),
-                description: description.to_owned(),
-            })
-            .send()
-            .await
-            .context("send Workspace Description command")?;
-        decode_empty_api_response(response, "Workspace Description").await
-    }
-
-    /// Reports that this Client has the Session open in its main view.
-    pub(crate) async fn view_session(
-        &self,
-        session_id: SessionId,
-        request: ViewSessionRequest,
-    ) -> Result<SessionSummary> {
-        self.post_session_command(
-            &format!("/v1/sessions/{session_id}/viewed"),
-            &request,
-            "Session viewed",
-        )
-        .await
-    }
-
-    pub(crate) async fn list_workspace_sessions(
-        &self,
-        workspace: Option<&crate::protocol::WorkspaceId>,
-    ) -> Result<Vec<SessionListItem>> {
-        let descriptor = self.descriptor.borrow().clone();
-        let mut request = self
-            .http
-            .get(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/sessions",
-            )?)
-            .bearer_auth(&descriptor.token);
-        if let Some(workspace) = workspace {
-            request = request.query(&[("workspace_id", &workspace.0)]);
-        }
-        decode_api_response(
-            request.send().await.context("send Session listing")?,
-            "Session listing",
-        )
-        .await
-    }
-
-    pub(crate) async fn list_sessions(
-        &self,
-        workspace: Option<&Path>,
-    ) -> Result<Vec<SessionListItem>> {
-        let descriptor = self.descriptor.borrow().clone();
-        let request = self
-            .http
-            .get(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/sessions",
-            )?)
-            .bearer_auth(&descriptor.token);
-        let request = match workspace {
-            Some(workspace) => request.query(&[("workspace", workspace)]),
-            None => request,
-        };
-        let response = request.send().await.context("send Session listing")?;
-        decode_api_response(response, "Session listing").await
-    }
-
-    pub(crate) async fn list_workspaces(&self) -> Result<WorkspaceListing> {
-        let descriptor = self.descriptor.borrow().clone();
-        let response = self
-            .http
-            .get(server_url(
-                &descriptor.base_url,
-                &self.outlook,
-                "/v1/workspaces",
-            )?)
-            .bearer_auth(&descriptor.token)
-            .send()
-            .await
-            .context("send Workspace listing")?;
-        decode_api_response(response, "Workspace listing").await
-    }
-
-    pub(crate) async fn attach_session(
-        &self,
-        session_id: SessionId,
-    ) -> Result<SessionSubscription> {
-        // Bound to the local Server as it stands, so the stream ends once that
-        // Server is replaced and its reader attaches afresh.
-        SessionSubscription::open_attached(
-            std::sync::Arc::new(self.transport().pinned()),
-            session_id,
-            self.initial_recovery_backoff,
-            self.max_recovery_backoff,
-        )
-        .await
-    }
-}
-
-pub(super) fn server_url(base_url: &str, outlook: &Outlook, path: &str) -> Result<reqwest::Url> {
-    let mut url = reqwest::Url::parse(base_url).context("parse server base URL")?;
-    let mut segments = url
-        .path_segments_mut()
-        .map_err(|()| anyhow!("server base URL cannot contain path segments"))?;
-    segments.clear();
-    if let Outlook::Remote(name) = outlook {
-        segments.extend(["v1", "remotes", name]);
-    }
-    segments.extend(path.trim_start_matches('/').split('/'));
-    drop(segments);
-    Ok(url)
-}
-
-async fn decode_api_response<T>(response: reqwest::Response, operation: &str) -> Result<T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    if response.status().is_success() {
-        return response
-            .json::<T>()
-            .await
-            .with_context(|| format!("decode {operation} response"));
-    }
-    Err(decode_api_error(response, operation).await)
-}
-
-async fn decode_empty_api_response(response: reqwest::Response, operation: &str) -> Result<()> {
-    if response.status().is_success() {
-        return Ok(());
-    }
-    Err(decode_api_error(response, operation).await)
-}
-
-async fn decode_api_error(response: reqwest::Response, operation: &str) -> anyhow::Error {
-    let status = response.status();
-    response.json::<SessionError>().await.map_or_else(
-        |_| anyhow!("{operation} failed with HTTP {status}"),
-        |error| anyhow!(error),
-    )
-}
-
 pub async fn start_server(config: &ManagedClientConfig) -> Result<Health> {
     let baseline = launcher::StopBaseline::read(config);
     let deadline = tokio::time::Instant::now() + config.startup_timeout;
@@ -2762,41 +1465,6 @@ pub async fn stop_server(config: &ManagedClientConfig) -> Result<ServerStop> {
     }
 }
 
-fn remote_probe_url(base_url: &str, name: &str) -> Result<reqwest::Url> {
-    let mut url = reqwest::Url::parse(base_url).context("parse server base URL")?;
-    url.path_segments_mut()
-        .map_err(|()| anyhow!("server base URL cannot contain path segments"))?
-        .extend(["v1", "pairing", "remotes", name, "health"]);
-    Ok(url)
-}
-
-/// The local Server's Relay route beneath `/v1/relays` for `segments`, each
-/// one encoded whole — a Relay's address among them, slashes and all.
-fn relay_url(base_url: &str, segments: &[&str]) -> Result<reqwest::Url> {
-    let mut url = reqwest::Url::parse(base_url).context("parse server base URL")?;
-    url.path_segments_mut()
-        .map_err(|()| anyhow!("server base URL cannot contain path segments"))?
-        .extend(["v1", "relays"])
-        .extend(segments);
-    Ok(url)
-}
-
-fn remote_icon_url(base_url: &str, name: &str) -> Result<reqwest::Url> {
-    let mut url = reqwest::Url::parse(base_url).context("parse server base URL")?;
-    url.path_segments_mut()
-        .map_err(|()| anyhow!("server base URL cannot contain path segments"))?
-        .extend(["v1", "pairing", "remotes", name, "icon"]);
-    Ok(url)
-}
-
-fn remote_removal_url(base_url: &str, name: &str) -> Result<reqwest::Url> {
-    let mut url = reqwest::Url::parse(base_url).context("parse server base URL")?;
-    url.path_segments_mut()
-        .map_err(|()| anyhow!("server base URL cannot contain path segments"))?
-        .extend(["v1", "pairing", "remotes", name]);
-    Ok(url)
-}
-
 impl Drop for ManagedClient {
     fn drop(&mut self) {
         if let Upkeep::Following(task) = &self.upkeep {
@@ -2807,9 +1475,6 @@ impl Drop for ManagedClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{SessionCommandClient, remote_probe_url, remote_removal_url, server_url};
-    use crate::protocol::Outlook;
-
     mod attachment_fetch {
         use std::time::Duration;
 
@@ -2824,10 +1489,12 @@ mod tests {
         use futures_util::StreamExt;
         use tokio::sync::watch;
 
-        use super::SessionCommandClient;
         use crate::{
             attachments::MAX_ATTACHMENT_BYTES,
-            managed_client::ATTACHMENT_FETCH_TIMEOUT,
+            managed_client::{
+                ATTACHMENT_FETCH_TIMEOUT, SessionCommandTimings, SessionCommands,
+                loopback::LoopbackTransport,
+            },
             protocol::{
                 AttachmentId, Outlook, PROTOCOL_VERSION, RuntimeDescriptor, ServerIdentity,
             },
@@ -2850,14 +1517,26 @@ mod tests {
             }
         }
 
-        async fn client() -> (SessionCommandClient, tokio::task::JoinHandle<()>) {
+        async fn client() -> (SessionCommands, tokio::task::JoinHandle<()>) {
             fixture_client(Router::new().route("/v1/attachments/{id}", get(answer))).await
         }
 
         /// A client of a fixture Server answering with `app`.
         pub(super) async fn fixture_client(
             app: Router,
-        ) -> (SessionCommandClient, tokio::task::JoinHandle<()>) {
+        ) -> (SessionCommands, tokio::task::JoinHandle<()>) {
+            client_within(app, ATTACHMENT_FETCH_TIMEOUT).await
+        }
+
+        /// The deadline a stalled request is failed at.
+        const DEADLINE: Duration = Duration::from_millis(50);
+
+        /// A client, over loopback, of a fixture Server answering with `app`,
+        /// whose Attachment requests are failed at `deadline`.
+        async fn client_within(
+            app: Router,
+            deadline: Duration,
+        ) -> (SessionCommands, tokio::task::JoinHandle<()>) {
             let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
                 .await
                 .expect("bind the Attachment fixture");
@@ -2877,28 +1556,18 @@ mod tests {
                     build_identity: "attachment-fixture".to_owned(),
                 },
             ));
-            let client = SessionCommandClient {
-                http: crate::runtime::loopback_http_client(),
-                descriptor,
-                outlook: Outlook::Local,
-                initial_recovery_backoff: Duration::from_millis(1),
-                max_recovery_backoff: Duration::from_millis(1),
-                attachment_fetch_timeout: ATTACHMENT_FETCH_TIMEOUT,
-            };
-            (client, server)
-        }
-
-        /// The deadline a stalled request is failed at.
-        const DEADLINE: Duration = Duration::from_millis(50);
-
-        /// A client of a fixture Server answering with `app`, whose Attachment
-        /// requests are failed at `deadline`.
-        async fn client_within(
-            app: Router,
-            deadline: Duration,
-        ) -> (SessionCommandClient, tokio::task::JoinHandle<()>) {
-            let (mut client, server) = fixture_client(app).await;
-            client.attachment_fetch_timeout = deadline;
+            let client = SessionCommands::new(
+                std::sync::Arc::new(LoopbackTransport::new(
+                    crate::runtime::loopback_http_client(),
+                    descriptor,
+                    Outlook::Local,
+                )),
+                SessionCommandTimings {
+                    initial_recovery_backoff: Duration::from_millis(1),
+                    max_recovery_backoff: Duration::from_millis(1),
+                    attachment_fetch_timeout: deadline,
+                },
+            );
             (client, server)
         }
 
@@ -3149,119 +1818,5 @@ mod tests {
             assert!(format!("{error:#}").contains(SAID), "{error:#}");
             server.abort();
         }
-    }
-
-    #[test]
-    fn remote_probe_url_encodes_a_freely_editable_name_as_one_path_segment() {
-        let url = remote_probe_url("http://127.0.0.1:7777", "lab/east?#")
-            .expect("build Remote probe URL");
-
-        assert_eq!(
-            url.as_str(),
-            "http://127.0.0.1:7777/v1/pairing/remotes/lab%2Feast%3F%23/health"
-        );
-    }
-
-    #[test]
-    fn remote_removal_url_encodes_a_freely_editable_name_as_one_path_segment() {
-        let url = remote_removal_url("http://127.0.0.1:7777", "lab/east?#")
-            .expect("build Remote removal URL");
-
-        assert_eq!(
-            url.as_str(),
-            "http://127.0.0.1:7777/v1/pairing/remotes/lab%2Feast%3F%23"
-        );
-    }
-
-    #[test]
-    fn approval_decision_uses_the_remote_session_command_route() {
-        let url = server_url(
-            "http://127.0.0.1:7777",
-            &Outlook::Remote("workstation".into()),
-            "/v1/sessions/session-id/approvals/approval-id/decision",
-        )
-        .expect("build remote Decision URL");
-
-        assert_eq!(
-            url.as_str(),
-            "http://127.0.0.1:7777/v1/remotes/workstation/v1/sessions/session-id/approvals/approval-id/decision"
-        );
-    }
-
-    /// A chosen Icon routes to a remote Session's own Origin exactly like
-    /// every other Session command: `session_commands_for(reference.origin)`
-    /// carries this Outlook into every request it sends, `set_session_icon`
-    /// included, and `server_url` is where that carrying becomes the request
-    /// a remote Server actually receives.
-    #[test]
-    fn set_session_icon_uses_the_remote_session_command_route() {
-        let url = server_url(
-            "http://127.0.0.1:7777",
-            &Outlook::Remote("workstation".into()),
-            "/v1/sessions/session-id/icon",
-        )
-        .expect("build remote Icon URL");
-
-        assert_eq!(
-            url.as_str(),
-            "http://127.0.0.1:7777/v1/remotes/workstation/v1/sessions/session-id/icon"
-        );
-    }
-
-    /// A chosen Workspace Icon routes to that Workspace's own Origin exactly
-    /// like a chosen Session Icon does: `session_commands_for(reference.origin)`
-    /// carries this Outlook into every request it sends, `set_workspace_icon`
-    /// included, and `server_url` is where that carrying becomes the request a
-    /// remote Server actually receives. The Workspace's identity is not part of
-    /// this path at all — it travels in the body instead, so this only proves
-    /// the route reaches the right Server.
-    #[test]
-    fn set_workspace_icon_uses_the_remote_session_command_route() {
-        let url = server_url(
-            "http://127.0.0.1:7777",
-            &Outlook::Remote("workstation".into()),
-            "/v1/workspaces/icon",
-        )
-        .expect("build remote Workspace Icon URL");
-
-        assert_eq!(
-            url.as_str(),
-            "http://127.0.0.1:7777/v1/remotes/workstation/v1/workspaces/icon"
-        );
-    }
-
-    /// `/sidekick` turned toward a Remote asks that Remote for its own Sidekick
-    /// Workspace, through the same route every other Session command takes.
-    #[test]
-    fn the_sidekick_workspace_is_asked_of_the_outlooks_own_server() {
-        let url = server_url(
-            "http://127.0.0.1:7777",
-            &Outlook::Remote("workstation".into()),
-            "/v1/workspaces/sidekick",
-        )
-        .expect("build remote Sidekick Workspace URL");
-
-        assert_eq!(
-            url.as_str(),
-            "http://127.0.0.1:7777/v1/remotes/workstation/v1/workspaces/sidekick"
-        );
-    }
-
-    /// A Workspace's Description routes to that Workspace's own Origin the
-    /// way its chosen Icon does, so a Remote's Workspace is described on the
-    /// Remote, which a Peer may ask it of.
-    #[test]
-    fn set_workspace_description_uses_the_remote_session_command_route() {
-        let url = server_url(
-            "http://127.0.0.1:7777",
-            &Outlook::Remote("workstation".into()),
-            "/v1/workspaces/description",
-        )
-        .expect("build remote Workspace Description URL");
-
-        assert_eq!(
-            url.as_str(),
-            "http://127.0.0.1:7777/v1/remotes/workstation/v1/workspaces/description"
-        );
     }
 }

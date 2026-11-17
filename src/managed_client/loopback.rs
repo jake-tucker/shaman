@@ -111,6 +111,11 @@ impl Transport for LoopbackTransport {
     fn try_now(&self) -> TryNow {
         TryNow::watching(self.descriptor.clone())
     }
+
+    /// Pinned to the local Server as it stands.
+    fn attached(self: std::sync::Arc<Self>) -> std::sync::Arc<dyn Transport> {
+        std::sync::Arc::new(self.pinned())
+    }
 }
 
 /// `response` as a transport answers it.

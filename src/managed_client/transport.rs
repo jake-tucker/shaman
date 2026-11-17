@@ -8,7 +8,7 @@
 //! credentials, the prefix and the connection, so no reader learns what an
 //! Outlook is.
 
-use std::{future::Future, pin::Pin, time::Duration};
+use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, combinators::UnsyncBoxBody};
@@ -39,6 +39,13 @@ pub(crate) trait Transport: Send + Sync {
     /// a reader's backoff next comes round: a new one has been found, say.
     /// Each call answers a signal of its own, for one reader to wait on.
     fn try_now(&self) -> TryNow;
+
+    /// The transport a stream attached to one Session runs over: one bound
+    /// to the Server this transport reaches as it stands, where it can tell
+    /// that Server from a successor, so the stream ends once it is replaced
+    /// and its reader attaches afresh. One that cannot tell them apart
+    /// answers itself, and a stream over it resumes by snapshot.
+    fn attached(self: Arc<Self>) -> Arc<dyn Transport>;
 }
 
 /// A `GET` of `path`, relative to the Session API.

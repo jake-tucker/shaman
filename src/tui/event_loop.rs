@@ -13,8 +13,8 @@ use std::{
 
 use crate::{
     managed_client::{
-        ManagedClient, ManagedEvent, RecoveryBackoff, SESSION_EVENT_CAPACITY,
-        SessionCatalogSubscription, SessionCommandClient, SessionEvent, SessionStreamError,
+        Administration, ManagedClient, ManagedEvent, RecoveryBackoff, SESSION_EVENT_CAPACITY,
+        SessionCatalogSubscription, SessionCommands, SessionEvent, SessionStreamError,
         SessionSubscription, SubagentTreeEvent,
     },
     protocol::{
@@ -311,7 +311,7 @@ impl SessionTasks {
 
     fn resolve_workspace(
         &mut self,
-        commands: SessionCommandClient,
+        commands: SessionCommands,
         outlook: Outlook,
         surface: WorkspaceResolutionSurface,
         request_id: u64,
@@ -341,7 +341,7 @@ impl SessionTasks {
     /// Sidekick resolution `request_id`; a later `/sidekick` supersedes it.
     fn resolve_sidekick_workspace(
         &mut self,
-        commands: SessionCommandClient,
+        commands: SessionCommands,
         outlook: Outlook,
         request_id: u64,
         results: &UnboundedSender<WorkspaceResolutionResult>,
@@ -412,7 +412,7 @@ impl SessionTasks {
     /// in flight for an earlier Session.
     fn resubscribe(
         &mut self,
-        commands: SessionCommandClient,
+        commands: SessionCommands,
         reference: SessionReference,
         connected: &UnboundedSender<ConnectedSessionSubscription>,
     ) {
@@ -424,7 +424,7 @@ impl SessionTasks {
     /// stream recovery never restarts a connection that is still retrying.
     fn subscribe_if_idle(
         &mut self,
-        commands: SessionCommandClient,
+        commands: SessionCommands,
         reference: SessionReference,
         connected: &UnboundedSender<ConnectedSessionSubscription>,
     ) {
@@ -435,7 +435,7 @@ impl SessionTasks {
 
     fn spawn_subscribe(
         &mut self,
-        commands: SessionCommandClient,
+        commands: SessionCommands,
         reference: SessionReference,
         connected: &UnboundedSender<ConnectedSessionSubscription>,
     ) {
@@ -462,7 +462,7 @@ impl SessionTasks {
     /// the Session on screen keeps its stream throughout.
     fn attach(
         &mut self,
-        commands: SessionCommandClient,
+        commands: SessionCommands,
         reference: SessionReference,
         results: &UnboundedSender<SessionPickerResult>,
     ) {
@@ -499,7 +499,7 @@ impl SessionTasks {
 
     fn list_workspaces(
         &mut self,
-        commands: SessionCommandClient,
+        commands: SessionCommands,
         request: WorkspaceListRequest,
         results: &UnboundedSender<SessionPickerResult>,
     ) {
@@ -511,7 +511,7 @@ impl SessionTasks {
 
     fn list_sessions(
         &mut self,
-        commands: SessionCommandClient,
+        commands: SessionCommands,
         request: SessionListRequest,
         results: &UnboundedSender<SessionPickerResult>,
     ) {
@@ -526,7 +526,7 @@ impl SessionTasks {
 
     fn list_models(
         &mut self,
-        commands: SessionCommandClient,
+        commands: SessionCommands,
         request: ModelListRequest,
         results: &UnboundedSender<ModelPickerResult>,
     ) {
@@ -538,7 +538,7 @@ impl SessionTasks {
 
     fn list_skills_if_needed(
         &mut self,
-        commands: SessionCommandClient,
+        commands: SessionCommands,
         outlook: Outlook,
         request: SkillCatalogRequest,
         results: &UnboundedSender<SkillCatalogResult>,
@@ -569,7 +569,7 @@ impl SessionTasks {
 
     fn refresh_skills(
         &mut self,
-        commands: SessionCommandClient,
+        commands: SessionCommands,
         outlook: Outlook,
         request: SkillCatalogRequest,
         results: &UnboundedSender<SkillCatalogResult>,
@@ -1164,7 +1164,7 @@ impl RunLoop {
     fn claim_relay_notices(&mut self) {
         for id in self.application.take_offer_notice_claims() {
             spawn_offer_notice_claim(
-                self.client.session_commands(),
+                self.client.administration(),
                 id,
                 self.notice_claimant,
                 self.channels.relays.clone(),
@@ -1172,7 +1172,7 @@ impl RunLoop {
         }
         for (address, lapse) in self.application.take_relay_notice_claims() {
             spawn_relay_notice_claim(
-                self.client.session_commands(),
+                self.client.administration(),
                 address,
                 lapse,
                 self.notice_claimant,
@@ -1539,7 +1539,7 @@ impl RunLoop {
             }
             ApplicationTransition::SetRemoteIcon { name, icon } => {
                 spawn_remote_icon_set(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     name,
                     icon,
                     self.channels.submissions.clone(),
@@ -1639,14 +1639,14 @@ impl RunLoop {
             }
             ApplicationTransition::MutateSetting { mutation, request } => {
                 spawn_setting_mutation(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     mutation,
                     request,
                     self.channels.submissions.clone(),
                 );
             }
             ApplicationTransition::MarkOnboarded => {
-                spawn_onboarded_mark(self.client.session_commands());
+                spawn_onboarded_mark(self.client.administration());
             }
             ApplicationTransition::RecheckProviders { recheck } => {
                 spawn_providers_recheck(
@@ -1657,14 +1657,14 @@ impl RunLoop {
             }
             ApplicationTransition::BeginServing { request } => {
                 spawn_serving_preparation(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     self.channels.pairing.clone(),
                 );
             }
             ApplicationTransition::IssueInvite { request, issuance } => {
                 spawn_invite_issuance(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     issuance,
                     self.channels.pairing.clone(),
@@ -1672,20 +1672,20 @@ impl RunLoop {
             }
             ApplicationTransition::RemovePeer(peer_id) => {
                 spawn_peer_removal(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     peer_id,
                     self.channels.pairing.clone(),
                 );
             }
             ApplicationTransition::RemoveRemote(name) => {
                 spawn_remote_removal(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     name,
                     self.channels.pairing.clone(),
                 );
             }
             ApplicationTransition::AnswerOffer { id, answer } => {
-                let commands = self.client.session_commands();
+                let commands = self.client.administration();
                 spawn_offer_act(
                     async move { commands.answer_offer(id, answer).await },
                     move |error| ApplicationEvent::OfferAnswered { id, error },
@@ -1693,7 +1693,7 @@ impl RunLoop {
                 );
             }
             ApplicationTransition::WithdrawOffer(id) => {
-                let commands = self.client.session_commands();
+                let commands = self.client.administration();
                 spawn_offer_act(
                     async move { commands.withdraw_offer(id).await },
                     |error| ApplicationEvent::OfferWithdrawn { error },
@@ -1702,14 +1702,14 @@ impl RunLoop {
             }
             ApplicationTransition::ListRelays(request) => {
                 spawn_relay_listing(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     self.channels.relays.clone(),
                 );
             }
             ApplicationTransition::AddRelay { request, address } => {
                 spawn_relay_addition(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     address,
                     self.channels.relays.clone(),
@@ -1721,7 +1721,7 @@ impl RunLoop {
                 afresh,
             } => {
                 spawn_relay_login(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     address,
                     afresh,
@@ -1731,7 +1731,7 @@ impl RunLoop {
             ApplicationTransition::FollowRelayLogins(follows) => {
                 for follow in follows {
                     let follower = spawn_relay_login_follower(
-                        self.client.session_commands(),
+                        self.client.administration(),
                         follow.request,
                         follow.address.clone(),
                         self.channels.relays.clone(),
@@ -1746,7 +1746,7 @@ impl RunLoop {
             }
             ApplicationTransition::RemoveRelay { request, address } => {
                 spawn_relay_removal(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     address,
                     self.channels.relays.clone(),
@@ -1758,7 +1758,7 @@ impl RunLoop {
                 serve_through,
             } => {
                 spawn_relay_serve_through(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     address,
                     serve_through,
@@ -1766,39 +1766,33 @@ impl RunLoop {
                 );
             }
             ApplicationTransition::BeginConnecting => {
-                spawn_remote_listing(
-                    self.client.session_commands(),
-                    self.channels.pairing.clone(),
-                );
+                spawn_remote_listing(self.client.administration(), self.channels.pairing.clone());
             }
             ApplicationTransition::BeginPairing(request) => {
-                spawn_remote_listing(
-                    self.client.session_commands(),
-                    self.channels.pairing.clone(),
-                );
+                spawn_remote_listing(self.client.administration(), self.channels.pairing.clone());
                 spawn_machine_finding(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     self.channels.pairing.clone(),
                 );
             }
             ApplicationTransition::FindMachines(request) => {
                 spawn_machine_finding(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     self.channels.pairing.clone(),
                 );
             }
             ApplicationTransition::ListEverywhereRemotes(request_id) => {
                 spawn_everywhere_remote_listing(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request_id,
                     self.channels.pairing.clone(),
                 );
             }
             ApplicationTransition::FetchShortInvite { request, fetch } => {
                 spawn_short_invite_fetch(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     fetch,
                     self.channels.pairing.clone(),
@@ -1806,14 +1800,14 @@ impl RunLoop {
             }
             ApplicationTransition::IssueShortCode(request) => {
                 spawn_short_code_issuance(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     self.channels.pairing.clone(),
                 );
             }
             ApplicationTransition::PreviewInvite { request, invite } => {
                 spawn_invite_preview(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     invite,
                     self.channels.pairing.clone(),
@@ -1824,7 +1818,7 @@ impl RunLoop {
                 redemption,
             } => {
                 spawn_invite_redemption(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     redemption,
                     self.channels.pairing.clone(),
@@ -1957,7 +1951,7 @@ impl RunLoop {
             } => self.reconcile_catalog_origins(catalog_origins, requests),
             ApplicationTransition::ListEverywhereRemotes(request) => {
                 spawn_everywhere_remote_listing(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request,
                     self.channels.pairing.clone(),
                 );
@@ -1997,7 +1991,7 @@ impl RunLoop {
         }
     }
 
-    fn outlook_commands(&self) -> SessionCommandClient {
+    fn outlook_commands(&self) -> SessionCommands {
         self.client
             .session_commands_for(self.application.outlook().clone())
     }
@@ -2022,10 +2016,7 @@ impl RunLoop {
             });
             // What the Client draws beside each Remote's name, its Icon, is
             // the local Server's to say, and it says so in its listing.
-            spawn_remotes_known(
-                self.client.session_commands(),
-                self.channels.pairing.clone(),
-            );
+            spawn_remotes_known(self.client.administration(), self.channels.pairing.clone());
         }
         let transition = self
             .application
@@ -2054,7 +2045,7 @@ impl RunLoop {
             }
             ApplicationTransition::ListEverywhereRemotes(request_id) => {
                 spawn_everywhere_remote_listing(
-                    self.client.session_commands(),
+                    self.client.administration(),
                     request_id,
                     self.channels.pairing.clone(),
                 );
@@ -3199,7 +3190,7 @@ enum PairingResult {
 }
 
 fn spawn_invite_redemption(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: crate::tui::ConnectRequest,
     redemption: crate::protocol::RedeemInviteRequest,
     results: UnboundedSender<PairingResult>,
@@ -3234,7 +3225,7 @@ fn relay_login_needed(error: &anyhow::Error) -> Option<String> {
 /// Makes the one attempt a reader asked for by typing a machine's code. Nothing
 /// here or above it asks again: only the reader does.
 fn spawn_short_invite_fetch(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: crate::tui::ConnectRequest,
     fetch: crate::protocol::FetchShortInviteRequest,
     results: UnboundedSender<PairingResult>,
@@ -3265,7 +3256,7 @@ fn spawn_short_invite_fetch(
 }
 
 fn spawn_short_code_issuance(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: crate::tui::ServeRequest,
     results: UnboundedSender<PairingResult>,
 ) {
@@ -3282,7 +3273,7 @@ fn spawn_short_code_issuance(
 }
 
 fn spawn_invite_preview(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: crate::tui::ConnectRequest,
     invite: crate::protocol::InviteText,
     results: UnboundedSender<PairingResult>,
@@ -3309,7 +3300,7 @@ fn spawn_invite_preview(
 /// The Server holds each to its answer budget, and says how each answered. A
 /// Server that cannot say which it holds leaves `/pair` to the Invite alone.
 fn spawn_machine_finding(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: crate::tui::ConnectRequest,
     results: UnboundedSender<PairingResult>,
 ) {
@@ -3347,7 +3338,7 @@ fn spawn_machine_finding(
     });
 }
 
-fn spawn_remote_listing(commands: SessionCommandClient, results: UnboundedSender<PairingResult>) {
+fn spawn_remote_listing(commands: Administration, results: UnboundedSender<PairingResult>) {
     tokio::spawn(async move {
         let remotes = match commands.list_remotes().await {
             Ok(remotes) => remotes,
@@ -3388,7 +3379,7 @@ fn spawn_remote_listing(commands: SessionCommandClient, results: UnboundedSender
 /// Lists the Remotes the Client's own Server is paired with for what the
 /// Client draws beside their names. A listing that fails leaves the Remotes
 /// drawn as they were, beside the plain monitor where none was known.
-fn spawn_remotes_known(commands: SessionCommandClient, results: UnboundedSender<PairingResult>) {
+fn spawn_remotes_known(commands: Administration, results: UnboundedSender<PairingResult>) {
     tokio::spawn(async move {
         match commands.list_remotes().await {
             Ok(remotes) => {
@@ -3400,7 +3391,7 @@ fn spawn_remotes_known(commands: SessionCommandClient, results: UnboundedSender<
 }
 
 fn spawn_everywhere_remote_listing(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: EverywhereListRequest,
     results: UnboundedSender<PairingResult>,
 ) {
@@ -3417,7 +3408,7 @@ fn spawn_everywhere_remote_listing(
 }
 
 fn spawn_serving_preparation(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: crate::tui::ServeRequest,
     results: UnboundedSender<PairingResult>,
 ) {
@@ -3438,7 +3429,7 @@ fn spawn_serving_preparation(
 }
 
 fn spawn_invite_issuance(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: crate::tui::ServeRequest,
     issuance: crate::protocol::IssueInviteRequest,
     results: UnboundedSender<PairingResult>,
@@ -3465,7 +3456,7 @@ fn spawn_invite_issuance(
 /// Ends the Pairing with one Remote. The local Server forgets it either way;
 /// the answer says whether the Remote itself acknowledged in time.
 fn spawn_remote_removal(
-    commands: SessionCommandClient,
+    commands: Administration,
     name: String,
     results: UnboundedSender<PairingResult>,
 ) {
@@ -3479,7 +3470,7 @@ fn spawn_remote_removal(
 }
 
 fn spawn_peer_removal(
-    commands: SessionCommandClient,
+    commands: Administration,
     peer_id: String,
     results: UnboundedSender<PairingResult>,
 ) {
@@ -3496,7 +3487,7 @@ fn spawn_peer_removal(
 /// Asks the Client's own Server for its Relays — never a Remote's, whichever
 /// way the Outlook is turned.
 fn spawn_relay_listing(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: crate::tui::RelayRequest,
     answers: UnboundedSender<ApplicationEvent>,
 ) {
@@ -3513,7 +3504,7 @@ fn spawn_relay_listing(
 }
 
 fn spawn_relay_addition(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: crate::tui::RelayRequest,
     address: String,
     answers: UnboundedSender<ApplicationEvent>,
@@ -3533,7 +3524,7 @@ fn spawn_relay_addition(
 /// Has the Client's own Server log in at a Relay. It decides whether that begins
 /// a login, and carries one out from there, so it outlives this Client.
 fn spawn_relay_login(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: crate::tui::RelayRequest,
     address: String,
     afresh: bool,
@@ -3561,7 +3552,7 @@ fn spawn_relay_login(
 
 /// Follows the latest login at a Relay until the Server reports it ended.
 fn spawn_relay_login_follower(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: crate::tui::RelayRequest,
     address: String,
     answers: UnboundedSender<ApplicationEvent>,
@@ -3581,7 +3572,7 @@ fn spawn_relay_login_follower(
 /// Removes a Relay from the Client's own Server, which asks the Relay to
 /// forget its Login there and forgets the Relay either way.
 fn spawn_relay_removal(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: crate::tui::RelayRequest,
     address: String,
     answers: UnboundedSender<ApplicationEvent>,
@@ -3598,7 +3589,7 @@ fn spawn_relay_removal(
 /// Chooses whether the Client's own Server Serves through a Relay, answering
 /// the Relay as it then stands.
 fn spawn_relay_serve_through(
-    commands: SessionCommandClient,
+    commands: Administration,
     request: crate::tui::RelayRequest,
     address: String,
     serve_through: bool,
@@ -3683,7 +3674,7 @@ where
 /// of the offer to pair back `id`, again and again while it does not hear, as a
 /// Relay's is, answering on `answers` whether it gave it this Client.
 fn spawn_offer_notice_claim(
-    commands: SessionCommandClient,
+    commands: Administration,
     id: uuid::Uuid,
     claimant: uuid::Uuid,
     answers: UnboundedSender<ApplicationEvent>,
@@ -3724,7 +3715,7 @@ fn spawn_offer_act(
 /// was lost says so again — answering on `answers` whether it gave it this
 /// Client.
 fn spawn_relay_notice_claim(
-    commands: SessionCommandClient,
+    commands: Administration,
     address: String,
     lapse: uuid::Uuid,
     claimant: uuid::Uuid,
@@ -3758,7 +3749,7 @@ fn spawn_relay_notice_claim(
 /// Uploads a pasted image and answers the paste with what the Server stored
 /// it as, or why it did not.
 fn spawn_attachment_upload(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     paste: crate::tui::PasteId,
     png: Vec<u8>,
     answers: UnboundedSender<ApplicationEvent>,
@@ -3790,7 +3781,7 @@ struct ThumbnailAsked {
 /// Fetches an Attachment's bytes and makes its thumbnail, answering with it or
 /// with the failure that leaves the Attachment's dimmed line standing.
 fn spawn_thumbnail(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     asked: ThumbnailAsked,
     answers: UnboundedSender<ApplicationEvent>,
 ) -> tokio::task::JoinHandle<()> {
@@ -3845,7 +3836,7 @@ async fn thumbnail_answer(
 /// Asks whether each Attachment a recalled Prompt binds is still stored, and
 /// answers the check with those that are not, or with why it could not ask.
 fn spawn_attachment_check(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     check: crate::tui::AttachmentCheckId,
     attachments: Vec<crate::protocol::AttachmentId>,
     answers: UnboundedSender<ApplicationEvent>,
@@ -3863,7 +3854,7 @@ fn spawn_attachment_check(
 /// `listing_id`. Nothing aborts it: an answer the browser no longer awaits is
 /// told apart by its identity and moves nothing.
 fn spawn_directory_listing(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     listing_id: crate::tui::DirectoryListingId,
     request: crate::protocol::ListDirectoryRequest,
     answers: UnboundedSender<ApplicationEvent>,
@@ -3882,7 +3873,7 @@ fn spawn_directory_listing(
 /// its answer apart from those listings, superseding none of them, and the
 /// Application keeps only the answer to its newest ask.
 fn spawn_providers_recheck(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     recheck: uuid::Uuid,
     answers: UnboundedSender<ApplicationEvent>,
 ) {
@@ -3896,7 +3887,7 @@ fn spawn_providers_recheck(
 }
 
 fn spawn_context_breakdown_read(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     session_id: crate::protocol::SessionId,
     request_id: uuid::Uuid,
     answers: UnboundedSender<ApplicationEvent>,
@@ -3914,7 +3905,7 @@ fn spawn_context_breakdown_read(
 /// it: an answer the view no longer awaits is told apart by its request and
 /// moves nothing.
 fn spawn_usage_metrics_read(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     query: crate::protocol::UsageMetricsQuery,
     request_id: uuid::Uuid,
     answers: UnboundedSender<ApplicationEvent>,
@@ -3931,7 +3922,7 @@ fn spawn_usage_metrics_read(
 /// Asks the Server `commands` names for its Insights, on the terms its
 /// Usage Metrics are asked for, answering on the same channel.
 fn spawn_insights_read(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     query: crate::protocol::InsightsQuery,
     request_id: uuid::Uuid,
     answers: UnboundedSender<ApplicationEvent>,
@@ -3971,7 +3962,7 @@ fn context_breakdown_refusal(error: &anyhow::Error) -> crate::tui::ContextBreakd
 
 /// Those of `attachments` the Server no longer stores, in the order asked.
 async fn missing_attachments(
-    commands: &SessionCommandClient,
+    commands: &SessionCommands,
     attachments: Vec<crate::protocol::AttachmentId>,
 ) -> Result<Vec<crate::protocol::AttachmentId>> {
     let mut missing = Vec::new();
@@ -3995,7 +3986,7 @@ fn upload_failure_reason(error: &anyhow::Error) -> String {
 }
 
 fn spawn_session_creation(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     outlook: Outlook,
     request: CreateSessionRequest,
     results: UnboundedSender<SubmissionResult>,
@@ -4011,7 +4002,7 @@ fn spawn_session_creation(
 }
 
 fn spawn_prompt_admission(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     session: SessionReference,
     request: AdmitPromptRequest,
     results: UnboundedSender<SubmissionResult>,
@@ -4221,7 +4212,7 @@ enum SkillCatalogOperation {
 }
 
 fn spawn_skill_catalog_operation(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     outlook: Outlook,
     request: SkillCatalogRequest,
     results: UnboundedSender<SkillCatalogResult>,
@@ -4249,7 +4240,7 @@ fn spawn_skill_catalog_operation(
 }
 
 fn spawn_model_listing(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     request: ModelListRequest,
     results: UnboundedSender<ModelPickerResult>,
 ) -> tokio::task::JoinHandle<()> {
@@ -4284,7 +4275,7 @@ fn spawn_model_listing(
 }
 
 fn spawn_landing_agent_selection_confirmation(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     outlook: Outlook,
     selection: AgentSelection,
     results: UnboundedSender<SubmissionResult>,
@@ -4304,7 +4295,7 @@ fn spawn_landing_agent_selection_confirmation(
 }
 
 fn spawn_agent_selection_update(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     session: SessionReference,
     request: UpdateAgentSelectionRequest,
     results: UnboundedSender<SubmissionResult>,
@@ -4331,7 +4322,7 @@ fn spawn_agent_selection_update(
 }
 
 fn spawn_approval_posture_update(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     session: SessionReference,
     asked_from: Option<SessionReference>,
     request: UpdateApprovalPostureRequest,
@@ -4408,7 +4399,7 @@ fn finish_listing<Request: PartialEq>(
 }
 
 fn spawn_session_listing(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     request: SessionListRequest,
     results: UnboundedSender<SessionPickerResult>,
 ) -> tokio::task::JoinHandle<()> {
@@ -4430,7 +4421,7 @@ fn spawn_session_listing(
 /// Asks the Server `request` names for the Workspaces its Workspace Registry
 /// lists, in its order, for the Workspace Picker.
 fn spawn_workspace_listing(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     request: WorkspaceListRequest,
     results: UnboundedSender<SessionPickerResult>,
 ) -> tokio::task::JoinHandle<()> {
@@ -4450,7 +4441,7 @@ fn spawn_workspace_listing(
 /// the answer and the refusal so the run loop can tell the navigation the
 /// reader is still waiting on from the one they left.
 fn spawn_session_attach(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     reference: SessionReference,
     operation: AttachOperationId,
     results: UnboundedSender<SessionPickerResult>,
@@ -4527,11 +4518,7 @@ enum SessionOperation {
 }
 
 impl SessionOperation {
-    async fn run(
-        self,
-        commands: SessionCommandClient,
-        session: SessionReference,
-    ) -> SubmissionResult {
+    async fn run(self, commands: SessionCommands, session: SessionReference) -> SubmissionResult {
         match self {
             Self::SubmitDecision {
                 session_id,
@@ -4769,7 +4756,7 @@ fn operation_result(session: SessionReference, result: anyhow::Result<()>) -> Su
 /// Session operation's is, gated on the same Outlook a Session operation's
 /// failure gates on.
 fn spawn_workspace_icon_set(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     origin: Outlook,
     workspace_id: crate::protocol::WorkspaceId,
     icon: String,
@@ -4789,7 +4776,7 @@ fn spawn_workspace_icon_set(
 /// it beside the Remote's name, and reports how it went: nothing else tells
 /// this Client a Remote's Icon changed.
 fn spawn_remote_icon_set(
-    commands: SessionCommandClient,
+    commands: Administration,
     name: String,
     icon: String,
     results: UnboundedSender<SubmissionResult>,
@@ -4810,7 +4797,7 @@ fn spawn_remote_icon_set(
 /// while the rename dialog holds the reader's text until it hears whether it
 /// landed.
 fn spawn_session_title_set(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     session: crate::protocol::SessionReference,
     title: String,
     answers: UnboundedSender<ApplicationEvent>,
@@ -4831,7 +4818,7 @@ fn spawn_session_title_set(
 /// An Origin that cannot answer offers none: the dialog renames by hand all
 /// the same.
 fn spawn_title_proposal_offer(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     session_id: crate::protocol::SessionId,
     opening: uuid::Uuid,
     answers: UnboundedSender<ApplicationEvent>,
@@ -4849,7 +4836,7 @@ fn spawn_title_proposal_offer(
 /// the Origin's own words for why there is none. Aborting the task abandons
 /// the request.
 fn spawn_title_proposal(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     session_id: crate::protocol::SessionId,
     request: uuid::Uuid,
     answers: UnboundedSender<ApplicationEvent>,
@@ -4873,7 +4860,7 @@ fn spawn_title_proposal(
 /// the Description itself reaches every client through the catalog stream,
 /// while the editor holds the reader's draft until it hears whether it landed.
 fn spawn_workspace_description_set(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     origin: Outlook,
     workspace_id: crate::protocol::WorkspaceId,
     path: std::path::PathBuf,
@@ -4902,7 +4889,7 @@ fn spawn_workspace_description_set(
 /// Sends one Setting's typed edit to the server, which owns the Config
 /// Document, and brings back the effective settings the edit left in force.
 fn spawn_setting_mutation(
-    commands: SessionCommandClient,
+    commands: Administration,
     mutation: SettingMutation,
     request: SettingRequest,
     results: UnboundedSender<SubmissionResult>,
@@ -4922,7 +4909,7 @@ fn spawn_setting_mutation(
 /// Asks the Client's own Server to mark itself onboarded. The flow is already
 /// closed and offered no more by this Client; a mark that fails costs only
 /// Onboarding offered again the next time a Client attaches.
-fn spawn_onboarded_mark(commands: SessionCommandClient) {
+fn spawn_onboarded_mark(commands: Administration) {
     tokio::spawn(async move {
         if let Err(error) = commands.mark_onboarded().await {
             tracing::warn!("could not mark this server onboarded: {error:#}");
@@ -4931,7 +4918,7 @@ fn spawn_onboarded_mark(commands: SessionCommandClient) {
 }
 
 fn spawn_session_operation(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     session: SessionReference,
     asked_from: Option<SessionReference>,
     operation: SessionOperation,
@@ -4956,7 +4943,7 @@ fn spawn_session_operation(
 /// answer. The catalog stream carries the authoritative Viewed moment back to
 /// every client, including this one; a transient reporting failure must not
 /// cancel an attach that can still succeed.
-fn spawn_session_view(commands: SessionCommandClient, session: SessionReference) {
+fn spawn_session_view(commands: SessionCommands, session: SessionReference) {
     tokio::spawn(async move {
         if let Err(error) = commands
             .view_session(
@@ -4982,7 +4969,7 @@ struct ConnectedSessionSubscription {
 }
 
 fn spawn_session_subscription(
-    commands: SessionCommandClient,
+    commands: SessionCommands,
     reference: SessionReference,
     connected: UnboundedSender<ConnectedSessionSubscription>,
 ) -> tokio::task::JoinHandle<()> {

@@ -71,6 +71,8 @@ if-addrs = "0.15.0"
 # for thumbnails; no other decoder is compiled in (ADR 0038).
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 libsqlite3-sys = { version = "0.38.2", features = ["bundled"] }
+# Encodes the ids a Session command's path holds and the queries it asks, without reqwest, which a Pairing does not use.
+percent-encoding = "2.3.2"
 pulldown-cmark = "0.13.4"
 rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "ring"] }
 # The HKDF, HMAC, AEAD and randomness a short Invite's exchange takes from what the Pairing's TLS is already built on
@@ -87,6 +89,7 @@ ratatui-image = { version = "9.0.0", default-features = false }
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.143", features = ["preserve_order"] }
+serde_urlencoded = "0.7.1"
 shlex = "2"
 socket2 = "0.6.5"
 # Holds a peer's SPAKE2 message to one point written the one way, which spake2 itself does not check (ADR-0065). The

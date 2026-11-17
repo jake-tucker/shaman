@@ -87,6 +87,10 @@ impl Transport for ScriptedTransport {
     fn try_now(&self) -> TryNow {
         TryNow::watching(self.try_now.subscribe())
     }
+
+    fn attached(self: std::sync::Arc<Self>) -> std::sync::Arc<dyn Transport> {
+        self
+    }
 }
 
 /// The failure a transport answers when it cannot reach its Server.
