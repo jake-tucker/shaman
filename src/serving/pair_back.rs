@@ -517,16 +517,6 @@ impl PairBack {
             .send_modify(|changes| *changes = changes.wrapping_add(1));
     }
 
-    /// Whether `key` is one of the Peers'.
-    fn is_enrolled_peer(&self, key: &[u8]) -> bool {
-        self.offering.peers.read().iter().any(|peer| {
-            bool::from(subtle::ConstantTimeEq::ct_eq(
-                peer.public_key.as_slice(),
-                key,
-            ))
-        })
-    }
-
     // On the side that makes offers.
 
     /// A new offer to the Serving Server whose key is `server_key`, where this
@@ -538,7 +528,7 @@ impl PairBack {
         _redeemer: &Redeemer,
         server_key: &[u8],
     ) -> std::result::Result<StoredMadeOffer, PairingFailure> {
-        if self.is_enrolled_peer(server_key) {
+        if self.offering.peers.enrolled(server_key).is_some() {
             return Err(PairingFailure::new(
                 SessionErrorCode::PairBackNotOfferable,
                 "That machine can already reach this one, so there is nothing to offer it",
@@ -1435,9 +1425,7 @@ pub(super) fn take_back_redemptions_caught_midway(
             continue;
         };
         let name = name.clone();
-        redeemer
-            .take_back(&peer.public_key, &name)
-            .map_err(|failure| anyhow::anyhow!(failure.message))?;
+        redeemer.take_back(&peer.public_key, &name)?;
         offer.standing = Standing::Accepted { name };
         changed_peers = true;
     }
@@ -1529,20 +1517,19 @@ mod tests {
     /// a TLS 1.3 client learns only as HTTP/2 fails to begin, well within a
     /// test.
     fn server(data: &tempfile::TempDir) -> ServingController {
-        let identity = IdentityKey::new(data.path());
-        let redeemer = Redeemer::new(
-            data.path(),
-            crate::protocol::PROTOCOL_VERSION,
-            std::sync::Arc::new(identity.clone()),
-            crate::pairing::RedeemerTimings {
-                handshake_timeout: tokio::time::Duration::from_millis(500),
-                ..crate::pairing::RedeemerTimings::default()
-            },
-        )
-        .unwrap();
         ServingController::new(
-            redeemer,
-            identity,
+            IdentityKey::new(data.path()),
+            |identity| {
+                Redeemer::new(
+                    data.path(),
+                    crate::protocol::PROTOCOL_VERSION,
+                    identity,
+                    crate::pairing::RedeemerTimings {
+                        handshake_timeout: tokio::time::Duration::from_millis(500),
+                        ..crate::pairing::RedeemerTimings::default()
+                    },
+                )
+            },
             60 * SECOND,
             "http://127.0.0.1:9".to_owned(),
             "token".to_owned(),

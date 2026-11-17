@@ -200,6 +200,16 @@ struct PeerRecords {
 }
 
 impl PeerRecords {
+    /// The Peer enrolled with `public_key`, by its key fingerprint and the
+    /// name it is known by, where one is: the one way a key is judged one of
+    /// the Peers', compared in constant time.
+    fn enrolled(&self, public_key: &[u8]) -> Option<(String, String)> {
+        self.read()
+            .iter()
+            .find(|peer| bool::from(peer.public_key.as_slice().ct_eq(public_key)))
+            .map(|peer| (peer.id.clone(), peer.name()))
+    }
+
     fn read(&self) -> std::sync::RwLockReadGuard<'_, Vec<StoredPeer>> {
         self.records
             .read()
@@ -550,18 +560,21 @@ struct ServingConnectionInfo {
 }
 
 impl ServingController {
-    /// The Serving side of the Server whose redeeming side is `redeemer`,
-    /// beside whose records under its directory its own are kept, proving
-    /// itself as `identity` — the redeemer's own — and answering Peers by
+    /// The Serving side of a Server proving itself as `identity`, and the
+    /// redeeming side beside it, which `redeemer` makes to prove that very
+    /// identity — so the two never prove different keys — and beside whose
+    /// records under its directory its own are kept. It answers Peers by
     /// carrying their requests to the local Session API at `local_base_url`
-    /// with `local_token`. Its offer to pair back attaches to `redeemer`.
+    /// with `local_token`, and its offer to pair back attaches to the
+    /// redeemer.
     pub(crate) fn new(
-        redeemer: Redeemer,
         identity: IdentityKey,
+        redeemer: impl FnOnce(Arc<dyn crate::pairing::Identity>) -> Result<Redeemer>,
         invite_ttl: tokio::time::Duration,
         local_base_url: String,
         local_token: String,
     ) -> Result<Self> {
+        let redeemer = redeemer(Arc::new(identity.clone()))?;
         let data_dir = redeemer.data_dir().to_path_buf();
         let mut peers: Vec<StoredPeer> = read_records(&data_dir.join(PEERS_FILE))?;
         pair_back::take_back_redemptions_caught_midway(&data_dir, &mut peers, &redeemer)?;
@@ -648,21 +661,21 @@ impl ServingController {
         identity: IdentityKey,
         local_base_url: impl Into<String>,
     ) -> Self {
-        let redeemer = Redeemer::new(
-            data_dir,
-            crate::protocol::PROTOCOL_VERSION,
-            Arc::new(identity.clone()),
-            crate::pairing::RedeemerTimings::default(),
-        )
-        .expect("read the Remotes' records");
         Self::new(
-            redeemer,
             identity,
+            |identity| {
+                Redeemer::new(
+                    data_dir,
+                    crate::protocol::PROTOCOL_VERSION,
+                    identity,
+                    crate::pairing::RedeemerTimings::default(),
+                )
+            },
             tokio::time::Duration::from_secs(60),
             local_base_url.into(),
             "token".to_owned(),
         )
-        .expect("read the Peers' records")
+        .expect("read the Pairings' records")
     }
 
     /// Bounds how long a token issued for an offer to pair back lives, and how
@@ -1370,14 +1383,9 @@ impl ServingController {
         self.enrolled_peer(public_key).is_some()
     }
 
-    /// The Peer enrolled with `public_key`, by its key fingerprint and the
-    /// name it is known by, where one is.
+    /// The Peer enrolled with `public_key`, as [`PeerRecords::enrolled`] says.
     fn enrolled_peer(&self, public_key: &[u8]) -> Option<(String, String)> {
-        self.peers
-            .read()
-            .iter()
-            .find(|peer| bool::from(peer.public_key.as_slice().ct_eq(public_key)))
-            .map(|peer| (peer.id.clone(), peer.name()))
+        self.peers.enrolled(public_key)
     }
 
     /// Who performs the act a request to this Server's own Session API asks

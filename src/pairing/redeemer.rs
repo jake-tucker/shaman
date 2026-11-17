@@ -1315,15 +1315,19 @@ impl Redeemer {
 
     /// Forgets, as a Server starts, the Remote `name` of the key `key`, where
     /// one is: what a redemption its stopping caught midway may have left.
-    pub(crate) fn take_back(
-        &self,
-        key: &[u8],
-        name: &str,
-    ) -> std::result::Result<(), PairingFailure> {
-        self.change_remotes(|remotes| {
-            remotes.retain(|stored| stored.public_key != key || stored.remote.name != name);
-            Ok(())
-        })
+    /// Nothing is attached yet to hear of it, and a failure to store it says
+    /// why, file and all, as a Server that cannot start tells its user.
+    pub(crate) fn take_back(&self, key: &[u8], name: &str) -> anyhow::Result<()> {
+        let mut remotes = self
+            .remotes
+            .write()
+            .expect("Remote record lock is not poisoned");
+        let before = remotes.len();
+        remotes.retain(|stored| stored.public_key != key || stored.remote.name != name);
+        if remotes.len() != before {
+            write_private_json(&self.data_dir.join(REMOTES_FILE), &*remotes)?;
+        }
+        Ok(())
     }
 
     /// Asks the Remote `remote` through `client`, as [`first_remote_answer`]

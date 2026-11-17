@@ -422,6 +422,9 @@ pub struct ServerTimings {
 
 impl Default for ServerTimings {
     fn default() -> Self {
+        // What a Server's redeeming side is given, and what its Serving side
+        // shares of it, are the redeemer's own defaults.
+        let redeemer = crate::pairing::RedeemerTimings::default();
         Self {
             sse_keepalive_interval: Duration::from_secs(10),
             checkout_observation_interval: Duration::from_secs(1),
@@ -445,7 +448,7 @@ impl Default for ServerTimings {
             scheduled_compaction_wake_ahead: crate::provider::SCHEDULED_COMPACTION_WAKE_AHEAD,
             move_continuation_grace: crate::provider::MOVE_CONTINUATION_GRACE,
             invite_ttl: Duration::from_secs(10 * 60),
-            remote_withdrawal_timeout: Duration::from_secs(5),
+            remote_withdrawal_timeout: redeemer.withdrawal_timeout,
             remote_reach_timeout: Duration::from_secs(10),
             remote_worktree_timeout: Duration::from_secs(20),
             remote_reach_budget: 64 * 1024 * 1024,
@@ -453,15 +456,15 @@ impl Default for ServerTimings {
             remote_silence_limit: Duration::from_secs(30),
             remote_watch_limits: RemoteWatchLimits::default(),
             remote_requests_at_once: crate::pairing::AWAITED_AT_ONCE,
-            serving_handshake_timeout: Duration::from_secs(10),
+            serving_handshake_timeout: redeemer.handshake_timeout,
             short_invite_reading_timeout: Duration::from_secs(2),
             short_invite_timeout: Duration::from_secs(10),
-            direct_head_start: Duration::from_millis(250),
-            direct_retry_interval: Duration::from_secs(5),
+            direct_head_start: redeemer.direct_head_start,
+            direct_retry_interval: redeemer.direct_retry_interval,
             remote_report_read_interval: Duration::from_millis(250),
             remote_report_poll_interval: Duration::from_secs(5),
             remote_report_wake_grace: Duration::from_secs(60),
-            told_relays_store_interval: Duration::from_secs(5),
+            told_relays_store_interval: redeemer.told_relays_store_interval,
             pair_back_invite_ttl: Duration::from_secs(2 * 60),
             pair_back_retry_interval: Duration::from_secs(60),
             pair_back_offers_loopback: false,
@@ -473,8 +476,8 @@ impl Default for ServerTimings {
             relay_retry_max: Duration::from_secs(60),
             relay_heartbeat_interval: Duration::from_secs(30),
             relay_heartbeat_timeout: Duration::from_secs(10),
-            pairing_keepalive_interval: Duration::from_secs(15),
-            pairing_keepalive_timeout: Duration::from_secs(30),
+            pairing_keepalive_interval: redeemer.keepalive.interval,
+            pairing_keepalive_timeout: redeemer.keepalive.timeout,
             election_handoff: Duration::from_secs(1),
             state_dir_check_interval: STATE_DIR_CHECK_INTERVAL,
             config_document_check_interval: Duration::from_secs(1),
@@ -1738,27 +1741,28 @@ async fn start(
         interval: timings.pairing_keepalive_interval,
         timeout: timings.pairing_keepalive_timeout,
     };
-    let redeemer = crate::pairing::Redeemer::new(
-        config.data_dir(),
-        timings.pairing_protocol_version,
-        Arc::new(identity.clone()),
-        crate::pairing::RedeemerTimings {
-            handshake_timeout: timings.serving_handshake_timeout,
-            direct_head_start: timings.direct_head_start,
-            direct_retry_interval: timings.direct_retry_interval,
-            keepalive,
-            withdrawal_timeout: timings.remote_withdrawal_timeout,
-            told_relays_store_interval: timings.told_relays_store_interval,
-        },
-    )?
-    .with_awaited(
-        timings.remote_requests_at_once,
-        crate::serving::AWAITED_BODY_BYTES,
-    )
-    .with_direct_proxies(timings.direct_proxies.clone());
     let serving = ServingController::new(
-        redeemer.clone(),
         identity,
+        |identity| {
+            Ok(crate::pairing::Redeemer::new(
+                config.data_dir(),
+                timings.pairing_protocol_version,
+                identity,
+                crate::pairing::RedeemerTimings {
+                    handshake_timeout: timings.serving_handshake_timeout,
+                    direct_head_start: timings.direct_head_start,
+                    direct_retry_interval: timings.direct_retry_interval,
+                    keepalive,
+                    withdrawal_timeout: timings.remote_withdrawal_timeout,
+                    told_relays_store_interval: timings.told_relays_store_interval,
+                },
+            )?
+            .with_awaited(
+                timings.remote_requests_at_once,
+                crate::serving::AWAITED_BODY_BYTES,
+            )
+            .with_direct_proxies(timings.direct_proxies.clone()))
+        },
         timings.invite_ttl,
         descriptor.base_url.clone(),
         descriptor.token.clone(),
@@ -2068,7 +2072,7 @@ async fn start(
         sidekick_workspace.clone(),
         config.home_dir(),
         operations::RemoteReach::new(
-            redeemer.clone(),
+            serving.redeemer().clone(),
             timings.remote_reach_timeout,
             timings.remote_reach_budget,
             timings.remote_worktree_timeout,
