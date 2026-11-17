@@ -7,9 +7,10 @@
 //! existed at its floor, and a field added since is optional or defaulted
 //! until the floor passes the version that added it. A Session error under a
 //! code this build does not know reads as [`SessionErrorCode::Other`], its
-//! message standing for it. What crosses no Pairing is read strictly: Config
-//! Documents, which a user writes by hand, what a Server stores for itself,
-//! and `runtime.json`, which only a machine's own Clients read.
+//! message standing for it. Administration, which only a machine's own
+//! Clients ask, shares these tolerant types too. Only these stay strict:
+//! Config Documents, which a user writes by hand, what a Server stores for
+//! itself, and `runtime.json`.
 
 use std::{
     collections::{BTreeMap, HashMap},
