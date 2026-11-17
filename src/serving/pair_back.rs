@@ -1161,7 +1161,7 @@ impl ServingController {
         .await;
         let failure = match redeemed {
             Ok(Ok(remote)) => return self.redeemed_for_offer(id, &remote, &key).await,
-            Ok(Err(failure)) => RedemptionFailure::of(&failure),
+            Ok(Err(failure)) => redemption_failure_of(&failure),
             Err(_) => {
                 // Given up midway, where it may have left its Remote to commit.
                 if self
@@ -1248,29 +1248,27 @@ impl ServingController {
     }
 }
 
-impl RedemptionFailure {
-    /// What `failure` comes to, in this Server's own terms. Each says what this
-    /// Server judged for itself. What the other machine said, code and all, is a
-    /// refusal and no more, since a code of its choosing could send a reader to
-    /// log in somewhere or round a rename for nothing.
-    fn of(failure: &PairingFailure) -> Self {
-        if failure.said_by_the_other {
-            return Self::Refused;
+/// What `failure` comes to as a [`RedemptionFailure`], in this Server's own terms. Each says what this
+/// Server judged for itself. What the other machine said, code and all, is a
+/// refusal and no more, since a code of its choosing could send a reader to
+/// log in somewhere or round a rename for nothing.
+fn redemption_failure_of(failure: &PairingFailure) -> RedemptionFailure {
+    if failure.said_by_the_other {
+        return RedemptionFailure::Refused;
+    }
+    match failure.code {
+        SessionErrorCode::PairingConnectionFailed => RedemptionFailure::NotReached,
+        SessionErrorCode::RelayLoginNeeded => RedemptionFailure::RelayLoginNeeded,
+        SessionErrorCode::RelayDifferentAccounts => RedemptionFailure::RelayAccountsDiffer,
+        SessionErrorCode::RelayCapReached => RedemptionFailure::RelayFull,
+        SessionErrorCode::PairingAuthenticationFailed => RedemptionFailure::WrongKey,
+        SessionErrorCode::RemoteNameConflict | SessionErrorCode::InvalidRemoteName => {
+            RedemptionFailure::NameTaken
         }
-        match failure.code {
-            SessionErrorCode::PairingConnectionFailed => Self::NotReached,
-            SessionErrorCode::RelayLoginNeeded => Self::RelayLoginNeeded,
-            SessionErrorCode::RelayDifferentAccounts => Self::RelayAccountsDiffer,
-            SessionErrorCode::RelayCapReached => Self::RelayFull,
-            SessionErrorCode::PairingAuthenticationFailed => Self::WrongKey,
-            SessionErrorCode::RemoteNameConflict | SessionErrorCode::InvalidRemoteName => {
-                Self::NameTaken
-            }
-            SessionErrorCode::InvalidInvite
-            | SessionErrorCode::InvalidInviteWays
-            | SessionErrorCode::UnsupportedInviteVersion => Self::Malformed,
-            _ => Self::Refused,
-        }
+        SessionErrorCode::InvalidInvite
+        | SessionErrorCode::InvalidInviteWays
+        | SessionErrorCode::UnsupportedInviteVersion => RedemptionFailure::Malformed,
+        _ => RedemptionFailure::Refused,
     }
 }
 

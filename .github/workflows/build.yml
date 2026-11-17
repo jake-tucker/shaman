@@ -220,6 +220,14 @@ jobs:
         if: env.RELEASE_TAG == ''
         run: cargo clippy --locked --all-targets --target "$TARGET" -- -D warnings
 
+      # A thin Client links the crates it shares with the Server on iOS, so each is checked here for the device and the
+      # simulator, and joins the list as it leaves the root crate.
+      - name: Check the shared crates for iOS
+        if: env.RELEASE_TAG == '' && runner.os == 'macOS'
+        run: |
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+          cargo check --locked -p shaman-protocol --target aarch64-apple-ios --target aarch64-apple-ios-sim
+
       - name: Test
         if: env.RELEASE_TAG == ''
         # Every failure in one run, rather than only the first.

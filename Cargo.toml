@@ -15,12 +15,14 @@ name = "relay_system"
 path = "tests/relay_system.rs"
 
 [workspace]
-members = ["crates/shaman-relay", "crates/shaman-relay-protocol"]
-# The Relay and the protocol it shares with the Server are linted and tested beside Shaman itself.
-default-members = [".", "crates/shaman-relay", "crates/shaman-relay-protocol"]
+members = ["crates/shaman-protocol", "crates/shaman-relay", "crates/shaman-relay-protocol"]
+# The Relay, the protocol it shares with the Server, and the protocol every Client shares with the Server are linted and
+# tested beside Shaman itself.
+default-members = [".", "crates/shaman-protocol", "crates/shaman-relay", "crates/shaman-relay-protocol"]
 
 [dependencies]
 shaman-build-id = { path = "crates/shaman-build-id" }
+shaman-protocol = { path = "crates/shaman-protocol" }
 shaman-relay-protocol = { path = "crates/shaman-relay-protocol" }
 async-trait = "0.1"
 anyhow = "1.0.99"
@@ -109,6 +111,8 @@ object = { version = "0.37", default-features = false, features = ["read_core", 
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo", "tzdb-bundle-platform"] }
 
 [dev-dependencies]
+# The protocol's fixtures, such as `Session::for_tests`, which Shaman's own tests build Sessions from.
+shaman-protocol = { path = "crates/shaman-protocol", features = ["test-support"] }
 # Holds SPAKE2's randomness still, to show a short Invite's exchange differs by a code nowhere it should not.
 rand_core = "0.6.4"
 # A real Relay in-process, which the Relay tests drive a Server against.

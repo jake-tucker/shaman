@@ -1,5 +1,5 @@
 //! Provider-neutral structured user input. Transport callbacks never enter this model.
-use crate::protocol::QuestionnaireId;
+use crate::QuestionnaireId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

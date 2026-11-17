@@ -112,7 +112,7 @@ impl Layout {
     /// the hint rather than the accident of a temp path's length.
     fn health(&self, instance_id: uuid::Uuid, pid: u32) -> Health {
         ready_health(instance_id, pid)
-            .with_workspace_paths(WorkspacePaths::from_home(Some(&self.root)))
+            .with_workspace_paths(shaman::paths::workspace_paths_from_home(Some(&self.root)))
     }
     fn at(&self, path: &Path) -> ResolvedWorkspace {
         let mut context = self.context.clone();
@@ -1242,7 +1242,7 @@ fn pressing_the_subdirectory_is_refused_while_the_remote_is_unreachable() {
     app.handle_event(ApplicationEvent::OriginCatalog {
         outlook: Outlook::Remote("studio".to_owned()),
         event: ManagedEvent::SessionCatalogReconciled(SessionCatalogSnapshot {
-            workspace_paths: WorkspacePaths::from_home(Some(&layout.root)),
+            workspace_paths: shaman::paths::workspace_paths_from_home(Some(&layout.root)),
             revision: SessionCatalogRevision::INITIAL,
             session_ids: Vec::new(),
             checkout_states: Vec::new(),

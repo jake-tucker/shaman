@@ -1,5 +1,4 @@
 mod ansi;
-pub mod approval;
 mod attachments;
 mod broker;
 pub mod build_identity;
@@ -17,7 +16,6 @@ pub mod open_files;
 pub mod paths;
 pub mod pricing;
 mod process_tree;
-pub mod protocol;
 pub mod provider;
 mod relay_said;
 mod relays;
@@ -38,8 +36,8 @@ pub mod tui;
 
 pub use runtime::{LastStop, RuntimeConfig};
 pub use serving::IdentityStoreChoice;
-
-pub mod questionnaire;
+pub use shaman_protocol as protocol;
+pub use shaman_protocol::{approval, questionnaire};
 
 /// The Icon Catalog's names, in listing order — the same list the Title
 /// Errand's reply schema enumerates an Icon over. The Catalog itself stays

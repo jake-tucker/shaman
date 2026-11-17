@@ -60,8 +60,8 @@ impl Detail {
 /// the Session's first, and its place among that Turn's entries, each from 1.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EntryNumber {
-    pub(crate) turn: usize,
-    pub(crate) entry: usize,
+    pub turn: usize,
+    pub entry: usize,
 }
 
 impl EntryNumber {
@@ -94,9 +94,9 @@ impl FromStr for EntryNumber {
 /// Turn. Spelled as briefly as says it: `4`, `4.7` or `4.7.120`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Position {
-    pub(crate) turn: usize,
-    pub(crate) entry: usize,
-    pub(crate) chars: usize,
+    pub turn: usize,
+    pub entry: usize,
+    pub chars: usize,
 }
 
 impl fmt::Display for Position {

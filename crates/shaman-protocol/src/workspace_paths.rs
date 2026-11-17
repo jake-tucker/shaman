@@ -65,23 +65,6 @@ pub struct WorkspacePaths {
 }
 
 impl WorkspacePaths {
-    /// Resolve once on the owning machine, never against a Remote's paths on
-    /// the Client. A home that cannot be resolved is unknown for abbreviation.
-    pub fn discover() -> Self {
-        Self::from_home(dirs::home_dir().as_deref())
-    }
-
-    /// Resolve an explicit home on this Server's filesystem. Keeping discovery
-    /// outside this boundary also permits isolated home fixtures in tests.
-    pub fn from_home(home: Option<&Path>) -> Self {
-        Self {
-            home: home
-                .and_then(|home| crate::paths::canonical(home).ok())
-                .and_then(|home| home.into_os_string().into_string().ok()),
-            ..Self::default()
-        }
-    }
-
     /// These paths with `directory` as the owning Server's Sidekick
     /// Workspace, so it is named and labelled as such.
     #[must_use]

@@ -1,0 +1,21 @@
+[package]
+name = "shaman-protocol"
+# Never published; what the wire speaks is numbered by `PROTOCOL_VERSION`.
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# What every Client shares with the Server: the wire's types, Approvals, Questionnaires and the Session projection.
+# It does no I/O, so a thin Client links it on a platform the Server never runs on (iOS).
+
+[features]
+# Fixtures, such as `Session::for_tests`, that Shaman's own tests build its types from.
+test-support = []
+
+[dependencies]
+anyhow = "1.0.99"
+blake3 = "1.8.2"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = { version = "1.0.143", features = ["preserve_order"] }
+uuid = { version = "1.18.1", features = ["serde", "v4"] }
+zeroize = "1.9.0"

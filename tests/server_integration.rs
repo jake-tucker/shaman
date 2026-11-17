@@ -70,11 +70,12 @@ struct SqliteCount {
 
 #[test]
 fn workspace_display_data_resolves_the_servers_home_and_handles_unknown_homes() {
-    use shaman::protocol::{PathStyle, WorkspacePaths};
+    use shaman::protocol::PathStyle;
 
     let home = tempfile::tempdir().unwrap();
     std::fs::create_dir(home.path().join("child")).unwrap();
-    let paths = WorkspacePaths::from_home(Some(&home.path().join("child").join("..")));
+    let paths =
+        shaman::paths::workspace_paths_from_home(Some(&home.path().join("child").join("..")));
     assert_eq!(
         paths.home.as_deref(),
         shaman::paths::canonical(home.path()).unwrap().to_str()
@@ -87,9 +88,9 @@ fn workspace_display_data_resolves_the_servers_home_and_handles_unknown_homes() 
             PathStyle::Unix
         }
     );
-    assert_eq!(WorkspacePaths::from_home(None).home, None);
+    assert_eq!(shaman::paths::workspace_paths_from_home(None).home, None);
     assert_eq!(
-        WorkspacePaths::from_home(Some(&home.path().join("missing"))).home,
+        shaman::paths::workspace_paths_from_home(Some(&home.path().join("missing"))).home,
         None
     );
 }

@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use uuid::Uuid;
 
-use crate::protocol::{Workspace, WorkspaceListing, WorkspaceListingRevision, WorkspacePaths};
+use crate::protocol::{Workspace, WorkspaceListing, WorkspaceListingRevision};
 
 /// The Workspace listing this Server gave last, and the run it gave it in.
 #[derive(Clone)]
@@ -27,7 +27,7 @@ impl WorkspaceListings {
                     run: Uuid::new_v4(),
                     changes: 0,
                 },
-                workspace_paths: WorkspacePaths::discover(),
+                workspace_paths: crate::paths::discover_workspace_paths(),
                 workspaces: Vec::new(),
             })
             .0,

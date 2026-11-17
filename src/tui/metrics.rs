@@ -83,15 +83,13 @@ impl Offered for UsageMetricsBreakdown {
     }
 }
 
-impl UsageMetricsBreakdown {
-    /// What several of its keys are called, in the words its notes use
-    /// beside its control's.
-    pub(super) fn plural(self) -> &'static str {
-        match self {
-            Self::Model => "models",
-            Self::Provider => "providers",
-            Self::Workspace => "workspaces",
-        }
+/// What several of `breakdown`'s keys are called, in the words its notes use
+/// beside its control's.
+pub(super) fn breakdown_plural(breakdown: UsageMetricsBreakdown) -> &'static str {
+    match breakdown {
+        UsageMetricsBreakdown::Model => "models",
+        UsageMetricsBreakdown::Provider => "providers",
+        UsageMetricsBreakdown::Workspace => "workspaces",
     }
 }
 

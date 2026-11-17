@@ -30,7 +30,7 @@ use crate::{
 use super::{
     super::slots::truncate_to_width,
     BarStrip, FocusedRow, LEGEND_SERIES, MetricsContent, MetricsReadRefusal, MetricsTab,
-    MetricsView, Offered,
+    MetricsView, Offered, breakdown_plural,
     calendar::{MetricsRange, RangeBuckets},
     chart::{self, Figure, MetricsMeasure, Series},
     headline::{self, HEADLINE_ROWS},
@@ -1103,7 +1103,7 @@ fn render_flowed_legend(
 fn overlap_note(breakdown: UsageMetricsBreakdown) -> String {
     format!(
         "A session that used several {} counts once for each",
-        breakdown.plural()
+        breakdown_plural(breakdown)
     )
 }
 

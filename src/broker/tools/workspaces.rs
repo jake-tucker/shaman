@@ -658,7 +658,7 @@ impl BrokerTools {
         let author = self.sidekick_author(call);
         let (paths, workspace) = match &origin {
             Outlook::Local => (
-                WorkspacePaths::discover(),
+                crate::paths::discover_workspace_paths(),
                 self.operations
                     .clone_workspace(&request, &author)
                     .await

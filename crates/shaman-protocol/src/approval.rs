@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::ApprovalId;
+use crate::ApprovalId;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -102,7 +102,7 @@ impl Approval {
     /// changing the Provider-owned request used to deliver a Decision. The
     /// typed subject remains intact; strings, collections, and JSON children
     /// are retained in order until the shared character budget is exhausted.
-    pub(crate) fn into_bounded_history(mut self, max_chars: usize) -> (Self, bool) {
+    pub fn into_bounded_history(mut self, max_chars: usize) -> (Self, bool) {
         let original = self.clone();
         let mut budget = CharacterBudget(max_chars);
         self.subject.retain_within(&mut budget);

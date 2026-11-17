@@ -5650,7 +5650,7 @@ fn paint_standing_rails(
     });
     let buffer = frame.buffer_mut();
     for rail in rails {
-        let feedback = rail.standing.presentation().feedback.style(theme);
+        let feedback = standing_presentation(rail.standing).feedback.style(theme);
         let style = if rail.focused && feedback.fg == theme.selection.focused.bg {
             Style::default().fg(theme.selection.focused.fg.unwrap_or(Color::Reset))
         } else {
@@ -5730,30 +5730,29 @@ enum StandingSlot {
     Word(&'static str),
 }
 
-impl SessionStanding {
-    const fn presentation(self) -> StandingPresentation {
-        match self {
-            Self::NeedsIntervention => StandingPresentation {
-                feedback: StandingFeedback::Warning,
-                slot: StandingSlot::Word("Needs intervention"),
-            },
-            Self::Working => StandingPresentation {
-                feedback: StandingFeedback::Info,
-                slot: StandingSlot::WorkingDuration,
-            },
-            Self::Failed => StandingPresentation {
-                feedback: StandingFeedback::Error,
-                slot: StandingSlot::Word("Failed"),
-            },
-            Self::Monitoring => StandingPresentation {
-                feedback: StandingFeedback::Info,
-                slot: StandingSlot::MonitoringDuration,
-            },
-            Self::Done => StandingPresentation {
-                feedback: StandingFeedback::Success,
-                slot: StandingSlot::Word("Done"),
-            },
-        }
+/// How a Session in `standing` is presented.
+const fn standing_presentation(standing: SessionStanding) -> StandingPresentation {
+    match standing {
+        SessionStanding::NeedsIntervention => StandingPresentation {
+            feedback: StandingFeedback::Warning,
+            slot: StandingSlot::Word("Needs intervention"),
+        },
+        SessionStanding::Working => StandingPresentation {
+            feedback: StandingFeedback::Info,
+            slot: StandingSlot::WorkingDuration,
+        },
+        SessionStanding::Failed => StandingPresentation {
+            feedback: StandingFeedback::Error,
+            slot: StandingSlot::Word("Failed"),
+        },
+        SessionStanding::Monitoring => StandingPresentation {
+            feedback: StandingFeedback::Info,
+            slot: StandingSlot::MonitoringDuration,
+        },
+        SessionStanding::Done => StandingPresentation {
+            feedback: StandingFeedback::Success,
+            slot: StandingSlot::Word("Done"),
+        },
     }
 }
 
@@ -6504,7 +6503,7 @@ fn sidebar_active_slot(
     now: u64,
 ) -> String {
     match standing
-        .map(SessionStanding::presentation)
+        .map(standing_presentation)
         .map(|reading| reading.slot)
     {
         Some(StandingSlot::WorkingDuration) => liveness.working_since.map_or_else(

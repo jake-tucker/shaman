@@ -1760,7 +1760,7 @@ async fn start(
     });
     let relays = crate::relays::RelayController::new(
         config.data_dir(),
-        crate::protocol::WorkspacePaths::from_home(config.home_dir().as_deref()),
+        crate::paths::workspace_paths_from_home(config.home_dir().as_deref()),
         serving.clone(),
         crate::relays::RelayTimings {
             answer_timeout: timings.relay_answer_timeout,
@@ -2110,7 +2110,7 @@ async fn start(
         // The paths this Server's clients name Workspaces by, its Sidekick
         // Workspace among them. The listing an Agent reads keeps the bare
         // discovery, naming that Workspace by the directory it can act on.
-        workspace_paths: crate::protocol::WorkspacePaths::from_home(config.home_dir().as_deref())
+        workspace_paths: crate::paths::workspace_paths_from_home(config.home_dir().as_deref())
             .with_sidekick_workspace(&sidekick_workspace.directory()),
         descriptor: Arc::new(descriptor.clone()),
         sessions: sessions.clone(),
@@ -5073,7 +5073,7 @@ async fn clone_workspace(State(state): State<AppState>, request: Request) -> Res
     {
         // Spelled as this Server's Workspace listing spells its paths.
         Ok(workspace) => Json(ClonedWorkspace {
-            workspace_paths: crate::protocol::WorkspacePaths::discover(),
+            workspace_paths: crate::paths::discover_workspace_paths(),
             workspace,
         })
         .into_response(),

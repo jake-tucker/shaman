@@ -111,11 +111,7 @@ impl SessionStore {
         let Some(record) = state.sessions.get(&sidekick) else {
             return Ok(());
         };
-        if !record
-            .snapshot
-            .remote_subsession_rows(remote, session_id)
-            .is_empty()
-        {
+        if !remote_subsession_rows(&record.snapshot, remote, session_id).is_empty() {
             return Ok(());
         }
         let remote = remote.to_owned();
@@ -325,9 +321,7 @@ impl SessionStoreState {
             let Some(record) = self.sessions.get_mut(sidekick) else {
                 continue;
             };
-            let changes = record
-                .snapshot
-                .remote_subsession_rows(remote, session_id)
+            let changes = remote_subsession_rows(&record.snapshot, remote, session_id)
                 .into_iter()
                 .filter(|(_, named)| *named != title)
                 .map(|(activity_id, _)| SessionChange::SubsessionTitleChanged {
@@ -370,28 +364,27 @@ impl SessionStoreState {
     }
 }
 
-impl crate::protocol::SessionSnapshot {
-    /// The rows of this Transcript leading into the Session `session_id` of
-    /// the Remote `remote`, by their identity and the Title each names.
-    fn remote_subsession_rows(
-        &self,
-        remote: &str,
-        session_id: SessionId,
-    ) -> Vec<(ActivityId, String)> {
-        self.activities
-            .iter()
-            .filter_map(|activity| match activity {
-                Activity::Subsession {
-                    id,
-                    session_id: led_into,
-                    origin: Some(origin),
-                    title,
-                    ..
-                } if *led_into == session_id && origin == remote => Some((*id, title.clone())),
-                _ => None,
-            })
-            .collect()
-    }
+/// The rows of `snapshot`'s Transcript leading into the Session `session_id`
+/// of the Remote `remote`, by their identity and the Title each names.
+fn remote_subsession_rows(
+    snapshot: &crate::protocol::SessionSnapshot,
+    remote: &str,
+    session_id: SessionId,
+) -> Vec<(ActivityId, String)> {
+    snapshot
+        .activities
+        .iter()
+        .filter_map(|activity| match activity {
+            Activity::Subsession {
+                id,
+                session_id: led_into,
+                origin: Some(origin),
+                title,
+                ..
+            } if *led_into == session_id && origin == remote => Some((*id, title.clone())),
+            _ => None,
+        })
+        .collect()
 }
 
 #[cfg(test)]

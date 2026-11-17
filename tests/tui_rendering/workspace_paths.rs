@@ -461,7 +461,7 @@ fn symlinked_homes_shorten_resolved_workspaces_but_links_outside_home_stay_absol
     let alias = root.path().join("home-alias");
     std::os::unix::fs::symlink(&home, &alias).unwrap();
     std::os::unix::fs::symlink(&outside, home.join("linked")).unwrap();
-    let paths = WorkspacePaths::from_home(Some(&alias));
+    let paths = shaman::paths::workspace_paths_from_home(Some(&alias));
     // The Landing's line is only as wide as its composer, so a long temporary
     // path gives up its front. A link outside home is known by the end it
     // keeps — its resolved target's — and by nothing of it being spelled from

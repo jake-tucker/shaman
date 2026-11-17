@@ -34,7 +34,7 @@ pub struct ShortCode(Zeroizing<String>);
 impl ShortCode {
     /// A code from `random`, each byte giving one character: 256 is a multiple
     /// of the alphabet's 32, so taking the low five bits favours no character.
-    pub(crate) fn from_random(random: &[u8; LENGTH]) -> Self {
+    pub fn from_random(random: &[u8; LENGTH]) -> Self {
         let mut code = Zeroizing::new(String::with_capacity(LENGTH));
         for byte in random {
             code.push(char::from(ALPHABET[usize::from(byte & 0x1f)]));
@@ -73,7 +73,7 @@ impl ShortCode {
 
     /// The code as both machines agree on it, which nothing but the exchange
     /// reads.
-    pub(crate) fn canonical(&self) -> &str {
+    pub fn canonical(&self) -> &str {
         &self.0
     }
 
@@ -270,14 +270,10 @@ mod tests {
 
     #[test]
     fn a_whole_invite_is_told_from_a_code_by_how_it_opens() {
-        assert!(crate::protocol::opens_as_an_invite("shaman-v1-eyJ3IjpbXX0"));
-        assert!(crate::protocol::opens_as_an_invite(
-            "\n  shaman-v2-anything"
-        ));
-        assert!(!crate::protocol::opens_as_an_invite("K7QF-2MXP"));
-        assert!(!crate::protocol::opens_as_an_invite(
-            "k7shaman-v1-eyJ3IjpbXX0"
-        ));
+        assert!(crate::opens_as_an_invite("shaman-v1-eyJ3IjpbXX0"));
+        assert!(crate::opens_as_an_invite("\n  shaman-v2-anything"));
+        assert!(!crate::opens_as_an_invite("K7QF-2MXP"));
+        assert!(!crate::opens_as_an_invite("k7shaman-v1-eyJ3IjpbXX0"));
     }
 
     /// An Invite crosses a Server's API as the bare string it always was, and
@@ -307,7 +303,7 @@ mod tests {
             ),
             format!(
                 "{:?}",
-                crate::protocol::IssuedInvite {
+                crate::IssuedInvite {
                     invite: text.clone(),
                     serial: 1,
                     ways: Vec::new(),
@@ -316,13 +312,13 @@ mod tests {
             ),
             format!(
                 "{:?}",
-                crate::protocol::PreviewInviteRequest {
+                crate::PreviewInviteRequest {
                     invite: text.clone(),
                 }
             ),
             format!(
                 "{:?}",
-                crate::protocol::RedeemInviteRequest {
+                crate::RedeemInviteRequest {
                     invite: text.clone(),
                     name: None,
                     ways: Vec::new(),

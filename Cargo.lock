@@ -3530,6 +3530,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shaman-build-id",
+ "shaman-protocol",
  "shaman-relay",
  "shaman-relay-protocol",
  "shlex",
@@ -3564,6 +3565,18 @@ name = "shaman-build-id"
 version = "0.1.0"
 dependencies = [
  "uuid",
+]
+
+[[package]]
+name = "shaman-protocol"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "serde",
+ "serde_json",
+ "uuid",
+ "zeroize",
 ]
 
 [[package]]

@@ -5,6 +5,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::protocol::WorkspacePaths;
+
 /// The canonical reading of `path`, resolved through symlinks and relative
 /// waypoints so that two ways of naming one directory cannot become two
 /// Workspaces, two Repositories, or two Execution Directories.
@@ -34,6 +36,25 @@ use std::{
 /// spells what it is given rather than what it can resolve locally.
 pub fn canonical(path: impl AsRef<Path>) -> io::Result<PathBuf> {
     dunce::canonicalize(path)
+}
+
+/// This machine's [`WorkspacePaths`], resolved once on the owning machine and
+/// never against a Remote's paths on the Client. A home that cannot be
+/// resolved is unknown for abbreviation.
+pub fn discover_workspace_paths() -> WorkspacePaths {
+    workspace_paths_from_home(dirs::home_dir().as_deref())
+}
+
+/// The [`WorkspacePaths`] of an explicit home on this Server's filesystem.
+/// Keeping discovery outside this boundary also permits isolated home
+/// fixtures in tests.
+pub fn workspace_paths_from_home(home: Option<&Path>) -> WorkspacePaths {
+    WorkspacePaths {
+        home: home
+            .and_then(|home| canonical(home).ok())
+            .and_then(|home| home.into_os_string().into_string().ok()),
+        ..WorkspacePaths::default()
+    }
 }
 
 /// Makes the directory `name` directly beneath `root`, which must already

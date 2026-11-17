@@ -10,6 +10,10 @@ use std::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use uuid::Uuid;
 
+pub mod approval;
+pub mod questionnaire;
+pub mod session_projection;
+
 mod workspace_paths;
 pub use workspace_paths::{MANAGED_WORKTREE_DIRECTORY, PathStyle, WorkspacePaths};
 
@@ -1021,7 +1025,7 @@ pub struct SkillDescriptor {
 impl SkillDescriptor {
     /// Whether this is the very Skill `invocation` is bound to, by identity
     /// and safe metadata alike.
-    pub(crate) fn identifies(&self, invocation: &SkillInvocation) -> bool {
+    pub fn identifies(&self, invocation: &SkillInvocation) -> bool {
         self.id == invocation.skill_id
             && self.name == invocation.name
             && self.scope == invocation.scope
@@ -1111,20 +1115,20 @@ impl From<Range<usize>> for TextSpan {
     }
 }
 
-pub(crate) fn skill_names_equal(left: &str, right: &str) -> bool {
+pub fn skill_names_equal(left: &str, right: &str) -> bool {
     left.chars()
         .flat_map(char::to_lowercase)
         .eq(right.chars().flat_map(char::to_lowercase))
 }
 
-pub(crate) fn skill_marker_matches(marker: &str, name: &str) -> bool {
+pub fn skill_marker_matches(marker: &str, name: &str) -> bool {
     marker
         .strip_prefix('$')
         .is_some_and(|visible| skill_names_equal(visible, name))
 }
 
 /// Adds `name` to `names` unless a Skill of that name is there already.
-pub(crate) fn push_skill_name_once(names: &mut Vec<String>, name: &str) {
+pub fn push_skill_name_once(names: &mut Vec<String>, name: &str) {
     if !names
         .iter()
         .any(|existing| skill_names_equal(existing, name))
@@ -1136,7 +1140,7 @@ pub(crate) fn push_skill_name_once(names: &mut Vec<String>, name: &str) {
 /// Why a Skill Invocation has no one Skill of its name in another directory's
 /// Catalog.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum SkillNameMismatch {
+pub enum SkillNameMismatch {
     Missing,
     Ambiguous,
 }
@@ -1144,13 +1148,13 @@ pub(crate) enum SkillNameMismatch {
 /// The names that kept Skill Invocations from being matched by name in another
 /// directory's Catalog, each once.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct UnmatchedSkills {
+pub struct UnmatchedSkills {
     missing: Vec<String>,
     ambiguous: Vec<String>,
 }
 
 impl UnmatchedSkills {
-    pub(crate) fn record(&mut self, mismatch: SkillNameMismatch, name: &str) {
+    pub fn record(&mut self, mismatch: SkillNameMismatch, name: &str) {
         let names = match mismatch {
             SkillNameMismatch::Missing => &mut self.missing,
             SkillNameMismatch::Ambiguous => &mut self.ambiguous,
@@ -1158,12 +1162,12 @@ impl UnmatchedSkills {
         push_skill_name_once(names, name);
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.missing.is_empty() && self.ambiguous.is_empty()
     }
 
     /// These names as a composer presents a Skill: `` `$name` ``.
-    pub(crate) fn as_markers(&self) -> String {
+    pub fn as_markers(&self) -> String {
         self.reasons(|name| format!("`${name}`"))
     }
 
@@ -1188,7 +1192,7 @@ impl std::fmt::Display for UnmatchedSkills {
 
 /// Resolves a Skill bound in one directory against the fresh `skills` of the
 /// directory it is going to.
-pub(crate) fn match_skill_by_name<'a>(
+pub fn match_skill_by_name<'a>(
     skills: &'a [SkillDescriptor],
     invocation: &SkillInvocation,
 ) -> Result<&'a SkillDescriptor, SkillNameMismatch> {
@@ -1213,7 +1217,7 @@ pub(crate) fn match_skill_by_name<'a>(
 /// Resolves a whole Prompt's Skills as [`match_skill_by_name`] does, answering
 /// each invocation's Skill in order. All match or none do, so callers never
 /// observe a partially retargeted set.
-pub(crate) fn match_skills_by_name<'a>(
+pub fn match_skills_by_name<'a>(
     skills: &'a [SkillDescriptor],
     invocations: &[SkillInvocation],
 ) -> Result<Vec<&'a SkillDescriptor>, UnmatchedSkills> {
@@ -2273,7 +2277,7 @@ impl std::fmt::Display for Way {
 }
 
 /// How every Invite's string opens, a version following.
-pub(crate) const INVITE_OPENING: &str = "shaman-v";
+pub const INVITE_OPENING: &str = "shaman-v";
 
 /// Whether `text` is, by how it opens, a whole Invite rather than a short code.
 /// No code reads so unless it is typed in lower case with its separator and opens
@@ -4037,7 +4041,7 @@ pub enum CacheWritePrice {
 }
 
 impl CacheWritePrice {
-    pub(crate) fn is_default(&self) -> bool {
+    pub fn is_default(&self) -> bool {
         *self == Self::Default
     }
 }
@@ -4275,11 +4279,11 @@ impl Session {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Session {
     /// An idle top-level Session working at the root of `workspace`, with no
     /// Agent yet, for a test that reads only where a Session is.
-    pub(crate) fn for_tests(workspace: Workspace) -> Self {
+    pub fn for_tests(workspace: Workspace) -> Self {
         Self {
             pending_move: None,
             context_fill: None,
@@ -4366,7 +4370,7 @@ impl SessionStandingInputs {
                 .sum::<usize>()
     }
 
-    pub(crate) fn from_turns(turns: &[Turn]) -> Self {
+    pub fn from_turns(turns: &[Turn]) -> Self {
         Self {
             subagent_interventions: Vec::new(),
             pending_questionnaires: Vec::new(),
@@ -4383,7 +4387,7 @@ impl SessionStandingInputs {
         }
     }
 
-    pub(crate) fn latest_turn_settled_as(&self, status: TurnStatus) -> bool {
+    pub fn latest_turn_settled_as(&self, status: TurnStatus) -> bool {
         self.latest_turn.is_some_and(|latest| {
             latest.status == status
                 && latest.settled_at.is_some_and(|settled_at| {

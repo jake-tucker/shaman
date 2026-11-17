@@ -20,7 +20,7 @@ use shaman::{
         Question, Questionnaire, QuestionnaireId, QuestionnaireOutcome, ResolveWorkspaceRequest,
         ServerIdentity, Session, SessionChange, SessionId, SessionListItem, SessionRevision,
         SessionSnapshot, SessionStatus, SessionSummary, SessionTimestamp, SettingMutation,
-        SettingsSnapshot, TranscriptItem, Turn, TurnId, TurnStatus, Workspace, WorkspacePaths,
+        SettingsSnapshot, TranscriptItem, Turn, TurnId, TurnStatus, Workspace,
     },
     tui::{
         Application, ApplicationEvent, ApplicationTransition, CommandId, SemanticCommandId,
@@ -291,7 +291,7 @@ pub fn connected_application_homed(workspace: &std::path::Path) -> Application {
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::Connected(
             ready_health(fixture_instance_id(), 42_424)
-                .with_workspace_paths(WorkspacePaths::from_home(Some(workspace))),
+                .with_workspace_paths(shaman::paths::workspace_paths_from_home(Some(workspace))),
         )))
         .expect("connect application");
     application
