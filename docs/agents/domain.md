@@ -44,6 +44,14 @@ When your output names a domain concept (in an issue title, a refactor proposal,
 
 If the concept you need isn't in the glossary yet, that's a signal — either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
 
+## Words for what a Client presents
+
+The TUI and a thin Client present the same work differently. `CONTEXT.md` handles that by one rule, which holds when reading a presentation entry and when writing one:
+
+- **A term named for what a presentation is for covers every Client.** Landing, Provisional Session, Workspace Picker, Worktree Selector, Working Indicator, Intervention and Turn Fold are such terms. The entry's opening sentence holds for every Client, the detail after it describes the TUI unless it says otherwise, and a trailing "A thin Client…" clause says what differs.
+- **A term named for a shape or a place on the TUI's screen stays the TUI's.** Sidebar, Aside, Section, Subagents Section and Subagent Picker are such terms. Where a thin Client shows something in its place, the entry gains a clause saying so in ordinary words: a thin Client's "listing of Sessions", the "sheet" it offers a tree in. Do not coin a term for the thin Client's counterpart.
+- **A thin Client clause is short.** One or two sentences, stating only a difference that follows from being a thin Client: no keys, no Server of its own, one screen at a time. What a release leaves out for now belongs in its spec, not in the glossary.
+
 ## Flag ADR conflicts
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
