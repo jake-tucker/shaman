@@ -32,7 +32,7 @@ use x509_parser::{
 /// A signature is asked for in the middle of a TLS handshake, so `sign` is
 /// called on an async worker and blocks it until it answers; it is to
 /// answer in milliseconds, as a Secure Enclave does.
-pub(crate) trait Signer: Send + Sync {
+pub trait Signer: Send + Sync {
     /// The key, as the DER SubjectPublicKeyInfo of a P-256 public key.
     fn public_key(&self) -> Vec<u8>;
 
@@ -45,7 +45,7 @@ pub(crate) trait Signer: Send + Sync {
 /// prove, and that key's bytes held for the uses to name it by. Cloning it
 /// shares the one signer.
 #[derive(Clone)]
-pub(crate) struct IdentitySigner(Arc<Taken>);
+pub struct IdentitySigner(Arc<Taken>);
 
 struct Taken {
     signer: Arc<dyn Signer>,
@@ -61,7 +61,7 @@ const P256_POINT_LEN: usize = 65;
 impl IdentitySigner {
     /// Takes up `signer`, where its key is one a P-256 signature can be
     /// made with.
-    pub(crate) fn new(signer: impl Signer + 'static) -> Result<Self> {
+    pub fn new(signer: impl Signer + 'static) -> Result<Self> {
         let public_key = signer.public_key();
         let point_at = p256_point_at(&public_key).context(
             "the identity key is not an ECDSA key on P-256, the only kind Shaman signs with",
@@ -74,12 +74,12 @@ impl IdentitySigner {
     }
 
     /// The key, as the DER SubjectPublicKeyInfo its Pairings pin.
-    pub(crate) fn public_key(&self) -> &[u8] {
+    pub fn public_key(&self) -> &[u8] {
         &self.0.public_key
     }
 
     /// Signs `message` with the key, as [`Signer::sign`] does.
-    pub(crate) fn sign(&self, message: &[u8]) -> Result<Vec<u8>> {
+    pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>> {
         self.0
             .signer
             .sign(message)
@@ -88,7 +88,7 @@ impl IdentitySigner {
 
     /// The DER of a certificate `params` describes, which the key signs
     /// itself, and whose subject key it is.
-    pub(crate) fn self_signed(&self, params: CertificateParams) -> Result<Vec<u8>> {
+    pub fn self_signed(&self, params: CertificateParams) -> Result<Vec<u8>> {
         let key = CertificateKey {
             signer: self,
             refused: StdMutex::default(),
@@ -104,7 +104,7 @@ impl IdentitySigner {
 
     /// What a TLS end presents to prove the key: `certificate`, the DER of
     /// a certificate of the key, which the key's signatures stand behind.
-    pub(crate) fn tls_identity(&self, certificate: Vec<u8>) -> Result<Arc<CertifiedKey>> {
+    pub fn tls_identity(&self, certificate: Vec<u8>) -> Result<Arc<CertifiedKey>> {
         let identity = CertifiedKey::new(
             vec![CertificateDer::from(certificate)],
             Arc::new(TlsKey(self.clone())),
@@ -117,10 +117,7 @@ impl IdentitySigner {
 
     /// What a TLS client presents to prove the key, whatever a server asks:
     /// `certificate`, as [`Self::tls_identity`] takes it.
-    pub(crate) fn tls_client_identity(
-        &self,
-        certificate: Vec<u8>,
-    ) -> Result<Arc<dyn ResolvesClientCert>> {
+    pub fn tls_client_identity(&self, certificate: Vec<u8>) -> Result<Arc<dyn ResolvesClientCert>> {
         Ok(Arc::new(SingleCertAndKey::from(
             self.tls_identity(certificate)?,
         )))
@@ -227,11 +224,11 @@ impl rustls::sign::Signer for TlsKey {
 
 /// Signs with a key whose PKCS#8 bytes are in memory: how a Server signs
 /// with the key it keeps in the platform credential store or its key file.
-pub(crate) struct SoftwareSigner(KeyPair);
+pub struct SoftwareSigner(KeyPair);
 
 impl SoftwareSigner {
     /// Signs with the P-256 key whose PKCS#8 DER is `key`.
-    pub(crate) fn from_pkcs8(key: &[u8]) -> Result<Self> {
+    pub fn from_pkcs8(key: &[u8]) -> Result<Self> {
         let key = KeyPair::try_from(key).context("read identity key")?;
         if key.algorithm() != &PKCS_ECDSA_P256_SHA256 {
             bail!("the identity key is not an ECDSA key on P-256, the only kind Shaman signs with");
@@ -250,8 +247,8 @@ impl Signer for SoftwareSigner {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod testing {
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing {
     //! A signer no key bytes stand behind in the signer itself: it asks for
     //! each signature by a callback, as a phone's core asks its app.
 
@@ -274,7 +271,7 @@ pub(crate) mod testing {
 
     /// Signs by calling back to whatever it was made with, knowing nothing
     /// of the key but its public half, and counting what it was asked.
-    pub(crate) struct CallbackSigner {
+    pub struct CallbackSigner {
         public_key: Vec<u8>,
         callback: Callback,
         signed: Arc<AtomicU64>,
@@ -282,7 +279,7 @@ pub(crate) mod testing {
 
     impl CallbackSigner {
         /// Signs with `public_key`'s key by calling `callback`.
-        pub(crate) fn new(
+        pub fn new(
             public_key: Vec<u8>,
             callback: impl Fn(&[u8]) -> Result<Vec<u8>> + Send + Sync + 'static,
         ) -> Self {
@@ -296,7 +293,7 @@ pub(crate) mod testing {
         /// Signs with a new key held by a thread of its own, which the
         /// callback asks for each signature and waits on, as a core's
         /// signer waits on its app.
-        pub(crate) fn elsewhere() -> Self {
+        pub fn elsewhere() -> Self {
             let key = KeyPair::generate().expect("generate a key");
             let public_key = key.subject_public_key_info();
             let (asks, asked) = mpsc::channel::<(Vec<u8>, mpsc::Sender<Vec<u8>>)>();
@@ -317,7 +314,7 @@ pub(crate) mod testing {
         }
 
         /// What counts the signatures it is asked for.
-        pub(crate) fn signed(&self) -> Arc<AtomicU64> {
+        pub fn signed(&self) -> Arc<AtomicU64> {
             self.signed.clone()
         }
     }

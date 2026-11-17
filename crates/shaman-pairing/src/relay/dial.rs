@@ -21,9 +21,9 @@ use tokio_tungstenite::{
 
 use super::{RelayFailure, carried::CarriedStream, carried::Stop, intake};
 #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
-use crate::pairing::SOCKET_USER_TIMEOUT;
+use crate::SOCKET_USER_TIMEOUT;
 use crate::{
-    pairing::{Identity, SOCKET_KEEPALIVE, SOCKET_KEEPALIVE_PROBES},
+    Identity, SOCKET_KEEPALIVE, SOCKET_KEEPALIVE_PROBES,
     protocol::{RelaySide, RelayUnreachable, SessionErrorCode},
     shown_text::shown,
 };
@@ -42,7 +42,7 @@ pub(super) struct Dialer {
 }
 
 /// Why a connection to a Relay could not be made.
-pub(crate) enum DialFailure {
+pub enum DialFailure {
     /// The Relay did not answer, saying why.
     Unreachable(String),
     /// The Relay and the Server share no version, and `behind` is the side
@@ -54,7 +54,7 @@ pub(crate) enum DialFailure {
 
 impl DialFailure {
     /// Why the Relay reads Unreachable, failing so.
-    pub(crate) fn unreachable(self) -> RelayUnreachable {
+    pub fn unreachable(self) -> RelayUnreachable {
         match self {
             Self::Unreachable(message) | Self::Refused(message) => RelayUnreachable {
                 behind: None,
@@ -70,7 +70,7 @@ impl DialFailure {
         }
     }
 
-    pub(crate) fn into_failure(self) -> RelayFailure {
+    pub fn into_failure(self) -> RelayFailure {
         match self {
             Self::Unreachable(message) => {
                 RelayFailure::new(SessionErrorCode::RelayUnreachable, message)
@@ -357,15 +357,20 @@ fn mismatch(relay_versions: &[relay_protocol::Version], behind: Side) -> String 
 
 /// How a connection to a Relay ended.
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) enum Ending {
+pub enum Ending {
     /// It closed.
     Closed,
     /// The Relay stopped answering while it stood open.
     Silent,
 }
 
+/// A message to a Relay that did not go: the connection failed, or the Relay
+/// took in nothing within the send timeout.
+#[derive(Debug)]
+pub struct Unsaid;
+
 /// A WebSocket to a Relay, carrying one JSON message to a text frame.
-pub(crate) struct Conversation {
+pub struct Conversation {
     socket: WebSocketStream<reqwest::Upgraded>,
     /// How long the Relay may take to take in what is sent it.
     send_timeout: Duration,
@@ -375,7 +380,7 @@ impl Conversation {
     /// Sends `message` once whatever is queued ahead of it — answers to the
     /// Relay's pings among them — has gone, so it fits however much was, all
     /// within the send timeout.
-    pub(crate) async fn say(&mut self, message: &ServerMessage) -> std::result::Result<(), ()> {
+    pub async fn say(&mut self, message: &ServerMessage) -> std::result::Result<(), Unsaid> {
         let text = serde_json::to_string(message).expect("a Server message always encodes");
         let said = tokio::time::timeout(self.send_timeout, async {
             self.socket.flush().await?;
@@ -383,13 +388,13 @@ impl Conversation {
         });
         match said.await {
             Ok(Ok(())) => Ok(()),
-            Ok(Err(_)) | Err(_) => Err(()),
+            Ok(Err(_)) | Err(_) => Err(Unsaid),
         }
     }
 
     /// The next thing the Relay says that this Server recognizes, or `None`
     /// once the connection has ended.
-    pub(crate) async fn hear(&mut self) -> Option<RelayMessage> {
+    pub async fn hear(&mut self) -> Option<RelayMessage> {
         loop {
             match self.socket.next().await? {
                 Ok(Message::Text(text)) => {
@@ -409,7 +414,7 @@ impl Conversation {
     /// what this Server asked shows it answers — it cannot without reading —
     /// so a Relay that keeps talking and never reads is found silent all the
     /// same.
-    pub(crate) async fn attend(
+    pub async fn attend(
         &mut self,
         interval: Duration,
         timeout: Duration,
@@ -456,7 +461,7 @@ impl Conversation {
 
     /// Ends the conversation and hears the Relay out until it lets it go, so
     /// whatever the Relay was doing for it is done, all within `timeout`.
-    pub(crate) async fn end(mut self, timeout: Duration) {
+    pub async fn end(mut self, timeout: Duration) {
         let _ = tokio::time::timeout(timeout, async {
             let _ = self.socket.close(None).await;
             while self.hear().await.is_some() {}
@@ -464,7 +469,7 @@ impl Conversation {
         .await;
     }
 
-    pub(crate) async fn close(mut self) {
+    pub async fn close(mut self) {
         let _ = tokio::time::timeout(self.send_timeout, self.socket.close(None)).await;
     }
 

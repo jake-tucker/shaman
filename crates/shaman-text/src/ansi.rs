@@ -1,5 +1,5 @@
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum Fragment {
+pub enum Fragment {
     Text(String),
     Sgr(String),
     Csi(String),
@@ -17,7 +17,7 @@ impl Fragment {
     /// strings, controls Shaman does not act on — classifies as
     /// [`FragmentRole::Invisible`], so ingest and rendering cannot drift apart
     /// over which sequences disappear.
-    pub(crate) fn into_role(self) -> FragmentRole {
+    pub fn into_role(self) -> FragmentRole {
         match self {
             Self::Text(text) => FragmentRole::Text(text),
             Self::Sgr(sequence) => FragmentRole::Sgr(sequence),
@@ -39,7 +39,7 @@ impl Fragment {
 /// decide what to do with each role; only [`FragmentRole::Invisible`] has one
 /// answer, which is to drop it.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum FragmentRole {
+pub enum FragmentRole {
     Text(String),
     Sgr(String),
     Hyperlink(Osc8),
@@ -50,7 +50,7 @@ pub(crate) enum FragmentRole {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Osc8 {
+pub struct Osc8 {
     sequence: String,
     target: Option<String>,
 }
@@ -78,11 +78,11 @@ impl Osc8 {
         Ok(Self { sequence, target })
     }
 
-    pub(crate) fn sequence(&self) -> &str {
+    pub fn sequence(&self) -> &str {
         &self.sequence
     }
 
-    pub(crate) fn target(&self) -> Option<&str> {
+    pub fn target(&self) -> Option<&str> {
         self.target.as_deref()
     }
 }
@@ -128,12 +128,12 @@ impl StringKind {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct AnsiScanner {
+pub struct AnsiScanner {
     state: State,
 }
 
 impl AnsiScanner {
-    pub(crate) fn feed(&mut self, chunk: &str) -> Vec<Fragment> {
+    pub fn feed(&mut self, chunk: &str) -> Vec<Fragment> {
         let mut fragments = Vec::new();
         let mut text = String::new();
         for character in chunk.chars() {
@@ -257,9 +257,9 @@ const HYPERLINK_CLOSE: &str = "\x1b]8;;\x1b\\";
 /// content itself carries only what the Provider sent, so a client that never
 /// reads the flag still renders Provider text and nothing of Shaman's.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct NormalizedText {
-    pub(crate) content: String,
-    pub(crate) truncated: bool,
+pub struct NormalizedText {
+    pub content: String,
+    pub truncated: bool,
 }
 
 /// Stateful normalization for provider text that may arrive in arbitrary
@@ -267,7 +267,7 @@ pub(crate) struct NormalizedText {
 /// printable text, newlines, complete SGR sequences, and complete OSC 8
 /// hyperlinks only.
 #[derive(Debug, Default)]
-pub(crate) struct ProviderTextNormalizer {
+pub struct ProviderTextNormalizer {
     scanner: AnsiScanner,
     remaining_chars: Option<usize>,
     formatting: Formatting,
@@ -366,20 +366,20 @@ fn split_to_fit(text: &str, limit: Option<usize>) -> (&str, bool) {
 }
 
 impl ProviderTextNormalizer {
-    pub(crate) fn with_max_chars(max_chars: usize) -> Self {
+    pub fn with_max_chars(max_chars: usize) -> Self {
         Self {
             remaining_chars: Some(max_chars),
             ..Self::default()
         }
     }
 
-    pub(crate) fn with_line_overwrite(max_chars: usize) -> Self {
+    pub fn with_line_overwrite(max_chars: usize) -> Self {
         let mut normalizer = Self::with_max_chars(max_chars);
         normalizer.overwrite_line = Some(OverwriteLine::default());
         normalizer
     }
 
-    pub(crate) fn push(&mut self, chunk: &str) -> NormalizedText {
+    pub fn push(&mut self, chunk: &str) -> NormalizedText {
         if self.truncated {
             return NormalizedText::default();
         }
@@ -408,7 +408,7 @@ impl ProviderTextNormalizer {
     /// Every path that settles a normalizer built with
     /// [`Self::with_line_overwrite`] must call this, or the unterminated line
     /// the normalizer is holding back is lost.
-    pub(crate) fn finish(&mut self) -> NormalizedText {
+    pub fn finish(&mut self) -> NormalizedText {
         if self.truncated {
             return NormalizedText::default();
         }
@@ -560,7 +560,7 @@ impl ProviderTextNormalizer {
 
 /// Normalizes text that arrives whole and uncapped, where the stream cannot be
 /// cut short and so carries no truncation to report.
-pub(crate) fn normalize_provider_text(text: &str) -> String {
+pub fn normalize_provider_text(text: &str) -> String {
     ProviderTextNormalizer::default().push(text).content
 }
 
@@ -657,7 +657,7 @@ enum SgrEffect {
 /// sequence that is not SGR. A sequence carrying no parameters splits into one
 /// empty parameter, which [`sgr_parameter_code`] reads as the reset the
 /// standard assigns it.
-pub(crate) fn sgr_parameters(sequence: &str) -> Option<impl Iterator<Item = &str>> {
+pub fn sgr_parameters(sequence: &str) -> Option<impl Iterator<Item = &str>> {
     sequence
         .strip_prefix("\x1b[")
         .and_then(|sequence| sequence.strip_suffix('m'))
@@ -666,7 +666,7 @@ pub(crate) fn sgr_parameters(sequence: &str) -> Option<impl Iterator<Item = &str
 
 /// Reads the numeric code an SGR parameter names, reporting `None` for a
 /// parameter that names none. An omitted parameter names zero.
-pub(crate) fn sgr_parameter_code(parameter: &str) -> Option<u16> {
+pub fn sgr_parameter_code(parameter: &str) -> Option<u16> {
     if parameter.is_empty() {
         Some(0)
     } else {

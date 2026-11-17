@@ -15,15 +15,33 @@ name = "relay_system"
 path = "tests/relay_system.rs"
 
 [workspace]
-members = ["crates/shaman-protocol", "crates/shaman-relay", "crates/shaman-relay-protocol"]
-# The Relay, the protocol it shares with the Server, and the protocol every Client shares with the Server are linted and
-# tested beside Shaman itself.
-default-members = [".", "crates/shaman-protocol", "crates/shaman-relay", "crates/shaman-relay-protocol"]
+members = [
+    "crates/shaman-pairing",
+    "crates/shaman-private-files",
+    "crates/shaman-protocol",
+    "crates/shaman-relay",
+    "crates/shaman-relay-protocol",
+    "crates/shaman-text",
+]
+# The Relay, the protocol it shares with the Server, the protocol every Client shares with the Server, the redeeming side
+# of a Pairing, and the text and private-file helpers they share are linted and tested beside Shaman itself.
+default-members = [
+    ".",
+    "crates/shaman-pairing",
+    "crates/shaman-private-files",
+    "crates/shaman-protocol",
+    "crates/shaman-relay",
+    "crates/shaman-relay-protocol",
+    "crates/shaman-text",
+]
 
 [dependencies]
 shaman-build-id = { path = "crates/shaman-build-id" }
+shaman-pairing = { path = "crates/shaman-pairing" }
 shaman-protocol = { path = "crates/shaman-protocol" }
+shaman-private-files = { path = "crates/shaman-private-files" }
 shaman-relay-protocol = { path = "crates/shaman-relay-protocol" }
+shaman-text = { path = "crates/shaman-text" }
 async-trait = "0.1"
 anyhow = "1.0.99"
 arboard = { version = "3.6.1", default-features = false, features = ["image-data", "wayland-data-control"] }
@@ -43,13 +61,8 @@ dunce = "1.0.5"
 eventsource-stream = "0.2.3"
 fs2 = "0.4.3"
 futures-util = "0.3.31"
-hostname = "0.4.1"
 http = "1.5.0"
-# The body the redeemer's `http` interface names, so it names no web framework's.
-http-body = "1.1.0"
-# The Pairing's pinned-key client: HTTP over a connection it is handed, rather than one it dials itself —
-# HTTP/1.1 over a direct way, and HTTP/2 over a Relay way, carrying everything asked by it on one join — and the
-# Serving side's server for each.
+# The Serving side's server, over a direct way and over a Relay way.
 http-body-util = "0.1.5"
 hyper = { version = "1.11.0", features = ["client", "http1", "http2", "server"] }
 hyper-util = { version = "0.1.20", features = ["client-legacy", "client-proxy", "http1", "http2", "service", "tokio"] }
@@ -72,9 +85,6 @@ ratatui = { version = "0.29.0", features = ["unstable-rendered-line-info"] }
 # Shaman tells it the protocol and cell size rather than letting it probe (ADR 0038).
 ratatui-image = { version = "9.0.0", default-features = false }
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std", "tls12"] }
-# A Server verifies an HTTPS Relay against the operating system's trust store, so a company's TLS-inspecting
-# proxy trusted there is trusted for it too.
-rustls-platform-verifier = "0.7.1"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.143", features = ["preserve_order"] }
 shlex = "2"
@@ -92,16 +102,11 @@ termina = "0.4.0"
 time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
 tokio = { version = "1.47.1", features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring", "tls12"] }
-# The WebSocket a Server speaks to a Relay over, opened through reqwest so it takes the system proxy and trust.
-tokio-tungstenite = { version = "0.29", default-features = false, features = ["handshake"] }
-tower-service = "0.3.3"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-width = "=0.2.0"
 unicode-segmentation = "1.13.3"
-icu_normalizer = { version = "2.3.0", default-features = false, features = ["compiled_data"] }
-icu_properties = "2.3.0"
 uuid = { version = "1.18.1", features = ["serde", "v4"] }
 # Wipes the copy of a Server identity key a call to the platform credential store is made with.
 zeroize = "1.9.0"
@@ -117,8 +122,13 @@ object = { version = "0.37", default-features = false, features = ["read_core", 
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo", "tzdb-bundle-platform"] }
 
 [dev-dependencies]
+# What a Relay test stands in for: a Relay's WebSocket, and the machine's name a Server tells a Relay.
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["handshake"] }
+hostname = "0.4.1"
 # The protocol's fixtures, such as `Session::for_tests`, which Shaman's own tests build Sessions from.
 shaman-protocol = { path = "crates/shaman-protocol", features = ["test-support"] }
+# The pairing fixtures, such as `IdentityMaterial::fresh`, which the Serving side's tests build a redeemer from.
+shaman-pairing = { path = "crates/shaman-pairing", features = ["test-support"] }
 # Holds SPAKE2's randomness still, to show a short Invite's exchange differs by a code nowhere it should not.
 rand_core = "0.6.4"
 # A real Relay in-process, which the Relay tests drive a Server against.

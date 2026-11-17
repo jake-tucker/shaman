@@ -50,32 +50,32 @@ use crate::protocol::{
 };
 
 /// The file under its directory a redeemer keeps its Remotes' records in.
-pub(crate) const REMOTES_FILE: &str = "remotes.json";
+pub const REMOTES_FILE: &str = "remotes.json";
 
 /// How long a redeemer gives each part of reaching a Remote, and how it keeps
 /// what it reached: its own, so whatever holds a redeemer — a Server or a
 /// thin Client — sets them as it needs and a test injects milliseconds.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct RedeemerTimings {
+pub struct RedeemerTimings {
     /// How long a connection to a Serving Server may take to finish its TLS
     /// handshake, and then to begin HTTP/2, before it is dropped; and how
     /// long a Remote is given to first tell which Relays it Serves through.
-    pub(crate) handshake_timeout: tokio::time::Duration,
+    pub handshake_timeout: tokio::time::Duration,
     /// How long each new dial of a Serving Server tries its direct ways
     /// alone before starting its Relay ways beside them.
-    pub(crate) direct_head_start: tokio::time::Duration,
+    pub direct_head_start: tokio::time::Duration,
     /// How long, at least, a Serving Server whose requests ride a joined
     /// stream goes between tries of its direct ways in the background.
-    pub(crate) direct_retry_interval: tokio::time::Duration,
+    pub direct_retry_interval: tokio::time::Duration,
     /// How the redeemer makes sure the Serving Server on a connection still
     /// answers.
-    pub(crate) keepalive: Keepalive,
+    pub keepalive: Keepalive,
     /// How long removing a Remote waits for that Remote to drop its Peer
     /// record.
-    pub(crate) withdrawal_timeout: tokio::time::Duration,
+    pub withdrawal_timeout: tokio::time::Duration,
     /// How often, at most, what Remotes tell of the Relays they Serve
     /// through is stored.
-    pub(crate) told_relays_store_interval: tokio::time::Duration,
+    pub told_relays_store_interval: tokio::time::Duration,
 }
 
 impl Default for RedeemerTimings {
@@ -98,7 +98,7 @@ impl Default for RedeemerTimings {
 /// Each is told the redeemer it acts for, so whatever implements these holds
 /// none. A thin Client passes none: it offers nothing, so no redemption it
 /// makes asks to.
-pub(crate) trait RedeemerHooks: Send + Sync {
+pub trait RedeemerHooks: Send + Sync {
     /// The offer to make the Serving Server whose key is `server_key`, asked
     /// as a redemption that asks to make one begins, before anything is
     /// dialled; refused where none can be made.
@@ -142,19 +142,19 @@ pub(crate) trait RedeemerHooks: Send + Sync {
 /// offer to pair back reads and writes (ADR-0066).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct StoredMadeOffer {
-    pub(crate) id: Uuid,
-    pub(crate) made_at: SessionTimestamp,
+pub struct StoredMadeOffer {
+    pub id: Uuid,
+    pub made_at: SessionTimestamp,
     /// Whether this Server's user withdrew it, for the Remote to hear of next.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub(crate) withdrawn: bool,
+    pub withdrawn: bool,
 }
 
 /// The redeeming side of Pairing: what redeems Invites, and owns the Remotes
 /// they form, their records in `remotes.json` under its directory. Cloning
 /// it shares the one redeemer.
 #[derive(Clone)]
-pub(crate) struct Redeemer {
+pub struct Redeemer {
     data_dir: PathBuf,
     protocol_version: u32,
     identity: Arc<dyn Identity>,
@@ -189,7 +189,7 @@ pub(crate) struct Redeemer {
 impl Redeemer {
     /// The redeemer whose Remotes' records are under `data_dir`, speaking the
     /// Pairing protocol `protocol_version`, proving itself as `identity`.
-    pub(crate) fn new(
+    pub fn new(
         data_dir: &Path,
         protocol_version: u32,
         identity: Arc<dyn Identity>,
@@ -217,7 +217,7 @@ impl Redeemer {
 
     /// Sets how many requests may await one Remote's answer at once, and how
     /// many bytes their bodies may hold between them.
-    pub(crate) fn with_awaited(mut self, requests: usize, body_bytes: usize) -> Self {
+    pub fn with_awaited(mut self, requests: usize, body_bytes: usize) -> Self {
         self.awaited_at_once = requests;
         self.awaited_body_bytes = body_bytes;
         self
@@ -225,13 +225,13 @@ impl Redeemer {
 
     /// Sets which proxy, if any, each direct way of a Remote is dialled
     /// through.
-    pub(crate) fn with_direct_proxies(mut self, proxies: DirectProxies) -> Self {
+    pub fn with_direct_proxies(mut self, proxies: DirectProxies) -> Self {
         self.direct_proxies = proxies;
         self
     }
 
     /// Attaches the offer to pair back, in place of whatever was attached.
-    pub(crate) fn attach(&self, hooks: Arc<dyn RedeemerHooks>) {
+    pub fn attach(&self, hooks: Arc<dyn RedeemerHooks>) {
         *self
             .hooks
             .write()
@@ -240,22 +240,22 @@ impl Redeemer {
 
     /// Has the redeemer reach Serving Servers by Relay ways through `relays`:
     /// given once, before it is asked anything.
-    pub(crate) fn reach_relays_through(&self, relays: Arc<dyn RelayWays>) {
+    pub fn reach_relays_through(&self, relays: Arc<dyn RelayWays>) {
         let _ = self.relays.set(relays);
     }
 
     /// The Relays the redeemer reaches Relay ways through, as they are given.
-    pub(crate) fn relays(&self) -> GivenRelays {
+    pub fn relays(&self) -> GivenRelays {
         self.relays.clone()
     }
 
     /// The directory the redeemer keeps its Remotes' records under.
-    pub(crate) fn data_dir(&self) -> &Path {
+    pub fn data_dir(&self) -> &Path {
         &self.data_dir
     }
 
     /// The Pairing protocol version the redeemer speaks.
-    pub(crate) fn protocol_version(&self) -> u32 {
+    pub fn protocol_version(&self) -> u32 {
         self.protocol_version
     }
 
@@ -272,7 +272,7 @@ impl Redeemer {
     }
 
     /// Stores what Remotes told that has yet to be stored, and nothing after.
-    pub(crate) async fn shutdown(&self) {
+    pub async fn shutdown(&self) {
         self.told.stopped.store(true, Ordering::SeqCst);
         self.store_told().await;
     }
@@ -281,7 +281,7 @@ impl Redeemer {
     fn refused_by(&self, remote: &StoredRemote) {
         self.hooked(|hooks| hooks.refused(self, &remote.public_key));
     }
-    pub(crate) async fn redeem_invite(
+    pub async fn redeem_invite(
         &self,
         request: RedeemInviteRequest,
     ) -> std::result::Result<Remote, PairingFailure> {
@@ -293,7 +293,7 @@ impl Redeemer {
 
     /// Redeems `invite`, as `request` asks, leaving what became of any offer
     /// to pair back that machine holds here for whoever asked.
-    pub(crate) async fn redeem(
+    pub async fn redeem(
         &self,
         invite: ParsedInvite,
         request: RedeemInviteRequest,
@@ -367,7 +367,7 @@ impl Redeemer {
         Ok(remote)
     }
 
-    pub(crate) fn list_remotes(&self) -> Vec<Remote> {
+    pub fn list_remotes(&self) -> Vec<Remote> {
         self.remotes
             .read()
             .expect("Remote record lock is not poisoned")
@@ -379,7 +379,7 @@ impl Redeemer {
     /// The Remotes this Server is paired with, in the order paired, each
     /// with the generation of its Pairing: which of those made since this
     /// Server started it is, none for one it started with.
-    pub(crate) fn remote_pairings(&self) -> Vec<(Remote, u64)> {
+    pub fn remote_pairings(&self) -> Vec<(Remote, u64)> {
         self.remotes
             .read()
             .expect("Remote record lock is not poisoned")
@@ -390,14 +390,14 @@ impl Redeemer {
 
     /// The generation of the last Pairing made: every Pairing made after
     /// this answers has a later one.
-    pub(crate) fn pairings_made(&self) -> u64 {
+    pub fn pairings_made(&self) -> u64 {
         self.pairings_made.load(Ordering::Acquire)
     }
 
     /// Asks the Remote `name` whether it answers, and as what: a request
     /// awaiting its answer as any carried to it does, refused at once where
     /// as many await it as may.
-    pub(crate) async fn probe_remote(
+    pub async fn probe_remote(
         &self,
         name: &str,
     ) -> std::result::Result<RemoteHealth, PairingFailure> {
@@ -440,7 +440,7 @@ impl Redeemer {
     /// it says itself. Its body is read no further than `body_limit`, and
     /// only once there is room for it among what awaits the Remote's answer:
     /// one larger is not carried at all.
-    pub(crate) async fn ask_remote<B>(
+    pub async fn ask_remote<B>(
         &self,
         name: &str,
         mut request: Request<B>,
@@ -533,7 +533,7 @@ impl Redeemer {
     /// still in place; the local record then goes whether or not that Remote
     /// answered, because a Remote that cannot be reached is forgotten here all
     /// the same and reaching it again takes a new Invite.
-    pub(crate) async fn remove_remote(
+    pub async fn remove_remote(
         &self,
         name: &str,
     ) -> std::result::Result<RemoteRemoval, PairingFailure> {
@@ -579,7 +579,7 @@ impl Redeemer {
     /// whether `icon` names one. A choice always stands over the one before
     /// it. What reaches the Remote is untouched: the Icon is this Server's
     /// own word for it, as its name is.
-    pub(crate) fn set_remote_icon(
+    pub fn set_remote_icon(
         &self,
         name: &str,
         icon: &str,
@@ -597,7 +597,7 @@ impl Redeemer {
     }
 
     /// Forgets the Remote `name` here, asking nothing of it.
-    pub(crate) fn delete_remote(&self, name: &str) -> std::result::Result<(), PairingFailure> {
+    pub fn delete_remote(&self, name: &str) -> std::result::Result<(), PairingFailure> {
         let removed = self.change_remotes(|remotes| {
             let Some(index) = remotes.iter().position(|stored| stored.remote.name == name) else {
                 return Err(PairingFailure::new(
@@ -624,7 +624,7 @@ impl Redeemer {
     /// their lock let go. The one way those records are written but for what
     /// Remotes tell of the Relays they Serve through, which is held at once and
     /// stored later ([`Self::store_told`]).
-    pub(crate) fn change_remotes<T>(
+    pub fn change_remotes<T>(
         &self,
         change: impl FnOnce(&mut Vec<StoredRemote>) -> std::result::Result<T, PairingFailure>,
     ) -> std::result::Result<T, PairingFailure> {
@@ -659,7 +659,7 @@ impl Redeemer {
 
     /// What moves on with every change to the Remotes this Server is paired
     /// with.
-    pub(crate) fn pairing_changes(&self) -> watch::Receiver<u64> {
+    pub fn pairing_changes(&self) -> watch::Receiver<u64> {
         self.pairing_changes.subscribe()
     }
 
@@ -667,7 +667,7 @@ impl Redeemer {
     /// knows it by as a Peer, and names its Sidekicks' acts by. It is known
     /// without asking the store the key is kept in, so while that store does
     /// not answer, and fails where the Server has yet to make its key.
-    pub(crate) fn own_fingerprint(&self) -> anyhow::Result<String> {
+    pub fn own_fingerprint(&self) -> anyhow::Result<String> {
         self.identity
             .fingerprint()?
             .context("this Server has yet to make its identity key")
@@ -687,7 +687,7 @@ impl Redeemer {
         }
     }
 
-    pub(crate) fn ensure_remote_name_available(
+    pub fn ensure_remote_name_available(
         &self,
         name: &str,
     ) -> std::result::Result<(), PairingFailure> {
@@ -703,10 +703,7 @@ impl Redeemer {
         Ok(())
     }
 
-    pub(crate) fn stored_remote(
-        &self,
-        name: &str,
-    ) -> std::result::Result<StoredRemote, PairingFailure> {
+    pub fn stored_remote(&self, name: &str) -> std::result::Result<StoredRemote, PairingFailure> {
         self.remotes
             .read()
             .expect("Remote record lock is not poisoned")
@@ -1252,7 +1249,7 @@ impl Redeemer {
     }
 
     /// The Remotes' records as they stand.
-    pub(crate) fn records(&self) -> Vec<StoredRemote> {
+    pub fn records(&self) -> Vec<StoredRemote> {
         self.remotes
             .read()
             .expect("Remote record lock is not poisoned")
@@ -1260,7 +1257,7 @@ impl Redeemer {
     }
 
     /// The offers recorded on whichever Remotes have the key `key`.
-    pub(crate) fn offers_made_to(&self, key: &[u8]) -> Vec<StoredMadeOffer> {
+    pub fn offers_made_to(&self, key: &[u8]) -> Vec<StoredMadeOffer> {
         self.remotes
             .read()
             .expect("Remote record lock is not poisoned")
@@ -1271,7 +1268,7 @@ impl Redeemer {
     }
 
     /// Whether a Remote of the key `key` is paired.
-    pub(crate) fn holds_remote_of(&self, key: &[u8]) -> bool {
+    pub fn holds_remote_of(&self, key: &[u8]) -> bool {
         self.remotes
             .read()
             .expect("Remote record lock is not poisoned")
@@ -1281,7 +1278,7 @@ impl Redeemer {
 
     /// Ends every offer recorded under `key` except any under `keep`,
     /// answering whether that could be stored.
-    pub(crate) fn keep_only_offer(&self, key: &[u8], keep: Option<Uuid>) -> bool {
+    pub fn keep_only_offer(&self, key: &[u8], keep: Option<Uuid>) -> bool {
         let kept = self.change_remotes(|remotes| {
             for stored in remotes.iter_mut().filter(|stored| stored.public_key == key) {
                 if stored
@@ -1305,7 +1302,7 @@ impl Redeemer {
 
     /// The client the Remote `name` is asked through just now, where anything
     /// asks it.
-    pub(crate) fn client_of(&self, name: &str) -> Option<StrongClient> {
+    pub fn client_of(&self, name: &str) -> Option<StrongClient> {
         self.remote_clients
             .lock()
             .expect("Remote client lock is not poisoned")
@@ -1317,7 +1314,7 @@ impl Redeemer {
     /// one is: what a redemption its stopping caught midway may have left.
     /// Nothing is attached yet to hear of it, and a failure to store it says
     /// why, file and all, as a Server that cannot start tells its user.
-    pub(crate) fn take_back(&self, key: &[u8], name: &str) -> anyhow::Result<()> {
+    pub fn take_back(&self, key: &[u8], name: &str) -> anyhow::Result<()> {
         let mut remotes = self
             .remotes
             .write()
@@ -1332,7 +1329,7 @@ impl Redeemer {
 
     /// Asks the Remote `remote` through `client`, as [`first_remote_answer`]
     /// does, for whatever attaches to the redeemer to say over the Pairing.
-    pub(crate) async fn ask_over<T, F, Fut>(
+    pub async fn ask_over<T, F, Fut>(
         &self,
         remote: &StoredRemote,
         client: &PairingHttpClient,
@@ -1354,7 +1351,7 @@ impl Redeemer {
 /// once, as the Remote being too busy to ask just now, rather than waiting.
 /// What the Server asks of a Remote on its own — which Relays it Serves
 /// through, over the place kept for that — is not among them.
-pub(crate) const AWAITED_AT_ONCE: usize = 2 * STREAMS_AT_ONCE as usize;
+pub const AWAITED_AT_ONCE: usize = 2 * STREAMS_AT_ONCE as usize;
 
 /// How many bytes the bodies of the requests awaiting one Remote's answer
 /// hold between them, by default. A request holds room for its body before
@@ -1362,11 +1359,11 @@ pub(crate) const AWAITED_AT_ONCE: usize = 2 * STREAMS_AT_ONCE as usize;
 /// where it does not say — so one that would hold past them is refused at
 /// once, its body unread. A Server holds as many as one Prompt binds of the
 /// largest Attachments it uploads.
-pub(crate) const AWAITED_BODY_BYTES: usize = 64 * 1024 * 1024;
+pub const AWAITED_BODY_BYTES: usize = 64 * 1024 * 1024;
 
 /// How what a Server's Remotes tell of the Relays they Serve through is
 /// stored: at most once each interval, however often they tell.
-pub(crate) struct ToldStore {
+pub struct ToldStore {
     store_interval: tokio::time::Duration,
     /// Whether something told has yet to be stored.
     unstored: AtomicBool,
@@ -1390,23 +1387,23 @@ impl ToldStore {
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct StoredRemote {
+pub struct StoredRemote {
     #[serde(flatten)]
-    pub(crate) remote: Remote,
-    pub(crate) public_key: Vec<u8>,
+    pub remote: Remote,
+    pub public_key: Vec<u8>,
     /// The ways that have answered, the latest first: each kind of way is
     /// dialled in this order ahead of the rest of its kind.
     #[serde(default)]
-    pub(crate) answered: Vec<Way>,
+    pub answered: Vec<Way>,
     /// Which of the Pairings made since this Server started this one is —
     /// none, for one it started with — so a name unpaired and paired again,
     /// even to the same key, is told apart from the Pairing before it.
     #[serde(skip)]
-    pub(crate) generation: u64,
+    pub generation: u64,
     /// The offer to pair back this Server made the Remote, until it is
     /// answered, withdrawn, or the Pairing ends with this record.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) offer: Option<StoredMadeOffer>,
+    pub offer: Option<StoredMadeOffer>,
 }
 
 impl StoredRemote {
@@ -1431,7 +1428,7 @@ impl StoredRemote {
 
 /// The room there is among what awaits one Remote's answer: for the requests
 /// asked of it, and for their bodies.
-pub(crate) struct Awaiting {
+pub struct Awaiting {
     requests: Arc<tokio::sync::Semaphore>,
     bytes: Arc<tokio::sync::Semaphore>,
 }
@@ -1448,7 +1445,7 @@ impl Awaiting {
 
 /// A request's room among what awaits its Remote's answer, and its body's,
 /// given back as this goes.
-pub(crate) struct AwaitingAnswer {
+pub struct AwaitingAnswer {
     _request: tokio::sync::OwnedSemaphorePermit,
     _body: tokio::sync::OwnedSemaphorePermit,
     /// What it is room among, held so another asking meanwhile shares it.
@@ -1457,7 +1454,7 @@ pub(crate) struct AwaitingAnswer {
 
 /// What came of following what a Serving Server tells of the Relays it
 /// Serves through.
-pub(crate) enum Followed {
+pub enum Followed {
     /// Nothing asks it through the client any longer, or its Pairing no
     /// longer stands as it did: nothing more is followed.
     LetGo,
@@ -1471,7 +1468,7 @@ pub(crate) enum Followed {
 
 /// What a Serving Server tells of the Relays it Serves through, over the
 /// answer it holds open: a line for each telling.
-pub(crate) struct Telling<B = AnswerBody> {
+pub struct Telling<B = AnswerBody> {
     answer: B,
     /// What has come of the next telling so far.
     coming: Vec<u8>,
@@ -1514,7 +1511,7 @@ impl<B: http_body::Body<Data = Bytes> + Unpin> Telling<B> {
 /// says so as one does: no more than [`MAX_TOLD_RELAYS`] of them, each once,
 /// each address no longer than [`MAX_TOLD_RELAY_LEN`] and written the one way
 /// a Relay's address is.
-pub(crate) fn told_relays(told: &[u8]) -> Option<OfferedRelays> {
+pub fn told_relays(told: &[u8]) -> Option<OfferedRelays> {
     let said: OfferedRelays = serde_json::from_slice(told).ok()?;
     let well_told = said.relays.len() <= MAX_TOLD_RELAYS
         && said.relays.iter().collect::<HashSet<_>>().len() == said.relays.len()
@@ -1528,7 +1525,7 @@ pub(crate) fn told_relays(told: &[u8]) -> Option<OfferedRelays> {
 /// A Remote's `ways` keeping up with `relays`, the Relays its Serving Server
 /// says it Serves through: its direct ways as they are, each Relay way still
 /// told where it was, and those told newly after them all, as told.
-pub(crate) fn kept_up(ways: &[Way], relays: &[String]) -> Vec<Way> {
+pub fn kept_up(ways: &[Way], relays: &[String]) -> Vec<Way> {
     let told = relays.iter().cloned().map(Way::Relay).collect::<Vec<_>>();
     let mut kept = ways
         .iter()
@@ -1542,7 +1539,7 @@ pub(crate) fn kept_up(ways: &[Way], relays: &[String]) -> Vec<Way> {
 /// Where among `remotes` the Remote `followed` stands under the Pairing it
 /// was followed under, while `client`, still asked through, is the one
 /// `clients` say this Server asks it through, and pins that very Pairing.
-pub(crate) fn followed_at(
+pub fn followed_at(
     clients: &HashMap<String, Weak<PairingHttpClient>>,
     remotes: &[StoredRemote],
     followed: &StoredRemote,
@@ -1563,7 +1560,7 @@ pub(crate) fn followed_at(
 
 /// Whether `stored` and `other` are records of the one Pairing: under one
 /// name, with one key, and made at one time.
-pub(crate) fn same_pairing(stored: &StoredRemote, other: &StoredRemote) -> bool {
+pub fn same_pairing(stored: &StoredRemote, other: &StoredRemote) -> bool {
     stored.remote.name == other.remote.name
         && stored.public_key == other.public_key
         && stored.generation == other.generation
@@ -1571,7 +1568,7 @@ pub(crate) fn same_pairing(stored: &StoredRemote, other: &StoredRemote) -> bool 
 
 /// Asks `remote` as [`first_answer`] does, by those of its ways this Server
 /// dials ([`WayDialer::dials`]), in the order each kind is dialled in.
-pub(crate) async fn first_remote_answer<T, F, Fut>(
+pub async fn first_remote_answer<T, F, Fut>(
     remote: &StoredRemote,
     client: &PairingHttpClient,
     asking: impl FnMut() -> Request<RequestBody>,
@@ -1630,7 +1627,7 @@ where
     }
 }
 
-pub(crate) fn ordered_ways(
+pub fn ordered_ways(
     offered: &[Way],
     chosen: &[Way],
 ) -> std::result::Result<Vec<Way>, PairingFailure> {
@@ -1648,7 +1645,7 @@ pub(crate) fn ordered_ways(
     Ok(chosen.to_vec())
 }
 
-pub(crate) fn remote_name_conflict(name: &str) -> PairingFailure {
+pub fn remote_name_conflict(name: &str) -> PairingFailure {
     PairingFailure::new(
         SessionErrorCode::RemoteNameConflict,
         format!("a Remote named `{name}` already exists"),
@@ -1656,7 +1653,7 @@ pub(crate) fn remote_name_conflict(name: &str) -> PairingFailure {
 }
 
 /// What came of carrying a request to a Remote.
-pub(crate) enum Carried {
+pub enum Carried {
     /// The Remote's answer, as it came.
     Answered(http::Response<RemoteBody>),
     /// The request's body is larger than it may be, so nothing was carried.
@@ -1666,7 +1663,7 @@ pub(crate) enum Carried {
 /// The body of what a Remote answered a request carried to it, as it came,
 /// holding the client it came through — and with it the Remote in view —
 /// until it ends; or, where it had to be read to be judged, as it was read.
-pub(crate) struct RemoteBody(RemoteBodyKind);
+pub struct RemoteBody(RemoteBodyKind);
 
 enum RemoteBodyKind {
     Coming {
@@ -1731,7 +1728,7 @@ impl http_body::Body for RemoteBody {
 /// request is asked by another way only where it never reached the Remote
 /// or asking it twice changes nothing (`repeatable`) — one that may have
 /// reached it is otherwise refused as such.
-pub(crate) fn judge_carried(
+pub fn judge_carried(
     answer: std::result::Result<Answer, Unanswered>,
     repeatable: bool,
     client: StrongClient,

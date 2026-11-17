@@ -3504,12 +3504,9 @@ dependencies = [
  "github-copilot-sdk",
  "hostname",
  "http",
- "http-body",
  "http-body-util",
  "hyper",
  "hyper-util",
- "icu_normalizer",
- "icu_properties",
  "if-addrs",
  "image",
  "jiff",
@@ -3527,15 +3524,17 @@ dependencies = [
  "ring",
  "rmcp",
  "rustls",
- "rustls-platform-verifier",
  "secret-service",
  "security-framework",
  "serde",
  "serde_json",
  "shaman-build-id",
+ "shaman-pairing",
+ "shaman-private-files",
  "shaman-protocol",
  "shaman-relay",
  "shaman-relay-protocol",
+ "shaman-text",
  "shlex",
  "signal-hook",
  "socket2",
@@ -3549,7 +3548,6 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
- "tower-service",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -3568,6 +3566,54 @@ name = "shaman-build-id"
 version = "0.1.0"
 dependencies = [
  "uuid",
+]
+
+[[package]]
+name = "shaman-pairing"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "blake3",
+ "bytes",
+ "futures-util",
+ "hostname",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "rcgen",
+ "reqwest",
+ "ring",
+ "rustls",
+ "rustls-platform-verifier",
+ "serde",
+ "serde_json",
+ "shaman-private-files",
+ "shaman-protocol",
+ "shaman-relay",
+ "shaman-relay-protocol",
+ "shaman-text",
+ "socket2",
+ "subtle",
+ "tempfile",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
+ "tower-service",
+ "tracing",
+ "uuid",
+ "x509-parser",
+]
+
+[[package]]
+name = "shaman-private-files"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tempfile",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3627,6 +3673,14 @@ dependencies = [
  "serde_json",
  "url",
  "x509-parser",
+]
+
+[[package]]
+name = "shaman-text"
+version = "0.1.0"
+dependencies = [
+ "icu_normalizer",
+ "icu_properties",
 ]
 
 [[package]]

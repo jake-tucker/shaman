@@ -9,7 +9,7 @@
 //!
 //! It keeps no connection to a Relay and waits at none. That, the choice to
 //! Serve through a Relay, the Notices of a Login that lapsed and the Relays a
-//! Config Document pins are a Server's Serving layer ([`crate::relays`]),
+//! Config Document pins are a Server's Serving layer (the root crate's `relays`),
 //! built over this and attached through [`RelayHooks`]. What a holder keeps
 //! of each entry beyond what is here rides on the entry: stored beside its
 //! own fields, as an extension this writes as it is and never reads
@@ -41,27 +41,26 @@ use tokio::{
 };
 
 use crate::{
-    pairing::{
-        ByteStream, Identity, MAX_TOLD_RELAY_LEN, PairingFailure, RelayJoin, RelayRefusal,
-        RelayWays, Wanted, machine_hostname, no_longer_wanted, read_records, write_private_json,
-    },
+    ByteStream, Identity, MAX_TOLD_RELAY_LEN, PairingFailure, RelayJoin, RelayRefusal, RelayWays,
+    Wanted, machine_hostname, no_longer_wanted,
     protocol::{
         RelayAccount, RelayLogin, RelayLoginOutcome, RelayLoginRefusal, RelayRemoval, RelayState,
         RelayUnreachable, SessionErrorCode, UnreachableReason,
     },
+    read_records, write_private_json,
 };
 
 mod carried;
 mod dial;
 mod intake;
 
-pub(crate) use carried::CarriedStream;
+pub use carried::CarriedStream;
 use carried::Carrying;
 use dial::Dialer;
-pub(crate) use dial::{Conversation, DialFailure, Ending};
+pub use dial::{Conversation, DialFailure, Ending};
 
 /// The file under its directory a Relay client keeps its entries in.
-pub(crate) const RELAYS_FILE: &str = "relays.json";
+pub const RELAYS_FILE: &str = "relays.json";
 
 /// The longest a login is waited on, whatever its Relay says the login may
 /// take: a device login lasts minutes.
@@ -70,10 +69,10 @@ const LONGEST_LOGIN: Duration = Duration::from_secs(60 * 60);
 /// How long a Relay client waits on a Relay: its own, so whatever holds one
 /// sets it as it needs and a test injects milliseconds.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct RelayClientTimings {
+pub struct RelayClientTimings {
     /// How long a Relay may take to answer each thing asked of it before the
     /// client stops waiting.
-    pub(crate) answer_timeout: Duration,
+    pub answer_timeout: Duration,
 }
 
 impl Default for RelayClientTimings {
@@ -88,7 +87,7 @@ impl Default for RelayClientTimings {
 /// and how it is told of them and has its say as they change (ADR-0045). Each
 /// is called with the entries held, so whatever it does is one state of them,
 /// and none may ask the client anything that holds them in turn.
-pub(crate) trait RelayHooks: Send + Sync + Sized + 'static {
+pub trait RelayHooks: Send + Sync + Sized + 'static {
     /// What the holder stores on each entry, flattened beside the client's
     /// own fields: written as it is and never read by the client.
     type Stored: Clone + Default + PartialEq + Serialize + DeserializeOwned + Send + Sync + 'static;
@@ -143,26 +142,12 @@ pub(crate) trait RelayHooks: Send + Sync + Sized + 'static {
 
 /// What another stores on an entry, kept unread by a holder that stores
 /// nothing there of its own.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "a thin Client holds the Relay client so, and is yet to be built"
-    )
-)]
-pub(crate) type Extension = serde_json::Map<String, serde_json::Value>;
+pub type Extension = serde_json::Map<String, serde_json::Value>;
 
 /// The hooks of a holder that keeps nothing of its own on its Relay entries,
 /// and has no say in them: a thin Client's. Whatever another stored on an
 /// entry stays as it was.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "a thin Client holds the Relay client so, and is yet to be built"
-    )
-)]
-pub(crate) struct Unattached;
+pub struct Unattached;
 
 impl RelayHooks for Unattached {
     type Stored = Extension;
@@ -175,7 +160,7 @@ impl RelayHooks for Unattached {
 /// records are the one part of what a Server stores that a Shaman upgrade
 /// carries forward (ADR-0047), so this tolerates fields a later Shaman adds.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub(crate) struct StoredRelay<X> {
+pub struct StoredRelay<X> {
     address: String,
     /// Whether a login here formed a Login at the Relay. A Login the Relay
     /// comes to refuse leaves this so, since one fresh login from any machine
@@ -190,22 +175,22 @@ pub(crate) struct StoredRelay<X> {
     login_needed: bool,
     /// What the holder stores on the entry.
     #[serde(flatten)]
-    pub(crate) extension: X,
+    pub extension: X,
 }
 
 impl<X> StoredRelay<X> {
-    pub(crate) fn logged_in(&self) -> bool {
+    pub fn logged_in(&self) -> bool {
         self.logged_in
     }
 
-    pub(crate) fn login_needed(&self) -> bool {
+    pub fn login_needed(&self) -> bool {
         self.login_needed
     }
 }
 
 /// A Relay entry as it is held: what is stored of it, how its Relay stands,
 /// the login under way there, and what its holder holds beside it.
-pub(crate) struct HeldRelay<H: RelayHooks> {
+pub struct HeldRelay<H: RelayHooks> {
     stored: StoredRelay<H::Stored>,
     state: RelayState,
     unreachable: Option<RelayUnreachable>,
@@ -216,7 +201,7 @@ pub(crate) struct HeldRelay<H: RelayHooks> {
     /// none begun before it can finish once removal asks the Relay to forget.
     operations: Arc<AsyncMutex<()>>,
     /// What the holder holds beside the entry.
-    pub(crate) beside: H::Beside,
+    pub beside: H::Beside,
 }
 
 struct HeldLogin {
@@ -231,7 +216,7 @@ struct HeldLogin {
 impl<H: RelayHooks> HeldRelay<H> {
     /// The entry for the Relay at `address`, at which nothing has yet been
     /// done, held with `beside`.
-    pub(crate) fn first_at(address: String, beside: H::Beside) -> Self {
+    pub fn first_at(address: String, beside: H::Beside) -> Self {
         Self::taken_up(
             StoredRelay {
                 address,
@@ -261,30 +246,30 @@ impl<H: RelayHooks> HeldRelay<H> {
         }
     }
 
-    pub(crate) fn address(&self) -> &str {
+    pub fn address(&self) -> &str {
         &self.stored.address
     }
 
-    pub(crate) fn stored(&self) -> &StoredRelay<H::Stored> {
+    pub fn stored(&self) -> &StoredRelay<H::Stored> {
         &self.stored
     }
 
-    pub(crate) fn state(&self) -> RelayState {
+    pub fn state(&self) -> RelayState {
         self.state
     }
 
     /// Why the Relay reads Unreachable, where it does.
-    pub(crate) fn unreachable(&self) -> Option<&RelayUnreachable> {
+    pub fn unreachable(&self) -> Option<&RelayUnreachable> {
         self.unreachable.as_ref()
     }
 
     /// The Account the Login there stands under, as the Relay last said.
-    pub(crate) fn account(&self) -> Option<&RelayAccount> {
+    pub fn account(&self) -> Option<&RelayAccount> {
         self.account.as_ref()
     }
 
     /// The latest login begun there, as it stands.
-    pub(crate) fn login(&self) -> Option<RelayLogin> {
+    pub fn login(&self) -> Option<RelayLogin> {
         self.login
             .as_ref()
             .map(|login| login.progress.borrow().clone())
@@ -302,7 +287,7 @@ impl<H: RelayHooks> HeldRelay<H> {
 
 /// What a Relay client found of a Relay as it spoke to it, or tried to.
 #[derive(Debug)]
-pub(crate) enum Observed {
+pub enum Observed {
     LoggedIn(RelayAccount),
     LoginNeeded,
     Unreachable(RelayUnreachable),
@@ -310,13 +295,13 @@ pub(crate) enum Observed {
 
 /// Why something asked of a Relay failed.
 #[derive(Debug)]
-pub(crate) struct RelayFailure {
-    pub(crate) code: SessionErrorCode,
-    pub(crate) message: String,
+pub struct RelayFailure {
+    pub code: SessionErrorCode,
+    pub message: String,
 }
 
 impl RelayFailure {
-    pub(crate) fn new(code: SessionErrorCode, message: impl Into<String>) -> Self {
+    pub fn new(code: SessionErrorCode, message: impl Into<String>) -> Self {
         Self {
             code,
             message: message.into(),
@@ -324,11 +309,11 @@ impl RelayFailure {
     }
 }
 
-pub(crate) fn relay_not_found() -> RelayFailure {
+pub fn relay_not_found() -> RelayFailure {
     RelayFailure::new(SessionErrorCode::RelayNotFound, "Relay not found")
 }
 
-pub(crate) fn records_failure(_error: anyhow::Error) -> RelayFailure {
+pub fn records_failure(_error: anyhow::Error) -> RelayFailure {
     // Paths and what the records hold are not copied into an outward error a
     // caller might later Log.
     RelayFailure::new(
@@ -338,7 +323,7 @@ pub(crate) fn records_failure(_error: anyhow::Error) -> RelayFailure {
 }
 
 /// Where a login asked of a Relay entry stands as it is answered.
-pub(crate) enum LoginStanding<T> {
+pub enum LoginStanding<T> {
     /// A login is under way there already, and goes on.
     UnderWay(RelayLogin),
     /// A login was begun there.
@@ -348,15 +333,15 @@ pub(crate) enum LoginStanding<T> {
 }
 
 /// A login asked of the Relay entry at `address`, as it is answered.
-pub(crate) struct LoginLead<T> {
-    pub(crate) address: String,
-    pub(crate) standing: LoginStanding<T>,
+pub struct LoginLead<T> {
+    pub address: String,
+    pub standing: LoginStanding<T>,
 }
 
 /// What dials, proves and joins at the Relays a client holds entries for,
 /// with nothing of its holder's hooks: what a redeemer reaches a Relay way
 /// through. Cloning it shares the one.
-pub(crate) struct RelayJoiner<H: RelayHooks> {
+pub struct RelayJoiner<H: RelayHooks> {
     relays: Arc<StdMutex<Vec<HeldRelay<H>>>>,
     /// The identity key proven at every Relay.
     identity: Arc<dyn Identity>,
@@ -380,7 +365,7 @@ impl<H: RelayHooks> Clone for RelayJoiner<H> {
 
 impl<H: RelayHooks> RelayJoiner<H> {
     /// The entries, held.
-    pub(crate) fn lock(&self) -> std::sync::MutexGuard<'_, Vec<HeldRelay<H>>> {
+    pub fn lock(&self) -> std::sync::MutexGuard<'_, Vec<HeldRelay<H>>> {
         self.relays
             .lock()
             .expect("Relay record lock is not poisoned")
@@ -390,7 +375,7 @@ impl<H: RelayHooks> RelayJoiner<H> {
     /// key there, each step within the answer timeout: what the Relay then
     /// says of the Login there — the Account it stands under, where it
     /// stands.
-    pub(crate) async fn dial(
+    pub async fn dial(
         &self,
         address: &str,
     ) -> std::result::Result<(Conversation, Option<relay_protocol::Account>), DialFailure> {
@@ -401,12 +386,12 @@ impl<H: RelayHooks> RelayJoiner<H> {
 
     /// The join `conversation` carries, once the Relay has made it, ended as
     /// the client stops.
-    pub(crate) fn carry(&self, conversation: Conversation) -> CarriedStream {
+    pub fn carry(&self, conversation: Conversation) -> CarriedStream {
         conversation.carried(self.carrying.stop())
     }
 
     /// The identity key, as the DER SubjectPublicKeyInfo a Relay knows it by.
-    pub(crate) async fn public_key(&self) -> std::result::Result<Vec<u8>, PairingFailure> {
+    pub async fn public_key(&self) -> std::result::Result<Vec<u8>, PairingFailure> {
         Ok(self.identity.material().await?.public_key().to_vec())
     }
 
@@ -416,7 +401,7 @@ impl<H: RelayHooks> RelayJoiner<H> {
     /// Relay as it asks, and still stand as the join is made, or nothing is
     /// carried; and the join is asked only while the connection is still
     /// `wanted`.
-    pub(crate) async fn join(
+    pub async fn join(
         &self,
         relay: &str,
         server: Vec<u8>,
@@ -523,7 +508,7 @@ impl<H: RelayHooks> RelayWays for RelayJoiner<H> {
 /// directory, the logins it carries out at them, forgetting a Login there,
 /// and dialling, proving and joining at them ([`RelayJoiner`]), with what
 /// `H` attaches. Cloning it shares the one client.
-pub(crate) struct RelayClient<H: RelayHooks> {
+pub struct RelayClient<H: RelayHooks> {
     data_dir: PathBuf,
     joiner: RelayJoiner<H>,
     /// Whether what is held of the entries has yet to be stored, the latest
@@ -548,7 +533,7 @@ impl<H: RelayHooks> Clone for RelayClient<H> {
 impl<H: RelayHooks> RelayClient<H> {
     /// The Relay entries stored under `data_dir`, proving `identity` at each
     /// Relay, with `hooks` attached.
-    pub(crate) fn new(
+    pub fn new(
         data_dir: &Path,
         identity: Arc<dyn Identity>,
         timings: RelayClientTimings,
@@ -577,22 +562,22 @@ impl<H: RelayHooks> RelayClient<H> {
     }
 
     /// What is attached.
-    pub(crate) fn hooks(&self) -> &H {
+    pub fn hooks(&self) -> &H {
         &self.hooks
     }
 
     /// What dials, proves and joins at the Relays, with nothing of the hooks.
-    pub(crate) fn joiner(&self) -> RelayJoiner<H> {
+    pub fn joiner(&self) -> RelayJoiner<H> {
         self.joiner.clone()
     }
 
     /// The entries, held.
-    pub(crate) fn lock(&self) -> std::sync::MutexGuard<'_, Vec<HeldRelay<H>>> {
+    pub fn lock(&self) -> std::sync::MutexGuard<'_, Vec<HeldRelay<H>>> {
         self.joiner.lock()
     }
 
     /// See [`RelayJoiner::dial`].
-    pub(crate) async fn dial(
+    pub async fn dial(
         &self,
         address: &str,
     ) -> std::result::Result<(Conversation, Option<relay_protocol::Account>), DialFailure> {
@@ -600,18 +585,18 @@ impl<H: RelayHooks> RelayClient<H> {
     }
 
     /// See [`RelayJoiner::carry`].
-    pub(crate) fn carry(&self, conversation: Conversation) -> CarriedStream {
+    pub fn carry(&self, conversation: Conversation) -> CarriedStream {
         self.joiner.carry(conversation)
     }
 
     /// See [`RelayJoiner::public_key`].
-    pub(crate) async fn public_key(&self) -> std::result::Result<Vec<u8>, PairingFailure> {
+    pub async fn public_key(&self) -> std::result::Result<Vec<u8>, PairingFailure> {
         self.joiner.public_key().await
     }
 
     /// Ends every join a Relay carries, and every one carried from now on,
     /// and every login under way.
-    pub(crate) fn shutdown(&self) {
+    pub fn shutdown(&self) {
         self.joiner.carrying.stop_all();
         for held in self.lock().iter_mut() {
             if let Some(task) = held.login.as_mut().and_then(|login| login.task.take()) {
@@ -622,7 +607,7 @@ impl<H: RelayHooks> RelayClient<H> {
 
     /// Adds an entry for the Relay at `address`, answering what `answer`
     /// makes of it as it is added. Nothing changes where it cannot be stored.
-    pub(crate) fn add<T>(
+    pub fn add<T>(
         &self,
         address: &str,
         answer: impl FnOnce(&HeldRelay<H>) -> T,
@@ -658,7 +643,7 @@ impl<H: RelayHooks> RelayClient<H> {
     /// whatever asked. It is decided with the entry's `operations` held, so
     /// two asking at once share one login rather than the second giving up
     /// the first.
-    pub(crate) async fn log_in<T>(
+    pub async fn log_in<T>(
         &self,
         address: &str,
         afresh: bool,
@@ -773,7 +758,7 @@ impl<H: RelayHooks> RelayClient<H> {
     }
 
     /// Follows the latest login begun at the Relay at `address`.
-    pub(crate) fn follow_login(
+    pub fn follow_login(
         &self,
         address: &str,
     ) -> std::result::Result<watch::Receiver<RelayLogin>, RelayFailure> {
@@ -801,10 +786,7 @@ impl<H: RelayHooks> RelayClient<H> {
     /// the Login there. The entry then goes whether or not it answered, since
     /// a Relay that cannot be reached is forgotten here all the same; where
     /// the entry cannot be forgotten here, it stays and goes on as before.
-    pub(crate) async fn remove(
-        &self,
-        address: &str,
-    ) -> std::result::Result<RelayRemoval, RelayFailure> {
+    pub async fn remove(&self, address: &str) -> std::result::Result<RelayRemoval, RelayFailure> {
         let address = relay_address(address)?;
         let operations = self.operations(&address)?;
         self.remove_holding(address, operations).await
@@ -1003,7 +985,7 @@ impl<H: RelayHooks> RelayClient<H> {
     /// answers, and stored, so a Relay found to refuse the Login reads
     /// **login needed** however it fails to answer afterwards, across a
     /// restart too, until it takes the proof with a Login that stands again.
-    pub(crate) fn observe(&self, address: &str, observed: Observed) {
+    pub fn observe(&self, address: &str, observed: Observed) {
         let mut relays = self.lock();
         let Some(index) = relays
             .iter()
@@ -1051,7 +1033,7 @@ impl<H: RelayHooks> RelayClient<H> {
     /// Changes what is stored of `relays`, which the caller holds, as
     /// `change` says: stored, and only then held, where it changes anything,
     /// and nothing changed where it cannot be stored.
-    pub(crate) fn change_stored(
+    pub fn change_stored(
         &self,
         relays: &mut [HeldRelay<H>],
         change: impl FnOnce(&mut [StoredRelay<H::Stored>]),
@@ -1079,7 +1061,7 @@ impl<H: RelayHooks> RelayClient<H> {
     /// holds them, where they `changed` or the latest write failed. Where
     /// they cannot be stored they stand all the same, and are written again
     /// with whatever is next noted, `what` they hold being Logged as unstored.
-    pub(crate) fn note_stored(&self, relays: &[HeldRelay<H>], changed: bool, what: &str) {
+    pub fn note_stored(&self, relays: &[HeldRelay<H>], changed: bool, what: &str) {
         if (changed || self.unstored.load(Ordering::Acquire))
             && let Err(error) = self.persist(relays)
         {
@@ -1156,13 +1138,13 @@ fn stopped_answering() -> RelayFailure {
 /// address is, where it is one an entry can be held for: what a Config
 /// Document's list is held to, as everything asked of a Relay by its address
 /// is.
-pub(crate) fn holdable_address(address: &str) -> Option<String> {
+pub fn holdable_address(address: &str) -> Option<String> {
     relay_protocol::canonical_address(address).filter(|address| address.len() <= MAX_TOLD_RELAY_LEN)
 }
 
 /// The address `address` names a Relay by, written the one way a Relay's
 /// address is (see [`relay_protocol::canonical_address`]).
-pub(crate) fn relay_address(address: &str) -> std::result::Result<String, RelayFailure> {
+pub fn relay_address(address: &str) -> std::result::Result<String, RelayFailure> {
     holdable_address(address).ok_or_else(|| {
         // A Relay a Server Serves through is told to its Peers by its
         // address, whole, which bounds how long one may run.
@@ -1289,7 +1271,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::pairing::{GivenIdentity, IdentityMaterial};
+    use crate::{GivenIdentity, IdentityMaterial};
 
     /// Waited on only where the client or a Relay fails.
     const STALLED: Duration = Duration::from_secs(60);

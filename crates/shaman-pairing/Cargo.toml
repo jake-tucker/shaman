@@ -1,0 +1,61 @@
+[package]
+name = "shaman-pairing"
+# Never published; what the wire speaks is numbered by `shaman-protocol`'s `PROTOCOL_VERSION`.
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# The redeeming side of a Pairing, and what both of its sides share: the Invite and the enrollment ceremony, the
+# pinned-key client, the redeemer and the Remotes it keeps, the signer, and the redeeming half of the Relays. The Server
+# and a thin Client both link it, so it uses no storage, Settings or TUI of the Server's, and builds for iOS.
+
+[features]
+# Fixtures, such as `IdentityMaterial::fresh`, that Shaman's own tests build a redeemer from.
+test-support = []
+
+[dependencies]
+shaman-private-files = { path = "../shaman-private-files" }
+shaman-protocol = { path = "../shaman-protocol" }
+shaman-relay-protocol = { path = "../shaman-relay-protocol" }
+shaman-text = { path = "../shaman-text" }
+anyhow = "1.0.99"
+base64 = "0.22.1"
+blake3 = "1.8.2"
+bytes = "1.12.1"
+futures-util = "0.3.31"
+hostname = "0.4.1"
+http = "1.5.0"
+# The body the redeemer's `http` interface names, so it names no web framework's.
+http-body = "1.1.0"
+# The pinned-key client: HTTP over a connection it is handed, rather than one it dials itself — HTTP/1.1 over a direct
+# way, and HTTP/2 over a Relay way, carrying everything asked by it on one join.
+http-body-util = "0.1.5"
+hyper = { version = "1.11.0", features = ["client", "http1", "http2", "server"] }
+hyper-util = { version = "0.1.20", features = ["client-legacy", "client-proxy", "http1", "http2", "service", "tokio"] }
+rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "ring"] }
+# `system-proxy` reads the operating system's HTTP proxy, which the way to a Relay honours; direct Pairing dials opt
+# out of every proxy.
+reqwest = { version = "0.12.23", default-features = false, features = ["json", "rustls-tls", "stream", "system-proxy"] }
+rustls = { version = "0.23.43", default-features = false, features = ["ring", "std", "tls12"] }
+# An HTTPS Relay is verified against the operating system's trust store, so a company's TLS-inspecting proxy trusted
+# there is trusted for it too.
+rustls-platform-verifier = "0.7.1"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = { version = "1.0.143", features = ["preserve_order"] }
+socket2 = "0.6.5"
+subtle = "2.6.1"
+tokio = { version = "1.47.1", features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring", "tls12"] }
+# The WebSocket a Relay is spoken to over, opened through reqwest so it takes the system proxy and trust.
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["handshake"] }
+tower-service = "0.3.3"
+tracing = "0.1"
+uuid = { version = "1.18.1", features = ["serde", "v4"] }
+x509-parser = "0.18.1"
+
+[dev-dependencies]
+# Verifies what a signer signs, as a Relay and a TLS peer would.
+ring = "0.17.14"
+# A real Relay in-process, which the redeeming half of the Relays is tested against.
+shaman-relay = { path = "../shaman-relay" }
+tempfile = "3.21.0"

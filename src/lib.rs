@@ -1,4 +1,3 @@
-mod ansi;
 mod attachments;
 mod broker;
 pub mod build_identity;
@@ -13,7 +12,6 @@ pub mod managed_client;
 mod memories;
 mod model_catalog;
 pub mod open_files;
-mod pairing;
 pub mod paths;
 pub mod pricing;
 mod process_tree;
@@ -26,9 +24,7 @@ mod serving;
 mod session_projection;
 mod sessions;
 pub mod settings;
-mod shown_text;
 mod sidekick;
-mod signer;
 mod skill_catalog;
 pub mod source_control;
 mod storage;
@@ -38,8 +34,10 @@ pub mod tui;
 
 pub use runtime::{LastStop, RuntimeConfig};
 pub use serving::IdentityStoreChoice;
+use shaman_pairing::{self as pairing, signer};
 pub use shaman_protocol as protocol;
 pub use shaman_protocol::{approval, questionnaire};
+use shaman_text::{ansi, shown_text};
 
 /// The Icon Catalog's names, in listing order — the same list the Title
 /// Errand's reply schema enumerates an Icon over. The Catalog itself stays

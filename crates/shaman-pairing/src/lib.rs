@@ -11,8 +11,8 @@
 //! through. The redeeming half of the Relays — their entries, the logins
 //! that form Logins there, forgetting one, and dialling, proving and joining
 //! at them — is [`relay`]. The Serving side, the offer to pair back and the
-//! short code stay in [`crate::serving`], and the Serving layer of the Relays
-//! in [`crate::relays`], built over these.
+//! short code stay in the root crate's `serving`, and the Serving layer of the
+//! Relays in its `relays`, built over these.
 //!
 //! Nothing here names a web framework, a Server's storage or its Settings:
 //! what crosses its seams is in the `http` crate's types, and what a Server
@@ -43,34 +43,38 @@ use tokio::{
 };
 use uuid::Uuid;
 
+use shaman_private_files::{protect_current_user_file, replace_private_file};
+use shaman_protocol as protocol;
+use shaman_text::shown_text;
+
 use crate::{
     protocol::{SessionErrorCode, UnreachableReason, Way},
-    runtime::{protect_current_user_file, replace_private_file},
     signer::IdentitySigner,
 };
 
 mod client;
 mod redeemer;
-pub(crate) mod relay;
+pub mod relay;
+pub mod signer;
 
 pub use client::DirectProxies;
 #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
-pub(crate) use client::SOCKET_USER_TIMEOUT;
-pub(crate) use client::{
+pub use client::SOCKET_USER_TIMEOUT;
+pub use client::{
     PairingHttpClient, SOCKET_KEEPALIVE, SOCKET_KEEPALIVE_PROBES, StrongClient, WayAttempt,
 };
-pub(crate) use redeemer::{
+pub use redeemer::{
     AWAITED_AT_ONCE, Carried, Redeemer, RedeemerHooks, RedeemerTimings, StoredMadeOffer,
     StoredRemote,
 };
 
 /// Any error a body or a connector gives, as `http` and `hyper` box one.
-pub(crate) type BoxError = Box<dyn std::error::Error + Send + Sync>;
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// What this Server proves itself by, wherever its identity key is kept: a
 /// Server's key in its data directory or the platform credential store, a
 /// phone's in its Secure Enclave.
-pub(crate) trait Identity: Send + Sync {
+pub trait Identity: Send + Sync {
     /// What proves the key, got from wherever it is kept; a failure is
     /// worded for whoever asked.
     fn material(&self) -> BoxFuture<'_, std::result::Result<IdentityMaterial, PairingFailure>>;
@@ -83,15 +87,15 @@ pub(crate) trait Identity: Send + Sync {
 /// the identity certificate of the key its pinned-key TLS presents. It holds
 /// none of the key's private bytes.
 #[derive(Clone)]
-pub(crate) struct IdentityMaterial {
-    pub(crate) signer: IdentitySigner,
-    pub(crate) certificate: Vec<u8>,
+pub struct IdentityMaterial {
+    pub signer: IdentitySigner,
+    pub certificate: Vec<u8>,
 }
 
 impl IdentityMaterial {
     /// The material of the key `signer` signs with, its identity
     /// certificate minted by the key itself.
-    pub(crate) fn minted(signer: IdentitySigner) -> Result<Self> {
+    pub fn minted(signer: IdentitySigner) -> Result<Self> {
         let certificate = signer
             .self_signed(
                 CertificateParams::new(vec![SERVING_IDENTITY_NAME.to_owned()])
@@ -105,15 +109,15 @@ impl IdentityMaterial {
     }
 
     /// The key, as the DER SubjectPublicKeyInfo its Pairings pin.
-    pub(crate) fn public_key(&self) -> &[u8] {
+    pub fn public_key(&self) -> &[u8] {
         self.signer.public_key()
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl IdentityMaterial {
     /// The material of a key made for a test, which it signs with in memory.
-    pub(crate) fn fresh() -> Self {
+    pub fn fresh() -> Self {
         let key = rcgen::KeyPair::generate().expect("make a key");
         let signer = crate::signer::SoftwareSigner::from_pkcs8(&key.serialize_der())
             .expect("take up the key");
@@ -124,10 +128,10 @@ impl IdentityMaterial {
 
 /// What proves the one key it holds, handed in rather than kept: how a test
 /// gives a redeemer its identity.
-#[cfg(test)]
-pub(crate) struct GivenIdentity(pub(crate) IdentityMaterial);
+#[cfg(any(test, feature = "test-support"))]
+pub struct GivenIdentity(pub IdentityMaterial);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Identity for GivenIdentity {
     fn material(&self) -> BoxFuture<'_, std::result::Result<IdentityMaterial, PairingFailure>> {
         let material = self.0.clone();
@@ -139,56 +143,56 @@ impl Identity for GivenIdentity {
     }
 }
 
-pub(crate) const PAIRING_PROTOCOL_HEADER: &str = "x-shaman-protocol-version";
+pub const PAIRING_PROTOCOL_HEADER: &str = "x-shaman-protocol-version";
 
 /// The longest key an Invite, or a Relay's list, is believed to name.
-pub(crate) const MAX_INVITE_KEY: usize = 4096;
+pub const MAX_INVITE_KEY: usize = 4096;
 
-pub(crate) const PEER_API_PREFIX: &str = "/v1/pairing/proxy";
+pub const PEER_API_PREFIX: &str = "/v1/pairing/proxy";
 
 /// Where a Peer says it is withdrawing, so removing a Remote can end the
 /// Pairing on the Serving side as well as this one.
-pub(crate) const PAIRING_WITHDRAWAL_PATH: &str = "/v1/pairing/withdrawal";
+pub const PAIRING_WITHDRAWAL_PATH: &str = "/v1/pairing/withdrawal";
 
 /// Where a Peer asks which Relays its Serving Server Serves through, and is
 /// told so at once and again whenever that changes, for as long as it holds
 /// the answer open.
-pub(crate) const OFFERED_RELAYS_PATH: &str = "/v1/pairing/offered-relays";
+pub const OFFERED_RELAYS_PATH: &str = "/v1/pairing/offered-relays";
 
 /// The most Relays a Serving Server tells its Peers it Serves through, and a
 /// Peer takes up from what it is told: so the most a Server Serves through.
-pub(crate) const MAX_TOLD_RELAYS: usize = 16;
+pub const MAX_TOLD_RELAYS: usize = 16;
 
 /// The longest address of a Relay a Serving Server tells its Peers of, and a
 /// Peer takes up: so the longest a Relay the Server holds an entry for has.
-pub(crate) const MAX_TOLD_RELAY_LEN: usize = 512;
+pub const MAX_TOLD_RELAY_LEN: usize = 512;
 
 /// The most this Server reads of an answer the Pairing's own exchanges give —
 /// a health check, an enrollment, a refusal, a conflict the proxy looks into
 /// — each a few small fields, so another Server saying more than this, faulty
 /// or worse, is read no further rather than held in memory whole.
-pub(crate) const PAIRING_ANSWER_BUDGET: usize = 64 * 1024;
+pub const PAIRING_ANSWER_BUDGET: usize = 64 * 1024;
 
 /// What a Pairing's connection speaks inside the pinned-key TLS, agreed as
 /// its handshake is: HTTP/2, so everything asked by one way travels together
 /// over one connection — a direct way's, dialled once however much is open
 /// to the Remote, or a Relay way's, costing its Relay one join. The Serving
 /// listener still answers a connection that agrees nothing as HTTP/1.1.
-pub(crate) const MULTIPLEXED: &[u8] = b"h2";
+pub const MULTIPLEXED: &[u8] = b"h2";
 
 /// How many requests and streams a Pairing's connection carries at once
 /// beside the one its Serving Server tells which Relays it Serves through
 /// over; more wait their turn, each held meanwhile by whatever asked it of
 /// this Server.
-pub(crate) const STREAMS_AT_ONCE: u32 = 100;
+pub const STREAMS_AT_ONCE: u32 = 100;
 
 /// How many such a connection carries at once in all: those, and the one the
 /// Relays are told over, which so never waits behind what is asked.
-pub(crate) const STREAMS_IN_ALL: u32 = STREAMS_AT_ONCE + 1;
+pub const STREAMS_IN_ALL: u32 = STREAMS_AT_ONCE + 1;
 
 /// How much of each request's or stream's body a Server lets the other send
 /// it ahead of what reads it.
-pub(crate) const STREAM_WINDOW: u32 = 256 * 1024;
+pub const STREAM_WINDOW: u32 = 256 * 1024;
 
 /// How much of all of them together: room for every stream at once, so those
 /// whose readers have stalled never hold back one that is read. The windows
@@ -200,7 +204,7 @@ pub(crate) const STREAM_WINDOW: u32 = 256 * 1024;
 /// [`STREAMS_IN_ALL`], each with its body, which [`AWAITED_AT_ONCE`] and
 /// [`redeemer::AWAITED_BODY_BYTES`] bound; and what the TLS and, on a joined stream,
 /// the Relay's WebSocket buffer.
-pub(crate) const CONNECTION_WINDOW: u32 = STREAMS_IN_ALL * STREAM_WINDOW;
+pub const CONNECTION_WINDOW: u32 = STREAMS_IN_ALL * STREAM_WINDOW;
 
 /// How each Server on a Pairing's connection — dialled to a direct way, or
 /// joined at a Relay — makes sure, inside the pinned-key TLS, that the other
@@ -219,33 +223,33 @@ pub(crate) const CONNECTION_WINDOW: u32 = STREAMS_IN_ALL * STREAM_WINDOW;
 /// the slowest link a connection is to survive. Giving up closes the
 /// connection gracefully, and [`Liveness`] bounds how long that may take.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Keepalive {
-    pub(crate) interval: tokio::time::Duration,
-    pub(crate) timeout: tokio::time::Duration,
+pub struct Keepalive {
+    pub interval: tokio::time::Duration,
+    pub timeout: tokio::time::Duration,
 }
 
 /// What a redeeming Server calls the Serving Server it asks, wherever a name
 /// is wanted: the name its identity certificate is minted for. A Serving
 /// Server is known by its pinned key alone, so this tells no one apart, and
 /// it is never sent in the clear.
-pub(crate) const SERVING_IDENTITY_NAME: &str = "shaman-server";
+pub const SERVING_IDENTITY_NAME: &str = "shaman-server";
 
 /// A byte stream a Pairing connection runs over, whatever carries it: the
 /// pinned-key TLS runs over it on both sides, and the Pairing's HTTP inside
 /// that.
-pub(crate) trait ByteStream: AsyncRead + AsyncWrite + Send + Unpin + 'static {}
+pub trait ByteStream: AsyncRead + AsyncWrite + Send + Unpin + 'static {}
 
 impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> ByteStream for T {}
 
 /// This Server's Relays, as they are given to Serving once the Server has
 /// them.
-pub(crate) type GivenRelays = Arc<OnceLock<Arc<dyn RelayWays>>>;
+pub type GivenRelays = Arc<OnceLock<Arc<dyn RelayWays>>>;
 
 /// This Server's Relays as Serving and the Pairings it redeemed use them
 /// (ADR-0045): which it Serves through, so an Invite may offer them, and the
 /// joins it asks at those it holds a Login at, so a Relay way reaches the
 /// Serving Server it names.
-pub(crate) trait RelayWays: Send + Sync {
+pub trait RelayWays: Send + Sync {
     /// The address of the Relay `relay` names, written the one way a Relay's
     /// address is, where this Server Serves through it and holds a Login
     /// there not known to need renewing.
@@ -269,22 +273,22 @@ pub(crate) trait RelayWays: Send + Sync {
 /// Whether a connection being made to a Serving Server is still wanted:
 /// whether anything is still asked of that Server by what it is made for.
 #[derive(Clone)]
-pub(crate) struct Wanted(pub(crate) watch::Receiver<()>);
+pub struct Wanted(pub watch::Receiver<()>);
 
 impl Wanted {
-    pub(crate) fn still(&self) -> bool {
+    pub fn still(&self) -> bool {
         self.0.has_changed().is_ok()
     }
 
     /// A connection wanted for as long as `interest` stands.
     #[cfg(test)]
-    pub(crate) fn while_held(interest: &watch::Sender<()>) -> Self {
+    pub fn while_held(interest: &watch::Sender<()>) -> Self {
         Self(interest.subscribe())
     }
 }
 
 /// The failure of a connection no longer wanted as it was being made.
-pub(crate) fn no_longer_wanted() -> std::io::Error {
+pub fn no_longer_wanted() -> std::io::Error {
     std::io::Error::new(
         std::io::ErrorKind::Interrupted,
         "nothing is asked of the Serving Server any longer",
@@ -292,8 +296,7 @@ pub(crate) fn no_longer_wanted() -> std::io::Error {
 }
 
 /// A join a Server asks at a Relay, as it comes to be made or not.
-pub(crate) type RelayJoin =
-    Pin<Box<dyn Future<Output = std::io::Result<Box<dyn ByteStream>>> + Send>>;
+pub type RelayJoin = Pin<Box<dyn Future<Output = std::io::Result<Box<dyn ByteStream>>> + Send>>;
 
 /// Why a Relay way reached no Serving Server where its user can do something
 /// about it — this Server holds no Login at the Relay, or the Relay will not
@@ -301,12 +304,12 @@ pub(crate) type RelayJoin =
 /// inside the I/O error the way fails with, so redeeming an Invite no way of
 /// which reached its Serving Server can say so.
 #[derive(Clone, Debug)]
-pub(crate) struct RelayRefusal {
-    pub(crate) code: SessionErrorCode,
-    pub(crate) message: String,
+pub struct RelayRefusal {
+    pub code: SessionErrorCode,
+    pub message: String,
     /// Why the Serving Server cannot be reached by the Relay way, where its
     /// user can do something about it rather than wait.
-    pub(crate) unreachable: Option<UnreachableReason>,
+    pub unreachable: Option<UnreachableReason>,
 }
 
 impl std::fmt::Display for RelayRefusal {
@@ -320,7 +323,7 @@ impl std::error::Error for RelayRefusal {}
 /// The [`RelayRefusal`] `error` carries, however deeply it is wrapped. I/O
 /// errors' own `source` passes over what they wrap, so each is looked inside
 /// as well as past.
-pub(crate) fn relay_refusal<'error>(
+pub fn relay_refusal<'error>(
     error: &'error (dyn std::error::Error + 'static),
 ) -> Option<&'error RelayRefusal> {
     if let Some(refusal) = error.downcast_ref::<RelayRefusal>() {
@@ -336,81 +339,81 @@ pub(crate) fn relay_refusal<'error>(
 }
 
 #[derive(Deserialize, Serialize)]
-pub(crate) struct InvitePayload {
+pub struct InvitePayload {
     #[serde(rename = "w")]
-    pub(crate) ways: Vec<Way>,
+    pub ways: Vec<Way>,
     #[serde(rename = "k")]
-    pub(crate) server_key: String,
+    pub server_key: String,
     #[serde(rename = "t")]
-    pub(crate) token: String,
+    pub token: String,
     #[serde(rename = "h")]
-    pub(crate) hostname: String,
+    pub hostname: String,
 }
 
-pub(crate) struct ParsedInvite {
-    pub(crate) ways: Vec<Way>,
-    pub(crate) server_key: Vec<u8>,
-    pub(crate) token: [u8; 32],
-    pub(crate) hostname: String,
+pub struct ParsedInvite {
+    pub ways: Vec<Way>,
+    pub server_key: Vec<u8>,
+    pub token: [u8; 32],
+    pub hostname: String,
 }
 
 #[derive(Deserialize, Serialize)]
-pub(crate) struct EnrollmentRequest {
-    pub(crate) token: String,
-    pub(crate) protocol_version: u32,
-    pub(crate) phase: EnrollmentPhase,
+pub struct EnrollmentRequest {
+    pub token: String,
+    pub protocol_version: u32,
+    pub phase: EnrollmentPhase,
     /// The name the redeeming Server gives itself — its machine's hostname —
     /// by which the Serving side attributes what a Sidekick on it sends.
     /// Said only when committing, so a preparation keeps the shape every
     /// version speaks and a Server of another version is told apart by its
     /// protocol version rather than by a request it cannot read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) hostname: Option<String>,
+    pub hostname: Option<String>,
     /// The offer to pair back this ceremony ends by making, by its id. Taken
     /// only as a commit forms the Pairing: there is no other way to make one
     /// (ADR-0066).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) offer: Option<Uuid>,
+    pub offer: Option<Uuid>,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum EnrollmentPhase {
+pub enum EnrollmentPhase {
     Prepare,
     Commit,
 }
 
 #[derive(Deserialize, Serialize)]
-pub(crate) struct EnrollmentResponse {
-    pub(crate) hostname: String,
-    pub(crate) protocol_version: u32,
+pub struct EnrollmentResponse {
+    pub hostname: String,
+    pub protocol_version: u32,
 }
 
 /// The compatibility handshake deliberately retains the v28 wire shape so a
 /// newly upgraded Server can still identify an older paired Server as a
 /// protocol mismatch rather than a transport failure.
 #[derive(Deserialize, Serialize)]
-pub(crate) struct PairingHealth {
-    pub(crate) protocol_version: u32,
+pub struct PairingHealth {
+    pub protocol_version: u32,
 }
 
 /// What a Serving Server tells a Peer of the Relays it Serves through, a
 /// line of the answer each time it tells it: the whole of them each time.
 #[derive(Deserialize, Serialize)]
-pub(crate) struct OfferedRelays {
-    pub(crate) relays: Vec<String>,
+pub struct OfferedRelays {
+    pub relays: Vec<String>,
     /// How the offer to pair back this very Peer made stands, where it made
     /// one. Nothing is told here of any other Peer's.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) offer: Option<ToldOffer>,
+    pub offer: Option<ToldOffer>,
 }
 
 /// How a Peer's own offer to pair back stands, as the Server it made it to
 /// tells it: plain data to a redeemer, which the offer to pair back reads.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(crate) struct ToldOffer {
-    pub(crate) id: Uuid,
-    pub(crate) accepted: bool,
+pub struct ToldOffer {
+    pub id: Uuid,
+    pub accepted: bool,
 }
 
 /// The header the Serving listener proves, to this Server's own Session API,
@@ -418,30 +421,30 @@ pub(crate) struct ToldOffer {
 /// it — naming the Peer it authenticated — rather than a Client or a Peer:
 /// its value is a secret this process mints and never shows anyone. A
 /// redeemer strips it from whatever it carries to a Remote.
-pub(crate) const FORWARDED_AUTHOR_PROOF_HEADER: &str = "x-shaman-forwarded-author-proof";
+pub const FORWARDED_AUTHOR_PROOF_HEADER: &str = "x-shaman-forwarded-author-proof";
 
 /// `author` as the [`AUTHOR_HEADER`](crate::protocol::AUTHOR_HEADER)
 /// carries it: its JSON, encoded so that whatever its words are it stands in
 /// a header.
-pub(crate) fn author_header(author: &crate::protocol::Author) -> header::HeaderValue {
+pub fn author_header(author: &crate::protocol::Author) -> header::HeaderValue {
     let json = serde_json::to_vec(author).expect("an author always serializes");
     header::HeaderValue::from_str(&URL_SAFE_NO_PAD.encode(json))
         .expect("base64 is a valid header value")
 }
 
-pub(crate) struct PairingFailure {
-    pub(crate) code: SessionErrorCode,
-    pub(crate) message: String,
+pub struct PairingFailure {
+    pub code: SessionErrorCode,
+    pub message: String,
     /// Why the Remote could not be reached, where its user can do something
     /// about it rather than wait.
-    pub(crate) unreachable: Option<UnreachableReason>,
+    pub unreachable: Option<UnreachableReason>,
     /// Whether the Server asked is who said this, its code among it, rather
     /// than this one having judged it for itself.
-    pub(crate) said_by_the_other: bool,
+    pub said_by_the_other: bool,
 }
 
 impl PairingFailure {
-    pub(crate) fn new(code: SessionErrorCode, message: impl Into<String>) -> Self {
+    pub fn new(code: SessionErrorCode, message: impl Into<String>) -> Self {
         Self {
             code,
             message: message.into(),
@@ -451,7 +454,7 @@ impl PairingFailure {
     }
 
     /// The failure the Server asked said, as it said it.
-    pub(crate) fn said_by_the_other(code: SessionErrorCode, message: impl Into<String>) -> Self {
+    pub fn said_by_the_other(code: SessionErrorCode, message: impl Into<String>) -> Self {
         Self {
             said_by_the_other: true,
             ..Self::new(code, message)
@@ -459,7 +462,7 @@ impl PairingFailure {
     }
 
     /// The failure `refusal` says, a Relay way having been refused for it.
-    pub(crate) fn refused(refusal: RelayRefusal) -> Self {
+    pub fn refused(refusal: RelayRefusal) -> Self {
         Self {
             code: refusal.code,
             message: refusal.message,
@@ -485,31 +488,31 @@ impl PairingFailure {
 /// what is sent it going nowhere — for the keepalive's `interval` and
 /// `timeout`, by when the keepalive has given the stream up, and `timeout`
 /// again for the close.
-pub(crate) struct Liveness<S> {
-    pub(crate) transport: StdMutex<Option<S>>,
+pub struct Liveness<S> {
+    pub transport: StdMutex<Option<S>>,
     /// Wakes whatever last used the transport, so it finds it given up.
-    pub(crate) waker: AtomicWaker,
+    pub waker: AtomicWaker,
     /// Whether the other Server's HTTP/2 preface has all come.
-    pub(crate) begun: watch::Sender<bool>,
+    pub begun: watch::Sender<bool>,
     /// What has last moved over the transport.
-    pub(crate) moved: StdMutex<Moved>,
+    pub moved: StdMutex<Moved>,
     /// Whether the transport has gone: given up, or let go by what used it.
-    pub(crate) gone: watch::Sender<bool>,
+    pub gone: watch::Sender<bool>,
 }
 
 /// What has last moved over a connection's transport.
 #[derive(Clone, Copy)]
-pub(crate) struct Moved {
+pub struct Moved {
     /// When the other Server last sent anything.
-    pub(crate) heard: tokio::time::Instant,
+    pub heard: tokio::time::Instant,
     /// Since when what is sent it has gone nowhere, while it has not.
-    pub(crate) held_since: Option<tokio::time::Instant>,
+    pub held_since: Option<tokio::time::Instant>,
 }
 
 impl<S> Liveness<S> {
     /// `transport` as HTTP/2 is run over it, the other Server's `preface`
     /// expected first, and what watches it.
-    pub(crate) fn watch(transport: S, preface: Preface) -> (Watched<S>, Arc<Self>) {
+    pub fn watch(transport: S, preface: Preface) -> (Watched<S>, Arc<Self>) {
         let liveness = Arc::new(Self {
             transport: StdMutex::new(Some(transport)),
             waker: AtomicWaker::new(),
@@ -529,7 +532,7 @@ impl<S> Liveness<S> {
 
     /// Waits for the other Server to begin HTTP/2, giving the transport up
     /// where it has not within `startup`.
-    pub(crate) async fn begun_within(&self, startup: tokio::time::Duration) -> std::io::Result<()> {
+    pub async fn begun_within(&self, startup: tokio::time::Duration) -> std::io::Result<()> {
         let mut begun = self.begun.subscribe();
         if let Ok(Ok(_)) = tokio::time::timeout(startup, begun.wait_for(|begun| *begun)).await {
             return Ok(());
@@ -545,7 +548,7 @@ impl<S> Liveness<S> {
     /// up, or once the transport has gone otherwise: the other Server not
     /// beginning HTTP/2 within `startup`, or, once it has, the transport
     /// stalling for as long as `keepalive` gives the stream and its close.
-    pub(crate) async fn lost(&self, startup: tokio::time::Duration, keepalive: Keepalive) {
+    pub async fn lost(&self, startup: tokio::time::Duration, keepalive: Keepalive) {
         let judging = async {
             if self.begun_within(startup).await.is_err() {
                 return;
@@ -570,7 +573,7 @@ impl<S> Liveness<S> {
     /// Since when the transport has stalled, as far as can be told: since
     /// the other Server last sent anything, or since what is sent it last
     /// went anywhere, whichever is longer ago.
-    pub(crate) fn stalled_since(&self) -> tokio::time::Instant {
+    pub fn stalled_since(&self) -> tokio::time::Instant {
         let moved = *self
             .moved
             .lock()
@@ -582,7 +585,7 @@ impl<S> Liveness<S> {
 
     /// Notes that what is sent the other Server is going nowhere just now
     /// where `held`, and that it is moving otherwise.
-    pub(crate) fn note_sending(&self, held: bool) {
+    pub fn note_sending(&self, held: bool) {
         let mut moved = self
             .moved
             .lock()
@@ -591,7 +594,7 @@ impl<S> Liveness<S> {
     }
 
     /// Drops the transport, and has whatever uses it find it gone.
-    pub(crate) fn give_up(&self) {
+    pub fn give_up(&self) {
         drop(
             self.transport
                 .lock()
@@ -604,10 +607,10 @@ impl<S> Liveness<S> {
 }
 
 /// Gives a connection's transport up as it goes, unless it is kept.
-pub(crate) struct GivenUpUnlessKept<S>(Option<Arc<Liveness<S>>>);
+pub struct GivenUpUnlessKept<S>(Option<Arc<Liveness<S>>>);
 
 impl<S> GivenUpUnlessKept<S> {
-    pub(crate) fn keep(mut self) {
+    pub fn keep(mut self) {
         self.0 = None;
     }
 }
@@ -622,10 +625,10 @@ impl<S> Drop for GivenUpUnlessKept<S> {
 
 /// A connection's transport as HTTP/2 runs over it, watched as
 /// [`Liveness`] says. Once given up, it fails whatever is asked of it.
-pub(crate) struct Watched<S> {
-    pub(crate) liveness: Arc<Liveness<S>>,
+pub struct Watched<S> {
+    pub liveness: Arc<Liveness<S>>,
     /// What is still to come of the other Server's preface.
-    pub(crate) preface: Preface,
+    pub preface: Preface,
 }
 
 impl<S> Drop for Watched<S> {
@@ -638,7 +641,7 @@ impl<S> Drop for Watched<S> {
 impl<S: Unpin> Watched<S> {
     /// Sends over the transport as `poll` does, noting whether what is sent
     /// is going anywhere.
-    pub(crate) fn poll_send<T>(
+    pub fn poll_send<T>(
         &self,
         context: &mut TaskContext<'_>,
         poll: impl FnOnce(Pin<&mut S>, &mut TaskContext<'_>) -> Poll<std::io::Result<T>>,
@@ -650,7 +653,7 @@ impl<S: Unpin> Watched<S> {
 
     /// Polls the transport as `poll` does, or fails where it has been given
     /// up.
-    pub(crate) fn poll_transport<T>(
+    pub fn poll_transport<T>(
         &self,
         context: &mut TaskContext<'_>,
         poll: impl FnOnce(Pin<&mut S>, &mut TaskContext<'_>) -> Poll<std::io::Result<T>>,
@@ -748,20 +751,20 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for Watched<S> {
 /// on a Pairing's connection sends first: from the redeeming Server, the client's
 /// magic and a SETTINGS frame; from the Serving Server, a SETTINGS frame.
 /// What it says is HTTP/2's to judge; this only counts it in.
-pub(crate) struct Preface {
+pub struct Preface {
     /// How much of the client's magic is still to come.
-    pub(crate) magic: usize,
+    pub magic: usize,
     /// The SETTINGS frame's header, as much of it as has come.
-    pub(crate) header: [u8; 9],
-    pub(crate) header_read: usize,
+    pub header: [u8; 9],
+    pub header_read: usize,
     /// How much of the SETTINGS frame's payload is still to come, once its
     /// header has.
-    pub(crate) payload: usize,
+    pub payload: usize,
 }
 
 impl Preface {
     /// The redeeming Server's preface.
-    pub(crate) fn of_client() -> Self {
+    pub fn of_client() -> Self {
         Self {
             magic: b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".len(),
             ..Self::of_server()
@@ -769,7 +772,7 @@ impl Preface {
     }
 
     /// The Serving Server's preface.
-    pub(crate) fn of_server() -> Self {
+    pub fn of_server() -> Self {
         Self {
             magic: 0,
             header: [0; 9],
@@ -778,13 +781,13 @@ impl Preface {
         }
     }
 
-    pub(crate) fn done(&self) -> bool {
+    pub fn done(&self) -> bool {
         self.magic == 0 && self.header_read == self.header.len() && self.payload == 0
     }
 
     /// Counts in `read`, the next bytes the other Server sent: whether the
     /// preface has now all come.
-    pub(crate) fn take_in(&mut self, mut read: &[u8]) -> bool {
+    pub fn take_in(&mut self, mut read: &[u8]) -> bool {
         let magic = self.magic.min(read.len());
         self.magic -= magic;
         read = &read[magic..];
@@ -810,7 +813,7 @@ impl Preface {
 /// `request` made safe to carry on: rid of every hop-by-hop header, and of
 /// the host, credentials and Pairing protocol version it came with, and with
 /// `added` set after all it carries.
-pub(crate) fn passed_on<B>(request: Request<B>, added: HeaderMap) -> Request<B> {
+pub fn passed_on<B>(request: Request<B>, added: HeaderMap) -> Request<B> {
     let (mut parts, body) = request.into_parts();
     remove_hop_by_hop_headers(&mut parts.headers);
     parts.headers.remove(header::HOST);
@@ -823,7 +826,7 @@ pub(crate) fn passed_on<B>(request: Request<B>, added: HeaderMap) -> Request<B> 
 /// The failure of a carried request that got no answer. A request that never
 /// connected was never delivered; once connected, it may have been, whatever
 /// went wrong after.
-pub(crate) fn undelivered_or_lost(never_connected: bool) -> PairingFailure {
+pub fn undelivered_or_lost(never_connected: bool) -> PairingFailure {
     if never_connected {
         PairingFailure::new(
             SessionErrorCode::PairingConnectionFailed,
@@ -837,7 +840,7 @@ pub(crate) fn undelivered_or_lost(never_connected: bool) -> PairingFailure {
     }
 }
 
-pub(crate) fn remote_forward_headers(protocol_version: u32) -> HeaderMap {
+pub fn remote_forward_headers(protocol_version: u32) -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(
         PAIRING_PROTOCOL_HEADER,
@@ -847,7 +850,7 @@ pub(crate) fn remote_forward_headers(protocol_version: u32) -> HeaderMap {
     headers
 }
 
-pub(crate) fn remove_hop_by_hop_headers(headers: &mut HeaderMap) {
+pub fn remove_hop_by_hop_headers(headers: &mut HeaderMap) {
     let named_by_connection = headers
         .get_all(header::CONNECTION)
         .iter()
@@ -872,11 +875,11 @@ pub(crate) fn remove_hop_by_hop_headers(headers: &mut HeaderMap) {
     }
 }
 
-pub(crate) fn crypto_provider() -> Arc<rustls::crypto::CryptoProvider> {
+pub fn crypto_provider() -> Arc<rustls::crypto::CryptoProvider> {
     Arc::new(rustls::crypto::ring::default_provider())
 }
 
-pub(crate) fn parse_invite(invite: &str) -> std::result::Result<ParsedInvite, PairingFailure> {
+pub fn parse_invite(invite: &str) -> std::result::Result<ParsedInvite, PairingFailure> {
     let Some(rest) = invite.strip_prefix("shaman-") else {
         return Err(PairingFailure::new(
             SessionErrorCode::InvalidInvite,
@@ -938,13 +941,13 @@ pub(crate) fn parse_invite(invite: &str) -> std::result::Result<ParsedInvite, Pa
     })
 }
 
-pub(crate) fn ways_are_unique_and_nonempty(ways: &[Way]) -> bool {
+pub fn ways_are_unique_and_nonempty(ways: &[Way]) -> bool {
     !ways.is_empty() && ways.iter().collect::<HashSet<_>>().len() == ways.len()
 }
 
 /// Whether `way` is written as an Invite carries one: a Relay way names its
 /// Relay by the one way a Relay's address is written.
-pub(crate) fn well_formed(way: &Way) -> bool {
+pub fn well_formed(way: &Way) -> bool {
     match way {
         Way::Direct(_) => true,
         Way::Relay(relay) => canonical_relay(relay),
@@ -952,11 +955,11 @@ pub(crate) fn well_formed(way: &Way) -> bool {
 }
 
 /// Whether `relay` is a Relay's address written the one way one is.
-pub(crate) fn canonical_relay(relay: &str) -> bool {
+pub fn canonical_relay(relay: &str) -> bool {
     shaman_relay_protocol::canonical_address(relay).as_deref() == Some(relay)
 }
 
-pub(crate) fn decode_token(encoded: &str) -> std::result::Result<[u8; 32], PairingFailure> {
+pub fn decode_token(encoded: &str) -> std::result::Result<[u8; 32], PairingFailure> {
     URL_SAFE_NO_PAD
         .decode(encoded)
         .ok()
@@ -968,7 +971,7 @@ pub(crate) fn decode_token(encoded: &str) -> std::result::Result<[u8; 32], Pairi
 
 /// What `response` says, decoded as `T` — `None` where it says anything
 /// else, or more than [`PAIRING_ANSWER_BUDGET`], which is read no further.
-pub(crate) async fn small_answer<T: DeserializeOwned>(
+pub async fn small_answer<T: DeserializeOwned>(
     response: http::Response<impl http_body::Body<Error: Into<BoxError>>>,
 ) -> Option<T> {
     let read = Limited::new(response.into_body(), PAIRING_ANSWER_BUDGET)
@@ -983,7 +986,7 @@ pub(crate) async fn small_answer<T: DeserializeOwned>(
 /// that is [`EVERYWHERE`](crate::protocol::EVERYWHERE) in any case — the word
 /// that names every Server at once wherever an Origin is named, so a Remote
 /// by that name, named back as its Origin, would name every Server instead.
-pub(crate) fn validate_remote_name(name: &str) -> std::result::Result<(), PairingFailure> {
+pub fn validate_remote_name(name: &str) -> std::result::Result<(), PairingFailure> {
     if name.trim().is_empty() || name != name.trim() {
         return Err(PairingFailure::new(
             SessionErrorCode::InvalidRemoteName,
@@ -1003,14 +1006,14 @@ pub(crate) fn validate_remote_name(name: &str) -> std::result::Result<(), Pairin
     Ok(())
 }
 
-pub(crate) fn protocol_mismatch(expected: u32, actual: u32) -> PairingFailure {
+pub fn protocol_mismatch(expected: u32, actual: u32) -> PairingFailure {
     PairingFailure::new(
         SessionErrorCode::PairingProtocolMismatch,
         format!("Pairing protocol mismatch: local v{expected}, remote v{actual}"),
     )
 }
 
-pub(crate) fn internal_pairing_failure(_error: anyhow::Error) -> PairingFailure {
+pub fn internal_pairing_failure(_error: anyhow::Error) -> PairingFailure {
     // Credential-bearing inputs and filesystem contents are deliberately not
     // copied into an outward error which a caller might later Log.
     PairingFailure::new(
@@ -1019,7 +1022,7 @@ pub(crate) fn internal_pairing_failure(_error: anyhow::Error) -> PairingFailure 
     )
 }
 
-pub(crate) fn new_token() -> [u8; 32] {
+pub fn new_token() -> [u8; 32] {
     let first = *Uuid::new_v4().as_bytes();
     let second = *Uuid::new_v4().as_bytes();
     let mut token = [0_u8; 32];
@@ -1028,11 +1031,11 @@ pub(crate) fn new_token() -> [u8; 32] {
     token
 }
 
-pub(crate) fn fingerprint(public_key: &[u8]) -> String {
+pub fn fingerprint(public_key: &[u8]) -> String {
     blake3::hash(public_key).to_hex().to_string()
 }
 
-pub(crate) fn public_key_from_certificate(
+pub fn public_key_from_certificate(
     certificate: &CertificateDer<'_>,
 ) -> std::result::Result<Vec<u8>, TlsError> {
     let (_, certificate) = x509_parser::parse_x509_certificate(certificate.as_ref())
@@ -1041,7 +1044,7 @@ pub(crate) fn public_key_from_certificate(
 }
 
 /// The name this Server reports itself by: its machine's hostname.
-pub(crate) fn machine_hostname() -> String {
+pub fn machine_hostname() -> String {
     short_hostname(
         &hostname::get()
             .ok()
@@ -1053,7 +1056,7 @@ pub(crate) fn machine_hostname() -> String {
 /// `hostname` up to its first `.`, so a machine is named as its user knows it
 /// — `laptop`, not `laptop.local` or a domain it happens to sit in — and
 /// `remote` where that leaves nothing.
-pub(crate) fn short_hostname(hostname: &str) -> String {
+pub fn short_hostname(hostname: &str) -> String {
     let name = hostname.split('.').next().unwrap_or_default().trim();
     if name.is_empty() {
         "remote".to_owned()
@@ -1062,7 +1065,7 @@ pub(crate) fn short_hostname(hostname: &str) -> String {
     }
 }
 
-pub(crate) fn read_records<T: DeserializeOwned + Default>(path: &Path) -> Result<T> {
+pub fn read_records<T: DeserializeOwned + Default>(path: &Path) -> Result<T> {
     match fs::read(path) {
         Ok(bytes) => {
             protect_current_user_file(path)?;
@@ -1075,7 +1078,7 @@ pub(crate) fn read_records<T: DeserializeOwned + Default>(path: &Path) -> Result
 
 /// Stores `value` as the Pairing records at `path`, replacing what was there
 /// whole or not at all.
-pub(crate) fn write_private_json(path: &Path, value: &impl Serialize) -> Result<()> {
+pub fn write_private_json(path: &Path, value: &impl Serialize) -> Result<()> {
     let mut records = serde_json::to_vec(value).context("encode Pairing records")?;
     records.push(b'\n');
     replace_private_file(path, &records)

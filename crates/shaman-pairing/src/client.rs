@@ -65,29 +65,29 @@ use crate::protocol::{SessionError, SessionErrorCode, Way};
 
 /// The body of every request a redeeming Server asks: each is whole before
 /// it is asked, so it can be asked again by another way.
-pub(crate) type RequestBody = Full<Bytes>;
+pub type RequestBody = Full<Bytes>;
 
 /// How long a socket a Pairing is carried over — dialled to a direct way, or
 /// to the Relay a join is made at — may sit idle before it is probed, and how
 /// long between probes, so a Serving Server or a Relay that vanished is found
 /// out.
-pub(crate) const SOCKET_KEEPALIVE: tokio::time::Duration = tokio::time::Duration::from_secs(15);
+pub const SOCKET_KEEPALIVE: tokio::time::Duration = tokio::time::Duration::from_secs(15);
 
 /// How many unanswered probes find what such a socket reaches gone.
-pub(crate) const SOCKET_KEEPALIVE_PROBES: u32 = 3;
+pub const SOCKET_KEEPALIVE_PROBES: u32 = 3;
 
 /// How long what such a socket sends may go unacknowledged before the
 /// connection is given up, where the platform can be told.
 #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
-pub(crate) const SOCKET_USER_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(30);
+pub const SOCKET_USER_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(30);
 
 /// Which proxy, if any, a Server dials a direct way through, chosen by the
 /// way's address as HTTP clients choose one.
 #[derive(Clone, Debug)]
 pub struct DirectProxies {
-    pub(crate) rules: Arc<Matcher>,
+    pub rules: Arc<Matcher>,
     /// Whether a loopback address is sent to a proxy as any other is.
-    pub(crate) loopback: bool,
+    pub loopback: bool,
 }
 
 impl DirectProxies {
@@ -115,7 +115,7 @@ impl DirectProxies {
     }
 
     /// The proxy a socket to `address` is tunnelled through, where one is.
-    pub(crate) fn for_address(&self, address: SocketAddr) -> Option<Intercept> {
+    pub fn for_address(&self, address: SocketAddr) -> Option<Intercept> {
         if !self.loopback && address.ip().to_canonical().is_loopback() {
             return None;
         }
@@ -125,11 +125,11 @@ impl DirectProxies {
 }
 
 /// A held client a Serving Server is asked through.
-pub(crate) type StrongClient = Arc<PairingHttpClient>;
+pub type StrongClient = Arc<PairingHttpClient>;
 
-pub(crate) struct PinnedServerKey {
-    pub(crate) expected: Vec<u8>,
-    pub(crate) rejected: Arc<AtomicU64>,
+pub struct PinnedServerKey {
+    pub expected: Vec<u8>,
+    pub rejected: Arc<AtomicU64>,
 }
 
 impl std::fmt::Debug for PinnedServerKey {
@@ -183,7 +183,7 @@ impl ServerCertVerifier for PinnedServerKey {
     }
 }
 
-pub(crate) fn server_signature_verifier(
+pub fn server_signature_verifier(
     certificate: &CertificateDer<'_>,
 ) -> std::result::Result<Arc<WebPkiServerVerifier>, TlsError> {
     let mut roots = RootCertStore::empty();
@@ -202,7 +202,7 @@ pub(crate) fn server_signature_verifier(
 /// proxy is tunnelled through: a way named a proxy of any other kind fails
 /// before anything is dialled. A Relay way is joined to the Serving Server
 /// at its Relay, while the connection is `wanted`.
-pub(crate) async fn open_connection(
+pub async fn open_connection(
     way: &Way,
     dialer: &WayDialer,
     wanted: Wanted,
@@ -253,7 +253,7 @@ pub(crate) async fn open_connection(
 }
 
 /// What `connector` connects to `target`, once it is ready to.
-pub(crate) async fn connected<C>(mut connector: C, target: Uri) -> std::io::Result<C::Response>
+pub async fn connected<C>(mut connector: C, target: Uri) -> std::io::Result<C::Response>
 where
     C: tower_service::Service<Uri>,
     C::Error: Into<BoxError>,
@@ -268,7 +268,7 @@ where
 /// to it: an HTTP client's dialer, which sets the socket up alike on every
 /// platform — sending without delay, probed while idle, and given up on where
 /// what it sends goes unacknowledged.
-pub(crate) fn direct_dialer() -> HttpConnector {
+pub fn direct_dialer() -> HttpConnector {
     let mut dialer = HttpConnector::new();
     dialer.enforce_http(false);
     dialer.set_nodelay(true);
@@ -285,7 +285,7 @@ pub(crate) fn direct_dialer() -> HttpConnector {
 /// dial is ([`PairingHttpClient::carrier`]), until one answers. Where none
 /// does, a way that presented another key is said first, and then the first
 /// Relay way refused for a reason the user can act on.
-pub(crate) async fn dial_enrollment(
+pub async fn dial_enrollment(
     ways: &[Way],
     server_key: &[u8],
     identity: &IdentityMaterial,
@@ -340,37 +340,37 @@ pub(crate) async fn dial_enrollment(
 /// at a Relay way's Relay — runs the pinned-key TLS over it, and has it carry
 /// everything asked by that way together, as HTTP/2. Which way carries each
 /// request is chosen as [`PairingHttpClient::carrier`] says.
-pub(crate) struct PairingHttpClient {
+pub struct PairingHttpClient {
     /// The pinned-key TLS run over each way's connection, asking the Serving
     /// Server to carry everything asked by that way together.
-    pub(crate) tls: TlsConnector,
-    pub(crate) dialer: WayDialer,
+    pub tls: TlsConnector,
+    pub dialer: WayDialer,
     /// The connection each way asked by so far is asked over.
-    pub(crate) over_ways: StdMutex<HashMap<Way, Arc<SharedConnection>>>,
-    pub(crate) server_key_rejections: Arc<AtomicU64>,
+    pub over_ways: StdMutex<HashMap<Way, Arc<SharedConnection>>>,
+    pub server_key_rejections: Arc<AtomicU64>,
     /// Lets go, as the client goes, of every connection still being made for
     /// it, so none is made, and no join asked at a Relay, once nothing is
     /// asked of the Serving Server. What makes a connection listens for it
     /// without holding the client.
-    pub(crate) interest: watch::Sender<()>,
+    pub interest: watch::Sender<()>,
     /// How the direct ways are being tried again in the background.
-    pub(crate) direct_retry: Arc<StdMutex<DirectRetry>>,
+    pub direct_retry: Arc<StdMutex<DirectRetry>>,
     /// Whether what the Serving Server tells of the Relays it Serves through
     /// is followed through this client.
-    pub(crate) keeping_up: AtomicBool,
+    pub keeping_up: AtomicBool,
     /// How many times the Serving Server has answered, as one paired with
     /// this Server does, what was asked through this client: so following
     /// what it tells, once that ends, can say whether it has answered since.
-    pub(crate) answers: AtomicU64,
+    pub answers: AtomicU64,
     /// Which of the Pairings made since this Server started the client was
     /// made for, as [`super::StoredRemote`]'s generation says.
-    pub(crate) generation: u64,
+    pub generation: u64,
 }
 
 impl PairingHttpClient {
     /// Whether this client was made for the Pairing of `server_key` made
     /// `generation`th: it pins that key, and was made for that very Pairing.
-    pub(crate) fn pins(&self, server_key: &[u8], generation: u64) -> bool {
+    pub fn pins(&self, server_key: &[u8], generation: u64) -> bool {
         *self.dialer.server == *server_key && self.generation == generation
     }
 }
@@ -378,11 +378,11 @@ impl PairingHttpClient {
 /// How a Serving Server's direct ways are being tried again in the
 /// background, while what is asked of it rides a joined stream.
 #[derive(Default)]
-pub(crate) struct DirectRetry {
+pub struct DirectRetry {
     /// When they were last tried.
-    pub(crate) tried: Option<tokio::time::Instant>,
+    pub tried: Option<tokio::time::Instant>,
     /// Whether they are being tried just now.
-    pub(crate) trying: bool,
+    pub trying: bool,
 }
 
 impl PairingHttpClient {
@@ -406,7 +406,7 @@ impl PairingHttpClient {
     ///
     /// Ways `asked` has seen fail are not dialled again, and each that fails
     /// now is noted there. `None` once every way has failed.
-    pub(crate) async fn carrier(&self, ways: &[Way], asked: &mut Asked) -> Option<(Way, Carrier)> {
+    pub async fn carrier(&self, ways: &[Way], asked: &mut Asked) -> Option<(Way, Carrier)> {
         let untried = |kind: fn(&Way) -> bool| {
             ways.iter()
                 .filter(|way| kind(way) && !asked.failed.contains(way))
@@ -463,7 +463,7 @@ impl PairingHttpClient {
     /// which goes directly. A way presenting another key never stands, and
     /// nothing already carried is moved. The tries hold no interest in the
     /// Serving Server of their own, so they end with the last of it.
-    pub(crate) fn retry_direct(&self, direct: &[Way]) {
+    pub fn retry_direct(&self, direct: &[Way]) {
         {
             let mut retry = self
                 .direct_retry
@@ -508,7 +508,7 @@ impl PairingHttpClient {
     }
 
     /// The connection the Serving Server is asked over by `way`.
-    pub(crate) fn over(&self, way: &Way) -> Arc<SharedConnection> {
+    pub fn over(&self, way: &Way) -> Arc<SharedConnection> {
         self.over_ways
             .lock()
             .expect("Pairing client lock is not poisoned")
@@ -525,7 +525,7 @@ impl PairingHttpClient {
 
     /// What connects to the Serving Server by `way`, running the pinned-key
     /// TLS over each connection, for as long as anything is asked of it.
-    pub(crate) fn connector(&self, way: &Way) -> WayConnector {
+    pub fn connector(&self, way: &Way) -> WayConnector {
         WayConnector {
             way: way.clone(),
             tls: self.tls.clone(),
@@ -538,7 +538,7 @@ impl PairingHttpClient {
 /// Whichever of `direct` and `relayed` first comes to something, the other
 /// let go: `relayed` is started only once `head_start` has passed, or as soon
 /// as `direct` has come to nothing; nothing where both do.
-pub(crate) async fn race<T>(
+pub async fn race<T>(
     direct: impl Future<Output = Option<T>>,
     relayed: impl Future<Output = Option<T>>,
     head_start: tokio::time::Duration,
@@ -564,14 +564,14 @@ pub(crate) async fn race<T>(
 }
 
 /// What a Serving Server answers over a Pairing connection.
-pub(crate) type Answer = hyper::Response<AnswerBody>;
+pub type Answer = hyper::Response<AnswerBody>;
 
 /// The body of what a Serving Server answers, holding the place what was
 /// asked took among the streams its connection carries at once until the
 /// body is read to its end or let go.
-pub(crate) struct AnswerBody {
-    pub(crate) body: Incoming,
-    pub(crate) _place: Option<tokio::sync::OwnedSemaphorePermit>,
+pub struct AnswerBody {
+    pub body: Incoming,
+    pub _place: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 
 impl http_body::Body for AnswerBody {
@@ -597,21 +597,21 @@ impl http_body::Body for AnswerBody {
 /// What carries one request to a Serving Server: the connection one of its
 /// ways answered by, carrying this request beside whatever else it carries.
 #[derive(Clone)]
-pub(crate) struct Carrier {
-    pub(crate) sender: http2::SendRequest<RequestBody>,
+pub struct Carrier {
+    pub sender: http2::SendRequest<RequestBody>,
     /// One for each of [`STREAMS_AT_ONCE`], each held by what is asked over
     /// the connection until its answer is read or let go, and closed as the
     /// connection ends. The stream the Relays are told over takes none, so
     /// the one place more the Serving Server allows is always free for it.
-    pub(crate) places: Arc<tokio::sync::Semaphore>,
+    pub places: Arc<tokio::sync::Semaphore>,
     /// Whether the connection stood already, from an earlier request, as
     /// this one came to be asked over it.
-    pub(crate) standing: bool,
+    pub standing: bool,
 }
 
 impl Carrier {
     /// Asks `request`, whose target is a path on the Serving Server.
-    pub(crate) async fn send(
+    pub async fn send(
         self,
         mut request: Request<RequestBody>,
     ) -> std::result::Result<Answer, Unanswered> {
@@ -664,13 +664,13 @@ impl Carrier {
 }
 
 /// Why something asked of a Serving Server over a connection got no answer.
-pub(crate) struct Unanswered {
+pub struct Unanswered {
     /// Whether it may have reached the Serving Server.
-    pub(crate) delivered: bool,
+    pub delivered: bool,
     /// Whether it went over a connection standing from an earlier request
     /// that had ended meanwhile, never reaching the Serving Server: asked
     /// over another, it may well be answered.
-    pub(crate) stale: bool,
+    pub stale: bool,
 }
 
 /// The one HTTP/2 connection to a Serving Server over one of its ways — a
@@ -682,36 +682,36 @@ pub(crate) struct Unanswered {
 /// made only once the one it carried has ended. A connection is made only
 /// for as long as something waits on it, and one made that has carried
 /// nothing is let go once nothing does — as when another way answered first.
-pub(crate) struct SharedConnection {
-    pub(crate) connector: WayConnector,
+pub struct SharedConnection {
+    pub connector: WayConnector,
     /// The connection made, or being made, for whatever is asked next.
-    pub(crate) current: StdMutex<Option<CurrentConnection>>,
+    pub current: StdMutex<Option<CurrentConnection>>,
     /// How many connections have been begun, so each is told apart from the
     /// next.
-    pub(crate) made: AtomicU64,
+    pub made: AtomicU64,
 }
 
 /// A way's connection as it comes to be made or not, shared by everything
 /// waiting on it.
-pub(crate) type MakingConnection =
+pub type MakingConnection =
     Shared<BoxFuture<'static, std::result::Result<Carrier, Arc<std::io::Error>>>>;
 
 /// The connection a way is asked over, made or being made.
-pub(crate) struct CurrentConnection {
+pub struct CurrentConnection {
     /// Which of the way's connections it is.
-    pub(crate) number: u64,
-    pub(crate) connection: MakingConnection,
+    pub number: u64,
+    pub connection: MakingConnection,
     /// Held by each thing waiting on the connection as it is made, which is
     /// given up — asking nothing more of its way, or of a Relay — once
     /// nothing holds it.
-    pub(crate) waiting: Weak<watch::Sender<()>>,
+    pub waiting: Weak<watch::Sender<()>>,
     /// Whether anything has been asked over it.
-    pub(crate) carried: bool,
+    pub carried: bool,
 }
 
 impl SharedConnection {
     /// The connection standing, where one is, to carry a request at once.
-    pub(crate) fn standing(&self) -> Option<Carrier> {
+    pub fn standing(&self) -> Option<Carrier> {
         let mut current = self
             .current
             .lock()
@@ -730,9 +730,7 @@ impl SharedConnection {
 
     /// What carries a request over this way, once its connection stands: the
     /// connection standing, or the one being made, or one made afresh.
-    pub(crate) async fn carrier(
-        self: &Arc<Self>,
-    ) -> std::result::Result<Carrier, Arc<std::io::Error>> {
+    pub async fn carrier(self: &Arc<Self>) -> std::result::Result<Carrier, Arc<std::io::Error>> {
         let (number, connection, waiting) = self.wait_on();
         let _waiting = WaitingOnConnection {
             shared: self.clone(),
@@ -747,7 +745,7 @@ impl SharedConnection {
     /// The connection the next request goes over, its number, and what to
     /// hold while it is made: the one standing, or the one being made, and
     /// otherwise one made afresh.
-    pub(crate) fn wait_on(&self) -> (u64, MakingConnection, Option<Arc<watch::Sender<()>>>) {
+    pub fn wait_on(&self) -> (u64, MakingConnection, Option<Arc<watch::Sender<()>>>) {
         let mut current = self
             .current
             .lock()
@@ -793,7 +791,7 @@ impl SharedConnection {
 
     /// Notes that the connection numbered `number` carries something, so it
     /// stands for whatever is asked next.
-    pub(crate) fn carry(&self, number: u64) {
+    pub fn carry(&self, number: u64) {
         if let Some(made) = self
             .current
             .lock()
@@ -808,7 +806,7 @@ impl SharedConnection {
     /// Lets the connection numbered `number` go where it has carried nothing
     /// and nothing waits on it any longer: given up as it is made, or
     /// dropped once made.
-    pub(crate) fn release(&self, number: u64) {
+    pub fn release(&self, number: u64) {
         let mut current = self
             .current
             .lock()
@@ -823,10 +821,10 @@ impl SharedConnection {
 
 /// Something waiting on a way's connection, which lets the connection go as
 /// it stops waiting, where nothing else holds it and it carries nothing.
-pub(crate) struct WaitingOnConnection {
-    pub(crate) shared: Arc<SharedConnection>,
-    pub(crate) number: u64,
-    pub(crate) waiting: Option<Arc<watch::Sender<()>>>,
+pub struct WaitingOnConnection {
+    pub shared: Arc<SharedConnection>,
+    pub number: u64,
+    pub waiting: Option<Arc<watch::Sender<()>>>,
 }
 
 impl Drop for WaitingOnConnection {
@@ -840,7 +838,7 @@ impl Drop for WaitingOnConnection {
 /// way, or joined at a Relay way's Relay, with the pinned-key TLS run over
 /// it — and has it carry HTTP/2, as the Serving Server agreed in that
 /// handshake.
-pub(crate) async fn make_connection(
+pub async fn make_connection(
     connector: WayConnector,
 ) -> std::result::Result<Carrier, Arc<std::io::Error>> {
     let mut interest = connector.interest.clone();
@@ -909,18 +907,18 @@ pub(crate) async fn make_connection(
 /// How a connection to a Serving Server is made by one way: obtained from
 /// the way, with the pinned-key TLS run over it.
 #[derive(Clone)]
-pub(crate) struct WayConnector {
-    pub(crate) way: Way,
-    pub(crate) tls: TlsConnector,
-    pub(crate) dialer: WayDialer,
+pub struct WayConnector {
+    pub way: Way,
+    pub tls: TlsConnector,
+    pub dialer: WayDialer,
     /// Ends once nothing wants the connection any longer.
-    pub(crate) interest: watch::Receiver<()>,
+    pub interest: watch::Receiver<()>,
 }
 
 impl WayConnector {
     /// A connection to the Serving Server by the way, the pinned-key TLS
     /// done over it, made only for as long as it is wanted.
-    pub(crate) async fn connect(&self) -> std::io::Result<PairedConnection> {
+    pub async fn connect(&self) -> std::io::Result<PairedConnection> {
         let mut interest = self.interest.clone();
         let connecting = async {
             let connection =
@@ -954,22 +952,22 @@ impl WayConnector {
 /// for its address, where one is, and a Relay way through this Server's
 /// Relays, to the Serving Server whose identity key is `server`.
 #[derive(Clone)]
-pub(crate) struct WayDialer {
-    pub(crate) proxies: DirectProxies,
-    pub(crate) relays: GivenRelays,
-    pub(crate) server: Arc<[u8]>,
+pub struct WayDialer {
+    pub proxies: DirectProxies,
+    pub relays: GivenRelays,
+    pub server: Arc<[u8]>,
     /// How long the Pairing's TLS handshake over a connection a way gave may
     /// take before the way is given up, so a Serving Server — or a Relay
     /// carrying a join — that never finishes it holds nothing up.
-    pub(crate) handshake_timeout: tokio::time::Duration,
+    pub handshake_timeout: tokio::time::Duration,
     /// How long each new dial tries the direct ways alone before starting
     /// the Relay ways beside them.
-    pub(crate) direct_head_start: tokio::time::Duration,
+    pub direct_head_start: tokio::time::Duration,
     /// How long, at least, requests riding a joined stream go between tries
     /// of the direct ways in the background.
-    pub(crate) direct_retry_interval: tokio::time::Duration,
+    pub direct_retry_interval: tokio::time::Duration,
     /// How a way's connection makes sure the Serving Server still answers.
-    pub(crate) keepalive: Keepalive,
+    pub keepalive: Keepalive,
 }
 
 impl WayDialer {
@@ -977,7 +975,7 @@ impl WayDialer {
     /// way only at a Relay this Server's user has chosen by adding or pinning
     /// it. A Relay way at any other — one the Remote told of, say — is listed
     /// with the Remote, and nothing is asked of that Relay.
-    pub(crate) fn dials(&self, way: &Way) -> bool {
+    pub fn dials(&self, way: &Way) -> bool {
         match way {
             Way::Direct(_) => true,
             Way::Relay(relay) => self.relays.get().is_some_and(|relays| relays.chosen(relay)),
@@ -987,7 +985,7 @@ impl WayDialer {
 
 /// A connection to a Serving Server over which the pinned-key TLS has been
 /// established.
-pub(crate) struct PairedConnection(tokio_rustls::client::TlsStream<Box<dyn ByteStream>>);
+pub struct PairedConnection(tokio_rustls::client::TlsStream<Box<dyn ByteStream>>);
 
 impl AsyncRead for PairedConnection {
     fn poll_read(
@@ -1036,7 +1034,7 @@ impl AsyncWrite for PairedConnection {
 }
 
 /// How what was asked of a Serving Server over one way went.
-pub(crate) enum WayAttempt<T> {
+pub enum WayAttempt<T> {
     Answered(T),
     TryNext,
     Rejected(PairingFailure),
@@ -1046,9 +1044,9 @@ pub(crate) enum WayAttempt<T> {
 /// that have failed it, not to be dialled again, and why a Relay way was
 /// refused, where its user can act on it.
 #[derive(Default)]
-pub(crate) struct Asked {
-    pub(crate) failed: Vec<Way>,
-    pub(crate) refused: Option<RelayRefusal>,
+pub struct Asked {
+    pub failed: Vec<Way>,
+    pub refused: Option<RelayRefusal>,
 }
 
 impl Asked {
@@ -1057,7 +1055,7 @@ impl Asked {
     /// held: a login, then logging in under one Account, before a cap the
     /// Relay's operator alone can lift — so that is what is said of a
     /// Serving Server no way reached, whichever way was dialled first.
-    pub(crate) fn refused_also(&mut self, refused: Option<RelayRefusal>) {
+    pub fn refused_also(&mut self, refused: Option<RelayRefusal>) {
         let Some(refused) = refused else {
             return;
         };
@@ -1077,7 +1075,7 @@ impl Asked {
 }
 
 /// How asking a Serving Server by its ways came to nothing.
-pub(crate) enum NoAnswer {
+pub enum NoAnswer {
     /// It answered with a refusal.
     Refused(PairingFailure),
     /// No way reached it: whether one presented a key other than its pinned
@@ -1094,7 +1092,7 @@ pub(crate) enum NoAnswer {
 /// what came of it. A way whose answer is judged one to try past is not
 /// dialled again, and what went over a connection standing from before that
 /// had ended meanwhile is asked again over another.
-pub(crate) async fn first_answer<T, F, Fut>(
+pub async fn first_answer<T, F, Fut>(
     client: &PairingHttpClient,
     ways: &[Way],
     mut asking: impl FnMut() -> Request<RequestBody>,
@@ -1123,7 +1121,7 @@ where
     })
 }
 
-pub(crate) fn paired_http_client(
+pub fn paired_http_client(
     server_key: &[u8],
     identity: &IdentityMaterial,
     enrollment_token: Option<&str>,
@@ -1165,7 +1163,7 @@ pub(crate) fn paired_http_client(
     })
 }
 
-pub(crate) fn enrollment_certificate(identity: &IdentityMaterial, token: &str) -> Result<Vec<u8>> {
+pub fn enrollment_certificate(identity: &IdentityMaterial, token: &str) -> Result<Vec<u8>> {
     let mut params = CertificateParams::new(Vec::new()).context("describe enrollment identity")?;
     params.distinguished_name = CertificateDistinguishedName::new();
     params
@@ -1177,7 +1175,7 @@ pub(crate) fn enrollment_certificate(identity: &IdentityMaterial, token: &str) -
         .context("mint enrollment identity certificate")
 }
 
-pub(crate) async fn decode_pairing_response(response: Answer) -> PairingFailure {
+pub async fn decode_pairing_response(response: Answer) -> PairingFailure {
     let status = response.status();
     match small_answer::<SessionError>(response).await {
         Some(error) => PairingFailure::said_by_the_other(error.code, error.message),

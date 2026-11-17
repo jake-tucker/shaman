@@ -1,0 +1,13 @@
+[package]
+name = "shaman-text"
+# Never published.
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# The escape sequences in text a Provider or another machine sends, and what of another machine's text may reach a
+# reader. The Server, the TUI and the redeeming side of a Pairing share it, so it builds wherever a thin Client runs.
+
+[dependencies]
+icu_normalizer = { version = "2.3.0", default-features = false, features = ["compiled_data"] }
+icu_properties = "2.3.0"

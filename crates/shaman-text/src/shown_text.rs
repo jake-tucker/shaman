@@ -14,7 +14,7 @@ use crate::ansi::{AnsiScanner, FragmentRole};
 
 /// The first characters of a key fingerprint: enough to tell two machines
 /// known by one name apart wherever they are named.
-pub(crate) fn short_fingerprint(fingerprint: &str) -> &str {
+pub fn short_fingerprint(fingerprint: &str) -> &str {
     fingerprint
         .char_indices()
         .nth(8)
@@ -23,7 +23,7 @@ pub(crate) fn short_fingerprint(fingerprint: &str) -> &str {
 
 /// Ever more of `fingerprint`, from [`short_fingerprint`] to the whole of it,
 /// for as much of it as tells one machine from others known by its name.
-pub(crate) fn fingerprint_prefixes(fingerprint: &str) -> impl Iterator<Item = &str> {
+pub fn fingerprint_prefixes(fingerprint: &str) -> impl Iterator<Item = &str> {
     let shortest = short_fingerprint(fingerprint).len();
     (shortest..fingerprint.len())
         .step_by(4)
@@ -34,7 +34,7 @@ pub(crate) fn fingerprint_prefixes(fingerprint: &str) -> impl Iterator<Item = &s
 
 /// `name` composed canonically, so one name is spelled one way however it was
 /// typed.
-pub(crate) fn composed(name: &str) -> String {
+pub fn composed(name: &str) -> String {
     icu_normalizer::ComposingNormalizerBorrowed::new_nfc()
         .normalize(name)
         .into_owned()
@@ -42,14 +42,14 @@ pub(crate) fn composed(name: &str) -> String {
 
 /// `name` as names are told apart: composed, then case folded, so `Å` and
 /// `å`, or `ß` and `ss`, are one.
-pub(crate) fn folded(name: &str) -> String {
+pub fn folded(name: &str) -> String {
     composed(name).to_uppercase().to_lowercase()
 }
 
 /// Whether `character` is one a reader cannot see in a name: a control, a
 /// formatting character, one Unicode says is ignorable by default, or the
 /// blank Braille pattern, which takes a cell and draws nothing in it.
-pub(crate) fn unseen(character: char) -> bool {
+pub fn unseen(character: char) -> bool {
     character.is_control()
         || character == '\u{2800}'
         || CodePointSetData::new::<DefaultIgnorableCodePoint>().contains(character)
@@ -67,7 +67,7 @@ pub(crate) fn unseen(character: char) -> bool {
 /// it is drawn in. It is composed canonically, each character bearing only so
 /// many combining marks. What is left of a sequence the scanner cannot make out
 /// is plain text, never a control. An empty answer says nothing could be shown.
-pub(crate) fn shown(text: &str, at_most: usize) -> String {
+pub fn shown(text: &str, at_most: usize) -> String {
     let mut visible = String::new();
     for fragment in AnsiScanner::default().feed(&introducers_spelled_out(text)) {
         match fragment.into_role() {
