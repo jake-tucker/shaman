@@ -45,7 +45,7 @@ impl SessionStreamError {
     /// The stream's transport was bound to a Server replaced before the
     /// stream opened, which a fresh attach reaches the new one past.
     fn replaced() -> Self {
-        Self::transport("The Server this stream was opened against has been replaced")
+        Self::transport("The server this stream was opened against has been replaced")
     }
 
     fn protocol(error: anyhow::Error) -> Self {

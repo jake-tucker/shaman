@@ -30,8 +30,13 @@ pub(super) async fn classify(
 ) -> Result<TransportResponse, RemoteConnectionFailure> {
     let response = match response {
         Ok(response) => response,
+        // The transport alone can say it will never reach the Server again;
+        // a Server's refusal under that code is just a refusal.
+        Err(error) if error.code == SessionErrorCode::ServerReplaced => {
+            return Err(RemoteConnectionFailure::Replaced);
+        }
         // Not reaching the Server is, like a Server failing, worth trying
-        // again, unless the transport says why it never will be.
+        // again.
         Err(error) => return Err(failure_of(error, true)),
     };
     let status = response.status();
@@ -59,7 +64,6 @@ fn failure_of(error: SessionError, server_error: bool) -> RemoteConnectionFailur
             status: RemoteStatus::ProtocolMismatch,
             message: error.message,
         },
-        SessionErrorCode::ServerReplaced => RemoteConnectionFailure::Replaced,
         SessionErrorCode::PairingConnectionFailed | SessionErrorCode::ServerUnreachable => {
             RemoteConnectionFailure::Transient(error.unreachable)
         }
@@ -117,5 +121,33 @@ mod tests {
             matches!(failed, Err(RemoteConnectionFailure::Transient(None))),
             "the reason this build does not know reads as none, and the failure as one to reach"
         );
+    }
+
+    #[tokio::test]
+    async fn only_the_transport_can_say_the_server_was_replaced() {
+        let refused = classify(answered(
+            409,
+            serde_json::json!({
+                "code": "server_replaced",
+                "message": "A Server claiming what no Server sends",
+            }),
+        ))
+        .await;
+        assert!(
+            matches!(
+                refused,
+                Err(RemoteConnectionFailure::Rejected(ref message))
+                    if message == "A Server claiming what no Server sends"
+            ),
+            "a Server's answer under that code is a refusal like any other"
+        );
+
+        let replaced = classify(Err(SessionError {
+            code: SessionErrorCode::ServerReplaced,
+            message: "replaced".to_owned(),
+            unreachable: None,
+        }))
+        .await;
+        assert!(matches!(replaced, Err(RemoteConnectionFailure::Replaced)));
     }
 }

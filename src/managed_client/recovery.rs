@@ -6,7 +6,8 @@ use anyhow::{Result, anyhow};
 use tokio::sync::{mpsc, watch};
 
 use crate::protocol::{
-    Health, LifecycleState, PROTOCOL_VERSION, RuntimeDescriptor, ServerShutdown, ShutdownReason,
+    Health, LifecycleState, Outlook, PROTOCOL_VERSION, RuntimeDescriptor, ServerShutdown,
+    ShutdownReason,
 };
 
 use super::{
@@ -175,10 +176,25 @@ async fn open_managed_streams(
             deadline,
             startup_timeout,
             "Session catalog stream",
-            session_catalog_stream::open(http, descriptor),
+            open_catalog(http, descriptor),
         ),
     )?;
     Ok(ManagedStreamResponses { lifecycle, catalog })
+}
+
+/// The local Server's own Session catalog stream, which this client hydrates
+/// its catalog from as it finds and keeps that Server.
+async fn open_catalog(
+    http: &reqwest::Client,
+    descriptor: &RuntimeDescriptor,
+) -> reqwest::Result<reqwest::Response> {
+    let url = super::server_url(&descriptor.base_url, &Outlook::Local, "/v1/session-events")
+        .expect("a validated runtime descriptor builds a Server URL");
+    http.get(url)
+        .bearer_auth(&descriptor.token)
+        .send()
+        .await?
+        .error_for_status()
 }
 
 async fn open_required_stream(

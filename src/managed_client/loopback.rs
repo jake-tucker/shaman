@@ -52,11 +52,11 @@ impl LoopbackTransport {
     /// The local Server's URL for `uri`, beneath the Outlook's prefix.
     fn url(&self, base_url: &str, uri: &http::Uri) -> Result<reqwest::Url, SessionError> {
         let mut url = reqwest::Url::parse(base_url).map_err(|error| {
-            unreachable(format!("the local Server's address is unusable: {error}"))
+            unreachable(format!("the local server's address is unusable: {error}"))
         })?;
         {
             let mut segments = url.path_segments_mut().map_err(|()| {
-                unreachable("the local Server's address cannot hold a path".to_owned())
+                unreachable("the local server's address cannot hold a path".to_owned())
             })?;
             segments.clear();
             if let Outlook::Remote(name) = &self.outlook {
@@ -70,9 +70,13 @@ impl LoopbackTransport {
         Ok(url)
     }
 
-    fn replaced(&self) -> bool {
+    /// Whether `descriptor`, the one a request is about to be sent by, names
+    /// a Server other than the one this transport is bound to, or nothing is
+    /// left to name a successor. The copy compared is the copy sent by, so a
+    /// replacement published in between cannot slip past the pin.
+    fn replaced(&self, descriptor: &RuntimeDescriptor) -> bool {
         self.pinned.is_some_and(|pinned| {
-            self.descriptor.has_changed().is_err() || self.descriptor.borrow().instance_id != pinned
+            descriptor.instance_id != pinned || self.descriptor.has_changed().is_err()
         })
     }
 }
@@ -80,15 +84,15 @@ impl LoopbackTransport {
 #[async_trait::async_trait]
 impl Transport for LoopbackTransport {
     async fn send(&self, request: http::Request<Bytes>) -> Result<TransportResponse, SessionError> {
-        if self.replaced() {
+        let descriptor = self.descriptor.borrow().clone();
+        if self.replaced(&descriptor) {
             return Err(SessionError {
                 code: SessionErrorCode::ServerReplaced,
-                message: "The local Server this stream was opened against has been replaced"
+                message: "The local server this stream was opened against has been replaced"
                     .to_owned(),
                 unreachable: None,
             });
         }
-        let descriptor = self.descriptor.borrow().clone();
         let (parts, body) = request.into_parts();
         let url = self.url(&descriptor.base_url, &parts.uri)?;
         let response = self

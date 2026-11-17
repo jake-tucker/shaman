@@ -29,10 +29,10 @@ anyhow = "1.0.99"
 arboard = { version = "3.6.1", default-features = false, features = ["image-data", "wayland-data-control"] }
 axum = "0.8.4"
 base64 = "0.22.1"
+blake3 = "1.8.2"
 # The transport under the Client's readers speaks the `http` crate's requests and responses, with `bytes` bodies, so one
 # set of readers runs over loopback and, later, a Pairing.
 bytes = "1.12.1"
-blake3 = "1.8.2"
 clap = { version = "4.5.46", features = ["derive"] }
 crossterm = "0.28.1"
 dirs = "6.0.0"

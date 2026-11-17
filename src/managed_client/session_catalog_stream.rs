@@ -13,7 +13,7 @@ use tokio::{
 };
 
 use crate::protocol::{
-    MODEL_CATALOG_EVENT, ModelCatalog, Outlook, RuntimeDescriptor, SESSION_CATALOG_SNAPSHOT_EVENT,
+    MODEL_CATALOG_EVENT, ModelCatalog, SESSION_CATALOG_SNAPSHOT_EVENT,
     SESSION_CATALOG_UPDATED_EVENT, SKILL_CATALOG_UPDATED_EVENT, SessionCatalogChange,
     SessionCatalogRevision, SessionCatalogSnapshot, SessionCatalogUpdate, SessionCreated,
     SessionDeleted, SessionId, SessionMonitoringChanged, SessionSettlementChanged,
@@ -24,22 +24,8 @@ use crate::protocol::{
 use super::{
     ManagedEvent, RecoveryBackoff,
     remote_connection::{self, RemoteConnectionFailure},
-    server_url,
     transport::{self, Transport, TransportResponse, TryNow},
 };
-
-pub(super) async fn open(
-    http: &reqwest::Client,
-    descriptor: &RuntimeDescriptor,
-) -> reqwest::Result<reqwest::Response> {
-    let url = server_url(&descriptor.base_url, &Outlook::Local, "/v1/session-events")
-        .expect("a validated runtime descriptor builds a Server URL");
-    http.get(url)
-        .bearer_auth(&descriptor.token)
-        .send()
-        .await?
-        .error_for_status()
-}
 
 async fn open_over(
     transport: &dyn Transport,
