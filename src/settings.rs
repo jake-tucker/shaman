@@ -4152,9 +4152,9 @@ mod tests {
         assert!(
             SERVING_RELAYS_LIST
                 .entry
-                .contains(&crate::serving::MAX_TOLD_RELAY_LEN.to_string())
+                .contains(&crate::pairing::MAX_TOLD_RELAY_LEN.to_string())
         );
-        let longest = crate::serving::MAX_TOLD_RELAY_LEN - "https://.test".len();
+        let longest = crate::pairing::MAX_TOLD_RELAY_LEN - "https://.test".len();
         let at_most = format!("https://{}.test", "a".repeat(longest));
         let too_long = format!("https://{}.test", "a".repeat(longest + 1));
         assert!((SERVING_RELAYS_LIST.admits)(&at_most));

@@ -45,6 +45,8 @@ fs2 = "0.4.3"
 futures-util = "0.3.31"
 hostname = "0.4.1"
 http = "1.5.0"
+# The body the redeemer's `http` interface names, so it names no web framework's.
+http-body = "1.1.0"
 # The Pairing's pinned-key client: HTTP over a connection it is handed, rather than one it dials itself —
 # HTTP/1.1 over a direct way, and HTTP/2 over a Relay way, carrying everything asked by it on one join — and the
 # Serving side's server for each.

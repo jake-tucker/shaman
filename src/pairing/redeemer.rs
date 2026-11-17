@@ -1,0 +1,2032 @@
+//! The redeeming side of a Pairing: the [`Redeemer`], which redeems Invites
+//! and owns the Remotes they form.
+//!
+//! It keeps each Remote's record in `remotes.json`, asks each through the
+//! pinned-key client by whichever of its ways answers, and keeps its Relay
+//! ways up with what it tells of the Relays it Serves through, its direct
+//! ways staying as its Invite gave them. A Relay way is dialled only at a
+//! Relay this Server's user has chosen by adding it; one at any other is
+//! listed with the Remote and nothing more.
+//!
+//! Nothing a Server alone does is here. The offer to pair back attaches by
+//! [`RedeemerHooks`], its fields riding on each record as plain data, and a
+//! thin Client passes none.
+
+use std::{
+    collections::{HashMap, HashSet},
+    future::Future,
+    path::{Path, PathBuf},
+    sync::{
+        Arc, Mutex as StdMutex, RwLock, Weak,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+};
+
+use anyhow::Context as _;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use bytes::Bytes;
+use http::{Request, StatusCode};
+use http_body_util::{BodyExt, Full, Limited};
+use serde::{Deserialize, Serialize};
+use tokio::sync::watch;
+use uuid::Uuid;
+
+use super::{
+    BoxError, EnrollmentPhase, EnrollmentRequest, FORWARDED_AUTHOR_PROOF_HEADER, GivenRelays,
+    Identity, Keepalive, MAX_TOLD_RELAY_LEN, MAX_TOLD_RELAYS, OFFERED_RELAYS_PATH, OfferedRelays,
+    PAIRING_ANSWER_BUDGET, PAIRING_WITHDRAWAL_PATH, PEER_API_PREFIX, PairingFailure, PairingHealth,
+    ParsedInvite, RelayWays, STREAMS_AT_ONCE, ToldOffer, author_header, canonical_relay,
+    client::{
+        Answer, AnswerBody, DirectProxies, NoAnswer, PairingHttpClient, RequestBody, StrongClient,
+        Unanswered, WayAttempt, WayDialer, dial_enrollment, first_answer, paired_http_client,
+    },
+    fingerprint, internal_pairing_failure, machine_hostname, parse_invite, passed_on,
+    protocol_mismatch, read_records, remote_forward_headers, remove_hop_by_hop_headers,
+    small_answer, undelivered_or_lost, validate_remote_name, write_private_json,
+};
+use crate::protocol::{
+    AUTHOR_HEADER, Author, RedeemInviteRequest, Remote, RemoteHealth, RemoteRemoval, RemoteStatus,
+    SessionError, SessionErrorCode, SessionTimestamp, Way,
+};
+
+/// The file under its directory a redeemer keeps its Remotes' records in.
+pub(crate) const REMOTES_FILE: &str = "remotes.json";
+
+/// How long a redeemer gives each part of reaching a Remote, and how it keeps
+/// what it reached: its own, so whatever holds a redeemer — a Server or a
+/// thin Client — sets them as it needs and a test injects milliseconds.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RedeemerTimings {
+    /// How long a connection to a Serving Server may take to finish its TLS
+    /// handshake, and then to begin HTTP/2, before it is dropped; and how
+    /// long a Remote is given to first tell which Relays it Serves through.
+    pub(crate) handshake_timeout: tokio::time::Duration,
+    /// How long each new dial of a Serving Server tries its direct ways
+    /// alone before starting its Relay ways beside them.
+    pub(crate) direct_head_start: tokio::time::Duration,
+    /// How long, at least, a Serving Server whose requests ride a joined
+    /// stream goes between tries of its direct ways in the background.
+    pub(crate) direct_retry_interval: tokio::time::Duration,
+    /// How the redeemer makes sure the Serving Server on a connection still
+    /// answers.
+    pub(crate) keepalive: Keepalive,
+    /// How long removing a Remote waits for that Remote to drop its Peer
+    /// record.
+    pub(crate) withdrawal_timeout: tokio::time::Duration,
+    /// How often, at most, what Remotes tell of the Relays they Serve
+    /// through is stored.
+    pub(crate) told_relays_store_interval: tokio::time::Duration,
+}
+
+impl Default for RedeemerTimings {
+    fn default() -> Self {
+        Self {
+            handshake_timeout: tokio::time::Duration::from_secs(10),
+            direct_head_start: tokio::time::Duration::from_millis(250),
+            direct_retry_interval: tokio::time::Duration::from_secs(5),
+            keepalive: Keepalive {
+                interval: tokio::time::Duration::from_secs(15),
+                timeout: tokio::time::Duration::from_secs(30),
+            },
+            withdrawal_timeout: tokio::time::Duration::from_secs(5),
+            told_relays_store_interval: tokio::time::Duration::from_secs(5),
+        }
+    }
+}
+
+/// What a Server's offer to pair back attaches to its redeemer by (ADR-0066).
+/// Each is told the redeemer it acts for, so whatever implements these holds
+/// none. A thin Client passes none: it offers nothing, so no redemption it
+/// makes asks to.
+pub(crate) trait RedeemerHooks: Send + Sync {
+    /// The offer to make the Serving Server whose key is `server_key`, asked
+    /// as a redemption that asks to make one begins, before anything is
+    /// dialled; refused where none can be made.
+    fn offer(
+        &self,
+        redeemer: &Redeemer,
+        server_key: &[u8],
+    ) -> std::result::Result<StoredMadeOffer, PairingFailure>;
+
+    /// The Pairing with `remote` stands by redeeming its Invite as this
+    /// Server's user asked.
+    fn redeemed(&self, redeemer: &Redeemer, remote: &Remote);
+
+    /// The Remote `remote` told, over `client`, how the offer this Server made
+    /// it stands — `None` where it holds none of this Server's.
+    fn told(
+        &self,
+        redeemer: &Redeemer,
+        remote: &StoredRemote,
+        client: &StrongClient,
+        offer: Option<ToldOffer>,
+    );
+
+    /// The Remote whose key is `key` refused this Server's key, proving its
+    /// own: it ended the Pairing from its side.
+    fn refused(&self, redeemer: &Redeemer, key: &[u8]);
+
+    /// The Remote whose key is `key` dropped this Server's Peer record as its
+    /// user removed it here.
+    fn withdrawn(&self, redeemer: &Redeemer, key: &[u8]);
+
+    /// The record `remote` is gone, and its Pairing with it.
+    fn forgotten(&self, redeemer: &Redeemer, remote: &StoredRemote);
+
+    /// The Remotes' records changed and are stored.
+    fn changed(&self, redeemer: &Redeemer);
+}
+
+/// An offer to pair back as the Server that made it records it on the Remote
+/// it was made to: plain data a redeemer stores and does not read, which the
+/// offer to pair back reads and writes (ADR-0066).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredMadeOffer {
+    pub(crate) id: Uuid,
+    pub(crate) made_at: SessionTimestamp,
+    /// Whether this Server's user withdrew it, for the Remote to hear of next.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) withdrawn: bool,
+}
+
+/// The redeeming side of Pairing: what redeems Invites, and owns the Remotes
+/// they form, their records in `remotes.json` under its directory. Cloning
+/// it shares the one redeemer.
+#[derive(Clone)]
+pub(crate) struct Redeemer {
+    data_dir: PathBuf,
+    protocol_version: u32,
+    identity: Arc<dyn Identity>,
+    timings: RedeemerTimings,
+    remotes: Arc<RwLock<Vec<StoredRemote>>>,
+    /// Moves on with every change to the Remotes paired — one paired,
+    /// removed, or rolled back — so what follows a Remote under one Pairing
+    /// hears at once that it may no longer stand.
+    pairing_changes: Arc<watch::Sender<u64>>,
+    /// How many Pairings were made since the redeemer started: the last one
+    /// made's generation.
+    pairings_made: Arc<AtomicU64>,
+    remote_clients: Arc<StdMutex<HashMap<String, Weak<PairingHttpClient>>>>,
+    /// What awaits each Remote's answer, by the Remote's name, for as long as
+    /// anything does.
+    awaiting: Arc<StdMutex<HashMap<String, Weak<Awaiting>>>>,
+    /// How many requests may await one Remote's answer at once.
+    awaited_at_once: usize,
+    /// How many bytes the bodies of the requests awaiting one Remote's answer
+    /// may hold between them.
+    awaited_body_bytes: usize,
+    /// Which proxy, if any, each direct way of a Remote is dialled through.
+    direct_proxies: DirectProxies,
+    /// The Relays a Relay way of a Remote is reached through, once given.
+    relays: GivenRelays,
+    /// How what Remotes tell of the Relays they Serve through is stored.
+    told: Arc<ToldStore>,
+    /// What the offer to pair back attaches by, where anything does.
+    hooks: Arc<RwLock<Option<Arc<dyn RedeemerHooks>>>>,
+}
+
+impl Redeemer {
+    /// The redeemer whose Remotes' records are under `data_dir`, speaking the
+    /// Pairing protocol `protocol_version`, proving itself as `identity`.
+    pub(crate) fn new(
+        data_dir: &Path,
+        protocol_version: u32,
+        identity: Arc<dyn Identity>,
+        timings: RedeemerTimings,
+    ) -> anyhow::Result<Self> {
+        let remotes: Vec<StoredRemote> = read_records(&data_dir.join(REMOTES_FILE))?;
+        Ok(Self {
+            data_dir: data_dir.to_path_buf(),
+            protocol_version,
+            identity,
+            timings,
+            remotes: Arc::new(RwLock::new(remotes)),
+            pairing_changes: Arc::new(watch::channel(0).0),
+            pairings_made: Arc::default(),
+            remote_clients: Arc::default(),
+            awaiting: Arc::default(),
+            awaited_at_once: AWAITED_AT_ONCE,
+            awaited_body_bytes: AWAITED_BODY_BYTES,
+            direct_proxies: DirectProxies::from_environment(),
+            relays: GivenRelays::default(),
+            told: Arc::new(ToldStore::every(timings.told_relays_store_interval)),
+            hooks: Arc::default(),
+        })
+    }
+
+    /// Sets how many requests may await one Remote's answer at once, and how
+    /// many bytes their bodies may hold between them.
+    pub(crate) fn with_awaited(mut self, requests: usize, body_bytes: usize) -> Self {
+        self.awaited_at_once = requests;
+        self.awaited_body_bytes = body_bytes;
+        self
+    }
+
+    /// Sets which proxy, if any, each direct way of a Remote is dialled
+    /// through.
+    pub(crate) fn with_direct_proxies(mut self, proxies: DirectProxies) -> Self {
+        self.direct_proxies = proxies;
+        self
+    }
+
+    /// Attaches the offer to pair back, in place of whatever was attached.
+    pub(crate) fn attach(&self, hooks: Arc<dyn RedeemerHooks>) {
+        *self
+            .hooks
+            .write()
+            .expect("redeemer hooks lock is not poisoned") = Some(hooks);
+    }
+
+    /// Has the redeemer reach Serving Servers by Relay ways through `relays`:
+    /// given once, before it is asked anything.
+    pub(crate) fn reach_relays_through(&self, relays: Arc<dyn RelayWays>) {
+        let _ = self.relays.set(relays);
+    }
+
+    /// The Relays the redeemer reaches Relay ways through, as they are given.
+    pub(crate) fn relays(&self) -> GivenRelays {
+        self.relays.clone()
+    }
+
+    /// The directory the redeemer keeps its Remotes' records under.
+    pub(crate) fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+
+    /// The Pairing protocol version the redeemer speaks.
+    pub(crate) fn protocol_version(&self) -> u32 {
+        self.protocol_version
+    }
+
+    /// What the hooks attached, if any, do; nothing where none are.
+    fn hooked(&self, act: impl FnOnce(&dyn RedeemerHooks)) {
+        let hooks = self
+            .hooks
+            .read()
+            .expect("redeemer hooks lock is not poisoned")
+            .clone();
+        if let Some(hooks) = hooks {
+            act(hooks.as_ref());
+        }
+    }
+
+    /// Stores what Remotes told that has yet to be stored, and nothing after.
+    pub(crate) async fn shutdown(&self) {
+        self.told.stopped.store(true, Ordering::SeqCst);
+        self.store_told().await;
+    }
+
+    /// The Remote `remote` refused this Server's key, proving its own.
+    fn refused_by(&self, remote: &StoredRemote) {
+        self.hooked(|hooks| hooks.refused(self, &remote.public_key));
+    }
+    pub(crate) async fn redeem_invite(
+        &self,
+        request: RedeemInviteRequest,
+    ) -> std::result::Result<Remote, PairingFailure> {
+        let invite = parse_invite(&request.invite)?;
+        let remote = self.redeem(invite, request).await?;
+        self.hooked(|hooks| hooks.redeemed(self, &remote));
+        Ok(remote)
+    }
+
+    /// Redeems `invite`, as `request` asks, leaving what became of any offer
+    /// to pair back that machine holds here for whoever asked.
+    pub(crate) async fn redeem(
+        &self,
+        invite: ParsedInvite,
+        request: RedeemInviteRequest,
+    ) -> std::result::Result<Remote, PairingFailure> {
+        let ways = ordered_ways(&invite.ways, &request.ways)?;
+        if let Some(name) = request.name.as_deref() {
+            validate_remote_name(name)?;
+            self.ensure_remote_name_available(name)?;
+        }
+        let offer = request
+            .pair_back
+            .then(|| self.new_offer(&invite.server_key))
+            .transpose()?;
+        let identity = self.identity.material().await?;
+        let prepare = EnrollmentRequest {
+            token: URL_SAFE_NO_PAD.encode(invite.token),
+            protocol_version: self.protocol_version,
+            phase: EnrollmentPhase::Prepare,
+            hostname: None,
+            offer: None,
+        };
+        let enrolled = dial_enrollment(
+            &ways,
+            &invite.server_key,
+            &identity,
+            self.way_dialer(&invite.server_key),
+            &prepare,
+        )
+        .await?;
+        if enrolled.protocol_version != self.protocol_version {
+            return Err(protocol_mismatch(
+                self.protocol_version,
+                enrolled.protocol_version,
+            ));
+        }
+        let name = request.name.unwrap_or(enrolled.hostname).trim().to_owned();
+        validate_remote_name(&name)?;
+        self.ensure_remote_name_available(&name)?;
+        let remote = Remote {
+            name: name.clone(),
+            fingerprint: fingerprint(&invite.server_key),
+            ways,
+            status: RemoteStatus::Available,
+            icon: None,
+        };
+        // Stored ahead of the commit that makes it, so a crash can leave this
+        // Server an offer the other does not hold, and never the reverse.
+        let offer_id = offer.as_ref().map(|offer| offer.id);
+        self.persist_remote(&remote, &invite.server_key, offer)?;
+
+        let commit = EnrollmentRequest {
+            token: URL_SAFE_NO_PAD.encode(invite.token),
+            protocol_version: self.protocol_version,
+            phase: EnrollmentPhase::Commit,
+            hostname: Some(machine_hostname()),
+            offer: offer_id,
+        };
+        if let Err(error) = dial_enrollment(
+            &remote.ways,
+            &invite.server_key,
+            &identity,
+            self.way_dialer(&invite.server_key),
+            &commit,
+        )
+        .await
+        {
+            self.rollback_remote(&remote);
+            return Err(error);
+        }
+        self.keep_only_offer(&invite.server_key, offer_id);
+        Ok(remote)
+    }
+
+    pub(crate) fn list_remotes(&self) -> Vec<Remote> {
+        self.remotes
+            .read()
+            .expect("Remote record lock is not poisoned")
+            .iter()
+            .map(|stored| stored.remote.clone())
+            .collect()
+    }
+
+    /// The Remotes this Server is paired with, in the order paired, each
+    /// with the generation of its Pairing: which of those made since this
+    /// Server started it is, none for one it started with.
+    pub(crate) fn remote_pairings(&self) -> Vec<(Remote, u64)> {
+        self.remotes
+            .read()
+            .expect("Remote record lock is not poisoned")
+            .iter()
+            .map(|stored| (stored.remote.clone(), stored.generation))
+            .collect()
+    }
+
+    /// The generation of the last Pairing made: every Pairing made after
+    /// this answers has a later one.
+    pub(crate) fn pairings_made(&self) -> u64 {
+        self.pairings_made.load(Ordering::Acquire)
+    }
+
+    /// Asks the Remote `name` whether it answers, and as what: a request
+    /// awaiting its answer as any carried to it does, refused at once where
+    /// as many await it as may.
+    pub(crate) async fn probe_remote(
+        &self,
+        name: &str,
+    ) -> std::result::Result<RemoteHealth, PairingFailure> {
+        let remote = self.stored_remote(name)?;
+        let _awaiting = self.await_answer(name, 0)?;
+        let health = match self.probe_remote_connection(&remote).await {
+            Ok(health) => return Ok(health),
+            Err(error) if error.code == SessionErrorCode::PairingAuthenticationFailed => {
+                Ok(RemoteHealth {
+                    protocol_version: None,
+                    status: RemoteStatus::Revoked,
+                    unreachable: None,
+                })
+            }
+            // Unavailable as any Remote no way reaches is, saying why where
+            // its user can do something about it.
+            Err(error)
+                if matches!(
+                    error.code,
+                    SessionErrorCode::PairingConnectionFailed | SessionErrorCode::RelayCapReached
+                ) =>
+            {
+                Ok(RemoteHealth {
+                    protocol_version: None,
+                    status: RemoteStatus::Unavailable,
+                    unreachable: error.unreachable,
+                })
+            }
+            Err(error) => Err(error),
+        }?;
+        self.record_remote_status(&remote, health.status);
+        Ok(health)
+    }
+
+    /// Carries `request` to the Remote `name`'s Session API through the
+    /// Pairing, answering what the Remote answered: "ask this Remote". Its
+    /// path is relative to that API. `author` names who performs the act it
+    /// asks for on the user's behalf — this Server's own Sidekick — and
+    /// travels with it; a request carried for a Client names none, whatever
+    /// it says itself. Its body is read no further than `body_limit`, and
+    /// only once there is room for it among what awaits the Remote's answer:
+    /// one larger is not carried at all.
+    pub(crate) async fn ask_remote<B>(
+        &self,
+        name: &str,
+        mut request: Request<B>,
+        author: Option<&Author>,
+        body_limit: usize,
+    ) -> std::result::Result<Carried, PairingFailure>
+    where
+        B: http_body::Body<Data = Bytes>,
+        B::Error: Into<BoxError>,
+    {
+        let remote = self.stored_remote(name)?;
+        let declared = request
+            .body()
+            .size_hint()
+            .exact()
+            .map(|length| usize::try_from(length).unwrap_or(usize::MAX));
+        if declared.is_some_and(|length| length > body_limit) {
+            return Ok(Carried::TooLarge);
+        }
+        let _awaiting = self.await_answer(name, declared.unwrap_or(body_limit))?;
+        // What the request said of its author goes, and so does every
+        // hop-by-hop header, before the author this Server names is added
+        // last, where nothing the request carried can remove it.
+        let headers = request.headers_mut();
+        headers.remove(AUTHOR_HEADER);
+        headers.remove(FORWARDED_AUTHOR_PROOF_HEADER);
+        remove_hop_by_hop_headers(headers);
+        let mut added = remote_forward_headers(self.protocol_version);
+        if let Some(author) = author {
+            added.insert(AUTHOR_HEADER, author_header(author));
+        }
+        let path_and_query = request
+            .uri()
+            .path_and_query()
+            .map_or("/", http::uri::PathAndQuery::as_str);
+        *request.uri_mut() = format!("{PEER_API_PREFIX}{path_and_query}")
+            .parse()
+            .map_err(|_| {
+                PairingFailure::new(
+                    SessionErrorCode::PairingConnectionFailed,
+                    "Remote API path is invalid",
+                )
+            })?;
+        let (parts, body) = request.into_parts();
+        let body = match Limited::new(body, body_limit).collect().await {
+            Ok(body) => body.to_bytes(),
+            Err(error) => {
+                if error.is::<http_body_util::LengthLimitError>() {
+                    return Ok(Carried::TooLarge);
+                }
+                return Err(PairingFailure::new(
+                    SessionErrorCode::PairingConnectionFailed,
+                    "Remote API request body could not be read",
+                ));
+            }
+        };
+        let client = self.pairing_client(&remote).await?;
+        // A request that may have reached the Remote is never asked again by
+        // another way unless asking twice changes nothing: only one that was
+        // never delivered is.
+        let repeatable = parts.method.is_safe();
+        let asking = || {
+            let mut request = Request::new(Full::new(body.clone()));
+            *request.method_mut() = parts.method.clone();
+            *request.uri_mut() = parts.uri.clone();
+            *request.headers_mut() = parts.headers.clone();
+            passed_on(request, added.clone())
+        };
+        let response = first_remote_answer(&remote, &client, asking, |answer| {
+            let client = client.clone();
+            async move { judge_carried(answer, repeatable, client) }
+        })
+        .await;
+        match response {
+            Ok((way, response)) => self
+                .classify_remote_response(&remote, &client, way, response)
+                .await
+                .map(Carried::Answered),
+            Err(error) => {
+                if error.code == SessionErrorCode::PairingAuthenticationFailed {
+                    self.record_remote_status(&remote, RemoteStatus::Revoked);
+                }
+                Err(error)
+            }
+        }
+    }
+
+    /// Ends a Pairing from the redeeming side. The Remote is asked to drop its
+    /// Peer record first, while the Pairing that authenticates the request is
+    /// still in place; the local record then goes whether or not that Remote
+    /// answered, because a Remote that cannot be reached is forgotten here all
+    /// the same and reaching it again takes a new Invite.
+    pub(crate) async fn remove_remote(
+        &self,
+        name: &str,
+    ) -> std::result::Result<RemoteRemoval, PairingFailure> {
+        let remote = self.stored_remote(name)?;
+        let acknowledged = self.ask_remote_to_withdraw(&remote).await;
+        self.delete_remote(name)?;
+        if acknowledged {
+            self.hooked(|hooks| hooks.withdrawn(self, &remote.public_key));
+        }
+        Ok(RemoteRemoval {
+            name: name.to_owned(),
+            acknowledged,
+        })
+    }
+
+    /// Dials the Remote over the Pairing listener and asks it to withdraw this
+    /// Server's Peer record, within the withdrawal budget. Every dial,
+    /// authentication, protocol, and timeout failure alike simply leaves the
+    /// removal unacknowledged.
+    async fn ask_remote_to_withdraw(&self, remote: &StoredRemote) -> bool {
+        let Ok(client) = self.pairing_client(remote).await else {
+            return false;
+        };
+        let asking = || {
+            Request::post(PAIRING_WITHDRAWAL_PATH)
+                .body(RequestBody::default())
+                .expect("a withdrawal is well formed")
+        };
+        let withdrawal = first_remote_answer(remote, &client, asking, |answer| async move {
+            match answer {
+                Ok(response) if response.status().is_success() => WayAttempt::Answered(()),
+                Ok(_) | Err(_) => WayAttempt::TryNext,
+            }
+        });
+        matches!(
+            tokio::time::timeout(self.timings.withdrawal_timeout, withdrawal).await,
+            Ok(Ok(_))
+        )
+    }
+
+    /// Sets the Icon the user chose for the Remote `name`, refused where this
+    /// Server is paired with no Remote of that name; whoever asks judges
+    /// whether `icon` names one. A choice always stands over the one before
+    /// it. What reaches the Remote is untouched: the Icon is this Server's
+    /// own word for it, as its name is.
+    pub(crate) fn set_remote_icon(
+        &self,
+        name: &str,
+        icon: &str,
+    ) -> std::result::Result<(), PairingFailure> {
+        self.change_remotes(|remotes| {
+            let Some(stored) = remotes.iter_mut().find(|stored| stored.remote.name == name) else {
+                return Err(PairingFailure::new(
+                    SessionErrorCode::RemoteNotFound,
+                    "Remote not found",
+                ));
+            };
+            stored.remote.icon = Some(icon.to_owned());
+            Ok(())
+        })
+    }
+
+    /// Forgets the Remote `name` here, asking nothing of it.
+    pub(crate) fn delete_remote(&self, name: &str) -> std::result::Result<(), PairingFailure> {
+        let removed = self.change_remotes(|remotes| {
+            let Some(index) = remotes.iter().position(|stored| stored.remote.name == name) else {
+                return Err(PairingFailure::new(
+                    SessionErrorCode::RemoteNotFound,
+                    "Remote not found",
+                ));
+            };
+            Ok(remotes.remove(index))
+        })?;
+        // A name freed here may be paired again to a different key, so its
+        // pinned client must not outlive the record it was built from.
+        self.remote_clients
+            .lock()
+            .expect("Remote client lock is not poisoned")
+            .remove(name);
+        self.note_pairing_change();
+        self.hooked(|hooks| hooks.forgotten(self, &removed));
+        Ok(())
+    }
+
+    /// Changes the Remotes' records as `change` says: put back as they were
+    /// where it refuses or they cannot be stored, left unwritten where it
+    /// changes nothing, and otherwise stored and told of to the hooks with
+    /// their lock let go. The one way those records are written but for what
+    /// Remotes tell of the Relays they Serve through, which is held at once and
+    /// stored later ([`Self::store_told`]).
+    pub(crate) fn change_remotes<T>(
+        &self,
+        change: impl FnOnce(&mut Vec<StoredRemote>) -> std::result::Result<T, PairingFailure>,
+    ) -> std::result::Result<T, PairingFailure> {
+        let mut held = self
+            .remotes
+            .write()
+            .expect("Remote record lock is not poisoned");
+        let before = held.clone();
+        let answer = match change(&mut held) {
+            Ok(answer) => answer,
+            Err(refusal) => {
+                *held = before;
+                return Err(refusal);
+            }
+        };
+        if *held == before {
+            return Ok(answer);
+        }
+        if let Err(error) = write_private_json(&self.data_dir.join(REMOTES_FILE), &*held) {
+            *held = before;
+            return Err(internal_pairing_failure(error));
+        }
+        drop(held);
+        self.hooked(|hooks| hooks.changed(self));
+        Ok(answer)
+    }
+
+    /// Tells whatever follows a Remote that the Remotes paired have changed.
+    fn note_pairing_change(&self) {
+        self.pairing_changes.send_modify(|changes| *changes += 1);
+    }
+
+    /// What moves on with every change to the Remotes this Server is paired
+    /// with.
+    pub(crate) fn pairing_changes(&self) -> watch::Receiver<u64> {
+        self.pairing_changes.subscribe()
+    }
+
+    /// This Server's own key fingerprint: what a Remote it is paired with
+    /// knows it by as a Peer, and names its Sidekicks' acts by. It is known
+    /// without asking the store the key is kept in, so while that store does
+    /// not answer, and fails where the Server has yet to make its key.
+    pub(crate) fn own_fingerprint(&self) -> anyhow::Result<String> {
+        self.identity
+            .fingerprint()?
+            .context("this Server has yet to make its identity key")
+    }
+
+    /// What dials the ways of the Serving Server whose identity key is
+    /// `server_key`.
+    fn way_dialer(&self, server_key: &[u8]) -> WayDialer {
+        WayDialer {
+            proxies: self.direct_proxies.clone(),
+            relays: self.relays.clone(),
+            server: server_key.into(),
+            handshake_timeout: self.timings.handshake_timeout,
+            direct_head_start: self.timings.direct_head_start,
+            direct_retry_interval: self.timings.direct_retry_interval,
+            keepalive: self.timings.keepalive,
+        }
+    }
+
+    pub(crate) fn ensure_remote_name_available(
+        &self,
+        name: &str,
+    ) -> std::result::Result<(), PairingFailure> {
+        if self
+            .remotes
+            .read()
+            .expect("Remote record lock is not poisoned")
+            .iter()
+            .any(|stored| stored.remote.name == name)
+        {
+            return Err(remote_name_conflict(name));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn stored_remote(
+        &self,
+        name: &str,
+    ) -> std::result::Result<StoredRemote, PairingFailure> {
+        self.remotes
+            .read()
+            .expect("Remote record lock is not poisoned")
+            .iter()
+            .find(|stored| stored.remote.name == name)
+            .cloned()
+            .ok_or_else(|| {
+                PairingFailure::new(SessionErrorCode::RemoteNotFound, "Remote not found")
+            })
+    }
+
+    /// Takes room among what awaits the Remote `name`'s answer for a request
+    /// whose body holds as much as `body` bytes, held until it is answered or
+    /// fails — refused at once where there is none, past as many requests as
+    /// may await it at once or [`AWAITED_BODY_BYTES`].
+    fn await_answer(
+        &self,
+        name: &str,
+        body: usize,
+    ) -> std::result::Result<AwaitingAnswer, PairingFailure> {
+        let awaiting = {
+            let mut awaiting = self
+                .awaiting
+                .lock()
+                .expect("awaited answers lock is not poisoned");
+            awaiting.retain(|_, held| held.strong_count() > 0);
+            if let Some(held) = awaiting.get(name).and_then(Weak::upgrade) {
+                held
+            } else {
+                let held = Arc::new(Awaiting::new(self.awaited_at_once, self.awaited_body_bytes));
+                awaiting.insert(name.to_owned(), Arc::downgrade(&held));
+                held
+            }
+        };
+        let busy = || {
+            PairingFailure::new(
+                SessionErrorCode::RemoteBusy,
+                "as many requests await the Remote's answer as it is asked at once; try again \
+                 shortly",
+            )
+        };
+        let request = awaiting
+            .requests
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| busy())?;
+        let body = u32::try_from(body)
+            .ok()
+            .and_then(|bytes| awaiting.bytes.clone().try_acquire_many_owned(bytes).ok())
+            .ok_or_else(busy)?;
+        Ok(AwaitingAnswer {
+            _request: request,
+            _body: body,
+            _awaiting: awaiting,
+        })
+    }
+
+    fn record_remote_status(&self, remote: &StoredRemote, status: RemoteStatus) {
+        self.record_remote_state(remote, status, None);
+    }
+
+    fn record_remote_connection(&self, remote: &StoredRemote, status: RemoteStatus, way: Way) {
+        self.record_remote_state(remote, status, Some(way));
+    }
+
+    /// Notes that `remote` answered what was asked of it through `client` by
+    /// `way`, standing as `status`; and, where it answers as a Remote paired
+    /// with this Server does, has what it tells of the Relays it Serves
+    /// through followed over `client` from now on.
+    fn answered(
+        &self,
+        remote: &StoredRemote,
+        client: &Arc<PairingHttpClient>,
+        way: Way,
+        status: RemoteStatus,
+    ) {
+        self.record_remote_connection(remote, status, way);
+        if status == RemoteStatus::Available {
+            self.keep_up_with(remote, client);
+        }
+    }
+
+    /// Follows over `client`, where nothing follows it there yet, what the
+    /// Remote `remote` tells of the Relays it Serves through: its Relay ways
+    /// keep up with what it tells, as it is connected to and then each time
+    /// that changes, for as long as anything asks the Remote through
+    /// `client`. Where following ends because the answer it rode ended, or
+    /// no way carried it, it is followed again once the Remote next answers,
+    /// at once where it has answered meanwhile.
+    fn keep_up_with(&self, remote: &StoredRemote, client: &Arc<PairingHttpClient>) {
+        client.answers.fetch_add(1, Ordering::SeqCst);
+        if client.keeping_up.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        tokio::spawn(self.clone().keep_up(remote.clone(), client.clone()));
+    }
+
+    async fn keep_up(self, remote: StoredRemote, client: Arc<PairingHttpClient>) {
+        let held = Arc::downgrade(&client);
+        let mut interest = client.interest.subscribe();
+        let mut asking = Some(client);
+        while let Some(client) = asking.take() {
+            let answers = client.answers.load(Ordering::SeqCst);
+            match self
+                .follow_told(&remote, client, &held, &mut interest)
+                .await
+            {
+                Followed::LetGo | Followed::Refused => return,
+                Followed::Lost => {}
+            }
+            let Some(client) = held.upgrade() else {
+                return;
+            };
+            client.keeping_up.store(false, Ordering::SeqCst);
+            // Followed again at once where the Remote has answered meanwhile,
+            // unless what noted that answer follows it already.
+            if client.answers.load(Ordering::SeqCst) != answers
+                && !client.keeping_up.swap(true, Ordering::SeqCst)
+            {
+                asking = Some(client);
+            }
+        }
+    }
+
+    /// Asks the Remote `remote` through `client` which Relays it Serves
+    /// through, and takes up what it tells: first holding `client` until the
+    /// Remote has told it once — as it does at once, so within the handshake
+    /// timeout — so what it tells as it is connected to is taken up however
+    /// soon what connected lets it go; and then, holding nothing, each change
+    /// it tells, until nothing asks the Remote through the client any longer
+    /// (`interest`) or its Pairing no longer stands as it did.
+    async fn follow_told(
+        &self,
+        remote: &StoredRemote,
+        client: Arc<PairingHttpClient>,
+        held: &Weak<PairingHttpClient>,
+        interest: &mut watch::Receiver<()>,
+    ) -> Followed {
+        let protocol_version = self.protocol_version;
+        // `client`, and with it the interest in the Remote that keeps its
+        // connections, is held no longer than this: a probe that lets the
+        // Remote go at once leaves it in view for the handshake timeout at
+        // most, and over a connection already standing, for no longer than
+        // its answer takes.
+        let first = tokio::time::timeout(self.timings.handshake_timeout, async {
+            let asking = || {
+                let mut request = Request::get(OFFERED_RELAYS_PATH)
+                    .body(RequestBody::default())
+                    .expect("asking which Relays are offered is well formed");
+                request
+                    .headers_mut()
+                    .extend(remote_forward_headers(protocol_version));
+                request
+            };
+            let answer = first_remote_answer(remote, &client, asking, |answer| async move {
+                match answer {
+                    Ok(response) => WayAttempt::Answered(response),
+                    Err(_) => WayAttempt::TryNext,
+                }
+            })
+            .await;
+            let Ok((_, response)) = answer else {
+                return Err(Followed::Lost);
+            };
+            if response.status() == StatusCode::UNAUTHORIZED {
+                self.refused_by(remote);
+            }
+            if !response.status().is_success() {
+                return Err(Followed::Refused);
+            }
+            let mut told = Telling::new(response.into_body());
+            let relays = told.next().await?;
+            Ok((told, relays))
+        })
+        .await;
+        let (mut told, said) = match first {
+            Ok(Ok(first)) => first,
+            Ok(Err(followed)) => return followed,
+            Err(_) => return Followed::Lost,
+        };
+        if !self.take_up_told(remote, held, &said.relays) {
+            return Followed::LetGo;
+        }
+        self.hooked(|hooks| hooks.told(self, remote, &client, said.offer));
+        drop(client);
+        let mut pairings = self.pairing_changes();
+        loop {
+            tokio::select! {
+                biased;
+                () = async { while interest.changed().await.is_ok() {} } => return Followed::LetGo,
+                changed = pairings.changed() => {
+                    if changed.is_err() || !self.still_followed(remote, held) {
+                        return Followed::LetGo;
+                    }
+                }
+                said = told.next() => match said {
+                    Ok(said) if self.take_up_told(remote, held, &said.relays) => {
+                        if let Some(client) = held.upgrade() {
+                            self.hooked(|hooks| hooks.told(self, remote, &client, said.offer));
+                        }
+                    }
+                    Ok(_) => return Followed::LetGo,
+                    Err(followed) => return followed,
+                },
+            }
+        }
+    }
+
+    /// Takes up `relays` as the Relays the Remote `followed` Serves through,
+    /// as it told over `client`: its Relay ways come to be those — each it
+    /// had already where it was, and the rest after them — its direct ways
+    /// stay as its Invite gave them, and the ways that last answered are
+    /// those of them that still stand. Taken up only while `client` is the
+    /// one this Server asks the Remote through and the Remote's Pairing
+    /// stands as it did, answering whether they do: what was told over an
+    /// earlier client, or under an earlier Pairing, is never taken up after
+    /// what was told since, since following over one client ends before the
+    /// next is made. It holds at once, and is stored soon after
+    /// ([`Self::store_told_soon`]).
+    fn take_up_told(
+        &self,
+        followed: &StoredRemote,
+        client: &Weak<PairingHttpClient>,
+        relays: &[String],
+    ) -> bool {
+        let clients = self
+            .remote_clients
+            .lock()
+            .expect("Remote client lock is not poisoned");
+        let mut remotes = self
+            .remotes
+            .write()
+            .expect("Remote record lock is not poisoned");
+        let Some(index) = followed_at(&clients, &remotes, followed, client) else {
+            return false;
+        };
+        let ways = kept_up(&remotes[index].remote.ways, relays);
+        if ways == remotes[index].remote.ways {
+            return true;
+        }
+        remotes[index].answered.retain(|way| ways.contains(way));
+        remotes[index].remote.ways = ways;
+        drop((remotes, clients));
+        self.store_told_soon();
+        true
+    }
+
+    /// Has the Remotes' records stored once the store interval has passed,
+    /// where what they told of the Relays they Serve through has yet to be:
+    /// so however often they tell, the records are stored at most once each
+    /// interval, and never on the async workers. What was told meanwhile
+    /// holds at once, and is stored with whatever else is stored first.
+    fn store_told_soon(&self) {
+        self.told.unstored.store(true, Ordering::SeqCst);
+        if self.told.storing.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let controller = self.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(controller.told.store_interval).await;
+                if controller.told.stopped.load(Ordering::SeqCst) {
+                    return;
+                }
+                controller.store_told().await;
+                controller.told.storing.store(false, Ordering::SeqCst);
+                if !controller.told.unstored.load(Ordering::SeqCst)
+                    || controller.told.storing.swap(true, Ordering::SeqCst)
+                {
+                    return;
+                }
+            }
+        });
+    }
+
+    /// Stores the Remotes' records as they stand where what they told of the
+    /// Relays they Serve through has yet to be, on a thread of its own; one
+    /// that cannot be stored is tried again an interval later.
+    async fn store_told(&self) {
+        if !self.told.unstored.swap(false, Ordering::SeqCst) {
+            return;
+        }
+        let controller = self.clone();
+        let stored = tokio::task::spawn_blocking(move || {
+            let remotes = controller
+                .remotes
+                .read()
+                .expect("Remote record lock is not poisoned");
+            write_private_json(&controller.data_dir.join(REMOTES_FILE), &*remotes)
+        })
+        .await
+        .unwrap_or_else(|error| Err(anyhow::anyhow!("the store was given up: {error}")));
+        if let Err(error) = stored {
+            self.told.unstored.store(true, Ordering::SeqCst);
+            tracing::warn!("could not store the Relays a Remote Serves through: {error:#}");
+        }
+    }
+
+    /// Whether the Remote `followed` is still asked through `client`, under
+    /// the Pairing it was followed under.
+    fn still_followed(&self, followed: &StoredRemote, client: &Weak<PairingHttpClient>) -> bool {
+        let clients = self
+            .remote_clients
+            .lock()
+            .expect("Remote client lock is not poisoned");
+        let remotes = self
+            .remotes
+            .read()
+            .expect("Remote record lock is not poisoned");
+        followed_at(&clients, &remotes, followed, client).is_some()
+    }
+
+    /// Records how `remote` stands, and the way it last answered by where it
+    /// did — of the Pairing it was asked under alone, so nothing that Pairing
+    /// answers is recorded of another made since under its name.
+    fn record_remote_state(
+        &self,
+        remote: &StoredRemote,
+        status: RemoteStatus,
+        answered: Option<Way>,
+    ) {
+        // A Remote answering as it did is the common case: asked of every
+        // answer, it costs a look and no more.
+        let unchanged = self
+            .remotes
+            .read()
+            .expect("Remote record lock is not poisoned")
+            .iter()
+            .find(|stored| same_pairing(stored, remote))
+            .is_none_or(|stored| {
+                stored.remote.status == status
+                    && answered.as_ref().is_none_or(|way| {
+                        !stored.remote.ways.contains(way) || stored.answered.first() == Some(way)
+                    })
+            });
+        if unchanged {
+            return;
+        }
+        let recorded = self.change_remotes(|remotes| {
+            let Some(stored) = remotes
+                .iter_mut()
+                .find(|stored| same_pairing(stored, remote))
+            else {
+                return Ok(());
+            };
+            stored.remote.status = status;
+            // A way the Remote no longer offers — dropped as it answered — is
+            // remembered as answering no longer.
+            if let Some(way) = answered.filter(|way| stored.remote.ways.contains(way)) {
+                stored.answered.retain(|known| *known != way);
+                stored.answered.insert(0, way);
+            }
+            Ok(())
+        });
+        if let Err(failure) = recorded {
+            tracing::warn!("could not persist Remote status: {}", failure.message);
+        }
+    }
+
+    async fn probe_remote_connection(
+        &self,
+        remote: &StoredRemote,
+    ) -> std::result::Result<RemoteHealth, PairingFailure> {
+        let client = self.pairing_client(remote).await?;
+        let asking = || {
+            Request::get("/health")
+                .body(RequestBody::default())
+                .expect("a health check is well formed")
+        };
+        let (way, pairing_health) = first_remote_answer(remote, &client, asking, |answer| async {
+            match answer {
+                Ok(response) if response.status().is_success() => {
+                    match small_answer::<PairingHealth>(response).await {
+                        Some(health) => WayAttempt::Answered(health),
+                        None => WayAttempt::Rejected(PairingFailure::new(
+                            SessionErrorCode::PairingConnectionFailed,
+                            "Remote returned an invalid health response",
+                        )),
+                    }
+                }
+                Ok(response) if response.status() == StatusCode::UNAUTHORIZED => {
+                    self.refused_by(remote);
+                    WayAttempt::Rejected(PairingFailure::new(
+                        SessionErrorCode::PairingAuthenticationFailed,
+                        "Remote refused this Server's key",
+                    ))
+                }
+                Ok(_) | Err(_) => WayAttempt::TryNext,
+            }
+        })
+        .await?;
+        let health = RemoteHealth {
+            protocol_version: Some(pairing_health.protocol_version),
+            status: if pairing_health.protocol_version == self.protocol_version {
+                RemoteStatus::Available
+            } else {
+                RemoteStatus::ProtocolMismatch
+            },
+            unreachable: None,
+        };
+        self.answered(remote, &client, way, health.status);
+        Ok(health)
+    }
+
+    /// The client `remote` is asked through, pinning its key: the one asked
+    /// through already where it was made for that very Pairing, and
+    /// otherwise one made afresh. Where the Pairing `remote` was read under
+    /// no longer stands — removed since, or another paired under its name —
+    /// nothing is asked of it, nor of the Pairing in its place, as it was
+    /// asked: it is not found. Judged as the client is chosen, so no client
+    /// is made for a Pairing that has ended.
+    async fn pairing_client(
+        &self,
+        remote: &StoredRemote,
+    ) -> std::result::Result<Arc<PairingHttpClient>, PairingFailure> {
+        // Got before anything is held, since getting it may take a while.
+        let identity = self.identity.material().await?;
+        let mut clients = self
+            .remote_clients
+            .lock()
+            .expect("Remote client lock is not poisoned");
+        let standing = self
+            .remotes
+            .read()
+            .expect("Remote record lock is not poisoned")
+            .iter()
+            .any(|stored| same_pairing(stored, remote));
+        if !standing {
+            return Err(PairingFailure::new(
+                SessionErrorCode::RemoteNotFound,
+                "Remote not found",
+            ));
+        }
+        if let Some(client) = clients
+            .get(&remote.remote.name)
+            .and_then(Weak::upgrade)
+            .filter(|client| client.pins(&remote.public_key, remote.generation))
+        {
+            return Ok(client);
+        }
+        let client = Arc::new(PairingHttpClient {
+            generation: remote.generation,
+            ..paired_http_client(
+                &remote.public_key,
+                &identity,
+                None,
+                self.way_dialer(&remote.public_key),
+            )
+            .map_err(internal_pairing_failure)?
+        });
+        clients.insert(remote.remote.name.clone(), Arc::downgrade(&client));
+        Ok(client)
+    }
+
+    async fn classify_remote_response(
+        &self,
+        remote: &StoredRemote,
+        client: &Arc<PairingHttpClient>,
+        way: Way,
+        response: http::Response<RemoteBody>,
+    ) -> std::result::Result<http::Response<RemoteBody>, PairingFailure> {
+        if response.status() == StatusCode::UNAUTHORIZED {
+            self.record_remote_connection(remote, RemoteStatus::Revoked, way);
+            self.refused_by(remote);
+            return Err(PairingFailure::new(
+                SessionErrorCode::PairingAuthenticationFailed,
+                "Remote refused this Server's key",
+            ));
+        }
+        if response.status() != StatusCode::CONFLICT {
+            self.answered(remote, client, way, RemoteStatus::Available);
+            return Ok(response);
+        }
+        let (parts, body) = response.into_parts();
+        let body = Limited::new(body, PAIRING_ANSWER_BUDGET)
+            .collect()
+            .await
+            .map_err(|_| {
+                PairingFailure::new(
+                    SessionErrorCode::PairingOutcomeUnknown,
+                    "Remote API conflict response could not be read",
+                )
+            })?
+            .to_bytes();
+        let protocol_mismatch = serde_json::from_slice::<SessionError>(&body)
+            .is_ok_and(|error| error.code == SessionErrorCode::PairingProtocolMismatch);
+        let status = if protocol_mismatch {
+            RemoteStatus::ProtocolMismatch
+        } else {
+            RemoteStatus::Available
+        };
+        self.answered(remote, client, way, status);
+        Ok(http::Response::from_parts(parts, RemoteBody::whole(body)))
+    }
+
+    fn persist_remote(
+        &self,
+        remote: &Remote,
+        public_key: &[u8],
+        offer: Option<StoredMadeOffer>,
+    ) -> std::result::Result<(), PairingFailure> {
+        self.change_remotes(|remotes| {
+            if remotes.iter().any(|known| known.remote.name == remote.name) {
+                return Err(remote_name_conflict(&remote.name));
+            }
+            remotes.push(StoredRemote {
+                remote: remote.clone(),
+                public_key: public_key.to_vec(),
+                answered: Vec::new(),
+                generation: self.pairings_made.fetch_add(1, Ordering::AcqRel) + 1,
+                offer,
+            });
+            Ok(())
+        })?;
+        self.note_pairing_change();
+        Ok(())
+    }
+
+    fn rollback_remote(&self, remote: &Remote) {
+        let rolled_back = self.change_remotes(|remotes| {
+            remotes.retain(|known| {
+                known.remote.name != remote.name || known.remote.fingerprint != remote.fingerprint
+            });
+            Ok(())
+        });
+        if let Err(failure) = rolled_back {
+            tracing::warn!("could not roll a Remote back: {}", failure.message);
+        }
+        self.note_pairing_change();
+    }
+    // What the offer to pair back reads and writes of the records, the
+    // offers on them being plain data to the redeemer.
+
+    /// A new offer to the Serving Server whose key is `server_key`, as the
+    /// hooks make one: none can be where nothing is attached.
+    fn new_offer(&self, server_key: &[u8]) -> std::result::Result<StoredMadeOffer, PairingFailure> {
+        let mut offered = Err(PairingFailure::new(
+            SessionErrorCode::PairBackNotOfferable,
+            "This machine does not offer to be reached",
+        ));
+        self.hooked(|hooks| offered = hooks.offer(self, server_key));
+        offered
+    }
+
+    /// The Remotes' records as they stand.
+    pub(crate) fn records(&self) -> Vec<StoredRemote> {
+        self.remotes
+            .read()
+            .expect("Remote record lock is not poisoned")
+            .clone()
+    }
+
+    /// The offers recorded on whichever Remotes have the key `key`.
+    pub(crate) fn offers_made_to(&self, key: &[u8]) -> Vec<StoredMadeOffer> {
+        self.remotes
+            .read()
+            .expect("Remote record lock is not poisoned")
+            .iter()
+            .filter(|stored| stored.public_key == key)
+            .filter_map(|stored| stored.offer.clone())
+            .collect()
+    }
+
+    /// Whether a Remote of the key `key` is paired.
+    pub(crate) fn holds_remote_of(&self, key: &[u8]) -> bool {
+        self.remotes
+            .read()
+            .expect("Remote record lock is not poisoned")
+            .iter()
+            .any(|stored| stored.public_key == key)
+    }
+
+    /// Ends every offer recorded under `key` except any under `keep`,
+    /// answering whether that could be stored.
+    pub(crate) fn keep_only_offer(&self, key: &[u8], keep: Option<Uuid>) -> bool {
+        let kept = self.change_remotes(|remotes| {
+            for stored in remotes.iter_mut().filter(|stored| stored.public_key == key) {
+                if stored
+                    .offer
+                    .as_ref()
+                    .is_some_and(|offer| Some(offer.id) != keep)
+                {
+                    stored.offer = None;
+                }
+            }
+            Ok(())
+        });
+        if let Err(failure) = &kept {
+            tracing::warn!(
+                "could not store what ended of an offer: {}",
+                failure.message
+            );
+        }
+        kept.is_ok()
+    }
+
+    /// The client the Remote `name` is asked through just now, where anything
+    /// asks it.
+    pub(crate) fn client_of(&self, name: &str) -> Option<StrongClient> {
+        self.remote_clients
+            .lock()
+            .expect("Remote client lock is not poisoned")
+            .get(name)
+            .and_then(Weak::upgrade)
+    }
+
+    /// Forgets, as a Server starts, the Remote `name` of the key `key`, where
+    /// one is: what a redemption its stopping caught midway may have left.
+    pub(crate) fn take_back(
+        &self,
+        key: &[u8],
+        name: &str,
+    ) -> std::result::Result<(), PairingFailure> {
+        self.change_remotes(|remotes| {
+            remotes.retain(|stored| stored.public_key != key || stored.remote.name != name);
+            Ok(())
+        })
+    }
+
+    /// Asks the Remote `remote` through `client`, as [`first_remote_answer`]
+    /// does, for whatever attaches to the redeemer to say over the Pairing.
+    pub(crate) async fn ask_over<T, F, Fut>(
+        &self,
+        remote: &StoredRemote,
+        client: &PairingHttpClient,
+        asking: impl FnMut() -> Request<RequestBody>,
+        judging: F,
+    ) -> std::result::Result<(Way, T), PairingFailure>
+    where
+        F: FnMut(std::result::Result<Answer, Unanswered>) -> Fut,
+        Fut: Future<Output = WayAttempt<T>>,
+    {
+        first_remote_answer(remote, client, asking, judging).await
+    }
+}
+
+/// How many requests this Server asks of one Remote at once, by default,
+/// awaiting its answer — carried there, or waiting their turn on its
+/// connection, a probe of its health among them: as many as a connection
+/// carries at once, and as many again. One asked past them is refused at
+/// once, as the Remote being too busy to ask just now, rather than waiting.
+/// What the Server asks of a Remote on its own — which Relays it Serves
+/// through, over the place kept for that — is not among them.
+pub(crate) const AWAITED_AT_ONCE: usize = 2 * STREAMS_AT_ONCE as usize;
+
+/// How many bytes the bodies of the requests awaiting one Remote's answer
+/// hold between them, by default. A request holds room for its body before
+/// it is read — as much as it says its body is, or as much as it may be,
+/// where it does not say — so one that would hold past them is refused at
+/// once, its body unread. A Server holds as many as one Prompt binds of the
+/// largest Attachments it uploads.
+pub(crate) const AWAITED_BODY_BYTES: usize = 64 * 1024 * 1024;
+
+/// How what a Server's Remotes tell of the Relays they Serve through is
+/// stored: at most once each interval, however often they tell.
+pub(crate) struct ToldStore {
+    store_interval: tokio::time::Duration,
+    /// Whether something told has yet to be stored.
+    unstored: AtomicBool,
+    /// Whether a store is waiting out its interval, or under way.
+    storing: AtomicBool,
+    /// Whether the Server has stopped, so nothing more is stored.
+    stopped: AtomicBool,
+}
+
+impl ToldStore {
+    /// Storing at most once each `store_interval`.
+    fn every(store_interval: tokio::time::Duration) -> Self {
+        Self {
+            store_interval,
+            unstored: AtomicBool::default(),
+            storing: AtomicBool::default(),
+            stopped: AtomicBool::default(),
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredRemote {
+    #[serde(flatten)]
+    pub(crate) remote: Remote,
+    pub(crate) public_key: Vec<u8>,
+    /// The ways that have answered, the latest first: each kind of way is
+    /// dialled in this order ahead of the rest of its kind.
+    #[serde(default)]
+    pub(crate) answered: Vec<Way>,
+    /// Which of the Pairings made since this Server started this one is —
+    /// none, for one it started with — so a name unpaired and paired again,
+    /// even to the same key, is told apart from the Pairing before it.
+    #[serde(skip)]
+    pub(crate) generation: u64,
+    /// The offer to pair back this Server made the Remote, until it is
+    /// answered, withdrawn, or the Pairing ends with this record.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) offer: Option<StoredMadeOffer>,
+}
+
+impl StoredRemote {
+    /// The Remote's ways in the order each kind of way is dialled in: those
+    /// that have answered, the latest first, and then the rest as the
+    /// Invite's redeemer ordered them. However recently either kind answered,
+    /// a new dial tries the direct ways first.
+    fn dialling_order(&self) -> Vec<Way> {
+        self.answered
+            .iter()
+            .filter(|way| self.remote.ways.contains(way))
+            .chain(
+                self.remote
+                    .ways
+                    .iter()
+                    .filter(|way| !self.answered.contains(way)),
+            )
+            .cloned()
+            .collect()
+    }
+}
+
+/// The room there is among what awaits one Remote's answer: for the requests
+/// asked of it, and for their bodies.
+pub(crate) struct Awaiting {
+    requests: Arc<tokio::sync::Semaphore>,
+    bytes: Arc<tokio::sync::Semaphore>,
+}
+
+impl Awaiting {
+    /// Room for `requests` at once, and `bytes` of their bodies.
+    fn new(requests: usize, bytes: usize) -> Self {
+        Self {
+            requests: Arc::new(tokio::sync::Semaphore::new(requests)),
+            bytes: Arc::new(tokio::sync::Semaphore::new(bytes)),
+        }
+    }
+}
+
+/// A request's room among what awaits its Remote's answer, and its body's,
+/// given back as this goes.
+pub(crate) struct AwaitingAnswer {
+    _request: tokio::sync::OwnedSemaphorePermit,
+    _body: tokio::sync::OwnedSemaphorePermit,
+    /// What it is room among, held so another asking meanwhile shares it.
+    _awaiting: Arc<Awaiting>,
+}
+
+/// What came of following what a Serving Server tells of the Relays it
+/// Serves through.
+pub(crate) enum Followed {
+    /// Nothing asks it through the client any longer, or its Pairing no
+    /// longer stands as it did: nothing more is followed.
+    LetGo,
+    /// It would not tell, or told what no Serving Server says: nothing more
+    /// is followed through the client.
+    Refused,
+    /// No way carried what was asked, or the answer it rode ended: followed
+    /// again once the Serving Server answers.
+    Lost,
+}
+
+/// What a Serving Server tells of the Relays it Serves through, over the
+/// answer it holds open: a line for each telling.
+pub(crate) struct Telling<B = AnswerBody> {
+    answer: B,
+    /// What has come of the next telling so far.
+    coming: Vec<u8>,
+}
+
+impl<B: http_body::Body<Data = Bytes> + Unpin> Telling<B> {
+    fn new(answer: B) -> Self {
+        Self {
+            answer,
+            coming: Vec::new(),
+        }
+    }
+
+    /// What is told next, once the whole of the telling has come. Let go of
+    /// before then, it loses nothing of what is coming.
+    async fn next(&mut self) -> std::result::Result<OfferedRelays, Followed> {
+        loop {
+            // A telling ends within the budget, or not at all.
+            let within = self.coming.len().min(PAIRING_ANSWER_BUDGET + 1);
+            if let Some(end) = self.coming[..within].iter().position(|byte| *byte == b'\n') {
+                let told = self.coming.drain(..=end).collect::<Vec<_>>();
+                return told_relays(&told[..end]).ok_or(Followed::Refused);
+            }
+            if self.coming.len() > PAIRING_ANSWER_BUDGET {
+                return Err(Followed::Refused);
+            }
+            match self.answer.frame().await {
+                Some(Ok(frame)) => {
+                    if let Ok(data) = frame.into_data() {
+                        self.coming.extend_from_slice(&data);
+                    }
+                }
+                Some(Err(_)) | None => return Err(Followed::Lost),
+            }
+        }
+    }
+}
+
+/// What `told` says of the Relays a Serving Server Serves through, where it
+/// says so as one does: no more than [`MAX_TOLD_RELAYS`] of them, each once,
+/// each address no longer than [`MAX_TOLD_RELAY_LEN`] and written the one way
+/// a Relay's address is.
+pub(crate) fn told_relays(told: &[u8]) -> Option<OfferedRelays> {
+    let said: OfferedRelays = serde_json::from_slice(told).ok()?;
+    let well_told = said.relays.len() <= MAX_TOLD_RELAYS
+        && said.relays.iter().collect::<HashSet<_>>().len() == said.relays.len()
+        && said
+            .relays
+            .iter()
+            .all(|relay| relay.len() <= MAX_TOLD_RELAY_LEN && canonical_relay(relay));
+    well_told.then_some(said)
+}
+
+/// A Remote's `ways` keeping up with `relays`, the Relays its Serving Server
+/// says it Serves through: its direct ways as they are, each Relay way still
+/// told where it was, and those told newly after them all, as told.
+pub(crate) fn kept_up(ways: &[Way], relays: &[String]) -> Vec<Way> {
+    let told = relays.iter().cloned().map(Way::Relay).collect::<Vec<_>>();
+    let mut kept = ways
+        .iter()
+        .filter(|way| matches!(way, Way::Direct(_)) || told.contains(way))
+        .cloned()
+        .collect::<Vec<_>>();
+    kept.extend(told.into_iter().filter(|way| !ways.contains(way)));
+    kept
+}
+
+/// Where among `remotes` the Remote `followed` stands under the Pairing it
+/// was followed under, while `client`, still asked through, is the one
+/// `clients` say this Server asks it through, and pins that very Pairing.
+pub(crate) fn followed_at(
+    clients: &HashMap<String, Weak<PairingHttpClient>>,
+    remotes: &[StoredRemote],
+    followed: &StoredRemote,
+    client: &Weak<PairingHttpClient>,
+) -> Option<usize> {
+    let current = clients.get(&followed.remote.name)?;
+    let pinned = Weak::ptr_eq(current, client)
+        && current
+            .upgrade()
+            .is_some_and(|current| current.pins(&followed.public_key, followed.generation));
+    if !pinned {
+        return None;
+    }
+    remotes
+        .iter()
+        .position(|stored| same_pairing(stored, followed))
+}
+
+/// Whether `stored` and `other` are records of the one Pairing: under one
+/// name, with one key, and made at one time.
+pub(crate) fn same_pairing(stored: &StoredRemote, other: &StoredRemote) -> bool {
+    stored.remote.name == other.remote.name
+        && stored.public_key == other.public_key
+        && stored.generation == other.generation
+}
+
+/// Asks `remote` as [`first_answer`] does, by those of its ways this Server
+/// dials ([`WayDialer::dials`]), in the order each kind is dialled in.
+pub(crate) async fn first_remote_answer<T, F, Fut>(
+    remote: &StoredRemote,
+    client: &PairingHttpClient,
+    asking: impl FnMut() -> Request<RequestBody>,
+    judging: F,
+) -> std::result::Result<(Way, T), PairingFailure>
+where
+    F: FnMut(std::result::Result<Answer, Unanswered>) -> Fut,
+    Fut: Future<Output = WayAttempt<T>>,
+{
+    let ways = remote
+        .dialling_order()
+        .into_iter()
+        .filter(|way| client.dialer.dials(way))
+        .collect::<Vec<_>>();
+    match first_answer(client, &ways, asking, judging).await {
+        Ok(answered) => Ok(answered),
+        Err(NoAnswer::Refused(failure)) => Err(failure),
+        Err(NoAnswer::Unreached {
+            other_key: true, ..
+        }) => Err(PairingFailure::new(
+            SessionErrorCode::PairingAuthenticationFailed,
+            "Remote presented a key other than its pinned key",
+        )),
+        // A Relay way refused for its cap on the Account says why no way
+        // reached the Remote, where its user can do something about it.
+        Err(NoAnswer::Unreached {
+            refused: Some(refusal),
+            ..
+        }) if refusal.code == SessionErrorCode::RelayCapReached => {
+            Err(PairingFailure::refused(refusal))
+        }
+        // So does one refused for want of a Login there, or for the two
+        // Servers' Logins there standing under different Accounts, though the
+        // Remote reads Unreachable like any other no way reached, and is
+        // tried again as one is: another of its ways may answer meanwhile,
+        // and a login from any Server of either Account may join them.
+        Err(NoAnswer::Unreached {
+            refused: Some(refusal),
+            ..
+        }) if matches!(
+            refusal.code,
+            SessionErrorCode::RelayLoginNeeded | SessionErrorCode::RelayDifferentAccounts
+        ) =>
+        {
+            Err(PairingFailure {
+                code: SessionErrorCode::PairingConnectionFailed,
+                message: refusal.message,
+                unreachable: refusal.unreachable,
+                said_by_the_other: false,
+            })
+        }
+        Err(NoAnswer::Unreached { .. }) => Err(PairingFailure::new(
+            SessionErrorCode::PairingConnectionFailed,
+            "could not reach Remote at any paired address",
+        )),
+    }
+}
+
+pub(crate) fn ordered_ways(
+    offered: &[Way],
+    chosen: &[Way],
+) -> std::result::Result<Vec<Way>, PairingFailure> {
+    if chosen.is_empty() {
+        return Ok(offered.to_vec());
+    }
+    let offered_set = offered.iter().collect::<HashSet<_>>();
+    let chosen_set = chosen.iter().collect::<HashSet<_>>();
+    if offered_set != chosen_set || chosen_set.len() != chosen.len() {
+        return Err(PairingFailure::new(
+            SessionErrorCode::InvalidInviteWays,
+            "ordered addresses must contain each offered address exactly once",
+        ));
+    }
+    Ok(chosen.to_vec())
+}
+
+pub(crate) fn remote_name_conflict(name: &str) -> PairingFailure {
+    PairingFailure::new(
+        SessionErrorCode::RemoteNameConflict,
+        format!("a Remote named `{name}` already exists"),
+    )
+}
+
+/// What came of carrying a request to a Remote.
+pub(crate) enum Carried {
+    /// The Remote's answer, as it came.
+    Answered(http::Response<RemoteBody>),
+    /// The request's body is larger than it may be, so nothing was carried.
+    TooLarge,
+}
+
+/// The body of what a Remote answered a request carried to it, as it came,
+/// holding the client it came through — and with it the Remote in view —
+/// until it ends; or, where it had to be read to be judged, as it was read.
+pub(crate) struct RemoteBody(RemoteBodyKind);
+
+enum RemoteBodyKind {
+    Coming {
+        body: AnswerBody,
+        interest: Option<StrongClient>,
+    },
+    Whole(Full<Bytes>),
+}
+
+impl RemoteBody {
+    fn coming(body: AnswerBody, interest: StrongClient) -> Self {
+        Self(RemoteBodyKind::Coming {
+            body,
+            interest: Some(interest),
+        })
+    }
+
+    fn whole(body: Bytes) -> Self {
+        Self(RemoteBodyKind::Whole(Full::new(body)))
+    }
+}
+
+impl http_body::Body for RemoteBody {
+    type Data = Bytes;
+    type Error = BoxError;
+
+    fn poll_frame(
+        self: std::pin::Pin<&mut Self>,
+        context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<std::result::Result<http_body::Frame<Bytes>, BoxError>>> {
+        match &mut self.get_mut().0 {
+            RemoteBodyKind::Coming { body, interest } => {
+                let frame = std::task::ready!(std::pin::Pin::new(body).poll_frame(context));
+                if frame.is_none() {
+                    interest.take();
+                }
+                std::task::Poll::Ready(frame.map(|frame| frame.map_err(Into::into)))
+            }
+            RemoteBodyKind::Whole(body) => std::pin::Pin::new(body)
+                .poll_frame(context)
+                .map_err(|never| match never {}),
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        match &self.0 {
+            RemoteBodyKind::Coming { body, .. } => body.is_end_stream(),
+            RemoteBodyKind::Whole(body) => body.is_end_stream(),
+        }
+    }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        match &self.0 {
+            RemoteBodyKind::Coming { body, .. } => body.size_hint(),
+            RemoteBodyKind::Whole(body) => body.size_hint(),
+        }
+    }
+}
+
+/// How what came of a request carried on to a Remote through `client` is
+/// judged: an answer is passed back as it came; and where none came, the
+/// request is asked by another way only where it never reached the Remote
+/// or asking it twice changes nothing (`repeatable`) — one that may have
+/// reached it is otherwise refused as such.
+pub(crate) fn judge_carried(
+    answer: std::result::Result<Answer, Unanswered>,
+    repeatable: bool,
+    client: StrongClient,
+) -> WayAttempt<http::Response<RemoteBody>> {
+    match answer {
+        Ok(response) => WayAttempt::Answered(remote_answer(response, client)),
+        Err(unanswered) if unanswered.delivered && !repeatable => {
+            WayAttempt::Rejected(undelivered_or_lost(false))
+        }
+        Err(_) => WayAttempt::TryNext,
+    }
+}
+
+/// What the Remote answered a request carried on to it through `client`,
+/// passed back as it came, hop-by-hop headers aside: the answer holds
+/// `client` as its interest lease until its body ends.
+fn remote_answer(response: Answer, client: StrongClient) -> http::Response<RemoteBody> {
+    let (mut parts, body) = response.into_parts();
+    remove_hop_by_hop_headers(&mut parts.headers);
+    http::Response::from_parts(parts, RemoteBody::coming(body, client))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::SocketAddr;
+
+    use futures_util::stream;
+
+    use super::{
+        super::{GivenIdentity, IdentityMaterial},
+        *,
+    };
+
+    /// A redeemer under `data`, proving itself as a key made for the test,
+    /// with the default timings.
+    fn redeemer(data: &tempfile::TempDir) -> Redeemer {
+        Redeemer::new(
+            data.path(),
+            crate::protocol::PROTOCOL_VERSION,
+            Arc::new(GivenIdentity(IdentityMaterial::fresh())),
+            RedeemerTimings::default(),
+        )
+        .expect("read the Remotes' records")
+    }
+
+    #[test]
+    fn a_remote_keeps_its_direct_ways_and_its_relay_ways_keep_up_with_those_told() {
+        let direct = Way::Direct(SocketAddr::from(([192, 0, 2, 1], 7000)));
+        let relay = |address: &str| Way::Relay(address.to_owned());
+        let ways = vec![
+            relay("https://dropped.example.com"),
+            direct.clone(),
+            relay("https://kept.example.com"),
+        ];
+        assert_eq!(
+            kept_up(
+                &ways,
+                &[
+                    "https://new.example.com".to_owned(),
+                    "https://kept.example.com".to_owned()
+                ]
+            ),
+            [
+                direct.clone(),
+                relay("https://kept.example.com"),
+                relay("https://new.example.com")
+            ],
+            "a Relay way still told stays where it was, and one told newly comes after"
+        );
+        assert_eq!(kept_up(&ways, &[]), [direct], "the direct ways stay");
+    }
+
+    #[test]
+    fn only_relays_told_as_a_serving_server_tells_them_are_taken_up() {
+        let told = |relays: serde_json::Value| {
+            told_relays(&serde_json::to_vec(&serde_json::json!({ "relays": relays })).unwrap())
+                .map(|said| said.relays)
+        };
+        assert_eq!(
+            told(serde_json::json!(["https://relay.example.com"])),
+            Some(vec!["https://relay.example.com".to_owned()])
+        );
+        assert_eq!(told(serde_json::json!([])), Some(Vec::new()));
+        for unwritten in [
+            "relay.example.com",
+            "https://Relay.example.com",
+            "https://relay.example.com/",
+            "https://someone:secret@relay.example.com",
+            "https://relay.example.com?next=elsewhere",
+            "ftp://relay.example.com",
+            "",
+        ] {
+            assert_eq!(
+                told(serde_json::json!([unwritten])),
+                None,
+                "{unwritten:?} is no Relay's address written the one way"
+            );
+        }
+        assert_eq!(
+            told(serde_json::json!([
+                "https://relay.example.com",
+                "https://relay.example.com"
+            ])),
+            None,
+            "a Relay told twice"
+        );
+        let many = (0..=MAX_TOLD_RELAYS)
+            .map(|relay| format!("https://relay{relay}.example.com"))
+            .collect::<Vec<_>>();
+        assert!(told(serde_json::json!(many[..MAX_TOLD_RELAYS])).is_some());
+        assert_eq!(told(serde_json::json!(many)), None, "too many Relays told");
+        let long = format!(
+            "https://relay.example.com/{}",
+            "a".repeat(MAX_TOLD_RELAY_LEN)
+        );
+        assert_eq!(told(serde_json::json!([long])), None, "too long an address");
+        assert_eq!(
+            told_relays(br#"{"relays":[],"ways":["192.0.2.1:7000"]}"#).map(|said| said.relays),
+            Some(Vec::new()),
+            "nothing but Relays is taken up: what else a newer Server tells is passed over"
+        );
+        assert!(told_relays(b"not what a Serving Server says").is_none());
+    }
+
+    /// Nothing a Serving Server tells of its Relays is taken in past the
+    /// budget, however it comes: in one piece or across several, ending its
+    /// line or not.
+    #[tokio::test]
+    async fn no_telling_is_taken_in_past_the_budget() {
+        let telling = |pieces: Vec<Vec<u8>>| {
+            Telling::new(http_body_util::StreamBody::new(stream::iter(
+                pieces.into_iter().map(|piece| {
+                    Ok::<_, std::convert::Infallible>(hyper::body::Frame::data(Bytes::from(piece)))
+                }),
+            )))
+        };
+        let told = br#"{"relays":["https://relay.example.com"]}"#;
+        let mut whole = vec![b' '; PAIRING_ANSWER_BUDGET - told.len()];
+        whole.extend_from_slice(told);
+        whole.push(b'\n');
+        let (first, rest) = whole.split_at(PAIRING_ANSWER_BUDGET / 2);
+        assert_eq!(
+            telling(vec![first.to_vec(), rest.to_vec()])
+                .next()
+                .await
+                .ok()
+                .map(|said| said.relays),
+            Some(vec!["https://relay.example.com".to_owned()]),
+            "a telling as long as the budget, in two pieces"
+        );
+
+        let mut past = vec![b' '; PAIRING_ANSWER_BUDGET];
+        past.extend_from_slice(b"{\"relays\":[]}\n");
+        for pieces in [
+            vec![
+                vec![b' '; PAIRING_ANSWER_BUDGET],
+                b"{\"relays\":[]}\n".to_vec(),
+            ],
+            vec![past],
+            vec![vec![b' '; PAIRING_ANSWER_BUDGET + 1]],
+        ] {
+            assert!(
+                matches!(telling(pieces).next().await, Err(Followed::Refused)),
+                "a telling past the budget is refused"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn the_proxy_looks_no_further_into_a_conflict_than_the_budget() {
+        let data = tempfile::tempdir().expect("create a data directory");
+        let controller = redeemer(&data);
+        let way = Way::Direct(SocketAddr::from(([127, 0, 0, 1], 9)));
+        let conflict = |body: Vec<u8>| {
+            http::Response::builder()
+                .status(StatusCode::CONFLICT)
+                .body(RemoteBody::whole(Bytes::from(body)))
+                .expect("a conflict")
+        };
+        let mismatch = serde_json::to_vec(&SessionError {
+            code: SessionErrorCode::PairingProtocolMismatch,
+            message: "Pairing protocol mismatch".to_owned(),
+            unreachable: None,
+        })
+        .expect("encode a refusal");
+        let remote = StoredRemote {
+            remote: Remote {
+                name: "workstation".to_owned(),
+                fingerprint: String::new(),
+                ways: vec![way.clone()],
+                status: RemoteStatus::Available,
+                icon: None,
+            },
+            public_key: Vec::new(),
+            answered: Vec::new(),
+            generation: 0,
+            offer: None,
+        };
+        let client = Arc::new(
+            paired_http_client(
+                &remote.public_key,
+                &controller
+                    .identity
+                    .material()
+                    .await
+                    .ok()
+                    .expect("make an identity"),
+                None,
+                controller.way_dialer(&remote.public_key),
+            )
+            .expect("make a client for the Remote"),
+        );
+        assert!(
+            controller
+                .classify_remote_response(&remote, &client, way.clone(), conflict(mismatch))
+                .await
+                .is_ok_and(|response| response.status() == StatusCode::CONFLICT),
+            "a conflict within the budget is passed on"
+        );
+        let refusal = controller
+            .classify_remote_response(
+                &remote,
+                &client,
+                way,
+                conflict(vec![b' '; PAIRING_ANSWER_BUDGET + 1]),
+            )
+            .await
+            .err()
+            .expect("a conflict past the budget is not read");
+        assert_eq!(
+            refusal.code,
+            SessionErrorCode::PairingOutcomeUnknown,
+            "the Remote answered, so what it was asked may have been done"
+        );
+    }
+
+    /// A redeemer is bounded by the timings it is given, not a Server's: a
+    /// Remote that takes its connection and never answers is removed,
+    /// unacknowledged, within the withdrawal timeout injected here, however
+    /// long its handshake is given.
+    #[tokio::test]
+    async fn a_redeemer_gives_a_silent_remote_no_longer_than_its_own_timings_say() {
+        let data = tempfile::tempdir().unwrap();
+        let silent = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let way = Way::Direct(silent.local_addr().unwrap());
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((socket, _)) = silent.accept().await {
+                held.push(socket);
+            }
+        });
+        let redeemer = Redeemer::new(
+            data.path(),
+            crate::protocol::PROTOCOL_VERSION,
+            Arc::new(GivenIdentity(IdentityMaterial::fresh())),
+            RedeemerTimings {
+                handshake_timeout: tokio::time::Duration::from_secs(60),
+                withdrawal_timeout: tokio::time::Duration::from_millis(50),
+                ..RedeemerTimings::default()
+            },
+        )
+        .unwrap()
+        .with_direct_proxies(DirectProxies::given("", ""));
+        let key = IdentityMaterial::fresh().public_key().to_vec();
+        redeemer
+            .change_remotes(|remotes| {
+                remotes.push(StoredRemote {
+                    remote: Remote {
+                        name: "silent".to_owned(),
+                        fingerprint: fingerprint(&key),
+                        ways: vec![way],
+                        status: RemoteStatus::Available,
+                        icon: None,
+                    },
+                    public_key: key,
+                    answered: Vec::new(),
+                    generation: 0,
+                    offer: None,
+                });
+                Ok(())
+            })
+            .unwrap_or_else(|failure| panic!("{}", failure.message));
+
+        let removal = tokio::time::timeout(
+            tokio::time::Duration::from_secs(2),
+            redeemer.remove_remote("silent"),
+        )
+        .await
+        .expect("removing waits out the injected withdrawal timeout, not the handshake's")
+        .unwrap_or_else(|failure| panic!("{}", failure.message));
+        assert!(!removal.acknowledged);
+        assert!(redeemer.list_remotes().is_empty());
+        assert_eq!(
+            std::fs::read_to_string(data.path().join(REMOTES_FILE))
+                .unwrap()
+                .trim(),
+            "[]"
+        );
+    }
+}

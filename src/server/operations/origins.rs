@@ -4,7 +4,7 @@
 //! A Sidekick never speaks to a Remote itself (ADR 0044). What it reads of
 //! one, its own Server fetches through the Pairing as a Client turned toward
 //! that Remote fetches what it reads — the Remote's own Session API, asked
-//! through [`ServingController::proxy_remote`], the route behind the local
+//! through [`Redeemer::ask_remote`], the route behind the local
 //! Server's `/v1/remotes/{name}` — and answers here in the very types this
 //! Server's own reads answer in. So a Broker Tool reads every Origin alike.
 //! A Session is read as an excerpt the Server holding it takes, so a
@@ -41,12 +41,12 @@ use tokio::sync::watch;
 
 use super::SessionOperations;
 use crate::{
+    pairing::{PairingFailure, Redeemer},
     protocol::{
         ACT_HEADER, ActId, Author, Outlook, ReadRequest, Remote, RemoteStatus, SessionError,
         SessionErrorCode, SessionId, SessionListItem, SessionReadingAnswer, SessionReadingQuery,
         SnapshotWithSummary, Workspace, WorkspaceId, WorkspaceListing, WorkspaceUnavailability,
     },
-    serving::{PairingFailure, ServingController},
     session_projection::agent_reading::{self, KnownRemote, ReadAt},
     sessions::Pairing,
 };
@@ -80,7 +80,7 @@ impl Paired {
 /// `timeout` to answer and reading no more than `budget` bytes of it.
 #[derive(Clone)]
 pub(crate) struct RemoteReach {
-    serving: ServingController,
+    redeemer: Redeemer,
     timeout: Duration,
     budget: usize,
     /// How long a Remote is given to answer an act that makes a new Managed
@@ -90,13 +90,13 @@ pub(crate) struct RemoteReach {
 
 impl RemoteReach {
     pub(crate) fn new(
-        serving: ServingController,
+        redeemer: Redeemer,
         timeout: Duration,
         budget: usize,
         worktree_timeout: Duration,
     ) -> Self {
         Self {
-            serving,
+            redeemer,
             timeout,
             budget,
             worktree_timeout,
@@ -122,7 +122,7 @@ impl RemoteReach {
 
     /// The Remotes this Server is paired with, in the order paired.
     fn paired(&self) -> Vec<Remote> {
-        self.serving.list_remotes()
+        self.redeemer.list_remotes()
     }
 
     /// The Remote paired as `name`.
@@ -135,7 +135,7 @@ impl RemoteReach {
 
     /// The Remote paired as `name`, with the Pairing it is paired by.
     pub(super) fn pairing(&self, name: &str) -> Result<Paired, OriginRefusal> {
-        self.serving
+        self.redeemer
             .remote_pairings()
             .into_iter()
             .find(|(remote, _)| remote.name == name)
@@ -147,7 +147,7 @@ impl RemoteReach {
     /// now by a name that was paired before this answered has had every
     /// Pairing by it up to this one end.
     pub(super) fn pairings_made(&self) -> u64 {
-        self.serving.pairings_made()
+        self.redeemer.pairings_made()
     }
 
     /// Whether `asked` is paired still by the very Pairing it was when it
@@ -186,7 +186,7 @@ impl RemoteReach {
     /// asks.
     pub(super) async fn answers(&self, name: &str) -> Result<(), OriginRefusal> {
         let silence =
-            match tokio::time::timeout(self.timeout, self.serving.probe_remote(name)).await {
+            match tokio::time::timeout(self.timeout, self.redeemer.probe_remote(name)).await {
                 Err(_) => Silence::TimedOut(self.timeout),
                 Ok(Err(failure)) if failure.code == SessionErrorCode::RemoteNotFound => {
                     return Err(OriginRefusal::UnknownRemote(name.to_owned()));
@@ -213,7 +213,8 @@ impl RemoteReach {
         author: Option<&Author>,
     ) -> Result<Exchanged, OriginRefusal> {
         let exchange = async {
-            let response = self.serving.proxy_remote(name, request, author).await?;
+            let response =
+                crate::serving::proxy_remote(&self.redeemer, name, request, author).await?;
             let status = response.status();
             let headers = response.headers().clone();
             Ok::<_, PairingFailure>((
@@ -395,7 +396,8 @@ impl RemoteReach {
             .expect("a Session API path makes a request");
         let silent = |silence| OriginRefusal::Silent(SilentRemote::new(name, silence));
         let opening = async {
-            let response = self.serving.proxy_remote(name, request, None).await?;
+            let response =
+                crate::serving::proxy_remote(&self.redeemer, name, request, None).await?;
             if response.status().is_success() {
                 return Ok(Ok(response));
             }
@@ -432,7 +434,7 @@ impl RemoteReach {
     /// This Server's own key fingerprint, which every Remote it is paired
     /// with knows it by as a Peer; `None` where its identity cannot be read.
     pub(super) fn own_fingerprint(&self) -> Option<String> {
-        self.serving.own_fingerprint().ok()
+        self.redeemer.own_fingerprint().ok()
     }
 
     /// How long a Remote is given to answer.
@@ -448,7 +450,7 @@ impl RemoteReach {
     /// What moves on with every change to the Remotes this Server is paired
     /// with.
     pub(super) fn pairing_changes(&self) -> tokio::sync::watch::Receiver<u64> {
-        self.serving.pairing_changes()
+        self.redeemer.pairing_changes()
     }
 
     /// The top-level Sessions the Remote `name` holds, as its own listing

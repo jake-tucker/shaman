@@ -91,7 +91,7 @@ use operations::{
 };
 
 pub use crate::clock::{ManualClock, ServerClock};
-pub use crate::serving::DirectProxies;
+pub use crate::pairing::DirectProxies;
 pub use cutoff::{CUT_OFF_EXIT_STATUS, CUTOFF_MARGIN, ProcessCutoff};
 pub(crate) use election::{StopWithNoServer, stop_with_no_server};
 pub use signals::ShutdownSignals;
@@ -452,7 +452,7 @@ impl Default for ServerTimings {
             remote_retry_interval: Duration::from_secs(5),
             remote_silence_limit: Duration::from_secs(30),
             remote_watch_limits: RemoteWatchLimits::default(),
-            remote_requests_at_once: crate::serving::AWAITED_AT_ONCE,
+            remote_requests_at_once: crate::pairing::AWAITED_AT_ONCE,
             serving_handshake_timeout: Duration::from_secs(10),
             short_invite_reading_timeout: Duration::from_secs(2),
             short_invite_timeout: Duration::from_secs(10),
@@ -1725,39 +1725,55 @@ async fn start(
             build_identity: build_identity::for_current_executable()?,
         },
     );
-    let serving = ServingController::new(
+    let identity = crate::serving::IdentityKey::kept_in(
         config.data_dir(),
-        timings.invite_ttl,
+        crate::serving::IdentityKeeping {
+            store: crate::serving::platform_identity_store(),
+            selection: crate::serving::Selection::for_this_build(config.identity_store()),
+            channel: config.channel().to_owned(),
+            store_timeout: timings.identity_store_timeout,
+        },
+    );
+    let keepalive = crate::pairing::Keepalive {
+        interval: timings.pairing_keepalive_interval,
+        timeout: timings.pairing_keepalive_timeout,
+    };
+    let redeemer = crate::pairing::Redeemer::new(
+        config.data_dir(),
         timings.pairing_protocol_version,
+        Arc::new(identity.clone()),
+        crate::pairing::RedeemerTimings {
+            handshake_timeout: timings.serving_handshake_timeout,
+            direct_head_start: timings.direct_head_start,
+            direct_retry_interval: timings.direct_retry_interval,
+            keepalive,
+            withdrawal_timeout: timings.remote_withdrawal_timeout,
+            told_relays_store_interval: timings.told_relays_store_interval,
+        },
+    )?
+    .with_awaited(
+        timings.remote_requests_at_once,
+        crate::serving::AWAITED_BODY_BYTES,
+    )
+    .with_direct_proxies(timings.direct_proxies.clone());
+    let serving = ServingController::new(
+        redeemer.clone(),
+        identity,
+        timings.invite_ttl,
         descriptor.base_url.clone(),
         descriptor.token.clone(),
     )?
-    .with_withdrawal_timeout(timings.remote_withdrawal_timeout)
     .with_handshake_timeout(timings.serving_handshake_timeout)
     .with_short_invite_timeouts(
         timings.short_invite_reading_timeout,
         timings.short_invite_timeout,
     )
-    .with_direct_head_start(timings.direct_head_start)
-    .with_awaited_at_once(timings.remote_requests_at_once)
-    .with_direct_retry_interval(timings.direct_retry_interval)
-    .with_told_relays_store_interval(timings.told_relays_store_interval)
     .with_pair_back_timings(
         timings.pair_back_invite_ttl,
         timings.pair_back_retry_interval,
     )
     .offering_loopback(timings.pair_back_offers_loopback)
-    .with_keepalive(crate::serving::Keepalive {
-        interval: timings.pairing_keepalive_interval,
-        timeout: timings.pairing_keepalive_timeout,
-    })
-    .with_direct_proxies(timings.direct_proxies.clone())
-    .with_identity_keeping(crate::serving::IdentityKeeping {
-        store: crate::serving::platform_identity_store(),
-        selection: crate::serving::Selection::for_this_build(config.identity_store()),
-        channel: config.channel().to_owned(),
-        store_timeout: timings.identity_store_timeout,
-    });
+    .with_keepalive(keepalive);
     let relays = crate::relays::RelayController::new(
         config.data_dir(),
         crate::paths::workspace_paths_from_home(config.home_dir().as_deref()),
@@ -2052,7 +2068,7 @@ async fn start(
         sidekick_workspace.clone(),
         config.home_dir(),
         operations::RemoteReach::new(
-            serving.clone(),
+            redeemer.clone(),
             timings.remote_reach_timeout,
             timings.remote_reach_budget,
             timings.remote_worktree_timeout,
@@ -2320,6 +2336,7 @@ async fn start(
                     .context("serve local HTTP API");
                 relays.shutdown();
                 serving.shutdown().await;
+                serving.redeemer().shutdown().await;
                 task_shutdown.stop_providers();
                 let providers_stopped = provider_shutdown_task
                     .await
@@ -2360,7 +2377,11 @@ async fn start(
                 provider_stop.abort();
                 providers_for_take_down.take_down();
                 relays_for_shutdown.shutdown();
-                if tokio::time::timeout_at(overrun_ends, serving_for_shutdown.shutdown())
+                let stopped = async {
+                    serving_for_shutdown.shutdown().await;
+                    serving_for_shutdown.redeemer().shutdown().await;
+                };
+                if tokio::time::timeout_at(overrun_ends, stopped)
                     .await
                     .is_err()
                 {
@@ -2925,7 +2946,7 @@ async fn redeem_invite(State(state): State<AppState>, request: Request) -> Respo
             Ok(request) => request,
             Err(response) => return response,
         };
-    match state.serving.redeem_invite(request).await {
+    match state.serving.redeemer().redeem_invite(request).await {
         Ok(remote) => Json(remote).into_response(),
         Err(error) => pairing_error_response(error),
     }
@@ -2942,7 +2963,7 @@ async fn list_remotes(State(state): State<AppState>, headers: HeaderMap) -> Resp
     if !is_authenticated(&headers, &state.descriptor.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    Json::<Vec<Remote>>(state.serving.list_remotes()).into_response()
+    Json::<Vec<Remote>>(state.serving.redeemer().list_remotes()).into_response()
 }
 
 async fn probe_remote(
@@ -2953,7 +2974,7 @@ async fn probe_remote(
     if !is_authenticated(&headers, &state.descriptor.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    match state.serving.probe_remote(&name).await {
+    match state.serving.redeemer().probe_remote(&name).await {
         Ok(health) => Json(health).into_response(),
         Err(error) => pairing_error_response(error),
     }
@@ -2988,7 +3009,7 @@ async fn proxy_remote(
         return client_author_refusal();
     }
     *request.uri_mut() = uri;
-    match state.serving.proxy_remote(&name, request, None).await {
+    match crate::serving::proxy_remote(state.serving.redeemer(), &name, request, None).await {
         Ok(response) => response,
         Err(error) => pairing_error_response(error),
     }
@@ -3014,7 +3035,17 @@ async fn set_remote_icon(
         Ok(request) => request,
         Err(response) => return response,
     };
-    match state.serving.set_remote_icon(&name, &request.icon) {
+    if crate::icon_catalog::glyph(&request.icon).is_none() {
+        return pairing_error_response(crate::pairing::PairingFailure::new(
+            SessionErrorCode::InvalidIcon,
+            format!("`{}` is not an Icon Catalog name", request.icon),
+        ));
+    }
+    match state
+        .serving
+        .redeemer()
+        .set_remote_icon(&name, &request.icon)
+    {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => pairing_error_response(error),
     }
@@ -3028,7 +3059,7 @@ async fn remove_remote(
     if !is_authenticated(&headers, &state.descriptor.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    match state.serving.remove_remote(&name).await {
+    match state.serving.redeemer().remove_remote(&name).await {
         Ok(removal) => Json(removal).into_response(),
         Err(error) => pairing_error_response(error),
     }
@@ -3116,8 +3147,8 @@ async fn withdraw_offer(
     }
 }
 
-fn pairing_error_response(error: crate::serving::PairingFailure) -> Response {
-    let status = error.status();
+fn pairing_error_response(error: crate::pairing::PairingFailure) -> Response {
+    let status = crate::serving::failure_status(&error);
     error_response(
         status,
         SessionError {

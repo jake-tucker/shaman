@@ -23,18 +23,19 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow};
-use rcgen::{CertificateParams, KeyPair, PublicKeyData};
+use rcgen::{KeyPair, PublicKeyData};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use super::{
-    SERVING_IDENTITY_NAME, fingerprint,
+    fingerprint,
     identity_store::{
-        BoundedStore, IdentityStore, IdentityStoreChoice, ItemId, NoIdentityStore, PLATFORM_STORE,
-        Selection, StoreUnavailable, Stored,
+        BoundedStore, IdentityStore, IdentityStoreChoice, ItemId, PLATFORM_STORE, Selection,
+        StoreUnavailable, Stored,
     },
 };
 use crate::{
+    pairing::IdentityMaterial,
     runtime::{protect_current_user_file, replace_private_file},
     signer::{IdentitySigner, SoftwareSigner},
 };
@@ -76,9 +77,10 @@ pub(crate) struct IdentityKeeping {
 impl IdentityKeeping {
     /// Keeping as a debug build does, in the file, with no platform
     /// credential store to ask.
+    #[cfg(test)]
     fn in_file() -> Self {
         Self {
-            store: Arc::new(NoIdentityStore),
+            store: Arc::new(super::identity_store::NoIdentityStore),
             selection: Selection::DebugBuild,
             channel: "debug".to_owned(),
             store_timeout: IDENTITY_STORE_TIMEOUT,
@@ -123,13 +125,14 @@ struct KeptKey {
 impl IdentityKey {
     /// The identity key of the Server whose data directory is `data_dir`,
     /// kept as a debug build keeps it, in that directory's key file.
-    pub(super) fn new(data_dir: &Path) -> Self {
+    #[cfg(test)]
+    pub(crate) fn new(data_dir: &Path) -> Self {
         Self::kept_in(data_dir, IdentityKeeping::in_file())
     }
 
     /// The identity key of the Server whose data directory is `data_dir`,
     /// kept as `keeping` says.
-    pub(super) fn kept_in(data_dir: &Path, keeping: IdentityKeeping) -> Self {
+    pub(crate) fn kept_in(data_dir: &Path, keeping: IdentityKeeping) -> Self {
         Self::written_with(data_dir, keeping, Arc::new(replace_private_file))
     }
 
@@ -160,7 +163,7 @@ impl IdentityKey {
     /// is never got from, or kept in, the data directory `data_dir` or any
     /// store.
     #[cfg(test)]
-    pub(super) fn given(data_dir: &Path, signer: IdentitySigner) -> Result<Self> {
+    pub(crate) fn given(data_dir: &Path, signer: IdentitySigner) -> Result<Self> {
         let key = Self::new(data_dir);
         let material = IdentityMaterial::minted(signer)?;
         let _ = key.0.fingerprint.set(fingerprint(material.public_key()));
@@ -221,6 +224,26 @@ impl IdentityKey {
             })
             .await?;
         Ok(got.clone())
+    }
+}
+
+/// A Server's identity key as its redeeming side proves itself by it.
+impl crate::pairing::Identity for IdentityKey {
+    fn material(
+        &self,
+    ) -> futures_util::future::BoxFuture<
+        '_,
+        std::result::Result<IdentityMaterial, crate::pairing::PairingFailure>,
+    > {
+        Box::pin(async move {
+            IdentityKey::material(self)
+                .await
+                .map_err(super::identity_failure)
+        })
+    }
+
+    fn fingerprint(&self) -> Result<Option<String>> {
+        IdentityKey::fingerprint(self)
     }
 }
 
@@ -514,37 +537,6 @@ impl KeptKey {
             );
         }
         Err(refused)
-    }
-}
-
-/// What a Server proves its identity key by: what signs with the key, and
-/// the identity certificate of the key its pinned-key TLS presents. It holds
-/// none of the key's private bytes.
-#[derive(Clone)]
-pub(super) struct IdentityMaterial {
-    pub(super) signer: IdentitySigner,
-    pub(super) certificate: Vec<u8>,
-}
-
-impl IdentityMaterial {
-    /// The material of the key `signer` signs with, its identity
-    /// certificate minted by the key itself.
-    pub(super) fn minted(signer: IdentitySigner) -> Result<Self> {
-        let certificate = signer
-            .self_signed(
-                CertificateParams::new(vec![SERVING_IDENTITY_NAME.to_owned()])
-                    .context("describe Server identity certificate")?,
-            )
-            .context("mint Server identity certificate")?;
-        Ok(Self {
-            signer,
-            certificate,
-        })
-    }
-
-    /// The key, as the DER SubjectPublicKeyInfo its Pairings pin.
-    pub(super) fn public_key(&self) -> &[u8] {
-        self.signer.public_key()
     }
 }
 

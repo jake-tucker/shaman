@@ -13,6 +13,7 @@ pub mod managed_client;
 mod memories;
 mod model_catalog;
 pub mod open_files;
+mod pairing;
 pub mod paths;
 pub mod pricing;
 mod process_tree;

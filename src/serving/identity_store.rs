@@ -128,14 +128,17 @@ pub(crate) fn platform_identity_store() -> Arc<dyn IdentityStore> {
 
 /// A platform credential store a Server does not use, every call to which
 /// counts as unavailable.
+#[cfg(any(test, not(any(target_os = "macos", target_os = "linux", windows))))]
 pub(crate) struct NoIdentityStore;
 
+#[cfg(any(test, not(any(target_os = "macos", target_os = "linux", windows))))]
 impl NoIdentityStore {
     fn unavailable() -> StoreUnavailable {
         anyhow!("this Server keeps nothing in {PLATFORM_STORE}").into()
     }
 }
 
+#[cfg(any(test, not(any(target_os = "macos", target_os = "linux", windows))))]
 impl IdentityStore for NoIdentityStore {
     fn put(&self, _item: &ItemId, _label: &str, _bytes: &[u8]) -> Result<(), StoreUnavailable> {
         Err(Self::unavailable())

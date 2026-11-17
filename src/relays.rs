@@ -57,8 +57,13 @@ use tokio_tungstenite::{
 use uuid::Uuid;
 
 #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
-use crate::serving::SOCKET_USER_TIMEOUT;
+use crate::pairing::SOCKET_USER_TIMEOUT;
 use crate::{
+    pairing::{
+        ByteStream, MAX_TOLD_RELAY_LEN, MAX_TOLD_RELAYS, RelayJoin, RelayRefusal, RelayWays,
+        SOCKET_KEEPALIVE, SOCKET_KEEPALIVE_PROBES, Wanted, machine_hostname, no_longer_wanted,
+        read_records,
+    },
     protocol::{
         Relay, RelayAccount, RelayListing, RelayLogin, RelayLoginLead, RelayLoginOutcome,
         RelayLoginRefusal, RelayLoginStanding, RelayMachines, RelayMachinesAnswer, RelayRemoval,
@@ -66,12 +71,7 @@ use crate::{
         WorkspacePaths, relay_pinned_message,
     },
     runtime::replace_private_file,
-    serving::{
-        ByteStream, IdentityKey, IdentityKeyUnavailable, MAX_TOLD_RELAY_LEN, MAX_TOLD_RELAYS,
-        RelayJoin, RelayRefusal, RelayWays, SOCKET_KEEPALIVE, SOCKET_KEEPALIVE_PROBES,
-        ServingController, ServingStretch, Wanted, machine_hostname, no_longer_wanted,
-        read_records,
-    },
+    serving::{IdentityKey, IdentityKeyUnavailable, ServingController, ServingStretch},
     shown_text::shown,
 };
 
@@ -403,7 +403,11 @@ impl RelayController {
                 let own_key = self.identity.public_key().await;
                 match own_key {
                     Ok(own_key) => RelayMachinesAnswer::Listed {
-                        machines: machines::listed(logins, &own_key, &self.serving.list_remotes()),
+                        machines: machines::listed(
+                            logins,
+                            &own_key,
+                            &self.serving.redeemer().list_remotes(),
+                        ),
                         cut_short,
                     },
                     Err(_) => machines::unreachable("the Server could not use its identity key"),
@@ -2357,7 +2361,7 @@ impl Stop {
 /// not judged here: what a Relay echoes of a join shows only that it read
 /// this far of what this Server sent, which waits on its passing on all
 /// before, however healthy it is. The two Servers judge it end to end, inside
-/// their pinned-key TLS, as [`crate::serving::Keepalive`] says — until
+/// their pinned-key TLS, as [`crate::pairing::Keepalive`] says — until
 /// that is under way, their TLS handshake and then HTTP/2's start are each
 /// bounded by the handshake timeout — and either drops the join, whatever it
 /// was still sending, once it has stalled past that keepalive's verdict.
@@ -2492,14 +2496,11 @@ mod tests {
 
     /// The same, waiting `answer_timeout` for each answer a Relay owes.
     fn controller_answering_within(directory: &Path, answer_timeout: Duration) -> RelayController {
-        let serving = ServingController::new(
+        let serving = ServingController::for_tests(
             directory,
-            Duration::from_secs(60),
-            crate::protocol::PROTOCOL_VERSION,
+            IdentityKey::new(directory),
             "http://127.0.0.1:1".to_owned(),
-            "token".to_owned(),
-        )
-        .unwrap();
+        );
         RelayController::new(
             directory,
             WorkspacePaths::default(),
@@ -2531,20 +2532,19 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let store = Arc::new(crate::serving::FakeIdentityStore::default());
         let relays = || {
-            let serving = ServingController::new(
+            let serving = ServingController::for_tests(
                 directory.path(),
-                Duration::from_secs(60),
-                crate::protocol::PROTOCOL_VERSION,
+                IdentityKey::kept_in(
+                    directory.path(),
+                    crate::serving::IdentityKeeping {
+                        store: store.clone(),
+                        selection: crate::serving::Selection::ReleaseBuild,
+                        channel: "test".to_owned(),
+                        store_timeout: Duration::from_secs(10),
+                    },
+                ),
                 "http://127.0.0.1:1".to_owned(),
-                "token".to_owned(),
-            )
-            .unwrap()
-            .with_identity_keeping(crate::serving::IdentityKeeping {
-                store: store.clone(),
-                selection: crate::serving::Selection::ReleaseBuild,
-                channel: "test".to_owned(),
-                store_timeout: Duration::from_secs(10),
-            });
+            );
             RelayController::new(
                 directory.path(),
                 WorkspacePaths::default(),
