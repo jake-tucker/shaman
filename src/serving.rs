@@ -835,7 +835,6 @@ struct StoredRemote {
 }
 
 #[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct InvitePayload {
     #[serde(rename = "w")]
     ways: Vec<Way>,
@@ -855,7 +854,6 @@ struct ParsedInvite {
 }
 
 #[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct EnrollmentRequest {
     token: String,
     protocol_version: u32,
@@ -882,7 +880,6 @@ enum EnrollmentPhase {
 }
 
 #[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct EnrollmentResponse {
     hostname: String,
     protocol_version: u32,
@@ -892,7 +889,6 @@ struct EnrollmentResponse {
 /// newly upgraded Server can still identify an older paired Server as a
 /// protocol mismatch rather than a transport failure.
 #[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct PairingHealth {
     protocol_version: u32,
 }
@@ -900,7 +896,6 @@ struct PairingHealth {
 /// What a Serving Server tells a Peer of the Relays it Serves through, a
 /// line of the answer each time it tells it: the whole of them each time.
 #[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 struct OfferedRelays {
     relays: Vec<String>,
     /// How the offer to pair back this very Peer made stands, where it made
@@ -7610,8 +7605,8 @@ mod tests {
         assert_eq!(told(serde_json::json!([long])), None, "too long an address");
         assert_eq!(
             told_relays(br#"{"relays":[],"ways":["192.0.2.1:7000"]}"#).map(|said| said.relays),
-            None,
-            "nothing but Relays is taken up"
+            Some(Vec::new()),
+            "nothing but Relays is taken up: what else a newer Server tells is passed over"
         );
         assert!(told_relays(b"not what a Serving Server says").is_none());
     }
@@ -7786,6 +7781,58 @@ mod tests {
                 "the act stands as the authenticated Peer's Sidekick's, proven: {connection}"
             );
         }
+    }
+
+    /// What a newer side says as a Pairing is formed and kept is read as far
+    /// as this build knows it, every field it adds passed over (ADR-0078):
+    /// its Invite, its enrollment and the answer to it, its health, and the
+    /// Relays it says it Serves through.
+    #[tokio::test]
+    async fn the_pairing_ceremony_from_a_newer_side_is_read_past_every_field_it_adds() {
+        let payload = serde_json::json!({
+            "w": [{ "direct": "192.0.2.10:7443" }],
+            "k": URL_SAFE_NO_PAD.encode([7_u8; 91]),
+            "t": URL_SAFE_NO_PAD.encode([1_u8; 32]),
+            "h": "workstation",
+            "q": "a field added since this build",
+        });
+        let invite = format!(
+            "shaman-v1-{}",
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap())
+        );
+        let parsed = parse_invite(&invite)
+            .ok()
+            .expect("an Invite from a newer Server is read");
+        assert_eq!(parsed.hostname, "workstation");
+
+        let enrollment: EnrollmentRequest = serde_json::from_value(serde_json::json!({
+            "token": URL_SAFE_NO_PAD.encode([1_u8; 32]),
+            "protocol_version": 900,
+            "phase": "commit",
+            "hostname": "laptop",
+            "device": { "kind": "a field added since this build" },
+        }))
+        .expect("an enrollment from a newer Peer is read");
+        assert_eq!(enrollment.hostname.as_deref(), Some("laptop"));
+        let enrolled: EnrollmentResponse = serde_json::from_value(serde_json::json!({
+            "hostname": "workstation",
+            "protocol_version": 900,
+            "floor": 117,
+        }))
+        .expect("an enrollment's answer from a newer Server is read");
+        assert_eq!(enrolled.hostname, "workstation");
+
+        let health = br#"{"protocol_version": 900, "floor": 117}"#.to_vec();
+        assert!(
+            small_answer::<PairingHealth>(answering(StatusCode::OK, health))
+                .await
+                .is_some_and(|health| health.protocol_version == 900),
+            "a newer Server's health is read"
+        );
+
+        let told = told_relays(br#"{"relays": ["https://relay.example.com"], "weather": "clear"}"#)
+            .expect("the Relays a newer Server says it Serves through are read");
+        assert_eq!(told.relays, ["https://relay.example.com"]);
     }
 
     #[tokio::test]

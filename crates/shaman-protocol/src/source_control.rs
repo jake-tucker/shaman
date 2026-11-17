@@ -222,7 +222,6 @@ impl Default for PreparationId {
 /// the markers of its bound Skill Invocations and the labels of its
 /// Attachments; an unbound `$token` or `[Image 1]` is text.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct PreparationPrompt {
     pub text: String,
     pub skill_invocations: Vec<super::SkillInvocation>,
@@ -231,7 +230,6 @@ pub struct PreparationPrompt {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct PrepareCheckoutRequest {
     pub id: PreparationId,
     pub source: ExecutionDirectory,
@@ -352,7 +350,6 @@ pub struct CheckoutRemovalPreview {
     pub pending_moves: usize,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RemoveCheckoutRequest {
     pub preview: CheckoutRemovalPreview,
     pub force: bool,

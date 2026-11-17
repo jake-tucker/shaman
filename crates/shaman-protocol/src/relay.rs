@@ -21,7 +21,6 @@ pub const RELAYS_EVENT: &str = "relays";
 /// each time the Server starts, so listings from two instances are never
 /// compared by revision: a client goes by the instance it is attached to.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RelayListing {
     pub instance: Uuid,
     pub revision: u64,
@@ -30,7 +29,6 @@ pub struct RelayListing {
 
 /// A Relay the Server holds an entry for, known by its address.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Relay {
     pub address: String,
     pub state: RelayState,
@@ -79,7 +77,6 @@ pub fn relay_pinned_message(address: &str, document: &str) -> String {
 /// run, so the Client claiming again, not having heard it was given the
 /// Notice, is told it was.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RelayLoginNeededNotice {
     pub lapse: Uuid,
     pub claimant: Uuid,
@@ -91,7 +88,6 @@ pub struct RelayLoginNeededNotice {
 /// claims it again while the lapse lasts — and no other, however late it
 /// claims it, nor any once the lapse has ended.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RelayLoginNeededNoticeClaim {
     pub claimed: bool,
 }
@@ -114,7 +110,6 @@ pub enum RelayState {
 
 /// Why a Relay reads Unreachable.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RelayUnreachable {
     /// Where the Server and the Relay share no version of the protocol
     /// between them, the side to upgrade.
@@ -134,7 +129,6 @@ pub enum RelaySide {
 /// The Account a Login stands under, by its identity provider and the
 /// username it has there.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RelayAccount {
     pub provider: String,
     pub username: String,
@@ -143,7 +137,6 @@ pub struct RelayAccount {
 /// A login the Server carries out at a Relay: its user visits
 /// `verification_uri` on any device and enters `user_code` there.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RelayLogin {
     pub verification_uri: String,
     pub user_code: String,
@@ -202,7 +195,6 @@ pub enum RelayLoginRefusal {
 /// machine by and is believed of nothing: it opens nothing, and nothing in it
 /// changes what this Server holds of any key (ADR-0064).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RelayMachines {
     pub address: String,
     pub answer: RelayMachinesAnswer,
@@ -231,7 +223,6 @@ pub enum RelayMachinesAnswer {
 /// could be one: a hostname is whatever that machine said, and a key the
 /// Relay's word.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RelayMachine {
     /// The identity key the Relay ties its Login to, as unpadded URL-safe
     /// base64: what a join there would name it by.
@@ -254,7 +245,6 @@ pub struct RelayMachine {
 /// asks for one where a Login stands, as a reader does who would stand under
 /// another Account; otherwise a Login that stands is answered and none begun.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RelayLoginRequest {
     pub afresh: bool,
 }
@@ -262,7 +252,6 @@ pub struct RelayLoginRequest {
 /// Where logging in at a Relay got to, as [`RelayLoginRequest`] asked: the Server
 /// decides, with the entry held, so two Clients asking at once share one login.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RelayLoginLead {
     /// The Relay's address, written the one way a Relay's is.
     pub address: String,
@@ -284,14 +273,12 @@ pub enum RelayLoginStanding {
 
 /// A Relay to add, by the address it is reached at.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct AddRelayRequest {
     pub address: String,
 }
 
 /// Whether the Server is to Serve through a Relay.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RelayServeThroughRequest {
     pub serve_through: bool,
 }
@@ -301,7 +288,6 @@ pub struct RelayServeThroughRequest {
 /// time and forgot the Server's Login, or `held_login` says there was none to
 /// forget and it was not asked.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RelayRemoval {
     pub address: String,
     pub acknowledged: bool,

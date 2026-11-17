@@ -178,6 +178,21 @@ async fn main_linked_and_subdirectory_sessions_share_authenticated_listing_and_i
         .await
         .unwrap();
     assert_eq!(via_path, listing);
+    let asked_by_a_newer_peer: Vec<SessionListItem> =
+        request(descriptor, reqwest::Method::GET, "/v1/sessions")
+            .query(&[
+                ("workspace_id", id.0.as_str()),
+                ("added_since", "a newer Peer"),
+            ])
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .expect("a filter a newer Peer added is passed over")
+            .json()
+            .await
+            .unwrap();
+    assert_eq!(asked_by_a_newer_peer, listing);
     let resolved = resolve(descriptor, &linked_subdir, None).await;
     assert_eq!(&resolved.workspace.id, id);
     assert_eq!(resolved.execution_directory.unwrap().path, linked_subdir);

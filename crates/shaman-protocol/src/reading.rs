@@ -189,7 +189,7 @@ impl Default for Window {
 
 /// Why a read names nothing the Session holds.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
 pub enum ReadRefusal {
     /// A Turn the Session has not reached; it has `turns`.
     NoSuchTurn { turn: usize, turns: usize },
@@ -202,7 +202,6 @@ pub enum ReadRefusal {
 /// names, which stand as [`ServerReference`]s for the reader to name as it
 /// reaches them.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionExcerpt {
     /// Every Questionnaire waiting on an Answer, in Transcript order.
     pub questionnaires: Vec<ExcerptQuestionnaire>,
@@ -225,7 +224,6 @@ pub struct SessionExcerpt {
 
 /// A Questionnaire waiting on an Answer, and its entry's number.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ExcerptQuestionnaire {
     pub entry: EntryNumber,
     pub questionnaire: Questionnaire,
@@ -244,7 +242,7 @@ pub enum ReadingSpan {
 /// user's behalf, or where a Session on another Server lives — each named by
 /// the Server holding the Session read, as its own Pairings know it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
 pub enum ServerReference {
     /// Who sent a Message, answered a Questionnaire, or began the Session.
     Actor(Author),
@@ -265,7 +263,6 @@ pub enum ServerReference {
 /// what its Session holds: the Session's summary, taken in the same moment as
 /// the excerpt, so how it stands and what it says agree.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionReadingAnswer {
     pub summary: SessionSummary,
     pub reading: Result<SessionExcerpt, ReadRefusal>,
@@ -276,7 +273,6 @@ pub struct SessionReadingAnswer {
 /// default — or one `item` whole, and `within`, the most bytes its asker
 /// reads of the answer.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionReadingQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turns: Option<usize>,

@@ -139,7 +139,6 @@ impl StoredMadeOffer {
 
 /// How a Peer's own offer stands, as the Server it made it to tells it.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub(super) struct ToldOffer {
     id: Uuid,
     accepted: bool,
@@ -148,7 +147,7 @@ pub(super) struct ToldOffer {
 /// What a Peer says of its own offer. Nothing here can make one, or name
 /// another's: a word about an id that is not the caller's finds no offer.
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub(super) enum OfferWord {
     /// Its user withdrew it, or it knows nothing of it.
     Withdrawn { id: Uuid },

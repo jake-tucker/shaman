@@ -262,7 +262,10 @@ async fn open_response(
         Ok(error) if error.code == SessionErrorCode::SessionNotFound => {
             Err(SessionStreamError::missing(session_id, error.message))
         }
-        _ => Err(SessionStreamError::protocol(anyhow::anyhow!(
+        // Whatever its code, a code this build does not know among them, the
+        // refusal says why in its own words.
+        Ok(error) => Err(SessionStreamError::protocol(anyhow::anyhow!(error.message))),
+        Err(_) => Err(SessionStreamError::protocol(anyhow::anyhow!(
             "server rejected the Session event stream with {status}"
         ))),
     }
@@ -395,7 +398,8 @@ async fn consume(
     while let Some(next) = stream.next().await {
         let event = match next {
             Ok(event) => match decode_event(event, session_id, &mut saw_snapshot, last_revision) {
-                Ok(event) => event,
+                Ok(Some(event)) => event,
+                Ok(None) => continue,
                 Err(error) => {
                     return StreamOutcome::Failed {
                         error: SessionStreamError::protocol(error),
@@ -419,18 +423,24 @@ async fn consume(
     }
 }
 
+/// The Session event `event` carries, and `None` for one under a name this
+/// reader was built without, which a newer Server may send and which is
+/// passed over (ADR-0078).
 fn decode_event(
     event: eventsource_stream::Event,
     session_id: SessionId,
     saw_snapshot: &mut bool,
     last_revision: &mut Option<crate::protocol::SessionRevision>,
-) -> Result<SessionEvent> {
-    let event_revision = event
-        .id
-        .parse::<u64>()
-        .context("Session event has an invalid revision ID")?;
+) -> Result<Option<SessionEvent>> {
+    let event_revision = || {
+        event
+            .id
+            .parse::<u64>()
+            .context("Session event has an invalid revision ID")
+    };
     match event.event.as_str() {
         SESSION_SNAPSHOT_EVENT => {
+            let event_revision = event_revision()?;
             if *saw_snapshot {
                 bail!("Session stream sent more than one snapshot");
             }
@@ -447,9 +457,10 @@ fn decode_event(
             }
             *saw_snapshot = true;
             *last_revision = Some(snapshot.revision);
-            Ok(SessionEvent::snapshot(snapshot))
+            Ok(Some(SessionEvent::snapshot(snapshot)))
         }
         SESSION_UPDATED_EVENT => {
+            let event_revision = event_revision()?;
             if !*saw_snapshot {
                 bail!("Session stream sent an update before its snapshot");
             }
@@ -466,8 +477,124 @@ fn decode_event(
                 bail!("Session update revision is not monotonic");
             }
             *last_revision = Some(update.revision);
-            Ok(SessionEvent::Updated(update))
+            Ok(Some(SessionEvent::Updated(update)))
         }
-        name => bail!("Session stream sent unknown event type '{name}'"),
+        name => {
+            tracing::debug!(
+                event = name,
+                "passed over a Session event this build does not know"
+            );
+            Ok(None)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::managed_client::stream_fixture::stream_of;
+    use crate::protocol::{
+        ExecutionDirectory, ModelAvailability, Session, SessionChange, SessionRevision,
+        SessionStatus, Workspace,
+    };
+
+    fn snapshot(session_id: SessionId, revision: u64) -> SessionSnapshot {
+        SessionSnapshot {
+            title: String::new(),
+            icon: None,
+            session: Session {
+                pending_move: None,
+                checkout: None,
+                context_fill: None,
+                prompt_cache: None,
+                id: session_id,
+                execution_directory: ExecutionDirectory {
+                    path: PathBuf::from("workspace"),
+                },
+                workspace: Workspace::directory(PathBuf::from("workspace")),
+                agent_selection: None,
+                agent_selection_availability: ModelAvailability::Available,
+                approval_posture: None,
+                status: SessionStatus::Idle,
+                working_since: None,
+                monitoring_since: None,
+                parent: None,
+                begun_by: None,
+            },
+            revision: SessionRevision(revision),
+            prompts: Vec::new(),
+            turns: Vec::new(),
+            messages: Vec::new(),
+            activities: Vec::new(),
+            transcript: Vec::new(),
+            subagent_interventions: Vec::new(),
+            pending_approvals: Vec::new(),
+            submitting_approvals: Vec::new(),
+            pending_approvals_revision: SessionRevision(0),
+            watches: Vec::new(),
+            waiting_on_subagents: None,
+            current_model: None,
+            subagent_usage: None,
+            total_cost: None,
+            own_cost: None,
+            attachments: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn an_event_a_newer_server_added_is_passed_over_and_the_stream_goes_on() {
+        let session_id = SessionId::new();
+        let opened = snapshot(session_id, 3);
+        let retitled = SessionUpdate {
+            session_id,
+            revision: SessionRevision(4),
+            changes: vec![SessionChange::TitleChanged {
+                title: "Map the seams".to_owned(),
+                icon: None,
+            }],
+        };
+        let response = stream_of(&[
+            (
+                SESSION_SNAPSHOT_EVENT,
+                Some(3),
+                serde_json::to_string(&opened).expect("encode the snapshot"),
+            ),
+            // One a newer Server sends with no revision of its own, and one
+            // with a shape this build could not read even if it knew the name.
+            (
+                "session_mood_changed",
+                None,
+                r#"{"mood":"sunny"}"#.to_owned(),
+            ),
+            ("session_forecast", Some(99), "not json at all".to_owned()),
+            (
+                SESSION_UPDATED_EVENT,
+                Some(4),
+                serde_json::to_string(&retitled).expect("encode the update"),
+            ),
+        ]);
+        let (events, mut received) = mpsc::channel(SESSION_EVENT_CAPACITY);
+
+        let outcome = consume(response, session_id, &events, &mut None).await;
+
+        assert!(
+            matches!(outcome, StreamOutcome::Disconnected { hydrated: true }),
+            "the stream ends as its body does, not as a broken protocol"
+        );
+        drop(events);
+        let mut read = Vec::new();
+        while let Some(event) = received.recv().await {
+            read.push(event.expect("nothing the stream carried was an error"));
+        }
+        assert_eq!(
+            read,
+            [
+                SessionEvent::snapshot(opened),
+                SessionEvent::Updated(retitled)
+            ],
+            "the events this build knows arrive in order, the others not at all"
+        );
     }
 }

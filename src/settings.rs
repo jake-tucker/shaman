@@ -47,7 +47,8 @@ use crate::protocol::{
     AfterWorktreeCreation, AgentSelection, AppearanceMode, AsideVisibility, AutoReclaim,
     AutoSettle, ClaudePermissionMode, CodexApprovalPolicy, CodexSandboxMode, CommandAutoExpand,
     CopilotPermissions, DerivationErrand, EffectiveSettings, FoldPosture, GroupPosture,
-    LandingPage, PenaltyThreshold, ProviderId, ReasoningSummaryDetail, ReasoningVisibility,
+    LandingPage, ModelId, ModelOptionChoiceId, ModelOptionId, ModelOptionSelection,
+    ModelOptionValue, PenaltyThreshold, ProviderId, ReasoningSummaryDetail, ReasoningVisibility,
     ScheduledCompactionSessions, SessionContentWidth, SettingMutation, SettingScope,
     SettingsDiagnostic, SettingsDiagnosticSeverity, SettingsSnapshot, SidebarScope,
     SidebarVisibility, TextSelectionCopy, TextSelectionPlainText, ToolCallVisibility,
@@ -1544,10 +1545,12 @@ pub const SCHEMA: &[SettingDescriptor] = &[
             }),
         },
         reset: SettingMutation::DerivationErrand { value: None },
-        apply: |settings, value| {
-            apply_value(value, |errand| {
+        apply: |settings, value| match derivation_errand_pinned(value) {
+            Some(errand) => {
                 settings.derivation.errand = errand;
-            })
+                Applied::Whole
+            }
+            None => Applied::Refused,
         },
     },
     SettingDescriptor {
@@ -2563,6 +2566,81 @@ fn apply_value<T: serde::de::DeserializeOwned>(value: &Value, write: impl FnOnce
     }
 }
 
+/// The derivation Errand a Config Document pins as `value`, and `None` where
+/// it pins none a reader could take. A document is written by hand, so it is
+/// read strictly where the wire's spelling of the same value passes over a
+/// field it does not know (ADR-0078): a key misspelt in a pinned Agent
+/// Selection is told of rather than dropped.
+fn derivation_errand_pinned(value: &Value) -> Option<DerivationErrand> {
+    match serde_json::from_value::<DerivationErrandDocument>(value.clone()).ok()? {
+        // The words are the wire's own, written down once there.
+        DerivationErrandDocument::Named(word) => serde_json::from_value(Value::String(word)).ok(),
+        DerivationErrandDocument::Pinned(selection) => {
+            Some(DerivationErrand::Pinned(selection.into()))
+        }
+    }
+}
+
+/// How a Config Document spells a derivation Errand: a word, or an Agent
+/// Selection written plainly.
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum DerivationErrandDocument {
+    Named(String),
+    Pinned(AgentSelectionDocument),
+}
+
+/// An [`AgentSelection`] as a Config Document pins one, holding nothing else.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AgentSelectionDocument {
+    provider: ProviderId,
+    model: ModelId,
+    options: Vec<ModelOptionSelectionDocument>,
+}
+
+/// A [`ModelOptionSelection`] as a Config Document pins one, holding nothing
+/// else.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ModelOptionSelectionDocument {
+    id: ModelOptionId,
+    value: ModelOptionValueDocument,
+}
+
+/// A [`ModelOptionValue`] as a Config Document pins one, holding nothing
+/// else.
+#[derive(serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum ModelOptionValueDocument {
+    Select { choice: ModelOptionChoiceId },
+    Toggle { enabled: bool },
+}
+
+impl From<AgentSelectionDocument> for AgentSelection {
+    fn from(document: AgentSelectionDocument) -> Self {
+        Self {
+            provider: document.provider,
+            model: document.model,
+            options: document
+                .options
+                .into_iter()
+                .map(|option| ModelOptionSelection {
+                    id: option.id,
+                    value: match option.value {
+                        ModelOptionValueDocument::Select { choice } => {
+                            ModelOptionValue::Select { choice }
+                        }
+                        ModelOptionValueDocument::Toggle { enabled } => {
+                            ModelOptionValue::Toggle { enabled }
+                        }
+                    },
+                })
+                .collect(),
+        }
+    }
+}
+
 /// Resolves the config root the way the state directory resolves: an explicit
 /// `SHAMAN_CONFIG_DIR` wins, then `$XDG_CONFIG_HOME/shaman/`, then the literal
 /// `~/.config/shaman/` on every platform — raw XDG, replicating opencode,
@@ -3336,6 +3414,69 @@ mod tests {
     use super::*;
 
     use crate::protocol::TranscriptSettings;
+
+    /// A Config Document is written by hand, so a key it holds that a
+    /// Setting does not take is a mistake to tell of, never a field from a
+    /// newer side to pass over as the wire does (ADR-0078): a pinned Agent
+    /// Selection is the one Setting whose value is an object of fields.
+    #[test]
+    fn a_pinned_agent_selection_takes_no_field_it_does_not_know_though_the_wire_does() {
+        let descriptor = SCHEMA
+            .iter()
+            .find(|descriptor| descriptor.key == DERIVATION_ERRAND)
+            .expect("derivation is a Setting");
+        let mut settings = EffectiveSettings::default();
+        assert_eq!(
+            (descriptor.apply)(
+                &mut settings,
+                &serde_json::json!({
+                    "provider": "codex",
+                    "model": "gpt-5-mini",
+                    "options": [{
+                        "id": "reasoning_effort",
+                        "value": { "type": "select", "choice": "high" },
+                    }],
+                }),
+            ),
+            Applied::Whole
+        );
+
+        for misspelt in [
+            serde_json::json!({ "provider": "codex", "model": "gpt-5-mini", "options": [], "effort": "high" }),
+            serde_json::json!({
+                "provider": "codex",
+                "model": "gpt-5-mini",
+                "options": [{
+                    "id": "reasoning_effort",
+                    "value": { "type": "select", "choice": "high" },
+                    "label": "Reasoning",
+                }],
+            }),
+            serde_json::json!({
+                "provider": "codex",
+                "model": "gpt-5-mini",
+                "options": [{
+                    "id": "reasoning_effort",
+                    "value": { "type": "select", "choice": "high", "default": "low" },
+                }],
+            }),
+        ] {
+            let mut settings = EffectiveSettings::default();
+            assert_eq!(
+                (descriptor.apply)(&mut settings, &misspelt),
+                Applied::Refused,
+                "{misspelt} holds a key no Agent Selection takes"
+            );
+            assert_eq!(settings.derivation.errand, DerivationErrand::default());
+            assert!(
+                matches!(
+                    serde_json::from_value::<DerivationErrand>(misspelt),
+                    Ok(DerivationErrand::Pinned(_))
+                ),
+                "the same value on the wire is read past what it adds"
+            );
+        }
+    }
 
     /// A Config Document name that cannot be told present or absent — its
     /// directory cannot be searched, say — is an error of the whole stack,

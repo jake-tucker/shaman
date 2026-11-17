@@ -4457,7 +4457,6 @@ async fn resolve_sidekick_workspace(State(state): State<AppState>, headers: Head
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ListSessionsQuery {
     workspace_id: Option<String>,
     workspace: Option<PathBuf>,

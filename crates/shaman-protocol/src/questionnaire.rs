@@ -3,14 +3,12 @@ use crate::QuestionnaireId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Questionnaire {
     pub id: QuestionnaireId,
     pub questions: Vec<Question>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Question {
     pub id: String,
     pub title: Option<String>,
@@ -25,7 +23,6 @@ pub struct Question {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct QuestionChoice {
     pub id: String,
     pub label: String,
@@ -34,7 +31,7 @@ pub struct QuestionChoice {
 }
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum QuestionAnswer {
     Selected {
         choices: Vec<String>,
@@ -59,13 +56,12 @@ impl std::fmt::Debug for QuestionAnswer {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Answer {
     pub questions: Vec<QuestionAnswer>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum QuestionnaireSubmission {
     Answer { answer: Answer },
     Decline,

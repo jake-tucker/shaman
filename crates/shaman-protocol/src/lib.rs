@@ -1,3 +1,16 @@
+//! The wire: what a Server's Clients and its Peers say to it, and what it
+//! answers.
+//!
+//! Everything a Peer may ask crosses a Pairing to a Server that may be older
+//! or newer than this build, so it is read tolerantly (ADR-0078). No wire type
+//! rejects a field it does not know, a reader requires only the fields that
+//! existed at its floor, and a field added since is optional or defaulted
+//! until the floor passes the version that added it. A Session error under a
+//! code this build does not know reads as [`SessionErrorCode::Other`], its
+//! message standing for it. What crosses no Pairing is read strictly: Config
+//! Documents, which a user writes by hand, what a Server stores for itself,
+//! and `runtime.json`, which only a machine's own Clients read.
+
 use std::{
     collections::{BTreeMap, HashMap},
     fmt,
@@ -186,7 +199,6 @@ impl ModelOptionRole {
 pub const ROUTING_TIER_OPTION_ID: &str = "routing_tier";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelOptionChoice {
     pub id: ModelOptionChoiceId,
     pub label: String,
@@ -195,7 +207,7 @@ pub struct ModelOptionChoice {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum ModelOptionKind {
     Select {
         choices: Vec<ModelOptionChoice>,
@@ -207,7 +219,6 @@ pub enum ModelOptionKind {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelOptionDescriptor {
     pub id: ModelOptionId,
     pub label: String,
@@ -217,7 +228,6 @@ pub struct ModelOptionDescriptor {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelDescriptor {
     pub provider: ProviderId,
     pub id: ModelId,
@@ -235,7 +245,6 @@ pub struct ModelDescriptor {
 /// its prices, how much it holds, and the Model Advisories the Provider asks a
 /// reader be shown.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelDetails {
     /// Where the Model's price stands relative to the Provider's other Models.
     pub price_category: Option<ModelPriceCategory>,
@@ -278,7 +287,6 @@ pub enum ModelPriceCategory {
 /// A Model's token prices in the Provider's own unit, one tier per context
 /// tier the Model offers.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelPrices {
     /// What a price counts, as the Provider names it, e.g. `AI Credits`.
     pub unit: String,
@@ -290,7 +298,6 @@ pub struct ModelPrices {
 /// The prices of one context tier, named as the Model's Context option names
 /// it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelPriceTier {
     pub label: String,
     /// The most prompt tokens the tier admits.
@@ -331,7 +338,6 @@ impl ModelPrice {
 /// warning, an advisory of its own, a promotion, or why the Model cannot be
 /// chosen.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelAdvisory {
     pub severity: ModelAdvisorySeverity,
     pub title: Option<String>,
@@ -505,7 +511,7 @@ impl ModelOptionDescriptor {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum ModelOptionValue {
     Select { choice: ModelOptionChoiceId },
     Toggle { enabled: bool },
@@ -536,7 +542,7 @@ impl ProviderUnavailability {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "state", rename_all = "snake_case")]
 pub enum ProviderCatalogStatus {
     Fresh,
     /// The Provider remains usable, but its environment has a compatibility
@@ -584,7 +590,6 @@ pub enum ProviderCatalogStatus {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ProviderModelCatalog {
     pub provider: ProviderId,
     /// The Provider's name as the user reads it, declared by its runtime —
@@ -597,7 +602,6 @@ pub struct ProviderModelCatalog {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelCatalog {
     pub providers: Vec<ProviderModelCatalog>,
 }
@@ -716,7 +720,6 @@ impl SessionTimestamp {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Workspace {
     pub id: WorkspaceId,
     /// Presentation only: identity is unchanged when a main root becomes known.
@@ -889,7 +892,6 @@ pub fn title_too_long(chars: usize) -> String {
 /// Errand deriving it. A set Description stands against every later
 /// derivation; a derived one only ever filled an absence.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct WorkspaceDescription {
     pub text: String,
     pub set: bool,
@@ -899,7 +901,6 @@ pub struct WorkspaceDescription {
 /// It is independent of Workspace grouping, set as the Session begins, and
 /// changed only by a Move.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ExecutionDirectory {
     pub path: PathBuf,
 }
@@ -908,7 +909,6 @@ pub struct ExecutionDirectory {
 /// relative path is read from `base`, or from the Server process's current
 /// directory when no base is supplied.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ResolveWorkspaceRequest {
     #[serde(default)]
     pub checkout_id: Option<CheckoutId>,
@@ -925,7 +925,6 @@ pub struct ResolveWorkspaceRequest {
 /// current directory when no base is supplied, and one beginning with `~` from
 /// the Server's home; on Windows the empty path is the [`DRIVE_LIST`].
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ListDirectoryRequest {
     pub path: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -954,7 +953,6 @@ pub const DRIVE_LIST: &str = "";
 /// parent is that path, and its listing has the path as its root, no parent,
 /// and a child for each drive, named and spelled as its root, such as `C:\`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct DirectoryListing {
     pub root: PathBuf,
     /// Absent where the root is the filesystem's own or a Windows Server's
@@ -971,7 +969,6 @@ pub struct DirectoryListing {
 /// A directory directly within a [`DirectoryListing`]'s root, whose name is
 /// Unicode.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ChildDirectory {
     pub name: String,
     /// The root joined with `name` in the Server's own syntax, so a Client
@@ -990,7 +987,7 @@ pub struct ChildDirectory {
 /// Git's metadata on disk rather than by running Git, so a listing costs one
 /// directory read and one HEAD read per Repository it names.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DirectorySourceControl {
     /// Neither a Worktree's root nor a bare Repository.
     Plain,
@@ -1014,7 +1011,6 @@ pub enum DirectorySourceControl {
 /// runtime boundary; clients receive only this opaque identity and the words
 /// they need to choose and distinguish the Skill.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SkillDescriptor {
     pub id: SkillId,
     pub name: String,
@@ -1045,7 +1041,6 @@ pub enum SkillPromptDelivery {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SkillCatalogCapabilities {
     /// The maximum number of distinct Skills one Prompt may invoke. None means
     /// the Provider declares no Shaman-enforced limit.
@@ -1057,7 +1052,7 @@ pub struct SkillCatalogCapabilities {
 /// Skill discovery is deliberately independent of Provider Availability: a
 /// failed or stale Skill Catalog never prevents an ordinary Prompt.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "state", rename_all = "snake_case")]
 pub enum SkillCatalogStatus {
     Loading,
     Fresh { warning: Option<String> },
@@ -1070,7 +1065,6 @@ pub enum SkillCatalogStatus {
 /// Execution Directory. Including both identities makes crossing Provider
 /// or execution contexts visible at every caller boundary.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SkillCatalog {
     pub provider: ProviderId,
     pub execution_directory: ExecutionDirectory,
@@ -1083,7 +1077,6 @@ pub struct SkillCatalog {
 /// canonicalizes the Execution Directory before consulting the Provider, so spelling
 /// variants of one directory cannot create separate authority domains.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SkillCatalogRequest {
     pub provider: ProviderId,
     pub execution_directory: ExecutionDirectory,
@@ -1093,7 +1086,6 @@ pub struct SkillCatalogRequest {
 /// bound beside that text, such as the `$skill-name` a Skill Invocation was
 /// written as. The end is exclusive, matching Rust string ranges.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct TextSpan {
     pub start: u32,
     pub end: u32,
@@ -1242,7 +1234,6 @@ pub fn match_skills_by_name<'a>(
 /// Provider lowering may later deduplicate identities in first-appearance
 /// order.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SkillInvocation {
     pub skill_id: SkillId,
     pub name: String,
@@ -1252,14 +1243,12 @@ pub struct SkillInvocation {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelOptionSelection {
     pub id: ModelOptionId,
     pub value: ModelOptionValue,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct AgentSelection {
     pub provider: ProviderId,
     pub model: ModelId,
@@ -1294,7 +1283,6 @@ impl AgentSelection {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct AgentIdentity {
     pub agent: AgentId,
     pub selection: AgentSelection,
@@ -1467,7 +1455,6 @@ impl<'de> Deserialize<'de> for CommandAutoExpand {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct TranscriptSettings {
     pub default_fold_posture: FoldPosture,
     pub groups: GroupPosture,
@@ -1629,13 +1616,11 @@ impl<'de> Deserialize<'de> for SessionContentWidth {
 
 /// How Shaman derives a Session's Title and a Workspace's Icon.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct DerivationSettings {
     pub errand: DerivationErrand,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionSettings {
     pub content_width: SessionContentWidth,
 }
@@ -1751,7 +1736,6 @@ impl<'de> Deserialize<'de> for AutoReclaim {
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct WorktreeSettings {
     pub auto_reclaim: AutoReclaim,
     pub after_creation: AfterWorktreeCreation,
@@ -1771,7 +1755,6 @@ pub enum AfterWorktreeCreation {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct WorkspaceSettings {
     /// The Workspace Roots: the directories the user's work lives in, each
     /// spelled as they named it — an absolute path, or one beginning with `~`
@@ -1842,7 +1825,6 @@ impl<'de> Deserialize<'de> for AutoSettle {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SidebarSettings {
     pub initial_visibility: SidebarVisibility,
     pub initial_width: u64,
@@ -1864,7 +1846,6 @@ impl Default for SidebarSettings {
 /// How a TUI's Aside begins. Both are launch Settings: the Aside adopts them
 /// once, and the reader's own showing, hiding, and dragging rule after that.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct AsideSettings {
     pub initial_visibility: AsideVisibility,
     pub initial_width: u64,
@@ -1881,7 +1862,6 @@ impl Default for AsideSettings {
 
 /// How a Client presents the work a Sidekick does on the reader's behalf.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SidekickSettings {
     /// Whether Subsessions are left out wherever Sessions are listed — the
     /// Sidebar, its search, and the Session picker, on every Server listed —
@@ -1905,7 +1885,6 @@ impl Default for SidekickSettings {
 /// is looking into. Theme names stay open strings because built-ins are only
 /// the first source; later tickets add Themes discovered from disk.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct AppearanceSettings {
     pub theme: String,
     pub mode: AppearanceMode,
@@ -1929,7 +1908,6 @@ impl Default for AppearanceSettings {
 /// deriving it, because a derived `bool` is `false` and a Provider is on unless
 /// the user says otherwise.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct CodexSettings {
     pub enabled: bool,
     pub reasoning_summary: ReasoningSummaryDetail,
@@ -1967,7 +1945,6 @@ pub enum CodexSandboxMode {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct CopilotSettings {
     pub enabled: bool,
     pub permissions: CopilotPermissions,
@@ -2000,7 +1977,6 @@ pub enum CopilotPermissions {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ClaudeSettings {
     pub enabled: bool,
     pub permission_mode: ClaudePermissionMode,
@@ -2039,7 +2015,6 @@ impl ClaudePermissionMode {
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ProviderSettings {
     pub codex: CodexSettings,
     pub copilot: CopilotSettings,
@@ -2051,7 +2026,6 @@ pub struct ProviderSettings {
 /// addresses are rejected by Settings loading before anything reaches the
 /// network boundary.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ServingSettings {
     /// Whether the Server accepts paired Servers at all, by whichever ways
     /// it is reached.
@@ -2074,7 +2048,7 @@ pub struct ServingSettings {
 /// addresses in an Invite only while it listens, and at the port it listens
 /// on.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "state", rename_all = "snake_case")]
 pub enum ListenerState {
     /// Listening nowhere, as asked: the Server is not Serving, or the
     /// listener Setting has the listener off.
@@ -2101,7 +2075,6 @@ impl ListenerState {
 
 /// How Shaman compacts a Session's context of its own accord.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct CompactionSettings {
     pub scheduled: ScheduledCompactionSettings,
 }
@@ -2112,7 +2085,6 @@ pub struct CompactionSettings {
 /// moment. Each value is read when a scheduled Compaction falls due, never
 /// when it was armed.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ScheduledCompactionSettings {
     pub enabled: bool,
     /// The least Lapse Penalty worth compacting a Session for: one forecast
@@ -2224,7 +2196,6 @@ impl<'de> Deserialize<'de> for PenaltyThreshold {
 /// The caps bound what the Broker spawns, each read at the moment of a spawn:
 /// a spawn past either is refused, naming the cap, and never queued.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct BrokerSettings {
     pub enabled: bool,
     /// How many Sessions deep a tree may stand through the Broker, its
@@ -2329,7 +2300,6 @@ impl PartialEq<&str> for InviteText {
 /// The ways of reaching this Server its Serving user chose to offer in a
 /// freshly issued Invite.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct IssueInviteRequest {
     pub ways: Vec<Way>,
 }
@@ -2337,7 +2307,6 @@ pub struct IssueInviteRequest {
 /// The pasteable Invite together with the ways it offers, returned by the
 /// Server's local interface so a Client need not decode credential data.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct IssuedInvite {
     pub invite: InviteText,
     /// Which Invite of this Server it is, for [`InviteStanding`] to be told of.
@@ -2359,7 +2328,6 @@ pub const INVITE_STANDING_EVENT: &str = "invite_standing";
 /// key, which is shown nowhere and stands outside superseding (ADR-0066), and
 /// holds no token and no code.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct InviteStanding {
     /// The Invite this says of; `0` before any was issued. A later one than a
     /// Client is showing has replaced the one it shows.
@@ -2385,7 +2353,6 @@ pub enum InviteState {
 /// Whether a Server is Serving, and how its listener stands, as its user's own
 /// surfaces read that without changing anything.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ServingStanding {
     /// Whether Serving is on, in force: what a Config Document says is not this
     /// until it is put in force (ADR-0067).
@@ -2397,7 +2364,6 @@ pub struct ServingStanding {
 /// issues one does first: Serving turned on where it was off, or asked for again
 /// where it could not start.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ServingPreparation {
     /// What this did to Serving, where it did anything.
     pub change: Option<ServingChange>,
@@ -2413,7 +2379,6 @@ pub struct ServingPreparation {
 /// which ways those are: what its user would have ticked in `/serve`, unless
 /// told otherwise.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct OfferInviteRequest {
     /// Whether it offers this machine's own addresses.
     pub addresses: bool,
@@ -2474,7 +2439,6 @@ pub enum WayLeftOut {
 /// An Invite issued by the Server's say of which ways to offer, and what its
 /// reader should be told of how that went.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct OfferedInvite {
     pub issued: IssuedInvite,
     /// What issuing it did to Serving, where it did anything.
@@ -2512,7 +2476,6 @@ pub enum InviteOfferAnswer {
 /// The non-secret facts a local Client may show before the reader decides to
 /// trust and dial the Serving Server named by a pasted Invite.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct InvitePreview {
     pub hostname: String,
     pub fingerprint: String,
@@ -2525,7 +2488,6 @@ pub struct InvitePreview {
 /// A pasted Invite to inspect locally. Inspection validates and decodes the
 /// Invite but never dials an offered way or changes Pairing state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct PreviewInviteRequest {
     pub invite: InviteText,
 }
@@ -2535,7 +2497,6 @@ pub struct PreviewInviteRequest {
 /// the offered order. `name` defaults to the Serving machine's hostname when
 /// omitted.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RedeemInviteRequest {
     pub invite: InviteText,
     pub name: Option<String>,
@@ -2547,7 +2508,6 @@ pub struct RedeemInviteRequest {
 
 /// A durable paired Serving Server as the connecting Server knows it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Remote {
     pub name: String,
     pub fingerprint: String,
@@ -2572,7 +2532,6 @@ pub struct Remote {
 /// named from the Icon Catalog. Refused where the Catalog carries no such
 /// Icon, or where this Server is paired with no Remote of that name.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SetRemoteIconRequest {
     pub icon: String,
 }
@@ -2624,7 +2583,6 @@ impl SessionReference {
 /// A Session on a Remote, by the name the Server naming it knows that Remote
 /// by and the Session's identity there.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RemoteSession {
     pub origin: String,
     pub session_id: SessionId,
@@ -2636,7 +2594,6 @@ pub struct RemoteSession {
 /// the Peer gave itself when it redeemed its Invite — its machine's hostname —
 /// by which what a Sidekick on it sends here is attributed.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Peer {
     pub id: String,
     pub fingerprint: String,
@@ -2659,7 +2616,6 @@ pub enum RemoteStatus {
 /// side; `acknowledged` says whether the Remote answered in time and dropped
 /// its Peer record for this Server as well.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RemoteRemoval {
     pub name: String,
     pub acknowledged: bool,
@@ -2668,7 +2624,6 @@ pub struct RemoteRemoval {
 /// The result of probing a Remote. The protocol version is known only after an
 /// authenticated health response.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct RemoteHealth {
     pub protocol_version: Option<u32>,
     pub status: RemoteStatus,
@@ -2747,7 +2702,6 @@ pub enum TextSelectionPlainText {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct TextSelectionSettings {
     pub copy: TextSelectionCopy,
     pub plain_text: TextSelectionPlainText,
@@ -2755,7 +2709,6 @@ pub struct TextSelectionSettings {
 
 /// How the composer takes what the reader puts into it.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ComposerSettings {
     /// Whether a large paste stands in the draft as a Collapsed Paste. On by
     /// default; off, every paste goes in as the text it is.
@@ -2773,7 +2726,6 @@ impl Default for ComposerSettings {
 /// The effective value of every defined Setting: what a Config Document
 /// pinned where it did, the built-in default everywhere else.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct EffectiveSettings {
     pub text_selection: TextSelectionSettings,
     pub composer: ComposerSettings,
@@ -2798,7 +2750,7 @@ pub struct EffectiveSettings {
 /// The Provider-native controls that govern which tool uses require an
 /// Approval. Each variant retains the complete tuple its Provider accepts.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "provider", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "provider", rename_all = "snake_case")]
 pub enum ApprovalPosture {
     Codex {
         approval_policy: CodexApprovalPolicy,
@@ -2907,7 +2859,6 @@ impl ApprovalPosture {
 /// `pinned` is its spawner's, since a Subagent's posture is never set on
 /// itself.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionApprovalPosture {
     pub value: ApprovalPosture,
     pub pinned: bool,
@@ -2954,7 +2905,7 @@ impl EffectiveSettings {
 /// when it equals the built-in default, so a deliberate choice survives a later
 /// change of that default; `null` removes the pin and lets the default resume.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "setting", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "setting", rename_all = "snake_case")]
 pub enum SettingMutation {
     TextSelectionCopy {
         value: Option<TextSelectionCopy>,
@@ -3114,7 +3065,6 @@ pub enum SettingsDiagnosticSeverity {
 /// alone is sufficient to act on it: the file, the key path when it is scoped to
 /// one key, and why the value was ignored or is not in force.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SettingsDiagnostic {
     pub severity: SettingsDiagnosticSeverity,
     pub file: PathBuf,
@@ -3126,7 +3076,6 @@ pub struct SettingsDiagnostic {
 /// Carries the startup diagnostics so a client can surface configuration
 /// problems without a side channel.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SettingsSnapshot {
     pub settings: EffectiveSettings,
     /// Dotted schema key paths a Config Document pins, so a client can tell a
@@ -3211,7 +3160,6 @@ impl MessageRole {
 /// The Agent a Delegation is from, as the Delegation names it wherever it
 /// stands: the Subagent's parent, or a sibling Subagent that sent it more.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Delegator {
     /// The delegating Agent's own Session: the Subagent's parent, or another
     /// Subagent's Session when a sibling delegated. A client tells the two
@@ -3360,7 +3308,7 @@ impl CompactionRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FileChange {
     Add {
         path: PathBuf,
@@ -3387,7 +3335,7 @@ pub const BROKER_SERVER_NAME: &str = "shaman";
 pub const WAIT_SUBAGENTS_TOOL: &str = "wait_subagents";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Activity {
     Approval {
         id: ActivityId,
@@ -3692,7 +3640,6 @@ pub enum Activity {
 /// the Worktree it lies in, where it lies in one on a branch when the Move
 /// is recorded.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct MoveLocation {
     pub execution_directory: ExecutionDirectory,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3873,7 +3820,6 @@ pub enum RouteVerdict {
 /// What a Reroute says: which Provider switched the Turn from which Model to
 /// which, and why.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Reroute {
     /// The Provider whose Models `from` and `to` name.
     pub provider: ProviderId,
@@ -3964,7 +3910,6 @@ impl RouteDecision {
 
 /// A measured context occupancy, independent of cumulative Usage and Cost.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ContextFill {
     pub occupied_tokens: u64,
     /// The raw Model window; zero is treated as unknown by consumers.
@@ -3980,7 +3925,6 @@ pub struct ContextFill {
 /// as it reads every other Session timestamp, so a client on another machine
 /// is out by however far the two clocks disagree.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct PromptCache {
     pub lapses_at: SessionTimestamp,
     /// The Turn whose output last wrote the cache and set this moment, where
@@ -4131,7 +4075,6 @@ mod lapse_penalty_tests {
 /// It is read on request and never stored, so it describes the context only
 /// at the moment it was asked for.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ContextBreakdown {
     pub fill: ContextFill,
     /// The part of the window the Provider holds back from the Agent, such
@@ -4144,7 +4087,6 @@ pub struct ContextBreakdown {
 /// One source's share of a [`ContextBreakdown`], with the items it is made
 /// of where the Provider names them.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ContextPart {
     pub source: ContextSource,
     pub tokens: u64,
@@ -4176,14 +4118,12 @@ pub enum ContextSource {
 
 /// A named contributor to a [`ContextPart`].
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ContextItem {
     pub label: String,
     pub tokens: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Session {
     /// The latest reported occupancy of this Session alone.
     #[serde(default)]
@@ -4310,7 +4250,6 @@ impl Session {
 /// status and Settle moment travel together so a client never combines facts
 /// from different Turns.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct LatestTurnStatus {
     pub status: TurnStatus,
     pub settled_at: Option<SessionTimestamp>,
@@ -4320,7 +4259,6 @@ pub struct LatestTurnStatus {
 /// one value so every catalog change replaces the reading whole and Viewed
 /// can be compared with the matching latest Turn.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionStandingInputs {
     /// Live Questionnaires and Approvals owned by descendants at any depth.
     #[serde(default)]
@@ -4398,7 +4336,6 @@ impl SessionStandingInputs {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionSummary {
     /// Ephemeral owning-Server reading, absent until checkout observation.
     #[serde(default)]
@@ -4451,12 +4388,7 @@ pub struct SessionSummary {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(
-    tag = "readability",
-    content = "summary",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
+#[serde(tag = "readability", content = "summary", rename_all = "snake_case")]
 pub enum SessionListItem {
     /// Boxed because a readable summary carries everything a Session states
     /// about itself — its Selection, its Workspace, its total Usage — while
@@ -4553,7 +4485,6 @@ impl SessionListItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct UnreadableSessionSummary {
     pub id: SessionId,
     pub title: String,
@@ -4563,7 +4494,6 @@ pub struct UnreadableSessionSummary {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionCatalogSnapshot {
     pub workspace_paths: WorkspacePaths,
     pub revision: SessionCatalogRevision,
@@ -4574,7 +4504,7 @@ pub struct SessionCatalogSnapshot {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum SessionCatalogChange {
     /// Stored content proved unreadable; clients refresh the containing root.
     Invalidated {
@@ -4673,7 +4603,6 @@ pub enum SessionCatalogChange {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionCatalogUpdate {
     pub revision: SessionCatalogRevision,
     pub change: SessionCatalogChange,
@@ -4694,7 +4623,6 @@ pub struct SessionCatalogUpdate {
 /// on a Remote stands with the Subagents beneath it there, as that Remote
 /// says of them, each named by that Remote as its `origin`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SubagentTreeSnapshot {
     pub revision: SubagentTreeRevision,
     pub top_level: SubagentTreeTopLevel,
@@ -4712,7 +4640,6 @@ pub struct SubagentTreeSnapshot {
 
 /// The top-level Session heading a tree.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SubagentTreeTopLevel {
     pub session_id: SessionId,
     pub title: String,
@@ -4782,7 +4709,6 @@ pub struct SubagentTreeTopLevel {
 /// `unanswered`, keeping what last said which Session it is and nothing that
 /// would give its work as current.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SubagentTreeSession {
     pub session_id: SessionId,
     /// The Remote the Session lives on, by the name the Server heading the
@@ -4861,7 +4787,6 @@ pub struct SubagentTreeSession {
 /// from any one row: a resumed Subagent is still one entry, and a resume or a
 /// Continuation of its Session sets it Working again (ADR 0031).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SubagentTreeEntry {
     pub session_id: SessionId,
     /// The Remote the Subagent's Session lives on, by the name the Server
@@ -4925,7 +4850,7 @@ pub struct SubagentTreeEntry {
 /// One change to a tree after its snapshot. An entry never moves: a spawn
 /// joins its spawner's Subagents last, and nothing else reorders them.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum SubagentTreeChange {
     /// A Subagent spawned. Its spawner is already in the tree, and the entry
     /// comes last among that spawner's Subagents. A Subagent beneath a
@@ -5019,7 +4944,6 @@ pub enum SubagentTreeChange {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SubagentTreeUpdate {
     pub revision: SubagentTreeRevision,
     pub change: SubagentTreeChange,
@@ -5160,7 +5084,6 @@ impl SubagentTreeSnapshot {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Prompt {
     pub id: PromptId,
     pub text: String,
@@ -5189,7 +5112,6 @@ pub struct Prompt {
 /// How a Prompt was taken: by the Turn begun for it, or by the working Turn
 /// its Agent took it into as a steer, at the moment the Server committed it.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct PromptTaking {
     pub turn_id: TurnId,
     /// When the Turn took it, on the Server's own clock — every moment it
@@ -5202,7 +5124,7 @@ pub struct PromptTaking {
 /// on the Prompt so the client that wrote it can tell, whatever it saw of
 /// the Session meanwhile, that the text is owed back to its composer.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "snake_case", tag = "reason")]
+#[serde(rename_all = "snake_case", tag = "reason")]
 pub enum PromptWithdrawal {
     /// The Prompt was held behind `turn_id`, the Turn a Compaction request
     /// began, which settled without its Compaction completing and without
@@ -5220,7 +5142,7 @@ pub enum PromptWithdrawal {
 /// told which Prompt so it can return the text to its own composer, where
 /// every other viewer only sees the Prompt go (ADR 0024).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "snake_case", tag = "outcome")]
+#[serde(rename_all = "snake_case", tag = "outcome")]
 pub enum InterruptOutcome {
     /// The interrupt stopped work already under way: an active Turn, or the
     /// Subagents that outlived one.
@@ -5234,7 +5156,6 @@ pub enum InterruptOutcome {
 /// a Turn of its own holding that one Compaction (ADR 0041). Only an idle,
 /// top-level Session on a Provider that compacts on request accepts it.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct CompactSessionRequest {
     /// What the summary should keep, in the user's words: everything typed
     /// after `/compact`. A Provider that takes no instructions refuses a
@@ -5247,7 +5168,6 @@ pub struct CompactSessionRequest {
 /// field means the Provider did not state it; a reported zero remains
 /// `Some(0)`, so absence is never fabricated into a number.
 #[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Usage {
     pub fresh_input_tokens: Option<u64>,
     pub cache_read_tokens: Option<u64>,
@@ -5437,7 +5357,6 @@ pub enum CostCoverage {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct CostRecord {
     pub cost: Cost,
     pub basis: CostBasis,
@@ -5450,7 +5369,6 @@ pub struct CostRecord {
 /// reporting lifetimes remain as records so reconnecting cannot erase frozen
 /// historical amounts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct CostDetails {
     pub coverage: CostCoverage,
     pub recorded_at: SessionTimestamp,
@@ -5460,7 +5378,6 @@ pub struct CostDetails {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct CostTotal {
     pub cost: Cost,
     pub is_partial: bool,
@@ -5479,7 +5396,6 @@ pub struct CostTotal {
 /// Provider that reports it already counts a whole Session, so summing two
 /// would count the same spend twice.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct UsageTotal {
     pub fresh_input_tokens: Option<u64>,
     pub cache_read_tokens: Option<u64>,
@@ -5647,7 +5563,6 @@ pub struct Turn {
 /// cumulative figure, never this Turn's increment — and Cost Coverage takes
 /// each Share's increments as it takes the Turn's.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelShare {
     pub model: ModelId,
     pub usage: Usage,
@@ -5669,7 +5584,6 @@ impl ModelShare {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct TurnWire {
     id: TurnId,
     prompt_id: Option<PromptId>,
@@ -5796,7 +5710,6 @@ impl Turn {
 
 /// Provider evidence of the concrete Model used beneath a routed selection.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelAttribution {
     pub provider: ProviderId,
     pub selected: ModelId,
@@ -5806,14 +5719,12 @@ pub struct ModelAttribution {
 /// Provider evidence of the concrete Model working in a Turn: the one last
 /// seen executing, while nothing since contradicts it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct WorkingModel {
     pub turn_id: TurnId,
     pub model: ModelAttribution,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Message {
     pub id: MessageId,
     pub turn_id: TurnId,
@@ -5865,7 +5776,6 @@ pub enum TranscriptItem {
 /// immediate child through which it is reached; the revision belongs to the
 /// owning descendant Session.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SubagentInterventions {
     pub session_id: SessionId,
     pub via_session_id: SessionId,
@@ -5893,14 +5803,12 @@ impl SubagentInterventions {
 /// and since when the Server heard it start. It is never stored, since no
 /// Watch outlives the Provider process that runs it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct WatchSummary {
     pub description: String,
     pub started_at: SessionTimestamp,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionSnapshot {
     pub title: String,
     /// The Icon Catalog name standing beside this Session's Title. See
@@ -6144,7 +6052,6 @@ impl SessionSnapshot {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionUpdate {
     pub session_id: SessionId,
     pub revision: SessionRevision,
@@ -6152,7 +6059,7 @@ pub struct SessionUpdate {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum SessionChange {
     WorkspaceChanged {
         workspace: Workspace,
@@ -6480,7 +6387,6 @@ pub enum SessionChange {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct InitialPrompt {
     pub id: PromptId,
     pub text: String,
@@ -6491,7 +6397,6 @@ pub struct InitialPrompt {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct CreateSessionRequest {
     #[serde(default)]
     pub preparation_id: Option<PreparationId>,
@@ -6509,7 +6414,6 @@ pub struct CreateSessionRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct AdmitPromptRequest {
     pub prompt: InitialPrompt,
     pub delivery: PromptDelivery,
@@ -6519,7 +6423,6 @@ pub struct AdmitPromptRequest {
 /// intent is carried rather than a toggle so a client that has been looking at
 /// a stale listing cannot flip a Session it meant to leave alone.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SettleSessionRequest {
     pub settled: bool,
 }
@@ -6530,7 +6433,6 @@ pub struct SettleSessionRequest {
 /// ever fills an absence, a chosen Icon replaces whatever the Session already
 /// carried — a user's choice always stands.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SetSessionIconRequest {
     pub icon: String,
 }
@@ -6540,7 +6442,6 @@ pub struct SetSessionIconRequest {
 /// carry is. A Title set this way replaces whatever stood, and a derivation
 /// still in flight never overwrites it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SetSessionTitleRequest {
     pub title: String,
 }
@@ -6548,14 +6449,13 @@ pub struct SetSessionTitleRequest {
 /// Where a Session is asked to Move (CONTEXT.md: Move). It names the
 /// destination alone: the Session it Moves is the one the request is sent to.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct MoveSessionRequest {
     pub destination: MoveDestination,
 }
 
 /// Where a Move takes a Session.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MoveDestination {
     /// A directory that exists on the Session's Server, named as the
     /// Directory Browser's path field names one: relative to the Session's
@@ -6576,7 +6476,7 @@ pub enum MoveDestination {
 
 /// What came of a Move the Session's Server took.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "outcome", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum MoveOutcome {
     /// The Session works in its destination from now on, as its summary
     /// says; its Provider follows at its next Turn.
@@ -6596,7 +6496,6 @@ pub enum MoveOutcome {
 /// A Move waiting for what the Session's Provider process is running to settle:
 /// the Activity recording it, and where it will take the Session (ADR 0059).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct PendingMove {
     pub activity_id: ActivityId,
     pub destination: ExecutionDirectory,
@@ -6612,7 +6511,6 @@ pub struct PendingMove {
 /// asked: as the derivation Setting in force there decides, and only where
 /// that Setting has a Provider to derive with.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionTitleProposalOffer {
     pub offered: bool,
 }
@@ -6621,7 +6519,6 @@ pub struct SessionTitleProposalOffer {
 /// asking. Only a proposal: nothing about the Session changes until the user
 /// keeps it by setting it as the Title.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionTitleProposal {
     pub title: String,
 }
@@ -6634,7 +6531,6 @@ pub struct SessionTitleProposal {
 /// ever fills an absence, a chosen Icon replaces whatever the Workspace
 /// already carried — a user's choice always stands.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SetWorkspaceIconRequest {
     pub workspace_id: WorkspaceId,
     pub icon: String,
@@ -6648,7 +6544,6 @@ pub struct SetWorkspaceIconRequest {
 /// again. Refused where this server cannot tell the Workspace is one of its
 /// own, or where the text runs longer than a Description may.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SetWorkspaceDescriptionRequest {
     pub workspace_id: WorkspaceId,
     /// Where the Workspace is presented — its [`Workspace::path`] — for one
@@ -6671,7 +6566,6 @@ pub struct SetWorkspaceDescriptionRequest {
 /// [`SessionErrorCode::CloneRefused`], or the Sidekick Workspace's own code —
 /// in its own words.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct CloneWorkspaceRequest {
     pub repository_url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -6687,7 +6581,6 @@ pub struct CloneWorkspaceRequest {
 /// in, so the Peer names it in the owning Server's own syntax as a listing
 /// lets it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ClonedWorkspace {
     pub workspace_paths: WorkspacePaths,
     pub workspace: Workspace,
@@ -6702,7 +6595,6 @@ pub struct ClonedWorkspace {
 /// listing is pushed on its Session catalog stream (ADR 0052), and its
 /// revision says which of the two a Client heard last is the newer.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct WorkspaceListing {
     pub revision: WorkspaceListingRevision,
     pub workspace_paths: WorkspacePaths,
@@ -6717,7 +6609,6 @@ pub struct WorkspaceListing {
 /// nothing, so a Client takes the run its Server's Session catalog stream
 /// speaks for.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct WorkspaceListingRevision {
     pub run: Uuid,
     pub changes: u64,
@@ -6748,7 +6639,6 @@ impl WorkspaceListingRevision {
 /// Nothing anyone wrote in it is carried, so it is small however long the
 /// work ran; what a Peer's Server follows its Sidekick's work there by.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionTreeOutline {
     /// When it was read, on the Server's own clock: everything it says
     /// happened at or before that moment, and nothing after.
@@ -6759,7 +6649,6 @@ pub struct SessionTreeOutline {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SnapshotWithSummary {
     pub snapshot: SessionSnapshot,
     pub summary: SessionSummary,
@@ -6768,13 +6657,11 @@ pub struct SnapshotWithSummary {
 /// One report that a Client has a root Session open in its main view. The
 /// identity makes transport retries one operation rather than later Views.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ViewSessionRequest {
     pub operation_id: ViewSessionOperationId,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct UpdateAgentSelectionRequest {
     pub operation_id: AgentSelectionOperationId,
     pub selection: AgentSelection,
@@ -6783,7 +6670,6 @@ pub struct UpdateAgentSelectionRequest {
 /// Pins one Provider-native Approval Posture on a Session, or resets it to
 /// follow the current Server Setting when `posture` is absent.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct UpdateApprovalPostureRequest {
     pub posture: Option<ApprovalPosture>,
 }
@@ -6961,17 +6847,37 @@ pub enum SessionErrorCode {
     /// the key was done; none was made in its place, and the next use tries
     /// again.
     IdentityKeyUnavailable,
+    /// A code this reader does not know, from a Server newer than it: what
+    /// went wrong is whatever the message beside it says (ADR-0078). No
+    /// Server sends it; a reader reads every code it was built without as
+    /// this one.
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionError {
     pub code: SessionErrorCode,
     pub message: String,
     /// Why a Remote the request was carried to could not be reached, where
-    /// its user can do something about it rather than wait.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// its user can do something about it rather than wait. A reason this
+    /// reader does not know reads as none, so the error is still read and
+    /// its message shown (ADR-0078).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "known_unreachable_reason"
+    )]
     pub unreachable: Option<UnreachableReason>,
+}
+
+/// An [`UnreachableReason`] where it is one this reader knows, and `None`
+/// where a newer Server gave one this reader was built without.
+fn known_unreachable_reason<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<UnreachableReason>, D::Error> {
+    Ok(Option::<serde_json::Value>::deserialize(deserializer)?
+        .and_then(|reason| serde_json::from_value(reason).ok()))
 }
 
 impl SessionErrorCode {
@@ -7068,7 +6974,6 @@ impl std::ops::DerefMut for Health {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct HealthWire {
     workspace_paths: WorkspacePaths,
     instance_id: Uuid,
@@ -7138,6 +7043,8 @@ impl std::ops::DerefMut for RuntimeDescriptor {
     }
 }
 
+/// How `runtime.json` spells a descriptor. Only a machine's own Clients read
+/// it, so it crosses no Pairing and stays strict.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RuntimeDescriptorWire {
@@ -7176,7 +7083,6 @@ pub enum ShutdownReason {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct ServerShutdown {
     pub instance_id: Uuid,
     pub reason: ShutdownReason,
@@ -7188,13 +7094,11 @@ pub struct ServerShutdown {
 /// comes with the listing a client asks for in answer, because the catalog
 /// carries the changes to a body of work rather than the work itself.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionCreated {
     pub session_id: SessionId,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionDeleted {
     pub session_id: SessionId,
 }
@@ -7202,7 +7106,6 @@ pub struct SessionDeleted {
 /// A Session set aside as done for now, or brought back, carried to a client
 /// that may be listing that Session without having it open.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionSettlementChanged {
     pub session_id: SessionId,
     pub settled_at: Option<SessionTimestamp>,
@@ -7213,7 +7116,6 @@ pub struct SessionSettlementChanged {
 /// listing says live work has been running for is only true while someone
 /// announces it changing.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionWorkingChanged {
     pub session_id: SessionId,
     pub working_since: Option<SessionTimestamp>,
@@ -7222,7 +7124,6 @@ pub struct SessionWorkingChanged {
 /// A Session began or stopped Monitoring, carried to a client that may be
 /// listing that Session without having it open.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionMonitoringChanged {
     pub session_id: SessionId,
     pub monitoring_since: Option<SessionTimestamp>,
@@ -7231,7 +7132,6 @@ pub struct SessionMonitoringChanged {
 /// The owning Server's current reading of one Worktree, carried independently
 /// of whether any listing surface is open.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct CheckoutStateChanged {
     pub checkout_id: CheckoutId,
     pub checkout_state: Option<CheckoutSummary>,
@@ -7240,7 +7140,6 @@ pub struct CheckoutStateChanged {
 /// A Session's complete Standing input, carried to a client that may be
 /// listing that Session without having it open.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionStandingInputsChanged {
     pub session_id: SessionId,
     pub inputs: SessionStandingInputs,
@@ -7250,7 +7149,6 @@ pub struct SessionStandingInputsChanged {
 /// — as the server rolled it up, carried to a client that may be listing that
 /// Session without having it open.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionUsageChanged {
     pub session_id: SessionId,
     pub total_usage: Option<UsageTotal>,
@@ -7260,7 +7158,6 @@ pub struct SessionUsageChanged {
 /// A Session's Title — and the Icon beside it — as a derivation left them,
 /// carried to a client that may be listing that Session without having it open.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionTitleChanged {
     pub session_id: SessionId,
     pub title: String,
@@ -7271,7 +7168,6 @@ pub struct SessionTitleChanged {
 /// to every client that may list a Session rooted there without having any of
 /// them open.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct WorkspaceIconChanged {
     pub workspace_id: WorkspaceId,
     pub icon: Option<String>,
@@ -7280,7 +7176,6 @@ pub struct WorkspaceIconChanged {
 /// A Workspace's Description as a derivation, a setting, or a clearing left
 /// it, carried to every client the way [`WorkspaceIconChanged`] is.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct WorkspaceDescriptionChanged {
     pub workspace_id: WorkspaceId,
     pub description: Option<WorkspaceDescription>,
@@ -7290,7 +7185,6 @@ pub struct WorkspaceDescriptionChanged {
 /// carried to a client that may be listing that Session without having it
 /// open.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct SessionRemoteSubsessionsChanged {
     pub session_id: SessionId,
     pub remote_subsessions: Vec<RemoteSession>,

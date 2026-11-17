@@ -44,6 +44,8 @@ mod remote_connection;
 mod session_catalog_stream;
 mod session_projection;
 mod session_stream;
+#[cfg(test)]
+mod stream_fixture;
 mod subagent_tree_stream;
 
 pub use keeper::{KeeperTimings, keep_server};
@@ -3078,6 +3080,67 @@ mod tests {
                     "{id}: {error:#}"
                 );
             }
+            server.abort();
+        }
+    }
+
+    /// A refusal under a code a newer Server added is read as the generic
+    /// code, and what a reader is shown is the message beside it.
+    mod an_error_code_this_build_does_not_know {
+        use axum::{
+            Json, Router,
+            http::StatusCode,
+            response::{IntoResponse, Response},
+            routing::get,
+        };
+
+        use super::attachment_fetch::fixture_client;
+        use crate::protocol::{SessionError, SessionErrorCode, SessionId};
+
+        const SAID: &str = "That Session is being tidied away; try again in a moment";
+
+        async fn refuse() -> Response {
+            (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({
+                    "code": "a_code_added_since_this_build",
+                    "message": SAID,
+                    "added_since_this_build": { "by": "a newer Server" },
+                })),
+            )
+                .into_response()
+        }
+
+        #[tokio::test]
+        async fn a_command_refused_so_reads_as_the_generic_code_with_its_message_shown() {
+            let (client, server) =
+                fixture_client(Router::new().route("/v1/sessions/{id}", get(refuse))).await;
+
+            let error = client
+                .read_session(SessionId::new())
+                .await
+                .expect_err("the Server refused the read");
+
+            assert_eq!(error.to_string(), SAID, "{error:#}");
+            assert_eq!(
+                error
+                    .downcast_ref::<SessionError>()
+                    .map(|refusal| refusal.code),
+                Some(SessionErrorCode::Other)
+            );
+            server.abort();
+        }
+
+        #[tokio::test]
+        async fn a_session_stream_refused_so_shows_its_message() {
+            let (client, server) =
+                fixture_client(Router::new().route("/v1/sessions/{id}/events", get(refuse))).await;
+
+            let Err(error) = client.subscribe_session(SessionId::new()).await else {
+                panic!("the Server refused the stream");
+            };
+
+            assert!(format!("{error:#}").contains(SAID), "{error:#}");
             server.abort();
         }
     }

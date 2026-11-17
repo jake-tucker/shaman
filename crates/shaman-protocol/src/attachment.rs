@@ -36,7 +36,7 @@ impl fmt::Display for AttachmentId {
 /// What an Attachment is, with the facts only that kind has. An image is the
 /// only kind today; another kind is another variant.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum AttachmentKind {
     /// A PNG, JPEG, GIF, or WebP image, measured in pixels from its header.
     Image { width: u32, height: u32 },
@@ -44,7 +44,6 @@ pub enum AttachmentKind {
 
 /// Everything a client learns of a stored Attachment short of its bytes.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct AttachmentDescriptor {
     pub id: AttachmentId,
     pub kind: AttachmentKind,
@@ -58,7 +57,6 @@ pub struct AttachmentDescriptor {
 /// stored Attachment it stands for, carried beside the text as a Skill
 /// Invocation is. Repeated labels remain separate bindings.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct AttachmentBinding {
     pub attachment_id: AttachmentId,
     /// The label exactly as it stands in the text at `span`.

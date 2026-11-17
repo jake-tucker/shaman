@@ -281,7 +281,10 @@ pub(super) async fn consume(
             Err(EventStreamError::Transport(_)) => return Ok(StreamOutcome::Disconnected),
             Err(error) => bail!("Session catalog stream failed: {error}"),
         };
-        match decode_event(event, revision)? {
+        let Some(event) = decode_event(event, revision)? else {
+            continue;
+        };
+        match event {
             CatalogEvent::Snapshot(snapshot) => {
                 let initial_checkout_states = snapshot.checkout_states.clone();
                 let reconnect_snapshot = known_session_ids.is_some().then(|| snapshot.clone());
@@ -526,8 +529,14 @@ enum CatalogEvent {
     Workspaces(WorkspaceListing),
 }
 
-fn decode_event(event: Event, revision: Option<SessionCatalogRevision>) -> Result<CatalogEvent> {
-    match event.event.as_str() {
+/// What `event` carries, and `None` for an event under a name this reader was
+/// built without, which a newer Server may send and which is passed over
+/// (ADR-0078).
+fn decode_event(
+    event: Event,
+    revision: Option<SessionCatalogRevision>,
+) -> Result<Option<CatalogEvent>> {
+    let decoded = match event.event.as_str() {
         SESSION_CATALOG_SNAPSHOT_EVENT if revision.is_none() => {
             let snapshot: SessionCatalogSnapshot =
                 serde_json::from_str(&event.data).context("decode Session catalog snapshot")?;
@@ -560,8 +569,15 @@ fn decode_event(event: Event, revision: Option<SessionCatalogRevision>) -> Resul
             let listing = serde_json::from_str(&event.data).context("decode Workspace listing")?;
             Ok(CatalogEvent::Workspaces(listing))
         }
-        name => bail!("server sent unknown Session catalog event type '{name}'"),
-    }
+        name => {
+            tracing::debug!(
+                event = name,
+                "passed over a Session catalog event this build does not know"
+            );
+            return Ok(None);
+        }
+    };
+    decoded.map(Some)
 }
 
 fn validate_event_id(id: &str, revision: SessionCatalogRevision) -> Result<()> {
@@ -709,5 +725,67 @@ mod tests {
             .is_err(),
             "Monitoring reported on a Session the catalog never listed is a discontinuity"
         );
+    }
+
+    #[tokio::test]
+    async fn an_event_a_newer_server_added_is_passed_over_and_the_stream_goes_on() {
+        use crate::managed_client::stream_fixture::stream_of;
+
+        let listed = SessionId::new();
+        let created = SessionId::new();
+        let snapshot = SessionCatalogSnapshot {
+            workspace_paths: Default::default(),
+            revision: SessionCatalogRevision(2),
+            session_ids: vec![listed],
+            checkout_states: Vec::new(),
+        };
+        let update = SessionCatalogUpdate {
+            revision: SessionCatalogRevision(3),
+            change: SessionCatalogChange::Created {
+                session_id: created,
+            },
+        };
+        let response = stream_of(&[
+            (
+                SESSION_CATALOG_SNAPSHOT_EVENT,
+                Some(2),
+                serde_json::to_string(&snapshot).expect("encode the snapshot"),
+            ),
+            // One a newer Server sends with no revision of its own, and one
+            // with a shape this build could not read even if it knew the name.
+            (
+                "session_catalog_weather",
+                None,
+                r#"{"sky":"clear"}"#.to_owned(),
+            ),
+            ("server_horoscope", Some(9), "not json at all".to_owned()),
+            (
+                SESSION_CATALOG_UPDATED_EVENT,
+                Some(3),
+                serde_json::to_string(&update).expect("encode the update"),
+            ),
+        ]);
+        let (events, mut received) = mpsc::channel(8);
+        let (hydrated, was_hydrated) = oneshot::channel();
+        let mut known = None;
+
+        let outcome = consume(response, &events, &mut known, hydrated, true, None)
+            .await
+            .expect("an event this build does not know breaks nothing");
+
+        assert!(matches!(outcome, StreamOutcome::Disconnected));
+        was_hydrated
+            .await
+            .expect("the snapshot hydrated the stream");
+        drop(events);
+        assert_eq!(
+            received.recv().await,
+            Some(ManagedEvent::SessionCreated(SessionCreated {
+                session_id: created
+            })),
+            "the change after the events passed over follows its snapshot unbroken"
+        );
+        assert_eq!(received.recv().await, None);
+        assert_eq!(known, Some(HashSet::from([listed, created])));
     }
 }

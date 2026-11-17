@@ -62,7 +62,7 @@ fn message_model_evidence_and_its_retraction_have_versioned_wire_shapes() {
 }
 
 #[test]
-fn approval_subjects_have_strict_provider_neutral_wire_shapes() {
+fn approval_subjects_have_provider_neutral_wire_shapes() {
     let subjects = [
         json!({
             "kind": "command",
@@ -101,12 +101,15 @@ fn approval_subjects_have_strict_provider_neutral_wire_shapes() {
             expected
         );
     }
-    assert!(
+    assert_eq!(
         serde_json::from_value::<ApprovalSubject>(
-            json!({"kind": "network", "host_or_url": "example.test", "opaque": true})
+            json!({"kind": "network", "host_or_url": "example.test", "added_since": true})
         )
-        .is_err(),
-        "Approval subjects reject untyped extension fields"
+        .expect("a field a newer side added is passed over"),
+        ApprovalSubject::Network {
+            host_or_url: "example.test".to_owned()
+        },
+        "what a reader keeps of an Approval subject is only what it knows"
     );
 }
 
@@ -671,9 +674,9 @@ fn session_summary_round_trips_with_discovery_metadata() {
     assert_eq!(decoded.own_cost, None);
 }
 
-#[test]
-fn provider_neutral_session_snapshot_round_trips_through_json() {
-    let snapshot = SessionSnapshot {
+/// A Session's snapshot with something in most of what it carries.
+fn session_snapshot_fixture() -> SessionSnapshot {
+    SessionSnapshot {
         title: String::new(),
         icon: None,
         session: Session {
@@ -810,7 +813,12 @@ fn provider_neutral_session_snapshot_round_trips_through_json() {
         total_cost: None,
         own_cost: None,
         attachments: Vec::new(),
-    };
+    }
+}
+
+#[test]
+fn provider_neutral_session_snapshot_round_trips_through_json() {
+    let snapshot = session_snapshot_fixture();
     let expected = json!({
         "title": "",
         "icon": null,
@@ -1604,13 +1612,19 @@ fn a_clone_asked_of_a_remote_and_its_answer_cross_the_pairing() {
         serde_json::from_value::<CloneWorkspaceRequest>(encoded).expect("decode a Clone"),
         named
     );
-    assert!(
+    assert_eq!(
         serde_json::from_value::<CloneWorkspaceRequest>(json!({
             "repository_url": "https://example.com/org/atlas.git",
             "depth": 1,
         }))
-        .is_err(),
-        "a Clone takes nothing it does not know"
+        .expect("a field a newer Peer added is passed over"),
+        CloneWorkspaceRequest {
+            repository_url: "https://example.com/org/atlas.git".to_owned(),
+            root: None,
+            name: None,
+            branch: None,
+        },
+        "a Clone is read as far as this build knows it"
     );
 
     let cloned = ClonedWorkspace {
@@ -2856,7 +2870,7 @@ fn file_change_activity_lifecycle_uses_typed_incremental_updates() {
 }
 
 #[test]
-fn file_change_updates_reject_opaque_public_protocol_fields() {
+fn file_change_updates_keep_only_the_fields_the_protocol_names() {
     let update = json!({
         "session_id": "0198b27e-26ec-7c4c-a83b-a83a4787453f",
         "revision": 10,
@@ -2868,9 +2882,20 @@ fn file_change_updates_reject_opaque_public_protocol_fields() {
         }]
     });
 
-    assert!(
-        serde_json::from_value::<SessionUpdate>(update).is_err(),
-        "public Session changes must reject arbitrary Provider fields"
+    let read = serde_json::from_value::<SessionUpdate>(update.clone())
+        .expect("a field the protocol does not name is passed over");
+    assert_eq!(
+        serde_json::to_value(&read).expect("encode the update read"),
+        json!({
+            "session_id": update["session_id"],
+            "revision": 10,
+            "changes": [{
+                "type": "file_change_status_changed",
+                "activity_id": "0198b27e-345a-700e-ae3b-d971c57fbe87",
+                "status": "completed"
+            }]
+        }),
+        "nothing a Provider adds rides through a reader onto the wire again"
     );
 }
 
@@ -2994,7 +3019,7 @@ fn agent_selection_command_round_trips_with_its_operation_identity() {
             .expect("decode Agent Selection command"),
         command
     );
-    assert!(
+    assert_eq!(
         serde_json::from_value::<UpdateAgentSelectionRequest>(json!({
             "operation_id": "0198b27e-3aa1-72dd-9ec8-65398d17ec16",
             "selection": {
@@ -3004,8 +3029,9 @@ fn agent_selection_command_round_trips_with_its_operation_identity() {
             },
             "unexpected": true
         }))
-        .is_err(),
-        "Agent Selection commands reject unknown fields"
+        .expect("a field a newer Peer added is passed over"),
+        command,
+        "an Agent Selection command is read past fields a newer Peer adds"
     );
 }
 
@@ -3028,13 +3054,14 @@ fn viewed_command_round_trips_with_its_operation_identity() {
         serde_json::from_value::<ViewSessionRequest>(expected).expect("decode Viewed command"),
         command
     );
-    assert!(
+    assert_eq!(
         serde_json::from_value::<ViewSessionRequest>(json!({
             "operation_id": "0198b27e-4aa1-72dd-9ec8-65398d17ec16",
             "unexpected": true
         }))
-        .is_err(),
-        "Viewed commands reject unknown fields"
+        .expect("a field a newer Peer added is passed over"),
+        command,
+        "a Viewed command is read past fields a newer Peer adds"
     );
 }
 
@@ -3158,11 +3185,14 @@ fn an_attachment_descriptor_carries_a_typed_kind_and_never_the_bytes() {
         serde_json::from_value::<AttachmentDescriptor>(encoded.clone()).unwrap(),
         descriptor
     );
-    let mut with_bytes = encoded;
+    let mut with_bytes = encoded.clone();
     with_bytes["bytes"] = json!("iVBORw0KGgo=");
-    assert!(
-        serde_json::from_value::<AttachmentDescriptor>(with_bytes).is_err(),
-        "a descriptor carrying bytes is refused"
+    let read = serde_json::from_value::<AttachmentDescriptor>(with_bytes)
+        .expect("a field the protocol does not name is passed over");
+    assert_eq!(
+        serde_json::to_value(&read).unwrap(),
+        encoded,
+        "bytes sent beside a descriptor are not held by its reader"
     );
 }
 
@@ -3415,7 +3445,7 @@ fn session_delta_status_and_error_contracts_use_stable_provider_neutral_shapes()
 }
 
 #[test]
-fn model_descriptors_and_option_values_use_strict_typed_json() {
+fn model_descriptors_and_option_values_use_typed_json() {
     let descriptor = ModelDescriptor {
         provider: ProviderId::new("codex"),
         id: ModelId::new("provider/model:opaque"),
@@ -3551,11 +3581,12 @@ fn model_descriptors_and_option_values_use_strict_typed_json() {
             { "type": "toggle", "enabled": true }
         ])
     );
-    assert!(
+    assert_eq!(
         serde_json::from_value::<ModelOptionValue>(
             json!({ "type": "toggle", "enabled": true, "provider_data": 1 })
         )
-        .is_err()
+        .expect("a field a newer side added is passed over"),
+        ModelOptionValue::Toggle { enabled: true }
     );
 }
 
@@ -3863,9 +3894,11 @@ fn a_compaction_request_and_the_turn_it_begins_travel_on_the_wire() {
         .expect("encode a Compaction request"),
         json!({"instructions": "Keep the parser notes"})
     );
-    assert!(
-        serde_json::from_value::<CompactSessionRequest>(json!({"instruction": "typo"})).is_err(),
-        "a request naming anything else is refused rather than read as bare"
+    assert_eq!(
+        serde_json::from_value::<CompactSessionRequest>(json!({"added_since": "a newer Peer"}))
+            .expect("a field a newer Peer added is passed over"),
+        CompactSessionRequest { instructions: None },
+        "a request naming only what this build does not know reads as bare"
     );
 
     let turn = json!({
@@ -4050,5 +4083,115 @@ fn a_superseded_message_and_a_route_row_keep_their_wire_shape() {
     assert_eq!(
         serde_json::to_value(MessageStatus::Superseded).expect("encode the status"),
         json!("superseded")
+    );
+}
+
+/// `value` as a Server or a Peer newer than this build might send it: every
+/// object in it carries a field this build was built without (ADR-0078).
+fn as_a_newer_side_sends(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(fields) => {
+            let mut fields: serde_json::Map<String, serde_json::Value> = fields
+                .into_iter()
+                .map(|(name, value)| (name, as_a_newer_side_sends(value)))
+                .collect();
+            fields.insert(
+                "added_since_this_build".to_owned(),
+                json!({ "by": "a newer side", "nested": [1, 2, 3] }),
+            );
+            serde_json::Value::Object(fields)
+        }
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.into_iter().map(as_a_newer_side_sends).collect())
+        }
+        other => other,
+    }
+}
+
+#[test]
+fn a_session_snapshot_from_a_newer_server_is_read_past_every_field_it_adds() {
+    let snapshot = session_snapshot_fixture();
+    let sent = as_a_newer_side_sends(serde_json::to_value(&snapshot).expect("encode snapshot"));
+
+    assert_eq!(
+        serde_json::from_value::<SessionSnapshot>(sent)
+            .expect("a field added at any depth is passed over"),
+        snapshot
+    );
+}
+
+#[test]
+fn a_request_from_a_newer_peer_is_read_past_every_field_it_adds() {
+    let command = CreateSessionRequest {
+        session_id: Some(SessionId::from_uuid(fixture_id(
+            "0198b27e-26ec-7c4c-a83b-a83a4787453f",
+        ))),
+        preparation_id: None,
+        agent_selection: Some(AgentSelection {
+            provider: ProviderId::new("codex"),
+            model: ModelId::new("gpt-5"),
+            options: vec![ModelOptionSelection {
+                id: ModelOptionId::new("reasoning_effort"),
+                value: ModelOptionValue::Select {
+                    choice: ModelOptionChoiceId::new("high"),
+                },
+            }],
+        }),
+        execution_directory: shaman::protocol::ExecutionDirectory {
+            path: PathBuf::from("/work/shaman"),
+        },
+        prompt: InitialPrompt {
+            id: PromptId::from_uuid(fixture_id("0198b27e-2a7e-7562-b80d-54aa50c360f9")),
+            text: "Explain $review this workspace".to_owned(),
+            skill_invocations: vec![SkillInvocation {
+                skill_id: SkillId::new("review"),
+                name: "review".to_owned(),
+                scope: None,
+                span: TextSpan { start: 8, end: 15 },
+            }],
+            attachments: Vec::new(),
+        },
+    };
+    let sent = as_a_newer_side_sends(serde_json::to_value(&command).expect("encode command"));
+
+    assert_eq!(
+        serde_json::from_value::<CreateSessionRequest>(sent)
+            .expect("a field added at any depth is passed over"),
+        command
+    );
+}
+
+#[test]
+fn an_error_code_a_newer_server_added_reads_as_other_with_its_message_kept() {
+    let error = serde_json::from_value::<SessionError>(as_a_newer_side_sends(json!({
+        "code": "a_code_added_since_this_build",
+        "message": "The Remote cannot do that while it is mid-upgrade",
+    })))
+    .expect("an error with a code this reader does not know is still read");
+
+    assert_eq!(error.code, SessionErrorCode::Other);
+    assert_eq!(
+        error.to_string(),
+        "The Remote cannot do that while it is mid-upgrade",
+        "the message beside the code is what a reader is shown"
+    );
+}
+
+#[test]
+fn an_unreachable_reason_a_newer_server_added_reads_as_none_and_keeps_its_error() {
+    let error = serde_json::from_value::<SessionError>(json!({
+        "code": "pairing_connection_failed",
+        "message": "The Remote could not be reached",
+        "unreachable": { "reason": "a_reason_added_since_this_build", "relay": "relay.test" },
+    }))
+    .expect("an error with a reason this reader does not know is still read");
+
+    assert_eq!(
+        error,
+        SessionError {
+            code: SessionErrorCode::PairingConnectionFailed,
+            message: "The Remote could not be reached".to_owned(),
+            unreachable: None,
+        }
     );
 }

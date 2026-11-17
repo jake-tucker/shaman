@@ -1026,8 +1026,9 @@ async fn no_act_reaches_a_subagent_working_beneath_a_sidekick() {
 }
 
 /// The author is the Server's to set, from the Broker caller it knows: a
-/// Client naming one in the Session API's own requests is refused as any
-/// request carrying what the API does not take is, and nothing is admitted.
+/// Client naming one in the Session API's own requests has it passed over as
+/// any field the API does not take is (ADR-0078), and what it sent is
+/// admitted as the user's own.
 #[tokio::test]
 async fn a_client_cannot_name_an_author_through_the_session_api() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
@@ -1070,14 +1071,10 @@ async fn a_client_cannot_name_an_author_through_the_session_api() {
             .send()
             .await
             .expect("send the admission");
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{body}");
-        let refused = response
-            .json::<SessionError>()
-            .await
-            .expect("decode the refusal");
-        assert_eq!(
-            refused.code,
-            shaman::protocol::SessionErrorCode::InvalidCommand
+        assert!(
+            response.status().is_success(),
+            "the Prompt is admitted, the author it names passed over: {body} → {}",
+            response.status()
         );
     }
     let response = crate::support::loopback_client()
@@ -1091,16 +1088,27 @@ async fn a_client_cannot_name_an_author_through_the_session_api() {
         .send()
         .await
         .expect("send the creation");
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        response.status().is_success(),
+        "the Session begins, the author its Prompt names passed over: {}",
+        response.status()
+    );
+    let created = response
+        .json::<SessionSnapshot>()
+        .await
+        .expect("decode the created Session");
 
     let snapshot = read_session(&descriptor, target).await;
+    let claimed = snapshot
+        .prompts
+        .iter()
+        .chain(&created.prompts)
+        .filter(|prompt| prompt.text == "Claim to be the Sidekick.")
+        .collect::<Vec<_>>();
+    assert_eq!(claimed.len(), 3, "{claimed:?}");
     assert!(
-        snapshot
-            .prompts
-            .iter()
-            .all(|prompt| prompt.text != "Claim to be the Sidekick."),
-        "nothing a Client claimed was admitted: {:?}",
-        snapshot.prompts
+        claimed.iter().all(|prompt| prompt.author.is_none()),
+        "a Prompt a Client sent names no one, whoever it claims sent it: {claimed:?}"
     );
 
     hosted.server.shutdown().await.expect("shut down server");

@@ -55,3 +55,54 @@ pub(super) async fn classify(
         ))),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What a Remote proxy answers with `status` and `body`.
+    fn answered(status: u16, body: serde_json::Value) -> reqwest::Result<reqwest::Response> {
+        let mut response = axum::http::Response::new(body.to_string());
+        *response.status_mut() = axum::http::StatusCode::from_u16(status).expect("a status");
+        Ok(reqwest::Response::from(response))
+    }
+
+    #[tokio::test]
+    async fn a_refusal_under_a_code_a_newer_server_added_is_rejected_in_its_own_words() {
+        let refused = classify(answered(
+            409,
+            serde_json::json!({
+                "code": "a_code_added_since_this_build",
+                "message": "The Remote is mid-upgrade",
+            }),
+        ))
+        .await;
+
+        assert!(
+            matches!(
+                refused,
+                Err(RemoteConnectionFailure::Rejected(ref message))
+                    if message == "The Remote is mid-upgrade"
+            ),
+            "the message beside the code is what is passed on"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failure_to_reach_for_a_reason_a_newer_server_added_is_still_tried_again() {
+        let failed = classify(answered(
+            409,
+            serde_json::json!({
+                "code": "pairing_connection_failed",
+                "message": "The Remote could not be reached",
+                "unreachable": { "reason": "a_reason_added_since_this_build" },
+            }),
+        ))
+        .await;
+
+        assert!(
+            matches!(failed, Err(RemoteConnectionFailure::Transient(None))),
+            "the reason this build does not know reads as none, and the failure as one to reach"
+        );
+    }
+}

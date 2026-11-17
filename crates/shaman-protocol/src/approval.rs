@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use crate::ApprovalId;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Approval {
     pub id: ApprovalId,
     pub subject: ApprovalSubject,
@@ -14,7 +13,7 @@ pub struct Approval {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ApprovalSubject {
     Command {
         command: String,
@@ -42,7 +41,7 @@ pub enum ApprovalSubject {
 
 /// One best-effort semantic action parsed from a command line by its Provider.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CommandAction {
     Read {
         command: String,

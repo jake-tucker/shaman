@@ -740,7 +740,9 @@ async fn no_sidekick_answers_a_questionnaire_in_a_session_of_the_sidekick_worksp
 
 /// A Client's submission carries no author: the Session API takes none from
 /// a Client, so the user's Answer can never be passed off as a Sidekick's,
-/// nor a Sidekick's claimed by a Client.
+/// nor a Sidekick's claimed by a Client. One naming an author anyway is read
+/// as every reader reads a field it does not take (ADR-0078): passed over,
+/// the Answer standing as the user's own.
 #[tokio::test]
 async fn a_client_cannot_name_an_author_for_its_answer() {
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
@@ -757,8 +759,6 @@ async fn a_client_cannot_name_an_author_for_its_answer() {
         start_sidekick(&descriptor, &mut claude).await;
     let (asking, mut asking_provider) =
         started_session(&descriptor, &mut claude, workspace.path(), "Run the tests.").await;
-    let questionnaire = where_to_run();
-    ask(&descriptor, asking, &asking_provider, &questionnaire).await;
     let answer = users_own_answer()["answer"].clone();
     let author = serde_json::to_value(sidekick_author(sidekick_id)).expect("encode an author");
 
@@ -766,22 +766,31 @@ async fn a_client_cannot_name_an_author_for_its_answer() {
         json!({ "kind": "answer", "answer": answer, "author": author }),
         json!({ "kind": "answer", "answer": { "questions": answer["questions"], "author": author } }),
     ] {
-        let response = client_answers(&descriptor, asking, questionnaire.id, &forged).await;
+        let questionnaire = where_to_run();
+        ask(&descriptor, asking, &asking_provider, &questionnaire).await;
+        let (submitted, _) = tokio::join!(
+            client_answers(&descriptor, asking, questionnaire.id, &forged),
+            async {
+                timeout(
+                    PROGRESS_DEADLINE,
+                    asking_provider.next_questionnaire_submission(),
+                )
+                .await
+                .expect("the Answer reaches the Agent")
+            },
+        );
         assert!(
-            response.status().is_client_error(),
-            "a submission naming an author is refused: {forged} → {}",
-            response.status()
+            submitted.status().is_success(),
+            "the Answer is taken, the author it names passed over: {forged} → {}",
+            submitted.status()
+        );
+        assert_eq!(
+            stood(&read_session(&descriptor, asking).await, questionnaire.id)
+                .map(|(outcome, _, author)| (outcome, author)),
+            Some((QuestionnaireOutcome::Answered, None)),
+            "an Answer a Client sent names no one, whoever it claims gave it: {forged}"
         );
     }
-    assert!(asking_provider.try_next_questionnaire_delivery().is_none());
-
-    user_answers(&descriptor, asking, questionnaire.id, &mut asking_provider).await;
-    assert_eq!(
-        stood(&read_session(&descriptor, asking).await, questionnaire.id)
-            .map(|(outcome, _, author)| (outcome, author)),
-        Some((QuestionnaireOutcome::Answered, None)),
-        "the user's own Answer names no one"
-    );
 
     server.shutdown().await.expect("shut down server");
 }

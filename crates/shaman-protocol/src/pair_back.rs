@@ -16,7 +16,6 @@ pub const PAIR_BACK_EVENT: &str = "pair_back";
 /// Every offer to pair back a Server has to do with: those its Peers made it,
 /// for its user to answer, and those it made its Remotes.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct PairBackOffers {
     pub held: Vec<HeldOffer>,
     pub made: Vec<MadeOffer>,
@@ -25,7 +24,6 @@ pub struct PairBackOffers {
 /// An offer a Peer made this Server, at the end of the ceremony that formed
 /// their Pairing: to let it reach that Peer as well.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct HeldOffer {
     pub id: Uuid,
     /// The name the Peer is known by, which it chose and which can be shown.
@@ -46,7 +44,6 @@ pub struct HeldOffer {
 
 /// An accepted offer, waiting on the machine that made it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct OfferAcceptance {
     /// The name the reader gave the Remote.
     pub name: String,
@@ -57,7 +54,6 @@ pub struct OfferAcceptance {
 /// An offer this Server made a Remote, which stands until the Remote's user
 /// answers it or this Server's withdraws it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct MadeOffer {
     pub id: Uuid,
     /// The Remote it was made to, by this Server's name for it.
@@ -71,7 +67,7 @@ pub struct MadeOffer {
 
 /// Why an accepted offer has not come to be a Pairing.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum OfferHeldUp {
     /// The machine that made it is not Serving, so it offers nothing.
     ServingOff,
@@ -113,7 +109,7 @@ pub enum RedemptionFailure {
 
 /// A reader's answer to an offer their Server holds.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum AnswerOfferRequest {
     /// Let the machine that made it be reached, as a Remote named `name`.
     Accept {
@@ -124,14 +120,12 @@ pub enum AnswerOfferRequest {
 
 /// Claims of the Server the Notice of an offer, for the Client run `claimant`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct OfferNoticeClaim {
     pub claimant: Uuid,
 }
 
 /// Whether the claim gave that Client the Notice, to raise.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct OfferNoticeClaimed {
     pub claimed: bool,
 }

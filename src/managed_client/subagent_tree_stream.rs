@@ -188,7 +188,8 @@ async fn consume(
             }
         };
         let event = match decode_event(event, &mut revision) {
-            Ok(event) => event,
+            Ok(Some(event)) => event,
+            Ok(None) => continue,
             Err(error) => {
                 tracing::warn!(%error, "Subagent tree stream broke its protocol");
                 return StreamOutcome::Disconnected { hydrated };
@@ -204,11 +205,14 @@ async fn consume(
     }
 }
 
+/// What `event` carries, and `None` for an event under a name this reader was
+/// built without, which a newer Server may send and which is passed over
+/// (ADR-0078).
 fn decode_event(
     event: eventsource_stream::Event,
     revision: &mut Option<SubagentTreeRevision>,
-) -> Result<SubagentTreeEvent> {
-    match event.event.as_str() {
+) -> Result<Option<SubagentTreeEvent>> {
+    let decoded = match event.event.as_str() {
         SUBAGENT_TREE_SNAPSHOT_EVENT => {
             if revision.is_some() {
                 bail!("Subagent tree stream sent more than one snapshot");
@@ -235,8 +239,15 @@ fn decode_event(
                 change => SubagentTreeEvent::Changed(change),
             })
         }
-        name => bail!("server sent unknown Subagent tree event type '{name}'"),
-    }
+        name => {
+            tracing::debug!(
+                event = name,
+                "passed over a Subagent tree event this build does not know"
+            );
+            return Ok(None);
+        }
+    };
+    decoded.map(Some)
 }
 
 fn validate_event_id(id: &str, revision: SubagentTreeRevision) -> Result<()> {
@@ -307,13 +318,13 @@ mod tests {
                 &mut revision
             )
             .expect("the snapshot opens the stream"),
-            SubagentTreeEvent::Snapshot(opened)
+            Some(SubagentTreeEvent::Snapshot(opened))
         );
         let next = settle(5);
         assert_eq!(
             decode_event(event(SUBAGENT_TREE_UPDATED_EVENT, 5, &next), &mut revision)
                 .expect("the next revision follows"),
-            SubagentTreeEvent::Changed(next.change)
+            Some(SubagentTreeEvent::Changed(next.change))
         );
         assert!(
             decode_event(
@@ -343,7 +354,7 @@ mod tests {
                 &mut revision
             )
             .expect("the deletion follows in sequence"),
-            SubagentTreeEvent::Deleted
+            Some(SubagentTreeEvent::Deleted)
         );
     }
 
@@ -662,6 +673,53 @@ mod tests {
         ));
         assert_eq!(next_event(&mut subscription).await, None);
         assert_eq!(server.connections(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_event_a_newer_server_added_is_passed_over_and_the_stream_goes_on() {
+        use crate::managed_client::stream_fixture::stream_of;
+
+        let opened = snapshot(4);
+        let next = settle(5);
+        let response = stream_of(&[
+            (
+                SUBAGENT_TREE_SNAPSHOT_EVENT,
+                Some(4),
+                serde_json::to_string(&opened).expect("encode the snapshot"),
+            ),
+            // One a newer Server sends with no revision of its own, and one
+            // with a shape this build could not read even if it knew the name.
+            ("subagent_tree_pruned", None, r#"{"leaves":3}"#.to_owned()),
+            (
+                "subagent_tree_watered",
+                Some(40),
+                "not json at all".to_owned(),
+            ),
+            (
+                SUBAGENT_TREE_UPDATED_EVENT,
+                Some(5),
+                serde_json::to_string(&next).expect("encode the update"),
+            ),
+        ]);
+        let (events, mut received) = mpsc::channel(8);
+
+        let outcome = consume(response, &events).await;
+
+        assert!(
+            matches!(outcome, StreamOutcome::Disconnected { hydrated: true }),
+            "the stream ends as its body does, its snapshot taken"
+        );
+        drop(events);
+        assert_eq!(
+            received.recv().await,
+            Some(SubagentTreeEvent::Snapshot(opened))
+        );
+        assert_eq!(
+            received.recv().await,
+            Some(SubagentTreeEvent::Changed(next.change)),
+            "the change after the events passed over follows its snapshot unbroken"
+        );
+        assert_eq!(received.recv().await, None);
     }
 
     #[test]

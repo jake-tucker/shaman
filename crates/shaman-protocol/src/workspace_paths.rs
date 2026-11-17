@@ -53,7 +53,6 @@ const SIDEKICK_WORKSPACE_NAME: &str = "Sidekick";
 /// The owning Server's resolved home and path syntax. Paths stay strings here:
 /// a Client's native `Path` parser cannot interpret another platform's roots.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct WorkspacePaths {
     pub home: Option<String>,
     pub style: PathStyle,
