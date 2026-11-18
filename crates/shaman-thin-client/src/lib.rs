@@ -16,9 +16,10 @@ use std::{
     fmt,
     path::PathBuf,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
-use shaman_pairing::IdentityMaterial;
+use shaman_pairing::{GivenIdentity, IdentityMaterial, Redeemer, RedeemerTimings};
 use tokio::{
     runtime::Runtime,
     sync::{Mutex as AsyncMutex, watch},
@@ -27,25 +28,66 @@ use tokio::{
 
 mod device;
 mod identity;
+mod pairing;
+mod remotes;
 
 pub use device::ThisDevice;
 use device::{DeviceRecord, Records};
 pub use identity::{KeySigner, SignError};
+pub use pairing::{InviteReading, OfferedWay, PairingOutcome, ReadInvite, TryInstead};
+use remotes::Remotes;
+pub use remotes::{Outlook, ServerRow, Servers, WayRow, WayState};
 
 uniffi::setup_scaffolding!();
+
+/// How long the core gives what it waits on: its own, so a test injects
+/// milliseconds.
+#[derive(Clone, Copy, Debug)]
+pub struct CoreTimings {
+    /// How the redeemer reaches each Remote.
+    pub redeemer: RedeemerTimings,
+    /// How long confirming a pairing keeps dialling while no way answers,
+    /// so that allowing the local network prompt is followed by success.
+    pub pairing_keeps_dialling: Duration,
+    /// How long confirming a pairing waits between one dial that no way
+    /// answered and the next.
+    pub pairing_redial: Duration,
+}
+
+impl Default for CoreTimings {
+    fn default() -> Self {
+        Self {
+            redeemer: RedeemerTimings::default(),
+            pairing_keeps_dialling: Duration::from_secs(8),
+            pairing_redial: Duration::from_millis(500),
+        }
+    }
+}
 
 /// The core of one thin Client, kept in one directory.
 #[derive(uniffi::Object)]
 pub struct ThinClient {
     /// Every act and every listener runs here, so nothing Swift calls needs
-    /// a runtime of its own, and UniFFI's `tokio` feature is not used.
-    runtime: Runtime,
+    /// a runtime of its own, and UniFFI's `tokio` feature is not used. Shut
+    /// down in the background as the core goes, wherever it goes from.
+    runtime: Option<Runtime>,
+    inner: Arc<Inner>,
+}
+
+/// Everything the core holds, shared by the acts running on its runtime.
+pub(crate) struct Inner {
     records: Records,
     /// What the thin Client's own file holds, held to the end of each change
     /// to it, so one change never undoes another and the last asked is kept.
-    record: Arc<AsyncMutex<DeviceRecord>>,
+    record: AsyncMutex<DeviceRecord>,
     identity: IdentityMaterial,
     device: watch::Sender<ThisDevice>,
+    /// Redeems Invites and holds the Remotes they form, in `remotes.json`.
+    redeemer: Redeemer,
+    remotes: Remotes,
+    /// Held through each pairing, so one pairing at a time is made.
+    pairing: AsyncMutex<()>,
+    timings: CoreTimings,
 }
 
 #[uniffi::export]
@@ -57,6 +99,92 @@ impl ThinClient {
     /// and opens nothing.
     #[uniffi::constructor]
     pub fn open(directory: String, signer: Arc<dyn KeySigner>) -> Result<Arc<Self>, OpenError> {
+        Self::open_with(directory, signer, CoreTimings::default())
+    }
+
+    /// Tells `listener` what "This device" shows now, and again on every
+    /// change, until the subscription is cancelled.
+    pub fn watch_device(&self, listener: Arc<dyn DeviceListener>) -> Arc<Subscription> {
+        self.watch(self.inner.device.subscribe(), move |device| {
+            listener.changed(device);
+        })
+    }
+
+    /// Tells `listener` what the Servers section of the sheet shows now, and
+    /// again on every change, until the subscription is cancelled.
+    pub fn watch_servers(&self, listener: Arc<dyn ServersListener>) -> Arc<Subscription> {
+        self.watch(self.inner.remotes.servers(), move |servers| {
+            listener.changed(servers);
+        })
+    }
+
+    /// Tells `listener` where the Outlook stands now, and again on every
+    /// change, until the subscription is cancelled.
+    pub fn watch_outlook(&self, listener: Arc<dyn OutlookListener>) -> Arc<Subscription> {
+        self.watch(self.inner.remotes.outlook(), move |outlook| {
+            listener.changed(outlook);
+        })
+    }
+
+    /// Renames this device to `name`, as the Serving side would keep it,
+    /// refusing a name it would not, with why.
+    pub async fn rename_device(&self, name: String) -> Result<(), ActError> {
+        let name = shaman_pairing::shown_peer_name(&name).map_err(|refusal| ActError::Invalid {
+            message: refusal.to_string(),
+        })?;
+        let inner = self.inner.clone();
+        self.run(async move { inner.change_record(move |record| record.name = name).await })
+            .await?
+    }
+
+    /// Says no more that this phone must pair again.
+    pub async fn dismiss_pair_again(&self) -> Result<(), ActError> {
+        let inner = self.inner.clone();
+        self.run(async move {
+            inner
+                .change_record(|record| record.pair_again = false)
+                .await
+        })
+        .await?
+    }
+
+    /// Reads `invite` for the confirmation screen, dialling nothing.
+    pub fn read_invite(&self, invite: String) -> InviteReading {
+        pairing::read(&self.inner, &invite)
+    }
+
+    /// Pairs with the Server `invite` is from, naming it `remote_name` and
+    /// this phone `device_name`, and turns the Outlook toward it; where this
+    /// phone holds that Server already, the new Pairing replaces the old.
+    /// Keeps dialling for a few seconds while no way answers, and keeps
+    /// nothing where it fails.
+    pub async fn confirm_pairing(
+        &self,
+        invite: String,
+        remote_name: String,
+        device_name: String,
+    ) -> PairingOutcome {
+        let inner = self.inner.clone();
+        let confirmed =
+            self.run(
+                async move { pairing::confirm(&inner, &invite, &remote_name, &device_name).await },
+            );
+        confirmed
+            .await
+            .unwrap_or_else(|error| PairingOutcome::Failed {
+                message: error.to_string(),
+                again: TryInstead::TryAgain,
+            })
+    }
+}
+
+impl ThinClient {
+    /// [`Self::open`], waiting on what it waits as `timings` say.
+    pub fn open_with(
+        directory: String,
+        signer: Arc<dyn KeySigner>,
+        timings: CoreTimings,
+    ) -> Result<Arc<Self>, OpenError> {
         let signer = identity::taken_up(signer).map_err(OpenError::unusable_key)?;
         let records = Records::open(PathBuf::from(directory)).map_err(OpenError::from)?;
         let identity::Reconciled { record, identity } = identity::reconcile(&records, signer)?;
@@ -66,79 +194,109 @@ impl ThinClient {
             .enable_all()
             .build()
             .map_err(|error| OpenError::from(anyhow::Error::from(error)))?;
+        let redeemer = Redeemer::new(
+            records.directory(),
+            shaman_protocol::PROTOCOL_VERSION,
+            Arc::new(GivenIdentity(identity.clone())),
+            timings.redeemer,
+        )
+        .map_err(OpenError::from)?;
+        let remotes = Remotes::new(redeemer.clone(), &record.turned);
         let (device, _) = watch::channel(ThisDevice::of(&record));
-        Ok(Arc::new(Self {
-            runtime,
+        let inner = Arc::new(Inner {
             records,
-            record: Arc::new(AsyncMutex::new(record)),
+            record: AsyncMutex::new(record),
             identity,
             device,
+            redeemer,
+            remotes,
+            pairing: AsyncMutex::new(()),
+            timings,
+        });
+        for name in inner.remotes.names() {
+            let inner = inner.clone();
+            runtime.spawn(async move {
+                let turned = inner.record.lock().await.turned.clone();
+                inner.remotes.ask_ways(&name, &turned).await;
+            });
+        }
+        Ok(Arc::new(Self {
+            runtime: Some(runtime),
+            inner,
         }))
     }
 
-    /// Tells `listener` what "This device" shows now, and again on every
-    /// change, until the subscription is cancelled.
-    pub fn watch_device(&self, listener: Arc<dyn DeviceListener>) -> Arc<Subscription> {
-        let mut device = self.device.subscribe();
-        let task = self.runtime.spawn(async move {
+    /// What proves this phone to the Servers it pairs with: what signs with
+    /// its key, and the certificate of the key the core keeps.
+    pub fn identity(&self) -> &IdentityMaterial {
+        &self.inner.identity
+    }
+
+    fn runtime(&self) -> &Runtime {
+        self.runtime
+            .as_ref()
+            .expect("the runtime stands until the core goes")
+    }
+
+    /// Runs `act` on the core's runtime, to its end.
+    async fn run<T: Send + 'static>(
+        &self,
+        act: impl Future<Output = T> + Send + 'static,
+    ) -> Result<T, ActError> {
+        self.runtime()
+            .spawn(act)
+            .await
+            .map_err(|error| ActError::failed(anyhow::Error::from(error)))
+    }
+
+    /// Tells `tell` what `model` holds now, and again on every change, until
+    /// the subscription is cancelled.
+    fn watch<T: Clone + Send + Sync + 'static>(
+        &self,
+        mut model: watch::Receiver<T>,
+        tell: impl Fn(T) + Send + 'static,
+    ) -> Arc<Subscription> {
+        let task = self.runtime().spawn(async move {
             loop {
-                let current = device.borrow_and_update().clone();
-                listener.changed(current);
-                if device.changed().await.is_err() {
+                let current = model.borrow_and_update().clone();
+                tell(current);
+                if model.changed().await.is_err() {
                     break;
                 }
             }
         });
         Subscription::of(task)
     }
+}
 
-    /// Renames this device to `name`, as the Serving side would keep it,
-    /// refusing a name it would not, with why.
-    pub async fn rename_device(&self, name: String) -> Result<(), ActError> {
-        let name = shaman_pairing::shown_peer_name(&name).map_err(|refusal| ActError::Invalid {
-            message: refusal.to_string(),
-        })?;
-        self.change_record(move |record| record.name = name).await
-    }
-
-    /// Says no more that this phone must pair again.
-    pub async fn dismiss_pair_again(&self) -> Result<(), ActError> {
-        self.change_record(|record| record.pair_again = false).await
+impl Drop for ThinClient {
+    fn drop(&mut self) {
+        if let Some(runtime) = self.runtime.take() {
+            runtime.shutdown_background();
+        }
     }
 }
 
-impl ThinClient {
-    /// What proves this phone to the Servers it pairs with: what signs with
-    /// its key, and the certificate of the key the core keeps.
-    pub fn identity(&self) -> &IdentityMaterial {
-        &self.identity
-    }
-
+impl Inner {
     /// Changes the thin Client's own file by `change`, keeping it before
-    /// "This device" is told.
+    /// "This device" and the Outlook are told.
     async fn change_record(
         &self,
         change: impl FnOnce(&mut DeviceRecord) + Send + 'static,
     ) -> Result<(), ActError> {
+        let mut held = self.record.lock().await;
+        let mut changed = held.clone();
+        change(&mut changed);
+        let written = changed.clone();
         let records = self.records.clone();
-        let record = self.record.clone();
-        let device = self.device.clone();
-        self.runtime
-            .spawn(async move {
-                let mut held = record.lock().await;
-                let mut changed = held.clone();
-                change(&mut changed);
-                let written = changed.clone();
-                tokio::task::spawn_blocking(move || records.write(&written))
-                    .await
-                    .map_err(|error| ActError::failed(anyhow::Error::from(error)))?
-                    .map_err(ActError::failed)?;
-                device.send_replace(ThisDevice::of(&changed));
-                *held = changed;
-                Ok(())
-            })
+        tokio::task::spawn_blocking(move || records.write(&written))
             .await
             .map_err(|error| ActError::failed(anyhow::Error::from(error)))?
+            .map_err(ActError::failed)?;
+        self.device.send_replace(ThisDevice::of(&changed));
+        self.remotes.show(&changed.turned);
+        *held = changed;
+        Ok(())
     }
 }
 
@@ -146,6 +304,19 @@ impl ThinClient {
 #[uniffi::export(with_foreign)]
 pub trait DeviceListener: Send + Sync {
     fn changed(&self, device: ThisDevice);
+}
+
+/// Hears what the Servers section of the sheet shows, at once and on every
+/// change.
+#[uniffi::export(with_foreign)]
+pub trait ServersListener: Send + Sync {
+    fn changed(&self, servers: Servers);
+}
+
+/// Hears where the Outlook stands, at once and on every change.
+#[uniffi::export(with_foreign)]
+pub trait OutlookListener: Send + Sync {
+    fn changed(&self, outlook: Outlook);
 }
 
 /// What keeps a listener hearing; cancelled, or dropped, it hears no more.

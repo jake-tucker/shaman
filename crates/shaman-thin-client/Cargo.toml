@@ -33,6 +33,12 @@ tokio = { version = "1.47.1", features = ["rt-multi-thread", "sync"] }
 uniffi = { version = "=0.32.2", default-features = false }
 
 [dev-dependencies]
+# A real Serving Server in process, which the core pairs with in its tests.
+shaman = { path = "../.." }
+# Marks the test binaries as `src/main.rs` marks Shaman's, so a Server a test starts in process identifies its
+# executable without hashing the whole of it.
+shaman-build-id = { path = "../shaman-build-id" }
 # A signer whose key the test holds apart from it, as the app holds a phone's.
 shaman-pairing = { path = "../shaman-pairing", features = ["test-support"] }
 tempfile = "3.21.0"
+tokio = { version = "1.47.1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }

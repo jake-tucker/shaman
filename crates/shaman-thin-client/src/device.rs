@@ -66,6 +66,10 @@ pub(crate) struct DeviceRecord {
     /// Whether the phone is yet to be told it must pair again.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pair_again: bool,
+    /// The Remotes, by name, in the order they were last turned toward, the
+    /// latest first: the Outlook stands at the first still held.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub turned: Vec<String>,
 }
 
 impl DeviceRecord {
@@ -75,6 +79,7 @@ impl DeviceRecord {
             name,
             key: None,
             pair_again: false,
+            turned: Vec::new(),
         }
     }
 }
