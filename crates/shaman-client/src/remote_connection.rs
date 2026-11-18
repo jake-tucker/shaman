@@ -67,6 +67,11 @@ fn failure_of(error: SessionError, server_error: bool) -> RemoteConnectionFailur
         SessionErrorCode::PairingConnectionFailed | SessionErrorCode::ServerUnreachable => {
             RemoteConnectionFailure::Transient(error.unreachable)
         }
+        // The asking side holds no such Remote: one removed or paired again
+        // under another name is never reached by asking again, however the
+        // failure came back — a local Server's proxy refusing it, or a
+        // Pairing transport failing to reach it.
+        SessionErrorCode::RemoteNotFound => RemoteConnectionFailure::Rejected(error.message),
         _ if server_error => RemoteConnectionFailure::Transient(error.unreachable),
         SessionErrorCode::SessionNotFound => RemoteConnectionFailure::Missing(error.message),
         _ => RemoteConnectionFailure::Rejected(error.message),
@@ -121,6 +126,38 @@ mod tests {
             matches!(failed, Err(RemoteConnectionFailure::Transient(None))),
             "the reason this build does not know reads as none, and the failure as one to reach"
         );
+    }
+
+    /// A Remote the asking side no longer holds is refused the same whether
+    /// a local Server's proxy said so or a Pairing transport did: what reads
+    /// it ends rather than trying a Remote that is gone again and again.
+    #[tokio::test]
+    async fn a_remote_no_longer_held_is_refused_however_the_failure_came_back() {
+        let error = || SessionError {
+            code: SessionErrorCode::RemoteNotFound,
+            message: "Remote not found".to_owned(),
+            unreachable: None,
+        };
+        let through_the_proxy = classify(answered(
+            404,
+            serde_json::to_value(error()).expect("encode the refusal"),
+        ))
+        .await;
+        let over_a_pairing = classify(Err(error())).await;
+
+        for (way, failure) in [
+            ("through the proxy", through_the_proxy),
+            ("over a Pairing", over_a_pairing),
+        ] {
+            assert!(
+                matches!(
+                    failure,
+                    Err(RemoteConnectionFailure::Rejected(ref message))
+                        if message == "Remote not found"
+                ),
+                "{way}, the Remote's absence is a refusal, not a failure to reach"
+            );
+        }
     }
 
     #[tokio::test]
