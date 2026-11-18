@@ -79,6 +79,18 @@ the named item, and opens nothing, which is how a UI test leaves nothing behind.
 will not take in the named item before the app looks for its key. To read what the core kept,
 `xcrun simctl get_app_container "$UDID" com.jaketucker.shaman data`.
 
+**Pairing.** A phone holding no Remote offers pairing alone, so "This device" is reached before pairing only in a
+debug build launched with `--servers-and-device`, which shows the sheet of Servers, Relays and This device by itself.
+In a debug build an Invite can arrive by the launch environment's `SHAMAN_INVITE`, and the app opens on its
+confirmation screen. Over the fake, `FakeCore.invite` reads as the workstation's; one holding "dead" or "unanswered"
+fails as a dead Invite or one no way answered does.
+
+**A real Server.** `../scripts/ios-pair-scratch-server.sh` builds Shaman, starts a scratch Server of this checkout's
+own Serving on the Mac's addresses, makes an Invite and launches the built app with it, in a core directory and under
+a key of its own, for a person to press Pair; with `--test` it runs `LivePairingTests` instead, which pairs, checks
+where the app lands and that the Pairing survives a relaunch, and stops the Server. `--stop` stops it otherwise. Run
+it before merging a change to pairing or transport; never in CI, where `LivePairingTests` skips.
+
 **Test.** `ShamanUI`'s unit tests run under its own scheme; `ShamanTests` and the UI tests under the app's. A result
 bundle's path must not exist yet. The package's tests run without the Keychain, which answers a test bundle with no
 host app `errSecMissingEntitlement` (-34018), so whatever reaches the Keychain is tested in `ShamanTests`, hosted in
