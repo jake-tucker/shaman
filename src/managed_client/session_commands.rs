@@ -120,7 +120,7 @@ impl SessionCommands {
     ) -> Result<crate::protocol::DirectoryListing> {
         let path = with_query("/v1/workspaces/directory", &request)?;
         let response = self
-            .send(bodiless(Method::GET, &path), "directory listing")
+            .send(bodiless(Method::GET, &path)?, "directory listing")
             .await?;
         decode_api_response(response, "Directory listing").await
     }
@@ -177,7 +177,7 @@ impl SessionCommands {
     pub(crate) async fn warm_models(&self) -> Result<()> {
         let response = self
             .send(
-                bodiless(Method::POST, "/v1/models/warm"),
+                bodiless(Method::POST, "/v1/models/warm")?,
                 "Model catalog warm-up",
             )
             .await?;
@@ -279,7 +279,7 @@ impl SessionCommands {
     async fn read_attachment(&self, attachment_id: &AttachmentId) -> Result<(String, Vec<u8>)> {
         let response = self
             .send(
-                bodiless(Method::GET, &attachment_path(attachment_id)),
+                bodiless(Method::GET, &attachment_path(attachment_id))?,
                 "Attachment fetch",
             )
             .await?;
@@ -323,7 +323,7 @@ impl SessionCommands {
             .within_attachment_deadline(
                 "Attachment check",
                 self.send(
-                    bodiless(Method::HEAD, &attachment_path(attachment_id)),
+                    bodiless(Method::HEAD, &attachment_path(attachment_id))?,
                     "Attachment check",
                 ),
             )
@@ -473,7 +473,7 @@ impl SessionCommands {
     ) -> Result<InterruptOutcome> {
         let response = self
             .send(
-                bodiless(Method::POST, &session_path(session_id, "/interrupt")),
+                bodiless(Method::POST, &session_path(session_id, "/interrupt"))?,
                 "Session interruption command",
             )
             .await?;
@@ -505,7 +505,7 @@ impl SessionCommands {
     pub(crate) async fn delete_session(&self, session_id: SessionId) -> Result<()> {
         let response = self
             .send(
-                bodiless(Method::DELETE, &session_path(session_id, "")),
+                bodiless(Method::DELETE, &session_path(session_id, ""))?,
                 "Session deletion",
             )
             .await?;
@@ -695,7 +695,7 @@ impl SessionCommands {
     }
 
     async fn get_json<T: DeserializeOwned>(&self, path: &str, operation: &str) -> Result<T> {
-        let response = self.send(bodiless(Method::GET, path), operation).await?;
+        let response = self.send(bodiless(Method::GET, path)?, operation).await?;
         decode_api_response(response, operation).await
     }
 
@@ -733,7 +733,7 @@ impl SessionCommands {
     ) -> Result<T> {
         let response = self
             .send(
-                bodiless(Method::POST, path),
+                bodiless(Method::POST, path)?,
                 &format!("{operation} command"),
             )
             .await?;
@@ -800,13 +800,15 @@ fn with_query(path: &str, query: &impl Serialize) -> Result<String> {
     })
 }
 
-/// A request to `path` carrying nothing.
-pub(super) fn bodiless(method: Method, path: &str) -> http::Request<Bytes> {
+/// A request to `path` carrying nothing, refused where `path` is no
+/// request URI at all: one too long to be, say, as a path a reader pasted
+/// into a query can make it.
+pub(super) fn bodiless(method: Method, path: &str) -> Result<http::Request<Bytes>> {
     http::Request::builder()
         .method(method)
         .uri(path)
         .body(Bytes::new())
-        .expect("a Session API path is a valid request URI")
+        .context("build the request")
 }
 
 /// A request to `path` carrying `body` as JSON.
@@ -1229,6 +1231,29 @@ mod tests {
                 "GET /v1/sessions?workspace=work+tree%2Fa%26b%3Dc",
             ]
         );
+    }
+
+    /// A path too long for any request URI — one a reader pasted into the
+    /// Directory Browser, say — fails the listing rather than its task, and
+    /// nothing is sent.
+    #[tokio::test]
+    async fn a_listing_too_long_to_ask_is_refused_rather_than_sent() {
+        let recorder = Recorder::new();
+        let commands = SessionCommands::new(recorder.clone(), timings());
+
+        let error = commands
+            .list_directory(ListDirectoryRequest {
+                path: PathBuf::from("a".repeat(70_000)),
+                base: None,
+            })
+            .await
+            .expect_err("no request URI holds a query that long");
+
+        assert!(
+            format!("{error:#}").starts_with("build the request"),
+            "{error:#}"
+        );
+        assert!(recorder.take().is_empty(), "nothing is sent");
     }
 
     /// Turned toward a Remote, a command reaches it beneath the local
