@@ -101,6 +101,13 @@ public protocol OpenedSession: AnyObject, Sendable {
   /// its screen is up. A running command's output grows in it.
   func detail(_ activity: String) -> AsyncStream<ActivityDetail>
 
+  /// The tree the Session belongs to, as its sheet shows it, now and whole on every change, for as long as the stream
+  /// is read: while the sheet is up.
+  func tree() -> AsyncStream<SubagentTree>
+
+  /// Stops the working Subagent a tree's entry hands back, and whatever it delegated, once its Server has answered.
+  func stopSubagent(_ session: String) async throws(ActError)
+
   /// Ends the Session's reading in the core; it cancels nothing on the Server.
   func close()
 

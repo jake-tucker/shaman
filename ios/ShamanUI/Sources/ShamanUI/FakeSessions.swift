@@ -220,7 +220,7 @@
       return SessionFrame(
         title: title, place: place, gone: nil, bar: bar,
         composer: FakeOpenedSession.composer(working: bar?.kind == .working, unreachable: unreachable ? line : nil),
-        queued: [], intervention: nil)
+        queued: [], intervention: nil, tree: nil)
     }
 
     static let canned: [FakeSession] =
@@ -257,6 +257,11 @@
         session(
           11, "workstation", "shaman", FakeConversation.undeliveredPrompt, nil, .working, checkout: on("main"),
           running: 8, moved: 30 * 3_600, reads: .undelivered),
+        // Its Agent only waits on the Subagents it delegated to, which `FakeTree` holds.
+        session(
+          12, "workstation", "shaman", FakeTree.title, "\u{f0349}", .working,
+          checkout: on("fix/session-lock", linked: true),
+          running: 190, moved: 20, reads: .delegating),
       ] + settledHistory
 
     /// A long history of settled work, so the shelf has more than it opens on.

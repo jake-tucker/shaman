@@ -26,6 +26,8 @@
       case approval
       /// The Turn waits on two Approvals, a File Change asked before another Tool.
       case approvals
+      /// The Agent delegated to Subagents and only waits on them: the Session heads the tree `FakeTree` holds.
+      case delegating
     }
 
     /// How the conversation stands of the Session whose last Turn stands as `scenario`.
@@ -59,6 +61,9 @@
         ]
       case .undelivered:
         return [user("open", undeliveredPrompt)]
+      case .delegating:
+        // Read from the tree it heads, as a stop there moves it.
+        return []
       case .monitoring:
         return opening + [
           card("work", .worked, "Worked for 2m 05s", "2 commands"),
@@ -103,7 +108,7 @@
                 style: .monospace)
             ]),
         ]
-      case .working, .settled, .stopped, .failed, .undelivered, .monitoring:
+      case .working, .settled, .stopped, .failed, .undelivered, .monitoring, .delegating:
         return []
       }
     }

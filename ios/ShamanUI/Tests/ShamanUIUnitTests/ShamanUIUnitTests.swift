@@ -527,6 +527,34 @@ private final class RefusingSigner: KeySigner {
   @Test func theSameSessionPushedTwiceIsTwoScreens() {
     #expect(SessionRoute(session: "a") != SessionRoute(session: "a"))
   }
+
+  @Test func anEntryChosenInTheTreeIsPushedPoppedBackToOrLeftAsTheOneOpen() {
+    let core = FakeCore(.paired)
+    let parent = SessionRoute(session: "workstation-key/12")
+    let stack = SessionStack(core: core)
+    stack.path = [.session(parent), .work(parent, turn: "work")]
+    let explorer = SessionRoute(session: "workstation-key/12.1")
+    stack.path.append(.session(explorer))
+
+    // Not on the stack, it is pushed over whatever is open.
+    stack.show("workstation-key/12.4", over: explorer)
+    #expect(stack.path.count == 4)
+    guard case .session(let grepper) = stack.path.last else {
+      Issue.record("a Session pushed")
+      return
+    }
+    #expect(grepper.session == "workstation-key/12.4")
+
+    // The one open: nothing more.
+    stack.show("workstation-key/12.4", over: grepper)
+    #expect(stack.path.count == 4)
+
+    // On the stack, it is popped back to, with what was pushed over it.
+    stack.show("workstation-key/12.1", over: grepper)
+    #expect(stack.path == [.session(parent), .work(parent, turn: "work"), .session(explorer)])
+    stack.show("workstation-key/12", over: explorer)
+    #expect(stack.path == [.session(parent)])
+  }
 }
 
 @Suite @MainActor struct SessionModelTests {

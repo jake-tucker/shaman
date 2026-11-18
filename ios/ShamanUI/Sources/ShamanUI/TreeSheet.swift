@@ -1,0 +1,182 @@
+import ShamanCore
+import SwiftUI
+
+/// The button in an open Session's navigation bar that opens the tree it belongs to, wearing how many of its
+/// Subagents work.
+struct TreeButtonView: View {
+  let button: TreeButton
+  let open: () -> Void
+
+  var body: some View {
+    Button(action: open) {
+      HStack(spacing: 3) {
+        Image(systemName: "point.3.connected.trianglepath.dotted")
+        if let working = button.working {
+          Text(verbatim: working)
+            .font(.caption.weight(.semibold).monospacedDigit())
+        }
+      }
+    }
+    .accessibilityLabel(Text(verbatim: button.label))
+    .accessibilityIdentifier("session.tree")
+  }
+}
+
+/// The tree an open Session belongs to, as a sheet: its top-level Session first, then every Subagent beneath the one
+/// that spawned it, in the order the core gives, the open Session highlighted. Choosing an entry hands its Session to
+/// `choose`; a working Subagent that can be stopped alone is stopped by a swipe, which asks nothing first. It crosses
+/// from the core only while it is up.
+struct TreeSheet: View {
+  let model: SessionModel
+  let choose: (String) -> Void
+  @State private var tree: SubagentTree?
+
+  var body: some View {
+    NavigationStack {
+      List {
+        ForEach(tree?.rows ?? [], id: \.id) { row in
+          Button {
+            if let session = row.session {
+              choose(session)
+            }
+          } label: {
+            TreeRowView(row: row)
+          }
+          .buttonStyle(.plain)
+          .disabled(row.session == nil)
+          .listRowBackground(row.open ? Color.accentColor.opacity(0.14) : nil)
+          .accessibilityAddTraits(row.open ? .isSelected : [])
+          .accessibilityIdentifier("tree.row")
+          .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            if let stop = row.stop, let session = row.session {
+              Button(role: .destructive) {
+                Task { await model.stopSubagent(session) }
+              } label: {
+                Label {
+                  Text(verbatim: stop)
+                } icon: {
+                  Image(systemName: "stop.fill")
+                }
+              }
+              .accessibilityIdentifier("tree.stop")
+            }
+          }
+        }
+      }
+      .listStyle(.plain)
+      .overlay {
+        if let loading = tree?.loading {
+          ProgressView {
+            Text(verbatim: loading)
+          }
+          .accessibilityElement(children: .combine)
+          .accessibilityIdentifier("tree.loading")
+        } else if let failed = tree?.failed {
+          ContentUnavailableView {
+            Label {
+              Text(verbatim: failed)
+                .accessibilityIdentifier("tree.failed")
+            } icon: {
+              Image(systemName: "exclamationmark.triangle")
+            }
+          }
+        }
+      }
+      .safeAreaInset(edge: .top) {
+        if let banner = model.banner {
+          Banner(text: banner)
+            .onTapGesture { model.dismissBanner() }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint("Dismisses this")
+        }
+      }
+      .navigationTitle(Text(verbatim: tree?.title ?? ""))
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        if let count = tree?.count {
+          ToolbarItem(placement: .topBarTrailing) {
+            Text(verbatim: count)
+              .font(.footnote.monospacedDigit())
+              .foregroundStyle(.secondary)
+              .accessibilityIdentifier("tree.count")
+          }
+        }
+      }
+    }
+    .presentationDetents([.medium, .large])
+    .accessibilityIdentifier("tree.sheet")
+    .task {
+      for await tree in model.tree() {
+        self.tree = tree
+      }
+    }
+  }
+}
+
+/// One entry of the tree: its Marker and Title, its name and Model beneath, and at the right how long it has worked,
+/// counting while it works, or what it says in the time's place; indented as deep as it stands.
+private struct TreeRowView: View {
+  let row: TreeRow
+
+  var body: some View {
+    HStack(alignment: .center, spacing: 10) {
+      MarkerSymbol(tone: row.marker)
+        .frame(width: 22)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(verbatim: row.title)
+          .font(.subheadline.weight(row.open ? .semibold : .regular))
+          .foregroundStyle(row.open ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+          .lineLimit(2)
+        if let line = row.line {
+          Text(verbatim: line)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+      }
+      Spacer(minLength: 0)
+      Group {
+        if let since = row.since {
+          TimelineView(.periodic(from: .now, by: 1)) { context in
+            Text(verbatim: RunningTime.working(since: since, now: context.date))
+          }
+        } else if let trailing = row.trailing {
+          Text(verbatim: trailing)
+            .foregroundStyle(row.needsYou ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+        }
+      }
+      .font(.caption.monospacedDigit())
+      .foregroundStyle(.secondary)
+      .fixedSize()
+    }
+    .padding(.leading, CGFloat(row.depth) * 16)
+    .contentShape(Rectangle())
+    .accessibilityElement(children: .combine)
+  }
+}
+
+/// The symbol an entry's Marker stands as: a spinner while it works, and its outcome once it settles.
+private struct MarkerSymbol: View {
+  let tone: Tone?
+
+  var body: some View {
+    Group {
+      switch tone {
+      case .running: ProgressView().controlSize(.small)
+      case .succeeded: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+      case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+      case .stopped: Image(systemName: "stop.circle.fill").foregroundStyle(.yellow)
+      case .waiting: Image(systemName: "hand.raised.fill").foregroundStyle(.orange)
+      case .quiet, .unknown: Image(systemName: "circle").foregroundStyle(.secondary)
+      case nil: Color.clear.frame(width: 1, height: 1)
+      }
+    }
+    .accessibilityHidden(true)
+  }
+}
+
+#if DEBUG
+  #Preview("A tree with working and settled subagents") {
+    TreeSheet(model: SessionModel(core: FakeCore(.paired), session: "workstation-key/12.1")) { _ in }
+  }
+#endif

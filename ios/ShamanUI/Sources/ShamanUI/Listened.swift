@@ -73,6 +73,12 @@ extension Forwarder: DetailListener where Model == ActivityDetail {
   }
 }
 
+extension Forwarder: TreeListener where Model == SubagentTree {
+  func changed(tree: SubagentTree) {
+    send(tree)
+  }
+}
+
 extension Forwarder: ActsListener where Model == Bool {
   func changed(underWay: Bool) {
     send(underWay)

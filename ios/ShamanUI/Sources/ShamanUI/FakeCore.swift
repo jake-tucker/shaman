@@ -53,6 +53,8 @@
 
     /// Each composer's draft, and whether an act is under way.
     private let acts = FakeActs()
+    /// The tree of the Session whose Agent delegates, which every Session of it reads.
+    private let tree = FakeTree()
 
     public init(_ scenario: Scenario) {
       device = Mutex(Self.device(in: scenario))
@@ -100,11 +102,15 @@
       let remotes = held.withLock { $0.map(\.name) }
       let found = sessions.withLock { $0.first { $0.id == session && remotes.contains($0.remote) } }
       let cut = found.map { found in unreachable.withLock { $0[found.remote] != nil } } ?? false
+      // A Subagent's Session is listed nowhere, and is read from its tree.
+      let delegated = FakeTree.member(session) != nil && remotes.contains("workstation")
+      let gone = SessionFrame(
+        title: "", place: "", gone: "This session no longer exists", bar: nil, composer: nil, queued: [],
+        intervention: nil, tree: nil)
+      let listed = found?.frame(originNamed: remotes.count > 1, unreachable: cut, now: Date())
       let frame =
-        found?.frame(originNamed: remotes.count > 1, unreachable: cut, now: Date())
-        ?? SessionFrame(
-          title: "", place: "", gone: "This session no longer exists", bar: nil, composer: nil, queued: [],
-          intervention: nil)
+        FakeTree.holds(session) && (found != nil || delegated)
+        ? tree.frame(of: session, top: listed ?? gone) : listed ?? gone
       if let found {
         turned.withLock { $0 = found.remote }
         // The Workspace remembered for the Remote stays; only where none is does the Session's own become it.
@@ -112,8 +118,10 @@
         outlookListeners.tell(currentOutlook())
       }
       // A Session on a Remote yet to answer is never read: its loading mark stands.
-      let read = found.flatMap { unanswered.contains($0.remote) ? nil : $0.reads }
-      let opened = FakeOpenedSession(session: session, frame: frame, scenario: read, unreachable: cut, acts: acts)
+      let read = found.flatMap { unanswered.contains($0.remote) ? nil : $0.reads } ?? (delegated ? .delegating : nil)
+      let opened = FakeOpenedSession(
+        session: session, frame: frame, scenario: read, unreachable: cut, acts: acts,
+        tree: FakeTree.holds(session) && read != nil ? tree : nil)
       self.opened.withLock { $0.append(opened) }
       return opened
     }

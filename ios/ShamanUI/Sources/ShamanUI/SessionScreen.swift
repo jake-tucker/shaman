@@ -8,10 +8,17 @@ import Textual
 /// its foot the bar says what the work is doing, with Stop, above the composer, whose send steers a working Turn and
 /// whose held send queues; a Prompt queued waits as a dashed bubble at the foot of the conversation. The Session's own
 /// Approval presents itself as a half-height sheet; swiped away, it waits behind the orange bar's "Review". An act's
-/// failure is a banner over the screen, or over the sheet that asked, but a Session gone, which pops it.
+/// failure is a banner over the screen, or over the sheet that asked, but a Session gone, which pops it. A Subagent's
+/// Session is named by the Subagent and has no composer. Where the tree the Session belongs to has Subagents, a button
+/// in the navigation bar opens it as a sheet, and choosing an entry there has `stack` show that Session.
 struct SessionScreen: View {
   let model: SessionModel
+  /// The navigation stack the Session is pushed on, which an entry chosen in its tree is shown on.
+  var stack: SessionStack?
   @Environment(\.dismiss) private var dismiss
+  @State private var showingTree = false
+  /// The Session an entry of the tree handed back, shown once its sheet has gone.
+  @State private var chosen: String?
 
   var body: some View {
     ScrollView {
@@ -68,6 +75,11 @@ struct SessionScreen: View {
       ToolbarItem(placement: .principal) {
         SessionHeader(frame: model.frame)
       }
+      if let tree = model.frame?.tree {
+        ToolbarItem(placement: .topBarTrailing) {
+          TreeButtonView(button: tree) { showingTree = true }
+        }
+      }
     }
     // Presented by the frame alone: SwiftUI clears the item only when the reader swipes the sheet away, which
     // dismisses what was pending; the core taking it away, once it is answered, clears nothing.
@@ -85,6 +97,21 @@ struct SessionScreen: View {
         ApprovalSheet(approval: approval, model: model)
       }
     }
+    .sheet(
+      isPresented: $showingTree,
+      onDismiss: {
+        if let chosen {
+          self.chosen = nil
+          stack?.show(chosen, over: model.route)
+        }
+      },
+      content: {
+        TreeSheet(model: model) { session in
+          chosen = session
+          showingTree = false
+        }
+      }
+    )
     .task { await model.follow() }
   }
 }
@@ -568,18 +595,21 @@ private struct BarView: View {
         .fixedSize()
         .accessibilityIdentifier("session.review")
       }
-      Button(action: stop) {
-        Label {
-          Text(verbatim: bar.stop)
-        } icon: {
-          Image(systemName: "stop.fill")
+      // A Subagent that cannot be stopped alone offers no Stop, and nothing says why.
+      if let label = bar.stop {
+        Button(action: stop) {
+          Label {
+            Text(verbatim: label)
+          } icon: {
+            Image(systemName: "stop.fill")
+          }
         }
+        .buttonStyle(.bordered)
+        .tint(.red)
+        .fixedSize()
+        .disabled(stopping)
+        .accessibilityIdentifier("session.stop")
       }
-      .buttonStyle(.bordered)
-      .tint(.red)
-      .fixedSize()
-      .disabled(stopping)
-      .accessibilityIdentifier("session.stop")
     }
     .font(.footnote)
     .controlSize(.small)
@@ -1004,6 +1034,20 @@ final class SessionModel {
     opened.detail(activity)
   }
 
+  /// The tree the Session belongs to, while its sheet is up.
+  func tree() -> AsyncStream<SubagentTree> {
+    opened.tree()
+  }
+
+  /// Stops the working Subagent a tree's entry handed back, and whatever it delegated; a failure stands in the banner.
+  func stopSubagent(_ subagent: String) async {
+    do {
+      try await opened.stopSubagent(subagent)
+    } catch {
+      failed(error)
+    }
+  }
+
   /// Ends the Session in the core, as its screen is popped.
   func close() {
     opened.close()
@@ -1035,6 +1079,20 @@ final class SessionStack {
     let model = SessionModel(core: core, route: route)
     models[route] = model
     return model
+  }
+
+  /// Shows the Session `session` names, chosen in the tree of the Session pushed as `route`: nothing more where it is
+  /// that one, popping back to it where it is on the path already, and pushing it over the path where it is not.
+  func show(_ session: String, over route: SessionRoute) {
+    guard route.session != session else { return }
+    let pushed = path.lastIndex {
+      if case .session(let pushed) = $0 { pushed.session == session } else { false }
+    }
+    if let pushed {
+      path.removeSubrange(path.index(after: pushed)...)
+    } else {
+      path.append(.session(SessionRoute(session: session)))
+    }
   }
 
   /// Closes every Session no screen of which is on the path.

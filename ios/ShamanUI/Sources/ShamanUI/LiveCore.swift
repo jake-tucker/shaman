@@ -134,6 +134,14 @@ final class LiveOpenedSession: OpenedSession {
     listened { send in session.watchDetail(activity: activity, listener: Forwarder(send)) }
   }
 
+  func tree() -> AsyncStream<SubagentTree> {
+    listened { send in session.watchTree(listener: Forwarder(send)) }
+  }
+
+  func stopSubagent(_ session: String) async throws(ActError) {
+    try await acted { try await self.session.stopSubagent(subagent: session) }
+  }
+
   func close() {
     session.close()
   }

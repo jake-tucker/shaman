@@ -97,8 +97,18 @@ final class ListingTests: XCTestCase {
     XCTAssertEqual(app.staticTexts["listing.settledHeader"].label, "Settled")
     attach(app, "A row settled onto the shelf")
 
+    // Clear of the bottom bar, so the action the swipe reveals takes the tap.
+    if settled.frame.maxY > app.frame.height * 0.75 {
+      app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+        .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)))
+    }
     settled.swipeLeft()
     app.buttons["Unsettle"].tap()
+    XCTAssertTrue(settled.waitForNonExistence(timeout: 10), "gone from the shelf")
+    // Back at the head of the active rows, above where the shelf was scrolled to.
+    for _ in 0..<3 where !active.exists {
+      app.swipeDown()
+    }
     XCTAssertTrue(active.waitForExistence(timeout: 10), "brought back among the active")
     XCTAssertFalse(settled.exists)
   }

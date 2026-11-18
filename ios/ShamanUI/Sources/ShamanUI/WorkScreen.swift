@@ -15,12 +15,19 @@ struct TurnWorkScreen: View {
       ForEach(work?.items ?? [], id: \.id) { item in
         switch item.kind {
         case .row(let row):
-          if case .detail(let activity) = row.tap {
+          switch row.tap {
+          case .detail(let activity):
             NavigationLink(value: Pushed.detail(session.route, activity: activity)) {
               WorkRowView(row: row)
             }
             .accessibilityIdentifier("work.row")
-          } else {
+          case .session(let opened):
+            // A Subagent's own Session, pushed over this list, which back returns to.
+            NavigationLink(value: Pushed.session(SessionRoute(session: opened))) {
+              WorkRowView(row: row)
+            }
+            .accessibilityIdentifier("work.row")
+          case .nothing:
             WorkRowView(row: row)
               .accessibilityIdentifier("work.row")
           }

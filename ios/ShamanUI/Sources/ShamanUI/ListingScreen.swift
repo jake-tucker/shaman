@@ -71,7 +71,7 @@ struct ListingScreen: View {
       .navigationDestination(for: Pushed.self) { pushed in
         switch pushed {
         case .session(let route):
-          SessionScreen(model: stack.model(for: route))
+          SessionScreen(model: stack.model(for: route), stack: stack)
         case .work(let route, let turn):
           TurnWorkScreen(session: stack.model(for: route), turn: turn)
         case .detail(let route, let activity):

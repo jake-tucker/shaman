@@ -131,6 +131,8 @@
 
     private let session: String
     private let scenario: FakeConversation.Scenario?
+    /// The tree the Session belongs to, where it is one of `FakeTree`'s.
+    private let family: FakeTree?
     private let unreachable: Bool
     private let acts: FakeActs
     private let state: Mutex<State>
@@ -139,22 +141,38 @@
     private let nextListener = Atomic<Int>(0)
     private let closed = Atomic<Bool>(false)
     private let landing = Mutex<Task<Void, Never>?>(nil)
+    private let following = Mutex<Task<Void, Never>?>(nil)
 
     init(
       session: String, frame: SessionFrame, scenario: FakeConversation.Scenario?, unreachable: Bool = false,
-      acts: FakeActs
+      acts: FakeActs, tree: FakeTree? = nil
     ) {
       self.session = session
       self.scenario = scenario
+      family = tree
       self.unreachable = unreachable
       self.acts = acts
       state = Mutex(
         State(frame: frame, items: [ConversationItem(id: "loading", kind: .loading(words: "Loading the conversation"))])
       )
       guard let scenario else { return }
+      if let tree {
+        // A stop anywhere in the tree reaches this screen too.
+        let follow = Task { [weak self] in
+          for await _ in tree.changed() {
+            guard let self, !Task.isCancelled else { return }
+            changeFrame { $0 = tree.frame(of: session, top: $0) }
+            // Once the conversation has landed, it moves with the tree.
+            if state.withLock({ $0.items.first?.id != "loading" }) {
+              change { $0 = tree.items(of: session) }
+            }
+          }
+        }
+        following.withLock { $0 = follow }
+      }
       let task = Task { [weak self] in
         try? await Task.sleep(for: .milliseconds(600))
-        self?.change { $0 = FakeConversation.items(scenario) }
+        self?.change { $0 = tree?.items(of: session) ?? FakeConversation.items(scenario) }
         self?.changeState { $0.pending = FakeConversation.approvals(scenario) }
         guard scenario == .working else { return }
         for text in FakeConversation.streamed.dropFirst() {
@@ -189,7 +207,33 @@
     }
 
     func work(_ turn: String) -> AsyncStream<TurnWork> {
-      FakeWork.work(of: turn, in: scenario)
+      guard let tree = family else { return FakeWork.work(of: turn, in: scenario) }
+      let session = session
+      return AsyncStream { continuation in
+        continuation.yield(tree.work(of: session, turn: turn))
+        let follow = Task {
+          for await _ in tree.changed() {
+            continuation.yield(tree.work(of: session, turn: turn))
+          }
+        }
+        continuation.onTermination = { _ in follow.cancel() }
+      }
+    }
+
+    func tree() -> AsyncStream<SubagentTree> {
+      guard let tree = family else {
+        return AsyncStream { continuation in
+          continuation.yield(SubagentTree(title: "Subagents", count: nil, loading: nil, failed: nil, rows: []))
+        }
+      }
+      return tree.stream(for: session)
+    }
+
+    func stopSubagent(_ session: String) async throws(ActError) {
+      try await acts.during { () async throws(ActError) in
+        guard let tree = family else { throw .Refused(message: "That subagent is not working") }
+        try await tree.stop(session)
+      }
     }
 
     func detail(_ activity: String) -> AsyncStream<ActivityDetail> {
@@ -199,6 +243,7 @@
     func close() {
       closed.store(true, ordering: .relaxed)
       landing.withLock { $0?.cancel() }
+      following.withLock { $0?.cancel() }
     }
 
     func send(_ text: String) async throws(ActError) {
@@ -281,6 +326,11 @@
     func stop() async throws(ActError) {
       try await acts.during { () async throws(ActError) in
         try reachable()
+        if let tree = family {
+          // A Subagent stops alone, with whatever it delegated; the Session heading the tree stops all of it.
+          try await tree.stop(FakeTree.member(session) == nil ? nil : session)
+          return
+        }
         try? await Task.sleep(for: .milliseconds(400))
         landing.withLock { $0?.cancel() }
         if scenario == .undelivered {
