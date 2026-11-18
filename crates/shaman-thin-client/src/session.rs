@@ -1786,4 +1786,120 @@ mod tests {
         drop(work);
         detached_within(0);
     }
+
+    /// The snapshot of the working Session `session`, as its stream sends
+    /// it, waiting on the Approval `approval` names.
+    fn waiting_on(session: SessionId, approval: shaman_protocol::ApprovalId) -> SessionSnapshot {
+        let mut snapshot = shaman_client::testing::session_snapshot(session, 1);
+        let mut turn = shaman_protocol::Turn::unprompted(None);
+        turn.status = shaman_protocol::TurnStatus::Active;
+        let turn_id = turn.id;
+        snapshot.turns.push(turn);
+        let activity_id = shaman_protocol::ActivityId::new();
+        snapshot
+            .activities
+            .push(shaman_protocol::Activity::Approval {
+                id: activity_id,
+                turn_id,
+                approval: shaman_protocol::Approval {
+                    id: approval,
+                    subject: shaman_protocol::ApprovalSubject::Command {
+                        command: "cargo build".to_owned(),
+                        cwd: None,
+                        actions: Vec::new(),
+                    },
+                    reason: None,
+                },
+                tool_activity_id: None,
+                detail_truncated: false,
+                outcome: shaman_protocol::ApprovalOutcome::Pending,
+                decision: None,
+                follow_up_error: None,
+                asked_at: None,
+            });
+        snapshot
+            .transcript
+            .push(shaman_protocol::TranscriptItem::Activity { activity_id });
+        let revision = snapshot.revision;
+        shaman_protocol::session_projection::close_revision(&mut snapshot, revision);
+        snapshot
+    }
+
+    #[test]
+    fn a_decision_whose_answer_was_lost_waits_behind_review_while_the_session_still_shows_it_pending()
+     {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let approval = shaman_protocol::ApprovalId::new();
+        let decided = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = decided.clone();
+        // The stream stays open on the Approval pending, as a Server whose
+        // answer to the Decision was lost has yet to say otherwise.
+        let (more, held) = tokio::sync::mpsc::unbounded_channel();
+        let held = Arc::new(Mutex::new(Some(held)));
+        let (opened, _drafts, _reference, _session, _directory) = opened_over(
+            &runtime,
+            answering(Arc::new(move |method, path| {
+                if method == http::Method::POST && path.ends_with("/decision") {
+                    counted.fetch_add(1, Ordering::AcqRel);
+                    return Box::pin(async {
+                        Err(SessionError {
+                            code: SessionErrorCode::PairingOutcomeUnknown,
+                            message: "Remote API request was delivered, and its answer was lost"
+                                .to_owned(),
+                            unreachable: None,
+                        })
+                    });
+                }
+                if path.ends_with("/events")
+                    && let Some(held) = held.lock().unwrap().take()
+                {
+                    // The Session the stream is asked of, as its path names it.
+                    let session = path
+                        .split('/')
+                        .rev()
+                        .nth(1)
+                        .and_then(|id| serde_json::from_value(serde_json::json!(id)).ok())
+                        .expect("a Session's stream");
+                    let snapshot = waiting_on(session, approval);
+                    return Box::pin(async move { Ok(stream_from(&snapshot, held)) });
+                }
+                Box::pin(std::future::pending())
+            })),
+        );
+        let mut frame = opened.frame.clone();
+        let presented = |frame: &SessionFrame| frame.intervention.is_some();
+        runtime.block_on(async {
+            tokio::time::timeout(SHOWN_WITHIN, frame.wait_for(presented))
+                .await
+                .expect("presented in time")
+                .expect("the frame stands");
+        });
+
+        let failed =
+            runtime.block_on(opened.decide(approval.to_string(), DecisionKind::AcceptOnce));
+        assert_eq!(
+            failed,
+            Err(ActError::Unreachable {
+                message: "The server did not answer, so the decision may have been sent".to_owned()
+            })
+        );
+        assert_eq!(decided.load(Ordering::Acquire), 1, "never sent again");
+        // It waits behind Review, as one dismissed does, and is not offered
+        // again while it may have been answered.
+        let waiting = |frame: &SessionFrame| {
+            frame.intervention.is_none()
+                && frame.bar.as_ref().is_some_and(|bar| {
+                    bar.kind == frame::BarKind::Waiting && bar.review.as_deref() == Some("Review")
+                })
+        };
+        runtime.block_on(async {
+            tokio::time::timeout(SHOWN_WITHIN, frame.wait_for(waiting))
+                .await
+                .unwrap_or_else(|_| {
+                    panic!("still offered: {:?}", opened.frame.borrow().intervention)
+                })
+                .expect("the frame stands");
+        });
+        drop(more);
+    }
 }

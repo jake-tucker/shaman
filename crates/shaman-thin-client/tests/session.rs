@@ -1425,7 +1425,7 @@ async fn an_approval_on_an_unreachable_origin_waits_out_of_sight_and_presents_it
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_decision_delivered_whose_answer_is_lost_is_not_sent_again_nor_offered_again() {
+async fn a_decision_delivered_whose_answer_is_lost_is_not_sent_again() {
     let desk = ServingServer::start("thin-approval-lost").await;
     let gate = Gate::open(desk.serving_address()).await;
     let holder = tempfile::tempdir().expect("make the Workspaces' directory");
