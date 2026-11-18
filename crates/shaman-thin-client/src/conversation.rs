@@ -48,6 +48,9 @@ pub enum ItemKind {
         /// What the Message carried beside its text, where it carried
         /// anything: its Attachments counted, its Skills named.
         note: Option<String>,
+        /// Whether it is a Prompt this phone is sending, which its Server has
+        /// yet to answer.
+        sending: bool,
     },
     /// A bubble at the left: what a delegating Agent asked of this Subagent.
     Delegation {
@@ -203,10 +206,11 @@ pub(crate) fn conversation(snapshot: &SessionSnapshot) -> Vec<ConversationItem> 
                     && prompt.taken.is_none()
             })
             .map(|prompt| ConversationItem {
-                id: format!("prompt:{}", prompt.id),
+                id: crate::frame::prompt_item_id(prompt.id),
                 kind: ItemKind::UserMessage {
                     text: prompt.text.clone(),
                     note: carried(prompt.attachments.len(), &prompt.skill_invocations),
+                    sending: false,
                 },
             }),
     );
@@ -551,6 +555,7 @@ fn message_item(message: &Message) -> ConversationItem {
         MessageRole::User => ItemKind::UserMessage {
             text: message.content.clone(),
             note: carried(message.attachments.len(), &message.skill_invocations),
+            sending: false,
         },
         MessageRole::Delegation(delegator) => ItemKind::Delegation {
             text: message.content.clone(),
@@ -577,7 +582,7 @@ fn message_item(message: &Message) -> ConversationItem {
 
 /// What a user Message carried beside its text: its `attachments` counted
 /// and its `skills` named, which a phone shows no more of.
-fn carried(attachments: usize, skills: &[SkillInvocation]) -> Option<String> {
+pub(crate) fn carried(attachments: usize, skills: &[SkillInvocation]) -> Option<String> {
     let attachments = match attachments {
         0 => None,
         1 => Some("1 attachment".to_owned()),

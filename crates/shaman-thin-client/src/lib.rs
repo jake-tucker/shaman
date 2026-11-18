@@ -27,17 +27,22 @@ use tokio::{
     task::JoinHandle,
 };
 
+mod acts;
 mod conversation;
 mod device;
+mod drafts;
+mod frame;
 mod identity;
 mod listing;
 mod pairing;
+mod reach;
 mod remotes;
 mod session;
 
 pub use conversation::{ConversationItem, ItemKind, Tone, TurnCard, TurnOutcome};
 pub use device::ThisDevice;
 use device::{DeviceRecord, Records};
+pub use frame::{Bar, BarKind, Composer, QueuedPrompt, SessionFrame};
 pub use identity::{KeySigner, SignError};
 use listing::Listings;
 pub use listing::{
@@ -47,9 +52,7 @@ pub use listing::{
 pub use pairing::{InviteReading, OfferedWay, PairingOutcome, ReadInvite, TryInstead};
 use remotes::Remotes;
 pub use remotes::{BeginsIn, Outlook, ServerRow, Servers, WayRow, WayState};
-pub use session::{
-    ConversationChange, ConversationListener, FrameListener, OpenSession, SessionFrame,
-};
+pub use session::{ConversationChange, ConversationListener, FrameListener, OpenSession};
 
 uniffi::setup_scaffolding!();
 
@@ -118,6 +121,10 @@ pub(crate) struct Inner {
     listing: Listings,
     /// Held through each pairing, so one pairing at a time is made.
     pairing: AsyncMutex<()>,
+    /// Each composer's unsent text.
+    drafts: drafts::Drafts,
+    /// The acts under way, which Swift holds background time for.
+    acts: acts::Acts,
     timings: CoreTimings,
 }
 
@@ -165,6 +172,27 @@ impl ThinClient {
         })
     }
 
+    /// Tells `listener` whether any act is under way now, and again each
+    /// time that changes, until the subscription is cancelled: Swift holds
+    /// iOS background time only while one is.
+    pub fn watch_acts(&self, listener: Arc<dyn ActsListener>) -> Arc<Subscription> {
+        self.watch(self.inner.acts.busy(), move |under_way| {
+            listener.changed(under_way);
+        })
+    }
+
+    /// The unsent text of the composer of the Session `session` names,
+    /// asked for when its screen appears and after a send fails.
+    pub fn draft(&self, session: String) -> String {
+        self.inner.drafts.get(&session)
+    }
+
+    /// Holds `text` as the unsent text of the composer of the Session
+    /// `session` names, as it is written.
+    pub fn set_draft(&self, session: String, text: String) {
+        self.inner.drafts.set(&session, text);
+    }
+
     /// Opens the Session `session` names for a screen pushed to read it,
     /// framed at once by what the listing knows of it, and turns the Outlook
     /// toward its Origin and Workspace. Closing it cancels nothing on the
@@ -191,6 +219,15 @@ impl ThinClient {
             &self.inner.listing,
             &session,
             pacing,
+            session::Asked {
+                drafts: self.inner.drafts.clone(),
+                acts: self.inner.acts.clone(),
+                asking: acts::Asking {
+                    initial_backoff: pacing.initial_backoff,
+                    max_backoff: pacing.max_backoff,
+                    bound: self.inner.timings.act_bound,
+                },
+            },
         )
     }
 
@@ -278,10 +315,11 @@ impl ThinClient {
         device_name: String,
     ) -> PairingOutcome {
         let inner = self.inner.clone();
-        let confirmed =
-            self.run(
-                async move { pairing::confirm(&inner, &invite, &remote_name, &device_name).await },
-            );
+        let under_way = self.inner.acts.begin();
+        let confirmed = self.run(async move {
+            let _under_way = under_way;
+            pairing::confirm(&inner, &invite, &remote_name, &device_name).await
+        });
         confirmed
             .await
             .unwrap_or_else(|error| PairingOutcome::Failed {
@@ -335,6 +373,8 @@ impl ThinClient {
             remotes,
             listing,
             pairing: AsyncMutex::new(()),
+            drafts: drafts::Drafts::default(),
+            acts: acts::Acts::default(),
             timings,
         });
         for name in inner.remotes.names() {
@@ -372,7 +412,9 @@ impl ThinClient {
         act: impl Future<Output = Result<(), ActError>> + Send + 'static,
     ) -> Result<(), ActError> {
         let bound = self.inner.timings.act_bound;
+        let under_way = self.inner.acts.begin();
         self.run(async move {
+            let _under_way = under_way;
             tokio::time::timeout(bound, act).await.unwrap_or_else(|_| {
                 Err(ActError::Unreachable {
                     message: "The server did not answer in time".to_owned(),
@@ -499,6 +541,12 @@ pub trait ListingListener: Send + Sync {
 #[uniffi::export(with_foreign)]
 pub trait OutlookListener: Send + Sync {
     fn changed(&self, outlook: Outlook);
+}
+
+/// Hears whether any act is under way, at once and each time that changes.
+#[uniffi::export(with_foreign)]
+pub trait ActsListener: Send + Sync {
+    fn changed(&self, under_way: bool);
 }
 
 /// What keeps a listener hearing; cancelled, or dropped, it hears no more.

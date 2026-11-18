@@ -2,44 +2,47 @@
 //! its Remote's Pairing for as long as it is open.
 //!
 //! It crosses to Swift in two parts. Its frame is whole on each change: the
-//! header, which stands at once from what the listing knows. Its
-//! conversation crosses as items with stable ids, whole once and then the
-//! items that changed and the order they stand in, so a Message streaming
-//! many times a second crosses alone: until the Session has been read it is
-//! the loading mark alone, and then the conversation lands in one piece.
+//! header, which stands at once from what the listing knows, the bar, the
+//! composer's state and the queued Prompts. Its conversation crosses as items
+//! with stable ids, whole once and then the items that changed and the order
+//! they stand in, so a Message streaming many times a second crosses alone:
+//! until the Session has been read it is the loading mark alone, and then the
+//! conversation lands in one piece.
+//!
+//! Its acts are a Prompt sent, to steer the working Turn or begin one, or
+//! queued for after it; a queued Prompt steered now or withdrawn; and a stop.
+//! A Prompt sent stands at once as a bubble marked as sending; where it fails
+//! it goes, and its text is given back to the composer's draft.
 //!
 //! Closing it stops the reading and cancels nothing on the Server.
 
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex, Weak,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
 use shaman_client::{
     RecoveryBackoff, SessionCommands, SessionEvent, SessionStreamError, SessionSubscription, TryNow,
 };
-use shaman_protocol::{SessionId, SessionSnapshot};
+use shaman_protocol::{
+    AdmitPromptRequest, InitialPrompt, InterruptOutcome, PromptDelivery, PromptId, SessionId,
+    SessionSnapshot,
+};
 use tokio::{runtime::Handle, sync::watch, task::JoinHandle};
 
 use crate::{
-    Subscription,
+    ActError, Subscription,
+    acts::{self, Acts, Asking, Unanswered},
     conversation::{self, ConversationItem},
+    drafts::Drafts,
+    frame::{self, GONE_REMOTE, Local, Outgoing, SessionFrame, frame_of},
     listing::{Listed, Listings},
     watching,
 };
-
-/// What frames an open Session's screen, whole on each change.
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
-pub struct SessionFrame {
-    /// The Session's Title.
-    pub title: String,
-    /// Where it stands, beneath the Title: "origin · workspace · branch",
-    /// the Origin named only where the phone holds more than one Remote.
-    pub place: String,
-    /// Said where the Session, or the Remote it is on, is gone.
-    pub gone: Option<String>,
-}
 
 /// How an open Session's conversation changed.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -66,6 +69,23 @@ pub struct OpenSession {
     conversation: watch::Receiver<Shown>,
     /// Reads the Session until it is closed.
     reader: Mutex<Option<JoinHandle<()>>>,
+    /// Whether its stream is still read: until its Session is gone, when
+    /// the reader only shows what the screen's own acts change.
+    reading: Arc<AtomicBool>,
+    /// What its acts ask over and keep.
+    acting: Acting,
+}
+
+/// What an open Session's acts need: where to find the Session's Remote as
+/// each is asked, the composer's draft, and what the screen holds of its own.
+#[derive(Clone)]
+pub(crate) struct Acting {
+    pub reference: String,
+    pub listings: Listings,
+    pub drafts: Drafts,
+    pub acts: Acts,
+    pub asking: Asking,
+    pub local: Arc<watch::Sender<Local>>,
 }
 
 #[uniffi::export]
@@ -108,17 +128,76 @@ impl OpenSession {
             reader.abort();
         }
     }
+
+    /// Sends `text` as a Prompt: it steers the working Turn, or begins one.
+    /// It stands at once as a bubble marked as sending; where the send fails
+    /// the bubble goes and the text is given back to the composer's draft.
+    pub async fn send(&self, text: String) -> Result<(), ActError> {
+        let acting = self.acting.clone();
+        self.act(async move { acting.prompt(text, PromptDelivery::Steer).await })
+            .await
+    }
+
+    /// Queues `text` as a Prompt for after the working Turn, failing as a
+    /// send does.
+    pub async fn queue(&self, text: String) -> Result<(), ActError> {
+        let acting = self.acting.clone();
+        self.act(async move { acting.prompt(text, PromptDelivery::Queue).await })
+            .await
+    }
+
+    /// Delivers the queued Prompt `prompt` names now, steering the working
+    /// Turn.
+    pub async fn steer_now(&self, prompt: String) -> Result<(), ActError> {
+        let acting = self.acting.clone();
+        self.act(async move { acting.steer_now(&prompt).await })
+            .await
+    }
+
+    /// Withdraws the queued Prompt `prompt` names.
+    pub async fn cancel_queued(&self, prompt: String) -> Result<(), ActError> {
+        let acting = self.acting.clone();
+        self.act(async move { acting.cancel_queued(&prompt).await })
+            .await
+    }
+
+    /// Stops the Session's work: its Turn, or its Watches while it is
+    /// Monitoring. A Session Working only for a Prompt not yet delivered has
+    /// that Prompt withdrawn instead, and its text given back to the
+    /// composer's draft, ahead of anything written there.
+    pub async fn stop(&self) -> Result<(), ActError> {
+        let acting = self.acting.clone();
+        self.act(async move { acting.stop().await }).await
+    }
 }
 
 impl OpenSession {
+    /// Runs `act` on the core's runtime to its end, marked under way while
+    /// it runs, whatever becomes of the call that asked it.
+    async fn act(
+        &self,
+        act: impl Future<Output = Result<(), ActError>> + Send + 'static,
+    ) -> Result<(), ActError> {
+        let under_way = self.acting.acts.begin();
+        self.runtime
+            .spawn(async move {
+                let _under_way = under_way;
+                act.await
+            })
+            .await
+            .map_err(|error| ActError::failed(anyhow::Error::from(error)))?
+    }
+
     /// Whether the Session is still being read: until it is closed, or its
     /// Session is gone.
     pub fn is_reading(&self) -> bool {
-        self.reader
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .as_ref()
-            .is_some_and(|reader| !reader.is_finished())
+        self.reading.load(Ordering::Acquire)
+            && self
+                .reader
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .as_ref()
+                .is_some_and(|reader| !reader.is_finished())
     }
 }
 
@@ -197,19 +276,30 @@ pub(crate) struct Pacing {
 
 /// Opens the Session `reference` names, read on `runtime` over the Pairing of
 /// the Remote it is on, its frame standing at once from what the listing
-/// knows of it.
+/// knows of it, and asking its acts as `acting` says.
 pub(crate) fn open(
     runtime: &Handle,
     listings: &Listings,
     reference: &str,
     pacing: Pacing,
+    asked: Asked,
 ) -> Arc<OpenSession> {
     let opening = listings.opening(reference);
     let listed = opening.as_ref().map(|opening| opening.listed.clone());
-    let (frame, frame_seen) = watch::channel(frame_of(listed.as_ref(), None, None));
+    let local = Arc::new(watch::Sender::new(Local::default()));
+    let (frame, frame_seen) = watch::channel(frame_of(
+        listed.as_ref(),
+        None,
+        None,
+        &Local::default(),
+        false,
+    ));
     let (conversation, conversation_seen) = watch::channel(shown(None, conversation::loading()));
+    let reading = Arc::new(AtomicBool::new(true));
     let reader = opening.map(|opening| {
         let reader = Reader {
+            gone: None,
+            reading: reading.clone(),
             listings: listings.clone(),
             reference: reference.to_owned(),
             session_id: opening.session_id,
@@ -217,6 +307,8 @@ pub(crate) fn open(
             try_now: opening.try_now,
             listed: opening.listed,
             snapshot: None,
+            local: Arc::downgrade(&local),
+            unreachable: opening.unreachable,
             frame,
             conversation,
             pacing,
@@ -228,51 +320,197 @@ pub(crate) fn open(
         frame: frame_seen,
         conversation: conversation_seen,
         reader: Mutex::new(reader),
+        reading,
+        acting: Acting {
+            reference: reference.to_owned(),
+            listings: listings.clone(),
+            drafts: asked.drafts,
+            acts: asked.acts,
+            asking: asked.asking,
+            local,
+        },
     })
 }
 
-/// What frames a Session: its Title and place as the listing and its
-/// snapshot last said them, or that it is gone.
-fn frame_of(
-    listed: Option<&Listed>,
-    snapshot: Option<&SessionSnapshot>,
-    gone: Option<String>,
-) -> SessionFrame {
-    let Some(listed) = listed else {
-        return SessionFrame {
-            title: String::new(),
-            place: String::new(),
-            gone: Some(gone.unwrap_or_else(|| GONE_REMOTE.to_owned())),
-        };
-    };
-    let title = snapshot
-        .map(|snapshot| snapshot.title.clone())
-        .filter(|title| !title.is_empty())
-        .or_else(|| listed.title.clone())
-        .unwrap_or_default();
-    let workspace = listed
-        .workspace
-        .as_ref()
-        .map(|(_, name)| name.clone())
-        .or_else(|| {
-            snapshot.map(|snapshot| listed.paths.workspace_name(&snapshot.session.workspace))
-        });
-    let place = listed
-        .origin
-        .iter()
-        .cloned()
-        .chain(workspace)
-        .chain(listed.branch.clone())
-        .collect::<Vec<_>>()
-        .join(" · ");
-    SessionFrame { title, place, gone }
+/// What the core hands each open Session for its acts.
+pub(crate) struct Asked {
+    pub drafts: Drafts,
+    pub acts: Acts,
+    pub asking: Asking,
 }
-
-/// Said where the Remote a Session was opened on is no longer held.
-const GONE_REMOTE: &str = "This phone is no longer paired with the server this session is on";
 
 /// Said where the Session's Server no longer holds it.
 const GONE_SESSION: &str = "This session no longer exists";
+
+/// Said where a queued Prompt an act names is no longer queued.
+const GONE_PROMPT: &str = "That prompt is no longer queued";
+
+/// Said where a Prompt with nothing in it is sent.
+const EMPTY_PROMPT: &str = "Write something to send";
+
+impl Acting {
+    /// What the Session's acts are asked over now: its Remote as the
+    /// listing holds it, which may have been paired again since it opened.
+    fn opening(&self) -> Result<crate::listing::Opening, ActError> {
+        self.listings
+            .opening(&self.reference)
+            .ok_or_else(|| ActError::Gone {
+                message: GONE_REMOTE.to_owned(),
+            })
+    }
+
+    /// Asks `ask` of the Session's Server, as an act is asked: again while
+    /// no way carries it, and never again once it may have reached it.
+    async fn deliver<T, F>(
+        &self,
+        opening: &mut crate::listing::Opening,
+        ask: impl FnMut(SessionCommands, SessionId) -> F,
+    ) -> Result<T, Unanswered>
+    where
+        F: Future<Output = anyhow::Result<T>>,
+    {
+        let mut ask = ask;
+        let (commands, session_id) = (opening.commands.clone(), opening.session_id);
+        acts::deliver(self.asking, &mut opening.try_now, || {
+            ask(commands.clone(), session_id)
+        })
+        .await
+    }
+
+    /// Sends `text` as a Prompt delivered as `delivery`, standing as a
+    /// bubble marked as sending until its Server holds it, and given back to
+    /// the composer's draft where it fails.
+    async fn prompt(&self, text: String, delivery: PromptDelivery) -> Result<(), ActError> {
+        let text = text.trim().to_owned();
+        if text.is_empty() {
+            return Err(ActError::Invalid {
+                message: EMPTY_PROMPT.to_owned(),
+            });
+        }
+        let mut opening = self.opening()?;
+        let id = PromptId::new();
+        self.local.send_modify(|local| {
+            local.note = None;
+            local.outgoing.push(Outgoing {
+                id,
+                text: text.clone(),
+                delivery,
+                answered: false,
+            });
+        });
+        let request = AdmitPromptRequest {
+            prompt: InitialPrompt {
+                id,
+                text: text.clone(),
+                skill_invocations: Vec::new(),
+                attachments: Vec::new(),
+            },
+            delivery,
+        };
+        let admitted = self
+            .deliver(&mut opening, |commands, session_id| {
+                let request = request.clone();
+                async move { commands.admit_prompt(session_id, request).await }
+            })
+            .await;
+        match admitted {
+            Ok(_) => {
+                // It stands as sent until the Server is seen holding it.
+                self.local.send_modify(|local| {
+                    if let Some(outgoing) = local.outgoing.iter_mut().find(|sent| sent.id == id) {
+                        outgoing.answered = true;
+                    }
+                });
+                Ok(())
+            }
+            Err(unanswered) => {
+                let maybe_sent = unanswered == Unanswered::MaybeDone;
+                self.local.send_modify(|local| {
+                    local.outgoing.retain(|outgoing| outgoing.id != id);
+                    if maybe_sent {
+                        local.note = Some(frame::MAY_HAVE_BEEN_SENT.to_owned());
+                    }
+                });
+                self.drafts.give_back(&self.reference, &text);
+                Err(said(unanswered, "The server did not answer"))
+            }
+        }
+    }
+
+    async fn steer_now(&self, prompt: &str) -> Result<(), ActError> {
+        let prompt = queued_prompt(prompt)?;
+        let mut opening = self.opening()?;
+        self.deliver(&mut opening, |commands, session_id| async move {
+            commands.promote_prompt(session_id, prompt).await
+        })
+        .await
+        .map(drop)
+        .map_err(|unanswered| {
+            said(
+                unanswered,
+                "The server did not answer, so the prompt may have been steered",
+            )
+        })
+    }
+
+    async fn cancel_queued(&self, prompt: &str) -> Result<(), ActError> {
+        let prompt = queued_prompt(prompt)?;
+        let mut opening = self.opening()?;
+        self.deliver(&mut opening, |commands, session_id| async move {
+            commands.cancel_prompt(session_id, prompt).await
+        })
+        .await
+        .map(drop)
+        .map_err(|unanswered| {
+            said(
+                unanswered,
+                "The server did not answer, so the prompt may have been cancelled",
+            )
+        })
+    }
+
+    async fn stop(&self) -> Result<(), ActError> {
+        let mut opening = self.opening()?;
+        let outcome = self
+            .deliver(&mut opening, |commands, session_id| async move {
+                commands
+                    .interrupt_session_reporting_outcome(session_id)
+                    .await
+            })
+            .await
+            .map_err(|unanswered| {
+                said(
+                    unanswered,
+                    "The server did not answer, so the work may have been stopped",
+                )
+            })?;
+        // A Prompt withdrawn, as the one thing to stop, is owed back to the
+        // composer it was written in.
+        if let InterruptOutcome::WithdrewPrompt { prompt } = outcome {
+            self.drafts.give_back(&self.reference, &prompt.text);
+        }
+        Ok(())
+    }
+}
+
+/// The queued Prompt `reference` names.
+fn queued_prompt(reference: &str) -> Result<PromptId, ActError> {
+    // The Session stands; only the Prompt is no longer there to act on.
+    frame::prompt_referenced(reference).ok_or_else(|| ActError::Refused {
+        message: GONE_PROMPT.to_owned(),
+    })
+}
+
+/// An act's failure as the banner says it, `maybe` where it may have been
+/// done.
+fn said(unanswered: Unanswered, maybe: &str) -> ActError {
+    match unanswered {
+        Unanswered::NotDone(error) => error,
+        Unanswered::MaybeDone => ActError::Unreachable {
+            message: maybe.to_owned(),
+        },
+    }
+}
 
 /// `items` as shown, each sharing what `was` shows where it is unchanged.
 fn shown(was: Option<&Shown>, items: Vec<ConversationItem>) -> Shown {
@@ -294,6 +532,10 @@ fn shown(was: Option<&Shown>, items: Vec<ConversationItem>) -> Shown {
 
 /// What reads one open Session, and what it last read.
 struct Reader {
+    /// Why the Session is gone, once it is.
+    gone: Option<String>,
+    /// Whether the Session's stream is still read.
+    reading: Arc<AtomicBool>,
     listings: Listings,
     reference: String,
     session_id: SessionId,
@@ -301,6 +543,12 @@ struct Reader {
     try_now: TryNow,
     listed: Listed,
     snapshot: Option<SessionSnapshot>,
+    /// What the screen holds of its own, which its acts change, for as long
+    /// as the screen holds it.
+    local: Weak<watch::Sender<Local>>,
+    /// Whether no way to the Session's Remote answered the last request
+    /// asked of it.
+    unreachable: watch::Receiver<bool>,
     frame: watch::Sender<SessionFrame>,
     conversation: watch::Sender<Shown>,
     pacing: Pacing,
@@ -339,13 +587,18 @@ enum Ended {
 impl Reader {
     async fn read(mut self) {
         let mut listing = self.listings.listing();
+        // Where the screen holds nothing of its own, nothing it holds moves.
+        let mut local = self.local.upgrade().map_or_else(
+            || watch::channel(Local::default()).1,
+            |local| local.subscribe(),
+        );
         let mut backoff =
             RecoveryBackoff::new(self.pacing.initial_backoff, self.pacing.max_backoff);
         loop {
             let ended = match self.commands.attach_session(self.session_id).await {
                 Ok(subscription) => {
                     backoff.reset();
-                    self.follow(subscription, &mut listing).await
+                    self.follow(subscription, &mut listing, &mut local).await
                 }
                 Err(error) => match error.downcast_ref::<SessionStreamError>() {
                     // A refusal no reopening gets past ends the reading in its
@@ -358,12 +611,13 @@ impl Reader {
                 },
             };
             if let Ended::Gone(why) = ended {
-                self.show_gone(why);
-                return;
+                return self.show_gone(why, local).await;
             }
-            if let Err(why) = self.back_off(backoff.next(), &mut listing).await {
-                self.show_gone(why);
-                return;
+            if let Err(why) = self
+                .back_off(backoff.next(), &mut listing, &mut local)
+                .await
+            {
+                return self.show_gone(why, local).await;
             }
         }
     }
@@ -376,6 +630,7 @@ impl Reader {
         &mut self,
         retry_in: Duration,
         listing: &mut watch::Receiver<crate::Listing>,
+        local: &mut watch::Receiver<Local>,
     ) -> Result<(), String> {
         let until = tokio::time::Instant::now() + retry_in;
         loop {
@@ -389,6 +644,9 @@ impl Reader {
                     // Another Session moved: the wait goes on.
                     Relisted::Same => {}
                 },
+                // A Prompt sent meanwhile stands as it is being sent.
+                Ok(()) = local.changed() => self.show(),
+                Ok(()) = self.unreachable.changed() => self.show_frame(),
             }
         }
     }
@@ -399,6 +657,7 @@ impl Reader {
         &mut self,
         mut subscription: SessionSubscription,
         listing: &mut watch::Receiver<crate::Listing>,
+        local: &mut watch::Receiver<Local>,
     ) -> Ended {
         loop {
             tokio::select! {
@@ -424,6 +683,8 @@ impl Reader {
                         return Ended::Gone(GONE_REMOTE.to_owned());
                     }
                 }
+                Ok(()) = local.changed() => self.show(),
+                Ok(()) = self.unreachable.changed() => self.show_frame(),
             }
         }
     }
@@ -469,16 +730,23 @@ impl Reader {
             return Relisted::Same;
         }
         self.listed = opening.listed;
-        self.show_frame(None);
+        self.show_frame();
         Relisted::Changed
     }
 
     fn show(&self) {
-        self.show_frame(None);
+        // A Prompt sent from here that the Server now holds stands as the
+        // Server says from now on.
+        if let (Some(snapshot), Some(local)) = (&self.snapshot, self.local.upgrade()) {
+            local.send_if_modified(|local| local.held_by(snapshot));
+        }
+        self.show_frame();
         let items = self
             .snapshot
             .as_ref()
-            .map_or_else(conversation::loading, conversation::conversation);
+            .map_or_else(conversation::loading, |snapshot| {
+                frame::with_outgoing(conversation::conversation(snapshot), &self.local())
+            });
         self.conversation.send_if_modified(|current| {
             let next = shown(Some(current), items);
             let changed = next.len() != current.len()
@@ -491,8 +759,14 @@ impl Reader {
         });
     }
 
-    fn show_frame(&self, gone: Option<String>) {
-        let frame = frame_of(Some(&self.listed), self.snapshot.as_ref(), gone);
+    fn show_frame(&self) {
+        let frame = frame_of(
+            Some(&self.listed),
+            self.snapshot.as_ref(),
+            self.gone.clone(),
+            &self.local(),
+            *self.unreachable.borrow(),
+        );
         self.frame.send_if_modified(|current| {
             let changed = *current != frame;
             *current = frame;
@@ -500,8 +774,24 @@ impl Reader {
         });
     }
 
-    fn show_gone(&self, why: String) {
-        self.show_frame(Some(why));
+    /// What the screen holds of its own now.
+    fn local(&self) -> Local {
+        self.local
+            .upgrade()
+            .map(|local| local.borrow().clone())
+            .unwrap_or_default()
+    }
+
+    /// Shows the Session gone, as `why` says, and reads it no more; what
+    /// the screen's own acts change meanwhile is shown until it is closed,
+    /// so a Prompt whose send fails goes from the conversation all the same.
+    async fn show_gone(mut self, why: String, mut local: watch::Receiver<Local>) {
+        self.reading.store(false, Ordering::Release);
+        self.gone = Some(why);
+        self.show_frame();
+        while local.changed().await.is_ok() {
+            self.show();
+        }
     }
 }
 
@@ -532,10 +822,18 @@ mod tests {
         backoff: Duration,
     ) -> (JoinHandle<()>, watch::Receiver<SessionFrame>) {
         let opening = listings.opening(reference).expect("its Remote is held");
-        let (frame, seen) = watch::channel(frame_of(Some(&opening.listed), None, None));
+        let (frame, seen) = watch::channel(frame_of(
+            Some(&opening.listed),
+            None,
+            None,
+            &Local::default(),
+            false,
+        ));
         let (conversation, _) = watch::channel(shown(None, conversation::loading()));
         let try_now = transport.try_now();
         let reader = Reader {
+            gone: None,
+            reading: Arc::new(AtomicBool::new(true)),
             listings: listings.clone(),
             reference: reference.to_owned(),
             session_id: opening.session_id,
@@ -550,6 +848,8 @@ mod tests {
             try_now,
             listed: opening.listed,
             snapshot: None,
+            local: Weak::new(),
+            unreachable: opening.unreachable,
             frame,
             conversation,
             pacing: Pacing {

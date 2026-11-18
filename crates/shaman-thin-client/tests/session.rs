@@ -5,13 +5,14 @@
 
 mod support;
 
-use shaman::protocol::{SessionId, SessionStatus, TurnStatus, Way};
+use shaman::protocol::{PromptDelivery, SessionId, SessionStatus, TurnStatus, Way};
 use shaman_thin_client::{
-    ActiveRow, ConversationChange, ConversationItem, ItemKind, Outlook, PairingOutcome, TurnOutcome,
+    ActError, ActiveRow, BarKind, ConversationChange, ConversationItem, ItemKind, Outlook,
+    PairingOutcome, TurnOutcome,
 };
 
 use shaman::provider::{ProviderActivityId, ProviderCommandStatus, ProviderEvent};
-use support::{Phone, SCRIPTED, Script, ServingServer, WORKING};
+use support::{Gate, Phone, SCRIPTED, Script, ServingServer, WORKING};
 
 /// Has the scripted Session's Provider send `events`, in order.
 fn say(script: &Script, events: impl IntoIterator<Item = ProviderEvent>) {
@@ -92,6 +93,13 @@ fn loaded(items: &[ConversationItem]) -> bool {
     !items
         .iter()
         .any(|item| matches!(item.kind, ItemKind::Loading { .. }))
+}
+
+/// Whether the Session's Turn has failed, its Error standing.
+fn failed_turn(items: &[ConversationItem]) -> bool {
+    items
+        .iter()
+        .any(|item| matches!(item.kind, ItemKind::Error { .. }))
 }
 
 fn session_id(reference: &str) -> SessionId {
@@ -436,7 +444,8 @@ async fn a_session_deleted_while_it_is_open_says_it_is_gone_and_is_read_no_more(
         .await;
     let row = row(&phone, "Map the workspace").await;
     let reading = phone.open(&row.session);
-    reading.conversation_until(loaded).await;
+    // A Session is deleted once its Turn has failed, and no longer works.
+    reading.conversation_until(failed_turn).await;
 
     desk.delete(session_id(&row.session)).await;
     let frame = reading.frame_until(|frame| frame.gone.is_some()).await;
@@ -500,6 +509,438 @@ async fn a_session_its_server_no_longer_holds_says_it_is_gone() {
     let reading = phone.open("not a reference");
     assert!(reading.frame().await.gone.is_some());
     assert!(!reading.session.is_reading());
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+/// The text of every Prompt the Server holds of the Session `session`, as
+/// it was delivered.
+async fn prompts(server: &ServingServer, session: SessionId) -> Vec<(String, PromptDelivery)> {
+    server
+        .read(session)
+        .await
+        .prompts
+        .into_iter()
+        .map(|prompt| (prompt.text, prompt.delivery))
+        .collect()
+}
+
+fn sending(items: &[ConversationItem]) -> Vec<(String, bool)> {
+    items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            ItemKind::UserMessage { text, sending, .. } => Some((text.clone(), *sending)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_prompt_sent_to_a_live_turn_steers_it_and_the_bar_says_it_works_until_stopped() {
+    let desk = ServingServer::start("thin-send-steer").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let session = desk
+        .begin(
+            &workspace(&holder, SCRIPTED),
+            "Draw the invite as a QR code",
+        )
+        .await;
+    let script = desk.script().await;
+    say(
+        &script,
+        [ProviderEvent::CommandStarted {
+            activity_id: ProviderActivityId::new("qr"),
+            command: "cargo test qr".to_owned(),
+            cwd: None,
+        }],
+    );
+    let row = row(&phone, "Draw the invite as a QR code").await;
+    let reading = phone.open(&row.session);
+    let frame = reading.frame_until(|frame| frame.bar.is_some()).await;
+    let bar = frame.bar.expect("a bar");
+    assert_eq!(bar.kind, BarKind::Working);
+    assert_eq!(bar.words, "Working");
+    assert_eq!(bar.stop, "Stop");
+    let composer = frame.composer.expect("a composer");
+    assert_eq!(composer.queue.as_deref(), Some("Queue for after this turn"));
+    assert_eq!(composer.unreachable, None);
+
+    reading
+        .session
+        .send("  Give it a quiet zone too.\n".to_owned())
+        .await
+        .expect("sent");
+    assert_eq!(
+        prompts(&desk, session).await.last(),
+        Some(&(
+            "Give it a quiet zone too.".to_owned(),
+            PromptDelivery::Steer
+        )),
+        "delivered as a steer, trimmed"
+    );
+    let steered = reading
+        .conversation_until(|items| {
+            sending(items).contains(&("Give it a quiet zone too.".to_owned(), false))
+        })
+        .await;
+    assert_eq!(
+        sending(&steered.items)
+            .iter()
+            .filter(|(text, _)| text == "Give it a quiet zone too.")
+            .count(),
+        1,
+        "it stands once, as the Server holds it: {:?}",
+        read_as(&steered.items)
+    );
+
+    let refused = reading.session.send("  \n".to_owned()).await;
+    assert_eq!(
+        refused,
+        Err(ActError::Invalid {
+            message: "Write something to send".to_owned()
+        })
+    );
+
+    reading.session.stop().await.expect("stopped");
+    let stopped = reading
+        .conversation_until(|items| {
+            cards(items)
+                .first()
+                .is_some_and(|card| card.outcome == TurnOutcome::Stopped)
+        })
+        .await;
+    assert!(!stopped.items.is_empty());
+    reading.frame_until(|frame| frame.bar.is_none()).await;
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_queued_prompt_waits_at_the_foot_and_is_steered_now_or_cancelled() {
+    let desk = ServingServer::start("thin-send-queue").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let session = desk
+        .begin(&workspace(&holder, SCRIPTED), "Add that CLI flag too")
+        .await;
+    let script = desk.script().await;
+    say(
+        &script,
+        [ProviderEvent::CommandStarted {
+            activity_id: ProviderActivityId::new("build"),
+            command: "cargo build".to_owned(),
+            cwd: None,
+        }],
+    );
+    let row = row(&phone, "Add that CLI flag too").await;
+    let reading = phone.open(&row.session);
+    reading.frame_until(|frame| frame.bar.is_some()).await;
+
+    reading
+        .session
+        .queue("Then the changelog".to_owned())
+        .await
+        .expect("queued");
+    let frame = reading
+        .frame_until(|frame| frame.queued.iter().any(|queued| queued.label == "Queued"))
+        .await;
+    let [queued] = &frame.queued[..] else {
+        panic!("one queued: {:?}", frame.queued);
+    };
+    assert_eq!(queued.text, "Then the changelog");
+    assert_eq!(queued.steer_now.as_deref(), Some("Steer now"));
+    assert_eq!(queued.cancel.as_deref(), Some("Cancel"));
+    assert!(
+        !sending(&reading.conversation_now().items)
+            .iter()
+            .any(|(text, _)| text == "Then the changelog"),
+        "it waits at the foot, not among what was said"
+    );
+
+    reading
+        .session
+        .steer_now(queued.prompt.clone())
+        .await
+        .expect("steered now");
+    reading.frame_until(|frame| frame.queued.is_empty()).await;
+    assert!(
+        prompts(&desk, session)
+            .await
+            .contains(&("Then the changelog".to_owned(), PromptDelivery::Steer)),
+        "delivered as a steer"
+    );
+
+    reading
+        .session
+        .queue("And the docs".to_owned())
+        .await
+        .expect("queued");
+    let frame = reading
+        .frame_until(|frame| frame.queued.iter().any(|queued| queued.label == "Queued"))
+        .await;
+    reading
+        .session
+        .cancel_queued(frame.queued[0].prompt.clone())
+        .await
+        .expect("cancelled");
+    reading.frame_until(|frame| frame.queued.is_empty()).await;
+    let snapshot = desk.read(session).await;
+    let cancelled = snapshot
+        .prompts
+        .iter()
+        .find(|prompt| prompt.text == "And the docs")
+        .expect("held");
+    assert_eq!(cancelled.status, shaman::protocol::PromptStatus::Cancelled);
+    assert_eq!(
+        phone.core.draft(row.session.clone()),
+        "",
+        "a cancelled Prompt is not owed back"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn stop_on_a_session_working_only_for_a_prompt_not_yet_delivered_gives_its_text_back() {
+    let desk = ServingServer::start("thin-stop-withdraw").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, WORKING), "Tidy the build")
+        .await;
+    let row = row(&phone, "Tidy the build").await;
+    let reading = phone.open(&row.session);
+    let frame = reading.frame_until(|frame| frame.bar.is_some()).await;
+    assert_eq!(frame.bar.map(|bar| bar.words).as_deref(), Some("Working"));
+    phone
+        .core
+        .set_draft(row.session.clone(), "and the docs".to_owned());
+
+    reading.session.stop().await.expect("stopped");
+    assert_eq!(
+        phone.core.draft(row.session.clone()),
+        "Tidy the build\nand the docs",
+        "ahead of anything already written there"
+    );
+    reading.frame_until(|frame| frame.bar.is_none()).await;
+    reading
+        .conversation_until(|items| sending(items).is_empty())
+        .await;
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_send_that_fails_goes_from_the_conversation_and_its_text_goes_back_to_the_composer() {
+    let desk = ServingServer::start("thin-send-gone").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let session = desk
+        .begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+    let row = row(&phone, "Map the workspace").await;
+    let reading = phone.open(&row.session);
+    reading.conversation_until(failed_turn).await;
+    phone
+        .core
+        .set_draft(row.session.clone(), "written meanwhile".to_owned());
+
+    desk.delete(session).await;
+    let failed = reading.session.send("One more thing".to_owned()).await;
+    assert!(matches!(failed, Err(ActError::Gone { .. })), "{failed:?}");
+    assert_eq!(
+        phone.core.draft(row.session.clone()),
+        "One more thing\nwritten meanwhile"
+    );
+    // Its bubble goes.
+    reading
+        .conversation_until(|items| {
+            !sending(items)
+                .iter()
+                .any(|(text, _)| text == "One more thing")
+        })
+        .await;
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn on_an_unreachable_origin_a_send_waits_marked_as_sending_and_goes_when_it_answers() {
+    let desk = ServingServer::start("thin-send-redial").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let phone = Phone::new();
+    let invite = desk.invite(vec![Way::Direct(gate.address())]).await;
+    assert!(matches!(
+        phone
+            .core
+            .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
+            .await,
+        PairingOutcome::Paired { .. }
+    ));
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let session = desk
+        .begin(
+            &workspace(&holder, SCRIPTED),
+            "Draw the invite as a QR code",
+        )
+        .await;
+    let script = desk.script().await;
+    say(
+        &script,
+        [ProviderEvent::CommandStarted {
+            activity_id: ProviderActivityId::new("qr"),
+            command: "cargo test qr".to_owned(),
+            cwd: None,
+        }],
+    );
+    let row = row(&phone, "Draw the invite as a QR code").await;
+    let reading = phone.open(&row.session);
+    reading.frame_until(|frame| frame.bar.is_some()).await;
+    phone.acts_until(false).await;
+
+    gate.shut_now();
+    let frame = reading
+        .frame_until(|frame| {
+            frame
+                .composer
+                .as_ref()
+                .is_some_and(|composer| composer.unreachable.is_some())
+        })
+        .await;
+    assert_eq!(
+        frame
+            .composer
+            .and_then(|composer| composer.unreachable)
+            .as_deref(),
+        Some("The server is unreachable. Nothing sent goes anywhere until it answers.")
+    );
+
+    let sent = {
+        let session = reading.session.clone();
+        tokio::spawn(async move { session.send("Give it a quiet zone".to_owned()).await })
+    };
+    reading
+        .conversation_until(|items| {
+            sending(items).contains(&("Give it a quiet zone".to_owned(), true))
+        })
+        .await;
+    phone.acts_until(true).await;
+    // It is tried while the way is shut, and is not given up.
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    assert!(!sent.is_finished(), "it waits");
+
+    gate.open_now();
+    sent.await
+        .expect("the send ends")
+        .expect("sent once it answered");
+    phone.acts_until(false).await;
+    assert_eq!(
+        prompts(&desk, session)
+            .await
+            .iter()
+            .filter(|(text, _)| text == "Give it a quiet zone")
+            .count(),
+        1,
+        "sent once"
+    );
+    reading
+        .frame_until(|frame| {
+            frame
+                .composer
+                .as_ref()
+                .is_some_and(|composer| composer.unreachable.is_none())
+        })
+        .await;
+    reading
+        .conversation_until(|items| {
+            sending(items).contains(&("Give it a quiet zone".to_owned(), false))
+        })
+        .await;
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_send_never_answered_is_not_sent_again_and_its_text_stays_saying_it_may_have_been() {
+    let desk = ServingServer::start("thin-send-unanswered").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let mut timings = support::timings();
+    // A dial that hears nothing is still under way when the act's bound
+    // passes, so the send may have gone.
+    timings.redeemer.handshake_timeout = std::time::Duration::from_secs(2);
+    timings.act_bound = std::time::Duration::from_millis(300);
+    let phone = Phone::with(timings);
+    let invite = desk.invite(vec![Way::Direct(gate.address())]).await;
+    assert!(matches!(
+        phone
+            .core
+            .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
+            .await,
+        PairingOutcome::Paired { .. }
+    ));
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let session = desk
+        .begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+    let row = row(&phone, "Map the workspace").await;
+    let reading = phone.open(&row.session);
+    reading.conversation_until(loaded).await;
+
+    gate.shut_now();
+    let failed = reading.session.send("One more thing".to_owned()).await;
+    assert_eq!(
+        failed,
+        Err(ActError::Unreachable {
+            message: "The server did not answer".to_owned()
+        })
+    );
+    assert_eq!(phone.core.draft(row.session.clone()), "One more thing");
+    let frame = reading
+        .frame_until(|frame| {
+            frame
+                .composer
+                .as_ref()
+                .is_some_and(|composer| composer.note.is_some())
+        })
+        .await;
+    assert_eq!(
+        frame.composer.and_then(|composer| composer.note).as_deref(),
+        Some("The server did not answer, so this prompt may have been sent")
+    );
+
+    gate.open_now();
+    reading
+        .frame_until(|frame| {
+            frame
+                .composer
+                .as_ref()
+                .is_some_and(|composer| composer.unreachable.is_none())
+        })
+        .await;
+    reading
+        .conversation_until(|items| {
+            !sending(items)
+                .iter()
+                .any(|(text, _)| text == "One more thing")
+        })
+        .await;
+    assert!(
+        !prompts(&desk, session)
+            .await
+            .iter()
+            .any(|(text, _)| text == "One more thing"),
+        "never sent again"
+    );
 
     phone.shutdown();
     desk.shutdown().await;

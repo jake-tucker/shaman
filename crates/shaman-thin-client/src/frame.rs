@@ -1,0 +1,325 @@
+//! What frames an open Session's screen, whole on each change: the header,
+//! the bar above the composer, the composer's state and the Prompts queued
+//! behind the working Turn; and the Prompts this screen has sent and its
+//! Server has yet to be seen holding, which stand in the conversation and
+//! among the queued as they are being sent.
+
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use shaman_protocol::{
+    PromptDelivery, PromptId, PromptStatus, SessionSnapshot, SessionTimestamp, WatchSummary,
+};
+
+use crate::{
+    conversation::{ConversationItem, ItemKind},
+    listing::Listed,
+};
+
+/// What frames an open Session's screen, whole on each change.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct SessionFrame {
+    /// The Session's Title.
+    pub title: String,
+    /// Where it stands, beneath the Title: "origin · workspace · branch",
+    /// the Origin named only where the phone holds more than one Remote.
+    pub place: String,
+    /// Said where the Session, or the Remote it is on, is gone.
+    pub gone: Option<String>,
+    /// The bar above the composer, while the Session is Working or
+    /// Monitoring.
+    pub bar: Option<Bar>,
+    /// The composer, where the Session takes Prompts from this phone: none
+    /// where it is gone, or is a Subagent's.
+    pub composer: Option<Composer>,
+    /// The Prompts queued for after the working Turn, oldest first, which
+    /// stand at the foot of the conversation.
+    pub queued: Vec<QueuedPrompt>,
+}
+
+/// The bar above the composer: what the Session's work is doing, since when,
+/// and the one tap that stops it.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct Bar {
+    pub kind: BarKind,
+    /// "Working" or "Monitoring".
+    pub words: String,
+    /// When the work began, as its Server gave it, which Swift counts the
+    /// elapsed time from.
+    pub since: SystemTime,
+    /// What a Monitoring Session waits on: its one Watch, or how many.
+    pub watching: Option<String>,
+    /// The tap that stops it.
+    pub stop: String,
+}
+
+/// What the bar stands for, by which Swift picks its colour and symbol.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum BarKind {
+    Working,
+    Monitoring,
+}
+
+/// The composer at the foot of an open Session.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct Composer {
+    /// What the empty field says.
+    pub placeholder: String,
+    /// The offer a held send makes, while a Turn works: to queue the Prompt
+    /// for after it rather than steer it.
+    pub queue: Option<String>,
+    /// Said above the composer while the Session's Origin is Unreachable,
+    /// when the composer takes nothing.
+    pub unreachable: Option<String>,
+    /// Said beneath the composer after a send went unanswered: its text is
+    /// back in the field, and it may have been sent.
+    pub note: Option<String>,
+}
+
+/// A Prompt queued for after the working Turn: a dashed bubble at the foot.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct QueuedPrompt {
+    /// The Prompt, as the core is handed it back.
+    pub prompt: String,
+    pub text: String,
+    /// What it carried beside its text, where it carried anything.
+    pub note: Option<String>,
+    /// "Queued", or "Sending" while it is on its way.
+    pub label: String,
+    /// The act that delivers it now, steering the working Turn.
+    pub steer_now: Option<String>,
+    /// The act that withdraws it.
+    pub cancel: Option<String>,
+}
+
+/// What an open Session's screen holds of its own beside what its Server
+/// says: the Prompts it sent that the Server has yet to be seen holding, and
+/// what a send that went unanswered left to say.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Local {
+    pub outgoing: Vec<Outgoing>,
+    pub note: Option<String>,
+}
+
+/// A Prompt this screen sent, until its Server is seen holding it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Outgoing {
+    pub id: PromptId,
+    pub text: String,
+    pub delivery: PromptDelivery,
+    /// Whether its Server has answered that it took it.
+    pub answered: bool,
+}
+
+impl Local {
+    /// Lets go of every Prompt `snapshot` holds, which stands as its Server
+    /// says from now on; answers whether any was.
+    pub fn held_by(&mut self, snapshot: &SessionSnapshot) -> bool {
+        let before = self.outgoing.len();
+        self.outgoing
+            .retain(|outgoing| !snapshot.prompts.iter().any(|held| held.id == outgoing.id));
+        self.outgoing.len() != before
+    }
+}
+
+/// Said beneath the composer after a send went unanswered.
+pub(crate) const MAY_HAVE_BEEN_SENT: &str =
+    "The server did not answer, so this prompt may have been sent";
+
+/// The id a Prompt stands under in the conversation, before and after its
+/// Server holds it.
+pub(crate) fn prompt_item_id(id: PromptId) -> String {
+    format!("prompt:{id}")
+}
+
+/// The Prompt `reference` names, as a queued bubble hands it back.
+pub(crate) fn prompt_referenced(reference: &str) -> Option<PromptId> {
+    serde_json::from_value(serde_json::Value::String(reference.to_owned())).ok()
+}
+
+/// What frames a Session: its Title and place as the listing and its
+/// snapshot last said them, or that it is gone; what its work is doing; and
+/// what this screen sent of its own. `unreachable` says whether its Origin
+/// answered the last time it was asked.
+pub(crate) fn frame_of(
+    listed: Option<&Listed>,
+    snapshot: Option<&SessionSnapshot>,
+    gone: Option<String>,
+    local: &Local,
+    unreachable: bool,
+) -> SessionFrame {
+    let Some(listed) = listed else {
+        return SessionFrame {
+            title: String::new(),
+            place: String::new(),
+            gone: Some(gone.unwrap_or_else(|| GONE_REMOTE.to_owned())),
+            bar: None,
+            composer: None,
+            queued: Vec::new(),
+        };
+    };
+    let title = snapshot
+        .map(|snapshot| snapshot.title.clone())
+        .filter(|title| !title.is_empty())
+        .or_else(|| listed.title.clone())
+        .unwrap_or_default();
+    let workspace = listed
+        .workspace
+        .as_ref()
+        .map(|(_, name)| name.clone())
+        .or_else(|| {
+            snapshot.map(|snapshot| listed.paths.workspace_name(&snapshot.session.workspace))
+        });
+    let place = listed
+        .origin
+        .iter()
+        .cloned()
+        .chain(workspace)
+        .chain(listed.branch.clone())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    if gone.is_some() {
+        return SessionFrame {
+            title,
+            place,
+            gone,
+            bar: None,
+            composer: None,
+            queued: Vec::new(),
+        };
+    }
+    let working = snapshot.is_some_and(|snapshot| snapshot.working_since().is_some());
+    // A Subagent's Session is read, not written to.
+    let subagent = snapshot.is_some_and(|snapshot| snapshot.session.parent.is_some());
+    let composer = (!subagent).then(|| Composer {
+        placeholder: if working {
+            "Steer, or hold send to queue"
+        } else {
+            "Message"
+        }
+        .to_owned(),
+        queue: working.then(|| "Queue for after this turn".to_owned()),
+        unreachable: unreachable.then(|| unreachable_line(listed)),
+        note: local.note.clone(),
+    });
+    SessionFrame {
+        title,
+        place,
+        gone,
+        bar: snapshot.and_then(bar),
+        composer,
+        queued: queued(snapshot, local),
+    }
+}
+
+/// Said where the Remote a Session was opened on is no longer held.
+pub(crate) const GONE_REMOTE: &str =
+    "This phone is no longer paired with the server this session is on";
+
+/// Said above the composer while the Session's Origin is Unreachable,
+/// naming it where the phone names Origins at all.
+fn unreachable_line(listed: &Listed) -> String {
+    let named = listed.origin.as_ref().map_or_else(
+        || "The server is unreachable".to_owned(),
+        |origin| format!("{origin} is unreachable"),
+    );
+    format!("{named}. Nothing sent goes anywhere until it answers.")
+}
+
+/// The bar, while the Session is Working, or else Monitoring.
+fn bar(snapshot: &SessionSnapshot) -> Option<Bar> {
+    let (kind, words, since, watching) = if let Some(since) = snapshot.working_since() {
+        (BarKind::Working, "Working", since, None)
+    } else {
+        let since = snapshot.monitoring_since()?;
+        (
+            BarKind::Monitoring,
+            "Monitoring",
+            since,
+            watching(&snapshot.watches),
+        )
+    };
+    Some(Bar {
+        kind,
+        words: words.to_owned(),
+        since: instant(since),
+        watching,
+        stop: "Stop".to_owned(),
+    })
+}
+
+/// What a Monitoring Session waits on, as the Working Indicator names it:
+/// its one Watch by its description, or several by how many.
+fn watching(watches: &[WatchSummary]) -> Option<String> {
+    match watches {
+        [] => None,
+        [watch] => Some(watch.description.clone()),
+        several => Some(format!("{} watches", several.len())),
+    }
+}
+
+/// The Prompts queued for after the working Turn, oldest first, and then
+/// those this screen is sending to be queued.
+fn queued(snapshot: Option<&SessionSnapshot>, local: &Local) -> Vec<QueuedPrompt> {
+    let mut held = snapshot
+        .into_iter()
+        .flat_map(|snapshot| &snapshot.prompts)
+        .filter(|prompt| {
+            prompt.status == PromptStatus::Pending && prompt.delivery == PromptDelivery::Queue
+        })
+        .collect::<Vec<_>>();
+    held.sort_by_key(|prompt| prompt.admission_order);
+    held.into_iter()
+        .map(|prompt| QueuedPrompt {
+            prompt: prompt.id.to_string(),
+            text: prompt.text.clone(),
+            note: crate::conversation::carried(prompt.attachments.len(), &prompt.skill_invocations),
+            label: "Queued".to_owned(),
+            steer_now: Some("Steer now".to_owned()),
+            cancel: Some("Cancel".to_owned()),
+        })
+        .chain(
+            local
+                .outgoing
+                .iter()
+                .filter(|outgoing| outgoing.delivery == PromptDelivery::Queue)
+                .map(|outgoing| QueuedPrompt {
+                    prompt: outgoing.id.to_string(),
+                    text: outgoing.text.clone(),
+                    note: None,
+                    label: "Sending".to_owned(),
+                    steer_now: None,
+                    cancel: None,
+                }),
+        )
+        .collect()
+}
+
+/// `items`, with each Prompt this screen is sending to steer or begin a Turn
+/// at their foot, as a bubble marked as sending until its Server answers.
+pub(crate) fn with_outgoing(
+    mut items: Vec<ConversationItem>,
+    local: &Local,
+) -> Vec<ConversationItem> {
+    items.extend(
+        local
+            .outgoing
+            .iter()
+            .filter(|outgoing| outgoing.delivery != PromptDelivery::Queue)
+            .map(|outgoing| ConversationItem {
+                id: prompt_item_id(outgoing.id),
+                kind: ItemKind::UserMessage {
+                    text: outgoing.text.clone(),
+                    note: None,
+                    sending: !outgoing.answered,
+                },
+            }),
+    );
+    items
+}
+
+fn instant(timestamp: SessionTimestamp) -> SystemTime {
+    UNIX_EPOCH + Duration::from_millis(timestamp.0)
+}
+
+#[cfg(test)]
+mod tests;

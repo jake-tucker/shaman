@@ -605,7 +605,8 @@ fn a_bubble_says_what_its_message_carried_beside_its_text() {
         message_item(&message).kind,
         ItemKind::UserMessage {
             text: "$review this".to_owned(),
-            note: Some("review".to_owned())
+            note: Some("review".to_owned()),
+            sending: false,
         }
     );
     message.skill_invocations.clear();
@@ -613,7 +614,8 @@ fn a_bubble_says_what_its_message_carried_beside_its_text() {
         message_item(&message).kind,
         ItemKind::UserMessage {
             text: "$review this".to_owned(),
-            note: None
+            note: None,
+            sending: false,
         }
     );
 }
@@ -713,4 +715,20 @@ fn a_turn_standing_as_a_newer_server_says_is_held_open_and_a_sender_it_names_rea
         message_item(message).kind,
         ItemKind::AgentMessage { .. }
     ));
+}
+
+#[test]
+fn a_bubble_counts_the_attachments_its_message_carried_and_names_its_skills_beside_them() {
+    let skill = |name: &str| SkillInvocation {
+        skill_id: SkillId::new(name),
+        name: name.to_owned(),
+        scope: None,
+        span: TextSpan { start: 0, end: 1 },
+    };
+    assert_eq!(carried(1, &[]).as_deref(), Some("1 attachment"));
+    assert_eq!(
+        carried(3, &[skill("review")]).as_deref(),
+        Some("3 attachments · review")
+    );
+    assert_eq!(carried(0, &[]), None);
 }

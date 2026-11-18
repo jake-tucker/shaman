@@ -33,9 +33,10 @@ use shaman_pairing::{
     signer::{Signer as _, testing::CallbackSigner},
 };
 use shaman_thin_client::{
-    ConversationChange, ConversationItem, ConversationListener, CoreTimings, DeviceListener,
-    FrameListener, KeySigner, Listing, ListingListener, OpenSession, Outlook, OutlookListener,
-    Servers, ServersListener, SessionFrame, SignError, Subscription, ThinClient, ThisDevice,
+    ActsListener, ConversationChange, ConversationItem, ConversationListener, CoreTimings,
+    DeviceListener, FrameListener, KeySigner, Listing, ListingListener, OpenSession, Outlook,
+    OutlookListener, Servers, ServersListener, SessionFrame, SignError, Subscription, ThinClient,
+    ThisDevice,
 };
 use tokio::{
     net::TcpListener,
@@ -279,6 +280,8 @@ pub struct Gate {
     address: SocketAddr,
     open: watch::Sender<bool>,
     dialled: Arc<AtomicU64>,
+    /// The connections it carries, which shutting it cuts.
+    carrying: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
 }
 
 impl Gate {
@@ -304,7 +307,8 @@ impl Gate {
     }
 
     /// A way to `target` held shut until it is opened, then carrying as many
-    /// as `carried` connections there and holding each after them.
+    /// as `carried` connections there and holding each after them, and
+    /// holding each new one while it is shut again.
     async fn carrying(target: SocketAddr, carried: u64) -> Self {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .await
@@ -312,8 +316,10 @@ impl Gate {
         let address = listener.local_addr().expect("the way's address");
         let open = watch::Sender::new(false);
         let dialled = Arc::new(AtomicU64::new(0));
+        let carrying = Arc::new(Mutex::new(Vec::new()));
         let mut opened = open.subscribe();
         let counted = dialled.clone();
+        let proxies = carrying.clone();
         tokio::spawn(async move {
             // Until it opens, nothing is accepted: a dial connects, and its
             // handshake hears nothing.
@@ -322,21 +328,23 @@ impl Gate {
             }
             let mut holding = Vec::new();
             while let Ok((mut inbound, _)) = listener.accept().await {
-                if counted.fetch_add(1, Ordering::AcqRel) >= carried {
+                if !*opened.borrow() || counted.fetch_add(1, Ordering::AcqRel) >= carried {
                     holding.push(inbound);
                     continue;
                 }
-                tokio::spawn(async move {
+                let proxy = tokio::spawn(async move {
                     if let Ok(mut outbound) = tokio::net::TcpStream::connect(target).await {
                         let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;
                     }
                 });
+                proxies.lock().unwrap().push(proxy);
             }
         });
         Self {
             address,
             open,
             dialled,
+            carrying,
         }
     }
 
@@ -346,6 +354,15 @@ impl Gate {
 
     pub fn open_now(&self) {
         self.open.send_replace(true);
+    }
+
+    /// Shuts the way again: every connection it carries is cut, and each
+    /// made from now on connects and hears nothing until it opens.
+    pub fn shut_now(&self) {
+        self.open.send_replace(false);
+        for proxy in self.carrying.lock().unwrap().drain(..) {
+            proxy.abort();
+        }
     }
 
     /// How many connections the way has carried.
@@ -491,6 +508,19 @@ impl Phone {
             Ok(Ok(listing)) => listing.clone().expect("heard"),
             _ => panic!("the listing never showed what was looked for"),
         }
+    }
+
+    /// Whether an act is under way, once it is as `wanted` says.
+    pub async fn acts_until(&self, wanted: bool) {
+        let (sender, mut heard) = watch::channel(None);
+        let _subscription = self.core.watch_acts(Arc::new(Heard(sender)));
+        timeout(
+            PROGRESS_DEADLINE,
+            heard.wait_for(|under_way| *under_way == Some(wanted)),
+        )
+        .await
+        .expect("acts stood as wanted in time")
+        .expect("heard");
     }
 
     /// Opens the Session `reference` names, as a screen pushed to read it.
@@ -664,6 +694,12 @@ impl ListingListener for Heard<Listing> {
 impl FrameListener for Heard<SessionFrame> {
     fn changed(&self, frame: SessionFrame) {
         self.0.send_replace(Some(frame));
+    }
+}
+
+impl ActsListener for Heard<bool> {
+    fn changed(&self, under_way: bool) {
+        self.0.send_replace(Some(under_way));
     }
 }
 

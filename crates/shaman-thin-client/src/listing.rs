@@ -38,7 +38,7 @@ use shaman_protocol::{
 };
 use tokio::{runtime::Handle, sync::Notify, sync::watch, task::JoinHandle};
 
-use crate::{ActError, device::RememberedWorkspace};
+use crate::{ActError, device::RememberedWorkspace, reach::Reaching};
 
 /// How long a phone leaves a Session untouched before it settles on its own:
 /// the schema's default of three days, which a phone offers no Setting to
@@ -911,6 +911,8 @@ struct Followed {
     generation: u64,
     /// What its Sessions are read over, which says when to try again now.
     transport: Arc<PairingTransport>,
+    /// Whether no way answered the last request asked of it.
+    unreachable: watch::Receiver<bool>,
     commands: SessionCommands,
     /// Its catalog's reader and its listing's asker, which go with it.
     _readers: Readers,
@@ -1108,6 +1110,7 @@ impl Listings {
             session_id,
             commands: followed.commands.clone(),
             try_now: followed.transport.try_now(),
+            unreachable: followed.unreachable.clone(),
             listed: Listed {
                 remote: remote.name.clone(),
                 origin: origin_named.then(|| remote.name.clone()),
@@ -1133,6 +1136,8 @@ pub(crate) struct Opening {
     pub session_id: SessionId,
     pub commands: SessionCommands,
     pub try_now: TryNow,
+    /// Whether no way to its Remote answered the last request asked of it.
+    pub unreachable: watch::Receiver<bool>,
     pub listed: Listed,
 }
 
@@ -1162,11 +1167,13 @@ impl Listings {
             self.shared.redeemer.clone(),
             answered.name.clone(),
         ));
+        let reaching = Arc::new(Reaching::new(transport.clone()));
         self.shared.lock().remotes.push(Followed {
             answered,
             generation: 0,
-            transport: transport.clone(),
-            commands: SessionCommands::new(transport, self.shared.timings),
+            transport,
+            unreachable: reaching.unreachable(),
+            commands: SessionCommands::new(reaching, self.shared.timings),
             _readers: Readers(Vec::new()),
         });
         self.shared.render();
@@ -1204,7 +1211,9 @@ impl Shared {
         let name = stored.remote.name.clone();
         let transport = Arc::new(PairingTransport::new(self.redeemer.clone(), name.clone()));
         let try_now = transport.try_now();
-        let commands = SessionCommands::new(transport.clone(), self.timings);
+        let reaching = Arc::new(Reaching::new(transport.clone()));
+        let unreachable = reaching.unreachable();
+        let commands = SessionCommands::new(reaching, self.timings);
         let wanted = Arc::new(Notify::new());
         let generation = stored.generation;
         let reader = self.runtime.spawn(follow_catalog(
@@ -1241,6 +1250,7 @@ impl Shared {
             },
             generation,
             transport,
+            unreachable,
             commands,
             _readers: Readers(vec![reader, asker]),
         }
