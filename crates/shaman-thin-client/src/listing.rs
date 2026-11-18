@@ -13,6 +13,10 @@
 //! the rows narrowed, filtered and ordered, and with the menu the screen's
 //! title opens, each choice carrying the scope Swift hands back.
 //!
+//! A Remote that reads Unreachable keeps the rows it last gave, dimmed, and
+//! stands as a slim row of its own at the foot of the active ones, offering
+//! to try it again; the rows it gives once it answers take their place.
+//!
 //! Fixed here from the schema's defaults, since a phone has no Settings:
 //! Sessions settle after three idle days, and a Sidekick's Subsessions are
 //! left out, their Sidekick's row speaking for them.
@@ -38,7 +42,11 @@ use shaman_protocol::{
 };
 use tokio::{runtime::Handle, sync::Notify, sync::watch, task::JoinHandle};
 
-use crate::{ActError, device::RememberedWorkspace, reach::Reaching};
+use crate::{
+    ActError,
+    device::RememberedWorkspace,
+    reach::{self, Network, Reach, Reaching, Reading, Unreached},
+};
 
 /// How long a phone leaves a Session untouched before it settles on its own:
 /// the schema's default of three days, which a phone offers no Setting to
@@ -67,6 +75,9 @@ pub struct Listing {
     /// Said at the foot of the active rows while a Remote held has yet to
     /// answer with its Sessions.
     pub waiting: Option<String>,
+    /// A slim row at the foot of the active rows for each Remote in scope
+    /// that reads Unreachable, in the order paired, its rows dimmed above.
+    pub unreachable: Vec<UnreachableRow>,
     /// What the shelf of settled Sessions is headed.
     pub settled_header: String,
     /// The settled Sessions on show, the most recently ended first; none
@@ -82,6 +93,46 @@ pub struct Listing {
     /// answered: that there is no work yet, none where the listing is
     /// narrowed to, or none the search finds.
     pub empty: Option<String>,
+}
+
+/// The slim row an Unreachable Remote stands as, offering to try it again.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct UnreachableRow {
+    /// The Remote, as the core is handed it back to try it again.
+    pub remote: String,
+    /// "desk unreachable", naming the Remote only beside others.
+    pub words: String,
+    pub try_again: String,
+    /// What tapping the row opens.
+    pub sheet: UnreachableSheet,
+}
+
+/// The short sheet a slim Unreachable row opens: why the Remote may not be
+/// answering, and the offer to try it again, with the way to lift what may
+/// be in its way where that is the phone's own.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct UnreachableSheet {
+    pub title: String,
+    pub explanation: String,
+    /// What may be in the way, by which Swift picks a symbol, and whether it
+    /// leads to the app's page in iOS Settings.
+    pub hint: UnreachableHint,
+    /// The way to the app's page in iOS Settings, where local network access
+    /// may be off for it.
+    pub open_settings: Option<String>,
+    pub try_again: String,
+}
+
+/// What may keep an Unreachable Remote from answering.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum UnreachableHint {
+    /// Nothing the phone can tell: no way to it answered.
+    Plain,
+    /// Every way that failed was a local address, so local network access
+    /// may be off for the app.
+    LocalNetwork,
+    /// This phone has no network connection at all.
+    NoNetwork,
 }
 
 /// One row a search found, in the shape its shelf gives it.
@@ -290,6 +341,9 @@ pub struct ActiveRow {
     pub slot: Slot,
     /// The swipe that settles it, where it can be settled.
     pub settle: Option<String>,
+    /// Whether it is drawn dimmed, as what its Remote last gave while it
+    /// reads Unreachable.
+    pub dimmed: bool,
 }
 
 /// One settled Session, as its one slim line says it.
@@ -302,6 +356,9 @@ pub struct SettledRow {
     pub ended: SystemTime,
     /// The swipe that brings it back among the active.
     pub unsettle: String,
+    /// Whether it is drawn dimmed, as what its Remote last gave while it
+    /// reads Unreachable.
+    pub dimmed: bool,
 }
 
 /// A Worktree's Checkout State, as the line beneath a Title says it: led by
@@ -362,6 +419,11 @@ pub(crate) struct Answered {
     /// The Workspaces its Workspace Registry holds, or none before its
     /// Session catalog has first listed them.
     pub workspaces: Option<Vec<Workspace>>,
+    /// Why it reads Unreachable, where it does.
+    pub unreached: Option<Unreached>,
+    /// Whether every way it is dialled by is an address on the local
+    /// network.
+    pub local_only: bool,
 }
 
 impl Answered {
@@ -431,12 +493,21 @@ pub(crate) fn present(
             .cmp(left)
             .then_with(|| a.session.id().to_string().cmp(&b.session.id().to_string()))
     });
-    let unanswered = remotes
-        .iter()
-        .filter(|remote| scope.reaches(remote) && remote.sessions.is_none())
+    let in_scope = || remotes.iter().filter(|remote| scope.reaches(remote));
+    let answered = in_scope().all(|remote| remote.sessions.is_some());
+    // An Unreachable Remote stands as its own row, rather than as one still
+    // being reached.
+    let unanswered = in_scope()
+        .filter(|remote| remote.sessions.is_none() && remote.unreached.is_none())
         .map(|remote| remote.name.as_str())
         .collect::<Vec<_>>();
-    let answered = unanswered.is_empty();
+    let unreachable = in_scope()
+        .filter_map(|remote| {
+            remote
+                .unreached
+                .map(|why| unreachable_row(remote, why, origin_named))
+        })
+        .collect::<Vec<_>>();
     let active = active
         .into_iter()
         .map(|(_, remote, row)| active_row(remote, &row, origin_named))
@@ -449,6 +520,7 @@ pub(crate) fn present(
             title: title(row.session),
             ended: instant(ended),
             unsettle: "Unsettle".to_owned(),
+            dimmed: remote.unreached.is_some(),
         })
         .collect::<Vec<_>>();
     let query = narrowing.query.as_str();
@@ -482,7 +554,8 @@ pub(crate) fn present(
     let searching = found.is_some();
     let hidden = settled.len().saturating_sub(on_show);
     let listing = Listing {
-        waiting: (!answered).then(|| reaching(&unanswered, origin_named)),
+        waiting: (!unanswered.is_empty()).then(|| reaching(&unanswered, origin_named)),
+        unreachable,
         title: scope_title(remotes, &scope, origin_named),
         scopes: menu(remotes, &scope, origin_named),
         search_prompt: "Search by title".to_owned(),
@@ -605,6 +678,56 @@ fn reaching(unanswered: &[&str], origin_named: bool) -> String {
         [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
     };
     format!("Reaching {named}…")
+}
+
+/// The slim row the Remote `remote`, Unreachable as `why` says, stands as,
+/// naming it only where the phone names Origins at all.
+fn unreachable_row(remote: &Answered, why: Unreached, origin_named: bool) -> UnreachableRow {
+    let try_again = "Try again".to_owned();
+    let (words, title, named) = if origin_named {
+        (
+            format!("{} unreachable", remote.name),
+            format!("{} is unreachable", remote.name),
+            remote.name.clone(),
+        )
+    } else {
+        (
+            "Server unreachable".to_owned(),
+            "The server is unreachable".to_owned(),
+            "the server".to_owned(),
+        )
+    };
+    let hint = match why {
+        Unreached::NoNetwork => UnreachableHint::NoNetwork,
+        Unreached::NoWay if remote.local_only => UnreachableHint::LocalNetwork,
+        Unreached::NoWay => UnreachableHint::Plain,
+    };
+    let explanation = match hint {
+        UnreachableHint::NoNetwork => {
+            "This phone has no network connection. Shaman tries again as soon as it has one."
+                .to_owned()
+        }
+        UnreachableHint::LocalNetwork => format!(
+            "Every way to {named} is on the local network, and local network access may be off \
+             for Shaman. Turn it on in Settings, then try again."
+        ),
+        UnreachableHint::Plain => {
+            format!("No way to {named} answered. Shaman keeps trying while it is open.")
+        }
+    };
+    UnreachableRow {
+        remote: remote.fingerprint.clone(),
+        words,
+        try_again: try_again.clone(),
+        sheet: UnreachableSheet {
+            title,
+            explanation,
+            open_settings: (hint == UnreachableHint::LocalNetwork)
+                .then(|| "Open Settings".to_owned()),
+            hint,
+            try_again,
+        },
+    }
 }
 
 /// One row the listing draws: a Session in its own right, and the
@@ -735,6 +858,7 @@ fn active_row(remote: &Answered, row: &Row<'_>, origin_named: bool) -> ActiveRow
         standing: standing.map(Standing::from),
         slot: slot(row, standing),
         settle: summary.map(|_| "Settle".to_owned()),
+        dimmed: remote.unreached.is_some(),
     }
 }
 
@@ -882,6 +1006,11 @@ struct Shared {
     runtime: Handle,
     redeemer: Redeemer,
     timings: SessionCommandTimings,
+    /// Whether the phone has a network path at all.
+    network: Network,
+    /// How long a Remote reached anew goes unanswered before it reads
+    /// Unreachable.
+    hold: Duration,
     /// How long a Session is left alone before it settles on its own.
     settle_after: Duration,
     shown: watch::Sender<Listing>,
@@ -911,8 +1040,8 @@ struct Followed {
     generation: u64,
     /// What its Sessions are read over, which says when to try again now.
     transport: Arc<PairingTransport>,
-    /// Whether no way answered the last request asked of it.
-    unreachable: watch::Receiver<bool>,
+    /// Whether it answers, as what is asked of it over `commands` finds.
+    reach: Reach,
     commands: SessionCommands,
     /// Its catalog's reader and its listing's asker, which go with it.
     _readers: Readers,
@@ -932,12 +1061,14 @@ impl Drop for Readers {
 impl Listings {
     /// The listing of the Remotes `redeemer` holds, each read over its
     /// Pairing on `runtime`, its readers waiting as `timings` say, a Session
-    /// settling once left alone for `settle_after`.
+    /// settling once left alone for `settle_after`, and a Remote reached
+    /// anew reading Unreachable once unanswered for `hold`.
     pub fn new(
         runtime: Handle,
         redeemer: Redeemer,
         timings: SessionCommandTimings,
         settle_after: Duration,
+        hold: Duration,
     ) -> Self {
         let (listing, _) = present(
             &[],
@@ -950,6 +1081,8 @@ impl Listings {
             runtime: runtime.clone(),
             redeemer,
             timings,
+            network: Network::default(),
+            hold,
             settle_after,
             renders: AtomicU64::new(0),
             shown: watch::Sender::new(listing),
@@ -1042,6 +1175,84 @@ impl Listings {
         self.shared.render();
     }
 
+    /// Checks every Remote followed, as the app comes to the front or the
+    /// network path changes: each reached anew, its readers told to try now,
+    /// and its connections asked something cheap within `deadline`, what
+    /// does not answer given up and redialled at once.
+    pub async fn check(&self, deadline: Duration) {
+        let held = self.shared.reached();
+        let redeemer = &self.shared.redeemer;
+        futures_util::future::join_all(held.iter().map(|(name, transport, reach)| {
+            reach::check(redeemer, name, transport, reach, deadline)
+        }))
+        .await;
+    }
+
+    /// Notes whether the phone has a network path at all: without one
+    /// nothing is dialled, and every Remote reads Unreachable at once until
+    /// one is back and something it is asked answers.
+    pub fn network_path(&self, has_path: bool) {
+        self.shared.network.set(has_path);
+        if !has_path {
+            for (_, _, reach) in self.shared.reached() {
+                reach.unreached(Unreached::NoNetwork);
+            }
+        }
+    }
+
+    /// Tries the Remote `fingerprint` names again, as its slim row offers:
+    /// checked as on a return to the front, answering once that has ended,
+    /// with success where it answered and why where it did not.
+    pub async fn try_again(&self, fingerprint: &str, deadline: Duration) -> Result<(), ActError> {
+        let (origin_named, held) = {
+            let state = self.shared.lock();
+            let held = state
+                .remotes
+                .iter()
+                .find(|followed| followed.answered.fingerprint == fingerprint)
+                .map(|followed| {
+                    (
+                        followed.answered.name.clone(),
+                        followed.transport.clone(),
+                        followed.reach.clone(),
+                    )
+                });
+            (state.remotes.len() > 1, held)
+        };
+        let (name, transport, reach) = held.ok_or_else(|| ActError::Gone {
+            message: "This phone is no longer paired with that server".to_owned(),
+        })?;
+        if !self.shared.network.has_path() {
+            reach.unreached(Unreached::NoNetwork);
+            return Err(ActError::Unreachable {
+                message: "This phone has no network connection".to_owned(),
+            });
+        }
+        // A dial abandoned by the check fails whatever waited on it, which
+        // says nothing of the ways, so then only an answer or the hold ends
+        // the wait.
+        let since = reach.noted();
+        let checked =
+            reach::check(&self.shared.redeemer, &name, &transport, &reach, deadline).await;
+        let answered =
+            checked.answered > 0 || reach.answers_after(since, checked.abandoned == 0).await;
+        if answered {
+            return Ok(());
+        }
+        let named = if origin_named {
+            name.as_str()
+        } else {
+            "the server"
+        };
+        Err(ActError::Unreachable {
+            message: if self.shared.network.has_path() {
+                format!("No way to {named} answered")
+            } else {
+                "This phone has no network connection".to_owned()
+            },
+        })
+    }
+
     /// Sets the Session `reference` names aside as done for now, or brings it
     /// back among the active, answering once its Server has.
     pub async fn settle(&self, reference: &str, settled: bool) -> Result<(), ActError> {
@@ -1110,7 +1321,7 @@ impl Listings {
             session_id,
             commands: followed.commands.clone(),
             try_now: followed.transport.try_now(),
-            unreachable: followed.unreachable.clone(),
+            unreachable: followed.reach.reading(),
             listed: Listed {
                 remote: remote.name.clone(),
                 origin: origin_named.then(|| remote.name.clone()),
@@ -1136,8 +1347,9 @@ pub(crate) struct Opening {
     pub session_id: SessionId,
     pub commands: SessionCommands,
     pub try_now: TryNow,
-    /// Whether no way to its Remote answered the last request asked of it.
-    pub unreachable: watch::Receiver<bool>,
+    /// Whether its Remote reads Unreachable, and why, now and on every
+    /// change: the one reading the listing shows it by.
+    pub unreachable: watch::Receiver<Reading>,
     pub listed: Listed,
 }
 
@@ -1167,16 +1379,7 @@ impl Listings {
             self.shared.redeemer.clone(),
             answered.name.clone(),
         ));
-        let reaching = Arc::new(Reaching::new(transport.clone()));
-        self.shared.lock().remotes.push(Followed {
-            answered,
-            generation: 0,
-            transport,
-            unreachable: reaching.unreachable(),
-            commands: SessionCommands::new(reaching, self.shared.timings),
-            _readers: Readers(Vec::new()),
-        });
-        self.shared.render();
+        self.hold_over(answered, transport);
     }
 
     /// Holds `answered` as a Remote the listing follows, its Sessions asked
@@ -1186,12 +1389,21 @@ impl Listings {
             self.shared.redeemer.clone(),
             answered.name.clone(),
         ));
-        let reaching = Arc::new(Reaching::new(over));
+        let reach = Reach::new(
+            self.shared.runtime.clone(),
+            self.shared.hold,
+            self.shared.network.clone(),
+        );
+        let reaching = Arc::new(Reaching::new(
+            over,
+            reach.clone(),
+            self.shared.network.clone(),
+        ));
         self.shared.lock().remotes.push(Followed {
             answered,
             generation: 0,
             transport,
-            unreachable: reaching.unreachable(),
+            reach,
             commands: SessionCommands::new(reaching, self.shared.timings),
             _readers: Readers(Vec::new()),
         });
@@ -1225,19 +1437,57 @@ impl Shared {
             .unwrap_or_else(|poison| poison.into_inner())
     }
 
-    /// Begins reading the Remote `stored`.
+    /// The name, transport and reach of every Remote followed.
+    fn reached(&self) -> Vec<(String, Arc<PairingTransport>, Reach)> {
+        self.lock()
+            .remotes
+            .iter()
+            .map(|followed| {
+                (
+                    followed.answered.name.clone(),
+                    followed.transport.clone(),
+                    followed.reach.clone(),
+                )
+            })
+            .collect()
+    }
+
+    /// Whether every way the Remote `name` is dialled by is an address on
+    /// the local network, as its record stands now.
+    fn local_only(&self, name: &str) -> bool {
+        let relays = self.redeemer.relays();
+        self.redeemer.stored_remote(name).is_ok_and(|stored| {
+            reach::only_local(&stored.remote.ways, |relay| {
+                relays.get().is_some_and(|relays| relays.chosen(relay))
+            })
+        })
+    }
+
+    /// Begins reading the Remote `stored`, which is reached anew as it is.
     fn read(self: &Arc<Self>, stored: &StoredRemote) -> Followed {
         let name = stored.remote.name.clone();
         let transport = Arc::new(PairingTransport::new(self.redeemer.clone(), name.clone()));
         let try_now = transport.try_now();
-        let reaching = Arc::new(Reaching::new(transport.clone()));
-        let unreachable = reaching.unreachable();
+        let reach = Reach::new(self.runtime.clone(), self.hold, self.network.clone());
+        let reaching = Arc::new(Reaching::new(
+            transport.clone(),
+            reach.clone(),
+            self.network.clone(),
+        ));
         let commands = SessionCommands::new(reaching, self.timings);
         let wanted = Arc::new(Notify::new());
         let generation = stored.generation;
+        reach.settle();
+        let reading = self.runtime.spawn(follow_reach(
+            Arc::downgrade(self),
+            reach.reading(),
+            name.clone(),
+            generation,
+        ));
         let reader = self.runtime.spawn(follow_catalog(
             Arc::downgrade(self),
             commands.clone(),
+            reach.clone(),
             name.clone(),
             generation,
             wanted.clone(),
@@ -1266,12 +1516,14 @@ impl Shared {
                 paths: WorkspacePaths::default(),
                 sessions: None,
                 workspaces: None,
+                unreached: None,
+                local_only: false,
             },
             generation,
             transport,
-            unreachable,
+            reach,
             commands,
-            _readers: Readers(vec![reader, asker]),
+            _readers: Readers(vec![reading, reader, asker]),
         }
     }
 
@@ -1355,11 +1607,38 @@ async fn settle_when_left_alone(shared: Arc<Shared>) {
     }
 }
 
+/// Shows the Remote `name`, under the Pairing of `generation`, as `reading`
+/// says it reads, now and on every change.
+async fn follow_reach(
+    shared: Weak<Shared>,
+    mut reading: watch::Receiver<Reading>,
+    name: String,
+    generation: u64,
+) {
+    loop {
+        let unreached = *reading.borrow_and_update();
+        let Some(shared) = shared.upgrade() else {
+            return;
+        };
+        let local_only = shared.local_only(&name);
+        shared.change(&name, generation, |answered| {
+            answered.unreached = unreached;
+            answered.local_only = local_only;
+        });
+        drop(shared);
+        if reading.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
 /// Reads the Remote `name`'s Session catalog, asking for its listing again
-/// through `wanted` whenever anything it lists moves.
+/// through `wanted` whenever anything it lists moves, and reaching the
+/// Remote anew, through `reach`, whenever the stream drops.
 async fn follow_catalog(
     shared: Weak<Shared>,
     commands: SessionCommands,
+    reach: Reach,
     name: String,
     generation: u64,
     wanted: Arc<Notify>,
@@ -1374,11 +1653,16 @@ async fn follow_catalog(
             SessionCatalogEvent::WorkspaceListing(listing) => {
                 (Some(listing.workspace_paths), Some(listing.workspaces))
             }
+            // The stream dropped: the Remote holds what it read while it is
+            // reached anew.
+            SessionCatalogEvent::Recovering(_) => {
+                reach.settle();
+                (None, None)
+            }
             // Nothing a row shows moves with these.
             SessionCatalogEvent::ModelCatalog(_)
             | SessionCatalogEvent::SkillCatalogUpdated(_)
             | SessionCatalogEvent::SessionUsageChanged(_)
-            | SessionCatalogEvent::Recovering(_)
             | SessionCatalogEvent::RemoteRecovered
             | SessionCatalogEvent::RemoteFailed { .. }
             | SessionCatalogEvent::ChangeSkipped => (None, None),

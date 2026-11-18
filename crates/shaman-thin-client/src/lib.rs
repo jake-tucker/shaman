@@ -48,7 +48,7 @@ pub use identity::{KeySigner, SignError};
 use listing::Listings;
 pub use listing::{
     ActiveRow, CheckoutLine, FoundRow, Listing, ScopeChoice, ScopeKind, ScopeSection, SettledRow,
-    Slot, Standing,
+    Slot, Standing, UnreachableHint, UnreachableRow, UnreachableSheet,
 };
 pub use pairing::{InviteReading, OfferedWay, PairingOutcome, ReadInvite, TryInstead};
 use remotes::Remotes;
@@ -78,6 +78,15 @@ pub struct CoreTimings {
     /// How long a Session is left alone before it settles on its own: three
     /// days, the schema's default, which a phone offers no Setting for.
     pub settle_after: Duration,
+    /// How long each connection to a Remote is given to answer the check
+    /// made as the app comes to the front or the network path changes,
+    /// before it is given up and redialled.
+    pub check_deadline: Duration,
+    /// How long a Remote reached anew — as the core opens, as the app comes
+    /// to the front, as its stream drops — holds its last reading without an
+    /// answer before it reads Unreachable, where every way has not failed
+    /// sooner.
+    pub unreachable_after: Duration,
 }
 
 impl Default for CoreTimings {
@@ -93,6 +102,8 @@ impl Default for CoreTimings {
             },
             act_bound: Duration::from_secs(30),
             settle_after: listing::SETTLE_AFTER,
+            check_deadline: Duration::from_secs(2),
+            unreachable_after: Duration::from_secs(3),
         }
     }
 }
@@ -292,6 +303,44 @@ impl ThinClient {
         self.inner.listing.search(&text);
     }
 
+    /// Hears that the app has come to the front: every Remote is checked,
+    /// each connection to it asked something cheap, what answers kept and
+    /// the rest redialled at once, skipping any backoff, and every stream
+    /// resumes by a fresh snapshot. Each Remote holds its last state while
+    /// that settles.
+    pub fn came_to_front(&self) {
+        self.check();
+    }
+
+    /// Hears that the app has left the front. Nothing is done to its
+    /// connections: a short switch away comes back to live streams, and the
+    /// check on return finds whatever did not last.
+    pub fn left_front(&self) {}
+
+    /// Hears that the network path changed, and whether there is one at
+    /// all: with none nothing is dialled and every Remote reads Unreachable;
+    /// with one every Remote is checked, as on a return to the front.
+    pub fn path_changed(&self, has_path: bool) {
+        self.inner.listing.network_path(has_path);
+        if has_path {
+            self.check();
+        }
+    }
+
+    /// Tries the Remote `remote` names again, as an Unreachable Remote's
+    /// row offers, answering once it answers, or failing as Unreachable
+    /// where it still does not.
+    pub async fn try_again(&self, remote: String) -> Result<(), ActError> {
+        let inner = self.inner.clone();
+        self.act(async move {
+            inner
+                .listing
+                .try_again(&remote, inner.timings.check_deadline)
+                .await
+        })
+        .await
+    }
+
     /// Renames this device to `name`, as the Serving side would keep it,
     /// refusing a name it would not, with why.
     pub async fn rename_device(&self, name: String) -> Result<(), ActError> {
@@ -382,6 +431,7 @@ impl ThinClient {
             redeemer.clone(),
             timings.readers,
             timings.settle_after,
+            timings.unreachable_after,
         );
         listing.follow(&remotes.held());
         let (device, _) = watch::channel(ThisDevice::of(&record));
@@ -412,6 +462,14 @@ impl ThinClient {
     /// its key, and the certificate of the key the core keeps.
     pub fn identity(&self) -> &IdentityMaterial {
         &self.inner.identity
+    }
+
+    /// Checks every Remote, in the background.
+    fn check(&self) {
+        let inner = self.inner.clone();
+        self.runtime().spawn(async move {
+            inner.listing.check(inner.timings.check_deadline).await;
+        });
     }
 
     fn runtime(&self) -> &Runtime {

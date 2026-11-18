@@ -31,6 +31,8 @@ anyhow = "1.0.99"
 async-trait = "0.1"
 base64 = "0.22.1"
 bytes = "1.12.1"
+# Checking every Remote at once as the app comes to the front.
+futures-util = "0.3.31"
 http = "1.5.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
@@ -51,9 +53,7 @@ shaman-build-id = { path = "../shaman-build-id" }
 shaman-pairing = { path = "../shaman-pairing", features = ["test-support"] }
 # `testing::ScriptedTransport`, which a listing is asked for over where no Server answers.
 shaman-client = { path = "../shaman-client", features = ["test-support"] }
-# The stream a scripted Session's Provider sends its events down.
-futures-util = "0.3.31"
 # `Session::for_tests`, which the listing's tests build what a Remote answers from.
 shaman-protocol = { path = "../shaman-protocol", features = ["test-support"] }
 tempfile = "3.21.0"
-tokio = { version = "1.47.1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.47.1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "test-util", "time"] }

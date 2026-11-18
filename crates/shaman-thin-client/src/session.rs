@@ -557,9 +557,9 @@ struct Reader {
     /// What the screen holds of its own, which its acts change, for as long
     /// as the screen holds it.
     local: Weak<watch::Sender<Local>>,
-    /// Whether no way to the Session's Remote answered the last request
-    /// asked of it.
-    unreachable: watch::Receiver<bool>,
+    /// Whether the Session's Remote reads Unreachable, as the listing reads
+    /// it.
+    unreachable: watch::Receiver<crate::reach::Reading>,
     frame: watch::Sender<SessionFrame>,
     conversation: watch::Sender<Shown>,
     pacing: Pacing,
@@ -807,7 +807,7 @@ impl Reader {
             self.snapshot.as_ref(),
             self.gone.clone(),
             &self.local(),
-            *self.unreachable.borrow(),
+            self.unreachable.borrow().is_some(),
         );
         self.frame.send_if_modified(|current| {
             let changed = *current != frame;

@@ -65,6 +65,8 @@ pub(crate) fn remote(name: &str, sessions: Vec<SessionSummary>) -> Answered {
         paths: WorkspacePaths::default(),
         sessions: Some(sessions.into_iter().map(listed).collect()),
         workspaces: None,
+        unreached: None,
+        local_only: false,
     }
 }
 
@@ -649,7 +651,13 @@ pub(crate) fn listings(runtime: &tokio::runtime::Runtime) -> (Listings, tempfile
         max_recovery_backoff: Duration::from_millis(1),
         attachment_fetch_timeout: Duration::from_secs(1),
     };
-    let listings = Listings::new(runtime.handle().clone(), redeemer, timings, SETTLE_AFTER);
+    let listings = Listings::new(
+        runtime.handle().clone(),
+        redeemer,
+        timings,
+        SETTLE_AFTER,
+        Duration::from_secs(3),
+    );
     (listings, directory)
 }
 
@@ -701,6 +709,7 @@ fn a_session_left_alone_settles_onto_the_shelf_as_it_comes_to_be() {
         redeemer,
         timings,
         Duration::from_millis(100),
+        Duration::from_secs(3),
     );
     let now = SessionTimestamp::now();
     listings.hold(remote("desk", vec![session("Quiet", "shaman", 1, now.0)]));
@@ -1289,4 +1298,137 @@ fn narrowing_to_a_workspace_no_longer_offered_turns_the_outlook_toward_its_remot
         })
     );
     assert_eq!(listings.listing().borrow().title, "desk");
+}
+
+/// The Remote `name` reading Unreachable as `why` says, its last answer
+/// `sessions`.
+fn unreachable(name: &str, sessions: Vec<SessionSummary>, why: Unreached) -> Answered {
+    Answered {
+        unreached: Some(why),
+        ..remote(name, sessions)
+    }
+}
+
+#[test]
+fn an_unreachable_remotes_rows_stay_dimmed_and_it_stands_as_a_slim_row_at_the_foot() {
+    let mut old_work = recent("Old work", 2);
+    old_work.settled_at = Some(SessionTimestamp(NOW.0 - 5));
+    let lab = unreachable(
+        "lab",
+        vec![recent("Tidy the build", 3), old_work],
+        Unreached::NoWay,
+    );
+    let listing = read(&[remote("desk", vec![recent("Mine", 1)]), lab]);
+
+    assert_eq!(titles(&listing.active), ["Mine", "Tidy the build"]);
+    assert_eq!(
+        listing
+            .active
+            .iter()
+            .map(|row| row.dimmed)
+            .collect::<Vec<_>>(),
+        [false, true],
+        "the Unreachable Remote's rows are what it last gave, dimmed"
+    );
+    assert_eq!(shelved(&listing.settled), ["Old work"]);
+    assert!(listing.settled.iter().all(|row| row.dimmed));
+    assert_eq!(listing.waiting, None, "it is not said to be being reached");
+    let [row] = listing.unreachable.as_slice() else {
+        panic!("one slim row: {:?}", listing.unreachable);
+    };
+    assert_eq!(row.words, "lab unreachable");
+    assert_eq!(row.try_again, "Try again");
+    assert_eq!(row.remote, "lab-key", "tried again by its key");
+    assert_eq!(row.sheet.title, "lab is unreachable");
+    assert_eq!(row.sheet.hint, UnreachableHint::Plain);
+    assert_eq!(row.sheet.open_settings, None);
+    assert_eq!(
+        row.sheet.explanation,
+        "No way to lab answered. Shaman keeps trying while it is open."
+    );
+}
+
+#[test]
+fn a_phone_holding_one_unreachable_remote_names_no_origin() {
+    let listing = read(&[unreachable(
+        "desk",
+        vec![recent("Mine", 1)],
+        Unreached::NoWay,
+    )]);
+    let [row] = listing.unreachable.as_slice() else {
+        panic!("one slim row");
+    };
+    assert_eq!(row.words, "Server unreachable");
+    assert_eq!(row.sheet.title, "The server is unreachable");
+    assert_eq!(
+        row.sheet.explanation,
+        "No way to the server answered. Shaman keeps trying while it is open."
+    );
+}
+
+#[test]
+fn where_every_way_is_on_the_local_network_the_offer_says_access_may_be_off() {
+    let desk = Answered {
+        local_only: true,
+        ..unreachable("desk", vec![recent("Mine", 1)], Unreached::NoWay)
+    };
+    let listing = read(&[desk, remote("lab", Vec::new())]);
+    let sheet = &listing.unreachable[0].sheet;
+    assert_eq!(sheet.hint, UnreachableHint::LocalNetwork);
+    assert_eq!(sheet.open_settings.as_deref(), Some("Open Settings"));
+    assert_eq!(
+        sheet.explanation,
+        "Every way to desk is on the local network, and local network access may be off for \
+         Shaman. Turn it on in Settings, then try again."
+    );
+}
+
+#[test]
+fn with_no_network_every_remote_reads_unreachable_and_says_why() {
+    let listing = read(&[
+        Answered {
+            local_only: true,
+            ..unreachable("desk", vec![recent("Mine", 1)], Unreached::NoNetwork)
+        },
+        unreachable("lab", Vec::new(), Unreached::NoNetwork),
+    ]);
+    assert_eq!(listing.unreachable.len(), 2);
+    for row in &listing.unreachable {
+        assert_eq!(row.sheet.hint, UnreachableHint::NoNetwork);
+        assert_eq!(row.sheet.open_settings, None, "{row:?}");
+        assert_eq!(
+            row.sheet.explanation,
+            "This phone has no network connection. Shaman tries again as soon as it has one."
+        );
+    }
+}
+
+#[test]
+fn an_unreachable_remote_never_answered_is_not_said_to_hold_nothing() {
+    let never = Answered {
+        sessions: None,
+        ..unreachable("desk", Vec::new(), Unreached::NoWay)
+    };
+    let listing = read(&[never]);
+    assert_eq!(listing.waiting, None);
+    assert_eq!(listing.empty, None, "nothing is known of it to be empty");
+    assert_eq!(listing.unreachable.len(), 1);
+}
+
+#[test]
+fn only_the_unreachable_remotes_in_scope_stand_as_rows() {
+    let [desk, lab] = desk_and_lab();
+    let lab = Answered {
+        unreached: Some(Unreached::NoWay),
+        ..lab
+    };
+    let narrowed_to_desk = narrowed(
+        &[desk.clone(), lab.clone()],
+        &scoped(Scope::Remote {
+            fingerprint: desk.fingerprint.clone(),
+        }),
+    );
+    assert!(narrowed_to_desk.unreachable.is_empty());
+    let everywhere = read(&[desk, lab]);
+    assert_eq!(everywhere.unreachable.len(), 1);
 }

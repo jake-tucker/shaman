@@ -78,7 +78,7 @@ pub fn timings() -> CoreTimings {
             attachment_fetch_timeout: PROGRESS_DEADLINE,
         },
         act_bound: PROGRESS_DEADLINE,
-        settle_after: shaman_thin_client::CoreTimings::default().settle_after,
+        ..shaman_thin_client::CoreTimings::default()
     }
 }
 
@@ -274,16 +274,34 @@ fn rcgen_key(pkcs8: &[u8]) -> Vec<u8> {
 }
 
 /// A way to a Server the test holds shut, so that what dials it connects and
-/// hears nothing, or opens, so that it carries each connection there.
+/// hears nothing, or opens, so that it carries each connection there; and
+/// which the test may cut, as a network swapped or lost while the phone
+/// slept: what it carried then goes silent though it stays open, and each
+/// connection dialled after is refused or held as the cut says, until it is
+/// mended.
 #[derive(Clone)]
 pub struct Gate {
     address: SocketAddr,
     open: watch::Sender<bool>,
+    /// How the way stands, and how many times it has been cut.
+    cut: watch::Sender<(Cut, u64)>,
     dialled: Arc<AtomicU64>,
+    attempted: Arc<AtomicU64>,
     /// The connections it carries, which shutting it cuts.
     carrying: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
     /// Whether what the Server says back is dropped.
     muted: watch::Sender<bool>,
+}
+
+/// How a way stands for what is dialled to it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cut {
+    /// Carried to the Server.
+    Mended,
+    /// Closed at once, so the dial fails at once.
+    Refusing,
+    /// Held open and carried nowhere, so the dial hears nothing.
+    Silent,
 }
 
 impl Gate {
@@ -319,28 +337,62 @@ impl Gate {
         let open = watch::Sender::new(false);
         let muted = watch::Sender::new(false);
         let muting = muted.clone();
+        let cut = watch::Sender::new((Cut::Mended, 0));
         let dialled = Arc::new(AtomicU64::new(0));
         let carrying = Arc::new(Mutex::new(Vec::new()));
         let mut opened = open.subscribe();
         let counted = dialled.clone();
         let proxies = carrying.clone();
+        let attempted = Arc::new(AtomicU64::new(0));
+        let attempts = attempted.clone();
+        let cuts = cut.clone();
         tokio::spawn(async move {
             // Until it opens, nothing is accepted: a dial connects, and its
             // handshake hears nothing.
             if opened.wait_for(|open| *open).await.is_err() {
                 return;
             }
-            let mut holding = Vec::new();
+            let holding: Arc<Mutex<Vec<Box<dyn std::any::Any + Send>>>> = Arc::default();
             while let Ok((inbound, _)) = listener.accept().await {
+                attempts.fetch_add(1, Ordering::AcqRel);
+                let (standing, cuts_so_far) = *cuts.borrow();
+                match standing {
+                    Cut::Refusing => continue,
+                    Cut::Silent => {
+                        holding.lock().unwrap().push(Box::new(inbound));
+                        continue;
+                    }
+                    Cut::Mended => {}
+                }
                 if !*opened.borrow() || counted.fetch_add(1, Ordering::AcqRel) >= carried {
-                    holding.push(inbound);
+                    holding.lock().unwrap().push(Box::new(inbound));
                     continue;
                 }
-                let muted = muting.subscribe();
+                let (muted, mut cut, frozen) =
+                    (muting.subscribe(), cuts.subscribe(), holding.clone());
                 let proxy = tokio::spawn(async move {
-                    if let Ok(outbound) = tokio::net::TcpStream::connect(target).await {
-                        carry(inbound, outbound, muted).await;
+                    let Ok(outbound) = tokio::net::TcpStream::connect(target).await else {
+                        return;
+                    };
+                    let (mut from_phone, mut to_phone) = inbound.into_split();
+                    let (mut from_server, mut to_server) = outbound.into_split();
+                    tokio::select! {
+                        () = carry(
+                            &mut from_phone,
+                            &mut to_phone,
+                            &mut from_server,
+                            &mut to_server,
+                            muted,
+                        ) => return,
+                        _ = cut.wait_for(|(_, cuts)| *cuts > cuts_so_far) => {}
                     }
+                    // Cut: it stays open and carries nothing, ever after.
+                    frozen.lock().unwrap().extend([
+                        Box::new(from_phone) as Box<dyn std::any::Any + Send>,
+                        Box::new(to_phone),
+                        Box::new(from_server),
+                        Box::new(to_server),
+                    ]);
                 });
                 proxies.lock().unwrap().push(proxy);
             }
@@ -349,7 +401,9 @@ impl Gate {
             address,
             open,
             muted,
+            cut,
             dialled,
+            attempted,
             carrying,
         }
     }
@@ -377,25 +431,47 @@ impl Gate {
         }
     }
 
+    /// Cuts the way: what it carries goes silent, and what is dialled after
+    /// is treated as `cut` says, until it is mended.
+    pub fn cut(&self, cut: Cut) {
+        self.cut.send_modify(|(standing, cuts)| {
+            *standing = cut;
+            *cuts += 1;
+        });
+    }
+
+    /// Carries what is dialled after to the Server again; what went silent
+    /// as it was cut stays so.
+    pub fn mend(&self) {
+        self.cut
+            .send_modify(|(standing, _)| *standing = Cut::Mended);
+    }
+
     /// How many connections the way has carried.
     pub fn dialled(&self) -> u64 {
         self.dialled.load(Ordering::Acquire)
     }
+
+    /// How many connections have been dialled to the way since it opened,
+    /// carried or not.
+    pub fn attempted(&self) -> u64 {
+        self.attempted.load(Ordering::Acquire)
+    }
 }
 
-/// Carries `inbound` to `outbound` and back, dropping what comes back while
-/// `muted` says to.
+/// Carries what the phone says to the Server and what it says back, dropping
+/// what comes back while `muted` says to.
 async fn carry(
-    inbound: tokio::net::TcpStream,
-    outbound: tokio::net::TcpStream,
+    from_phone: &mut tokio::net::tcp::OwnedReadHalf,
+    to_phone: &mut tokio::net::tcp::OwnedWriteHalf,
+    from_server: &mut tokio::net::tcp::OwnedReadHalf,
+    to_server: &mut tokio::net::tcp::OwnedWriteHalf,
     muted: watch::Receiver<bool>,
 ) {
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-    let (mut from_phone, mut to_phone) = inbound.into_split();
-    let (mut from_server, mut to_server) = outbound.into_split();
     let said = async {
-        let _ = tokio::io::copy(&mut from_phone, &mut to_server).await;
+        let _ = tokio::io::copy(from_phone, to_server).await;
     };
     let answered = async {
         let mut buffer = vec![0; 16 * 1024];
@@ -483,6 +559,11 @@ impl Phone {
             timings,
             core,
         }
+    }
+
+    /// How many times this phone's key has signed.
+    pub fn signed(&self) -> u64 {
+        self.key.0.signed().load(Ordering::Acquire)
     }
 
     /// The fingerprint a Serving Server knows this phone by.
