@@ -151,7 +151,7 @@ impl Local {
     /// takes out each owed Prompt it shows settled: answering the text of
     /// those it shows withdrawn, which are owed back to the composer.
     pub fn reconcile(&mut self, snapshot: &SessionSnapshot) -> Vec<String> {
-        self.pending = intervention::pending_ids(snapshot);
+        self.pending = snapshot.pending_approvals.clone();
         self.withdrawable = snapshot
             .prompts
             .iter()

@@ -12,7 +12,7 @@
 //! them by, and offers all four Decisions, as the TUI does: the wire carries
 //! no set of them for each Approval.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use shaman_protocol::{
     Activity, Approval, ApprovalId, ApprovalOutcome, ApprovalSubject, Decision, SessionSnapshot,
@@ -85,30 +85,29 @@ pub(crate) const APPROVAL_WAITING: &str = "Approval waiting";
 pub(crate) const REVIEW: &str = "Review";
 
 /// The Session's own Approvals waiting on a Decision, oldest first in
-/// Transcript order.
+/// Transcript order: those its Server says are pending, as the TUI reads
+/// them, each answerable in a Turn still open, as a card reads "Waiting on
+/// you" for.
 pub(crate) fn pending(snapshot: &SessionSnapshot) -> Vec<&Activity> {
+    if snapshot.pending_approvals.is_empty() {
+        return Vec::new();
+    }
+    let waiting = snapshot.pending_approvals.iter().collect::<HashSet<_>>();
+    let mut asked = snapshot
+        .activities
+        .iter()
+        .filter_map(|activity| match activity {
+            Activity::Approval { id, approval, .. } if waiting.contains(&approval.id) => {
+                Some((*id, activity))
+            }
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
     snapshot
         .transcript_in_reading_order()
         .into_iter()
         .filter_map(|(_, item)| match item {
-            TranscriptItem::Activity { activity_id } => snapshot
-                .activities
-                .iter()
-                .find(|activity| activity.id() == *activity_id),
-            _ => None,
-        })
-        .filter(|activity| {
-            matches!(activity, Activity::Approval { outcome, .. } if outcome.is_answerable())
-        })
-        .collect()
-}
-
-/// The ids of the Approvals `pending` holds.
-pub(crate) fn pending_ids(snapshot: &SessionSnapshot) -> Vec<ApprovalId> {
-    pending(snapshot)
-        .into_iter()
-        .filter_map(|activity| match activity {
-            Activity::Approval { approval, .. } => Some(approval.id),
+            TranscriptItem::Activity { activity_id } => asked.remove(activity_id),
             _ => None,
         })
         .collect()

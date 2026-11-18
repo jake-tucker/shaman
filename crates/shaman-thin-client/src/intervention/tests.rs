@@ -32,9 +32,15 @@ fn command(text: &str) -> ApprovalSubject {
 /// A Session working on a Turn whose Approvals `asked` stand as each says,
 /// in that Transcript order.
 fn asking(asked: &[(&Approval, ApprovalOutcome)]) -> SessionSnapshot {
+    asking_in(TurnStatus::Active, asked)
+}
+
+/// A Session whose one Turn stands as `status`, its Approvals `asked`
+/// standing as each says, in that Transcript order.
+fn asking_in(status: TurnStatus, asked: &[(&Approval, ApprovalOutcome)]) -> SessionSnapshot {
     let mut snapshot = shaman_client::testing::session_snapshot(SessionId::new(), 1);
     let mut turn = Turn::unprompted(None);
-    turn.status = TurnStatus::Active;
+    turn.status = status;
     let turn_id = turn.id;
     snapshot.turns.push(turn);
     for (approval, outcome) in asked {
@@ -54,6 +60,9 @@ fn asking(asked: &[(&Approval, ApprovalOutcome)]) -> SessionSnapshot {
             .transcript
             .push(TranscriptItem::Activity { activity_id: id });
     }
+    // What the Server says is pending, as it derives it.
+    let revision = snapshot.revision;
+    shaman_protocol::session_projection::close_revision(&mut snapshot, revision);
     snapshot
 }
 
@@ -231,7 +240,6 @@ fn several_pending_present_oldest_first_one_by_one() {
         second.id.to_string(),
         "the next presents itself once the first is answered"
     );
-    assert_eq!(pending_ids(&both), [first.id, second.id]);
 }
 
 #[test]
@@ -258,6 +266,41 @@ fn a_decision_not_delivered_presents_again_saying_so_and_one_on_its_way_does_not
             "{settled:?} waits on no one"
         );
     }
+}
+
+#[test]
+fn an_approval_still_answerable_in_a_turn_that_ended_waits_on_no_one_as_its_card_does_not() {
+    let asked = approval(command("cargo build"), None);
+    assert_eq!(
+        standing(
+            &asking_in(
+                TurnStatus::Interrupted,
+                &[(&asked, ApprovalOutcome::Pending)]
+            ),
+            &HashSet::new(),
+            false,
+        ),
+        Standing::None
+    );
+}
+
+#[test]
+fn several_pending_are_found_in_transcript_order_whatever_order_the_server_lists_them_in() {
+    let first = approval(command("cargo build"), None);
+    let second = approval(command("cargo test"), None);
+    let mut both = asking(&[
+        (&first, ApprovalOutcome::Pending),
+        (&second, ApprovalOutcome::Pending),
+    ]);
+    both.pending_approvals.reverse();
+    let found = pending(&both)
+        .into_iter()
+        .filter_map(|activity| match activity {
+            Activity::Approval { approval, .. } => Some(approval.id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(found, [first.id, second.id]);
 }
 
 #[test]

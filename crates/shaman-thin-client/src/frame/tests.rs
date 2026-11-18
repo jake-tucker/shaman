@@ -322,6 +322,9 @@ fn approving(id: ApprovalId) -> SessionSnapshot {
     snapshot
         .transcript
         .push(TranscriptItem::Activity { activity_id });
+    // What the Server says is pending, as it derives it.
+    let revision = snapshot.revision;
+    shaman_protocol::session_projection::close_revision(&mut snapshot, revision);
     snapshot
 }
 
