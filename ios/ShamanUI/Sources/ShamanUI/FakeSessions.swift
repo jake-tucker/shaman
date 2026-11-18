@@ -26,27 +26,91 @@
     static let shelfBatch = 25
 
     /// The listing `sessions` make on the Remotes `remotes`, of which those `unanswered` have yet to answer, with as
-    /// many as `onShow` of the shelf's rows on show.
+    /// many as `onShow` of the shelf's rows on show, narrowed to `scope` and searched for `query`.
     static func listing(
-      of sessions: [FakeSession], on remotes: [String], unanswered: [String], showing onShow: Int, now: Date
+      of sessions: [FakeSession], on remotes: [String], unanswered: [String], showing onShow: Int,
+      scope: FakeScope = .everywhere, query: String = "", now: Date
     ) -> Listing {
-      let held = sessions.filter { remotes.contains($0.remote) && !unanswered.contains($0.remote) }
+      let scope = scope.within(remotes)
       let originNamed = remotes.count > 1
-      let active = held.filter { !$0.settled }
-      let settled = held.filter(\.settled).sorted { $0.moved < $1.moved }
+      let held = sessions.filter { remotes.contains($0.remote) && !unanswered.contains($0.remote) }
+      let inScope = held.filter { scope.holds($0) }
+      let active = inScope.filter { !$0.settled }.map { $0.active(originNamed: originNamed, now: now) }
+      let settled = inScope.filter(\.settled).sorted { $0.moved < $1.moved }.map { $0.settledRow(now: now) }
+      let found: [FoundRow]? =
+        query.isEmpty
+        ? nil
+        : active.filter { $0.title.localizedCaseInsensitiveContains(query) }.map { FoundRow.active(row: $0) }
+          + settled.filter { $0.title.localizedCaseInsensitiveContains(query) }.map { FoundRow.settled(row: $0) }
+      let waiting = unanswered.filter { scope.reaches($0) }
+      let nothing = found.map(\.isEmpty) ?? (active.isEmpty && settled.isEmpty)
+      let empty: String?
+      if !waiting.isEmpty || !nothing {
+        empty = nil
+      } else {
+        empty =
+          switch (found, scope) {
+          case (.some, _): "No sessions match"
+          case (nil, .everywhere): "No sessions yet"
+          case (nil, .workspace): "No sessions in this workspace"
+          case (nil, .remote(let remote)): "No sessions on \(remote)"
+          }
+      }
       let hidden = settled.count - min(onShow, settled.count)
       return Listing(
-        title: originNamed ? "Everywhere" : "All workspaces",
-        active: active.map { $0.active(originNamed: originNamed, now: now) },
-        waiting: reaching(unanswered, originNamed: originNamed),
+        title: scope.title(originNamed: originNamed),
+        scopes: menu(on: remotes, sessions: sessions, chosen: scope, originNamed: originNamed),
+        searchPrompt: "Search by title",
+        active: found == nil ? active : [],
+        waiting: reaching(waiting, originNamed: originNamed),
         settledHeader: "Settled",
-        settled: settled.prefix(onShow).map { session in
-          SettledRow(
-            session: session.id, glyph: session.glyph, title: session.title,
-            ended: now.addingTimeInterval(-session.moved), unsettle: "Unsettle")
-        },
-        showMore: hidden > 0 ? "Show \(min(hidden, shelfBatch)) more" : nil,
-        empty: held.isEmpty && unanswered.isEmpty ? "No sessions yet" : nil)
+        settled: found == nil ? Array(settled.prefix(onShow)) : [],
+        showMore: found == nil && hidden > 0 ? "Show \(min(hidden, shelfBatch)) more" : nil,
+        found: found,
+        empty: empty)
+    }
+
+    /// The Workspaces each Remote's Server lists, as the fake's Remotes would list them.
+    static let registry: [String: [String]] = [
+      "workstation": ["shaman", "dotfiles", "notes"],
+      "laptop": ["design-system", "billing-api", "shaman"],
+      "homelab": ["home-assistant", "relay-infra"],
+    ]
+
+    /// The glyphs of the Icons the fake's Workspaces carry.
+    private static let workspaceGlyphs: [String: String] = [
+      "shaman": "\u{f06a9}", "dotfiles": "\u{f018d}", "home-assistant": "\u{f04e6}", "design-system": "\u{f03d8}",
+    ]
+
+    /// The Workspaces the menu offers of the Remote `remote`: those its Server lists, then any other a Session of it is
+    /// in, but never its Sidekick Workspace.
+    static func workspaces(on remote: String, sessions: [FakeSession]) -> [String] {
+      var offered: [String] = []
+      for workspace in (registry[remote] ?? []) + sessions.filter({ $0.remote == remote }).map(\.workspace)
+      where workspace != "Sidekick" && !offered.contains(workspace) {
+        offered.append(workspace)
+      }
+      return offered
+    }
+
+    /// The menu the listing's title opens, as the core makes it.
+    private static func menu(
+      on remotes: [String], sessions: [FakeSession], chosen: FakeScope, originNamed: Bool
+    ) -> [ScopeSection] {
+      func choice(_ scope: FakeScope, _ kind: ScopeKind, _ glyph: String?, _ words: String) -> ScopeChoice {
+        ScopeChoice(scope: scope.reference, kind: kind, glyph: glyph, words: words, chosen: scope == chosen)
+      }
+      let everywhere = ScopeSection(
+        header: nil,
+        choices: [choice(.everywhere, .everywhere, nil, FakeScope.everywhere.title(originNamed: originNamed))])
+      return [everywhere]
+        + remotes.map { remote in
+          let whole = originNamed ? [choice(.remote(remote), .remote, nil, "All of \(remote)")] : []
+          let workspaces = Self.workspaces(on: remote, sessions: sessions).map {
+            choice(.workspace(remote, $0), .workspace, workspaceGlyphs[$0], $0)
+          }
+          return ScopeSection(header: originNamed ? remote : nil, choices: whole + workspaces)
+        }
     }
 
     /// What the core says while the Remotes `unanswered` have yet to answer.
@@ -70,6 +134,11 @@
       return ActiveRow(
         session: id, place: originNamed ? "\(remote) · \(workspace)" : workspace, glyph: glyph, title: title,
         checkout: checkout, standing: standing, slot: slot, settle: "Settle")
+    }
+
+    private func settledRow(now: Date) -> SettledRow {
+      SettledRow(
+        session: id, glyph: glyph, title: title, ended: now.addingTimeInterval(-moved), unsettle: "Unsettle")
     }
 
     private static let branch = "\u{ec6f}"
@@ -158,6 +227,69 @@
     ].enumerated().map { index, canned in
       session(
         100 + index, canned.0, canned.1, canned.2, canned.3, moved: TimeInterval(2 + index) * 86_400, settled: true)
+    }
+  }
+
+  /// What the fake's listing is narrowed to, by the names of its Remotes and Workspaces, and the plain string it
+  /// crosses as, in the core's shape: a Remote known by its key, which the fake's are named for.
+  enum FakeScope: Equatable, Sendable {
+    case everywhere
+    case remote(String)
+    case workspace(String, String)
+
+    var reference: String {
+      switch self {
+      case .everywhere: "everywhere"
+      case .remote(let remote): "remote/\(remote)-key"
+      case .workspace(let remote, let workspace): "workspace/\(remote)-key/\(workspace)"
+      }
+    }
+
+    /// The scope `reference` names, and Everywhere where it names none.
+    init(_ reference: String) {
+      let parts = reference.split(separator: "/", maxSplits: 2).map(String.init)
+      let remote = parts.count > 1 && parts[1].hasSuffix("-key") ? String(parts[1].dropLast(4)) : nil
+      switch (parts.first, remote, parts.count) {
+      case ("remote", .some(let remote), 2): self = .remote(remote)
+      case ("workspace", .some(let remote), 3): self = .workspace(remote, parts[2])
+      default: self = .everywhere
+      }
+    }
+
+    var remote: String? {
+      switch self {
+      case .everywhere: nil
+      case .remote(let remote), .workspace(let remote, _): remote
+      }
+    }
+
+    /// The scope as it stands among the Remotes `remotes`: Everywhere where it names one not held, or the one held.
+    func within(_ remotes: [String]) -> FakeScope {
+      switch self {
+      case .everywhere: .everywhere
+      case .remote where remotes.count == 1: .everywhere
+      case .remote(let remote), .workspace(let remote, _): remotes.contains(remote) ? self : .everywhere
+      }
+    }
+
+    func holds(_ session: FakeSession) -> Bool {
+      switch self {
+      case .everywhere: true
+      case .remote(let remote): session.remote == remote
+      case .workspace(let remote, let workspace): session.remote == remote && session.workspace == workspace
+      }
+    }
+
+    func reaches(_ remote: String) -> Bool {
+      self.remote.map { $0 == remote } ?? true
+    }
+
+    func title(originNamed: Bool) -> String {
+      switch self {
+      case .everywhere: originNamed ? "Everywhere" : "All workspaces"
+      case .remote(let remote): remote
+      case .workspace(let remote, let workspace): originNamed ? "\(remote) · \(workspace)" : workspace
+      }
     }
   }
 #endif

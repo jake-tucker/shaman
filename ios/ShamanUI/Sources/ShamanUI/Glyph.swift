@@ -51,6 +51,23 @@ struct Glyph: View {
   }
 }
 
+extension Glyph {
+  /// `glyph` drawn as a template image at body size, for where only an image is drawn, as in a menu; none where the
+  /// font could not be registered.
+  static func image(_ glyph: String) -> Image? {
+    guard let name = IconFont.name,
+      let font = UIFont(name: name, size: UIFont.preferredFont(forTextStyle: .body).pointSize)
+    else {
+      return nil
+    }
+    let drawn = NSAttributedString(string: glyph, attributes: [.font: font])
+    let size = drawn.size()
+    guard size.width > 0, size.height > 0 else { return nil }
+    let image = UIGraphicsImageRenderer(size: size).image { _ in drawn.draw(at: .zero) }
+    return Image(uiImage: image.withRenderingMode(.alwaysTemplate))
+  }
+}
+
 extension Font.TextStyle {
   /// The UIKit style of the same name, whose size a custom font is drawn at.
   fileprivate var uiKit: UIFont.TextStyle {

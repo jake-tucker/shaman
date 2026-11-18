@@ -1,6 +1,7 @@
 import XCTest
 
-/// The listing of every Remote's Sessions, over the fake: one Remote, and several standing together.
+/// The listing of every Remote's Sessions, over the fake: one Remote, and several standing together, narrowed by the
+/// title's menu and searched by Title.
 final class ListingTests: XCTestCase {
   override func setUp() {
     continueAfterFailure = false
@@ -126,5 +127,116 @@ final class ListingTests: XCTestCase {
     XCTAssertFalse(row("active", titled: "homelab ·", in: app).exists, "nothing of it is listed yet")
     XCTAssertFalse(app.descendants(matching: .any)["listing.empty"].exists)
     attach(app, "A remote yet to answer")
+  }
+
+  @MainActor
+  private func beginsIn(_ app: XCUIApplication) -> String {
+    app.descendants(matching: .any)["home.beginsIn"].label
+  }
+
+  /// Opens the title's menu and chooses `words` in it.
+  @MainActor
+  private func choose(_ words: String, in app: XCUIApplication) {
+    app.buttons["listing.scope"].tap()
+    let choice = app.buttons[words].firstMatch
+    XCTAssertTrue(choice.waitForExistence(timeout: 10), "the menu offers \(words)")
+    choice.tap()
+  }
+
+  @MainActor
+  func testTheTitleMenuOffersEverywhereThenEachRemoteWithAllOfItAndItsWorkspaces() {
+    let app = launched("several")
+    let menu = app.buttons["listing.scope"]
+    XCTAssertTrue(menu.waitForExistence(timeout: 10))
+    XCTAssertEqual(menu.label, "Everywhere", "the listing starts at Everywhere")
+    menu.tap()
+    for words in [
+      "Everywhere", "All of workstation", "dotfiles", "notes", "All of laptop", "design-system",
+      "All of homelab", "home-assistant", "relay-infra",
+    ] {
+      XCTAssertTrue(app.buttons[words].firstMatch.waitForExistence(timeout: 10), "offers \(words)")
+    }
+    XCTAssertFalse(app.buttons["Sidekick"].exists, "the Sidekick Workspace is never offered")
+    attach(app, "The title's menu with several servers")
+  }
+
+  @MainActor
+  func testWithOneRemoteTheMenuOffersAllWorkspacesAndItsWorkspaces() {
+    let app = launched("paired")
+    let menu = app.buttons["listing.scope"]
+    XCTAssertTrue(menu.waitForExistence(timeout: 10))
+    XCTAssertEqual(menu.label, "All workspaces")
+    menu.tap()
+    for words in ["All workspaces", "shaman", "dotfiles", "notes"] {
+      XCTAssertTrue(app.buttons[words].firstMatch.waitForExistence(timeout: 10), "offers \(words)")
+    }
+    XCTAssertFalse(app.buttons["All of workstation"].exists, "no Origin is named with one server")
+    attach(app, "The title's menu with one server")
+  }
+
+  @MainActor
+  func testChoosingARemoteOrAWorkspaceNarrowsTheListingAndTurnsTheOutlookAndEverywhereTurnsNothing() {
+    let app = launched("several")
+    XCTAssertTrue(rows("active", in: app).firstMatch.waitForExistence(timeout: 10))
+    XCTAssertEqual(beginsIn(app), "New sessions begin in workstation")
+
+    choose("relay-infra", in: app)
+    XCTAssertTrue(app.navigationBars["homelab · relay-infra"].waitForExistence(timeout: 10))
+    XCTAssertTrue(
+      row("active", titled: "Why the nightly backup skipped Tuesday", in: app).waitForExistence(timeout: 10))
+    XCTAssertFalse(row("active", titled: "Upgrade Home Assistant", in: app).exists, "another Workspace's")
+    XCTAssertFalse(row("active", titled: "workstation ·", in: app).exists, "another Remote's")
+    XCTAssertEqual(beginsIn(app), "New sessions begin in homelab · relay-infra")
+    attach(app, "Narrowed to a workspace, the outlook turned")
+
+    choose("All of laptop", in: app)
+    XCTAssertTrue(app.navigationBars["laptop"].waitForExistence(timeout: 10))
+    XCTAssertTrue(row("active", titled: "laptop · design-system", in: app).waitForExistence(timeout: 10))
+    XCTAssertFalse(row("active", titled: "homelab ·", in: app).exists)
+    XCTAssertEqual(beginsIn(app), "New sessions begin in laptop")
+    attach(app, "Narrowed to a server, the outlook turned")
+
+    choose("Everywhere", in: app)
+    XCTAssertTrue(app.navigationBars["Everywhere"].waitForExistence(timeout: 10))
+    XCTAssertTrue(row("active", titled: "homelab · home-assistant", in: app).waitForExistence(timeout: 10))
+    XCTAssertEqual(beginsIn(app), "New sessions begin in laptop", "Everywhere turns nothing")
+
+    choose("relay-infra", in: app)
+    choose("All of homelab", in: app)
+    XCTAssertTrue(app.navigationBars["homelab"].waitForExistence(timeout: 10))
+    XCTAssertEqual(
+      beginsIn(app), "New sessions begin in homelab · relay-infra", "the Workspace remembered for the server")
+  }
+
+  @MainActor
+  func testASearchAnswersWithOneFlatListEachRowKeepingItsShelfsShape() {
+    let app = launched("paired")
+    XCTAssertTrue(rows("active", in: app).firstMatch.waitForExistence(timeout: 10))
+    let field = app.searchFields.firstMatch
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    XCTAssertEqual(field.placeholderValue, "Search by title")
+    field.tap()
+    field.typeText("ZSH")
+    XCTAssertTrue(row("active", titled: "Tidy zsh startup time", in: app).waitForExistence(timeout: 10))
+    XCTAssertEqual(rows("active", in: app).count, 1)
+
+    field.typeText(XCUIKeyboardKey.delete.rawValue)
+    field.typeText(XCUIKeyboardKey.delete.rawValue)
+    field.typeText(XCUIKeyboardKey.delete.rawValue)
+    field.typeText("t")
+    XCTAssertTrue(
+      row("active", titled: "Draw the invite as a QR code", in: app).waitForExistence(timeout: 10),
+      "active rows keep their shape")
+    let stale = row("settled", titled: "Prune the stale worktrees", in: app)
+    XCTAssertTrue(scrolled(to: stale, in: app).exists, "the whole shelf is searched, past Show more")
+    XCTAssertFalse(app.staticTexts["listing.settledHeader"].exists, "the shelves stand down")
+    XCTAssertFalse(app.buttons["listing.showMore"].exists)
+    attach(app, "A search, one flat list")
+
+    field.typeText("nothing like it")
+    let empty = app.staticTexts["listing.empty"]
+    XCTAssertTrue(empty.waitForExistence(timeout: 10))
+    XCTAssertEqual(empty.label, "No sessions match")
+    attach(app, "A search that finds nothing")
   }
 }

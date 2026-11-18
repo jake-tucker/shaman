@@ -2,7 +2,8 @@ import ShamanCore
 import SwiftUI
 
 /// What the app shows when no Session is open: every Remote's Sessions in one flat list, active rows above the shelf
-/// of settled ones, and the bottom bar, with the sheet of Servers, Relays and This device behind its button.
+/// of settled ones, under a title that is a menu narrowing it to a Remote or a Workspace and a field searching it by
+/// Title, and the bottom bar, with the sheet of Servers, Relays and This device behind its button.
 struct ListingScreen: View {
   let core: any Core
   let appVersion: String
@@ -11,6 +12,8 @@ struct ListingScreen: View {
   @State private var sheet: ListingSheet?
   /// The Sessions pushed over the listing, each closed in the core as its screen is popped.
   @State private var stack: SessionStack
+  /// What the search field holds, which the core is handed as it changes and keeps no longer than the core runs.
+  @State private var query = ""
 
   init(core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?, opening: String? = nil) {
     self.core = core
@@ -36,13 +39,18 @@ struct ListingScreen: View {
               Text(verbatim: empty)
                 .accessibilityIdentifier("listing.empty")
             } icon: {
-              Image(systemName: "square.and.pencil")
+              Image(systemName: model.listing?.found == nil ? "square.and.pencil" : "magnifyingglass")
             }
           }
         }
       }
       .navigationTitle(model.listing?.title ?? "")
       .navigationBarTitleDisplayMode(.inline)
+      .searchable(
+        text: $query, placement: .navigationBarDrawer(displayMode: .always),
+        prompt: Text(verbatim: model.listing?.searchPrompt ?? "")
+      )
+      .onChange(of: query) { model.search(query) }
       .safeAreaInset(edge: .top) {
         if let failure = model.failure {
           Banner(text: failure)
@@ -51,7 +59,14 @@ struct ListingScreen: View {
             .accessibilityHint("Dismisses this")
         }
       }
-      .toolbar { bottomBar }
+      .toolbar {
+        ToolbarItem(placement: .principal) {
+          if let listing = model.listing {
+            ScopeMenu(listing: listing) { scope in Task { await model.narrow(scope) } }
+          }
+        }
+        bottomBar
+      }
       .navigationDestination(for: SessionRoute.self) { route in
         SessionScreen(model: stack.model(for: route))
       }
@@ -75,19 +90,23 @@ struct ListingScreen: View {
 
   @ViewBuilder
   private func rows(_ listing: Listing) -> some View {
-    Section {
-      ForEach(listing.active, id: \.session) { row in
-        NavigationLink(value: SessionRoute(session: row.session)) {
-          ActiveRowView(row: row)
-        }
-        .accessibilityIdentifier("listing.active")
-        .swipeActions(edge: .trailing) {
-          if let settle = row.settle {
-            Button(settle) { Task { await model.settle(row.session) } }
-              .tint(.indigo)
-          }
+    if let found = listing.found {
+      // A search stands in place of both shelves, each row keeping its shelf's shape.
+      ForEach(found, id: \.session) { row in
+        switch row {
+        case .active(let row): active(row)
+        case .settled(let row): settled(row)
         }
       }
+    } else {
+      shelves(listing)
+    }
+  }
+
+  @ViewBuilder
+  private func shelves(_ listing: Listing) -> some View {
+    Section {
+      ForEach(listing.active, id: \.session) { row in active(row) }
       if let waiting = listing.waiting {
         HStack(spacing: 8) {
           ProgressView()
@@ -102,16 +121,7 @@ struct ListingScreen: View {
     }
     if !listing.settled.isEmpty {
       Section {
-        ForEach(listing.settled, id: \.session) { row in
-          NavigationLink(value: SessionRoute(session: row.session)) {
-            SettledRowView(row: row)
-          }
-          .accessibilityIdentifier("listing.settled")
-          .swipeActions(edge: .trailing) {
-            Button(row.unsettle) { Task { await model.unsettle(row.session) } }
-              .tint(.indigo)
-          }
-        }
+        ForEach(listing.settled, id: \.session) { row in settled(row) }
         if let showMore = listing.showMore {
           Button(showMore) { model.showMore() }
             .font(.footnote)
@@ -121,6 +131,30 @@ struct ListingScreen: View {
         Text(verbatim: listing.settledHeader)
           .accessibilityIdentifier("listing.settledHeader")
       }
+    }
+  }
+
+  private func active(_ row: ActiveRow) -> some View {
+    NavigationLink(value: SessionRoute(session: row.session)) {
+      ActiveRowView(row: row)
+    }
+    .accessibilityIdentifier("listing.active")
+    .swipeActions(edge: .trailing) {
+      if let settle = row.settle {
+        Button(settle) { Task { await model.settle(row.session) } }
+          .tint(.indigo)
+      }
+    }
+  }
+
+  private func settled(_ row: SettledRow) -> some View {
+    NavigationLink(value: SessionRoute(session: row.session)) {
+      SettledRowView(row: row)
+    }
+    .accessibilityIdentifier("listing.settled")
+    .swipeActions(edge: .trailing) {
+      Button(row.unsettle) { Task { await model.unsettle(row.session) } }
+        .tint(.indigo)
     }
   }
 
@@ -212,6 +246,16 @@ final class ListingModel {
     core.showMoreSettled()
   }
 
+  /// Narrows the listing to `scope`, which turns the Outlook where it names a Remote or a Workspace.
+  func narrow(_ scope: String) async {
+    await act { () async throws(ActError) in try await core.narrowListing(scope) }
+  }
+
+  /// Searches the listing by Title for `text`.
+  func search(_ text: String) {
+    core.searchListing(text)
+  }
+
   private func act(_ act: () async throws(ActError) -> Void) async {
     do {
       try await act()
@@ -229,6 +273,82 @@ final class ListingModel {
       try? await Task.sleep(for: stands)
       guard !Task.isCancelled else { return }
       self?.failure = nil
+    }
+  }
+}
+
+/// The listing's title, as the menu that narrows it: Everywhere, then each Remote with all of it and its Workspaces,
+/// the scope chosen ticked.
+struct ScopeMenu: View {
+  let listing: Listing
+  let narrow: (String) -> Void
+
+  var body: some View {
+    Menu {
+      ForEach(Array(listing.scopes.enumerated()), id: \.offset) { _, section in
+        Section {
+          Picker(selection: chosen) {
+            ForEach(section.choices, id: \.scope) { choice in
+              Label {
+                Text(verbatim: choice.words)
+              } icon: {
+                choice.glyph.flatMap(Glyph.image) ?? Image(systemName: choice.kind.symbol)
+              }
+              .tag(choice.scope)
+            }
+          } label: {
+            EmptyView()
+          }
+          .pickerStyle(.inline)
+        } header: {
+          if let header = section.header {
+            Text(verbatim: header)
+          }
+        }
+      }
+    } label: {
+      HStack(spacing: 4) {
+        Text(verbatim: listing.title)
+          .font(.headline)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        Image(systemName: "chevron.down")
+          .font(.caption2.weight(.bold))
+          .accessibilityHidden(true)
+      }
+      .foregroundStyle(.primary)
+    }
+    .accessibilityIdentifier("listing.scope")
+    .accessibilityLabel(Text(verbatim: listing.title))
+  }
+
+  /// The scope chosen now, and choosing another narrows the listing to it.
+  private var chosen: Binding<String> {
+    Binding {
+      listing.scopes.flatMap(\.choices).first(where: \.chosen)?.scope ?? ""
+    } set: { scope in
+      narrow(scope)
+    }
+  }
+}
+
+extension FoundRow {
+  /// The Session the row is of.
+  var session: String {
+    switch self {
+    case .active(let row): row.session
+    case .settled(let row): row.session
+    }
+  }
+}
+
+extension ScopeKind {
+  /// The symbol a choice of the scope menu is drawn with.
+  var symbol: String {
+    switch self {
+    case .everywhere: "globe"
+    case .remote: "server.rack"
+    case .workspace: "folder"
     }
   }
 }

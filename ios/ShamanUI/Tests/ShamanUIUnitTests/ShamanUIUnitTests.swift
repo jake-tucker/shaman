@@ -378,6 +378,39 @@ private final class RefusingSigner: KeySigner {
     await model.settle("workstation-key/1")
     #expect(model.failure == nil)
   }
+
+  /// Waits until the model's listing shows what `shown` looks for.
+  private func listing(of model: ListingModel, until shown: (Listing) -> Bool) async throws -> Listing {
+    for _ in 0..<200 {
+      if let listing = model.listing, shown(listing) { return listing }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    Issue.record("the listing never showed what was looked for")
+    return try #require(model.listing)
+  }
+
+  @Test func aSearchIsHandedToTheCoreWhichAnswersWithWhatItFound() async throws {
+    let model = ListingModel(core: FakeCore(.paired), failureStands: .seconds(3600))
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    model.search("zsh")
+    let found = try await listing(of: model) { $0.found != nil }.found
+    #expect(found?.map(\.session) == ["workstation-key/7"])
+    model.search("")
+    _ = try await listing(of: model) { $0.found == nil }
+  }
+
+  @Test func aScopeChosenIsHandedToTheCoreWhichNarrowsTheListing() async throws {
+    let model = ListingModel(core: FakeCore(.several), failureStands: .seconds(3600))
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    let menu = try await listing(of: model) { _ in true }
+    let laptop = try #require(menu.scopes.flatMap(\.choices).first { $0.words == "All of laptop" })
+    await model.narrow(laptop.scope)
+    let narrowed = try await listing(of: model) { $0.title == "laptop" }
+    #expect(narrowed.active.allSatisfy { $0.place.hasPrefix("laptop · ") })
+    #expect(model.failure == nil)
+  }
 }
 
 @Suite struct ConversationTests {

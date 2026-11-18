@@ -78,6 +78,27 @@ final class LivePairingTests: XCTestCase {
     app.navigationBars.buttons.firstMatch.tap()
     XCTAssertTrue(beginsIn.waitForExistence(timeout: 10))
     XCTAssertEqual(beginsIn.label, "\(paired) · workspace", "opening it turned the Outlook toward its Workspace")
+
+    // The title's menu and the search are the live core's: narrowing to the Session's Workspace lists it alone.
+    let menu = app.buttons["listing.scope"]
+    XCTAssertEqual(menu.label, "All workspaces")
+    menu.tap()
+    let workspace = app.buttons["workspace"].firstMatch
+    XCTAssertTrue(workspace.waitForExistence(timeout: 10), "the scratch Server's Workspace is offered")
+    attach(app, "The scratch Server's title menu")
+    workspace.tap()
+    XCTAssertTrue(app.navigationBars["workspace"].waitForExistence(timeout: 10))
+    XCTAssertTrue(row.waitForExistence(timeout: 10))
+    let field = app.searchFields.firstMatch
+    XCTAssertEqual(field.placeholderValue, "Search by title")
+    field.tap()
+    field.typeText("nothing like it")
+    let empty = app.descendants(matching: .any)["listing.empty"]
+    XCTAssertTrue(empty.waitForExistence(timeout: 10))
+    XCTAssertEqual(empty.label, "No sessions match")
+    attach(app, "A search of the scratch Server")
+    app.buttons["Close"].firstMatch.tap()
+    XCTAssertEqual(beginsIn.label, "\(paired) · workspace")
     let shown = beginsIn.label
     app.buttons["home.servers"].tap()
     let way = app.descendants(matching: .any).matching(NSPredicate(format: "identifier ENDSWITH '.way.0'")).firstMatch

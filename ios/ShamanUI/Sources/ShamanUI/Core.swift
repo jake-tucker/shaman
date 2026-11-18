@@ -37,6 +37,13 @@ public protocol Core: AnyObject, Sendable {
   /// and turns the Outlook toward its Origin and Workspace. Closing it cancels nothing on the Server.
   func openSession(_ session: String) -> any OpenedSession
 
+  /// Narrows the listing to the scope a choice of its title's menu carries. A Remote or a Workspace chosen turns the
+  /// Outlook toward it; Everywhere turns nothing.
+  func narrowListing(_ scope: String) async throws(ActError)
+
+  /// Searches the listing by Title; an empty text searches for nothing.
+  func searchListing(_ text: String)
+
   /// What the screen where pairing begins says to do.
   func pairingPrompt() -> String
 

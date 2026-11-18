@@ -38,6 +38,9 @@
     private let onShow = Mutex(FakeSession.shelfOpening)
     /// The Remotes held that have yet to answer with their Sessions, which they never do.
     private let unanswered: [String]
+    /// What the listing is narrowed to and searched for, until the fake goes.
+    private let scope = Mutex(FakeScope.everywhere)
+    private let query = Mutex("")
 
     public init(_ scenario: Scenario) {
       device = Mutex(Self.device(in: scenario))
@@ -96,6 +99,25 @@
     /// The Workspace last turned toward on each Remote.
     private let turnedWorkspace = Mutex<[String: String]>([:])
 
+    public func narrowListing(_ reference: String) async throws(ActError) {
+      let remotes = held.withLock { $0.map(\.name) }
+      let chosen = FakeScope(reference).within(remotes)
+      scope.withLock { $0 = chosen }
+      if let remote = chosen.remote {
+        turned.withLock { $0 = remote }
+        if case .workspace(_, let workspace) = chosen {
+          turnedWorkspace.withLock { $0[remote] = workspace }
+        }
+        outlookListeners.tell(currentOutlook())
+      }
+      listingListeners.tell(currentListing())
+    }
+
+    public func searchListing(_ text: String) {
+      query.withLock { $0 = text }
+      listingListeners.tell(currentListing())
+    }
+
     private func settling(_ session: String, to settled: Bool) async throws(ActError) {
       try? await Task.sleep(for: .milliseconds(150))
       let found = sessions.withLock { sessions in
@@ -116,7 +138,8 @@
     private func currentListing() -> Listing {
       let remotes = held.withLock { $0.map(\.name) }
       return FakeSession.listing(
-        of: sessions.withLock { $0 }, on: remotes, unanswered: unanswered, showing: onShow.withLock { $0 }, now: Date())
+        of: sessions.withLock { $0 }, on: remotes, unanswered: unanswered, showing: onShow.withLock { $0 },
+        scope: scope.withLock { $0 }, query: query.withLock { $0 }, now: Date())
     }
 
     public func thisDevice() -> AsyncStream<ThisDevice> {
@@ -200,7 +223,7 @@
       return .paired(name: remoteName)
     }
 
-    /// The Remote last paired, which the Outlook stands at.
+    /// The Remote last turned toward, which the Outlook stands at.
     private let turned = Mutex<String?>(nil)
 
     private func currentOutlook() -> Outlook {

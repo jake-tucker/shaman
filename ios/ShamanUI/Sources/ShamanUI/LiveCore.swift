@@ -68,6 +68,14 @@ public final class LiveCore: Core {
     LiveOpenedSession(client.openSession(session: session))
   }
 
+  public func narrowListing(_ scope: String) async throws(ActError) {
+    try await acted { try await client.narrowListing(scope: scope) }
+  }
+
+  public func searchListing(_ text: String) {
+    client.searchListing(text: text)
+  }
+
   public func pairingPrompt() -> String {
     client.pairingPrompt()
   }
