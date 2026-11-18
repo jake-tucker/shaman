@@ -1179,6 +1179,25 @@ impl Listings {
         self.shared.render();
     }
 
+    /// Holds `answered` as a Remote the listing follows, its Sessions asked
+    /// and acted on over `over`.
+    pub(crate) fn hold_over(&self, answered: Answered, over: Arc<dyn shaman_client::Transport>) {
+        let transport = Arc::new(PairingTransport::new(
+            self.shared.redeemer.clone(),
+            answered.name.clone(),
+        ));
+        let reaching = Arc::new(Reaching::new(over));
+        self.shared.lock().remotes.push(Followed {
+            answered,
+            generation: 0,
+            transport,
+            unreachable: reaching.unreachable(),
+            commands: SessionCommands::new(reaching, self.shared.timings),
+            _readers: Readers(Vec::new()),
+        });
+        self.shared.render();
+    }
+
     /// Lets go of the Remote `name`, as one removed is.
     pub(crate) fn release(&self, name: &str) {
         self.shared

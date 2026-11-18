@@ -697,7 +697,7 @@ async fn a_queued_prompt_waits_at_the_foot_and_is_steered_now_or_cancelled() {
         .expect("held");
     assert_eq!(cancelled.status, shaman::protocol::PromptStatus::Cancelled);
     assert_eq!(
-        phone.core.draft(row.session.clone()),
+        phone.core.draft(row.session.clone()).text,
         "",
         "a cancelled Prompt is not owed back"
     );
@@ -720,11 +720,11 @@ async fn stop_on_a_session_working_only_for_a_prompt_not_yet_delivered_gives_its
     assert_eq!(frame.bar.map(|bar| bar.words).as_deref(), Some("Working"));
     phone
         .core
-        .set_draft(row.session.clone(), "and the docs".to_owned());
+        .set_draft(row.session.clone(), "and the docs".to_owned(), 0);
 
     reading.session.stop().await.expect("stopped");
     assert_eq!(
-        phone.core.draft(row.session.clone()),
+        phone.core.draft(row.session.clone()).text,
         "Tidy the build\nand the docs",
         "ahead of anything already written there"
     );
@@ -751,13 +751,13 @@ async fn a_send_that_fails_goes_from_the_conversation_and_its_text_goes_back_to_
     reading.conversation_until(failed_turn).await;
     phone
         .core
-        .set_draft(row.session.clone(), "written meanwhile".to_owned());
+        .set_draft(row.session.clone(), "written meanwhile".to_owned(), 0);
 
     desk.delete(session).await;
     let failed = reading.session.send("One more thing".to_owned()).await;
     assert!(matches!(failed, Err(ActError::Gone { .. })), "{failed:?}");
     assert_eq!(
-        phone.core.draft(row.session.clone()),
+        phone.core.draft(row.session.clone()).text,
         "One more thing\nwritten meanwhile"
     );
     // Its bubble goes.
@@ -870,15 +870,17 @@ async fn on_an_unreachable_origin_a_send_waits_marked_as_sending_and_goes_when_i
     desk.shutdown().await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn a_send_never_answered_is_not_sent_again_and_its_text_stays_saying_it_may_have_been() {
-    let desk = ServingServer::start("thin-send-unanswered").await;
-    let gate = Gate::open(desk.serving_address()).await;
-    let mut timings = support::timings();
-    // A dial that hears nothing is still under way when the act's bound
-    // passes, so the send may have gone.
-    timings.redeemer.handshake_timeout = std::time::Duration::from_secs(2);
-    timings.act_bound = std::time::Duration::from_millis(300);
+/// A phone paired with `desk` through `gate`, with the Session titled
+/// `title` begun in a Workspace of `holder`'s named `workspace`, open and
+/// read, on a phone whose core waits as `timings` say.
+async fn opened_through(
+    desk: &ServingServer,
+    gate: &Gate,
+    timings: shaman_thin_client::CoreTimings,
+    holder: &tempfile::TempDir,
+    workspace_name: &str,
+    title: &str,
+) -> (Phone, SessionId, ActiveRow, support::Reading) {
     let phone = Phone::with(timings);
     let invite = desk.invite(vec![Way::Direct(gate.address())]).await;
     assert!(matches!(
@@ -888,15 +890,100 @@ async fn a_send_never_answered_is_not_sent_again_and_its_text_stays_saying_it_ma
             .await,
         PairingOutcome::Paired { .. }
     ));
-    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
-    let session = desk
-        .begin(&workspace(&holder, "shaman"), "Map the workspace")
-        .await;
-    let row = row(&phone, "Map the workspace").await;
+    let session = desk.begin(&workspace(holder, workspace_name), title).await;
+    let row = row(&phone, title).await;
     let reading = phone.open(&row.session);
     reading.conversation_until(loaded).await;
+    (phone, session, row, reading)
+}
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_send_still_dialling_when_its_bound_passes_was_not_sent_and_its_text_goes_back() {
+    let desk = ServingServer::start("thin-send-undialled").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let mut timings = support::timings();
+    // A dial that hears nothing is still under way when the act's bound
+    // passes, and fails a moment later: nothing was sent.
+    timings.redeemer.handshake_timeout = std::time::Duration::from_millis(500);
+    timings.act_bound = std::time::Duration::from_millis(200);
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let (phone, session, row, reading) = opened_through(
+        &desk,
+        &gate,
+        timings,
+        &holder,
+        "shaman",
+        "Map the workspace",
+    )
+    .await;
+
+    // Once the connection it held is known gone, a send has to dial.
     gate.shut_now();
+    reading
+        .frame_until(|frame| {
+            frame
+                .composer
+                .as_ref()
+                .is_some_and(|composer| composer.unreachable.is_some())
+        })
+        .await;
+    let failed = reading.session.send("One more thing".to_owned()).await;
+    assert_eq!(
+        failed,
+        Err(ActError::Unreachable {
+            message: "The server did not answer in time".to_owned()
+        })
+    );
+    assert_eq!(phone.core.draft(row.session.clone()).text, "One more thing");
+    assert_eq!(
+        reading
+            .frame()
+            .await
+            .composer
+            .and_then(|composer| composer.note),
+        None,
+        "it was not sent, and nothing says it may have been"
+    );
+
+    gate.open_now();
+    reading
+        .frame_until(|frame| {
+            frame
+                .composer
+                .as_ref()
+                .is_some_and(|composer| composer.unreachable.is_none())
+        })
+        .await;
+    assert!(
+        !prompts(&desk, session)
+            .await
+            .iter()
+            .any(|(text, _)| text == "One more thing"),
+        "never sent"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_send_delivered_whose_answer_is_lost_is_not_sent_again_and_says_it_may_have_been() {
+    let desk = ServingServer::start("thin-send-lost").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let (phone, session, row, reading) = opened_through(
+        &desk,
+        &gate,
+        support::timings(),
+        &holder,
+        "shaman",
+        "Map the workspace",
+    )
+    .await;
+
+    // What the phone says reaches the Server; nothing the Server says comes
+    // back, so the connection is given up as its keepalive goes unanswered.
+    gate.mute_now();
     let failed = reading.session.send("One more thing".to_owned()).await;
     assert_eq!(
         failed,
@@ -904,7 +991,11 @@ async fn a_send_never_answered_is_not_sent_again_and_its_text_stays_saying_it_ma
             message: "The server did not answer".to_owned()
         })
     );
-    assert_eq!(phone.core.draft(row.session.clone()), "One more thing");
+    assert_eq!(
+        phone.core.draft(row.session.clone()).text,
+        "One more thing",
+        "its text stays in the composer"
+    );
     let frame = reading
         .frame_until(|frame| {
             frame
@@ -917,29 +1008,14 @@ async fn a_send_never_answered_is_not_sent_again_and_its_text_stays_saying_it_ma
         frame.composer.and_then(|composer| composer.note).as_deref(),
         Some("The server did not answer, so this prompt may have been sent")
     );
-
-    gate.open_now();
-    reading
-        .frame_until(|frame| {
-            frame
-                .composer
-                .as_ref()
-                .is_some_and(|composer| composer.unreachable.is_none())
-        })
-        .await;
-    reading
-        .conversation_until(|items| {
-            !sending(items)
-                .iter()
-                .any(|(text, _)| text == "One more thing")
-        })
-        .await;
-    assert!(
-        !prompts(&desk, session)
+    assert_eq!(
+        prompts(&desk, session)
             .await
             .iter()
-            .any(|(text, _)| text == "One more thing"),
-        "never sent again"
+            .filter(|(text, _)| text == "One more thing")
+            .count(),
+        1,
+        "it was delivered, once, and never sent again"
     );
 
     phone.shutdown();

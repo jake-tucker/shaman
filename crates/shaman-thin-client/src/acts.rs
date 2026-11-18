@@ -82,6 +82,10 @@ pub(crate) struct Asking {
     pub max_backoff: Duration,
     /// How long it waits on an answer before it fails as Unreachable.
     pub bound: Duration,
+    /// How much longer an attempt under way as the bound passes is let run:
+    /// as long as a dial may take, so an attempt still dialling is told from
+    /// one that reached the Server and waits on its answer.
+    pub dialling: Duration,
 }
 
 /// Why an act's request was not answered as asked.
@@ -91,7 +95,7 @@ pub(crate) enum Unanswered {
     /// the bound passed. Said as it is to be shown.
     NotDone(ActError),
     /// It may have reached the Server: its answer was lost, or had yet to
-    /// come when the bound passed.
+    /// come when the bound passed and any dial would have ended.
     MaybeDone,
 }
 
@@ -99,10 +103,11 @@ pub(crate) enum Unanswered {
 enum Reached {
     /// No way carried it, so it is safe to ask again.
     Undelivered,
-    /// It was carried and its answer lost.
+    /// It was carried, and what came back was lost or unreadable: a Server
+    /// that took it answers with success, or refuses in its own words.
     Lost,
-    /// The Server answered it, refusing it.
-    Answered,
+    /// The Server refused it, in its own words.
+    Refused,
 }
 
 fn reached(error: &anyhow::Error) -> Reached {
@@ -115,7 +120,10 @@ fn reached(error: &anyhow::Error) -> Reached {
     {
         Some(SessionErrorCode::PairingConnectionFailed) => Reached::Undelivered,
         Some(SessionErrorCode::PairingOutcomeUnknown) => Reached::Lost,
-        _ => Reached::Answered,
+        Some(_) => Reached::Refused,
+        // Not the Server's refusal: an answer whose body could not be read
+        // or made sense of, which may well have been its success.
+        None => Reached::Lost,
     }
 }
 
@@ -123,7 +131,9 @@ fn reached(error: &anyhow::Error) -> Reached {
 const NOT_IN_TIME: &str = "The server did not answer in time";
 
 /// Asks `ask` of a Server, again each time no way carried it, at once where
-/// `try_now` says to, until it is answered or `asking`'s bound passes.
+/// `try_now` says to, until it is answered or `asking`'s bound passes. An
+/// attempt under way as the bound passes is let run as long as a dial may
+/// take, and only one still unanswered after that may have been done.
 pub(crate) async fn deliver<T, F>(
     asking: Asking,
     try_now: &mut TryNow,
@@ -135,13 +145,25 @@ where
     let deadline = tokio::time::Instant::now() + asking.bound;
     let mut backoff = RecoveryBackoff::new(asking.initial_backoff, asking.max_backoff);
     loop {
-        let error = match tokio::time::timeout_at(deadline, ask()).await {
+        let attempt = ask();
+        tokio::pin!(attempt);
+        let (error, last) = match tokio::time::timeout_at(deadline, &mut attempt).await {
             Ok(Ok(answered)) => return Ok(answered),
-            Ok(Err(error)) => error,
-            // It was asked, and may have been carried.
-            Err(_) => return Err(Unanswered::MaybeDone),
+            Ok(Err(error)) => (error, false),
+            Err(_) => match tokio::time::timeout(asking.dialling, attempt).await {
+                Ok(Ok(answered)) => return Ok(answered),
+                Ok(Err(error)) => (error, true),
+                // Past any dial: it reached the Server, and waits on it.
+                Err(_) => return Err(Unanswered::MaybeDone),
+            },
+        };
+        let not_in_time = || {
+            Err(Unanswered::NotDone(ActError::Unreachable {
+                message: NOT_IN_TIME.to_owned(),
+            }))
         };
         match reached(&error) {
+            Reached::Undelivered if last => return not_in_time(),
             Reached::Undelivered => {
                 tracing::debug!("an act went undelivered, and waits to go: {error:#}");
                 let retry_in = backoff.next();
@@ -149,13 +171,14 @@ where
                     .await
                     .is_err()
                 {
-                    return Err(Unanswered::NotDone(ActError::Unreachable {
-                        message: NOT_IN_TIME.to_owned(),
-                    }));
+                    return not_in_time();
                 }
             }
-            Reached::Lost => return Err(Unanswered::MaybeDone),
-            Reached::Answered => return Err(Unanswered::NotDone(crate::listing::failed(error))),
+            Reached::Lost => {
+                tracing::debug!("an act's answer was lost: {error:#}");
+                return Err(Unanswered::MaybeDone);
+            }
+            Reached::Refused => return Err(Unanswered::NotDone(crate::listing::failed(error))),
         }
     }
 }
@@ -176,6 +199,7 @@ mod tests {
             initial_backoff: Duration::from_millis(1),
             max_backoff: Duration::from_millis(5),
             bound,
+            dialling: Duration::from_millis(20),
         }
     }
 
@@ -241,6 +265,60 @@ mod tests {
         let session = SessionId::new();
         let lost = deliver(asking(Duration::from_secs(5)), &mut try_now, || {
             commands.interrupt_session(session)
+        })
+        .await;
+        assert_eq!(lost, Err(Unanswered::MaybeDone));
+        assert_eq!(transport.asked(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_act_still_dialling_as_its_bound_passes_and_carried_by_no_way_was_not_done() {
+        // The one attempt is under way as the bound passes, and its dial
+        // fails a moment later: nothing was sent.
+        let dialling = shaman_client::testing::Answering::new(|_| async {
+            tokio::time::sleep(Duration::from_millis(40)).await;
+            Err(failure(
+                SessionErrorCode::PairingConnectionFailed,
+                "could not reach Remote at any paired address",
+            ))
+        });
+        let commands = SessionCommands::new(
+            dialling,
+            SessionCommandTimings {
+                initial_recovery_backoff: Duration::from_millis(1),
+                max_recovery_backoff: Duration::from_millis(5),
+                attachment_fetch_timeout: Duration::from_secs(5),
+            },
+        );
+        let session = SessionId::new();
+        let mut asked = asking(Duration::from_millis(20));
+        asked.dialling = Duration::from_secs(5);
+        let unanswered = deliver(asked, &mut TryNow::never(), || {
+            commands.interrupt_session(session)
+        })
+        .await;
+        assert_eq!(
+            unanswered,
+            Err(Unanswered::NotDone(ActError::Unreachable {
+                message: NOT_IN_TIME.to_owned()
+            }))
+        );
+    }
+
+    #[tokio::test]
+    async fn an_answer_that_could_not_be_read_may_have_been_success_and_is_never_asked_again() {
+        // A success whose body was cut off: the Server took it.
+        let cut = || {
+            Ok(http::Response::new(shaman_client::full_body(
+                br#"{"outcome":"withdrew_prompt","prompt":{"id":"#.to_vec(),
+            )))
+        };
+        let transport = Arc::new(ScriptedTransport::new(vec![cut(), cut()]));
+        let commands = commands(&transport);
+        let mut try_now = transport.try_now();
+        let session = SessionId::new();
+        let lost = deliver(asking(Duration::from_secs(5)), &mut try_now, || {
+            commands.interrupt_session_reporting_outcome(session)
         })
         .await;
         assert_eq!(lost, Err(Unanswered::MaybeDone));

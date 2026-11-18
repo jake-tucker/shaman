@@ -98,6 +98,12 @@ pub struct QueuedPrompt {
 pub(crate) struct Local {
     pub outgoing: Vec<Outgoing>,
     pub note: Option<String>,
+    /// The Prompts a stop would withdraw now, as the Session last read: each
+    /// admitted to steer or begin a Turn, and taken by none.
+    pub withdrawable: Vec<(PromptId, String)>,
+    /// The Prompts a stop whose answer was lost may have withdrawn, whose
+    /// text is owed back to the composer once the Server shows one withdrawn.
+    pub owed: Vec<(PromptId, String)>,
 }
 
 /// A Prompt this screen sent, until its Server is seen holding it.
@@ -118,6 +124,41 @@ impl Local {
         self.outgoing
             .retain(|outgoing| !snapshot.prompts.iter().any(|held| held.id == outgoing.id));
         self.outgoing.len() != before
+    }
+
+    /// Notes which Prompts a stop would withdraw as `snapshot` stands, and
+    /// takes out each owed Prompt it shows settled: answering the text of
+    /// those it shows withdrawn, which are owed back to the composer.
+    pub fn reconcile(&mut self, snapshot: &SessionSnapshot) -> Vec<String> {
+        self.withdrawable = snapshot
+            .prompts
+            .iter()
+            .filter(|prompt| {
+                prompt.status == PromptStatus::Pending
+                    && prompt.delivery == PromptDelivery::Steer
+                    && prompt.taken.is_none()
+            })
+            .map(|prompt| (prompt.id, prompt.text.clone()))
+            .collect();
+        let mut withdrawn = Vec::new();
+        self.owed.retain(|(id, text)| {
+            match snapshot.prompts.iter().find(|prompt| prompt.id == *id) {
+                // Still waiting: the stop may yet be seen to have taken it.
+                Some(prompt)
+                    if prompt.status == PromptStatus::Pending && prompt.taken.is_none() =>
+                {
+                    true
+                }
+                Some(prompt) => {
+                    if prompt.status == PromptStatus::Cancelled {
+                        withdrawn.push(text.clone());
+                    }
+                    false
+                }
+                None => true,
+            }
+        });
+        withdrawn
     }
 }
 

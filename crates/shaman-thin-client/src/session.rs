@@ -299,6 +299,7 @@ pub(crate) fn open(
     let reader = opening.map(|opening| {
         let reader = Reader {
             gone: None,
+            drafts: asked.drafts.clone(),
             reading: reading.clone(),
             listings: listings.clone(),
             reference: reference.to_owned(),
@@ -471,19 +472,27 @@ impl Acting {
 
     async fn stop(&self) -> Result<(), ActError> {
         let mut opening = self.opening()?;
-        let outcome = self
+        let asked = self
             .deliver(&mut opening, |commands, session_id| async move {
                 commands
                     .interrupt_session_reporting_outcome(session_id)
                     .await
             })
-            .await
-            .map_err(|unanswered| {
-                said(
-                    unanswered,
-                    "The server did not answer, so the work may have been stopped",
-                )
-            })?;
+            .await;
+        if asked == Err(Unanswered::MaybeDone) {
+            // Whatever it withdrew is owed back once the Session shows it
+            // withdrawn.
+            self.local.send_modify(|local| {
+                let withdrawable = local.withdrawable.clone();
+                local.owed.extend(withdrawable);
+            });
+        }
+        let outcome = asked.map_err(|unanswered| {
+            said(
+                unanswered,
+                "The server did not answer, so the work may have been stopped",
+            )
+        })?;
         // A Prompt withdrawn, as the one thing to stop, is owed back to the
         // composer it was written in.
         if let InterruptOutcome::WithdrewPrompt { prompt } = outcome {
@@ -534,6 +543,8 @@ fn shown(was: Option<&Shown>, items: Vec<ConversationItem>) -> Shown {
 struct Reader {
     /// Why the Session is gone, once it is.
     gone: Option<String>,
+    /// Where a Prompt a stop withdrew goes back to.
+    drafts: Drafts,
     /// Whether the Session's stream is still read.
     reading: Arc<AtomicBool>,
     listings: Listings,
@@ -595,7 +606,8 @@ impl Reader {
         let mut backoff =
             RecoveryBackoff::new(self.pacing.initial_backoff, self.pacing.max_backoff);
         loop {
-            let ended = match self.commands.attach_session(self.session_id).await {
+            let attached = self.attach(&mut local).await;
+            let ended = match attached {
                 Ok(subscription) => {
                     backoff.reset();
                     self.follow(subscription, &mut listing, &mut local).await
@@ -618,6 +630,24 @@ impl Reader {
                 .await
             {
                 return self.show_gone(why, local).await;
+            }
+        }
+    }
+
+    /// Attaches to the Session's stream, showing meanwhile what the screen's
+    /// own acts change: a Prompt sent before the stream answers stands at
+    /// once.
+    async fn attach(
+        &mut self,
+        local: &mut watch::Receiver<Local>,
+    ) -> anyhow::Result<SessionSubscription> {
+        let commands = self.commands.clone();
+        let attaching = commands.attach_session(self.session_id);
+        tokio::pin!(attaching);
+        loop {
+            tokio::select! {
+                attached = &mut attaching => return attached,
+                Ok(()) = local.changed() => self.show(),
             }
         }
     }
@@ -738,15 +768,27 @@ impl Reader {
         // A Prompt sent from here that the Server now holds stands as the
         // Server says from now on.
         if let (Some(snapshot), Some(local)) = (&self.snapshot, self.local.upgrade()) {
-            local.send_if_modified(|local| local.held_by(snapshot));
+            let mut withdrawn = Vec::new();
+            local.send_if_modified(|local| {
+                // What a stop would withdraw, and what one may have, change
+                // nothing shown.
+                withdrawn = local.reconcile(snapshot);
+                local.held_by(snapshot)
+            });
+            // A Prompt a stop whose answer was lost did withdraw.
+            for text in withdrawn {
+                self.drafts.give_back(&self.reference, &text);
+            }
         }
         self.show_frame();
-        let items = self
-            .snapshot
-            .as_ref()
-            .map_or_else(conversation::loading, |snapshot| {
-                frame::with_outgoing(conversation::conversation(snapshot), &self.local())
-            });
+        // A Prompt being sent stands at the foot even before the Session has
+        // been read, beneath the loading mark.
+        let items = frame::with_outgoing(
+            self.snapshot
+                .as_ref()
+                .map_or_else(conversation::loading, conversation::conversation),
+            &self.local(),
+        );
         self.conversation.send_if_modified(|current| {
             let next = shown(Some(current), items);
             let changed = next.len() != current.len()
@@ -833,6 +875,7 @@ mod tests {
         let try_now = transport.try_now();
         let reader = Reader {
             gone: None,
+            drafts: Drafts::default(),
             reading: Arc::new(AtomicBool::new(true)),
             listings: listings.clone(),
             reference: reference.to_owned(),
@@ -1046,5 +1089,279 @@ mod tests {
             }),
             "an item gone, and the rest moved, is the order alone"
         );
+    }
+
+    /// What a test's Server answers each request it is asked over, by its
+    /// method and path, and how many times each was asked.
+    type Answers = dyn Fn(
+            &http::Method,
+            &str,
+        ) -> futures_util::future::BoxFuture<
+            'static,
+            Result<shaman_client::TransportResponse, SessionError>,
+        > + Send
+        + Sync;
+
+    fn answering(answer: Arc<Answers>) -> Arc<dyn shaman_client::Transport> {
+        shaman_client::testing::Answering::new(move |request| {
+            answer(request.method(), request.uri().path())
+        })
+    }
+
+    /// A Session's stream as a Server sends it: `snapshot`, and whatever is
+    /// sent down `more` after, open until `more` is dropped.
+    fn stream_from(
+        snapshot: &SessionSnapshot,
+        more: tokio::sync::mpsc::UnboundedReceiver<bytes::Bytes>,
+    ) -> shaman_client::TransportResponse {
+        let first = bytes::Bytes::from(format!(
+            "event: {}\nid: {}\ndata: {}\n\n",
+            shaman_protocol::SESSION_SNAPSHOT_EVENT,
+            snapshot.revision.0,
+            serde_json::to_string(snapshot).unwrap()
+        ));
+        let rest = futures_util::stream::unfold(more, |mut more| async move {
+            more.recv().await.map(|chunk| (chunk, more))
+        });
+        http::Response::new(shaman_client::testing::streamed(
+            futures_util::stream::StreamExt::chain(futures_util::stream::iter([first]), rest),
+        ))
+    }
+
+    /// An answer of success whose body was cut off part way.
+    fn cut_off() -> shaman_client::TransportResponse {
+        http::Response::new(shaman_client::full_body(br#"{"id":"#.to_vec()))
+    }
+
+    /// The Session `reference` names opened over `over`, its acts asked as
+    /// a test's are, and the drafts they keep.
+    fn opened_over(
+        runtime: &tokio::runtime::Runtime,
+        over: Arc<dyn shaman_client::Transport>,
+    ) -> (
+        Arc<OpenSession>,
+        Drafts,
+        String,
+        SessionId,
+        tempfile::TempDir,
+    ) {
+        let (listings, directory) = listings(runtime);
+        let (desk, reference) = listed_on("desk", "Map the workspace");
+        let session_id = desk.sessions.as_ref().unwrap()[0].id();
+        listings.hold_over(desk, over);
+        let drafts = Drafts::default();
+        let pacing = Pacing {
+            initial_backoff: Duration::from_millis(1),
+            max_backoff: Duration::from_millis(5),
+        };
+        let opened = open(
+            runtime.handle(),
+            &listings,
+            &reference,
+            pacing,
+            Asked {
+                drafts: drafts.clone(),
+                acts: Acts::default(),
+                asking: Asking {
+                    initial_backoff: Duration::from_millis(1),
+                    max_backoff: Duration::from_millis(5),
+                    bound: SHOWN_WITHIN,
+                    dialling: Duration::from_millis(50),
+                },
+            },
+        );
+        (opened, drafts, reference, session_id, directory)
+    }
+
+    fn conversation_until(
+        runtime: &tokio::runtime::Runtime,
+        opened: &OpenSession,
+        shown: impl Fn(&[Arc<ConversationItem>]) -> bool,
+    ) -> Vec<ConversationItem> {
+        let mut conversation = opened.conversation.clone();
+        runtime.block_on(async {
+            tokio::time::timeout(SHOWN_WITHIN, conversation.wait_for(|items| shown(items)))
+                .await
+                .expect("shown in time")
+                .expect("the conversation stands")
+                .iter()
+                .map(|item| (**item).clone())
+                .collect()
+        })
+    }
+
+    #[test]
+    fn a_prompt_sent_before_the_session_is_read_stands_at_once_beneath_the_loading_mark() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        // The Session's stream never answers, and nor does the send.
+        let (opened, _drafts, _reference, _session, _directory) = opened_over(
+            &runtime,
+            answering(Arc::new(|_, _| Box::pin(std::future::pending()))),
+        );
+        let sending = {
+            let opened = opened.clone();
+            runtime.spawn(async move { opened.send("Steer it".to_owned()).await })
+        };
+        let items = conversation_until(&runtime, &opened, |items| items.len() == 2);
+        assert!(
+            matches!(items[0].kind, ItemKind::Loading { .. }),
+            "{items:?}"
+        );
+        assert_eq!(
+            items[1].kind,
+            ItemKind::UserMessage {
+                text: "Steer it".to_owned(),
+                note: None,
+                sending: true,
+            }
+        );
+        sending.abort();
+    }
+
+    #[test]
+    fn a_send_whose_success_could_not_be_read_may_have_been_sent_and_is_not_sent_again() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let admitted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = admitted.clone();
+        let (opened, drafts, reference, _session, _directory) = opened_over(
+            &runtime,
+            answering(Arc::new(move |method, path| {
+                if method == http::Method::POST && path.ends_with("/prompts") {
+                    counted.fetch_add(1, Ordering::AcqRel);
+                    return Box::pin(async { Ok(cut_off()) });
+                }
+                Box::pin(std::future::pending())
+            })),
+        );
+        let failed = runtime.block_on(opened.send("One more thing".to_owned()));
+        assert_eq!(
+            failed,
+            Err(ActError::Unreachable {
+                message: "The server did not answer".to_owned()
+            }),
+            "not refused: the Server may hold it"
+        );
+        assert_eq!(admitted.load(Ordering::Acquire), 1, "never sent again");
+        assert_eq!(drafts.get(&reference).text, "One more thing");
+        let mut frame = opened.frame.clone();
+        let note = runtime.block_on(async {
+            tokio::time::timeout(
+                SHOWN_WITHIN,
+                frame.wait_for(|frame| frame.composer.as_ref().is_some_and(|c| c.note.is_some())),
+            )
+            .await
+            .expect("shown in time")
+            .expect("the frame stands")
+            .composer
+            .clone()
+            .and_then(|composer| composer.note)
+        });
+        assert_eq!(note.as_deref(), Some(frame::MAY_HAVE_BEEN_SENT));
+    }
+
+    #[test]
+    fn a_stop_whose_answer_was_lost_gives_back_a_prompt_the_session_then_shows_withdrawn() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let session_id = Arc::new(Mutex::new(None::<SessionId>));
+        let prompt = shaman_protocol::Prompt {
+            id: PromptId::new(),
+            text: "Tidy the build".to_owned(),
+            skill_invocations: Vec::new(),
+            attachments: Vec::new(),
+            delivery: PromptDelivery::Steer,
+            admission_order: shaman_protocol::PromptOrder(1),
+            status: shaman_protocol::PromptStatus::Pending,
+            withdrawal: None,
+            author: None,
+            taken: None,
+        };
+        let (more, first_more) = tokio::sync::mpsc::unbounded_channel();
+        let first_more = Arc::new(Mutex::new(Some(first_more)));
+        let streams = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let answers: Arc<Answers> = {
+            let session_id = session_id.clone();
+            let prompt = prompt.clone();
+            Arc::new(move |method, path| {
+                let id = session_id.lock().unwrap().expect("the Session is known");
+                if method == http::Method::POST && path.ends_with("/interrupt") {
+                    return Box::pin(async { Ok(cut_off()) });
+                }
+                if path.ends_with("/events") {
+                    let mut snapshot = shaman_client::testing::session_snapshot(id, 1);
+                    let mut prompt = prompt.clone();
+                    let opened = streams.fetch_add(1, Ordering::AcqRel);
+                    if opened == 0 {
+                        snapshot.prompts = vec![prompt];
+                        let more = first_more.lock().unwrap().take().unwrap();
+                        return Box::pin(async move { Ok(stream_from(&snapshot, more)) });
+                    }
+                    // Read again after the stop: the Prompt was withdrawn.
+                    prompt.status = shaman_protocol::PromptStatus::Cancelled;
+                    snapshot.revision = shaman_protocol::SessionRevision(2);
+                    snapshot.prompts = vec![prompt];
+                    let data = serde_json::to_string(&snapshot).unwrap();
+                    return Box::pin(async move {
+                        Ok(shaman_client::testing::open_stream_of(&[(
+                            shaman_protocol::SESSION_SNAPSHOT_EVENT,
+                            Some(2),
+                            data,
+                        )]))
+                    });
+                }
+                Box::pin(std::future::pending())
+            })
+        };
+        let (listings, _directory) = listings(&runtime);
+        let (desk, reference) = listed_on("desk", "Map the workspace");
+        *session_id.lock().unwrap() = Some(desk.sessions.as_ref().unwrap()[0].id());
+        listings.hold_over(desk, answering(answers));
+        let drafts = Drafts::default();
+        let opened = open(
+            runtime.handle(),
+            &listings,
+            &reference,
+            Pacing {
+                initial_backoff: Duration::from_millis(1),
+                max_backoff: Duration::from_millis(5),
+            },
+            Asked {
+                drafts: drafts.clone(),
+                acts: Acts::default(),
+                asking: Asking {
+                    initial_backoff: Duration::from_millis(1),
+                    max_backoff: Duration::from_millis(5),
+                    bound: SHOWN_WITHIN,
+                    dialling: Duration::from_millis(50),
+                },
+            },
+        );
+        conversation_until(&runtime, &opened, |items| {
+            items.iter().any(|item| {
+                matches!(&item.kind, ItemKind::UserMessage { text, .. } if text == "Tidy the build")
+            })
+        });
+        drafts.set(&reference, "and the docs".to_owned(), 0);
+
+        let stopped = runtime.block_on(opened.stop());
+        assert_eq!(
+            stopped,
+            Err(ActError::Unreachable {
+                message: "The server did not answer, so the work may have been stopped".to_owned()
+            })
+        );
+        assert_eq!(drafts.get(&reference).text, "and the docs", "not yet known");
+
+        // The stream drops and is read again, showing the Prompt withdrawn.
+        drop(more);
+        runtime.block_on(async {
+            tokio::time::timeout(SHOWN_WITHIN, async {
+                while drafts.get(&reference).text == "and the docs" {
+                    tokio::time::sleep(Duration::from_millis(2)).await;
+                }
+            })
+            .await
+            .expect("given back in time");
+        });
+        assert_eq!(drafts.get(&reference).text, "Tidy the build\nand the docs");
     }
 }

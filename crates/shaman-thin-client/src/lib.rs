@@ -42,6 +42,7 @@ mod session;
 pub use conversation::{ConversationItem, ItemKind, Tone, TurnCard, TurnOutcome};
 pub use device::ThisDevice;
 use device::{DeviceRecord, Records};
+pub use drafts::Draft;
 pub use frame::{Bar, BarKind, Composer, QueuedPrompt, SessionFrame};
 pub use identity::{KeySigner, SignError};
 use listing::Listings;
@@ -182,15 +183,32 @@ impl ThinClient {
     }
 
     /// The unsent text of the composer of the Session `session` names,
-    /// asked for when its screen appears and after a send fails.
-    pub fn draft(&self, session: String) -> String {
+    /// asked for when its screen appears, with the version of it Swift hands
+    /// back with each change.
+    pub fn draft(&self, session: String) -> Draft {
         self.inner.drafts.get(&session)
     }
 
-    /// Holds `text` as the unsent text of the composer of the Session
-    /// `session` names, as it is written.
-    pub fn set_draft(&self, session: String, text: String) {
-        self.inner.drafts.set(&session, text);
+    /// Holds `text`, written over the version `version` of the draft, as the
+    /// unsent text of the composer of the Session `session` names. Text the
+    /// core gave back since that version stands ahead of it, and the
+    /// draft's listeners are told.
+    pub fn set_draft(&self, session: String, text: String, version: u64) {
+        self.inner.drafts.set(&session, text, version);
+    }
+
+    /// Tells `listener` the draft of the composer of the Session `session`
+    /// names now, and again each time the core changes it on its own: a
+    /// Prompt whose send failed, or that a stop withdrew, given back ahead of
+    /// what is written, which the field is to take.
+    pub fn watch_draft(
+        &self,
+        session: String,
+        listener: Arc<dyn DraftListener>,
+    ) -> Arc<Subscription> {
+        self.watch(self.inner.drafts.changes(&session), move |held| {
+            listener.changed(held.draft());
+        })
     }
 
     /// Opens the Session `session` names for a screen pushed to read it,
@@ -226,6 +244,9 @@ impl ThinClient {
                     initial_backoff: pacing.initial_backoff,
                     max_backoff: pacing.max_backoff,
                     bound: self.inner.timings.act_bound,
+                    // Every way's dial, the last begun after its head start.
+                    dialling: self.inner.timings.redeemer.direct_head_start
+                        + self.inner.timings.redeemer.handshake_timeout * 2,
                 },
             },
         )
@@ -541,6 +562,13 @@ pub trait ListingListener: Send + Sync {
 #[uniffi::export(with_foreign)]
 pub trait OutlookListener: Send + Sync {
     fn changed(&self, outlook: Outlook);
+}
+
+/// Hears a composer's draft, at once and each time the core changes it on its
+/// own.
+#[uniffi::export(with_foreign)]
+pub trait DraftListener: Send + Sync {
+    fn changed(&self, draft: Draft);
 }
 
 /// Hears whether any act is under way, at once and each time that changes.

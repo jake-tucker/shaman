@@ -282,6 +282,8 @@ pub struct Gate {
     dialled: Arc<AtomicU64>,
     /// The connections it carries, which shutting it cuts.
     carrying: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+    /// Whether what the Server says back is dropped.
+    muted: watch::Sender<bool>,
 }
 
 impl Gate {
@@ -315,6 +317,8 @@ impl Gate {
             .expect("listen for the way");
         let address = listener.local_addr().expect("the way's address");
         let open = watch::Sender::new(false);
+        let muted = watch::Sender::new(false);
+        let muting = muted.clone();
         let dialled = Arc::new(AtomicU64::new(0));
         let carrying = Arc::new(Mutex::new(Vec::new()));
         let mut opened = open.subscribe();
@@ -327,14 +331,15 @@ impl Gate {
                 return;
             }
             let mut holding = Vec::new();
-            while let Ok((mut inbound, _)) = listener.accept().await {
+            while let Ok((inbound, _)) = listener.accept().await {
                 if !*opened.borrow() || counted.fetch_add(1, Ordering::AcqRel) >= carried {
                     holding.push(inbound);
                     continue;
                 }
+                let muted = muting.subscribe();
                 let proxy = tokio::spawn(async move {
-                    if let Ok(mut outbound) = tokio::net::TcpStream::connect(target).await {
-                        let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;
+                    if let Ok(outbound) = tokio::net::TcpStream::connect(target).await {
+                        carry(inbound, outbound, muted).await;
                     }
                 });
                 proxies.lock().unwrap().push(proxy);
@@ -343,6 +348,7 @@ impl Gate {
         Self {
             address,
             open,
+            muted,
             dialled,
             carrying,
         }
@@ -354,6 +360,12 @@ impl Gate {
 
     pub fn open_now(&self) {
         self.open.send_replace(true);
+    }
+
+    /// Mutes the way: what the phone says still reaches the Server, and
+    /// nothing the Server says back reaches the phone, on every connection.
+    pub fn mute_now(&self) {
+        self.muted.send_replace(true);
     }
 
     /// Shuts the way again: every connection it carries is cut, and each
@@ -369,6 +381,38 @@ impl Gate {
     pub fn dialled(&self) -> u64 {
         self.dialled.load(Ordering::Acquire)
     }
+}
+
+/// Carries `inbound` to `outbound` and back, dropping what comes back while
+/// `muted` says to.
+async fn carry(
+    inbound: tokio::net::TcpStream,
+    outbound: tokio::net::TcpStream,
+    muted: watch::Receiver<bool>,
+) {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    let (mut from_phone, mut to_phone) = inbound.into_split();
+    let (mut from_server, mut to_server) = outbound.into_split();
+    let said = async {
+        let _ = tokio::io::copy(&mut from_phone, &mut to_server).await;
+    };
+    let answered = async {
+        let mut buffer = vec![0; 16 * 1024];
+        loop {
+            let read = match from_server.read(&mut buffer).await {
+                Ok(0) | Err(_) => return,
+                Ok(read) => read,
+            };
+            if *muted.borrow() {
+                continue;
+            }
+            if to_phone.write_all(&buffer[..read]).await.is_err() {
+                return;
+            }
+        }
+    };
+    tokio::join!(said, answered);
 }
 
 /// A key held apart from the core, as the app holds a phone's.

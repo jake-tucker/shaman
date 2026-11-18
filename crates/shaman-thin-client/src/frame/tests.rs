@@ -203,7 +203,7 @@ fn queued_prompts_stand_oldest_first_with_steer_now_and_cancel_then_those_being_
                 answered: false,
             },
         ],
-        note: None,
+        ..Local::default()
     };
 
     let queued = framed(&snapshot, &local, false).queued;
@@ -242,7 +242,7 @@ fn a_prompt_being_sent_stands_at_the_foot_marked_as_sending_until_its_server_hol
             delivery: PromptDelivery::Steer,
             answered: false,
         }],
-        note: None,
+        ..Local::default()
     };
     let items = with_outgoing(Vec::new(), &local);
     assert_eq!(
@@ -279,6 +279,7 @@ fn a_send_that_went_unanswered_leaves_a_note_beneath_the_composer() {
     let local = Local {
         outgoing: Vec::new(),
         note: Some(MAY_HAVE_BEEN_SENT.to_owned()),
+        ..Local::default()
     };
     assert_eq!(
         framed(&snapshot(), &local, false)
