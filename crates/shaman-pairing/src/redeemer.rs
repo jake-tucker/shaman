@@ -94,6 +94,32 @@ impl Default for RedeemerTimings {
     }
 }
 
+/// How a redemption names its redeemer to the Serving Server, and what it
+/// does with a Remote of that Server already paired.
+#[derive(Clone, Debug, Default)]
+pub struct Redemption {
+    /// The name the redeemer gives itself as it commits: its machine's
+    /// hostname where none is given. A thin Client gives the name its user
+    /// chose for the device.
+    pub peer_name: Option<String>,
+    /// Whether the new Pairing replaces every Remote of the Invite's key,
+    /// taking its name where it asks for it, rather than standing beside
+    /// them: a thin Client holds one Remote for each Server.
+    pub replacing: bool,
+}
+
+/// How one way of a Remote stood when it was last asked.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WayStanding {
+    /// It answered as the Serving Server paired with.
+    Answering,
+    /// It was dialled and did not answer, or answered as something else.
+    NotAnswering,
+    /// It is not dialled: a Relay way at a Relay this redeemer holds no
+    /// entry for.
+    NotDialled,
+}
+
 /// What a Server's offer to pair back attaches to its redeemer by (ADR-0066).
 /// Each is told the redeemer it acts for, so whatever implements these holds
 /// none. A thin Client passes none: it offers nothing, so no redemption it
@@ -298,10 +324,25 @@ impl Redeemer {
         invite: ParsedInvite,
         request: RedeemInviteRequest,
     ) -> std::result::Result<Remote, PairingFailure> {
+        self.redeem_as(invite, request, Redemption::default()).await
+    }
+
+    /// Redeems `invite`, as `request` asks, the redeemer naming itself and
+    /// treating a Remote of the Invite's key as `redemption` says. Where it
+    /// replaces one, the Remotes of that key stand until the new Pairing is
+    /// made, and stand again where it is not: nothing of a failed
+    /// redemption is kept.
+    pub async fn redeem_as(
+        &self,
+        invite: ParsedInvite,
+        request: RedeemInviteRequest,
+        redemption: Redemption,
+    ) -> std::result::Result<Remote, PairingFailure> {
         let ways = ordered_ways(&invite.ways, &request.ways)?;
+        let replaced = redemption.replacing.then_some(invite.server_key.as_slice());
         if let Some(name) = request.name.as_deref() {
             validate_remote_name(name)?;
-            self.ensure_remote_name_available(name)?;
+            self.ensure_remote_name_free(name, replaced)?;
         }
         let offer = request
             .pair_back
@@ -331,7 +372,7 @@ impl Redeemer {
         }
         let name = request.name.unwrap_or(enrolled.hostname).trim().to_owned();
         validate_remote_name(&name)?;
-        self.ensure_remote_name_available(&name)?;
+        self.ensure_remote_name_free(&name, replaced)?;
         let remote = Remote {
             name: name.clone(),
             fingerprint: fingerprint(&invite.server_key),
@@ -342,13 +383,13 @@ impl Redeemer {
         // Stored ahead of the commit that makes it, so a crash can leave this
         // Server an offer the other does not hold, and never the reverse.
         let offer_id = offer.as_ref().map(|offer| offer.id);
-        self.persist_remote(&remote, &invite.server_key, offer)?;
+        let set_aside = self.persist_remote(&remote, &invite.server_key, offer, replaced)?;
 
         let commit = EnrollmentRequest {
             token: URL_SAFE_NO_PAD.encode(invite.token),
             protocol_version: self.protocol_version,
             phase: EnrollmentPhase::Commit,
-            hostname: Some(machine_hostname()),
+            hostname: Some(redemption.peer_name.unwrap_or_else(machine_hostname)),
             offer: offer_id,
         };
         if let Err(error) = dial_enrollment(
@@ -360,10 +401,14 @@ impl Redeemer {
         )
         .await
         {
-            self.rollback_remote(&remote);
+            self.rollback_remote(&remote, set_aside);
             return Err(error);
         }
         self.keep_only_offer(&invite.server_key, offer_id);
+        for (_, replaced) in &set_aside {
+            self.forget_client(&replaced.remote.name);
+            self.hooked(|hooks| hooks.forgotten(self, replaced));
+        }
         Ok(remote)
     }
 
@@ -430,6 +475,50 @@ impl Redeemer {
         }?;
         self.record_remote_status(&remote, health.status);
         Ok(health)
+    }
+
+    /// Asks the Remote `name` whether it answers by each of its ways alone,
+    /// all at once: how each stood, in the order the ways are dialled in.
+    /// Nothing is recorded of what answered.
+    pub async fn probe_ways(
+        &self,
+        name: &str,
+    ) -> std::result::Result<Vec<(Way, WayStanding)>, PairingFailure> {
+        let remote = self.stored_remote(name)?;
+        let client = self.pairing_client(&remote).await?;
+        let probes = remote.remote.ways.iter().map(|way| {
+            let client = client.clone();
+            async move {
+                if !client.dialer.dials(way) {
+                    return (way.clone(), WayStanding::NotDialled);
+                }
+                let asking = || {
+                    Request::get("/health")
+                        .body(RequestBody::default())
+                        .expect("a health check is well formed")
+                };
+                let answered =
+                    first_answer(&client, std::slice::from_ref(way), asking, |answer| async {
+                        match answer {
+                            Ok(response) if response.status().is_success() => {
+                                match small_answer::<PairingHealth>(response).await {
+                                    Some(_) => WayAttempt::Answered(()),
+                                    None => WayAttempt::TryNext,
+                                }
+                            }
+                            Ok(_) | Err(_) => WayAttempt::TryNext,
+                        }
+                    })
+                    .await;
+                let standing = if answered.is_ok() {
+                    WayStanding::Answering
+                } else {
+                    WayStanding::NotAnswering
+                };
+                (way.clone(), standing)
+            }
+        });
+        Ok(futures_util::future::join_all(probes).await)
     }
 
     /// Carries `request` to the Remote `name`'s Session API through the
@@ -607,15 +696,21 @@ impl Redeemer {
             };
             Ok(remotes.remove(index))
         })?;
-        // A name freed here may be paired again to a different key, so its
-        // pinned client must not outlive the record it was built from.
+        self.forget_client(name);
+        self.note_pairing_change();
+        self.hooked(|hooks| hooks.forgotten(self, &removed));
+        Ok(())
+    }
+
+    /// Lets go of the client the Remote `name` was asked through: a name
+    /// freed may be paired again to a different key, or the one key paired
+    /// again, so a pinned client must not outlive the record it was built
+    /// from.
+    fn forget_client(&self, name: &str) {
         self.remote_clients
             .lock()
             .expect("Remote client lock is not poisoned")
             .remove(name);
-        self.note_pairing_change();
-        self.hooked(|hooks| hooks.forgotten(self, &removed));
-        Ok(())
     }
 
     /// Changes the Remotes' records as `change` says: put back as they were
@@ -691,12 +786,24 @@ impl Redeemer {
         &self,
         name: &str,
     ) -> std::result::Result<(), PairingFailure> {
+        self.ensure_remote_name_free(name, None)
+    }
+
+    /// Refuses `name` where a Remote holds it, unless that Remote is of the
+    /// key `replaced`, which a new Pairing is to replace.
+    fn ensure_remote_name_free(
+        &self,
+        name: &str,
+        replaced: Option<&[u8]>,
+    ) -> std::result::Result<(), PairingFailure> {
         if self
             .remotes
             .read()
             .expect("Remote record lock is not poisoned")
             .iter()
-            .any(|stored| stored.remote.name == name)
+            .any(|stored| {
+                stored.remote.name == name && Some(stored.public_key.as_slice()) != replaced
+            })
         {
             return Err(remote_name_conflict(name));
         }
@@ -1199,13 +1306,29 @@ impl Redeemer {
         Ok(http::Response::from_parts(parts, RemoteBody::whole(body)))
     }
 
+    /// Stores `remote`, paired under `public_key`, setting aside each Remote
+    /// of the key `replaced`, where it is given, as it stood: what is set
+    /// aside, by where each stood, which a rollback puts back.
     fn persist_remote(
         &self,
         remote: &Remote,
         public_key: &[u8],
         offer: Option<StoredMadeOffer>,
-    ) -> std::result::Result<(), PairingFailure> {
-        self.change_remotes(|remotes| {
+        replaced: Option<&[u8]>,
+    ) -> std::result::Result<Vec<(usize, StoredRemote)>, PairingFailure> {
+        let set_aside = self.change_remotes(|remotes| {
+            let mut set_aside = Vec::new();
+            if let Some(replaced) = replaced {
+                let mut index = 0;
+                remotes.retain(|known| {
+                    let kept = known.public_key != replaced;
+                    if !kept {
+                        set_aside.push((index, known.clone()));
+                    }
+                    index += 1;
+                    kept
+                });
+            }
             if remotes.iter().any(|known| known.remote.name == remote.name) {
                 return Err(remote_name_conflict(&remote.name));
             }
@@ -1216,17 +1339,22 @@ impl Redeemer {
                 generation: self.pairings_made.fetch_add(1, Ordering::AcqRel) + 1,
                 offer,
             });
-            Ok(())
+            Ok(set_aside)
         })?;
         self.note_pairing_change();
-        Ok(())
+        Ok(set_aside)
     }
 
-    fn rollback_remote(&self, remote: &Remote) {
+    /// Takes back `remote`, stored by a redemption that failed, and puts back
+    /// what it set aside, each where it stood.
+    fn rollback_remote(&self, remote: &Remote, set_aside: Vec<(usize, StoredRemote)>) {
         let rolled_back = self.change_remotes(|remotes| {
             remotes.retain(|known| {
                 known.remote.name != remote.name || known.remote.fingerprint != remote.fingerprint
             });
+            for (index, stored) in set_aside {
+                remotes.insert(index.min(remotes.len()), stored);
+            }
             Ok(())
         });
         if let Err(failure) = rolled_back {

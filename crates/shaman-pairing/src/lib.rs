@@ -66,8 +66,8 @@ pub use client::{
 };
 pub use peer_name::{MAX_PEER_NAME_CHARS, PeerNameRefusal, shown_peer_name};
 pub use redeemer::{
-    AWAITED_AT_ONCE, Carried, REMOTES_FILE, Redeemer, RedeemerHooks, RedeemerTimings,
-    StoredMadeOffer, StoredRemote,
+    AWAITED_AT_ONCE, Carried, REMOTES_FILE, Redeemer, RedeemerHooks, RedeemerTimings, Redemption,
+    StoredMadeOffer, StoredRemote, WayStanding,
 };
 
 /// Any error a body or a connector gives, as `http` and `hyper` box one.
@@ -128,12 +128,10 @@ impl IdentityMaterial {
     }
 }
 
-/// What proves the one key it holds, handed in rather than kept: how a test
-/// gives a redeemer its identity.
-#[cfg(any(test, feature = "test-support"))]
+/// What proves the one key it holds, handed in rather than kept: how a thin
+/// Client, whose key its app keeps, and a test give a redeemer its identity.
 pub struct GivenIdentity(pub IdentityMaterial);
 
-#[cfg(any(test, feature = "test-support"))]
 impl Identity for GivenIdentity {
     fn material(&self) -> BoxFuture<'_, std::result::Result<IdentityMaterial, PairingFailure>> {
         let material = self.0.clone();
@@ -352,6 +350,7 @@ pub struct InvitePayload {
     pub hostname: String,
 }
 
+#[derive(Clone)]
 pub struct ParsedInvite {
     pub ways: Vec<Way>,
     pub server_key: Vec<u8>,
