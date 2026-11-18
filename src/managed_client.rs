@@ -38,28 +38,21 @@ mod launcher;
 mod lifecycle;
 mod loopback;
 mod recovery;
-mod remote_connection;
-mod session_catalog_stream;
-mod session_commands;
 mod session_projection;
-mod session_stream;
-#[cfg(test)]
-mod stream_fixture;
-mod subagent_tree_stream;
-mod transport;
 
 pub(crate) use administration::Administration;
 pub use keeper::{KeeperTimings, keep_server};
 pub use launcher::StoppedDuringLaunch;
 #[doc(hidden)]
 pub use launcher::launch_detached;
-pub(crate) use recovery::RecoveryBackoff;
-pub use session_catalog_stream::SessionCatalogSubscription;
-pub(crate) use session_commands::{SessionCommandTimings, SessionCommands};
 pub(crate) use session_projection::SessionProjection;
-pub(crate) use session_stream::SESSION_EVENT_CAPACITY;
-pub use session_stream::{SessionEvent, SessionStreamError, SessionSubscription};
-pub use subagent_tree_stream::{SubagentTreeEvent, SubagentTreeSubscription};
+pub(crate) use shaman_client::{
+    RecoveryBackoff, SESSION_EVENT_CAPACITY, SessionCommandTimings, SessionCommands,
+};
+pub use shaman_client::{
+    RecoveryStatus, SessionCatalogEvent, SessionEvent, SessionStreamError, SessionSubscription,
+    SubagentTreeEvent, SubagentTreeSubscription,
+};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -379,13 +372,64 @@ impl ManagedEvent {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RecoveryStatus {
-    pub attempt: u32,
-    pub retry_in: Duration,
-    /// Why the Remote recovering cannot be reached, where its user can do
-    /// something about it rather than wait; never given for the local Server.
-    pub unreachable: Option<crate::protocol::UnreachableReason>,
+impl From<SessionCatalogEvent> for ManagedEvent {
+    fn from(event: SessionCatalogEvent) -> Self {
+        match event {
+            SessionCatalogEvent::ModelCatalog(catalog) => Self::ModelCatalog(catalog),
+            SessionCatalogEvent::SkillCatalogUpdated(catalog) => Self::SkillCatalogUpdated(catalog),
+            SessionCatalogEvent::WorkspaceListing(listing) => Self::WorkspaceListing(listing),
+            SessionCatalogEvent::Recovering(status) => Self::Recovering(status),
+            SessionCatalogEvent::RemoteRecovered => Self::RemoteRecovered,
+            SessionCatalogEvent::RemoteFailed { status, message } => {
+                Self::RemoteFailed { status, message }
+            }
+            SessionCatalogEvent::SessionCreated(created) => Self::SessionCreated(created),
+            SessionCatalogEvent::SessionCatalogInvalidated { session_id } => {
+                Self::SessionCatalogInvalidated { session_id }
+            }
+            SessionCatalogEvent::CheckoutStateChanged(changed) => {
+                Self::CheckoutStateChanged(changed)
+            }
+            SessionCatalogEvent::SessionDeleted(deleted) => Self::SessionDeleted(deleted),
+            SessionCatalogEvent::SessionTitleChanged(changed) => Self::SessionTitleChanged(changed),
+            SessionCatalogEvent::SessionSettlementChanged(changed) => {
+                Self::SessionSettlementChanged(changed)
+            }
+            SessionCatalogEvent::SessionWorkingChanged(changed) => {
+                Self::SessionWorkingChanged(changed)
+            }
+            SessionCatalogEvent::SessionMonitoringChanged(changed) => {
+                Self::SessionMonitoringChanged(changed)
+            }
+            SessionCatalogEvent::SessionStandingInputsChanged(changed) => {
+                Self::SessionStandingInputsChanged(changed)
+            }
+            SessionCatalogEvent::SessionUsageChanged(changed) => Self::SessionUsageChanged(changed),
+            SessionCatalogEvent::WorkspaceIconChanged(changed) => {
+                Self::WorkspaceIconChanged(changed)
+            }
+            SessionCatalogEvent::WorkspaceDescriptionChanged(changed) => {
+                Self::WorkspaceDescriptionChanged(changed)
+            }
+            SessionCatalogEvent::SessionRemoteSubsessionsChanged(changed) => {
+                Self::SessionRemoteSubsessionsChanged(changed)
+            }
+            SessionCatalogEvent::SessionCatalogReconciled(snapshot) => {
+                Self::SessionCatalogReconciled(snapshot)
+            }
+        }
+    }
+}
+
+/// A reconnecting Session catalog stream for the Server an Outlook names,
+/// its events heard among the rest a Client hears. Its lifetime is the
+/// interest: dropping it stops the reading and releases its connection.
+pub struct SessionCatalogSubscription(shaman_client::SessionCatalogSubscription);
+
+impl SessionCatalogSubscription {
+    pub async fn next(&mut self) -> Option<ManagedEvent> {
+        self.0.next().await.map(ManagedEvent::from)
+    }
 }
 
 pub struct ManagedClient {
@@ -1074,7 +1118,7 @@ impl ManagedClient {
 
 impl OutlookClient {
     pub fn subscribe_catalog(&self) -> SessionCatalogSubscription {
-        self.commands.subscribe_catalog()
+        SessionCatalogSubscription(self.commands.subscribe_catalog())
     }
 
     /// Subscribes to the tree `session_id` belongs to, headed by its
@@ -1475,348 +1519,20 @@ impl Drop for ManagedClient {
 
 #[cfg(test)]
 mod tests {
-    mod attachment_fetch {
-        use std::time::Duration;
-
-        use axum::{
-            Router,
-            body::Body,
-            extract::Path,
-            http::{StatusCode, header::CONTENT_TYPE},
-            response::{IntoResponse, Response},
-            routing::{get, head, post},
-        };
-        use futures_util::StreamExt;
-        use tokio::sync::watch;
-
-        use crate::{
-            attachments::MAX_ATTACHMENT_BYTES,
-            managed_client::{
-                ATTACHMENT_FETCH_TIMEOUT, SessionCommandTimings, SessionCommands,
-                loopback::LoopbackTransport,
-            },
-            protocol::{
-                AttachmentId, Outlook, PROTOCOL_VERSION, RuntimeDescriptor, ServerIdentity,
-            },
-        };
-
-        /// Answers `/v1/attachments/{id}` with a PNG's worth of bytes of a
-        /// length the id names: `exact` is the cap, `over` one byte past it
-        /// and saying so, and `streamed-over` one byte past it without saying
-        /// so up front.
-        async fn answer(Path(id): Path<String>) -> Response {
-            let png = [(CONTENT_TYPE, "image/png")];
-            match id.as_str() {
-                "exact" => (png, vec![0_u8; MAX_ATTACHMENT_BYTES]).into_response(),
-                "over" => (png, vec![0_u8; MAX_ATTACHMENT_BYTES + 1]).into_response(),
-                _ => {
-                    let chunks = (0..=MAX_ATTACHMENT_BYTES / 65_536)
-                        .map(|_| Ok::<_, std::io::Error>(vec![0_u8; 65_536]));
-                    (png, Body::from_stream(futures_util::stream::iter(chunks))).into_response()
-                }
-            }
-        }
-
-        async fn client() -> (SessionCommands, tokio::task::JoinHandle<()>) {
-            fixture_client(Router::new().route("/v1/attachments/{id}", get(answer))).await
-        }
-
-        /// A client of a fixture Server answering with `app`.
-        pub(super) async fn fixture_client(
-            app: Router,
-        ) -> (SessionCommands, tokio::task::JoinHandle<()>) {
-            client_within(app, ATTACHMENT_FETCH_TIMEOUT).await
-        }
-
-        /// The deadline a stalled request is failed at.
-        const DEADLINE: Duration = Duration::from_millis(50);
-
-        /// A client, over loopback, of a fixture Server answering with `app`,
-        /// whose Attachment requests are failed at `deadline`.
-        async fn client_within(
-            app: Router,
-            deadline: Duration,
-        ) -> (SessionCommands, tokio::task::JoinHandle<()>) {
-            let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-                .await
-                .expect("bind the Attachment fixture");
-            let address = listener.local_addr().expect("read the fixture address");
-            let server = tokio::spawn(async move {
-                axum::serve(listener, app)
-                    .await
-                    .expect("serve the Attachment fixture");
-            });
-            let (_, descriptor) = watch::channel(RuntimeDescriptor::new(
-                format!("http://{address}"),
-                "attachment-fixture-token".to_owned(),
-                ServerIdentity {
-                    instance_id: uuid::Uuid::new_v4(),
-                    pid: std::process::id(),
-                    protocol_version: PROTOCOL_VERSION,
-                    build_identity: "attachment-fixture".to_owned(),
-                },
-            ));
-            let client = SessionCommands::new(
-                std::sync::Arc::new(LoopbackTransport::new(
-                    crate::runtime::loopback_http_client(),
-                    descriptor,
-                    Outlook::Local,
-                )),
-                SessionCommandTimings {
-                    initial_recovery_backoff: Duration::from_millis(1),
-                    max_recovery_backoff: Duration::from_millis(1),
-                    attachment_fetch_timeout: deadline,
-                },
-            );
-            (client, server)
-        }
-
-        /// Awaits `request`, which must end by itself: a guard long past any
-        /// deadline a test sets fails the test rather than letting it hang.
-        async fn ends_by_itself<T>(request: impl Future<Output = T>) -> T {
-            tokio::time::timeout(Duration::from_secs(5), request)
-                .await
-                .expect("the request ends at its own deadline")
-        }
-
-        /// Answers `/v1/attachments/{id}` and stalls where the id says:
-        /// `headers` before sending any, and `body` after its first chunk.
-        async fn stall(Path(id): Path<String>) -> Response {
-            if id == "headers" {
-                std::future::pending::<()>().await;
-            }
-            let first =
-                futures_util::stream::once(async { Ok::<_, std::io::Error>(vec![0_u8; 1024]) });
-            let body = Body::from_stream(first.chain(futures_util::stream::pending()));
-            ([(CONTENT_TYPE, "image/png")], body).into_response()
-        }
-
-        /// Answers `/v1/attachments/{id}` with its body in three chunks a few
-        /// milliseconds apart.
-        async fn trickle() -> Response {
-            let chunks = futures_util::stream::iter(0..3).then(|_| async {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-                Ok::<_, std::io::Error>(vec![0_u8; 1024])
-            });
-            ([(CONTENT_TYPE, "image/png")], Body::from_stream(chunks)).into_response()
-        }
-
-        #[tokio::test]
-        async fn a_fetch_the_server_stalls_fails_at_its_deadline() {
-            let (client, server) = client_within(
-                Router::new().route("/v1/attachments/{id}", get(stall)),
-                DEADLINE,
-            )
-            .await;
-
-            for id in ["headers", "body"] {
-                let refused = ends_by_itself(client.fetch_attachment(&AttachmentId::new(id)))
-                    .await
-                    .expect_err("a stalled fetch fails");
+    /// The shared commands are those a Peer may ask: each one's route is
+    /// classed as the API by the Serving side's own route check, so none of
+    /// them is refused when it runs over a Pairing.
+    #[tokio::test]
+    async fn every_shared_command_asks_what_a_peer_may_ask() {
+        shaman_client::testing::walk_every_command(|name, asked| {
+            assert!(!asked.is_empty(), "{name} asks nothing");
+            for (method, uri) in asked {
                 assert!(
-                    refused
-                        .to_string()
-                        .contains("Attachment fetch timed out after 50ms"),
-                    "{id}: {refused:#}"
+                    crate::serving::a_peer_may_ask(&method, &uri),
+                    "{name} asks {method} {uri}, which a Peer may not"
                 );
             }
-            server.abort();
-        }
-
-        #[tokio::test]
-        async fn a_fetch_finished_within_its_deadline_is_taken() {
-            let (client, server) = client_within(
-                Router::new().route("/v1/attachments/{id}", get(trickle)),
-                Duration::from_millis(500),
-            )
-            .await;
-
-            let (mime_type, bytes) = client
-                .fetch_attachment(&AttachmentId::new("trickled"))
-                .await
-                .expect("a body read to its end in time is an Attachment");
-            assert_eq!(mime_type, "image/png");
-            assert_eq!(bytes.len(), 3 * 1024);
-            server.abort();
-        }
-
-        #[tokio::test]
-        async fn an_upload_or_a_check_the_server_stalls_fails_at_its_deadline() {
-            async fn stalled() -> StatusCode {
-                std::future::pending().await
-            }
-            let (client, server) = client_within(
-                Router::new()
-                    .route("/v1/attachments", post(stalled))
-                    .route("/v1/attachments/{id}", head(stalled)),
-                DEADLINE,
-            )
-            .await;
-
-            let upload = ends_by_itself(client.upload_attachment(vec![0_u8; 16]))
-                .await
-                .expect_err("a stalled upload fails");
-            assert!(
-                upload
-                    .to_string()
-                    .contains("Attachment upload timed out after 50ms"),
-                "{upload:#}"
-            );
-            let check = ends_by_itself(client.attachment_exists(&AttachmentId::new("stored")))
-                .await
-                .expect_err("a stalled check fails");
-            assert!(
-                check
-                    .to_string()
-                    .contains("Attachment check timed out after 50ms"),
-                "{check:#}"
-            );
-            server.abort();
-        }
-
-        #[tokio::test]
-        async fn a_fetch_over_the_attachment_cap_is_refused_and_one_at_it_is_taken() {
-            let (client, server) = client().await;
-
-            let (mime_type, bytes) = client
-                .fetch_attachment(&AttachmentId::new("exact"))
-                .await
-                .expect("a body at the cap is an Attachment");
-            assert_eq!(mime_type, "image/png");
-            assert_eq!(bytes.len(), MAX_ATTACHMENT_BYTES);
-
-            for id in ["over", "streamed-over"] {
-                let refused = client
-                    .fetch_attachment(&AttachmentId::new(id))
-                    .await
-                    .expect_err("a body past the cap is refused");
-                assert!(
-                    refused
-                        .to_string()
-                        .contains("larger than an Attachment may be"),
-                    "{id}: {refused:#}"
-                );
-            }
-            server.abort();
-        }
-    }
-
-    mod attachment_check {
-        use axum::{
-            Router,
-            extract::Path,
-            http::StatusCode,
-            response::{IntoResponse, Response},
-            routing::head,
-        };
-
-        use super::attachment_fetch::fixture_client;
-        use crate::protocol::{AttachmentId, SESSION_ERROR_CODE_HEADER};
-
-        /// Answers a `HEAD` of `/v1/attachments/{id}` as the id names: stored,
-        /// not stored, a Remote the proxy no longer knows, a Not Found that
-        /// does not say why, and a failure.
-        async fn answer(Path(id): Path<String>) -> Response {
-            match id.as_str() {
-                "stored" => StatusCode::OK.into_response(),
-                "swept" => (
-                    StatusCode::NOT_FOUND,
-                    [(SESSION_ERROR_CODE_HEADER, "attachment_not_found")],
-                )
-                    .into_response(),
-                "unpaired" => (
-                    StatusCode::NOT_FOUND,
-                    [(SESSION_ERROR_CODE_HEADER, "remote_not_found")],
-                )
-                    .into_response(),
-                "silent" => StatusCode::NOT_FOUND.into_response(),
-                _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-            }
-        }
-
-        #[tokio::test]
-        async fn only_a_not_found_naming_the_attachment_reads_as_not_stored() {
-            let (client, server) =
-                fixture_client(Router::new().route("/v1/attachments/{id}", head(answer))).await;
-            let exists = |id: &str| {
-                let client = client.clone();
-                let id = AttachmentId::new(id);
-                async move { client.attachment_exists(&id).await }
-            };
-
-            assert!(exists("stored").await.expect("a stored Attachment answers"));
-            assert!(!exists("swept").await.expect("a missing Attachment answers"));
-            for id in ["unpaired", "silent", "broken"] {
-                let error = exists(id)
-                    .await
-                    .expect_err("a refusal not about the Attachment is no answer");
-                assert!(
-                    error.to_string().contains("Attachment check failed"),
-                    "{id}: {error:#}"
-                );
-            }
-            server.abort();
-        }
-    }
-
-    /// A refusal under a code a newer Server added is read as the generic
-    /// code, and what a reader is shown is the message beside it.
-    mod an_error_code_this_build_does_not_know {
-        use axum::{
-            Json, Router,
-            http::StatusCode,
-            response::{IntoResponse, Response},
-            routing::get,
-        };
-
-        use super::attachment_fetch::fixture_client;
-        use crate::protocol::{SessionError, SessionErrorCode, SessionId};
-
-        const SAID: &str = "That Session is being tidied away; try again in a moment";
-
-        async fn refuse() -> Response {
-            (
-                StatusCode::CONFLICT,
-                Json(serde_json::json!({
-                    "code": "a_code_added_since_this_build",
-                    "message": SAID,
-                    "added_since_this_build": { "by": "a newer Server" },
-                })),
-            )
-                .into_response()
-        }
-
-        #[tokio::test]
-        async fn a_command_refused_so_reads_as_the_generic_code_with_its_message_shown() {
-            let (client, server) =
-                fixture_client(Router::new().route("/v1/sessions/{id}", get(refuse))).await;
-
-            let error = client
-                .read_session(SessionId::new())
-                .await
-                .expect_err("the Server refused the read");
-
-            assert_eq!(error.to_string(), SAID, "{error:#}");
-            assert_eq!(
-                error
-                    .downcast_ref::<SessionError>()
-                    .map(|refusal| refusal.code),
-                Some(SessionErrorCode::Other)
-            );
-            server.abort();
-        }
-
-        #[tokio::test]
-        async fn a_session_stream_refused_so_shows_its_message() {
-            let (client, server) =
-                fixture_client(Router::new().route("/v1/sessions/{id}/events", get(refuse))).await;
-
-            let Err(error) = client.subscribe_session(SessionId::new()).await else {
-                panic!("the Server refused the stream");
-            };
-
-            assert!(format!("{error:#}").contains(SAID), "{error:#}");
-            server.abort();
-        }
+        })
+        .await;
     }
 }

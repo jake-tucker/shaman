@@ -4,11 +4,10 @@
 
 use bytes::Bytes;
 use http_body_util::BodyExt;
+use shaman_client::{Transport, TransportResponse, TryNow};
 use tokio::sync::watch;
 
 use crate::protocol::{Outlook, RuntimeDescriptor, SessionError, SessionErrorCode};
-
-use super::transport::{Transport, TransportResponse, TryNow};
 
 /// Reaches one Outlook's work through the local Server the descriptor names
 /// at the moment each request is sent, with that Server's token.
@@ -153,8 +152,12 @@ mod tests {
         routing::any,
     };
 
+    use shaman_client::testing::session_snapshot;
+
     use super::*;
-    use crate::protocol::{PROTOCOL_VERSION, ServerIdentity};
+    use crate::protocol::{
+        ApprovalId, Decision, PROTOCOL_VERSION, ServerIdentity, SessionId, WorkspaceId,
+    };
 
     fn descriptor(base_url: String) -> RuntimeDescriptor {
         RuntimeDescriptor::new(
@@ -194,6 +197,22 @@ mod tests {
         (format!("http://{address}"), server)
     }
 
+    /// A `GET` of `path`, relative to the Session API.
+    fn get(path: &str) -> http::Request<bytes::Bytes> {
+        http::Request::get(path)
+            .body(bytes::Bytes::new())
+            .expect("a Session API path is a valid request URI")
+    }
+
+    fn timings() -> crate::managed_client::SessionCommandTimings {
+        let backoff = std::time::Duration::from_millis(1);
+        crate::managed_client::SessionCommandTimings {
+            initial_recovery_backoff: backoff,
+            max_recovery_backoff: backoff,
+            attachment_fetch_timeout: std::time::Duration::from_secs(5),
+        }
+    }
+
     async fn text_of(response: TransportResponse) -> String {
         let body = response
             .into_body()
@@ -218,7 +237,7 @@ mod tests {
             watched,
             Outlook::Remote("lab/east?#".into()),
         );
-        let request = || super::super::transport::get("/v1/session-events?warm_models=true");
+        let request = || get("/v1/session-events?warm_models=true");
 
         assert_eq!(
             text_of(
@@ -248,10 +267,7 @@ mod tests {
             Outlook::Local,
         );
 
-        let Err(error) = transport
-            .send(super::super::transport::get("/v1/session-events"))
-            .await
-        else {
+        let Err(error) = transport.send(get("/v1/session-events")).await else {
             panic!("nothing answers on the discard port");
         };
 
@@ -298,7 +314,7 @@ mod tests {
             Outlook::Local,
         );
         let pinned = transport.pinned();
-        let request = || super::super::transport::get("/v1/sessions/one/events");
+        let request = || get("/v1/sessions/one/events");
 
         // The same Server found again leaves the pin standing.
         source.send_replace(found);
@@ -325,6 +341,148 @@ mod tests {
             error.code,
             SessionErrorCode::ServerReplaced,
             "a stream ends once nothing can name a new Server"
+        );
+        server.abort();
+    }
+
+    /// A stand-in local Server answering a Session's stream with its snapshot
+    /// and then ending it, as a Server shutting down does.
+    async fn ending_server(
+        session_id: crate::protocol::SessionId,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        use axum::{Router, http::header::CONTENT_TYPE, response::IntoResponse, routing::get};
+
+        let body = format!(
+            "event: {}\nid: 3\ndata: {}\n\n",
+            crate::protocol::SESSION_SNAPSHOT_EVENT,
+            serde_json::to_string(&session_snapshot(session_id, 3)).expect("encode the snapshot")
+        );
+        let app = Router::new().route(
+            "/v1/sessions/{session_id}/events",
+            get(move || {
+                let body = body.clone();
+                async move { ([(CONTENT_TYPE, "text/event-stream")], body).into_response() }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind the Session stream fixture");
+        let address = listener.local_addr().expect("read the fixture address");
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .expect("serve the Session stream fixture");
+        });
+        (format!("http://{address}"), server)
+    }
+
+    #[tokio::test]
+    async fn an_attached_stream_over_loopback_ends_once_its_local_server_is_replaced() {
+        let session_id = crate::protocol::SessionId::new();
+        let (base_url, server) = ending_server(session_id).await;
+        let (found, watched) = tokio::sync::watch::channel(descriptor(base_url.clone()));
+        let transport = LoopbackTransport::new(
+            crate::runtime::loopback_http_client(),
+            watched,
+            Outlook::Local,
+        );
+        let hour = std::time::Duration::from_secs(3600);
+        // Attached as a Client attaches, through the commands over a loopback
+        // transport, which pins the attached stream itself.
+        let commands = crate::managed_client::SessionCommands::new(
+            std::sync::Arc::new(transport),
+            crate::managed_client::SessionCommandTimings {
+                initial_recovery_backoff: hour,
+                max_recovery_backoff: hour,
+                attachment_fetch_timeout: hour,
+            },
+        );
+        let mut subscription = commands
+            .attach_session(session_id)
+            .await
+            .expect("the stream opens");
+        assert!(matches!(
+            subscription.next().await,
+            Some(Ok(crate::managed_client::SessionEvent::Snapshot(_)))
+        ));
+
+        // Another local Server is found where this one stood: the same
+        // address answers, but it is not the Server the stream opened on.
+        found.send_replace(descriptor(base_url.clone()));
+
+        assert_eq!(
+            subscription.next().await,
+            None,
+            "the stream ends at once, for its reader to attach to the new Server"
+        );
+        server.abort();
+    }
+
+    /// Turned toward a Remote, a command reaches it beneath the local
+    /// Server's proxy route for it, and the Remote's own Session or
+    /// Workspace route there — the Decision, the Icon, the Description and
+    /// the Sidekick Workspace among them.
+    #[tokio::test]
+    async fn a_command_turned_toward_a_remote_asks_the_remotes_own_route() {
+        use axum::{Router, extract::Request, routing::any};
+
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind the proxy fixture");
+        let address = listener.local_addr().expect("read the fixture address");
+        let (asked_tx, mut asked) = tokio::sync::mpsc::unbounded_channel();
+        let app = Router::new().fallback(any(move |request: Request| {
+            let _ = asked_tx.send(format!("{} {}", request.method(), request.uri()));
+            async { http::StatusCode::NO_CONTENT }
+        }));
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .expect("serve the proxy fixture");
+        });
+        let (_descriptor, descriptor) = watch::channel(descriptor(format!("http://{address}")));
+        let commands = crate::managed_client::SessionCommands::new(
+            std::sync::Arc::new(LoopbackTransport::new(
+                crate::runtime::loopback_http_client(),
+                descriptor,
+                Outlook::Remote("workstation".into()),
+            )),
+            timings(),
+        );
+        let session = SessionId::new();
+        let approval = ApprovalId::new();
+        let workspace = WorkspaceId("workspace".to_owned());
+
+        commands
+            .submit_decision(session, approval, Decision::Accept)
+            .await
+            .expect("the proxy takes the Decision");
+        let _ = commands.set_session_icon(session, "star").await;
+        commands
+            .set_workspace_icon(&workspace, "star")
+            .await
+            .expect("the proxy takes the Icon");
+        commands
+            .set_workspace_description(&workspace, None, "Notes")
+            .await
+            .expect("the proxy takes the Description");
+        let _ = commands.sidekick_workspace().await;
+
+        let mut routes = Vec::new();
+        while let Ok(route) = asked.try_recv() {
+            routes.push(route);
+        }
+        assert_eq!(
+            routes,
+            [
+                format!(
+                    "POST /v1/remotes/workstation/v1/sessions/{session}/approvals/{approval}/decision"
+                ),
+                format!("POST /v1/remotes/workstation/v1/sessions/{session}/icon"),
+                "POST /v1/remotes/workstation/v1/workspaces/icon".to_owned(),
+                "POST /v1/remotes/workstation/v1/workspaces/description".to_owned(),
+                "POST /v1/remotes/workstation/v1/workspaces/sidekick".to_owned(),
+            ]
         );
         server.abort();
     }

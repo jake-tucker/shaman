@@ -1,6 +1,6 @@
 //! The transport the Client's readers run over: whatever carries a request
 //! to one Server's work and its answer back, whether that Server is the
-//! machine's own on loopback or, later, a Remote reached over a Pairing.
+//! machine's own on loopback or a Remote reached over a Pairing.
 //!
 //! A reader asks with a path relative to the Session API (`/v1/sessions/…`)
 //! and is answered with a streaming body. It keeps JSON, SSE parsing, error
@@ -17,17 +17,17 @@ use tokio::sync::watch;
 use crate::protocol::SessionError;
 
 /// What fails while an answer's body is read.
-pub(crate) type BodyError = Box<dyn std::error::Error + Send + Sync>;
+pub type BodyError = Box<dyn std::error::Error + Send + Sync>;
 
 /// An answer's body as it streams in.
-pub(crate) type ResponseBody = UnsyncBoxBody<Bytes, BodyError>;
+pub type ResponseBody = UnsyncBoxBody<Bytes, BodyError>;
 
 /// What a transport answers a request with.
-pub(crate) type TransportResponse = http::Response<ResponseBody>;
+pub type TransportResponse = http::Response<ResponseBody>;
 
 /// Carries requests to one Server's work.
 #[async_trait::async_trait]
-pub(crate) trait Transport: Send + Sync {
+pub trait Transport: Send + Sync {
     /// Sends `request`, whose path is relative to the Session API, and
     /// answers with the Server's response as it begins to stream — a refusal
     /// among them, which the reader decodes. A failure to reach the Server at
@@ -56,8 +56,7 @@ pub(crate) fn get(path: &str) -> http::Request<Bytes> {
 }
 
 /// `body` as an answer's body, read whole.
-#[cfg(test)]
-pub(crate) fn full_body(body: impl Into<Bytes>) -> ResponseBody {
+pub fn full_body(body: impl Into<Bytes>) -> ResponseBody {
     http_body_util::Full::new(body.into())
         .map_err(|never| match never {})
         .boxed_unsync()
@@ -75,27 +74,26 @@ pub(crate) async fn read_json<T: serde::de::DeserializeOwned>(
 /// A signal a reader waits on, beside its backoff, to try its Server again
 /// at once. Every reader has its own; one that is never given, or whose
 /// source has gone, is simply never heard.
-pub(crate) struct TryNow {
+pub struct TryNow {
     source: Option<Box<dyn Changes>>,
 }
 
 impl TryNow {
     /// A signal that is never given.
-    #[cfg(test)]
-    pub(crate) fn never() -> Self {
+    pub fn never() -> Self {
         Self { source: None }
     }
 
     /// A signal given whenever `source` changes, from the value it was last
     /// seen at.
-    pub(crate) fn watching<T: Send + Sync + 'static>(source: watch::Receiver<T>) -> Self {
+    pub fn watching<T: Send + Sync + 'static>(source: watch::Receiver<T>) -> Self {
         Self {
             source: Some(Box::new(source)),
         }
     }
 
     /// Waits until the signal is given; forever, where it never will be.
-    pub(crate) async fn heard(&mut self) {
+    pub async fn heard(&mut self) {
         if let Some(source) = self.source.as_mut()
             && source.changed().await
         {
@@ -107,7 +105,7 @@ impl TryNow {
 
     /// Waits out `retry_in`, or less where the signal comes first, answering
     /// whether it did: a reader that hears it skips the rest of its backoff.
-    pub(crate) async fn or_after(&mut self, retry_in: Duration) -> bool {
+    pub async fn or_after(&mut self, retry_in: Duration) -> bool {
         tokio::select! {
             () = self.heard() => true,
             () = tokio::time::sleep(retry_in) => false,

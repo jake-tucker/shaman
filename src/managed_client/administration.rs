@@ -14,10 +14,11 @@ use crate::protocol::{
     SetRemoteIconRequest, SettingMutation, SettingsSnapshot,
 };
 
-use super::{
-    loopback::response_of,
-    session_commands::{decode_api_error, decode_api_response, decode_empty_api_response},
+use shaman_client::{
+    TransportResponse, decode_api_error, decode_api_response, decode_empty_api_response,
 };
+
+use super::loopback::response_of;
 
 /// The administration of the local Server the descriptor names.
 #[derive(Clone)]
@@ -326,7 +327,7 @@ impl Administration {
         method: reqwest::Method,
         segments: &[&str],
         body: Option<&(impl Serialize + ?Sized)>,
-    ) -> Result<super::transport::TransportResponse> {
+    ) -> Result<TransportResponse> {
         let descriptor = self.descriptor.borrow().clone();
         let url = local_url(&descriptor.base_url, segments)?;
         let request = self

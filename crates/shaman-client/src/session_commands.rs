@@ -1,7 +1,7 @@
 //! The commands a Peer may ask of a Server's work, and the readers of its
 //! Sessions, catalog and Subagent trees, all sent over a transport: the
-//! machine's own Server on loopback, turned toward an Outlook, or later a
-//! Remote reached over a Pairing. Nothing here learns which.
+//! machine's own Server on loopback, turned toward an Outlook, or a Remote
+//! reached over a Pairing. Nothing here learns which.
 //!
 //! These are exactly the commands whose routes the Serving side lets a Peer
 //! ask. What only a Client's own Server answers — its Settings, its
@@ -28,14 +28,14 @@ use crate::protocol::{
     ViewSessionRequest, WorkspaceId, WorkspaceListing,
 };
 
-use super::{
+use crate::{
     SessionCatalogSubscription, SessionSubscription, SubagentTreeSubscription,
     transport::{Transport, TransportResponse},
 };
 
 /// The commands a Peer may ask of the one Server's work a transport reaches.
 #[derive(Clone)]
-pub(crate) struct SessionCommands {
+pub struct SessionCommands {
     transport: Arc<dyn Transport>,
     timings: SessionCommandTimings,
 }
@@ -43,25 +43,25 @@ pub(crate) struct SessionCommands {
 /// How long the commands and readers wait: a reader's backoff between
 /// reconnections, and the deadline a whole Attachment request is held to.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct SessionCommandTimings {
-    pub(crate) initial_recovery_backoff: Duration,
-    pub(crate) max_recovery_backoff: Duration,
-    pub(crate) attachment_fetch_timeout: Duration,
+pub struct SessionCommandTimings {
+    pub initial_recovery_backoff: Duration,
+    pub max_recovery_backoff: Duration,
+    pub attachment_fetch_timeout: Duration,
 }
 
 impl SessionCommands {
-    pub(crate) fn new(transport: Arc<dyn Transport>, timings: SessionCommandTimings) -> Self {
+    pub fn new(transport: Arc<dyn Transport>, timings: SessionCommandTimings) -> Self {
         Self { transport, timings }
     }
 
-    pub(crate) fn recovery_backoff(&self) -> (Duration, Duration) {
+    pub fn recovery_backoff(&self) -> (Duration, Duration) {
         (
             self.timings.initial_recovery_backoff,
             self.timings.max_recovery_backoff,
         )
     }
 
-    pub(crate) fn subscribe_catalog(&self) -> SessionCatalogSubscription {
+    pub fn subscribe_catalog(&self) -> SessionCatalogSubscription {
         SessionCatalogSubscription::open_attached(
             self.transport.clone(),
             self.timings.initial_recovery_backoff,
@@ -69,10 +69,7 @@ impl SessionCommands {
         )
     }
 
-    pub(crate) fn subscribe_subagent_tree(
-        &self,
-        session_id: SessionId,
-    ) -> SubagentTreeSubscription {
+    pub fn subscribe_subagent_tree(&self, session_id: SessionId) -> SubagentTreeSubscription {
         SubagentTreeSubscription::open(
             self.transport.clone(),
             session_id,
@@ -82,10 +79,7 @@ impl SessionCommands {
     }
 
     /// The Session's stream, read to its end and not reopened.
-    pub(crate) async fn subscribe_session(
-        &self,
-        session_id: SessionId,
-    ) -> Result<SessionSubscription> {
+    pub async fn subscribe_session(&self, session_id: SessionId) -> Result<SessionSubscription> {
         SessionSubscription::open(self.transport.as_ref(), session_id).await
     }
 
@@ -93,10 +87,7 @@ impl SessionCommands {
     /// an attached stream runs over: one bound to the Server as it stands,
     /// where the transport can tell, so the stream ends once that Server is
     /// replaced and its reader attaches afresh.
-    pub(crate) async fn attach_session(
-        &self,
-        session_id: SessionId,
-    ) -> Result<SessionSubscription> {
+    pub async fn attach_session(&self, session_id: SessionId) -> Result<SessionSubscription> {
         SessionSubscription::open_attached(
             self.transport.clone().attached(),
             session_id,
@@ -106,7 +97,7 @@ impl SessionCommands {
         .await
     }
 
-    pub(crate) async fn resolve_workspace(
+    pub async fn resolve_workspace(
         &self,
         request: ResolveWorkspaceRequest,
     ) -> Result<crate::protocol::ResolvedWorkspace> {
@@ -114,7 +105,7 @@ impl SessionCommands {
             .await
     }
 
-    pub(crate) async fn list_directory(
+    pub async fn list_directory(
         &self,
         request: crate::protocol::ListDirectoryRequest,
     ) -> Result<crate::protocol::DirectoryListing> {
@@ -127,7 +118,7 @@ impl SessionCommands {
 
     /// The Usage Metrics of the Server this transport reaches. The query
     /// rides the body, as the Server's route asks.
-    pub(crate) async fn usage_metrics(
+    pub async fn usage_metrics(
         &self,
         query: &crate::protocol::UsageMetricsQuery,
     ) -> Result<crate::protocol::UsageMetricsReport> {
@@ -137,7 +128,7 @@ impl SessionCommands {
 
     /// The Insights of the Server this transport reaches, asked as its Usage
     /// Metrics are.
-    pub(crate) async fn insights(
+    pub async fn insights(
         &self,
         query: &crate::protocol::InsightsQuery,
     ) -> Result<crate::protocol::InsightsReport> {
@@ -147,34 +138,31 @@ impl SessionCommands {
 
     /// The Sidekick Workspace of the Server this transport reaches, which
     /// that Server makes the first time it is asked for.
-    pub(crate) async fn sidekick_workspace(&self) -> Result<crate::protocol::ResolvedWorkspace> {
+    pub async fn sidekick_workspace(&self) -> Result<crate::protocol::ResolvedWorkspace> {
         self.post_without_body("/v1/workspaces/sidekick", "Sidekick Workspace")
             .await
     }
 
-    pub(crate) async fn list_skills(&self, request: SkillCatalogRequest) -> Result<SkillCatalog> {
+    pub async fn list_skills(&self, request: SkillCatalogRequest) -> Result<SkillCatalog> {
         self.post_json("/v1/skills", &request, "Skill Catalog listing")
             .await
     }
 
-    pub(crate) async fn refresh_skills(
-        &self,
-        request: SkillCatalogRequest,
-    ) -> Result<SkillCatalog> {
+    pub async fn refresh_skills(&self, request: SkillCatalogRequest) -> Result<SkillCatalog> {
         self.post_json("/v1/skills/refresh", &request, "Skill Catalog refresh")
             .await
     }
 
-    pub(crate) async fn list_models(&self) -> Result<ModelCatalog> {
+    pub async fn list_models(&self) -> Result<ModelCatalog> {
         self.get_json("/v1/models", "Model listing").await
     }
 
-    pub(crate) async fn refresh_models(&self) -> Result<ModelCatalog> {
+    pub async fn refresh_models(&self) -> Result<ModelCatalog> {
         self.post_without_body("/v1/models/refresh", "Model catalog refresh")
             .await
     }
 
-    pub(crate) async fn warm_models(&self) -> Result<()> {
+    pub async fn warm_models(&self) -> Result<()> {
         let response = self
             .send(
                 bodiless(Method::POST, "/v1/models/warm")?,
@@ -184,7 +172,7 @@ impl SessionCommands {
         decode_empty_api_response(response, "Model catalog warm-up").await
     }
 
-    pub(crate) async fn preview_checkout_removal(
+    pub async fn preview_checkout_removal(
         &self,
         target: crate::protocol::CheckoutRemovalTarget,
     ) -> Result<crate::protocol::CheckoutRemovalPreview> {
@@ -196,7 +184,7 @@ impl SessionCommands {
         .await
     }
 
-    pub(crate) async fn remove_checkout(
+    pub async fn remove_checkout(
         &self,
         request: crate::protocol::RemoveCheckoutRequest,
     ) -> Result<crate::protocol::RemoveCheckoutResult> {
@@ -204,7 +192,7 @@ impl SessionCommands {
             .await
     }
 
-    pub(crate) async fn prepare_checkout(
+    pub async fn prepare_checkout(
         &self,
         request: crate::protocol::PrepareCheckoutRequest,
     ) -> Result<crate::protocol::PrepareCheckoutResult> {
@@ -212,15 +200,12 @@ impl SessionCommands {
             .await
     }
 
-    pub(crate) async fn create_session(
-        &self,
-        request: CreateSessionRequest,
-    ) -> Result<SessionSnapshot> {
+    pub async fn create_session(&self, request: CreateSessionRequest) -> Result<SessionSnapshot> {
         self.post_json("/v1/sessions", &request, "Session creation")
             .await
     }
 
-    pub(crate) async fn admit_prompt(
+    pub async fn admit_prompt(
         &self,
         session_id: SessionId,
         request: AdmitPromptRequest,
@@ -252,7 +237,7 @@ impl SessionCommands {
     /// transport reaches, answering with what it was stored as. A refusal is
     /// the Server's own `SessionError`, whose message a client can show as it
     /// stands.
-    pub(crate) async fn upload_attachment(&self, png: Vec<u8>) -> Result<AttachmentDescriptor> {
+    pub async fn upload_attachment(&self, png: Vec<u8>) -> Result<AttachmentDescriptor> {
         self.within_attachment_deadline("Attachment upload", async {
             let request = http::Request::post("/v1/attachments")
                 .header(CONTENT_TYPE, "image/png")
@@ -268,7 +253,7 @@ impl SessionCommands {
     /// A body past the 5 MiB an Attachment may be is refused as it arrives,
     /// rather than read to its end: nothing the Server admitted is that large,
     /// so nothing that large is taken for an Attachment.
-    pub(crate) async fn fetch_attachment(
+    pub async fn fetch_attachment(
         &self,
         attachment_id: &AttachmentId,
     ) -> Result<(String, Vec<u8>)> {
@@ -292,7 +277,7 @@ impl SessionCommands {
             .and_then(|value| value.to_str().ok())
             .ok_or_else(|| anyhow!("Attachment fetch answered without a content type"))?
             .to_owned();
-        let limit = crate::attachments::MAX_ATTACHMENT_BYTES;
+        let limit = crate::protocol::MAX_ATTACHMENT_BYTES;
         if content_length(&response).is_some_and(|length| length > limit as u64) {
             bail!("the fetched Attachment is larger than an Attachment may be");
         }
@@ -318,7 +303,7 @@ impl SessionCommands {
     /// Not Found whose code header says `attachment_not_found` means it is
     /// not stored there: any other refusal, a Remote this Server no longer
     /// knows among them, is an error, so the Attachment is not taken for gone.
-    pub(crate) async fn attachment_exists(&self, attachment_id: &AttachmentId) -> Result<bool> {
+    pub async fn attachment_exists(&self, attachment_id: &AttachmentId) -> Result<bool> {
         let response = self
             .within_attachment_deadline(
                 "Attachment check",
@@ -347,7 +332,7 @@ impl SessionCommands {
         ))
     }
 
-    pub(crate) async fn update_agent_selection(
+    pub async fn update_agent_selection(
         &self,
         session_id: SessionId,
         request: UpdateAgentSelectionRequest,
@@ -360,7 +345,7 @@ impl SessionCommands {
         .await
     }
 
-    pub(crate) async fn update_approval_posture(
+    pub async fn update_approval_posture(
         &self,
         session_id: SessionId,
         request: UpdateApprovalPostureRequest,
@@ -373,7 +358,7 @@ impl SessionCommands {
         .await
     }
 
-    pub(crate) async fn confirm_landing_agent_selection(
+    pub async fn confirm_landing_agent_selection(
         &self,
         selection: AgentSelection,
     ) -> Result<AgentSelection> {
@@ -386,7 +371,7 @@ impl SessionCommands {
         decode_api_response(response, "Landing Agent Selection update").await
     }
 
-    pub(crate) async fn promote_prompt(
+    pub async fn promote_prompt(
         &self,
         session_id: SessionId,
         prompt_id: PromptId,
@@ -401,7 +386,7 @@ impl SessionCommands {
         .await
     }
 
-    pub(crate) async fn cancel_prompt(
+    pub async fn cancel_prompt(
         &self,
         session_id: SessionId,
         prompt_id: PromptId,
@@ -416,7 +401,7 @@ impl SessionCommands {
         .await
     }
 
-    pub(crate) async fn submit_questionnaire(
+    pub async fn submit_questionnaire(
         &self,
         session_id: SessionId,
         id: crate::protocol::QuestionnaireId,
@@ -430,7 +415,7 @@ impl SessionCommands {
         .await
     }
 
-    pub(crate) async fn submit_decision(
+    pub async fn submit_decision(
         &self,
         session_id: SessionId,
         id: crate::protocol::ApprovalId,
@@ -444,13 +429,13 @@ impl SessionCommands {
         .await
     }
 
-    pub(crate) async fn interrupt_session(&self, session_id: SessionId) -> Result<()> {
+    pub async fn interrupt_session(&self, session_id: SessionId) -> Result<()> {
         self.interrupt_session_reporting_outcome(session_id)
             .await
             .map(|_| ())
     }
 
-    pub(crate) async fn compact_session(
+    pub async fn compact_session(
         &self,
         session_id: SessionId,
         request: crate::protocol::CompactSessionRequest,
@@ -467,7 +452,7 @@ impl SessionCommands {
     /// that withdrew an undelivered Prompt can return its text to the composer
     /// it was submitted from (ADR 0024). Stopping work answers with no body at
     /// all, which is [`InterruptOutcome::StoppedWork`].
-    pub(crate) async fn interrupt_session_reporting_outcome(
+    pub async fn interrupt_session_reporting_outcome(
         &self,
         session_id: SessionId,
     ) -> Result<InterruptOutcome> {
@@ -489,12 +474,12 @@ impl SessionCommands {
         serde_json::from_slice(&body).context("decode Session interruption outcome")
     }
 
-    pub(crate) async fn read_session(&self, session_id: SessionId) -> Result<SessionSnapshot> {
+    pub async fn read_session(&self, session_id: SessionId) -> Result<SessionSnapshot> {
         self.get_json(&session_path(session_id, ""), "Session read")
             .await
     }
 
-    pub(crate) async fn context_breakdown(
+    pub async fn context_breakdown(
         &self,
         session_id: SessionId,
     ) -> Result<crate::protocol::ContextBreakdown> {
@@ -502,7 +487,7 @@ impl SessionCommands {
             .await
     }
 
-    pub(crate) async fn delete_session(&self, session_id: SessionId) -> Result<()> {
+    pub async fn delete_session(&self, session_id: SessionId) -> Result<()> {
         let response = self
             .send(
                 bodiless(Method::DELETE, &session_path(session_id, ""))?,
@@ -515,7 +500,7 @@ impl SessionCommands {
     /// Sets a Session aside as done for now, or brings it back. Which of the
     /// two is stated rather than toggled, so a client acting on a listing that
     /// has moved on cannot flip a Session it meant to leave alone.
-    pub(crate) async fn settle_session(
+    pub async fn settle_session(
         &self,
         session_id: SessionId,
         settled: bool,
@@ -531,7 +516,7 @@ impl SessionCommands {
     /// Sets a Session's Icon to a user's own choice from the Icon Catalog by
     /// name, on the Server this transport reaches: the Session's Origin,
     /// wherever a caller turned it toward that.
-    pub(crate) async fn set_session_icon(
+    pub async fn set_session_icon(
         &self,
         session_id: SessionId,
         icon: &str,
@@ -547,7 +532,7 @@ impl SessionCommands {
     }
 
     /// Renames a Session to a Title the user wrote, on its Origin.
-    pub(crate) async fn set_session_title(
+    pub async fn set_session_title(
         &self,
         session_id: SessionId,
         title: &str,
@@ -564,7 +549,7 @@ impl SessionCommands {
 
     /// Moves a Session to another directory of its Origin, which reads the
     /// destination against its own directories.
-    pub(crate) async fn move_session(
+    pub async fn move_session(
         &self,
         session_id: SessionId,
         request: &MoveSessionRequest,
@@ -575,10 +560,7 @@ impl SessionCommands {
 
     /// Asks the Session's Origin whether it would derive a Title proposal
     /// for it, as the derivation Setting in force there decides.
-    pub(crate) async fn session_title_proposal_offered(
-        &self,
-        session_id: SessionId,
-    ) -> Result<bool> {
+    pub async fn session_title_proposal_offered(&self, session_id: SessionId) -> Result<bool> {
         self.get_json::<SessionTitleProposalOffer>(
             &session_path(session_id, "/title/proposal"),
             "Title proposal offer",
@@ -590,7 +572,7 @@ impl SessionCommands {
     /// Asks the Session's Origin to derive a Title proposal from its Prompts
     /// so far. Dropping the future abandons the request, and the Errand
     /// behind it with it.
-    pub(crate) async fn propose_session_title(&self, session_id: SessionId) -> Result<String> {
+    pub async fn propose_session_title(&self, session_id: SessionId) -> Result<String> {
         self.post_without_body::<SessionTitleProposal>(
             &session_path(session_id, "/title/proposal"),
             "Title proposal",
@@ -604,11 +586,7 @@ impl SessionCommands {
     /// wherever a caller turned it toward that. The Workspace's identity
     /// travels in the request body rather than a path segment, since a
     /// `WorkspaceId`'s inner string may itself contain path characters.
-    pub(crate) async fn set_workspace_icon(
-        &self,
-        workspace_id: &WorkspaceId,
-        icon: &str,
-    ) -> Result<()> {
+    pub async fn set_workspace_icon(&self, workspace_id: &WorkspaceId, icon: &str) -> Result<()> {
         self.post_json_answering_nothing(
             "/v1/workspaces/icon",
             &SetWorkspaceIconRequest {
@@ -623,7 +601,7 @@ impl SessionCommands {
     /// Sets a Workspace's Description, or clears it where the text is blank,
     /// on the Workspace's Origin, exactly as [`Self::set_workspace_icon`]
     /// sets its Icon.
-    pub(crate) async fn set_workspace_description(
+    pub async fn set_workspace_description(
         &self,
         workspace_id: &WorkspaceId,
         path: Option<&Path>,
@@ -642,7 +620,7 @@ impl SessionCommands {
     }
 
     /// Reports that this Client has the Session open in its main view.
-    pub(crate) async fn view_session(
+    pub async fn view_session(
         &self,
         session_id: SessionId,
         request: ViewSessionRequest,
@@ -655,7 +633,7 @@ impl SessionCommands {
         .await
     }
 
-    pub(crate) async fn list_workspace_sessions(
+    pub async fn list_workspace_sessions(
         &self,
         workspace: Option<&WorkspaceId>,
     ) -> Result<Vec<SessionListItem>> {
@@ -666,10 +644,7 @@ impl SessionCommands {
         self.get_json(&path, "Session listing").await
     }
 
-    pub(crate) async fn list_sessions(
-        &self,
-        workspace: Option<&Path>,
-    ) -> Result<Vec<SessionListItem>> {
+    pub async fn list_sessions(&self, workspace: Option<&Path>) -> Result<Vec<SessionListItem>> {
         let path = match workspace {
             Some(workspace) => with_query("/v1/sessions", &[("workspace", workspace)])?,
             None => "/v1/sessions".to_owned(),
@@ -677,7 +652,7 @@ impl SessionCommands {
         self.get_json(&path, "Session listing").await
     }
 
-    pub(crate) async fn list_workspaces(&self) -> Result<WorkspaceListing> {
+    pub async fn list_workspaces(&self) -> Result<WorkspaceListing> {
         self.get_json("/v1/workspaces", "Workspace listing").await
     }
 
@@ -747,7 +722,7 @@ impl SessionCommands {
 /// to ask finds none here, as it found none where loopback was asked
 /// directly. Its message carries the cause the transport gave.
 #[derive(Debug)]
-pub(crate) struct NotReached(SessionError);
+pub struct NotReached(SessionError);
 
 impl std::fmt::Display for NotReached {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -803,7 +778,7 @@ fn with_query(path: &str, query: &impl Serialize) -> Result<String> {
 /// A request to `path` carrying nothing, refused where `path` is no
 /// request URI at all: one too long to be, say, as a path a reader pasted
 /// into a query can make it.
-pub(super) fn bodiless(method: Method, path: &str) -> Result<http::Request<Bytes>> {
+fn bodiless(method: Method, path: &str) -> Result<http::Request<Bytes>> {
     http::Request::builder()
         .method(method)
         .uri(path)
@@ -812,7 +787,7 @@ pub(super) fn bodiless(method: Method, path: &str) -> Result<http::Request<Bytes
 }
 
 /// A request to `path` carrying `body` as JSON.
-pub(super) fn json(
+fn json(
     method: Method,
     path: &str,
     body: &(impl Serialize + ?Sized),
@@ -828,7 +803,7 @@ pub(super) fn json(
 
 /// The length an answer says its body is, where it says.
 fn content_length(response: &TransportResponse) -> Option<u64> {
-    use hyper::body::Body as _;
+    use http_body::Body as _;
 
     response
         .headers()
@@ -847,7 +822,7 @@ async fn read_body(response: TransportResponse) -> Result<Bytes> {
 }
 
 /// What a command was answered: the JSON of a `T`, or the Server's refusal.
-pub(super) async fn decode_api_response<T: DeserializeOwned>(
+pub async fn decode_api_response<T: DeserializeOwned>(
     response: TransportResponse,
     operation: &str,
 ) -> Result<T> {
@@ -861,10 +836,7 @@ pub(super) async fn decode_api_response<T: DeserializeOwned>(
 }
 
 /// Whether a command answering nothing was taken, or the Server's refusal.
-pub(super) async fn decode_empty_api_response(
-    response: TransportResponse,
-    operation: &str,
-) -> Result<()> {
+pub async fn decode_empty_api_response(response: TransportResponse, operation: &str) -> Result<()> {
     if response.status().is_success() {
         return Ok(());
     }
@@ -873,10 +845,7 @@ pub(super) async fn decode_empty_api_response(
 
 /// The Server's refusal of `operation`, as the `SessionError` it sent where
 /// it sent one.
-pub(super) async fn decode_api_error(
-    response: TransportResponse,
-    operation: &str,
-) -> anyhow::Error {
+pub async fn decode_api_error(response: TransportResponse, operation: &str) -> anyhow::Error {
     let status = response.status();
     read_body(response)
         .await
@@ -890,92 +859,16 @@ pub(super) async fn decode_api_error(
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, sync::Mutex};
+    use std::path::PathBuf;
 
-    use tokio::sync::watch;
+    use futures_util::StreamExt;
 
     use super::*;
     use crate::{
-        managed_client::{
-            loopback::LoopbackTransport,
-            stream_fixture::open_stream_of,
-            transport::{TryNow, full_body},
-        },
-        protocol::{
-            ApprovalId, CheckoutAssociation, CheckoutBranchOutcome, CheckoutId, CheckoutKind,
-            CheckoutRemovalInspection, CheckoutRemovalPreview, CheckoutRemovalTarget,
-            CheckoutSummary, CompactSessionRequest, Decision, ExecutionDirectory, InitialPrompt,
-            InsightsQuery, ListDirectoryRequest, ModelId, MoveDestination, Outlook, PreparationId,
-            PrepareCheckoutRequest, PromptDelivery, ProviderId, QuestionnaireId,
-            QuestionnaireSubmission, Repository, RepositoryId, RepositoryLocation,
-            RuntimeDescriptor, SessionTimestamp, SourceControlAvailability,
-            SourceControlCapabilities, UsageMetricsBreakdown, UsageMetricsInterval,
-            UsageMetricsQuery, ViewSessionOperationId,
-        },
+        protocol::{ListDirectoryRequest, MAX_ATTACHMENT_BYTES},
+        testing::{Answering, Recorder, streamed},
+        transport::{ResponseBody, full_body},
     };
-
-    /// A transport that answers every request with an empty success, and
-    /// keeps what it was asked.
-    struct Recorder {
-        asked: Mutex<Vec<(Method, http::Uri)>>,
-        count: watch::Sender<usize>,
-    }
-
-    impl Recorder {
-        fn new() -> Arc<Self> {
-            Arc::new(Self {
-                asked: Mutex::new(Vec::new()),
-                count: watch::Sender::new(0),
-            })
-        }
-
-        /// What it has been asked since last taken.
-        fn take(&self) -> Vec<(Method, http::Uri)> {
-            std::mem::take(&mut *self.asked.lock().expect("the record lock"))
-        }
-
-        /// Waits until it has been asked something since last taken.
-        async fn asked_something(&self) {
-            let asked = || !self.asked.lock().expect("the record lock").is_empty();
-            let mut count = self.count.subscribe();
-            tokio::time::timeout(Duration::from_secs(5), async {
-                while !asked() {
-                    count.changed().await.expect("the recorder stands");
-                }
-            })
-            .await
-            .expect("a reader asks as it opens");
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl Transport for Recorder {
-        async fn send(
-            &self,
-            request: http::Request<Bytes>,
-        ) -> Result<TransportResponse, SessionError> {
-            self.asked
-                .lock()
-                .expect("the record lock")
-                .push((request.method().clone(), request.uri().clone()));
-            self.count.send_modify(|count| *count += 1);
-            // A stream is held open, so its reader asks nothing more of its
-            // own accord; anything else is answered at once.
-            let path = request.uri().path();
-            if path.ends_with("events") || path.ends_with("subagent-tree") {
-                return Ok(open_stream_of(&[]));
-            }
-            Ok(http::Response::new(full_body(Bytes::new())))
-        }
-
-        fn try_now(&self) -> TryNow {
-            TryNow::never()
-        }
-
-        fn attached(self: Arc<Self>) -> Arc<dyn Transport> {
-            self
-        }
-    }
 
     fn timings() -> SessionCommandTimings {
         SessionCommandTimings {
@@ -983,226 +876,6 @@ mod tests {
             max_recovery_backoff: Duration::from_millis(1),
             attachment_fetch_timeout: Duration::from_secs(5),
         }
-    }
-
-    /// Every shared command and reader, each asked once with what it takes.
-    /// A command added to [`SessionCommands`] is added here, so the walk
-    /// judges every route the shared commands send.
-    #[allow(clippy::too_many_lines)]
-    async fn walk_every_command(
-        commands: &SessionCommands,
-        recorder: &Recorder,
-        judge: impl Fn(&'static str, Vec<(Method, http::Uri)>),
-    ) {
-        let session = SessionId::new();
-        let root = PathBuf::from("worktree");
-        let directory = ExecutionDirectory { path: root.clone() };
-        let provider = ProviderId::new("codex");
-        let selection = AgentSelection {
-            provider: provider.clone(),
-            model: ModelId::new("model"),
-            options: Vec::new(),
-        };
-        let prompt = InitialPrompt {
-            id: PromptId::new(),
-            text: "Hello".to_owned(),
-            skill_invocations: Vec::new(),
-            attachments: Vec::new(),
-        };
-        let repository = Repository {
-            id: RepositoryId::from_metadata("git", &root),
-            system: "git".to_owned(),
-            metadata_directory: root.join(".git"),
-            location: RepositoryLocation::Main { root: root.clone() },
-            availability: SourceControlAvailability::Available,
-            capabilities: SourceControlCapabilities::discovery_only(),
-        };
-        let checkout = CheckoutAssociation {
-            id: CheckoutId::from_root(&repository.id, &root),
-            repository: repository.id.clone(),
-            root: root.clone(),
-            kind: CheckoutKind::Linked,
-            recovery_revision: None,
-            reclaim: None,
-        };
-        let target = CheckoutRemovalTarget {
-            repository,
-            checkout: checkout.clone(),
-        };
-        let preview = CheckoutRemovalPreview {
-            target: target.clone(),
-            inspection: CheckoutRemovalInspection {
-                checkout: CheckoutSummary {
-                    association: checkout,
-                    revision: None,
-                    availability: SourceControlAvailability::Available,
-                },
-                tracked: Vec::new(),
-                untracked: Vec::new(),
-                ignored: Vec::new(),
-                lock: None,
-                initialized_submodules: Vec::new(),
-            },
-            branch_outcome: CheckoutBranchOutcome::Retained,
-            affected_sessions: 0,
-            working_sessions: 0,
-            pending_moves: 0,
-        };
-        let interval = UsageMetricsInterval {
-            start: SessionTimestamp(0),
-            end: SessionTimestamp(1),
-        };
-        let skills = SkillCatalogRequest {
-            provider: provider.clone(),
-            execution_directory: directory.clone(),
-        };
-        let workspace = WorkspaceId("workspace".to_owned());
-        let attachment = AttachmentId::new("attachment");
-
-        macro_rules! walk {
-            ($($name:literal => $asked:expr),* $(,)?) => {
-                $(
-                    let _ = $asked;
-                    judge($name, recorder.take());
-                )*
-            };
-        }
-        walk![
-            "subscribe_catalog" => {
-                let _catalog = commands.subscribe_catalog();
-                recorder.asked_something().await;
-            },
-            "subscribe_subagent_tree" => {
-                let _tree = commands.subscribe_subagent_tree(session);
-                recorder.asked_something().await;
-            },
-            "subscribe_session" => commands.subscribe_session(session).await.map(drop),
-            "attach_session" => commands.attach_session(session).await.map(drop),
-            "resolve_workspace" => commands.resolve_workspace(ResolveWorkspaceRequest {
-                checkout_id: None,
-                remembered_execution_directory: None,
-                workspace_id: None,
-                base: None,
-                path: root.clone(),
-            }).await,
-            "list_directory" => commands.list_directory(ListDirectoryRequest {
-                path: root.clone(),
-                base: Some(root.clone()),
-            }).await,
-            "usage_metrics" => commands.usage_metrics(&UsageMetricsQuery {
-                buckets: vec![interval],
-                breakdown: UsageMetricsBreakdown::Model,
-                model_view: Default::default(),
-                comparison: None,
-                top_sessions: 0,
-            }).await,
-            "insights" => commands.insights(&InsightsQuery { interval }).await,
-            "sidekick_workspace" => commands.sidekick_workspace().await,
-            "list_skills" => commands.list_skills(skills.clone()).await,
-            "refresh_skills" => commands.refresh_skills(skills).await,
-            "list_models" => commands.list_models().await,
-            "refresh_models" => commands.refresh_models().await,
-            "warm_models" => commands.warm_models().await,
-            "preview_checkout_removal" => commands.preview_checkout_removal(target).await,
-            "remove_checkout" => commands.remove_checkout(
-                crate::protocol::RemoveCheckoutRequest { preview, force: false },
-            ).await,
-            "prepare_checkout" => commands.prepare_checkout(PrepareCheckoutRequest {
-                id: PreparationId::default(),
-                source: directory.clone(),
-                prompt: Default::default(),
-                provider,
-                intended_session: None,
-            }).await,
-            "create_session" => commands.create_session(CreateSessionRequest {
-                preparation_id: None,
-                agent_selection: Some(selection.clone()),
-                execution_directory: directory,
-                prompt: prompt.clone(),
-                session_id: None,
-            }).await,
-            "admit_prompt" => commands.admit_prompt(session, AdmitPromptRequest {
-                prompt,
-                delivery: PromptDelivery::Queue,
-            }).await,
-            "upload_attachment" => commands.upload_attachment(vec![0_u8; 8]).await,
-            "fetch_attachment" => commands.fetch_attachment(&attachment).await,
-            "attachment_exists" => commands.attachment_exists(&attachment).await,
-            "update_agent_selection" => commands.update_agent_selection(
-                session,
-                UpdateAgentSelectionRequest {
-                    operation_id: crate::protocol::AgentSelectionOperationId::new(),
-                    selection: selection.clone(),
-                },
-            ).await,
-            "update_approval_posture" => commands.update_approval_posture(
-                session,
-                UpdateApprovalPostureRequest { posture: None },
-            ).await,
-            "confirm_landing_agent_selection" => {
-                commands.confirm_landing_agent_selection(selection).await
-            },
-            "promote_prompt" => commands.promote_prompt(session, PromptId::new()).await,
-            "cancel_prompt" => commands.cancel_prompt(session, PromptId::new()).await,
-            "submit_questionnaire" => commands.submit_questionnaire(
-                session,
-                QuestionnaireId::new(),
-                QuestionnaireSubmission::Decline,
-            ).await,
-            "submit_decision" => {
-                commands.submit_decision(session, ApprovalId::new(), Decision::Accept).await
-            },
-            "interrupt_session" => commands.interrupt_session(session).await,
-            "interrupt_session_reporting_outcome" => {
-                commands.interrupt_session_reporting_outcome(session).await
-            },
-            "compact_session" => {
-                commands.compact_session(session, CompactSessionRequest::default()).await
-            },
-            "read_session" => commands.read_session(session).await,
-            "context_breakdown" => commands.context_breakdown(session).await,
-            "delete_session" => commands.delete_session(session).await,
-            "settle_session" => commands.settle_session(session, true).await,
-            "set_session_icon" => commands.set_session_icon(session, "star").await,
-            "set_session_title" => commands.set_session_title(session, "Title").await,
-            "move_session" => commands.move_session(session, &MoveSessionRequest {
-                destination: MoveDestination::Directory { path: root.clone() },
-            }).await,
-            "session_title_proposal_offered" => {
-                commands.session_title_proposal_offered(session).await
-            },
-            "propose_session_title" => commands.propose_session_title(session).await,
-            "set_workspace_icon" => commands.set_workspace_icon(&workspace, "star").await,
-            "set_workspace_description" => {
-                commands.set_workspace_description(&workspace, Some(&root), "Notes").await
-            },
-            "view_session" => commands.view_session(session, ViewSessionRequest {
-                operation_id: ViewSessionOperationId::new(),
-            }).await,
-            "list_workspace_sessions" => commands.list_workspace_sessions(Some(&workspace)).await,
-            "list_sessions" => commands.list_sessions(Some(&root)).await,
-            "list_workspaces" => commands.list_workspaces().await,
-        ];
-    }
-
-    /// The shared commands are those a Peer may ask: each one's route is
-    /// classed as the API by the Serving side's own route check, so none of
-    /// them is refused when it runs over a Pairing.
-    #[tokio::test]
-    async fn every_shared_command_asks_what_a_peer_may_ask() {
-        let recorder = Recorder::new();
-        let commands = SessionCommands::new(recorder.clone(), timings());
-
-        walk_every_command(&commands, &recorder, |name, asked| {
-            assert!(!asked.is_empty(), "{name} asks nothing");
-            for (method, uri) in asked {
-                assert!(
-                    crate::serving::a_peer_may_ask(&method, &uri),
-                    "{name} asks {method} {uri}, which a Peer may not"
-                );
-            }
-        })
-        .await;
     }
 
     /// An id or a path a command carries spells one segment of its route, or
@@ -1256,81 +929,279 @@ mod tests {
         assert!(recorder.take().is_empty(), "nothing is sent");
     }
 
-    /// Turned toward a Remote, a command reaches it beneath the local
-    /// Server's proxy route for it, and the Remote's own Session or
-    /// Workspace route there — the Decision, the Icon, the Description and
-    /// the Sidekick Workspace among them.
-    #[tokio::test]
-    async fn a_command_turned_toward_a_remote_asks_the_remotes_own_route() {
-        use axum::{Router, extract::Request, routing::any};
-
-        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-            .await
-            .expect("bind the proxy fixture");
-        let address = listener.local_addr().expect("read the fixture address");
-        let (asked_tx, mut asked) = tokio::sync::mpsc::unbounded_channel();
-        let app = Router::new().fallback(any(move |request: Request| {
-            let _ = asked_tx.send(format!("{} {}", request.method(), request.uri()));
-            async { http::StatusCode::NO_CONTENT }
-        }));
-        let server = tokio::spawn(async move {
-            axum::serve(listener, app)
-                .await
-                .expect("serve the proxy fixture");
-        });
-        let (_descriptor, descriptor) = watch::channel(RuntimeDescriptor::new(
-            format!("http://{address}"),
-            "proxy-fixture-token".to_owned(),
-            crate::protocol::ServerIdentity {
-                instance_id: uuid::Uuid::new_v4(),
-                pid: std::process::id(),
-                protocol_version: crate::protocol::PROTOCOL_VERSION,
-                build_identity: "proxy-fixture".to_owned(),
+    /// Commands over `transport`, whose Attachment requests are failed at
+    /// `deadline`.
+    fn commands_within(transport: Arc<dyn Transport>, deadline: Duration) -> SessionCommands {
+        SessionCommands::new(
+            transport,
+            SessionCommandTimings {
+                attachment_fetch_timeout: deadline,
+                ..timings()
             },
-        ));
+        )
+    }
+
+    /// An answer of `body`, a PNG's worth of bytes.
+    fn png(body: ResponseBody) -> Result<TransportResponse, SessionError> {
+        let mut response = http::Response::new(body);
+        response
+            .headers_mut()
+            .insert(CONTENT_TYPE, http::HeaderValue::from_static("image/png"));
+        Ok(response)
+    }
+
+    /// The id a request for one Attachment names.
+    fn attachment_named(request: &http::Request<Bytes>) -> String {
+        request
+            .uri()
+            .path()
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .to_owned()
+    }
+
+    /// Awaits `request`, which must end by itself: a guard long past any
+    /// deadline a test sets fails the test rather than letting it hang.
+    async fn ends_by_itself<T>(request: impl Future<Output = T>) -> T {
+        tokio::time::timeout(Duration::from_secs(5), request)
+            .await
+            .expect("the request ends at its own deadline")
+    }
+
+    /// The deadline a stalled request is failed at.
+    const DEADLINE: Duration = Duration::from_millis(50);
+
+    #[tokio::test]
+    async fn a_fetch_the_server_stalls_fails_at_its_deadline() {
+        // Stalls where the id says: `headers` before sending any, and `body`
+        // after its first chunk.
+        let commands = commands_within(
+            Answering::new(|request| async move {
+                if attachment_named(&request) == "headers" {
+                    std::future::pending::<()>().await;
+                }
+                let first = futures_util::stream::once(async { Bytes::from(vec![0_u8; 1024]) });
+                png(streamed(first.chain(futures_util::stream::pending())))
+            }),
+            DEADLINE,
+        );
+
+        for id in ["headers", "body"] {
+            let refused = ends_by_itself(commands.fetch_attachment(&AttachmentId::new(id)))
+                .await
+                .expect_err("a stalled fetch fails");
+            assert!(
+                refused
+                    .to_string()
+                    .contains("Attachment fetch timed out after 50ms"),
+                "{id}: {refused:#}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_fetch_finished_within_its_deadline_is_taken() {
+        // Its body comes in three chunks a few milliseconds apart.
+        let commands = commands_within(
+            Answering::new(|_| async {
+                let chunks = futures_util::stream::iter(0..3).then(|_| async {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                    Bytes::from(vec![0_u8; 1024])
+                });
+                png(streamed(chunks))
+            }),
+            Duration::from_millis(500),
+        );
+
+        let (mime_type, bytes) = commands
+            .fetch_attachment(&AttachmentId::new("trickled"))
+            .await
+            .expect("a body read to its end in time is an Attachment");
+        assert_eq!(mime_type, "image/png");
+        assert_eq!(bytes.len(), 3 * 1024);
+    }
+
+    #[tokio::test]
+    async fn an_upload_or_a_check_the_server_stalls_fails_at_its_deadline() {
+        let commands = commands_within(Answering::new(|_| std::future::pending()), DEADLINE);
+
+        let upload = ends_by_itself(commands.upload_attachment(vec![0_u8; 16]))
+            .await
+            .expect_err("a stalled upload fails");
+        assert!(
+            upload
+                .to_string()
+                .contains("Attachment upload timed out after 50ms"),
+            "{upload:#}"
+        );
+        let check = ends_by_itself(commands.attachment_exists(&AttachmentId::new("stored")))
+            .await
+            .expect_err("a stalled check fails");
+        assert!(
+            check
+                .to_string()
+                .contains("Attachment check timed out after 50ms"),
+            "{check:#}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_fetch_over_the_attachment_cap_is_refused_and_one_at_it_is_taken() {
+        // The id names the length: `exact` is the cap, `over` one byte past
+        // it and saying so, and `streamed-over` one byte past it without
+        // saying so up front.
         let commands = SessionCommands::new(
-            Arc::new(LoopbackTransport::new(
-                crate::runtime::loopback_http_client(),
-                descriptor,
-                Outlook::Remote("workstation".into()),
-            )),
+            Answering::new(|request| async move {
+                match attachment_named(&request).as_str() {
+                    "exact" => png(full_body(vec![0_u8; MAX_ATTACHMENT_BYTES])),
+                    "over" => png(full_body(vec![0_u8; MAX_ATTACHMENT_BYTES + 1])),
+                    _ => {
+                        let chunks = (0..=MAX_ATTACHMENT_BYTES / 65_536)
+                            .map(|_| Bytes::from(vec![0_u8; 65_536]));
+                        png(streamed(futures_util::stream::iter(chunks)))
+                    }
+                }
+            }),
             timings(),
         );
-        let session = SessionId::new();
-        let approval = ApprovalId::new();
-        let workspace = WorkspaceId("workspace".to_owned());
 
-        commands
-            .submit_decision(session, approval, Decision::Accept)
+        let (mime_type, bytes) = commands
+            .fetch_attachment(&AttachmentId::new("exact"))
             .await
-            .expect("the proxy takes the Decision");
-        let _ = commands.set_session_icon(session, "star").await;
-        commands
-            .set_workspace_icon(&workspace, "star")
-            .await
-            .expect("the proxy takes the Icon");
-        commands
-            .set_workspace_description(&workspace, None, "Notes")
-            .await
-            .expect("the proxy takes the Description");
-        let _ = commands.sidekick_workspace().await;
+            .expect("a body at the cap is an Attachment");
+        assert_eq!(mime_type, "image/png");
+        assert_eq!(bytes.len(), MAX_ATTACHMENT_BYTES);
 
-        let mut routes = Vec::new();
-        while let Ok(route) = asked.try_recv() {
-            routes.push(route);
+        for id in ["over", "streamed-over"] {
+            let refused = commands
+                .fetch_attachment(&AttachmentId::new(id))
+                .await
+                .expect_err("a body past the cap is refused");
+            assert!(
+                refused
+                    .to_string()
+                    .contains("larger than an Attachment may be"),
+                "{id}: {refused:#}"
+            );
         }
-        assert_eq!(
-            routes,
-            [
-                format!(
-                    "POST /v1/remotes/workstation/v1/sessions/{session}/approvals/{approval}/decision"
-                ),
-                format!("POST /v1/remotes/workstation/v1/sessions/{session}/icon"),
-                "POST /v1/remotes/workstation/v1/workspaces/icon".to_owned(),
-                "POST /v1/remotes/workstation/v1/workspaces/description".to_owned(),
-                "POST /v1/remotes/workstation/v1/workspaces/sidekick".to_owned(),
-            ]
+    }
+
+    #[tokio::test]
+    async fn only_a_not_found_naming_the_attachment_reads_as_not_stored() {
+        // Answers a check as the id names: stored, not stored, a Remote the
+        // proxy no longer knows, a Not Found that does not say why, and a
+        // failure.
+        let commands = SessionCommands::new(
+            Answering::new(|request| async move {
+                let answered = |status: http::StatusCode, code: Option<&'static str>| {
+                    let mut response = http::Response::new(full_body(Bytes::new()));
+                    *response.status_mut() = status;
+                    if let Some(code) = code {
+                        response.headers_mut().insert(
+                            SESSION_ERROR_CODE_HEADER,
+                            http::HeaderValue::from_static(code),
+                        );
+                    }
+                    Ok(response)
+                };
+                match attachment_named(&request).as_str() {
+                    "stored" => answered(http::StatusCode::OK, None),
+                    "swept" => answered(http::StatusCode::NOT_FOUND, Some("attachment_not_found")),
+                    "unpaired" => answered(http::StatusCode::NOT_FOUND, Some("remote_not_found")),
+                    "silent" => answered(http::StatusCode::NOT_FOUND, None),
+                    _ => answered(http::StatusCode::INTERNAL_SERVER_ERROR, None),
+                }
+            }),
+            timings(),
         );
-        server.abort();
+        let exists = |id: &str| {
+            let commands = commands.clone();
+            let id = AttachmentId::new(id);
+            async move { commands.attachment_exists(&id).await }
+        };
+
+        assert!(exists("stored").await.expect("a stored Attachment answers"));
+        assert!(!exists("swept").await.expect("a missing Attachment answers"));
+        for id in ["unpaired", "silent", "broken"] {
+            let error = exists(id)
+                .await
+                .expect_err("a refusal not about the Attachment is no answer");
+            assert!(
+                error.to_string().contains("Attachment check failed"),
+                "{id}: {error:#}"
+            );
+        }
+    }
+
+    /// What a Server answers every request with under a code a newer Server
+    /// added, saying `SAID` beside it.
+    fn refusing_under_an_unknown_code() -> SessionCommands {
+        SessionCommands::new(
+            Answering::new(|_| async {
+                let body = serde_json::json!({
+                    "code": "a_code_added_since_this_build",
+                    "message": SAID,
+                    "added_since_this_build": { "by": "a newer Server" },
+                });
+                let mut response = http::Response::new(full_body(body.to_string()));
+                *response.status_mut() = http::StatusCode::CONFLICT;
+                Ok(response)
+            }),
+            timings(),
+        )
+    }
+
+    const SAID: &str = "That Session is being tidied away; try again in a moment";
+
+    /// A refusal under a code a newer Server added is read as the generic
+    /// code, and what a reader is shown is the message beside it.
+    #[tokio::test]
+    async fn a_command_refused_under_an_unknown_code_reads_as_the_generic_code_with_its_message_shown()
+     {
+        let error = refusing_under_an_unknown_code()
+            .read_session(SessionId::new())
+            .await
+            .expect_err("the Server refused the read");
+
+        assert_eq!(error.to_string(), SAID, "{error:#}");
+        assert_eq!(
+            error
+                .downcast_ref::<SessionError>()
+                .map(|refusal| refusal.code),
+            Some(SessionErrorCode::Other)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_session_stream_refused_under_an_unknown_code_shows_its_message() {
+        let Err(error) = refusing_under_an_unknown_code()
+            .subscribe_session(SessionId::new())
+            .await
+        else {
+            panic!("the Server refused the stream");
+        };
+
+        assert!(format!("{error:#}").contains(SAID), "{error:#}");
+    }
+
+    /// A transport that cannot reach its Server fails a command as not
+    /// reached, rather than as a Server's refusal, saying why.
+    #[tokio::test]
+    async fn a_command_its_transport_cannot_send_is_not_reached_rather_than_refused() {
+        let error = SessionCommands::new(
+            Answering::new(|_| async { Err(crate::testing::unreachable()) }),
+            timings(),
+        )
+        .read_session(SessionId::new())
+        .await
+        .expect_err("nothing answered");
+
+        assert!(error.downcast_ref::<NotReached>().is_some(), "{error:#}");
+        assert!(error.downcast_ref::<SessionError>().is_none());
+        assert!(
+            format!("{error:#}").contains("nothing answered"),
+            "{error:#}"
+        );
     }
 }

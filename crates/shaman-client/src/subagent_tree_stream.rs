@@ -14,7 +14,7 @@ use crate::protocol::{
     SubagentTreeRevision, SubagentTreeSnapshot, SubagentTreeUpdate,
 };
 
-use super::{
+use crate::{
     RecoveryBackoff,
     remote_connection::{self, RemoteConnectionFailure},
     transport::{self, Transport, TransportResponse},
@@ -50,7 +50,7 @@ pub struct SubagentTreeSubscription {
 }
 
 impl SubagentTreeSubscription {
-    pub(super) fn open(
+    pub(crate) fn open(
         transport: Arc<dyn Transport>,
         session_id: SessionId,
         initial_backoff: Duration,
@@ -243,7 +243,10 @@ fn validate_event_id(id: &str, revision: SubagentTreeRevision) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::{ActivityStatus, SubagentTreeTopLevel};
+    use crate::{
+        protocol::{ActivityStatus, SessionError, SessionErrorCode, SubagentTreeTopLevel},
+        testing::{ScriptedTransport, open_stream_of, refusal, stream_of, unreachable},
+    };
 
     fn event(name: &str, id: u64, data: &impl serde::Serialize) -> eventsource_stream::Event {
         eventsource_stream::Event {
@@ -340,160 +343,51 @@ mod tests {
         );
     }
 
-    /// A stand-in Server for the per-tree route, answering each connection
-    /// with the next of its scripted answers and counting how many it has had.
-    mod fixture {
-        use std::{
-            convert::Infallible,
-            sync::{
-                Arc, Mutex,
-                atomic::{AtomicUsize, Ordering},
-            },
-        };
-
-        use axum::{
-            Json, Router,
-            extract::State,
-            http::StatusCode,
-            response::{IntoResponse, Response, Sse, sse::Event},
-            routing::get,
-        };
-        use futures_util::stream;
-        use tokio::sync::watch;
-
-        use crate::protocol::{
-            PROTOCOL_VERSION, RuntimeDescriptor, SUBAGENT_TREE_SNAPSHOT_EVENT,
-            SUBAGENT_TREE_UPDATED_EVENT, ServerIdentity, SessionError, SessionErrorCode,
-            SubagentTreeSnapshot, SubagentTreeUpdate,
-        };
-
-        /// One connection's answer.
-        pub(super) enum Answer {
-            /// The snapshot and changes, after which the Server ends the
-            /// stream, as a Server shutting down or dropping a lagging
-            /// subscriber does.
-            Ends(SubagentTreeSnapshot, Vec<SubagentTreeUpdate>),
-            /// The snapshot and changes, after which the stream stays open.
-            Stays(SubagentTreeSnapshot, Vec<SubagentTreeUpdate>),
-            /// The refusal a Server holding no such Session gives.
-            NotFound,
-        }
-
-        struct Script {
-            answers: Mutex<Vec<Answer>>,
-            connections: AtomicUsize,
-        }
-
-        pub(super) struct TreeServer {
-            script: Arc<Script>,
-            pub(super) descriptor: watch::Receiver<RuntimeDescriptor>,
-            _descriptor: watch::Sender<RuntimeDescriptor>,
-            task: tokio::task::JoinHandle<()>,
-        }
-
-        impl TreeServer {
-            pub(super) async fn spawn(answers: Vec<Answer>) -> Self {
-                let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-                    .await
-                    .expect("bind the tree fixture");
-                let address = listener.local_addr().expect("read the fixture address");
-                let script = Arc::new(Script {
-                    answers: Mutex::new(answers.into_iter().rev().collect()),
-                    connections: AtomicUsize::new(0),
-                });
-                let app = Router::new()
-                    .route("/v1/sessions/{session_id}/subagent-tree", get(answer))
-                    .with_state(script.clone());
-                let task = tokio::spawn(async move {
-                    axum::serve(listener, app)
-                        .await
-                        .expect("serve the tree fixture");
-                });
-                let (sender, descriptor) = watch::channel(RuntimeDescriptor::new(
-                    format!("http://{address}"),
-                    "tree-fixture-token".to_owned(),
-                    ServerIdentity {
-                        instance_id: uuid::Uuid::new_v4(),
-                        pid: std::process::id(),
-                        protocol_version: PROTOCOL_VERSION,
-                        build_identity: "tree-fixture".to_owned(),
-                    },
-                ));
-                Self {
-                    script,
-                    descriptor,
-                    _descriptor: sender,
-                    task,
-                }
-            }
-
-            pub(super) fn connections(&self) -> usize {
-                self.script.connections.load(Ordering::SeqCst)
-            }
-        }
-
-        impl Drop for TreeServer {
-            fn drop(&mut self) {
-                self.task.abort();
-            }
-        }
-
-        async fn answer(State(script): State<Arc<Script>>) -> Response {
-            script.connections.fetch_add(1, Ordering::SeqCst);
-            let next = script
-                .answers
-                .lock()
-                .expect("the script lock is not poisoned")
-                .pop();
-            let (snapshot, updates, stays) = match next {
-                Some(Answer::Ends(snapshot, updates)) => (snapshot, updates, false),
-                Some(Answer::Stays(snapshot, updates)) => (snapshot, updates, true),
-                Some(Answer::NotFound) | None => {
-                    return (
-                        StatusCode::NOT_FOUND,
-                        Json(SessionError {
-                            code: SessionErrorCode::SessionNotFound,
-                            message: "Session does not exist on this server instance".to_owned(),
-                            unreachable: None,
-                        }),
-                    )
-                        .into_response();
-                }
-            };
-            let mut events = vec![
-                Event::default()
-                    .event(SUBAGENT_TREE_SNAPSHOT_EVENT)
-                    .id(snapshot.revision.0.to_string())
-                    .json_data(snapshot)
-                    .expect("encode the fixture snapshot"),
-            ];
-            events.extend(updates.into_iter().map(|update| {
-                Event::default()
-                    .event(SUBAGENT_TREE_UPDATED_EVENT)
-                    .id(update.revision.0.to_string())
-                    .json_data(update)
-                    .expect("encode the fixture update")
-            }));
-            let events = stream::iter(events.into_iter().map(Ok::<_, Infallible>));
-            if stays {
-                Sse::new(futures_util::StreamExt::chain(events, stream::pending())).into_response()
-            } else {
-                Sse::new(events).into_response()
-            }
-        }
-    }
-
-    use fixture::{Answer, TreeServer};
-
     const DEADLINE: Duration = Duration::from_secs(10);
 
-    fn subscribe(server: &TreeServer) -> SubagentTreeSubscription {
+    /// The stream of `tree`'s snapshot and then `updates`, the stream left
+    /// open after them where `stays` says, as a live stream stays open, and
+    /// otherwise ended, as a Server shutting down or dropping a lagging
+    /// subscriber ends it.
+    fn tree_stream(
+        tree: &SubagentTreeSnapshot,
+        updates: &[SubagentTreeUpdate],
+        stays: bool,
+    ) -> Result<TransportResponse, SessionError> {
+        let mut events = vec![(
+            SUBAGENT_TREE_SNAPSHOT_EVENT,
+            Some(tree.revision.0),
+            serde_json::to_string(tree).expect("encode the snapshot"),
+        )];
+        events.extend(updates.iter().map(|update| {
+            (
+                SUBAGENT_TREE_UPDATED_EVENT,
+                Some(update.revision.0),
+                serde_json::to_string(update).expect("encode the update"),
+            )
+        }));
+        Ok(if stays {
+            open_stream_of(&events)
+        } else {
+            stream_of(&events)
+        })
+    }
+
+    /// The refusal a Server holding no such Session gives.
+    fn not_found() -> Result<TransportResponse, SessionError> {
+        Ok(refusal(
+            http::StatusCode::NOT_FOUND,
+            &SessionError {
+                code: SessionErrorCode::SessionNotFound,
+                message: "Session does not exist on this server instance".to_owned(),
+                unreachable: None,
+            },
+        ))
+    }
+
+    fn subscribe(transport: &Arc<ScriptedTransport>) -> SubagentTreeSubscription {
         SubagentTreeSubscription::open(
-            Arc::new(crate::managed_client::loopback::LoopbackTransport::new(
-                crate::runtime::loopback_http_client(),
-                server.descriptor.clone(),
-                crate::protocol::Outlook::Local,
-            )),
+            transport.clone(),
             SessionId::new(),
             Duration::from_millis(1),
             Duration::from_millis(5),
@@ -538,12 +432,11 @@ mod tests {
         after.subagents[0].status = ActivityStatus::Completed;
         after.subagents[0].worked_ms = Some(40);
         after.subagents[0].working_since = None;
-        let server = TreeServer::spawn(vec![
-            Answer::Ends(before.clone(), Vec::new()),
-            Answer::Stays(after.clone(), Vec::new()),
-        ])
-        .await;
-        let mut subscription = subscribe(&server);
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            tree_stream(&before, &[], false),
+            tree_stream(&after, &[], true),
+        ]));
+        let mut subscription = subscribe(&transport);
 
         assert_eq!(
             next_event(&mut subscription).await,
@@ -555,7 +448,7 @@ mod tests {
             "the connection lost, the subscription reconnects on its own and its fresh \
              snapshot carries the settle it missed"
         );
-        assert_eq!(server.connections(), 2);
+        assert_eq!(transport.asked(), 2);
     }
 
     #[tokio::test]
@@ -575,12 +468,11 @@ mod tests {
                 monitoring_since: None,
             },
         };
-        let server = TreeServer::spawn(vec![
-            Answer::Stays(before.clone(), vec![skipped]),
-            Answer::Stays(after.clone(), Vec::new()),
-        ])
-        .await;
-        let mut subscription = subscribe(&server);
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            tree_stream(&before, &[skipped], true),
+            tree_stream(&after, &[], true),
+        ]));
+        let mut subscription = subscribe(&transport);
 
         assert_eq!(
             next_event(&mut subscription).await,
@@ -600,8 +492,12 @@ mod tests {
             revision: SubagentTreeRevision(2),
             change: SubagentTreeChange::TreeDeleted,
         };
-        let server = TreeServer::spawn(vec![Answer::Stays(tree.clone(), vec![deleted])]).await;
-        let mut subscription = subscribe(&server);
+        let transport = Arc::new(ScriptedTransport::new(vec![tree_stream(
+            &tree,
+            &[deleted],
+            true,
+        )]));
+        let mut subscription = subscribe(&transport);
 
         assert_eq!(
             next_event(&mut subscription).await,
@@ -616,22 +512,17 @@ mod tests {
             None,
             "the deletion is the subscription's last word"
         );
-        assert_eq!(
-            server.connections(),
-            1,
-            "nothing reconnects to a deleted tree"
-        );
+        assert_eq!(transport.asked(), 1, "nothing reconnects to a deleted tree");
     }
 
     #[tokio::test]
     async fn a_tree_deleted_while_disconnected_ends_the_subscription_as_deleted() {
         let (tree, _) = working_tree(1);
-        let server = TreeServer::spawn(vec![
-            Answer::Ends(tree.clone(), Vec::new()),
-            Answer::NotFound,
-        ])
-        .await;
-        let mut subscription = subscribe(&server);
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            tree_stream(&tree, &[], false),
+            not_found(),
+        ]));
+        let mut subscription = subscribe(&transport);
 
         assert_eq!(
             next_event(&mut subscription).await,
@@ -643,26 +534,24 @@ mod tests {
             "a tree once heard and then not found was deleted while the subscription was away"
         );
         assert_eq!(next_event(&mut subscription).await, None);
-        assert_eq!(server.connections(), 2);
+        assert_eq!(transport.asked(), 2);
     }
 
     #[tokio::test]
     async fn a_tree_never_found_fails_rather_than_reading_as_deleted() {
-        let server = TreeServer::spawn(vec![Answer::NotFound]).await;
-        let mut subscription = subscribe(&server);
+        let transport = Arc::new(ScriptedTransport::new(vec![not_found()]));
+        let mut subscription = subscribe(&transport);
 
         assert!(matches!(
             next_event(&mut subscription).await,
             Some(SubagentTreeEvent::Failed(_))
         ));
         assert_eq!(next_event(&mut subscription).await, None);
-        assert_eq!(server.connections(), 1);
+        assert_eq!(transport.asked(), 1);
     }
 
     #[tokio::test]
     async fn an_event_a_newer_server_added_is_passed_over_and_the_stream_goes_on() {
-        use crate::managed_client::stream_fixture::stream_of;
-
         let opened = snapshot(4);
         let next = settle(5);
         let response = stream_of(&[
@@ -715,10 +604,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_subscription_told_to_try_now_skips_its_backoff() {
-        use crate::managed_client::stream_fixture::{
-            ScriptedTransport, open_stream_of, unreachable,
-        };
-
         let opened = snapshot(1);
         let transport = Arc::new(ScriptedTransport::new(vec![
             Err(unreachable()),

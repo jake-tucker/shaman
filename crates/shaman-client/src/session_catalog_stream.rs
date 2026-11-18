@@ -13,19 +13,68 @@ use tokio::{
 };
 
 use crate::protocol::{
-    MODEL_CATALOG_EVENT, ModelCatalog, SESSION_CATALOG_SNAPSHOT_EVENT,
-    SESSION_CATALOG_UPDATED_EVENT, SKILL_CATALOG_UPDATED_EVENT, SessionCatalogChange,
-    SessionCatalogRevision, SessionCatalogSnapshot, SessionCatalogUpdate, SessionCreated,
-    SessionDeleted, SessionId, SessionMonitoringChanged, SessionSettlementChanged,
-    SessionStandingInputsChanged, SessionTitleChanged, SessionUsageChanged, SessionWorkingChanged,
-    SkillCatalog, UnreachableReason, WORKSPACE_LISTING_EVENT, WorkspaceListing,
+    CheckoutStateChanged, CheckoutSummary, MODEL_CATALOG_EVENT, ModelCatalog, RemoteStatus,
+    SESSION_CATALOG_SNAPSHOT_EVENT, SESSION_CATALOG_UPDATED_EVENT, SKILL_CATALOG_UPDATED_EVENT,
+    SessionCatalogChange, SessionCatalogRevision, SessionCatalogSnapshot, SessionCatalogUpdate,
+    SessionCreated, SessionDeleted, SessionId, SessionMonitoringChanged,
+    SessionRemoteSubsessionsChanged, SessionSettlementChanged, SessionStandingInputsChanged,
+    SessionTitleChanged, SessionUsageChanged, SessionWorkingChanged, SkillCatalog,
+    UnreachableReason, WORKSPACE_LISTING_EVENT, WorkspaceDescriptionChanged, WorkspaceIconChanged,
+    WorkspaceListing,
 };
 
-use super::{
-    ManagedEvent, RecoveryBackoff,
+use crate::{
+    RecoveryBackoff, RecoveryStatus,
     remote_connection::{self, RemoteConnectionFailure},
     transport::{self, Transport, TransportResponse, TryNow},
 };
+
+/// What a Session catalog reader tells its reader: how its Server's catalog
+/// moves, what the Server pushes beside it, and how the reading stands.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SessionCatalogEvent {
+    /// The Server's Model Catalog, pushed on connect and whenever it changes.
+    ModelCatalog(ModelCatalog),
+    /// A server-authoritative Skill Catalog changed after discovery or
+    /// invalidation.
+    SkillCatalogUpdated(SkillCatalog),
+    /// The Server's Workspace listing, as its `GET /v1/workspaces` answers
+    /// it: pushed after the Model Catalog on every connect, and again
+    /// whenever what it lists moves (ADR 0052).
+    WorkspaceListing(WorkspaceListing),
+    /// The reading failed and is tried again when the status says.
+    Recovering(RecoveryStatus),
+    /// The reading resumed after a transient failure, its snapshot taken.
+    RemoteRecovered,
+    /// The Remote rejected further use of its Pairing. Unlike a transient
+    /// failure, this ends the reading, which is not tried again.
+    RemoteFailed {
+        status: RemoteStatus,
+        message: String,
+    },
+    /// A Session joined the catalog. It carries an id and no more.
+    SessionCreated(SessionCreated),
+    SessionCatalogInvalidated {
+        session_id: SessionId,
+    },
+    CheckoutStateChanged(CheckoutStateChanged),
+    SessionDeleted(SessionDeleted),
+    SessionTitleChanged(SessionTitleChanged),
+    SessionSettlementChanged(SessionSettlementChanged),
+    SessionWorkingChanged(SessionWorkingChanged),
+    SessionMonitoringChanged(SessionMonitoringChanged),
+    SessionStandingInputsChanged(SessionStandingInputsChanged),
+    SessionUsageChanged(SessionUsageChanged),
+    /// A Workspace's Icon changed. It names no Session: a Workspace may hold
+    /// none the reader lists.
+    WorkspaceIconChanged(WorkspaceIconChanged),
+    /// A Workspace's Description was derived, set, or cleared.
+    WorkspaceDescriptionChanged(WorkspaceDescriptionChanged),
+    SessionRemoteSubsessionsChanged(SessionRemoteSubsessionsChanged),
+    /// The whole catalog as a fresh connection's snapshot has it, every
+    /// Session deleted while the reader was away already announced.
+    SessionCatalogReconciled(SessionCatalogSnapshot),
+}
 
 async fn open_over(
     transport: &dyn Transport,
@@ -42,12 +91,12 @@ async fn open_over(
 /// Its lifetime is the interest: dropping it aborts the task and releases the
 /// Remote proxy connection.
 pub struct SessionCatalogSubscription {
-    events: mpsc::Receiver<ManagedEvent>,
+    events: mpsc::Receiver<SessionCatalogEvent>,
     task: JoinHandle<()>,
 }
 
 impl SessionCatalogSubscription {
-    pub(super) fn open_attached(
+    pub(crate) fn open_attached(
         transport: Arc<dyn Transport>,
         initial_backoff: Duration,
         max_backoff: Duration,
@@ -64,7 +113,7 @@ impl SessionCatalogSubscription {
         }
     }
 
-    pub async fn next(&mut self) -> Option<ManagedEvent> {
+    pub async fn next(&mut self) -> Option<SessionCatalogEvent> {
         self.events.recv().await
     }
 }
@@ -94,7 +143,7 @@ impl RemoteRecovery {
     /// something its user can act on — and waits until it is next tried.
     async fn wait_after_failure(
         &mut self,
-        events: &mpsc::Sender<ManagedEvent>,
+        events: &mpsc::Sender<SessionCatalogEvent>,
         try_now: &mut TryNow,
         unreachable: Option<UnreachableReason>,
     ) -> bool {
@@ -102,7 +151,7 @@ impl RemoteRecovery {
         self.attempt = self.attempt.saturating_add(1);
         self.active = true;
         if events
-            .send(ManagedEvent::Recovering(super::RecoveryStatus {
+            .send(SessionCatalogEvent::Recovering(RecoveryStatus {
                 attempt: self.attempt,
                 retry_in,
                 unreachable,
@@ -137,7 +186,7 @@ impl RemoteRecovery {
 
 async fn run_attached(
     transport: Arc<dyn Transport>,
-    events: mpsc::Sender<ManagedEvent>,
+    events: mpsc::Sender<SessionCatalogEvent>,
     backoff: RecoveryBackoff,
 ) {
     let mut try_now = transport.try_now();
@@ -155,7 +204,7 @@ async fn run_attached(
             Err(RemoteConnectionFailure::Replaced) => return,
             Err(RemoteConnectionFailure::Terminal { status, message }) => {
                 let _ = events
-                    .send(ManagedEvent::RemoteFailed { status, message })
+                    .send(SessionCatalogEvent::RemoteFailed { status, message })
                     .await;
                 return;
             }
@@ -179,7 +228,7 @@ async fn run_attached(
             }
         };
         let (hydrated, hydration) = oneshot::channel();
-        let consumption = consume(
+        let consumption = consume_session_catalog(
             response,
             &events,
             &mut known_session_ids,
@@ -194,7 +243,7 @@ async fn run_attached(
             outcome = &mut consumption => {
                 if (&mut hydration).await.is_ok()
                     && recovery.hydrated()
-                    && events.send(ManagedEvent::RemoteRecovered).await.is_err()
+                    && events.send(SessionCatalogEvent::RemoteRecovered).await.is_err()
                 {
                     return;
                 }
@@ -205,7 +254,7 @@ async fn run_attached(
                     return;
                 }
                 if recovery.hydrated()
-                    && events.send(ManagedEvent::RemoteRecovered).await.is_err()
+                    && events.send(SessionCatalogEvent::RemoteRecovered).await.is_err()
                 {
                     return;
                 }
@@ -213,8 +262,8 @@ async fn run_attached(
             }
         };
         match outcome {
-            Ok(StreamOutcome::ReceiverClosed) => return,
-            Ok(StreamOutcome::Disconnected) | Err(_) => {
+            Ok(SessionCatalogOutcome::ReceiverClosed) => return,
+            Ok(SessionCatalogOutcome::Disconnected) | Err(_) => {
                 if !recovery
                     .wait_after_failure(&events, &mut try_now, None)
                     .await
@@ -226,8 +275,11 @@ async fn run_attached(
     }
 }
 
-pub(super) enum StreamOutcome {
+/// How a Session catalog stream's reading ended.
+pub enum SessionCatalogOutcome {
+    /// The stream ended, cleanly or not, for its reader to open again.
     Disconnected,
+    /// Nothing is left to hear what it reads.
     ReceiverClosed,
 }
 
@@ -237,49 +289,53 @@ pub(super) enum StreamOutcome {
 /// `announced` is given, nothing after the snapshot is passed on until it
 /// says the connection the snapshot hydrates has been announced, so a reader
 /// hears it is connected before anything the stream pushes.
-pub(super) async fn consume(
+///
+/// Each event is passed on as the `E` it makes, so a reader with an event
+/// type of its own hears this one's among them.
+pub async fn consume_session_catalog<E: From<SessionCatalogEvent>>(
     response: TransportResponse,
-    events: &mpsc::Sender<ManagedEvent>,
+    events: &mpsc::Sender<E>,
     known_session_ids: &mut Option<HashSet<SessionId>>,
-    hydrated: oneshot::Sender<Vec<crate::protocol::CheckoutSummary>>,
+    hydrated: oneshot::Sender<Vec<CheckoutSummary>>,
     forward_models: bool,
     mut announced: Option<oneshot::Receiver<()>>,
-) -> Result<StreamOutcome> {
+) -> Result<SessionCatalogOutcome> {
+    let send = |event: SessionCatalogEvent| events.send(E::from(event));
     let mut stream = response.into_body().into_data_stream().eventsource();
     let mut revision = None;
     let mut hydrated = Some(hydrated);
     while let Some(next) = stream.next().await {
         let event = match next {
             Ok(event) => event,
-            Err(EventStreamError::Transport(_)) => return Ok(StreamOutcome::Disconnected),
+            Err(EventStreamError::Transport(_)) => return Ok(SessionCatalogOutcome::Disconnected),
             Err(error) => bail!("Session catalog stream failed: {error}"),
         };
         let Some(event) = decode_event(event, revision)? else {
             continue;
         };
         match event {
-            CatalogEvent::Snapshot(snapshot) => {
+            Pushed::Snapshot(snapshot) => {
                 let initial_checkout_states = snapshot.checkout_states.clone();
                 let reconnect_snapshot = known_session_ids.is_some().then(|| snapshot.clone());
                 let snapshot_revision = snapshot.revision;
                 let deleted = reconcile_snapshot(known_session_ids, snapshot);
                 revision = Some(snapshot_revision);
                 for session_id in deleted {
-                    if events
-                        .send(ManagedEvent::SessionDeleted(SessionDeleted { session_id }))
-                        .await
-                        .is_err()
+                    if send(SessionCatalogEvent::SessionDeleted(SessionDeleted {
+                        session_id,
+                    }))
+                    .await
+                    .is_err()
                     {
-                        return Ok(StreamOutcome::ReceiverClosed);
+                        return Ok(SessionCatalogOutcome::ReceiverClosed);
                     }
                 }
                 if let Some(snapshot) = reconnect_snapshot
-                    && events
-                        .send(ManagedEvent::SessionCatalogReconciled(snapshot))
+                    && send(SessionCatalogEvent::SessionCatalogReconciled(snapshot))
                         .await
                         .is_err()
                 {
-                    return Ok(StreamOutcome::ReceiverClosed);
+                    return Ok(SessionCatalogOutcome::ReceiverClosed);
                 }
                 if let Some(hydrated) = hydrated.take() {
                     let _ = hydrated.send(initial_checkout_states);
@@ -290,44 +346,41 @@ pub(super) async fn consume(
                     }
                 }
             }
-            CatalogEvent::Update(update) => {
+            Pushed::Update(update) => {
                 let announced = apply_update(known_session_ids, update.change)?;
                 revision = Some(update.revision);
-                if events.send(announced).await.is_err() {
-                    return Ok(StreamOutcome::ReceiverClosed);
+                if send(announced).await.is_err() {
+                    return Ok(SessionCatalogOutcome::ReceiverClosed);
                 }
             }
-            CatalogEvent::Models(catalog) => {
+            Pushed::Models(catalog) => {
                 if forward_models
-                    && events
-                        .send(ManagedEvent::ModelCatalog(catalog))
+                    && send(SessionCatalogEvent::ModelCatalog(catalog))
                         .await
                         .is_err()
                 {
-                    return Ok(StreamOutcome::ReceiverClosed);
+                    return Ok(SessionCatalogOutcome::ReceiverClosed);
                 }
             }
-            CatalogEvent::Skill(catalog) => {
-                if events
-                    .send(ManagedEvent::SkillCatalogUpdated(catalog))
+            Pushed::Skill(catalog) => {
+                if send(SessionCatalogEvent::SkillCatalogUpdated(catalog))
                     .await
                     .is_err()
                 {
-                    return Ok(StreamOutcome::ReceiverClosed);
+                    return Ok(SessionCatalogOutcome::ReceiverClosed);
                 }
             }
-            CatalogEvent::Workspaces(listing) => {
-                if events
-                    .send(ManagedEvent::WorkspaceListing(listing))
+            Pushed::Workspaces(listing) => {
+                if send(SessionCatalogEvent::WorkspaceListing(listing))
                     .await
                     .is_err()
                 {
-                    return Ok(StreamOutcome::ReceiverClosed);
+                    return Ok(SessionCatalogOutcome::ReceiverClosed);
                 }
             }
         }
     }
-    Ok(StreamOutcome::Disconnected)
+    Ok(SessionCatalogOutcome::Disconnected)
 }
 
 fn reconcile_snapshot(
@@ -351,7 +404,7 @@ fn reconcile_snapshot(
 fn apply_update(
     known_session_ids: &mut Option<HashSet<SessionId>>,
     change: SessionCatalogChange,
-) -> Result<ManagedEvent> {
+) -> Result<SessionCatalogEvent> {
     let known = known_session_ids
         .as_mut()
         .expect("a catalog update is decoded only after its snapshot");
@@ -360,13 +413,13 @@ fn apply_update(
             if !known.contains(&session_id) {
                 bail!("Session catalog invalidated an unknown Session");
             }
-            Ok(ManagedEvent::SessionCatalogInvalidated { session_id })
+            Ok(SessionCatalogEvent::SessionCatalogInvalidated { session_id })
         }
         SessionCatalogChange::CheckoutStateChanged {
             checkout_id,
             checkout_state,
-        } => Ok(ManagedEvent::CheckoutStateChanged(
-            crate::protocol::CheckoutStateChanged {
+        } => Ok(SessionCatalogEvent::CheckoutStateChanged(
+            CheckoutStateChanged {
                 checkout_id,
                 checkout_state,
             },
@@ -375,13 +428,17 @@ fn apply_update(
             if !known.insert(session_id) {
                 bail!("Session catalog created an existing Session");
             }
-            Ok(ManagedEvent::SessionCreated(SessionCreated { session_id }))
+            Ok(SessionCatalogEvent::SessionCreated(SessionCreated {
+                session_id,
+            }))
         }
         SessionCatalogChange::Deleted { session_id } => {
             if !known.remove(&session_id) {
                 bail!("Session catalog deleted an unknown Session");
             }
-            Ok(ManagedEvent::SessionDeleted(SessionDeleted { session_id }))
+            Ok(SessionCatalogEvent::SessionDeleted(SessionDeleted {
+                session_id,
+            }))
         }
         SessionCatalogChange::TitleChanged {
             session_id,
@@ -391,11 +448,13 @@ fn apply_update(
             if !known.contains(&session_id) {
                 bail!("Session catalog retitled an unknown Session");
             }
-            Ok(ManagedEvent::SessionTitleChanged(SessionTitleChanged {
-                session_id,
-                title,
-                icon,
-            }))
+            Ok(SessionCatalogEvent::SessionTitleChanged(
+                SessionTitleChanged {
+                    session_id,
+                    title,
+                    icon,
+                },
+            ))
         }
         SessionCatalogChange::SettlementChanged {
             session_id,
@@ -404,7 +463,7 @@ fn apply_update(
             if !known.contains(&session_id) {
                 bail!("Session catalog settled an unknown Session");
             }
-            Ok(ManagedEvent::SessionSettlementChanged(
+            Ok(SessionCatalogEvent::SessionSettlementChanged(
                 SessionSettlementChanged {
                     session_id,
                     settled_at,
@@ -418,10 +477,12 @@ fn apply_update(
             if !known.contains(&session_id) {
                 bail!("Session catalog reported work on an unknown Session");
             }
-            Ok(ManagedEvent::SessionWorkingChanged(SessionWorkingChanged {
-                session_id,
-                working_since,
-            }))
+            Ok(SessionCatalogEvent::SessionWorkingChanged(
+                SessionWorkingChanged {
+                    session_id,
+                    working_since,
+                },
+            ))
         }
         SessionCatalogChange::MonitoringChanged {
             session_id,
@@ -430,7 +491,7 @@ fn apply_update(
             if !known.contains(&session_id) {
                 bail!("Session catalog reported Monitoring on an unknown Session");
             }
-            Ok(ManagedEvent::SessionMonitoringChanged(
+            Ok(SessionCatalogEvent::SessionMonitoringChanged(
                 SessionMonitoringChanged {
                     session_id,
                     monitoring_since,
@@ -441,7 +502,7 @@ fn apply_update(
             if !known.contains(&session_id) {
                 bail!("Session catalog reported Standing on an unknown Session");
             }
-            Ok(ManagedEvent::SessionStandingInputsChanged(
+            Ok(SessionCatalogEvent::SessionStandingInputsChanged(
                 SessionStandingInputsChanged { session_id, inputs },
             ))
         }
@@ -453,26 +514,26 @@ fn apply_update(
             if !known.contains(&session_id) {
                 bail!("Session catalog reported Usage on an unknown Session");
             }
-            Ok(ManagedEvent::SessionUsageChanged(SessionUsageChanged {
-                session_id,
-                total_usage,
-                own_cost,
-            }))
+            Ok(SessionCatalogEvent::SessionUsageChanged(
+                SessionUsageChanged {
+                    session_id,
+                    total_usage,
+                    own_cost,
+                },
+            ))
         }
         // Unlike every other change here, this names no Session at all: a
         // Workspace may hold none this client currently lists, and it is
         // still worth telling every surface that lists one — the Landing
         // draws its current Workspace whether or not it has ever held work.
-        SessionCatalogChange::WorkspaceIconChanged { workspace_id, icon } => {
-            Ok(ManagedEvent::WorkspaceIconChanged(
-                crate::protocol::WorkspaceIconChanged { workspace_id, icon },
-            ))
-        }
+        SessionCatalogChange::WorkspaceIconChanged { workspace_id, icon } => Ok(
+            SessionCatalogEvent::WorkspaceIconChanged(WorkspaceIconChanged { workspace_id, icon }),
+        ),
         SessionCatalogChange::WorkspaceDescriptionChanged {
             workspace_id,
             description,
-        } => Ok(ManagedEvent::WorkspaceDescriptionChanged(
-            crate::protocol::WorkspaceDescriptionChanged {
+        } => Ok(SessionCatalogEvent::WorkspaceDescriptionChanged(
+            WorkspaceDescriptionChanged {
                 workspace_id,
                 description,
             },
@@ -484,8 +545,8 @@ fn apply_update(
             if !known.contains(&session_id) {
                 bail!("Session catalog named the Remote Subsessions of an unknown Session");
             }
-            Ok(ManagedEvent::SessionRemoteSubsessionsChanged(
-                crate::protocol::SessionRemoteSubsessionsChanged {
+            Ok(SessionCatalogEvent::SessionRemoteSubsessionsChanged(
+                SessionRemoteSubsessionsChanged {
                     session_id,
                     remote_subsessions,
                 },
@@ -494,7 +555,7 @@ fn apply_update(
     }
 }
 
-enum CatalogEvent {
+enum Pushed {
     Snapshot(SessionCatalogSnapshot),
     Update(SessionCatalogUpdate),
     Skill(SkillCatalog),
@@ -505,16 +566,13 @@ enum CatalogEvent {
 /// What `event` carries, and `None` for an event under a name this reader was
 /// built without, which a newer Server may send and which is passed over
 /// (ADR-0078).
-fn decode_event(
-    event: Event,
-    revision: Option<SessionCatalogRevision>,
-) -> Result<Option<CatalogEvent>> {
+fn decode_event(event: Event, revision: Option<SessionCatalogRevision>) -> Result<Option<Pushed>> {
     let decoded = match event.event.as_str() {
         SESSION_CATALOG_SNAPSHOT_EVENT if revision.is_none() => {
             let snapshot: SessionCatalogSnapshot =
                 serde_json::from_str(&event.data).context("decode Session catalog snapshot")?;
             validate_event_id(&event.id, snapshot.revision)?;
-            Ok(CatalogEvent::Snapshot(snapshot))
+            Ok(Pushed::Snapshot(snapshot))
         }
         SESSION_CATALOG_SNAPSHOT_EVENT => bail!("Session catalog sent more than one snapshot"),
         SESSION_CATALOG_UPDATED_EVENT => {
@@ -527,20 +585,20 @@ fn decode_event(
             if !update.revision.immediately_follows(previous) {
                 bail!("Session catalog revision sequence is discontinuous");
             }
-            Ok(CatalogEvent::Update(update))
+            Ok(Pushed::Update(update))
         }
         MODEL_CATALOG_EVENT => {
             let catalog = serde_json::from_str(&event.data).context("decode Model Catalog")?;
-            Ok(CatalogEvent::Models(catalog))
+            Ok(Pushed::Models(catalog))
         }
         SKILL_CATALOG_UPDATED_EVENT => {
             let catalog: SkillCatalog =
                 serde_json::from_str(&event.data).context("decode Skill Catalog update")?;
-            Ok(CatalogEvent::Skill(catalog))
+            Ok(Pushed::Skill(catalog))
         }
         WORKSPACE_LISTING_EVENT => {
             let listing = serde_json::from_str(&event.data).context("decode Workspace listing")?;
-            Ok(CatalogEvent::Workspaces(listing))
+            Ok(Pushed::Workspaces(listing))
         }
         name => {
             tracing::debug!(
@@ -564,7 +622,10 @@ fn validate_event_id(id: &str, revision: SessionCatalogRevision) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::SessionTimestamp;
+    use crate::{
+        protocol::SessionTimestamp,
+        testing::{ScriptedTransport, open_stream_of, stream_of, unreachable},
+    };
 
     #[test]
     fn reconnect_snapshot_recovers_a_missed_deletion() {
@@ -594,7 +655,7 @@ mod tests {
                 },
             )
             .expect("track the created Session"),
-            ManagedEvent::SessionCreated(SessionCreated {
+            SessionCatalogEvent::SessionCreated(SessionCreated {
                 session_id: created_after_connect,
             }),
             "a Session another client made is announced to every client listing Sessions"
@@ -638,7 +699,7 @@ mod tests {
                 },
             )
             .expect("announce the Turn another client's Session is running"),
-            ManagedEvent::SessionWorkingChanged(SessionWorkingChanged {
+            SessionCatalogEvent::SessionWorkingChanged(SessionWorkingChanged {
                 session_id: listed,
                 working_since: Some(SessionTimestamp(7)),
             }),
@@ -682,7 +743,7 @@ mod tests {
                 },
             )
             .expect("announce the Watch another client's Session is waiting on"),
-            ManagedEvent::SessionMonitoringChanged(SessionMonitoringChanged {
+            SessionCatalogEvent::SessionMonitoringChanged(SessionMonitoringChanged {
                 session_id: listed,
                 monitoring_since: Some(SessionTimestamp(9)),
             })
@@ -702,8 +763,6 @@ mod tests {
 
     #[tokio::test]
     async fn an_event_a_newer_server_added_is_passed_over_and_the_stream_goes_on() {
-        use crate::managed_client::stream_fixture::stream_of;
-
         let listed = SessionId::new();
         let created = SessionId::new();
         let snapshot = SessionCatalogSnapshot {
@@ -738,22 +797,22 @@ mod tests {
                 serde_json::to_string(&update).expect("encode the update"),
             ),
         ]);
-        let (events, mut received) = mpsc::channel(8);
+        let (events, mut received) = mpsc::channel::<SessionCatalogEvent>(8);
         let (hydrated, was_hydrated) = oneshot::channel();
         let mut known = None;
 
-        let outcome = consume(response, &events, &mut known, hydrated, true, None)
+        let outcome = consume_session_catalog(response, &events, &mut known, hydrated, true, None)
             .await
             .expect("an event this build does not know breaks nothing");
 
-        assert!(matches!(outcome, StreamOutcome::Disconnected));
+        assert!(matches!(outcome, SessionCatalogOutcome::Disconnected));
         was_hydrated
             .await
             .expect("the snapshot hydrated the stream");
         drop(events);
         assert_eq!(
             received.recv().await,
-            Some(ManagedEvent::SessionCreated(SessionCreated {
+            Some(SessionCatalogEvent::SessionCreated(SessionCreated {
                 session_id: created
             })),
             "the change after the events passed over follows its snapshot unbroken"
@@ -764,10 +823,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_subscription_told_to_try_now_skips_its_backoff() {
-        use crate::managed_client::stream_fixture::{
-            ScriptedTransport, open_stream_of, unreachable,
-        };
-
         let listed = SessionId::new();
         let snapshot = SessionCatalogSnapshot {
             workspace_paths: Default::default(),
@@ -794,16 +849,16 @@ mod tests {
         };
 
         assert!(
-            matches!(next().await, Some(ManagedEvent::Recovering(status)) if status.retry_in == hour),
+            matches!(next().await, Some(SessionCatalogEvent::Recovering(status)) if status.retry_in == hour),
             "the first try fails, and the next is an hour off"
         );
         transport.say_try_now();
 
         assert_eq!(
             next().await,
-            Some(ManagedEvent::SessionCatalogReconciled(snapshot)),
+            Some(SessionCatalogEvent::SessionCatalogReconciled(snapshot)),
             "the catalog is read again at once rather than an hour on"
         );
-        assert_eq!(next().await, Some(ManagedEvent::RemoteRecovered));
+        assert_eq!(next().await, Some(SessionCatalogEvent::RemoteRecovered));
     }
 }

@@ -25,9 +25,7 @@ use crate::{
 
 use image_header::HeaderError;
 
-/// The most bytes one image may carry: the tightest limit any hosted Provider
-/// publishes.
-pub(crate) const MAX_ATTACHMENT_BYTES: usize = 5 * 1024 * 1024;
+pub(crate) use crate::protocol::MAX_ATTACHMENT_BYTES;
 
 /// The most Attachments one Prompt may bind.
 pub(crate) const MAX_ATTACHMENTS_PER_PROMPT: usize = 10;

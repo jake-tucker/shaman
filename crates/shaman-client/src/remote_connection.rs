@@ -2,9 +2,9 @@
 
 use crate::protocol::{RemoteStatus, SessionError, SessionErrorCode, UnreachableReason};
 
-use super::transport::{self, TransportResponse};
+use crate::transport::{self, TransportResponse};
 
-pub(super) enum RemoteConnectionFailure {
+pub(crate) enum RemoteConnectionFailure {
     /// The Remote could not be reached just now, and is tried again later;
     /// where its user can do something about it, why.
     Transient(Option<UnreachableReason>),
@@ -25,7 +25,7 @@ pub(super) enum RemoteConnectionFailure {
 /// What came of a request a reader sent: the answer to read on, or what
 /// failed, whether the transport could not reach the Server or the Server
 /// refused.
-pub(super) async fn classify(
+pub(crate) async fn classify(
     response: Result<TransportResponse, SessionError>,
 ) -> Result<TransportResponse, RemoteConnectionFailure> {
     let response = match response {

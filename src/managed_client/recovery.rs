@@ -3,6 +3,7 @@
 use std::{collections::HashSet, time::Duration};
 
 use anyhow::{Result, anyhow};
+use shaman_client::{RecoveryBackoff, SessionCatalogOutcome};
 use tokio::sync::{mpsc, watch};
 
 use crate::protocol::{
@@ -14,39 +15,8 @@ use super::{
     event_stream::{self, StreamOutcome},
     launcher,
     lifecycle::{self, Registration},
-    loopback, session_catalog_stream,
+    loopback,
 };
-
-/// One exponential retry schedule shared by managed, Remote catalog, and
-/// Session recovery so all three honor the same configured policy.
-pub(crate) struct RecoveryBackoff {
-    current: Duration,
-    initial: Duration,
-    max: Duration,
-}
-
-impl RecoveryBackoff {
-    pub(crate) fn new(initial: Duration, max: Duration) -> Self {
-        Self {
-            current: Duration::ZERO,
-            initial,
-            max,
-        }
-    }
-
-    pub(crate) fn next(&mut self) -> Duration {
-        self.current = if self.current.is_zero() {
-            self.initial
-        } else {
-            self.current.saturating_mul(2).min(self.max)
-        };
-        self.current
-    }
-
-    pub(crate) fn reset(&mut self) {
-        self.current = Duration::ZERO;
-    }
-}
 
 struct ActiveConnection {
     descriptor: RuntimeDescriptor,
@@ -232,7 +202,7 @@ async fn run_managed_client(
         let active_build_identity = connection.health.build_identity.clone();
         let (catalog_hydrated, catalog_hydration) = tokio::sync::oneshot::channel();
         let (connection_announced, catalog_announced) = tokio::sync::oneshot::channel();
-        let catalog = session_catalog_stream::consume(
+        let catalog = shaman_client::consume_session_catalog(
             loopback::response_of(connection.catalog_response),
             &events,
             &mut known_session_ids,
@@ -298,7 +268,7 @@ async fn run_managed_client(
                     outcome = &mut catalog => {
                         if matches!(
                             outcome,
-                            Ok(session_catalog_stream::StreamOutcome::Disconnected)
+                            Ok(SessionCatalogOutcome::Disconnected)
                         ) {
                             let health = lifecycle::inspect_descriptor_health(&active_descriptor);
                             tokio::pin!(health);
@@ -330,12 +300,8 @@ async fn run_managed_client(
                 Some(instance_id)
             }
             ActiveStreamResult::Lifecycle(Ok(StreamOutcome::ReceiverClosed))
-            | ActiveStreamResult::Catalog(Ok(
-                session_catalog_stream::StreamOutcome::ReceiverClosed,
-            )) => return,
-            ActiveStreamResult::Catalog(Ok(
-                session_catalog_stream::StreamOutcome::Disconnected,
-            )) => None,
+            | ActiveStreamResult::Catalog(Ok(SessionCatalogOutcome::ReceiverClosed)) => return,
+            ActiveStreamResult::Catalog(Ok(SessionCatalogOutcome::Disconnected)) => None,
             ActiveStreamResult::Lifecycle(Err(error)) | ActiveStreamResult::Catalog(Err(error)) => {
                 tracing::error!("managed server stream failed: {error:#}");
                 let _ = events.send(ManagedEvent::Fatal(error.to_string())).await;
@@ -504,7 +470,7 @@ enum ConnectionProbe {
 
 enum ActiveStreamResult {
     Lifecycle(Result<StreamOutcome>),
-    Catalog(Result<session_catalog_stream::StreamOutcome>),
+    Catalog(Result<SessionCatalogOutcome>),
 }
 
 enum ConnectionWait {

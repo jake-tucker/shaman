@@ -1,0 +1,38 @@
+[package]
+name = "shaman-client"
+# Never published; what the wire speaks is numbered by `shaman-protocol`'s `PROTOCOL_VERSION`.
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# What every Client reads one Server's work with: the transport a reader runs over, the backoff and classification of
+# what a request came to, the Session, Session catalog and Subagent tree readers, and the commands a Peer may ask. The
+# TUI runs it over loopback and a thin Client, later, over a Pairing; it knows neither, so it builds for iOS.
+
+[features]
+# Fixtures, such as `testing::ScriptedTransport`, that Shaman's own tests stand a Server in with.
+test-support = []
+
+[dependencies]
+shaman-protocol = { path = "../shaman-protocol" }
+anyhow = "1.0.99"
+async-trait = "0.1"
+# A request and its answer cross the transport in the `http` crate's types, with `bytes` bodies, so one set of readers
+# runs over loopback and over a Pairing.
+bytes = "1.12.1"
+eventsource-stream = "0.2.3"
+futures-util = "0.3.31"
+http = "1.5.0"
+http-body = "1.1.0"
+http-body-util = "0.1.5"
+# Encodes the ids a Session command's path holds and the queries it asks, without reqwest, which a Pairing does not use.
+percent-encoding = "2.3.2"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = { version = "1.0.143", features = ["preserve_order"] }
+serde_urlencoded = "0.7.1"
+tokio = { version = "1.47.1", features = ["macros", "rt", "sync", "time"] }
+tracing = "0.1"
+
+[dev-dependencies]
+shaman-protocol = { path = "../shaman-protocol", features = ["test-support"] }
+tokio = { version = "1.47.1", features = ["macros", "rt", "sync", "test-util", "time"] }

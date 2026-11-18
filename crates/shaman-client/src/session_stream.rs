@@ -13,7 +13,7 @@ use crate::protocol::{
     SessionUpdate,
 };
 
-use super::{
+use crate::{
     RecoveryBackoff,
     remote_connection::{self, RemoteConnectionFailure},
     transport::{self, BodyError, Transport, TransportResponse, TryNow},
@@ -66,7 +66,8 @@ impl SessionStreamError {
         }
     }
 
-    pub(crate) fn remote(status: RemoteStatus, message: impl Into<String>) -> Self {
+    /// A stream the Remote it reads refused further use of its Pairing.
+    pub fn remote(status: RemoteStatus, message: impl Into<String>) -> Self {
         Self {
             kind: SessionStreamErrorKind::Remote(status),
             message: message.into(),
@@ -130,7 +131,7 @@ impl SessionEvent {
 /// How many decoded Session events a subscription holds that its reader has
 /// not yet taken: how far a Server streaming a Turn may run ahead of the
 /// client drawing it before the stream waits on the client.
-pub(crate) const SESSION_EVENT_CAPACITY: usize = 32;
+pub const SESSION_EVENT_CAPACITY: usize = 32;
 
 pub struct SessionSubscription {
     events: mpsc::Receiver<Result<SessionEvent, SessionStreamError>>,
@@ -140,7 +141,7 @@ pub struct SessionSubscription {
 impl SessionSubscription {
     /// The Session's stream as `transport` opens it, read to its end and not
     /// reopened.
-    pub(super) async fn open(transport: &dyn Transport, session_id: SessionId) -> Result<Self> {
+    pub(crate) async fn open(transport: &dyn Transport, session_id: SessionId) -> Result<Self> {
         let response = open_response(transport, session_id)
             .await
             .map_err(|error| error.unwrap_or_else(SessionStreamError::replaced))
@@ -157,7 +158,7 @@ impl SessionSubscription {
     /// it drops, and sooner where the transport says to try now. It ends
     /// once the transport says it never will be again, as a loopback
     /// transport bound to a local Server since replaced does.
-    pub(super) async fn open_attached(
+    pub(crate) async fn open_attached(
         transport: Arc<dyn Transport>,
         session_id: SessionId,
         initial_backoff: Duration,
@@ -204,8 +205,8 @@ impl SessionSubscription {
 
     /// A subscription fed by the sender it is returned with rather than by a
     /// Server, holding up to `capacity` events not yet taken.
-    #[cfg(test)]
-    pub(crate) fn fed_by(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fed_by(
         capacity: usize,
     ) -> (mpsc::Sender<Result<SessionEvent, SessionStreamError>>, Self) {
         let (events_tx, events_rx) = mpsc::channel(capacity);
@@ -426,57 +427,11 @@ fn decode_event(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
-    use crate::managed_client::stream_fixture::{ScriptedTransport, stream_of, unreachable};
-    use crate::protocol::{
-        ExecutionDirectory, ModelAvailability, Session, SessionChange, SessionError,
-        SessionErrorCode, SessionRevision, SessionStatus, Workspace,
+    use crate::{
+        protocol::{SessionChange, SessionError, SessionErrorCode, SessionRevision},
+        testing::{ScriptedTransport, session_snapshot as snapshot, stream_of, unreachable},
     };
-
-    fn snapshot(session_id: SessionId, revision: u64) -> SessionSnapshot {
-        SessionSnapshot {
-            title: String::new(),
-            icon: None,
-            session: Session {
-                pending_move: None,
-                checkout: None,
-                context_fill: None,
-                prompt_cache: None,
-                id: session_id,
-                execution_directory: ExecutionDirectory {
-                    path: PathBuf::from("workspace"),
-                },
-                workspace: Workspace::directory(PathBuf::from("workspace")),
-                agent_selection: None,
-                agent_selection_availability: ModelAvailability::Available,
-                approval_posture: None,
-                status: SessionStatus::Idle,
-                working_since: None,
-                monitoring_since: None,
-                parent: None,
-                begun_by: None,
-            },
-            revision: SessionRevision(revision),
-            prompts: Vec::new(),
-            turns: Vec::new(),
-            messages: Vec::new(),
-            activities: Vec::new(),
-            transcript: Vec::new(),
-            subagent_interventions: Vec::new(),
-            pending_approvals: Vec::new(),
-            submitting_approvals: Vec::new(),
-            pending_approvals_revision: SessionRevision(0),
-            watches: Vec::new(),
-            waiting_on_subagents: None,
-            current_model: None,
-            subagent_usage: None,
-            total_cost: None,
-            own_cost: None,
-            attachments: Vec::new(),
-        }
-    }
 
     #[tokio::test]
     async fn an_event_a_newer_server_added_is_passed_over_and_the_stream_goes_on() {
@@ -620,88 +575,5 @@ mod tests {
             None,
             "the stream ends, for its reader to attach afresh, rather than fail"
         );
-    }
-
-    /// A stand-in local Server answering a Session's stream with its snapshot
-    /// and then ending it, as a Server shutting down does.
-    async fn ending_server(session_id: SessionId) -> (String, tokio::task::JoinHandle<()>) {
-        use axum::{Router, http::header::CONTENT_TYPE, response::IntoResponse, routing::get};
-
-        let body = format!(
-            "event: {SESSION_SNAPSHOT_EVENT}\nid: 3\ndata: {}\n\n",
-            serde_json::to_string(&snapshot(session_id, 3)).expect("encode the snapshot")
-        );
-        let app = Router::new().route(
-            "/v1/sessions/{session_id}/events",
-            get(move || {
-                let body = body.clone();
-                async move { ([(CONTENT_TYPE, "text/event-stream")], body).into_response() }
-            }),
-        );
-        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-            .await
-            .expect("bind the Session stream fixture");
-        let address = listener.local_addr().expect("read the fixture address");
-        let server = tokio::spawn(async move {
-            axum::serve(listener, app)
-                .await
-                .expect("serve the Session stream fixture");
-        });
-        (format!("http://{address}"), server)
-    }
-
-    fn descriptor(base_url: &str) -> crate::protocol::RuntimeDescriptor {
-        crate::protocol::RuntimeDescriptor::new(
-            base_url.to_owned(),
-            "session-stream-fixture-token".to_owned(),
-            crate::protocol::ServerIdentity {
-                instance_id: uuid::Uuid::new_v4(),
-                pid: std::process::id(),
-                protocol_version: crate::protocol::PROTOCOL_VERSION,
-                build_identity: "session-stream-fixture".to_owned(),
-            },
-        )
-    }
-
-    #[tokio::test]
-    async fn an_attached_stream_over_loopback_ends_once_its_local_server_is_replaced() {
-        let session_id = SessionId::new();
-        let (base_url, server) = ending_server(session_id).await;
-        let (found, watched) = tokio::sync::watch::channel(descriptor(&base_url));
-        let transport = crate::managed_client::loopback::LoopbackTransport::new(
-            crate::runtime::loopback_http_client(),
-            watched,
-            crate::protocol::Outlook::Local,
-        );
-        let hour = Duration::from_secs(3600);
-        // Attached as a Client attaches, through the commands over a loopback
-        // transport, which pins the attached stream itself.
-        let commands = crate::managed_client::SessionCommands::new(
-            Arc::new(transport),
-            crate::managed_client::SessionCommandTimings {
-                initial_recovery_backoff: hour,
-                max_recovery_backoff: hour,
-                attachment_fetch_timeout: hour,
-            },
-        );
-        let mut subscription = commands
-            .attach_session(session_id)
-            .await
-            .expect("the stream opens");
-        assert!(matches!(
-            next_event(&mut subscription).await,
-            Some(Ok(SessionEvent::Snapshot(_)))
-        ));
-
-        // Another local Server is found where this one stood: the same
-        // address answers, but it is not the Server the stream opened on.
-        found.send_replace(descriptor(&base_url));
-
-        assert_eq!(
-            next_event(&mut subscription).await,
-            None,
-            "the stream ends at once, for its reader to attach to the new Server"
-        );
-        server.abort();
     }
 }

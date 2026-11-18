@@ -3665,7 +3665,6 @@ dependencies = [
  "libc",
  "libsqlite3-sys",
  "object",
- "percent-encoding",
  "portable-pty",
  "pulldown-cmark",
  "rand_core 0.6.4",
@@ -3680,8 +3679,8 @@ dependencies = [
  "security-framework",
  "serde",
  "serde_json",
- "serde_urlencoded",
  "shaman-build-id",
+ "shaman-client",
  "shaman-pairing",
  "shaman-private-files",
  "shaman-protocol",
@@ -3719,6 +3718,27 @@ name = "shaman-build-id"
 version = "0.1.0"
 dependencies = [
  "uuid",
+]
+
+[[package]]
+name = "shaman-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "eventsource-stream",
+ "futures-util",
+ "http",
+ "http-body",
+ "http-body-util",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "shaman-protocol",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

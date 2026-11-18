@@ -278,9 +278,7 @@ impl SessionTasks {
                 .entry(outlook.clone())
                 .or_insert_with(|| {
                     spawn_origin_catalog_forwarder(
-                        client
-                            .session_commands_for(outlook.clone())
-                            .subscribe_catalog(),
+                        client.outlook(outlook.clone()).subscribe_catalog(),
                         outlook,
                         events.clone(),
                     )
@@ -300,9 +298,7 @@ impl SessionTasks {
             task.abort();
         }
         let task = spawn_origin_catalog_forwarder(
-            client
-                .session_commands_for(outlook.clone())
-                .subscribe_catalog(),
+            client.outlook(outlook.clone()).subscribe_catalog(),
             outlook.clone(),
             events.clone(),
         );

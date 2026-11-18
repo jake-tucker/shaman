@@ -6,6 +6,11 @@ use super::TextSpan;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// The most bytes one image may carry: the tightest limit any hosted Provider
+/// publishes. A Server refuses an upload past it, and a Client a fetched
+/// Attachment past it.
+pub const MAX_ATTACHMENT_BYTES: usize = 5 * 1024 * 1024;
+
 /// An Attachment's identity: the lowercase hex blake3 hash of its bytes, so
 /// the same bytes uploaded twice are the same Attachment.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]

@@ -16,6 +16,7 @@ path = "tests/relay_system.rs"
 
 [workspace]
 members = [
+    "crates/shaman-client",
     "crates/shaman-pairing",
     "crates/shaman-private-files",
     "crates/shaman-protocol",
@@ -24,11 +25,12 @@ members = [
     "crates/shaman-text",
     "crates/shaman-thin-client",
 ]
-# The Relay, the protocol it shares with the Server, the protocol every Client shares with the Server, the redeeming side
-# of a Pairing, the text and private-file helpers they share, and the thin Client's core are linted and tested beside
-# Shaman itself.
+# The Relay, the protocol it shares with the Server, the protocol every Client shares with the Server, the readers and
+# commands every Client reads a Server with, the redeeming side of a Pairing, the text and private-file helpers they
+# share, and the thin Client's core are linted and tested beside Shaman itself.
 default-members = [
     ".",
+    "crates/shaman-client",
     "crates/shaman-pairing",
     "crates/shaman-private-files",
     "crates/shaman-protocol",
@@ -40,6 +42,7 @@ default-members = [
 
 [dependencies]
 shaman-build-id = { path = "crates/shaman-build-id" }
+shaman-client = { path = "crates/shaman-client" }
 shaman-pairing = { path = "crates/shaman-pairing" }
 shaman-protocol = { path = "crates/shaman-protocol" }
 shaman-private-files = { path = "crates/shaman-private-files" }
@@ -74,8 +77,6 @@ if-addrs = "0.15.0"
 # for thumbnails; no other decoder is compiled in (ADR 0038).
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 libsqlite3-sys = { version = "0.38.2", features = ["bundled"] }
-# Encodes the ids a Session command's path holds and the queries it asks, without reqwest, which a Pairing does not use.
-percent-encoding = "2.3.2"
 pulldown-cmark = "0.13.4"
 rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "ring"] }
 # The HKDF, HMAC, AEAD and randomness a short Invite's exchange takes from what the Pairing's TLS is already built on
@@ -92,7 +93,6 @@ ratatui-image = { version = "9.0.0", default-features = false }
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.143", features = ["preserve_order"] }
-serde_urlencoded = "0.7.1"
 shlex = "2"
 socket2 = "0.6.5"
 # Holds a peer's SPAKE2 message to one point written the one way, which spake2 itself does not check (ADR-0065). The
@@ -133,6 +133,8 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = ["h
 hostname = "0.4.1"
 # The protocol's fixtures, such as `Session::for_tests`, which Shaman's own tests build Sessions from.
 shaman-protocol = { path = "crates/shaman-protocol", features = ["test-support"] }
+# The reader fixtures, such as `testing::ScriptedTransport`, which the readers' tests over loopback stand a Server in with.
+shaman-client = { path = "crates/shaman-client", features = ["test-support"] }
 # The pairing fixtures, such as `IdentityMaterial::fresh`, which the Serving side's tests build a redeemer from.
 shaman-pairing = { path = "crates/shaman-pairing", features = ["test-support"] }
 # Holds SPAKE2's randomness still, to show a short Invite's exchange differs by a code nowhere it should not.
