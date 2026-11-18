@@ -30,7 +30,7 @@ use std::{
     cell::{Cell, Ref, RefCell},
     collections::{HashMap, HashSet},
     hash::{Hash, Hasher},
-    path::{Component, Path},
+    path::Path,
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -4298,9 +4298,7 @@ fn first_changed_path(member: &Activity) -> Option<&Path> {
 /// reports, spelled as its own rows spell it.
 fn member_summary(member: &Activity, workspace: &Path) -> String {
     match first_changed_path(member) {
-        Some(path) => {
-            sanitize_content(&transcript_path(path, workspace).to_string_lossy()).replace('\n', " ")
-        }
+        Some(path) => sanitize_content(&transcript_path(path, workspace)).replace('\n', " "),
         None => invocation_summary(member),
     }
 }
@@ -4659,7 +4657,7 @@ struct ProjectedStrip {
 struct CommandActivity<'a> {
     status: crate::protocol::ActivityStatus,
     command: &'a str,
-    cwd: Option<&'a std::path::Path>,
+    cwd: Option<String>,
     output: &'a str,
     output_truncated: bool,
     exit_status: Option<i32>,
@@ -4692,12 +4690,7 @@ fn push_command_activity(
     let mut details = Vec::new();
     if let Some(cwd) = cwd {
         let cwd_prefix = format!("{OUTPUT_DETAIL_INDENT}in ");
-        push_prefixed_lines(
-            &mut details,
-            &cwd_prefix,
-            cwd.to_string_lossy().as_ref(),
-            theme.text.subdued,
-        );
+        push_prefixed_lines(&mut details, &cwd_prefix, &cwd, theme.text.subdued);
     }
     push_output_fold(
         projection,
@@ -5149,57 +5142,12 @@ struct FileChangeActions {
     edit: &'static str,
 }
 
-/// Shortens only paths spelled inside the Session's Workspace. No filesystem
-/// reads: deleted files and symlink spellings retain the same presentation.
-fn transcript_path<'a>(path: &'a Path, workspace: &Path) -> &'a Path {
-    if !path.is_absolute() || !workspace.is_absolute() {
-        return path;
-    }
-    let mut components = path.components();
-    for base in workspace.components() {
-        if !components
-            .next()
-            .is_some_and(|part| same_path_component(part, base))
-        {
-            return path;
-        }
-    }
-    let relative = components.as_path();
-    let mut depth = 0_usize;
-    for component in relative.components() {
-        match component {
-            Component::Normal(_) => depth += 1,
-            Component::ParentDir => {
-                let Some(parent_depth) = depth.checked_sub(1) else {
-                    return path;
-                };
-                depth = parent_depth;
-            }
-            _ => {}
-        }
-    }
-    if relative.as_os_str().is_empty() {
-        Path::new(".")
-    } else {
-        relative
-    }
-}
-
-/// Windows canonical roots use verbatim prefixes even when a Provider spells
-/// the same drive or share ordinarily. Compare that prefix without filesystem IO.
-fn same_path_component(left: Component<'_>, right: Component<'_>) -> bool {
-    #[cfg(windows)]
-    if let (Component::Prefix(left), Component::Prefix(right)) = (left, right) {
-        use std::path::Prefix;
-
-        let ordinary = |prefix| match prefix {
-            Prefix::VerbatimDisk(drive) => Prefix::Disk(drive),
-            Prefix::VerbatimUNC(server, share) => Prefix::UNC(server, share),
-            other => other,
-        };
-        return ordinary(left.kind()) == ordinary(right.kind());
-    }
-    left == right
+/// Shortens only paths spelled inside the Session's execution directory, read
+/// as the text its Server wrote whatever platform this Client runs on, so a
+/// Remote's paths shorten too. No filesystem reads: deleted files and symlink
+/// spellings retain the same presentation.
+fn transcript_path(path: &Path, workspace: &Path) -> String {
+    shaman_text::paths::within(&path.to_string_lossy(), &workspace.to_string_lossy()).into_owned()
 }
 
 /// Projects a FileChange Activity as one compact row per changed file. A
@@ -5280,18 +5228,8 @@ fn push_file_change_activity(
     };
     for change in &changes[..listed] {
         let (action, path) = match change {
-            FileChange::Add { path } => (
-                actions.create,
-                transcript_path(path, workspace)
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
-            FileChange::Delete { path } => (
-                actions.delete,
-                transcript_path(path, workspace)
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
+            FileChange::Add { path } => (actions.create, transcript_path(path, workspace)),
+            FileChange::Delete { path } => (actions.delete, transcript_path(path, workspace)),
             FileChange::Update {
                 path,
                 moved_to: Some(moved_to),
@@ -5299,19 +5237,14 @@ fn push_file_change_activity(
                 actions.rename,
                 format!(
                     "{} → {}",
-                    transcript_path(path, workspace).to_string_lossy(),
-                    transcript_path(moved_to, workspace).to_string_lossy()
+                    transcript_path(path, workspace),
+                    transcript_path(moved_to, workspace)
                 ),
             ),
             FileChange::Update {
                 path,
                 moved_to: None,
-            } => (
-                actions.edit,
-                transcript_path(path, workspace)
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
+            } => (actions.edit, transcript_path(path, workspace)),
             FileChange::Unknown => (
                 "Changed",
                 "a file, in a way this Shaman does not know".to_owned(),
