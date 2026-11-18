@@ -66,3 +66,9 @@ extension Forwarder: ActsListener where Model == Bool {
     send(underWay)
   }
 }
+
+extension Forwarder: DraftListener where Model == Draft {
+  func changed(draft: Draft) {
+    send(draft)
+  }
+}

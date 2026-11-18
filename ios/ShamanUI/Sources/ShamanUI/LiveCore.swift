@@ -65,12 +65,16 @@ public final class LiveCore: Core {
     client.searchListing(text: text)
   }
 
-  public func draft(for session: String) -> String {
+  public func draft(for session: String) -> Draft {
     client.draft(session: session)
   }
 
-  public func setDraft(_ text: String, for session: String) {
-    client.setDraft(session: session, text: text)
+  public func setDraft(_ text: String, version: UInt64, for session: String) {
+    client.setDraft(session: session, text: text, version: version)
+  }
+
+  public func drafts(for session: String) -> AsyncStream<Draft> {
+    listened { send in client.watchDraft(session: session, listener: Forwarder(send)) }
   }
 
   public func actsUnderWay() -> AsyncStream<Bool> {

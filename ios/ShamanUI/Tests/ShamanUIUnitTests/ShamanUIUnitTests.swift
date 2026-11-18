@@ -491,11 +491,11 @@ private final class RefusingSigner: KeySigner {
 
   @Test func theComposerOpensOnItsDraftAndHandsTheCoreEachChange() {
     let core = FakeCore(.paired)
-    core.setDraft("half a thought", for: working)
+    core.setDraft("half a thought", version: 0, for: working)
     let model = SessionModel(core: core, session: working)
     #expect(model.text == "half a thought")
     model.text = "half a thought, finished"
-    #expect(core.draft(for: working) == "half a thought, finished")
+    #expect(core.draft(for: working).text == "half a thought, finished")
   }
 
   @Test func aSendEmptiesTheFieldAtOnce() async {
@@ -505,7 +505,7 @@ private final class RefusingSigner: KeySigner {
     let sending = Task { await model.send() }
     await Task.yield()
     #expect(model.text == "")
-    #expect(core.draft(for: working) == "")
+    #expect(core.draft(for: working).text == "")
     await sending.value
     #expect(model.banner == nil)
     #expect(model.text == "")
@@ -545,6 +545,39 @@ private final class RefusingSigner: KeySigner {
     await model.send()
     #expect(model.banner == "The server did not answer in time")
     #expect(model.invalid == nil)
+  }
+
+  @Test func aSendNeverAnsweredKeepsItsTextAndTheLineSaysItMayHaveBeenSent() async throws {
+    let model = SessionModel(core: FakeCore(.paired), session: working, failureStands: .seconds(3600))
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    model.text = "Unanswered, this one"
+    await model.send()
+    #expect(model.banner == "The server did not answer")
+    #expect(model.text == "Unanswered, this one")
+    for _ in 0..<100 where model.frame?.composer?.note == nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.frame?.composer?.note == "The server did not answer, so this prompt may have been sent")
+  }
+
+  @Test func textGivenBackWinsOverWhatIsTypedBeforeTheFieldHearsOfIt() async throws {
+    let core = FakeCore(.paired)
+    let model = SessionModel(core: core, session: working)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    model.text = "and then"
+    // The core gives a Prompt back, and a keystroke reaches it before the field has heard.
+    core.setDraft("and then", version: 0, for: working)
+    FakeCore.giveBack("Tidy the build", in: core, to: working)
+    core.setDraft("and then!", version: 0, for: working)
+    #expect(core.draft(for: working).text == "Tidy the build\nand then!", "the core keeps what it gave back ahead")
+    for _ in 0..<100 where !model.text.hasPrefix("Tidy the build") {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.text.hasPrefix("Tidy the build\n"), "the field took it in")
+    model.text += " and the docs"
+    #expect(core.draft(for: working).text == model.text, "once heard, the field's text is taken as it stands")
   }
 
   @Test func aStopThatWithdrawsAPromptPutsItBackInTheFieldAheadOfWhatIsWritten() async {

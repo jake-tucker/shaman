@@ -270,6 +270,19 @@ final class SessionTests: XCTestCase {
   }
 
   @MainActor
+  func testASendNeverAnsweredKeepsItsTextWithALineSayingItMayHaveBeenSent() {
+    let app = openedFromTheListing("Draw the invite as a QR code")
+    write("Unanswered, this one", in: app)
+    element("session.send", in: app).tap()
+    let note = element("session.note", in: app)
+    XCTAssertTrue(note.waitForExistence(timeout: 10))
+    XCTAssertEqual(note.label, "The server did not answer, so this prompt may have been sent")
+    XCTAssertEqual(element("banner", in: app).label, "The server did not answer")
+    waitFor("value == %@", "Unanswered, this one", on: element("session.composer", in: app))
+    attach(app, "A send never answered")
+  }
+
+  @MainActor
   func testAnActFindingTheSessionGonePopsItsScreen() {
     let app = openedFromTheListing("Draw the invite as a QR code")
     write("Is it gone?", in: app)

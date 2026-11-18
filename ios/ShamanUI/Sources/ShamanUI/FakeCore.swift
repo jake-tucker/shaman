@@ -107,16 +107,26 @@
       return opened
     }
 
-    public func draft(for session: String) -> String {
+    public func draft(for session: String) -> Draft {
       acts.draft(for: session)
     }
 
-    public func setDraft(_ text: String, for session: String) {
-      acts.setDraft(text, for: session)
+    public func setDraft(_ text: String, version: UInt64, for session: String) {
+      acts.setDraft(text, version: version, for: session)
+    }
+
+    public func drafts(for session: String) -> AsyncStream<Draft> {
+      acts.drafts(for: session)
     }
 
     public func actsUnderWay() -> AsyncStream<Bool> {
       acts.stream()
+    }
+
+    /// Gives `text` back to the composer of `session` as the core does after a failed send, for a test to see what
+    /// the field makes of it.
+    static func giveBack(_ text: String, in core: FakeCore, to session: String) {
+      core.acts.giveBack(text, to: session)
     }
 
     /// The Workspace last turned toward on each Remote.

@@ -5,7 +5,16 @@
 
   /// What the fake's acts share with the fake core: each composer's draft, and whether any act is under way.
   final class FakeActs: Sendable {
-    private let drafts = Mutex<[String: String]>([:])
+    /// One composer's draft, versioned as the core versions it.
+    private struct Held {
+      var text = ""
+      var version: UInt64 = 0
+      /// The text given back at each version Swift may not have heard of yet.
+      var given: [(UInt64, String)] = []
+    }
+
+    private let drafts = Mutex<[String: Held]>([:])
+    private let draftListeners = Mutex<[String: Listeners<Draft>]>([:])
     private let underWay = Mutex(0)
     private let listeners = Listeners<Bool>()
 
@@ -13,19 +22,62 @@
       listeners.stream(now: underWay.withLock { $0 > 0 })
     }
 
-    func draft(for session: String) -> String {
-      drafts.withLock { $0[session] ?? "" }
+    func draft(for session: String) -> Draft {
+      drafts.withLock { drafts in
+        let held = drafts[session] ?? Held()
+        return Draft(text: held.text, version: held.version)
+      }
     }
 
-    func setDraft(_ text: String, for session: String) {
-      drafts.withLock { $0[session] = text.isEmpty ? nil : text }
+    func drafts(for session: String) -> AsyncStream<Draft> {
+      draftListening(session).stream(now: draft(for: session))
+    }
+
+    /// Holds `text` written over `version`, keeping what was given back since ahead of it, as the core does.
+    func setDraft(_ text: String, version: UInt64, for session: String) {
+      let merged = drafts.withLock { drafts -> Draft? in
+        var held = drafts[session] ?? Held()
+        let unseen = held.given.filter { $0.0 > version }.map(\.1)
+        if unseen.isEmpty {
+          held.given = []
+          held.text = text
+          drafts[session] = held
+          return nil
+        }
+        held.text = unseen.reduce(text) { written, given in Self.ahead(given, of: written) }
+        drafts[session] = held
+        return Draft(text: held.text, version: held.version)
+      }
+      if let merged {
+        draftListening(session).tell(merged)
+      }
     }
 
     /// Gives `text` back to the composer of `session`, ahead of anything written there, as the core does.
     func giveBack(_ text: String, to session: String) {
-      drafts.withLock { drafts in
-        let written = drafts[session] ?? ""
-        drafts[session] = written.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? text : "\(text)\n\(written)"
+      let draft = drafts.withLock { drafts in
+        var held = drafts[session] ?? Held()
+        held.version += 1
+        held.given.append((held.version, text))
+        held.text = Self.ahead(text, of: held.text)
+        drafts[session] = held
+        return Draft(text: held.text, version: held.version)
+      }
+      draftListening(session).tell(draft)
+    }
+
+    private static func ahead(_ given: String, of written: String) -> String {
+      written.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? given : "\(given)\n\(written)"
+    }
+
+    private func draftListening(_ session: String) -> Listeners<Draft> {
+      draftListeners.withLock { listeners in
+        if let held = listeners[session] {
+          return held
+        }
+        let made = Listeners<Draft>()
+        listeners[session] = made
+        return made
       }
     }
 
@@ -46,8 +98,9 @@
   }
 
   /// A Session the fake holds open: framed at once, its conversation landing a moment later, a working Turn's answer
-  /// streaming in by change, and its acts answered as the core would answer them. A Prompt holding "fail" is refused
-  /// and one holding "gone" finds the Session gone, so a screen can be seen failing.
+  /// streaming in by change, and its acts answered as the core would answer them. A Prompt holding "fail" is refused,
+  /// one holding "gone" finds the Session gone, and one holding "unanswered" is never answered and may have been sent,
+  /// so a screen can be seen failing each way.
   final class FakeOpenedSession: OpenedSession {
     private struct State {
       var frame: SessionFrame
@@ -125,9 +178,17 @@
           state.sent += 1
           return "sent-\(state.sent)"
         }
+        changeFrame { $0.composer?.note = nil }
         change { $0.append(FakeConversation.user(id, text, sending: true)) }
         try? await Task.sleep(for: .milliseconds(2_500))
         let lowered = text.lowercased()
+        if lowered.contains("unanswered") {
+          // Its answer never came: it may have been sent, and is never sent again.
+          change { $0.removeAll { $0.id == id } }
+          acts.giveBack(text, to: session)
+          changeFrame { $0.composer?.note = "The server did not answer, so this prompt may have been sent" }
+          throw .Unreachable(message: "The server did not answer")
+        }
         if lowered.contains("fail") || lowered.contains("gone") {
           change { $0.removeAll { $0.id == id } }
           acts.giveBack(text, to: session)

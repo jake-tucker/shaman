@@ -44,12 +44,17 @@ public protocol Core: AnyObject, Sendable {
   /// Searches the listing by Title; an empty text searches for nothing.
   func searchListing(_ text: String)
 
-  /// The unsent text of the composer of the Session `session` names: asked for when its screen appears, and after a
-  /// send fails or a stop gives a Prompt back.
-  func draft(for session: String) -> String
+  /// The unsent text of the composer of the Session `session` names, asked for when its screen appears, with the
+  /// version of it each change is handed back with.
+  func draft(for session: String) -> Draft
 
-  /// Hands the core the composer's text for the Session `session` names, on each change.
-  func setDraft(_ text: String, for session: String)
+  /// Hands the core the composer's text for the Session `session` names, on each change, written over `version` of
+  /// the draft. Text the core gave back since that version stays ahead of it, and `drafts(for:)` says so.
+  func setDraft(_ text: String, version: UInt64, for session: String)
+
+  /// The draft of the composer of the Session `session` names, now and each time the core changes it on its own: a
+  /// Prompt whose send failed, or that a stop withdrew, given back ahead of what is written, which the field takes.
+  func drafts(for session: String) -> AsyncStream<Draft>
 
   /// Whether any act is under way, now and each time that changes: iOS background time is held only while one is.
   func actsUnderWay() -> AsyncStream<Bool>

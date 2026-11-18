@@ -288,18 +288,27 @@ private struct BarView: View {
         .accessibilityHidden(true)
       Text(verbatim: bar.words)
         .fontWeight(.medium)
+        .fixedSize()
         .accessibilityIdentifier("session.barWords")
       TimelineView(.periodic(from: .now, by: 1)) { context in
         Text(verbatim: RunningTime.working(since: bar.since, now: context.date))
           .monospacedDigit()
           .foregroundStyle(.secondary)
+          .fixedSize()
       }
-      if let watching = bar.watching {
-        Text(verbatim: watching)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
+      .fixedSize()
+      // What a Monitoring Session waits on takes whatever width is left.
+      Group {
+        if let watching = bar.watching {
+          Text(verbatim: watching)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+        } else {
+          Color.clear.frame(height: 0)
+        }
       }
-      Spacer(minLength: 4)
+      .frame(maxWidth: .infinity, alignment: .leading)
       Button(action: stop) {
         Label {
           Text(verbatim: bar.stop)
@@ -309,6 +318,7 @@ private struct BarView: View {
       }
       .buttonStyle(.bordered)
       .tint(.red)
+      .fixedSize()
       .disabled(stopping)
       .accessibilityIdentifier("session.stop")
     }
@@ -537,14 +547,17 @@ final class SessionModel {
   private let opened: any OpenedSession
   private(set) var frame: SessionFrame?
   private(set) var conversation = Conversation()
-  /// What the composer's field holds, each change of which the core is handed.
+  /// What the composer's field holds, each change of which the core is handed, written over the version of the
+  /// draft it last heard of.
   var text: String {
     didSet {
       guard text != oldValue else { return }
       invalid = nil
-      core.setDraft(text, for: session)
+      core.setDraft(text, version: draftVersion, for: session)
     }
   }
+  /// The version of the draft the core last told of: what the core gave back since stays ahead of what is typed.
+  @ObservationIgnored private var draftVersion: UInt64
   /// An act's failure, in the core's words, shown over the screen.
   private(set) var banner: String?
   /// What the core refused of the input, shown beside it.
@@ -564,7 +577,17 @@ final class SessionModel {
     self.core = core
     self.failureStands = failureStands
     opened = core.openSession(session)
-    text = core.draft(for: session)
+    let draft = core.draft(for: session)
+    text = draft.text
+    draftVersion = draft.version
+  }
+
+  /// Takes the draft the core holds into the field: what it gave back always wins over what is typed meanwhile.
+  private func take(_ draft: Draft) {
+    draftVersion = draft.version
+    if text != draft.text {
+      text = draft.text
+    }
   }
 
   /// Sends what the composer holds, steering the working Turn or beginning one. The field empties at once; where the
@@ -586,7 +609,7 @@ final class SessionModel {
       try await act(sent)
     } catch {
       failed(error)
-      text = core.draft(for: session)
+      take(core.draft(for: session))
     }
   }
 
@@ -596,7 +619,7 @@ final class SessionModel {
     defer { stopping = false }
     do {
       try await opened.stop()
-      text = core.draft(for: session)
+      take(core.draft(for: session))
     } catch {
       failed(error)
     }
@@ -650,7 +673,14 @@ final class SessionModel {
   func follow() async {
     async let frames: Void = followFrame()
     async let changes: Void = followConversation()
-    _ = await (frames, changes)
+    async let drafts: Void = followDraft()
+    _ = await (frames, changes, drafts)
+  }
+
+  private func followDraft() async {
+    for await draft in core.drafts(for: session) {
+      take(draft)
+    }
   }
 
   private func followFrame() async {

@@ -65,10 +65,15 @@ scenarios are `FakeCore.Scenario`'s cases. Anything after the bundle identifier 
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake named
 ```
 
-`--open <session>` pushes the Session a listing row names over the listing at launch, so a screenshot reaches it
-without a tap. Over the fake each Session reads as one of `FakeConversation.Scenario`'s cases: in `paired`,
-`workstation-key/1` is a working Turn, `/7` a settled one, `/8` a stopped one and `/9` a failed one; in `reaching`,
-`homelab-key/2` is never read, so its loading mark stands.
+`--open <session>` pushes the Session a listing row names over the listing at launch, so a screenshot reaches it without
+a tap. Over the fake each Session reads as one of `FakeConversation.Scenario`'s cases: in `paired`, `workstation-key/1`
+is a working Turn, `/7` a settled one, `/8` a stopped one, `/9` a failed one and `/11` a Session Working only for a
+Prompt not yet delivered, which Stop withdraws and gives back to the composer; in `several`, `homelab-key/6` is
+Monitoring, its bar naming its Watch; in `reaching`, `homelab-key/2` is never read, so its loading mark stands; and in
+`unreachable`, the home lab no longer answers, so `homelab-key/2` opens with its composer taking nothing and saying why.
+Every act a fake Session is asked is answered as the core would answer it, after a moment: a Prompt holding "fail" is
+refused, one holding "gone" finds the Session gone, which pops its screen, and one holding "unanswered" is never
+answered, so its text stays in the composer with the line saying it may have been sent.
 
 ```sh
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake paired --open workstation-key/1
