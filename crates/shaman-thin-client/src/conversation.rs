@@ -103,6 +103,8 @@ pub enum Tone {
     Succeeded,
     Failed,
     Stopped,
+    /// Standing as a newer Server says, in a way this build does not know.
+    Unknown,
 }
 
 impl From<ActivityStatus> for Tone {
@@ -112,6 +114,7 @@ impl From<ActivityStatus> for Tone {
             ActivityStatus::Completed => Self::Succeeded,
             ActivityStatus::Failed => Self::Failed,
             ActivityStatus::Interrupted => Self::Stopped,
+            ActivityStatus::Unknown => Self::Unknown,
         }
     }
 }
@@ -155,6 +158,8 @@ pub(crate) fn conversation(snapshot: &SessionSnapshot) -> Vec<ConversationItem> 
                 .copied()
                 .filter(|activity| shown(activity))
                 .map(Entry::Activity),
+            // A kind of entry this build does not know holds no item.
+            TranscriptItem::Unknown => None,
         })
         .collect::<Vec<_>>();
     let closing = Closing::of(&entries, &turns);
@@ -255,9 +260,7 @@ impl Closing {
                 }
                 Entry::Activity(activity) if !matches!(activity, Activity::Compaction { .. }) => {
                     if let Some(turn) = activity.turn_id()
-                        && turns
-                            .get(&turn)
-                            .is_some_and(|turn| turn.status == TurnStatus::Active)
+                        && turns.get(&turn).is_some_and(|turn| turn.status.is_open())
                     {
                         answers.remove(&turn);
                     }
@@ -282,8 +285,12 @@ impl Entry<'_> {
                 MessageRole::Agent if closing.answers.contains(&message.id) => {
                     Role::Outside(Some(message.turn_id))
                 }
-                MessageRole::Agent if message.content.is_empty() => Role::Nothing,
-                MessageRole::Agent => Role::Work(message.turn_id),
+                // A Message from a sender this build does not know reads as
+                // the Agent's, as the TUI reads it.
+                MessageRole::Agent | MessageRole::Unknown if message.content.is_empty() => {
+                    Role::Nothing
+                }
+                MessageRole::Agent | MessageRole::Unknown => Role::Work(message.turn_id),
             },
             Self::Activity(activity) => {
                 let Some(turn) = activity.turn_id() else {
@@ -375,7 +382,7 @@ fn needs_card(turn: &Turn, entries: &[Entry<'_>], roles: &[Role]) -> bool {
     if turn.begun_for_compaction() {
         return false;
     }
-    turn.status == TurnStatus::Active
+    turn.status.is_open()
         || entries
             .iter()
             .zip(roles)
@@ -413,10 +420,13 @@ pub(crate) fn card_id(turn: TurnId) -> String {
 /// The card of `turn`, whose work is `work`.
 fn card(turn: &Turn, work: &[&Activity], workspace: &Path) -> TurnCard {
     let (outcome, line) = match turn.status {
-        TurnStatus::Active if work.iter().any(|activity| awaits_reader(activity)) => {
+        // A status a newer Server sent holds the Turn open, as working.
+        TurnStatus::Active | TurnStatus::Unknown
+            if work.iter().any(|activity| awaits_reader(activity)) =>
+        {
             (TurnOutcome::Waiting, "Waiting on you".to_owned())
         }
-        TurnStatus::Active => (
+        TurnStatus::Active | TurnStatus::Unknown => (
             TurnOutcome::Working,
             work.iter()
                 .rev()
@@ -499,10 +509,11 @@ fn running_line(activity: &Activity, workspace: &Path) -> Option<String> {
             }
         }
         Activity::FileChange { changes, .. } => {
-            let path = changes.first().map(|change| match change {
+            let path = changes.first().and_then(|change| match change {
                 FileChange::Add { path }
                 | FileChange::Delete { path }
-                | FileChange::Update { path, .. } => path,
+                | FileChange::Update { path, .. } => Some(path),
+                FileChange::Unknown => None,
             })?;
             path.strip_prefix(workspace)
                 .unwrap_or(path)
@@ -548,7 +559,7 @@ fn message_item(message: &Message) -> ConversationItem {
                 .clone()
                 .unwrap_or_else(|| "The delegating agent".to_owned()),
         },
-        MessageRole::Agent => ItemKind::AgentMessage {
+        MessageRole::Agent | MessageRole::Unknown => ItemKind::AgentMessage {
             markdown: message.content.clone(),
             model: message
                 .model
@@ -623,7 +634,7 @@ fn compaction_words(
             match trigger {
                 CompactionTrigger::Automatic => words.push_str(" (automatic)"),
                 CompactionTrigger::Scheduled => words.push_str(" (scheduled)"),
-                CompactionTrigger::Manual => {}
+                CompactionTrigger::Manual | CompactionTrigger::Unknown => {}
             }
             words
         }
@@ -632,6 +643,7 @@ fn compaction_words(
             _ => "Compaction failed".to_owned(),
         },
         ActivityStatus::Interrupted => "Compaction stopped".to_owned(),
+        ActivityStatus::Unknown => "Compaction".to_owned(),
     }
 }
 

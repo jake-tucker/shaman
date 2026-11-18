@@ -731,7 +731,7 @@ pub(crate) struct Opening {
 
 /// What the listing knows of one Session, which its open screen is framed
 /// by until the Session has been read, and as the listing moves after.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Listed {
     /// The name this phone knows the Session's Remote by.
     pub remote: String,
@@ -750,7 +750,7 @@ pub(crate) struct Listed {
 #[cfg(test)]
 impl Listings {
     /// Holds `answered` as a Remote the listing follows, read by nothing.
-    fn hold(&self, answered: Answered) {
+    pub(crate) fn hold(&self, answered: Answered) {
         let transport = Arc::new(PairingTransport::new(
             self.shared.redeemer.clone(),
             answered.name.clone(),
@@ -763,6 +763,20 @@ impl Listings {
             _readers: Readers(Vec::new()),
         });
         self.shared.render();
+    }
+
+    /// Lets go of the Remote `name`, as one removed is.
+    pub(crate) fn release(&self, name: &str) {
+        self.shared
+            .lock()
+            .remotes
+            .retain(|followed| followed.answered.name != name);
+        self.shared.render();
+    }
+
+    /// Changes what the Remote `name`, held by [`Self::hold`], last answered.
+    pub(crate) fn answer(&self, name: &str, change: impl FnOnce(&mut Answered)) {
+        self.shared.change(name, 0, change);
     }
 
     /// How many times the listing has been made.
@@ -1016,4 +1030,4 @@ pub(crate) fn failed(error: anyhow::Error) -> ActError {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

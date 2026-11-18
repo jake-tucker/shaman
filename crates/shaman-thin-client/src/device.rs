@@ -100,20 +100,20 @@ impl DeviceRecord {
         }
     }
 
-    /// Turns the Outlook toward the Remote and Workspace of the Session
-    /// `listed` speaks of: the Remote first among those turned toward, and
-    /// its Workspace the one remembered for it, where the Session has one.
+    /// Turns the Outlook toward the Remote of the Session `listed` speaks
+    /// of, first among those turned toward. Its Workspace becomes the one
+    /// remembered for that Remote, or, only where none is remembered, the
+    /// Session's own.
     pub fn turn_toward(&mut self, listed: &crate::listing::Listed) {
         self.turned.retain(|held| *held != listed.remote);
         self.turned.insert(0, listed.remote.clone());
         if let Some((path, name)) = &listed.workspace {
-            self.workspaces.insert(
-                listed.remote.clone(),
-                RememberedWorkspace {
+            self.workspaces
+                .entry(listed.remote.clone())
+                .or_insert_with(|| RememberedWorkspace {
                     path: path.clone(),
                     name: name.clone(),
-                },
-            );
+                });
         }
     }
 }

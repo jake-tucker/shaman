@@ -200,6 +200,28 @@ impl ServingServer {
             .expect("interrupt the Session");
     }
 
+    /// Deletes the Session `session`, as the Server's own user would.
+    pub async fn delete(&self, session: SessionId) {
+        self.client
+            .delete_session(session)
+            .await
+            .expect("delete the Session");
+    }
+
+    /// Removes the Peer `fingerprint` names, ending its Pairing.
+    pub async fn remove_peer(&self, fingerprint: &str) {
+        let peer = self
+            .peers()
+            .await
+            .into_iter()
+            .find(|peer| peer.fingerprint == fingerprint)
+            .expect("the Peer is paired");
+        self.client
+            .remove_peer(&peer.id)
+            .await
+            .expect("remove the Peer");
+    }
+
     /// What the Server holds of the Session `session` now.
     pub async fn read(&self, session: SessionId) -> shaman::protocol::SessionSnapshot {
         self.client

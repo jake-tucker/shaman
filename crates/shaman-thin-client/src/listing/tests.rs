@@ -28,7 +28,7 @@ fn root() -> PathBuf {
 
 /// A readable Session in the Workspace `workspace`, begun at `created` and
 /// last moved at `moved`.
-fn session(title: &str, workspace: &str, created: u64, moved: u64) -> SessionSummary {
+pub(crate) fn session(title: &str, workspace: &str, created: u64, moved: u64) -> SessionSummary {
     SessionSummary {
         checkout_state: None,
         session: Session::for_tests(Workspace::directory(root().join("work").join(workspace))),
@@ -44,6 +44,10 @@ fn session(title: &str, workspace: &str, created: u64, moved: u64) -> SessionSum
     }
 }
 
+pub(crate) fn listed_summary(summary: SessionSummary) -> SessionListItem {
+    listed(summary)
+}
+
 fn listed(summary: SessionSummary) -> SessionListItem {
     SessionListItem::Readable(Box::new(summary))
 }
@@ -53,7 +57,7 @@ fn recent(title: &str, created: u64) -> SessionSummary {
     session(title, "shaman", NOW.0 - created, NOW.0 - 60 * 60 * 1_000)
 }
 
-fn remote(name: &str, sessions: Vec<SessionSummary>) -> Answered {
+pub(crate) fn remote(name: &str, sessions: Vec<SessionSummary>) -> Answered {
     Answered {
         name: name.to_owned(),
         fingerprint: format!("{name}-key"),
@@ -601,7 +605,7 @@ fn a_remote_yet_to_answer_is_said_to_be_reached_naming_it_only_beside_others() {
 
 /// The listing held over a redeemer of no Remote, its Remotes' answers put in
 /// by the test.
-fn listings(runtime: &tokio::runtime::Runtime) -> (Listings, tempfile::TempDir) {
+pub(crate) fn listings(runtime: &tokio::runtime::Runtime) -> (Listings, tempfile::TempDir) {
     let directory = tempfile::tempdir().unwrap();
     let redeemer = Redeemer::new(
         directory.path(),

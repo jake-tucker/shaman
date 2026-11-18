@@ -688,3 +688,29 @@ fn a_prompt_sent_and_not_yet_delivered_stands_at_the_foot_as_the_message_it_will
     assert_eq!(read_as(&items), ["user: Steer Pending"]);
     assert_eq!(items[0].id, format!("prompt:{}", pending.id));
 }
+
+#[test]
+fn a_turn_standing_as_a_newer_server_says_is_held_open_and_a_sender_it_names_reads_as_the_agent() {
+    let mut built = Built::new();
+    let turn = built.turn(TurnStatus::Unknown, 1_000, None);
+    built.user(turn, "Try the newer thing");
+    built.command(turn, "make", ActivityStatus::Unknown);
+    let unknown = built.message(turn, MessageRole::Unknown, "From someone unknown");
+    let items = built.read();
+    assert_eq!(
+        read_as(&items),
+        ["user: Try the newer thing", "card: Working"],
+        "a Message from a sender this build does not know is work, as the TUI's fold holds it"
+    );
+    assert_eq!(cards(&items)[0].outcome, TurnOutcome::Working);
+    let message = built
+        .snapshot
+        .messages
+        .iter()
+        .find(|message| message.id == unknown)
+        .unwrap();
+    assert!(matches!(
+        message_item(message).kind,
+        ItemKind::AgentMessage { .. }
+    ));
+}

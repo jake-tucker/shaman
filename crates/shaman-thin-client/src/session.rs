@@ -306,6 +306,28 @@ struct Reader {
     pacing: Pacing,
 }
 
+/// What reading the listing again found of the Session.
+#[derive(Debug, PartialEq, Eq)]
+enum Relisted {
+    /// Its Remote is no longer held.
+    Gone,
+    /// What the listing knows of it changed.
+    Changed,
+    /// Nothing of it changed.
+    Same,
+}
+
+/// How reading a Session ends on a refusal its Server gave that no reopening
+/// gets past: that the Session is gone, or the Server's own words for why
+/// this phone may read it no more.
+fn refusal(refused: &SessionStreamError) -> Ended {
+    if refused.deleted_session().is_some() {
+        Ended::Gone(GONE_SESSION.to_owned())
+    } else {
+        Ended::Gone(refused.to_string())
+    }
+}
+
 /// Why a Session stopped being read.
 enum Ended {
     /// It is gone, as `0` says.
@@ -326,9 +348,9 @@ impl Reader {
                     self.follow(subscription, &mut listing).await
                 }
                 Err(error) => match error.downcast_ref::<SessionStreamError>() {
-                    Some(refused) if refused.deleted_session().is_some() => {
-                        Ended::Gone(GONE_SESSION.to_owned())
-                    }
+                    // A refusal no reopening gets past ends the reading in its
+                    // words, as one that comes mid-stream does.
+                    Some(refused) if !refused.is_recoverable() => refusal(refused),
                     _ => {
                         tracing::debug!("the session was not read: {error:#}");
                         Ended::Dropped
@@ -339,15 +361,34 @@ impl Reader {
                 self.show_gone(why);
                 return;
             }
-            let retry_in = backoff.next();
+            if let Err(why) = self.back_off(backoff.next(), &mut listing).await {
+                self.show_gone(why);
+                return;
+            }
+        }
+    }
+
+    /// Waits `retry_in` before the Session is read again, or less where the
+    /// transport says to try now or what the listing knows of the Session
+    /// changes; the header follows the listing meanwhile. Fails with why
+    /// where the Session's Remote is no longer held.
+    async fn back_off(
+        &mut self,
+        retry_in: Duration,
+        listing: &mut watch::Receiver<crate::Listing>,
+    ) -> Result<(), String> {
+        let until = tokio::time::Instant::now() + retry_in;
+        loop {
+            let left = until.saturating_duration_since(tokio::time::Instant::now());
             tokio::select! {
-                _ = self.try_now.or_after(retry_in) => {}
-                // While it waits, the header still follows the listing.
-                Ok(()) = listing.changed() => {
-                    if !self.relist() {
-                        return;
-                    }
-                }
+                _ = self.try_now.or_after(left) => return Ok(()),
+                Ok(()) = listing.changed() => match self.relist() {
+                    Relisted::Gone => return Err(GONE_REMOTE.to_owned()),
+                    // What moved is this Session's, so it is read again now.
+                    Relisted::Changed => return Ok(()),
+                    // Another Session moved: the wait goes on.
+                    Relisted::Same => {}
+                },
             }
         }
     }
@@ -379,7 +420,7 @@ impl Reader {
                     self.show();
                 }
                 Ok(()) = listing.changed() => {
-                    if !self.relist() {
+                    if self.relist() == Relisted::Gone {
                         return Ended::Gone(GONE_REMOTE.to_owned());
                     }
                 }
@@ -407,10 +448,9 @@ impl Reader {
                 }
                 None
             }
-            Err(error) if error.deleted_session().is_some() => {
-                Some(Ended::Gone(GONE_SESSION.to_owned()))
+            Err(error) if error.deleted_session().is_some() || error.remote_status().is_some() => {
+                Some(refusal(&error))
             }
-            Err(error) if error.remote_status().is_some() => Some(Ended::Gone(error.to_string())),
             Err(error) => {
                 tracing::debug!("the session's stream ended: {error}");
                 Some(Ended::Dropped)
@@ -419,14 +459,18 @@ impl Reader {
     }
 
     /// Reads again what the listing knows of the Session, showing the frame
-    /// by it; false where its Remote is no longer held.
-    fn relist(&mut self) -> bool {
+    /// by it, and says whether that changed, or that its Remote is no longer
+    /// held.
+    fn relist(&mut self) -> Relisted {
         let Some(opening) = self.listings.opening(&self.reference) else {
-            return false;
+            return Relisted::Gone;
         };
+        if opening.listed == self.listed {
+            return Relisted::Same;
+        }
         self.listed = opening.listed;
         self.show_frame(None);
-        true
+        Relisted::Changed
     }
 
     fn show(&self) {
@@ -463,8 +507,194 @@ impl Reader {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use shaman_client::{SessionCommandTimings, Transport as _, testing::ScriptedTransport};
+    use shaman_protocol::{SessionError, SessionErrorCode};
+
     use super::*;
-    use crate::conversation::ItemKind;
+    use crate::{
+        conversation::ItemKind,
+        listing::tests::{listings, remote, session},
+    };
+
+    /// How long a test waits for the frame to show what it must.
+    const SHOWN_WITHIN: Duration = Duration::from_secs(5);
+
+    /// A reader of the Session `reference` names, read over `transport`,
+    /// waiting `backoff` between one failed attempt and the next, and the
+    /// frame it shows.
+    fn reading(
+        runtime: &tokio::runtime::Runtime,
+        listings: &Listings,
+        reference: &str,
+        transport: Arc<ScriptedTransport>,
+        backoff: Duration,
+    ) -> (JoinHandle<()>, watch::Receiver<SessionFrame>) {
+        let opening = listings.opening(reference).expect("its Remote is held");
+        let (frame, seen) = watch::channel(frame_of(Some(&opening.listed), None, None));
+        let (conversation, _) = watch::channel(shown(None, conversation::loading()));
+        let try_now = transport.try_now();
+        let reader = Reader {
+            listings: listings.clone(),
+            reference: reference.to_owned(),
+            session_id: opening.session_id,
+            commands: SessionCommands::new(
+                transport,
+                SessionCommandTimings {
+                    initial_recovery_backoff: backoff,
+                    max_recovery_backoff: backoff,
+                    attachment_fetch_timeout: SHOWN_WITHIN,
+                },
+            ),
+            try_now,
+            listed: opening.listed,
+            snapshot: None,
+            frame,
+            conversation,
+            pacing: Pacing {
+                initial_backoff: backoff,
+                max_backoff: backoff,
+            },
+        };
+        (runtime.spawn(reader.read()), seen)
+    }
+
+    /// The reference of the one Session the Remote `name` holds.
+    fn listed_on(name: &str, title: &str) -> (crate::listing::Answered, String) {
+        let answered = remote(name, vec![session(title, "shaman", 1, 1)]);
+        let id = answered.sessions.as_ref().unwrap()[0].id();
+        let reference = format!("{}/{id}", answered.fingerprint);
+        (answered, reference)
+    }
+
+    fn gone_within(
+        runtime: &tokio::runtime::Runtime,
+        frame: &mut watch::Receiver<SessionFrame>,
+    ) -> String {
+        runtime.block_on(async {
+            tokio::time::timeout(SHOWN_WITHIN, frame.wait_for(|frame| frame.gone.is_some()))
+                .await
+                .expect("shown gone in time")
+                .expect("the frame stands")
+                .gone
+                .clone()
+                .unwrap()
+        })
+    }
+
+    #[test]
+    fn a_refusal_no_reopening_gets_past_on_the_first_attach_ends_the_reading_in_its_words() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (listings, _directory) = listings(&runtime);
+        let (desk, reference) = listed_on("desk", "Map the workspace");
+        listings.hold(desk);
+        let revoked = SessionError {
+            code: SessionErrorCode::PairingAuthenticationFailed,
+            message: "unknown peer".to_owned(),
+            unreachable: None,
+        };
+        let transport = Arc::new(ScriptedTransport::new(vec![Ok(
+            shaman_client::testing::refusal(http::StatusCode::FORBIDDEN, &revoked),
+        )]));
+        let (reader, mut frame) = reading(
+            &runtime,
+            &listings,
+            &reference,
+            transport.clone(),
+            Duration::from_millis(1),
+        );
+        assert_eq!(
+            gone_within(&runtime, &mut frame),
+            "Remote revoked this pairing",
+            "in the words a refusal mid-stream is said in"
+        );
+        runtime.block_on(reader).unwrap();
+        assert_eq!(transport.asked(), 1, "and it is asked no more");
+    }
+
+    #[test]
+    fn a_remote_no_longer_held_while_the_reading_waits_to_try_again_shows_the_session_gone() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (listings, _directory) = listings(&runtime);
+        let (desk, reference) = listed_on("desk", "Map the workspace");
+        listings.hold(desk);
+        let transport = Arc::new(ScriptedTransport::new(Vec::new()));
+        let (reader, mut frame) = reading(
+            &runtime,
+            &listings,
+            &reference,
+            transport.clone(),
+            Duration::from_secs(60),
+        );
+        runtime.block_on(async {
+            while transport.asked() == 0 {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        });
+        listings.release("desk");
+        assert_eq!(gone_within(&runtime, &mut frame), GONE_REMOTE);
+        runtime.block_on(reader).unwrap();
+    }
+
+    #[test]
+    fn only_what_moves_of_the_session_itself_cuts_the_wait_to_try_again_short() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (listings, _directory) = listings(&runtime);
+        let (desk, reference) = listed_on("desk", "Map the workspace");
+        let (lab, _) = listed_on("lab", "Tidy the build");
+        listings.hold(desk);
+        listings.hold(lab);
+        let transport = Arc::new(ScriptedTransport::new(Vec::new()));
+        let (_reader, frame) = reading(
+            &runtime,
+            &listings,
+            &reference,
+            transport.clone(),
+            Duration::from_secs(60),
+        );
+        let asked_at_least = |times: usize| {
+            runtime.block_on(async {
+                tokio::time::timeout(SHOWN_WITHIN, async {
+                    while transport.asked() < times {
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                    }
+                })
+                .await
+            })
+        };
+        asked_at_least(1).expect("asked once");
+
+        // Another Remote's Session moves: the wait goes on.
+        listings.answer("lab", |answered| {
+            answered.sessions = Some(vec![crate::listing::tests::listed_summary(session(
+                "Tidy the build, again",
+                "shaman",
+                1,
+                2,
+            ))]);
+        });
+        runtime.block_on(async { tokio::time::sleep(Duration::from_millis(50)).await });
+        assert_eq!(
+            transport.asked(),
+            1,
+            "another Remote's change cut nothing short"
+        );
+
+        // This Session's own row moves: it is read again at once.
+        listings.answer("desk", |answered| {
+            let Some(shaman_protocol::SessionListItem::Readable(summary)) = answered
+                .sessions
+                .as_mut()
+                .and_then(|sessions| sessions.first_mut())
+            else {
+                panic!("a readable Session");
+            };
+            summary.title = "Map the workspace, renamed".to_owned();
+        });
+        asked_at_least(2).expect("asked again at once");
+        assert_eq!(frame.borrow().title, "Map the workspace, renamed");
+    }
 
     fn item(id: &str, text: &str) -> ConversationItem {
         ConversationItem {

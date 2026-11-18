@@ -372,8 +372,8 @@ async fn opening_a_session_turns_the_outlook_toward_its_origin_and_workspace_and
     assert_eq!(name, "lab", "the Remote last paired");
     assert_eq!(begins_in.place, "lab");
 
-    let row = row(&phone, "Map the workspace").await;
-    let reading = phone.open(&row.session);
+    let mapped = row(&phone, "Map the workspace").await;
+    let reading = phone.open(&mapped.session);
     assert_eq!(
         reading.frame().await.place,
         "desk · shaman",
@@ -394,9 +394,96 @@ async fn opening_a_session_turns_the_outlook_toward_its_origin_and_workspace_and
         "kept from one run to the next"
     );
 
+    // Where no Workspace is remembered for a Remote, its Session's own is.
+    lab.begin(&workspace(&holder, "tidy"), "Tidy the build")
+        .await;
+    let tidy = row(&phone, "Tidy the build").await;
+    let reading = phone.open(&tidy.session);
+    phone
+        .outlook_until(|outlook| {
+            matches!(outlook, Outlook::Remote { begins_in, .. } if begins_in.place == "lab · tidy")
+        })
+        .await;
+    drop(reading);
+
+    // Where one is, it stays: opening another of that Remote's Sessions
+    // turns only the Remote.
+    desk.begin(&workspace(&holder, "dotfiles"), "Trim the shell")
+        .await;
+    let trim = row(&phone, "Trim the shell").await;
+    let reading = phone.open(&trim.session);
+    assert_eq!(reading.frame().await.place, "desk · dotfiles");
+    let outlook = phone
+        .outlook_until(|outlook| matches!(outlook, Outlook::Remote { name, .. } if name == "desk"))
+        .await;
+    assert!(
+        turned(&outlook),
+        "the Workspace remembered for desk stays: {outlook:?}"
+    );
+
     phone.shutdown();
     desk.shutdown().await;
     lab.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_deleted_while_it_is_open_says_it_is_gone_and_is_read_no_more() {
+    let desk = ServingServer::start("thin-open-deleted").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+    let row = row(&phone, "Map the workspace").await;
+    let reading = phone.open(&row.session);
+    reading.conversation_until(loaded).await;
+
+    desk.delete(session_id(&row.session)).await;
+    let frame = reading.frame_until(|frame| frame.gone.is_some()).await;
+    assert_eq!(frame.gone.as_deref(), Some("This session no longer exists"));
+    tokio::time::timeout(support::PROGRESS_DEADLINE, async {
+        while reading.session.is_reading() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("read no more");
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_whose_pairing_was_ended_says_so_in_the_servers_words() {
+    let desk = ServingServer::start("thin-open-revoked").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+    let row = row(&phone, "Map the workspace").await;
+
+    desk.remove_peer(&phone.fingerprint()).await;
+    let reading = phone.open(&row.session);
+    let frame = reading.frame_until(|frame| frame.gone.is_some()).await;
+    assert_eq!(
+        frame.title, "Map the workspace",
+        "framed by what the listing knew"
+    );
+    assert!(
+        frame
+            .gone
+            .as_deref()
+            .is_some_and(|gone| gone.contains("revoked")),
+        "{frame:?}"
+    );
+    assert!(
+        !loaded(&reading.conversation_now().items),
+        "never read, so the loading mark stands"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
