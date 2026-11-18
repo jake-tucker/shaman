@@ -220,7 +220,7 @@
       return SessionFrame(
         title: title, place: place, gone: nil, bar: bar,
         composer: FakeOpenedSession.composer(working: bar?.kind == .working, unreachable: unreachable ? line : nil),
-        queued: [], intervention: nil, tree: nil)
+        queued: [], intervention: nil, tree: nil, waiting: [])
     }
 
     static let canned: [FakeSession] =

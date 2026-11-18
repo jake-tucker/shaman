@@ -58,6 +58,14 @@ xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman
 
 **Look.** `xcrun simctl io "$UDID" screenshot /tmp/shaman.png`, then read the image.
 
+The simulator holds a hardware keyboard and minimises the software one below the screen. To see a screen with the
+software keyboard up, set it to stay up, focus a field from a UI test without typing (`typeText` minimises it again),
+and set it back after. iOS leaves the keyboard of a secure field out of screenshots.
+
+```sh
+xcrun simctl spawn "$UDID" defaults write com.apple.Preferences AutomaticMinimizationEnabled -bool false
+```
+
 **The fake.** Debug builds run over `FakeCore` with canned values when launched with `--fake <scenario>`; the
 scenarios are `FakeCore.Scenario`'s cases. Anything after the bundle identifier is a launch argument:
 

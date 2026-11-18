@@ -117,6 +117,7 @@
       /// and otherwise the orange bar naming the oldest, with "Review" where there is anything to bring back.
       func shown(unreachable: Bool) -> SessionFrame {
         var shown = frame
+        shown.waiting = pending.map(\.reference)
         guard let oldest = pending.first else { return shown }
         let presenting = unreachable ? nil : pending.first { !dismissed.contains($0.reference) }
         shown.intervention = presenting
@@ -378,7 +379,17 @@
       try await acts.during { () async throws(ActError) in
         try await submitted(questionnaire)
         if answers.contains(where: { $0.text.lowercased().contains("fail") }) {
-          throw .Refused(message: "The server refused the answers: the agent stopped listening for them")
+          // Its Agent took none of them: it asks again, saying so.
+          changeState { state in
+            state.pending = state.pending.map { intervention in
+              guard case .questionnaire(var asked) = intervention, asked.reference == questionnaire else {
+                return intervention
+              }
+              asked.note = "Your answers were not delivered. Look them over and send them again."
+              return .questionnaire(questionnaire: asked)
+            }
+          }
+          throw .Refused(message: "The agent did not take the answers.")
         }
         answered(questionnaire)
       }

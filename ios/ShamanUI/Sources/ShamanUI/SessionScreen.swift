@@ -1025,8 +1025,12 @@ final class SessionModel {
     }
   }
 
-  /// The sheet swiped away: every Intervention pending now waits behind the bar's "Review" while the screen is open.
+  /// The sheet swiped away: every Intervention pending now waits behind the bar's "Review" while the screen is open,
+  /// and a secret's answer written on the page left shows nothing of itself when it is reviewed.
   func dismissInterventions() {
+    for reference in questionnaireDrafts.keys {
+      questionnaireDrafts[reference]?.setAside()
+    }
     opened.dismiss()
   }
 
@@ -1078,6 +1082,17 @@ final class SessionModel {
   private func followFrame() async {
     for await frame in opened.frame() {
       self.frame = frame
+      forgetSettled(frame)
+    }
+  }
+
+  /// Lets go of what the reader half gave each Questionnaire the frame no longer lists as live: answered here or
+  /// elsewhere, its Turn ended, or answers whose delivery went unanswered since shown to have arrived. A secret's
+  /// answer goes with it.
+  private func forgetSettled(_ frame: SessionFrame) {
+    let live = Set(frame.waiting)
+    if questionnaireDrafts.keys.contains(where: { !live.contains($0) }) {
+      questionnaireDrafts = questionnaireDrafts.filter { live.contains($0.key) }
     }
   }
 

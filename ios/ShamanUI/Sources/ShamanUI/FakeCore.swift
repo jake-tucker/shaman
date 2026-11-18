@@ -112,7 +112,7 @@
       let delegated = FakeTree.member(session) != nil && remotes.contains("workstation")
       let gone = SessionFrame(
         title: "", place: "", gone: "This session no longer exists", bar: nil, composer: nil, queued: [],
-        intervention: nil, tree: nil)
+        intervention: nil, tree: nil, waiting: [])
       let listed = found?.frame(originNamed: remotes.count > 1, unreachable: cut, now: Date())
       let frame =
         FakeTree.holds(session) && (found != nil || delegated)

@@ -895,8 +895,11 @@ private final class HeldTime: BackgroundTasks {
     #expect(draft.onLast(asked))
     #expect(draft.goesOn(asked), "one not required goes on unanswered")
     draft.choose("unit", of: optional)
-    #expect(draft.skip(asked) == true, "skipping the last sends")
+    draft.skip(asked)
+    #expect(draft.page == 1, "Skip on the last page stays, for Send answers alone sends")
+    #expect(!draft.taken("unit"), "it leaves its Question unanswered")
     #expect(draft.answers == [GivenAnswer(choices: [], text: "staging"), GivenAnswer(choices: [], text: "")])
+    #expect(draft.next(asked) == true, "Send answers sends")
   }
 
   @Test func aSecretLeftBehindReadsAnsweredAndShowsNothingOfItUntilReplaced() {
@@ -908,8 +911,9 @@ private final class HeldTime: BackgroundTasks {
     draft.write("hunter2", of: secret)
     #expect(!draft.sealed, "while it is written it is the reader's own")
     _ = draft.next(asked)
-    draft.back(asked)
+    draft.back()
     #expect(draft.sealed)
+    #expect(draft.readsSecret)
     #expect(draft.written.isEmpty && !draft.taken("prod"), "nothing of it is shown again")
     #expect(draft.answers[0] == GivenAnswer(choices: ["prod"], text: "hunter2"), "it is still given")
     draft.write("", of: secret)
@@ -919,17 +923,40 @@ private final class HeldTime: BackgroundTasks {
     #expect(draft.answers[0] == GivenAnswer(choices: [], text: "s"), "replaced whole")
   }
 
+  @Test func aSecretsChoiceTakenMarksNoCardAndReadsAnswered() {
+    let secret = question(["prod", "staging"], required: false, secret: true)
+    var draft = QuestionnaireDraft(questionnaire(secret))
+    #expect(!draft.readsSecret)
+    draft.choose("prod", of: secret)
+    #expect(!draft.taken("prod"), "no card shows which was taken")
+    #expect(draft.readsSecret)
+    #expect(draft.answers[0] == GivenAnswer(choices: ["prod"], text: ""), "it is still given")
+  }
+
+  @Test func aSecretWrittenIsSealedWhenTheSheetIsSetAside() {
+    let secret = question(field: field(combines: false, secure: true), required: false, secret: true)
+    let open = question(field: field(combines: false))
+    var draft = QuestionnaireDraft(questionnaire(secret))
+    draft.write("hunter2", of: secret)
+    draft.setAside()
+    #expect(draft.sealed && draft.readsSecret && draft.written.isEmpty)
+    var plain = QuestionnaireDraft(questionnaire(open))
+    plain.write("staging", of: open)
+    plain.setAside()
+    #expect(!plain.sealed && plain.written == "staging", "only a secret is sealed")
+  }
+
   @Test func backReturnsToThePageBeforeKeepingWhatWasGiven() {
     let first = question(["staging"])
     let second = question(["unit"])
     let asked = questionnaire(first, second)
     var draft = QuestionnaireDraft(asked)
-    draft.back(asked)
+    draft.back()
     #expect(draft.page == 0)
     draft.choose("staging", of: first)
     _ = draft.next(asked)
     draft.choose("unit", of: second)
-    draft.back(asked)
+    draft.back()
     #expect(draft.page == 0 && draft.taken("staging"))
     _ = draft.next(asked)
     #expect(draft.taken("unit"))
@@ -993,7 +1020,7 @@ private final class HeldTime: BackgroundTasks {
     #expect(model.frame?.bar?.kind == .working)
   }
 
-  @Test func answersRefusedStandInTheBannerAndWhatWasGivenIsKept() async throws {
+  @Test func answersRefusedStandInTheBannerAndAsItAsksAgainWhatWasGivenIsKept() async throws {
     let model = SessionModel(core: FakeCore(.paired), session: waiting, failureStands: .seconds(3600))
     let following = Task { await model.follow() }
     defer { following.cancel() }
@@ -1001,9 +1028,45 @@ private final class HeldTime: BackgroundTasks {
     let questionnaire = try presented(model)
     model.changeDraft(of: questionnaire) { $0.write("fail, please", of: questionnaire.questions[0]) }
     await model.sendAnswers(questionnaire)
-    #expect(model.banner == "The server refused the answers: the agent stopped listening for them")
-    #expect(model.draft(of: questionnaire).answers[0].text == "fail, please")
-    #expect(model.presented != nil, "it still asks")
+    #expect(model.banner == "The agent did not take the answers.")
+    try await until(model) { (try? presented($0).note) != nil }
+    #expect(
+      try presented(model).note == "Your answers were not delivered. Look them over and send them again.")
+    #expect(model.draft(of: questionnaire).answers[0].text == "fail, please", "kept to send again")
+  }
+
+  @Test func aSecretWrittenThenSwipedAwayReadsAnsweredWhenReviewed() async throws {
+    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.presented != nil }
+    let questionnaire = try presented(model)
+    model.changeDraft(of: questionnaire) { $0.choose("staging", of: questionnaire.questions[0]) }
+    _ = model.changeDraft(of: questionnaire) { $0.next(questionnaire) }
+    _ = model.changeDraft(of: questionnaire) { $0.next(questionnaire) }
+    model.changeDraft(of: questionnaire) { $0.write("hunter2", of: questionnaire.questions[2]) }
+    model.dismissInterventions()
+    try await until(model) { $0.presented == nil }
+    model.review()
+    try await until(model) { $0.presented != nil }
+    let kept = model.draft(of: try presented(model))
+    #expect(kept.page == 2 && kept.readsSecret && kept.written.isEmpty)
+  }
+
+  @Test func whatWasHalfGivenGoesOnceTheFrameNoLongerListsItLive() async throws {
+    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.presented != nil }
+    let questionnaire = try presented(model)
+    model.changeDraft(of: questionnaire) { $0.choose("local", of: questionnaire.questions[0]) }
+    model.dismissInterventions()
+    try await until(model) { $0.presented == nil }
+    #expect(model.questionnaireDrafts.keys.contains(questionnaire.reference), "dismissed, it is kept")
+    // The Turn stopped, the Questionnaire waits on no one, and what was given goes with it.
+    await model.stop()
+    try await until(model) { $0.frame?.waiting.isEmpty == true }
+    #expect(model.questionnaireDrafts.isEmpty)
   }
 
   @Test func declinedItGoesWhole() async throws {

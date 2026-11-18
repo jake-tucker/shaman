@@ -266,7 +266,7 @@
       // A Subagent's Session takes no Prompt, so it has no composer at all.
       return SessionFrame(
         title: member.title, place: "\(member.name) · \(member.model)", gone: nil, bar: bar, composer: nil, queued: [],
-        intervention: nil, tree: button)
+        intervention: nil, tree: button, waiting: [])
     }
 
     /// The conversation of the Session `session` of the tree.

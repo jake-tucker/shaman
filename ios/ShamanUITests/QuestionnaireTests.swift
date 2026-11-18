@@ -3,7 +3,8 @@ import XCTest
 /// An open Session's own Questionnaire over the fake: presenting itself as a full-height sheet, one Question to a
 /// page, its choices cards with a "Recommended" badge, a field beside them, "Skip" where a Question is not required,
 /// a secret's field secure and reading "Answered (secret)" when shown again, "Next" leading to "Send answers", and
-/// "Decline" in the corner; swiped away, waiting behind the orange bar with what was half given kept.
+/// "Decline" in the corner; swiped away, waiting behind the orange bar with what was half given kept, a secret written
+/// reading "Answered (secret)" once reviewed.
 final class QuestionnaireTests: XCTestCase {
   override func setUp() {
     continueAfterFailure = false
@@ -164,6 +165,21 @@ final class QuestionnaireTests: XCTestCase {
     element("questionnaire.back", in: app).tap()
     XCTAssertTrue(choice("Local", in: app).isSelected)
     attach(app, "Reviewed, as it was left")
+
+    // A secret written and swiped away reads as answered once reviewed, showing nothing of itself.
+    next.tap()
+    next.tap()
+    wait(for: "label == 'Question 3 of 3'", position(in: app))
+    let secure = app.secureTextFields["questionnaire.field"]
+    secure.tap()
+    secure.typeText("hunter2")
+    swipeAway(in: app)
+    wait(for: "exists == false", sheet)
+    element("session.review", in: app).tap()
+    XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+    wait(for: "label == 'Question 3 of 3'", position(in: app))
+    XCTAssertEqual(element("questionnaire.secret", in: app).label, "Answered (secret)")
+    attach(app, "A secret swiped away, reviewed")
   }
 
   @MainActor
@@ -177,8 +193,18 @@ final class QuestionnaireTests: XCTestCase {
     element("questionnaire.next", in: app).tap()
     wait(for: "label == 'Question 2 of 3'", position(in: app))
     choice("Soak", in: app).tap()
-    element("questionnaire.skip", in: app).tap()
+    let skip = element("questionnaire.skip", in: app)
+    skip.tap()
     wait(for: "label == 'Question 3 of 3'", position(in: app))
+    let secure = app.secureTextFields["questionnaire.field"]
+    secure.tap()
+    secure.typeText("hunter2")
+    skip.tap()
+    XCTAssertEqual(position(in: app).label, "Question 3 of 3", "Skip on the last page stays; Send answers alone sends")
+    XCTAssertTrue(element("questionnaire.sheet", in: app).exists)
+    XCTAssertFalse(element("questionnaire.sending", in: app).exists)
+    XCTAssertFalse(element("questionnaire.secret", in: app).exists, "skipped, it holds nothing")
+    attach(app, "Skip on the last page, staying")
     element("questionnaire.back", in: app).tap()
     wait(for: "label == 'Question 2 of 3'", position(in: app))
     XCTAssertFalse(choice("Soak", in: app).isSelected, "skipped, it holds nothing")
@@ -186,5 +212,57 @@ final class QuestionnaireTests: XCTestCase {
     decline.tap()
     wait(for: "exists == false", element("questionnaire.sheet", in: app))
     XCTAssertEqual(element("session.barWords", in: app).label, "Working")
+  }
+
+  /// Waits for the software keyboard to stand fully up, where it comes up at all: a simulator holding a hardware
+  /// keyboard that minimises it, as typing into it from a test does, keeps it below the screen, and nothing then covers
+  /// the foot. Answers whether it is up.
+  @MainActor
+  private func keyboardUp(in app: XCUIApplication) -> Bool {
+    let keyboard = app.keyboards.firstMatch
+    let screen = app.windows.firstMatch.frame
+    let deadline = Date().addingTimeInterval(3)
+    while Date() < deadline {
+      if keyboard.exists, keyboard.frame.minY < screen.maxY - keyboard.frame.height / 2 {
+        // Let it settle where it stands.
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        return true
+      }
+      RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+    }
+    return false
+  }
+
+  /// Checks that Back, Skip and Next stand above the software keyboard where it is up.
+  @MainActor
+  private func footClearOfTheKeyboard(in app: XCUIApplication) {
+    guard keyboardUp(in: app) else { return }
+    let keyboard = app.keyboards.firstMatch.frame
+    for tap in ["questionnaire.back", "questionnaire.skip", "questionnaire.next"] {
+      let frame = element(tap, in: app).frame
+      XCTAssertLessThanOrEqual(frame.maxY, keyboard.minY, "\(tap) at \(frame) is clear of the keyboard at \(keyboard)")
+    }
+  }
+
+  /// Nothing is typed: typing from a test minimises the software keyboard, which is what is to be seen.
+  @MainActor
+  func testTheFootStaysClearOfTheKeyboardOnTheWrittenAndSecretPages() {
+    let app = launched()
+    let staging = choice("Staging", in: app)
+    XCTAssertTrue(staging.waitForExistence(timeout: 10))
+    wait(for: "isEnabled == true", element("questionnaire.decline", in: app))
+    staging.tap()
+    let next = element("questionnaire.next", in: app)
+    next.tap()
+    wait(for: "label == 'Question 2 of 3'", position(in: app))
+    element("questionnaire.field", in: app).tap()
+    footClearOfTheKeyboard(in: app)
+    attach(app, "A written answer, the keyboard up")
+    next.tap()
+
+    wait(for: "label == 'Question 3 of 3'", position(in: app))
+    app.secureTextFields["questionnaire.field"].tap()
+    footClearOfTheKeyboard(in: app)
+    attach(app, "A secret's field, the keyboard up")
   }
 }

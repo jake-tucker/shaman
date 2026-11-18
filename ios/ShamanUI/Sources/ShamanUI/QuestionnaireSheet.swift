@@ -117,7 +117,7 @@ private struct QuestionPage: View {
       if let field = question.field {
         AnswerFieldView(field: field, text: written)
       }
-      if draft.sealed, let secret = question.secret {
+      if draft.readsSecret, let secret = question.secret {
         Label {
           Text(verbatim: secret)
         } icon: {
@@ -220,7 +220,8 @@ private struct AnswerFieldView: View {
 }
 
 /// The sheet's foot: "Back" from every page but the first, "Skip" where the Question is not required, and "Next",
-/// which on the last page is "Send answers" and is held until a required Question is answered.
+/// which on the last page is "Send answers" and is held until a required Question is answered. "Send answers" alone
+/// sends: "Skip" on the last page leaves its Question unanswered and stays.
 private struct QuestionnaireFoot: View {
   let questionnaire: PendingQuestionnaire
   let question: PendingQuestion?
@@ -231,7 +232,7 @@ private struct QuestionnaireFoot: View {
     HStack(spacing: 10) {
       if draft.page > 0 {
         Button {
-          model.changeDraft(of: questionnaire) { $0.back(questionnaire) }
+          model.changeDraft(of: questionnaire) { $0.back() }
         } label: {
           Text(verbatim: questionnaire.back)
         }
@@ -240,7 +241,7 @@ private struct QuestionnaireFoot: View {
       }
       if let skip = question?.skip {
         Button {
-          go { $0.skip(questionnaire) }
+          model.changeDraft(of: questionnaire) { $0.skip(questionnaire) }
         } label: {
           Text(verbatim: skip)
         }
@@ -262,7 +263,7 @@ private struct QuestionnaireFoot: View {
     .padding(.vertical, 12)
   }
 
-  /// Moves the draft on as `step` does, sending the answers where it left the last page.
+  /// Moves the draft on as `step` does, sending the answers where "Send answers" was tapped.
   private func go(_ step: (inout QuestionnaireDraft) -> Bool) {
     if model.changeDraft(of: questionnaire, step) {
       Task { await model.sendAnswers(questionnaire) }

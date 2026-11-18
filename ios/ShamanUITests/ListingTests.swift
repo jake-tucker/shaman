@@ -92,9 +92,9 @@ final class ListingTests: XCTestCase {
     app.buttons["Settle"].tap()
 
     let settled = row("settled", titled: title, in: app)
-    XCTAssertTrue(settled.waitForExistence(timeout: 10), "settled onto the shelf")
-    XCTAssertFalse(active.exists, "gone from the active rows")
-    XCTAssertTrue(scrolled(to: settled, in: app).isHittable)
+    XCTAssertTrue(active.waitForNonExistence(timeout: 10), "gone from the active rows")
+    // The shelf stands beneath every active row, further down than the listing draws at first.
+    XCTAssertTrue(scrolled(to: settled, in: app).isHittable, "settled onto the shelf")
     XCTAssertTrue(app.staticTexts["listing.settledHeader"].exists)
     XCTAssertEqual(app.staticTexts["listing.settledHeader"].label, "Settled")
     attach(app, "A row settled onto the shelf")
