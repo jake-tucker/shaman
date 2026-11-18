@@ -40,7 +40,10 @@ pub use device::ThisDevice;
 use device::{DeviceRecord, Records};
 pub use identity::{KeySigner, SignError};
 use listing::Listings;
-pub use listing::{ActiveRow, CheckoutLine, Listing, SettledRow, Slot, Standing};
+pub use listing::{
+    ActiveRow, CheckoutLine, FoundRow, Listing, ScopeChoice, ScopeKind, ScopeSection, SettledRow,
+    Slot, Standing,
+};
 pub use pairing::{InviteReading, OfferedWay, PairingOutcome, ReadInvite, TryInstead};
 use remotes::Remotes;
 pub use remotes::{BeginsIn, Outlook, ServerRow, Servers, WayRow, WayState};
@@ -205,6 +208,30 @@ impl ThinClient {
     /// opened again.
     pub fn show_more_settled(&self) {
         self.inner.listing.show_more();
+    }
+
+    /// Narrows the listing to the scope `scope` names, as a choice of the
+    /// menu its title opens carries it, until the core is opened again; one
+    /// naming no Remote held narrows it to Everywhere. A Remote or a
+    /// Workspace chosen turns the Outlook toward it, so that is where the
+    /// next Session begins, and Everywhere turns nothing.
+    pub async fn narrow_listing(&self, scope: String) -> Result<(), ActError> {
+        let Some(turn) = self.inner.listing.narrow(&scope) else {
+            return Ok(());
+        };
+        let inner = self.inner.clone();
+        self.run(async move {
+            inner
+                .change_record_shown(move |record| record.turn(&turn.remote, turn.workspace))
+                .await
+        })
+        .await?
+    }
+
+    /// Searches the listing by Title for `text`, until the core is opened
+    /// again; an empty one searches for nothing.
+    pub fn search_listing(&self, text: String) {
+        self.inner.listing.search(&text);
     }
 
     /// Renames this device to `name`, as the Serving side would keep it,

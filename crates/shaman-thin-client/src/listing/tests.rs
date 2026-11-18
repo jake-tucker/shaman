@@ -11,10 +11,11 @@ use shaman_protocol::{
     ApprovalId, Author, CheckoutAssociation, CheckoutId, CheckoutKind, CheckoutRevision,
     CheckoutSummary, LatestTurnStatus, RemoteSession, RepositoryId, Session, SessionListItem,
     SessionStanding, SessionSummary, SessionTimestamp, SourceControlAvailability, TurnStatus,
-    UnreadableSessionSummary, Workspace, WorkspacePaths,
+    UnreadableSessionSummary, Workspace, WorkspaceId, WorkspacePaths,
 };
 
 use super::*;
+use crate::device::RememberedWorkspace;
 
 const DAY: u64 = 24 * 60 * 60 * 1_000;
 
@@ -63,11 +64,16 @@ pub(crate) fn remote(name: &str, sessions: Vec<SessionSummary>) -> Answered {
         fingerprint: format!("{name}-key"),
         paths: WorkspacePaths::default(),
         sessions: Some(sessions.into_iter().map(listed).collect()),
+        workspaces: None,
     }
 }
 
 fn read(remotes: &[Answered]) -> Listing {
-    present(remotes, NOW, SHELF_OPENING, SETTLE_AFTER).0
+    narrowed(remotes, &Narrowing::default())
+}
+
+fn narrowed(remotes: &[Answered], narrowing: &Narrowing) -> Listing {
+    present(remotes, NOW, SHELF_OPENING, SETTLE_AFTER, narrowing).0
 }
 
 fn titles(rows: &[ActiveRow]) -> Vec<&str> {
@@ -128,6 +134,7 @@ fn a_session_settles_when_set_aside_or_after_three_idle_days() {
         NOW,
         SHELF_OPENING,
         SETTLE_AFTER,
+        &Narrowing::default(),
     );
     assert_eq!(
         titles(&listing.active),
@@ -178,16 +185,34 @@ fn the_shelf_opens_on_its_first_rows_and_shows_more_a_batch_at_a_time() {
         .collect::<Vec<_>>();
     let desk = [remote("desk", settled)];
 
-    let (opened, _) = present(&desk, NOW, SHELF_OPENING, SETTLE_AFTER);
+    let (opened, _) = present(
+        &desk,
+        NOW,
+        SHELF_OPENING,
+        SETTLE_AFTER,
+        &Narrowing::default(),
+    );
     assert_eq!(opened.settled.len(), 10);
     assert_eq!(opened.settled[0].title, "Settled 0");
     assert_eq!(opened.show_more.as_deref(), Some("Show 25 more"));
 
-    let (more, _) = present(&desk, NOW, SHELF_OPENING + SHELF_BATCH, SETTLE_AFTER);
+    let (more, _) = present(
+        &desk,
+        NOW,
+        SHELF_OPENING + SHELF_BATCH,
+        SETTLE_AFTER,
+        &Narrowing::default(),
+    );
     assert_eq!(more.settled.len(), 35);
     assert_eq!(more.show_more.as_deref(), Some("Show 2 more"));
 
-    let (whole, _) = present(&desk, NOW, SHELF_OPENING + 2 * SHELF_BATCH, SETTLE_AFTER);
+    let (whole, _) = present(
+        &desk,
+        NOW,
+        SHELF_OPENING + 2 * SHELF_BATCH,
+        SETTLE_AFTER,
+        &Narrowing::default(),
+    );
     assert_eq!(whole.settled.len(), 37);
     assert_eq!(whole.show_more, None);
 }
@@ -497,6 +522,7 @@ fn a_row_held_among_the_active_past_its_settling_waits_on_no_moment() {
         NOW,
         SHELF_OPENING,
         SETTLE_AFTER,
+        &Narrowing::default(),
     );
     assert_eq!(titles(&listing.active), ["Sidekick"]);
     assert_eq!(
@@ -512,6 +538,7 @@ fn a_row_held_among_the_active_past_its_settling_waits_on_no_moment() {
         NOW,
         SHELF_OPENING,
         SETTLE_AFTER,
+        &Narrowing::default(),
     );
     assert_eq!(next, Some(SessionTimestamp(NOW.0 + 2 * DAY)));
 }
@@ -524,6 +551,7 @@ fn a_shorter_settling_settles_sooner() {
         NOW,
         SHELF_OPENING,
         Duration::from_secs(1),
+        &Narrowing::default(),
     );
     assert_eq!(shelved(&listing.settled), ["Quiet"]);
     assert_eq!(next, None);
@@ -762,4 +790,440 @@ fn a_listing_not_answered_is_asked_for_at_once_when_told_to_try_now() {
         .recv_timeout(Duration::from_secs(5))
         .expect("asked again at once");
     assert_eq!(transport.asked(), 2);
+}
+
+/// The Workspace directory `name` in the tests' root, as a Server lists it.
+fn listed_workspace(name: &str) -> Workspace {
+    Workspace::directory(root().join("work").join(name))
+}
+
+/// The Workspace `name`'s identity, as a scope names it.
+fn workspace_id(name: &str) -> WorkspaceId {
+    listed_workspace(name).id
+}
+
+/// `remote`, its Workspace listing answered with the Workspaces `names`.
+fn with_workspaces(mut remote: Answered, names: &[&str]) -> Answered {
+    remote.workspaces = Some(names.iter().map(|name| listed_workspace(name)).collect());
+    remote
+}
+
+/// What the menu the title opens says, section by section: each section's
+/// header, then each choice's words, a chosen one marked so.
+fn menu(listing: &Listing) -> Vec<(Option<&str>, Vec<String>)> {
+    listing
+        .scopes
+        .iter()
+        .map(|section| {
+            (
+                section.header.as_deref(),
+                section
+                    .choices
+                    .iter()
+                    .map(|choice| {
+                        if choice.chosen {
+                            format!("[{}]", choice.words)
+                        } else {
+                            choice.words.clone()
+                        }
+                    })
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+/// The choice of the menu whose words are `words`.
+fn choice<'a>(listing: &'a Listing, words: &str) -> &'a ScopeChoice {
+    listing
+        .scopes
+        .iter()
+        .flat_map(|section| &section.choices)
+        .find(|choice| choice.words == words)
+        .unwrap_or_else(|| panic!("no choice reads {words}: {:?}", menu(listing)))
+}
+
+fn scoped(scope: Scope) -> Narrowing {
+    Narrowing {
+        scope,
+        query: String::new(),
+    }
+}
+
+fn searched(query: &str) -> Narrowing {
+    Narrowing {
+        scope: Scope::Everywhere,
+        query: query.to_owned(),
+    }
+}
+
+/// The desk, in `shaman` and `dotfiles`, and the lab, in `homelab`.
+fn desk_and_lab() -> [Answered; 2] {
+    [
+        with_workspaces(
+            remote(
+                "desk",
+                vec![
+                    session("Map the workspace", "shaman", NOW.0 - 30, NOW.0 - 30),
+                    session("Tidy zsh", "dotfiles", NOW.0 - 20, NOW.0 - 20),
+                ],
+            ),
+            &["shaman", "dotfiles", "notes"],
+        ),
+        with_workspaces(
+            remote(
+                "lab",
+                vec![session(
+                    "Upgrade the lab",
+                    "homelab",
+                    NOW.0 - 10,
+                    NOW.0 - 10,
+                )],
+            ),
+            &["homelab"],
+        ),
+    ]
+}
+
+#[test]
+fn the_menu_offers_everywhere_then_each_remote_with_all_of_it_and_its_workspaces() {
+    let listing = read(&desk_and_lab());
+    assert_eq!(listing.title, "Everywhere");
+    assert_eq!(
+        menu(&listing),
+        [
+            (None, vec!["[Everywhere]".to_owned()]),
+            (
+                Some("desk"),
+                vec![
+                    "All of desk".to_owned(),
+                    "shaman".to_owned(),
+                    "dotfiles".to_owned(),
+                    "notes".to_owned(),
+                ]
+            ),
+            (
+                Some("lab"),
+                vec!["All of lab".to_owned(), "homelab".to_owned()]
+            ),
+        ]
+    );
+    assert_eq!(choice(&listing, "Everywhere").kind, ScopeKind::Everywhere);
+    assert_eq!(choice(&listing, "All of desk").kind, ScopeKind::Remote);
+    assert_eq!(choice(&listing, "homelab").kind, ScopeKind::Workspace);
+    assert_eq!(listing.search_prompt, "Search by title");
+}
+
+#[test]
+fn with_one_remote_the_menu_offers_all_workspaces_and_its_workspaces() {
+    let [desk, _] = desk_and_lab();
+    let listing = read(&[desk]);
+    assert_eq!(listing.title, "All workspaces");
+    assert_eq!(
+        menu(&listing),
+        [
+            (None, vec!["[All workspaces]".to_owned()]),
+            (
+                None,
+                vec![
+                    "shaman".to_owned(),
+                    "dotfiles".to_owned(),
+                    "notes".to_owned()
+                ]
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_menus_workspaces_are_its_servers_then_those_its_sessions_are_in_and_never_the_sidekicks() {
+    let home = root().join("work").join("sidekick-home");
+    let mut desk = with_workspaces(
+        remote(
+            "desk",
+            vec![
+                session("Ask", "sidekick-home", NOW.0 - 1, NOW.0 - 1),
+                session("Elsewhere", "scratch", NOW.0 - 2, NOW.0 - 2),
+                session("Mapped", "shaman", NOW.0 - 3, NOW.0 - 3),
+            ],
+        ),
+        &["sidekick-home", "shaman"],
+    );
+    desk.paths = WorkspacePaths::default().with_sidekick_workspace(&home);
+    desk.workspaces.as_mut().unwrap()[1].icon = Some("md-robot".to_owned());
+    let listing = read(&[desk]);
+    assert_eq!(
+        menu(&listing)[1].1,
+        ["shaman", "scratch"],
+        "the Server's own first, then one only a Session is in, and the Sidekick's never"
+    );
+    assert_eq!(
+        choice(&listing, "shaman").glyph.as_deref(),
+        Some("\u{f06a9}")
+    );
+
+    // Before the Server has listed its Workspaces, its Sessions' stand.
+    let mut unlisted = remote("desk", vec![session("Mapped", "shaman", 1, 1)]);
+    unlisted.workspaces = None;
+    assert_eq!(menu(&read(&[unlisted]))[1].1, ["shaman"]);
+}
+
+#[test]
+fn narrowing_to_a_remote_lists_its_sessions_alone_and_is_titled_by_it() {
+    let remotes = desk_and_lab();
+    let desk = choice(&read(&remotes), "All of desk").scope.clone();
+    let listing = narrowed(&remotes, &scoped(Scope::of(&desk)));
+    assert_eq!(listing.title, "desk");
+    assert_eq!(titles(&listing.active), ["Tidy zsh", "Map the workspace"]);
+    assert_eq!(
+        listing.active[0].place, "desk · dotfiles",
+        "a row names its Origin whatever the scope"
+    );
+    assert_eq!(menu(&listing)[0].1, ["Everywhere"]);
+    assert_eq!(menu(&listing)[1].1[0], "[All of desk]");
+}
+
+#[test]
+fn narrowing_to_a_workspace_lists_its_sessions_alone_and_is_titled_by_where_it_is() {
+    let remotes = desk_and_lab();
+    let listing = narrowed(
+        &remotes,
+        &scoped(Scope::Workspace {
+            fingerprint: "desk-key".to_owned(),
+            workspace: workspace_id("dotfiles"),
+        }),
+    );
+    assert_eq!(listing.title, "desk · dotfiles");
+    assert_eq!(titles(&listing.active), ["Tidy zsh"]);
+    assert_eq!(menu(&listing)[1].1[2], "[dotfiles]");
+
+    let [desk, _] = desk_and_lab();
+    let alone = narrowed(
+        &[desk],
+        &scoped(Scope::Workspace {
+            fingerprint: "desk-key".to_owned(),
+            workspace: workspace_id("dotfiles"),
+        }),
+    );
+    assert_eq!(
+        alone.title, "dotfiles",
+        "no Origin is named with one Remote"
+    );
+}
+
+#[test]
+fn a_scope_of_a_remote_not_held_or_the_only_one_held_is_everywhere() {
+    let remotes = desk_and_lab();
+    for scope in [
+        Scope::Remote {
+            fingerprint: "gone-key".to_owned(),
+        },
+        Scope::Workspace {
+            fingerprint: "gone-key".to_owned(),
+            workspace: workspace_id("shaman"),
+        },
+    ] {
+        let listing = narrowed(&remotes, &scoped(scope));
+        assert_eq!(listing.title, "Everywhere");
+        assert_eq!(listing.active.len(), 3);
+    }
+    let [desk, _] = desk_and_lab();
+    let listing = narrowed(
+        &[desk],
+        &scoped(Scope::Remote {
+            fingerprint: "desk-key".to_owned(),
+        }),
+    );
+    assert_eq!(listing.title, "All workspaces");
+    assert_eq!(menu(&listing)[0].1, ["[All workspaces]"]);
+}
+
+#[test]
+fn a_scope_crosses_as_a_plain_string_and_one_that_names_nothing_is_everywhere() {
+    for scope in [
+        Scope::Everywhere,
+        Scope::Remote {
+            fingerprint: "desk-key".to_owned(),
+        },
+        Scope::Workspace {
+            fingerprint: "desk-key".to_owned(),
+            workspace: workspace_id("shaman"),
+        },
+    ] {
+        assert_eq!(Scope::of(&scope.reference()), scope);
+    }
+    for nothing in [
+        "",
+        "nowhere",
+        "remote/",
+        "workspace/desk-key",
+        "workspace//x",
+    ] {
+        assert_eq!(Scope::of(nothing), Scope::Everywhere, "{nothing}");
+    }
+}
+
+#[test]
+fn a_search_answers_with_one_flat_list_each_row_keeping_its_shelfs_shape() {
+    let mut settled = (0..14)
+        .map(|index| {
+            let mut settled = session(
+                &format!("Fix the tests {index}"),
+                "shaman",
+                0,
+                NOW.0 - 9 * DAY,
+            );
+            settled.settled_at = Some(SessionTimestamp(NOW.0 - DAY - index));
+            settled
+        })
+        .collect::<Vec<_>>();
+    settled.push(recent("Fix the build", 10));
+    settled.push(recent("Write the docs", 5));
+    settled.push(recent("FIX the release", 1));
+    let listing = narrowed(&[remote("desk", settled)], &searched("fix"));
+
+    assert!(listing.active.is_empty(), "the shelves stand down");
+    assert!(listing.settled.is_empty());
+    assert_eq!(listing.show_more, None);
+    let found = listing.found.expect("found");
+    let shapes = found
+        .iter()
+        .map(|row| match row {
+            FoundRow::Active { row } => format!("active {}", row.title),
+            FoundRow::Settled { row } => format!("settled {}", row.title),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        shapes[..3],
+        [
+            "active FIX the release",
+            "active Fix the build",
+            "settled Fix the tests 0"
+        ]
+    );
+    assert_eq!(
+        shapes.len(),
+        16,
+        "every settled match, past what the shelf opens on"
+    );
+    assert_eq!(listing.empty, None);
+}
+
+#[test]
+fn a_search_answers_within_the_scope() {
+    let remotes = desk_and_lab();
+    let listing = narrowed(
+        &remotes,
+        &Narrowing {
+            scope: Scope::Remote {
+                fingerprint: "lab-key".to_owned(),
+            },
+            query: "t".to_owned(),
+        },
+    );
+    let found = listing.found.expect("found");
+    assert_eq!(found.len(), 1);
+    assert!(matches!(&found[0], FoundRow::Active { row } if row.title == "Upgrade the lab"));
+}
+
+#[test]
+fn what_stands_where_nothing_is_listed_says_why() {
+    let remotes = desk_and_lab();
+    assert_eq!(
+        narrowed(&remotes, &searched("nothing like it"))
+            .empty
+            .as_deref(),
+        Some("No sessions match")
+    );
+    assert_eq!(
+        narrowed(&remotes, &searched("nothing like it")).found,
+        Some(Vec::new())
+    );
+    assert_eq!(
+        narrowed(
+            &remotes,
+            &scoped(Scope::Workspace {
+                fingerprint: "desk-key".to_owned(),
+                workspace: workspace_id("notes"),
+            })
+        )
+        .empty
+        .as_deref(),
+        Some("No sessions in this workspace")
+    );
+    let mut quiet = desk_and_lab();
+    quiet[1].sessions = Some(Vec::new());
+    assert_eq!(
+        narrowed(
+            &quiet,
+            &scoped(Scope::Remote {
+                fingerprint: "lab-key".to_owned(),
+            })
+        )
+        .empty
+        .as_deref(),
+        Some("No sessions on lab")
+    );
+}
+
+#[test]
+fn only_a_remote_in_scope_yet_to_answer_is_said_to_be_reached() {
+    let mut remotes = desk_and_lab();
+    remotes[1].sessions = None;
+    let lab = Scope::Remote {
+        fingerprint: "lab-key".to_owned(),
+    };
+    let desk = Scope::Remote {
+        fingerprint: "desk-key".to_owned(),
+    };
+    assert_eq!(
+        narrowed(&remotes, &scoped(lab)).waiting.as_deref(),
+        Some("Reaching lab…")
+    );
+    let listing = narrowed(&remotes, &scoped(desk));
+    assert_eq!(listing.waiting, None);
+    assert_eq!(titles(&listing.active), ["Tidy zsh", "Map the workspace"]);
+}
+
+#[test]
+fn narrowing_says_what_the_outlook_turns_toward_and_everywhere_turns_nothing() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let (listings, _directory) = listings(&runtime);
+    for remote in desk_and_lab() {
+        listings.hold(remote);
+    }
+    let listing = listings.listing().borrow().clone();
+
+    assert_eq!(
+        listings.narrow(&choice(&listing, "dotfiles").scope),
+        Some(Turn {
+            remote: "desk".to_owned(),
+            workspace: Some(RememberedWorkspace {
+                path: root().join("work").join("dotfiles"),
+                name: "dotfiles".to_owned(),
+            }),
+        })
+    );
+    assert_eq!(listings.listing().borrow().title, "desk · dotfiles");
+    assert_eq!(
+        listings.narrow(&choice(&listing, "All of lab").scope),
+        Some(Turn {
+            remote: "lab".to_owned(),
+            workspace: None,
+        })
+    );
+    assert_eq!(listings.listing().borrow().title, "lab");
+    assert_eq!(listings.narrow("everywhere"), None);
+    assert_eq!(listings.listing().borrow().title, "Everywhere");
+    assert_eq!(
+        listings.narrow("remote/gone-key"),
+        None,
+        "nothing to turn toward"
+    );
+
+    listings.search("upgrade");
+    let found = listings.listing().borrow().found.clone().expect("found");
+    assert_eq!(found.len(), 1);
+    listings.search("");
+    assert_eq!(listings.listing().borrow().found, None);
 }

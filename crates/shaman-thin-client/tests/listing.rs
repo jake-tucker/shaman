@@ -5,7 +5,9 @@
 mod support;
 
 use shaman::protocol::Way;
-use shaman_thin_client::{ActError, Listing, PairingOutcome, Slot, Standing};
+use shaman_thin_client::{
+    ActError, BeginsIn, FoundRow, Listing, Outlook, PairingOutcome, ScopeChoice, Slot, Standing,
+};
 
 use support::{Phone, ServingServer, WORKING};
 
@@ -260,4 +262,114 @@ async fn a_session_settled_by_being_left_alone_is_brought_back_and_stays_back() 
 
     phone.shutdown();
     desk.shutdown().await;
+}
+
+/// The choice of the menu the listing's title opens whose words are `words`.
+fn choice(listing: &Listing, words: &str) -> Option<ScopeChoice> {
+    listing
+        .scopes
+        .iter()
+        .flat_map(|section| &section.choices)
+        .find(|choice| choice.words == words)
+        .cloned()
+}
+
+fn outlook(name: &str, workspace: Option<&str>) -> Outlook {
+    Outlook::Remote {
+        name: name.to_owned(),
+        begins_in: BeginsIn::remote(name, workspace),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn narrowing_turns_the_outlook_which_is_kept_and_the_scope_is_not() {
+    let desk = ServingServer::start("thin-list-narrow-desk").await;
+    let lab = ServingServer::start("thin-list-narrow-lab").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    pair(&phone, &lab, "lab").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+    desk.begin(&workspace(&holder, "dotfiles"), "Tidy zsh")
+        .await;
+    lab.begin(&workspace(&holder, WORKING), "Upgrade the lab")
+        .await;
+    let listing = phone
+        .listing_until(|listing| {
+            settled_into(
+                listing,
+                &["Map the workspace", "Tidy zsh", "Upgrade the lab"],
+            ) && choice(listing, "dotfiles").is_some()
+                && choice(listing, WORKING).is_some()
+        })
+        .await;
+    assert_eq!(listing.title, "Everywhere");
+    assert_eq!(phone.outlook().await, outlook("lab", None), "paired last");
+
+    // A Workspace chosen narrows the listing and turns the Outlook there.
+    let dotfiles = choice(&listing, "dotfiles").expect("offered");
+    phone
+        .core
+        .narrow_listing(dotfiles.scope)
+        .await
+        .expect("narrowed");
+    let narrowed = phone
+        .listing_until(|listing| listing.title == "desk · dotfiles")
+        .await;
+    assert_eq!(titles(&narrowed), ["Tidy zsh"]);
+    assert_eq!(phone.outlook().await, outlook("desk", Some("dotfiles")));
+
+    // A search answers within it.
+    phone.core.search_listing("ZSH".to_owned());
+    let searched = phone.listing_until(|listing| listing.found.is_some()).await;
+    let found = searched.found.expect("found");
+    assert!(
+        matches!(&found[..], [FoundRow::Active { row }] if row.title == "Tidy zsh"),
+        "{found:?}"
+    );
+    phone.core.search_listing(String::new());
+
+    // A Remote chosen turns the Outlook toward it, its Workspace as it was.
+    let lab_whole = choice(&listing, "All of lab").expect("offered");
+    phone
+        .core
+        .narrow_listing(lab_whole.scope)
+        .await
+        .expect("narrowed");
+    let narrowed = phone
+        .listing_until(|listing| listing.title == "lab" && listing.found.is_none())
+        .await;
+    assert_eq!(titles(&narrowed), ["Upgrade the lab"]);
+    assert_eq!(phone.outlook().await, outlook("lab", None));
+
+    // Everywhere turns nothing.
+    let everywhere = choice(&listing, "Everywhere").expect("offered");
+    phone
+        .core
+        .narrow_listing(everywhere.scope)
+        .await
+        .expect("widened");
+    phone
+        .listing_until(|listing| listing.title == "Everywhere" && listing.active.len() == 3)
+        .await;
+    assert_eq!(phone.outlook().await, outlook("lab", None));
+
+    // The Outlook and each Remote's Workspace are kept; the scope is not.
+    phone
+        .core
+        .narrow_listing(choice(&listing, "All of desk").expect("offered").scope)
+        .await
+        .expect("narrowed");
+    phone.listing_until(|listing| listing.title == "desk").await;
+    let phone = phone.relaunched();
+    assert_eq!(phone.outlook().await, outlook("desk", Some("dotfiles")));
+    let listing = phone
+        .listing_until(|listing| listing.active.len() == 3)
+        .await;
+    assert_eq!(listing.title, "Everywhere");
+
+    phone.shutdown();
+    desk.shutdown().await;
+    lab.shutdown().await;
 }

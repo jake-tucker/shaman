@@ -8,6 +8,11 @@
 //! rows, whole on every change: every word but what ticks, each row's glyphs
 //! already resolved, and the Standing a Rail's colour is picked by.
 //!
+//! The listing is narrowed by a scope and searched by Title, both handed in
+//! by Swift and neither kept from one run to the next: the core answers with
+//! the rows narrowed, filtered and ordered, and with the menu the screen's
+//! title opens, each choice carrying the scope Swift hands back.
+//!
 //! Fixed here from the schema's defaults, since a phone has no Settings:
 //! Sessions settle after three idle days, and a Sidekick's Subsessions are
 //! left out, their Sidekick's row speaking for them.
@@ -29,11 +34,11 @@ use shaman_pairing::{Redeemer, StoredRemote};
 use shaman_protocol::{
     Author, CheckoutKind, CheckoutRevision, CheckoutSummary, SessionError, SessionErrorCode,
     SessionId, SessionListItem, SessionStanding, SessionSummary, SessionTimestamp,
-    SourceControlAvailability, StandingReading, WorkspacePaths,
+    SourceControlAvailability, StandingReading, Workspace, WorkspaceId, WorkspacePaths,
 };
 use tokio::{runtime::Handle, sync::Notify, sync::watch, task::JoinHandle};
 
-use crate::ActError;
+use crate::{ActError, device::RememberedWorkspace};
 
 /// How long a phone leaves a Session untouched before it settles on its own:
 /// the schema's default of three days, which a phone offers no Setting to
@@ -49,22 +54,199 @@ const SHELF_BATCH: usize = 25;
 /// The listing, as the screen shown when no Session is open draws it.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct Listing {
-    /// What the screen is titled: the scope it lists, which is every
+    /// What the screen is titled: the scope it lists, which begins as every
     /// Remote's Sessions, or with one Remote every Workspace's.
     pub title: String,
-    /// The active Sessions, the most recently begun first.
+    /// The menu the title opens, which narrows the listing, in sections.
+    pub scopes: Vec<ScopeSection>,
+    /// What the search field beneath the title says while it is empty.
+    pub search_prompt: String,
+    /// The active Sessions, the most recently begun first; none while a
+    /// search is typed.
     pub active: Vec<ActiveRow>,
     /// Said at the foot of the active rows while a Remote held has yet to
     /// answer with its Sessions.
     pub waiting: Option<String>,
     /// What the shelf of settled Sessions is headed.
     pub settled_header: String,
-    /// The settled Sessions on show, the most recently ended first.
+    /// The settled Sessions on show, the most recently ended first; none
+    /// while a search is typed.
     pub settled: Vec<SettledRow>,
     /// The offer to show more of the shelf, where more of it stands hidden.
     pub show_more: Option<String>,
-    /// What stands where nothing is listed, once every Remote has answered.
+    /// While a search is typed, the Sessions whose Title carries it, in one
+    /// flat list in place of both shelves: in the order the shelves would
+    /// draw them, the whole shelf included, each keeping its shelf's shape.
+    pub found: Option<Vec<FoundRow>>,
+    /// What stands where nothing is listed, once every Remote in scope has
+    /// answered: that there is no work yet, none where the listing is
+    /// narrowed to, or none the search finds.
     pub empty: Option<String>,
+}
+
+/// One row a search found, in the shape its shelf gives it.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum FoundRow {
+    Active { row: ActiveRow },
+    Settled { row: SettledRow },
+}
+
+/// A section of the menu the listing's title opens.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct ScopeSection {
+    /// The Remote the section's choices are on, where the phone holds more
+    /// than one.
+    pub header: Option<String>,
+    pub choices: Vec<ScopeChoice>,
+}
+
+/// One choice of the menu the listing's title opens.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct ScopeChoice {
+    /// The scope, as the core is handed it back.
+    pub scope: String,
+    /// What the scope ranges over, by which Swift picks a symbol.
+    pub kind: ScopeKind,
+    /// The glyph of a Workspace's Icon, where it has one this build knows.
+    pub glyph: Option<String>,
+    pub words: String,
+    /// Whether the listing is narrowed to it now.
+    pub chosen: bool,
+}
+
+/// What a scope ranges over.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ScopeKind {
+    /// Every Remote held, which with one Remote is every Workspace of it.
+    Everywhere,
+    /// Every Workspace of one Remote.
+    Remote,
+    /// One Workspace of one Remote.
+    Workspace,
+}
+
+/// What the listing is narrowed to: every Remote, one Remote by its key, or
+/// one Workspace of one Remote by its identity there.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Scope {
+    #[default]
+    Everywhere,
+    Remote {
+        fingerprint: String,
+    },
+    Workspace {
+        fingerprint: String,
+        workspace: WorkspaceId,
+    },
+}
+
+impl Scope {
+    const EVERYWHERE: &str = "everywhere";
+    const REMOTE: &str = "remote/";
+    const WORKSPACE: &str = "workspace/";
+
+    /// The scope as Swift hands it back: a plain string it keeps.
+    pub fn reference(&self) -> String {
+        match self {
+            Self::Everywhere => Self::EVERYWHERE.to_owned(),
+            Self::Remote { fingerprint } => format!("{}{fingerprint}", Self::REMOTE),
+            Self::Workspace {
+                fingerprint,
+                workspace,
+            } => format!("{}{fingerprint}/{}", Self::WORKSPACE, workspace.0),
+        }
+    }
+
+    /// The scope `reference` names, and Everywhere where it names none.
+    pub fn of(reference: &str) -> Self {
+        if let Some(fingerprint) = reference.strip_prefix(Self::REMOTE)
+            && !fingerprint.is_empty()
+        {
+            return Self::Remote {
+                fingerprint: fingerprint.to_owned(),
+            };
+        }
+        if let Some((fingerprint, workspace)) = reference
+            .strip_prefix(Self::WORKSPACE)
+            .and_then(|named| named.split_once('/'))
+            && !fingerprint.is_empty()
+            && !workspace.is_empty()
+        {
+            return Self::Workspace {
+                fingerprint: fingerprint.to_owned(),
+                workspace: WorkspaceId(workspace.to_owned()),
+            };
+        }
+        Self::Everywhere
+    }
+
+    /// The Remote of `remotes` the scope ranges over, where it ranges over
+    /// one alone.
+    fn remote<'a>(&self, remotes: &'a [Answered]) -> Option<&'a Answered> {
+        let fingerprint = match self {
+            Self::Everywhere => return None,
+            Self::Remote { fingerprint } | Self::Workspace { fingerprint, .. } => fingerprint,
+        };
+        remotes
+            .iter()
+            .find(|remote| remote.fingerprint == *fingerprint)
+    }
+
+    /// The scope as it stands among `remotes`: Everywhere where it names a
+    /// Remote not held, or the one Remote held whole, which is everywhere.
+    fn within(&self, remotes: &[Answered]) -> Self {
+        match self {
+            Self::Everywhere => Self::Everywhere,
+            Self::Remote { .. } if remotes.len() == 1 => Self::Everywhere,
+            Self::Remote { .. } | Self::Workspace { .. } => match self.remote(remotes) {
+                Some(_) => self.clone(),
+                None => Self::Everywhere,
+            },
+        }
+    }
+
+    /// Whether the scope holds the Session `session` on the Remote `remote`.
+    fn holds(&self, remote: &Answered, session: &SessionListItem) -> bool {
+        match self {
+            Self::Everywhere => true,
+            Self::Remote { fingerprint } => remote.fingerprint == *fingerprint,
+            Self::Workspace {
+                fingerprint,
+                workspace,
+            } => {
+                remote.fingerprint == *fingerprint
+                    && session
+                        .workspace()
+                        .is_some_and(|listed| listed.id == *workspace)
+            }
+        }
+    }
+
+    /// Whether the scope ranges over the Remote `remote`.
+    fn reaches(&self, remote: &Answered) -> bool {
+        match self {
+            Self::Everywhere => true,
+            Self::Remote { fingerprint } | Self::Workspace { fingerprint, .. } => {
+                remote.fingerprint == *fingerprint
+            }
+        }
+    }
+}
+
+/// How the listing is narrowed: by a scope, and by what a search has typed,
+/// which narrows nothing while it is empty.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Narrowing {
+    pub scope: Scope,
+    pub query: String,
+}
+
+/// What narrowing the listing turns the Outlook toward: a Remote, and the
+/// Workspace of it chosen, where one was.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Turn {
+    pub remote: String,
+    pub workspace: Option<RememberedWorkspace>,
 }
 
 /// One active Session, as its three lines say it.
@@ -157,20 +339,49 @@ pub(crate) struct Answered {
     pub paths: WorkspacePaths,
     /// Its Sessions, or none before it has first answered.
     pub sessions: Option<Vec<SessionListItem>>,
+    /// The Workspaces its Workspace Registry holds, or none before its
+    /// Session catalog has first listed them.
+    pub workspaces: Option<Vec<Workspace>>,
 }
 
-/// The listing every held Remote's last answer makes, as of `now`, with the
-/// shelf showing as many as `on_show` of its rows and a Session settling once
-/// left alone for `settle_after`; and the next moment after `now` a Session
-/// in it settles so, when it must be made again.
+impl Answered {
+    /// The Workspaces the menu offers of this Remote: those its Server lists,
+    /// then any other a Session of it is in, but never its Sidekick
+    /// Workspace, in which nothing a phone begins begins.
+    fn offered_workspaces(&self) -> Vec<&Workspace> {
+        let mut offered: Vec<&Workspace> = Vec::new();
+        let listed = self.workspaces.iter().flatten();
+        let worked_in = self
+            .sessions
+            .iter()
+            .flatten()
+            .filter_map(SessionListItem::workspace);
+        for workspace in listed.chain(worked_in) {
+            if !self.paths.is_sidekick_workspace(&workspace.path)
+                && !offered.iter().any(|held| held.id == workspace.id)
+            {
+                offered.push(workspace);
+            }
+        }
+        offered
+    }
+}
+
+/// The listing every held Remote's last answer makes, as of `now`, narrowed
+/// as `narrowing` says, with the shelf showing as many as `on_show` of its
+/// rows and a Session settling once left alone for `settle_after`; and the
+/// next moment after `now` a Session in it settles so, when it must be made
+/// again.
 pub(crate) fn present(
     remotes: &[Answered],
     now: SessionTimestamp,
     on_show: usize,
     settle_after: Duration,
+    narrowing: &Narrowing,
 ) -> (Listing, Option<SessionTimestamp>) {
     let idle = u64::try_from(settle_after.as_millis()).unwrap_or(u64::MAX);
     let origin_named = remotes.len() > 1;
+    let scope = narrowing.scope.within(remotes);
     let mut active = Vec::new();
     let mut settled = Vec::new();
     let mut next_settling: Option<SessionTimestamp> = None;
@@ -180,6 +391,9 @@ pub(crate) fn present(
         // no moment a timer could wait for.
         if let Some(at) = row.settles_at(idle).filter(|at| *at > now) {
             next_settling = Some(next_settling.map_or(at, |next| next.min(at)));
+        }
+        if !scope.holds(remote, row.session) {
+            continue;
         }
         if row.settles(idle, now) {
             settled.push((ended_at(row.session), remote, row));
@@ -197,42 +411,162 @@ pub(crate) fn present(
             .cmp(left)
             .then_with(|| a.session.id().to_string().cmp(&b.session.id().to_string()))
     });
-    let hidden = settled.len().saturating_sub(on_show);
     let unanswered = remotes
         .iter()
-        .filter(|remote| remote.sessions.is_none())
+        .filter(|remote| scope.reaches(remote) && remote.sessions.is_none())
         .map(|remote| remote.name.as_str())
         .collect::<Vec<_>>();
     let answered = unanswered.is_empty();
+    let active = active
+        .into_iter()
+        .map(|(_, remote, row)| active_row(remote, &row, origin_named))
+        .collect::<Vec<_>>();
+    let settled = settled
+        .into_iter()
+        .map(|(ended, remote, row)| SettledRow {
+            session: reference(&remote.fingerprint, row.session.id()),
+            glyph: icon_glyph(row.session.icon()),
+            title: title(row.session),
+            ended: instant(ended),
+            unsettle: "Unsettle".to_owned(),
+        })
+        .collect::<Vec<_>>();
+    let query = narrowing.query.as_str();
+    let found = (!query.is_empty()).then(|| {
+        let active = active
+            .iter()
+            .filter(|row| title_carries(query, &row.title))
+            .map(|row| FoundRow::Active { row: row.clone() });
+        let settled = settled
+            .iter()
+            .filter(|row| title_carries(query, &row.title))
+            .map(|row| FoundRow::Settled { row: row.clone() });
+        active.chain(settled).collect::<Vec<_>>()
+    });
+    let nothing = match &found {
+        Some(found) => found.is_empty(),
+        None => active.is_empty() && settled.is_empty(),
+    };
+    let empty = (answered && nothing).then(|| match (&found, &scope) {
+        (Some(_), _) => "No sessions match".to_owned(),
+        (None, Scope::Everywhere) => "No sessions yet".to_owned(),
+        (None, Scope::Workspace { .. }) => "No sessions in this workspace".to_owned(),
+        (None, Scope::Remote { .. }) => format!(
+            "No sessions on {}",
+            scope.remote(remotes).map_or("", |remote| &remote.name)
+        ),
+    });
+    let searching = found.is_some();
+    let hidden = settled.len().saturating_sub(on_show);
     let listing = Listing {
         waiting: (!answered).then(|| reaching(&unanswered, origin_named)),
-        title: if origin_named {
-            "Everywhere"
-        } else {
-            "All workspaces"
-        }
-        .to_owned(),
-        empty: (answered && active.is_empty() && settled.is_empty())
-            .then(|| "No sessions yet".to_owned()),
-        active: active
-            .into_iter()
-            .map(|(_, remote, row)| active_row(remote, &row, origin_named))
-            .collect(),
+        title: scope_title(remotes, &scope, origin_named),
+        scopes: menu(remotes, &scope, origin_named),
+        search_prompt: "Search by title".to_owned(),
+        empty,
+        active: if searching { Vec::new() } else { active },
         settled_header: "Settled".to_owned(),
-        settled: settled
-            .into_iter()
-            .take(on_show)
-            .map(|(ended, remote, row)| SettledRow {
-                session: reference(&remote.fingerprint, row.session.id()),
-                glyph: icon_glyph(row.session.icon()),
-                title: title(row.session),
-                ended: instant(ended),
-                unsettle: "Unsettle".to_owned(),
-            })
-            .collect(),
-        show_more: (hidden > 0).then(|| format!("Show {} more", hidden.min(SHELF_BATCH))),
+        show_more: (!searching && hidden > 0)
+            .then(|| format!("Show {} more", hidden.min(SHELF_BATCH))),
+        settled: if searching {
+            Vec::new()
+        } else {
+            settled.into_iter().take(on_show).collect()
+        },
+        found,
     };
     (listing, next_settling)
+}
+
+/// Whether `title` carries `query`: a plain case-insensitive substring, as
+/// the Sidebar's search is, since a reader searches by words they remember.
+fn title_carries(query: &str, title: &str) -> bool {
+    title.to_lowercase().contains(&query.to_lowercase())
+}
+
+/// What Everywhere is called: every Remote's Sessions, or with one Remote
+/// every Workspace's.
+fn everywhere(origin_named: bool) -> &'static str {
+    if origin_named {
+        "Everywhere"
+    } else {
+        "All workspaces"
+    }
+}
+
+/// What the screen is titled under `scope`: Everywhere, the Remote, or the
+/// Workspace, preceded by its Remote where the phone names Origins at all.
+fn scope_title(remotes: &[Answered], scope: &Scope, origin_named: bool) -> String {
+    let Some(remote) = scope.remote(remotes) else {
+        return everywhere(origin_named).to_owned();
+    };
+    let Scope::Workspace { workspace, .. } = scope else {
+        return remote.name.clone();
+    };
+    let named = remote
+        .offered_workspaces()
+        .into_iter()
+        .find(|offered| offered.id == *workspace)
+        .map(|offered| remote.paths.workspace_name(offered));
+    match (named, origin_named) {
+        (Some(name), true) => format!("{} · {name}", remote.name),
+        (Some(name), false) => name,
+        // Not yet listed by its Server: named by its Remote until it is.
+        (None, _) => remote.name.clone(),
+    }
+}
+
+/// The menu the title opens: Everywhere, then each Remote with all of it
+/// and each Workspace it offers; with one Remote, Everywhere reads as all its
+/// Workspaces, and they follow it.
+fn menu(remotes: &[Answered], scope: &Scope, origin_named: bool) -> Vec<ScopeSection> {
+    let choice = |offered: Scope, kind, glyph, words: String| ScopeChoice {
+        chosen: offered == *scope,
+        scope: offered.reference(),
+        kind,
+        glyph,
+        words,
+    };
+    let mut sections = vec![ScopeSection {
+        header: None,
+        choices: vec![choice(
+            Scope::Everywhere,
+            ScopeKind::Everywhere,
+            None,
+            everywhere(origin_named).to_owned(),
+        )],
+    }];
+    for remote in remotes {
+        let whole = origin_named.then(|| {
+            choice(
+                Scope::Remote {
+                    fingerprint: remote.fingerprint.clone(),
+                },
+                ScopeKind::Remote,
+                None,
+                format!("All of {}", remote.name),
+            )
+        });
+        let workspaces = remote.offered_workspaces().into_iter().map(|workspace| {
+            choice(
+                Scope::Workspace {
+                    fingerprint: remote.fingerprint.clone(),
+                    workspace: workspace.id.clone(),
+                },
+                ScopeKind::Workspace,
+                icon_glyph(workspace.icon.as_deref()),
+                remote.paths.workspace_name(workspace),
+            )
+        });
+        let choices = whole.into_iter().chain(workspaces).collect::<Vec<_>>();
+        if !choices.is_empty() {
+            sections.push(ScopeSection {
+                header: origin_named.then(|| remote.name.clone()),
+                choices,
+            });
+        }
+    }
+    sections
 }
 
 /// What stands at the foot of the active rows while the Remotes `unanswered`
@@ -542,6 +876,8 @@ struct State {
     remotes: Vec<Followed>,
     /// How many of the shelf's rows are on show.
     on_show: usize,
+    /// How the listing is narrowed, until the core is opened again.
+    narrowing: Narrowing,
     next_settling: Option<SessionTimestamp>,
 }
 
@@ -577,7 +913,13 @@ impl Listings {
         timings: SessionCommandTimings,
         settle_after: Duration,
     ) -> Self {
-        let (listing, _) = present(&[], SessionTimestamp::now(), SHELF_OPENING, settle_after);
+        let (listing, _) = present(
+            &[],
+            SessionTimestamp::now(),
+            SHELF_OPENING,
+            settle_after,
+            &Narrowing::default(),
+        );
         let shared = Arc::new(Shared {
             runtime: runtime.clone(),
             redeemer,
@@ -630,6 +972,47 @@ impl Listings {
     /// Brings up the next of the shelf's settled rows.
     pub fn show_more(&self) {
         self.shared.lock().on_show += SHELF_BATCH;
+        self.shared.render();
+    }
+
+    /// Narrows the listing to the scope `reference` names, or to Everywhere
+    /// where it names no Remote held; and what that turns the Outlook
+    /// toward, which Everywhere turns toward nothing.
+    pub fn narrow(&self, reference: &str) -> Option<Turn> {
+        let turn = {
+            let mut state = self.shared.lock();
+            let answered = state
+                .remotes
+                .iter()
+                .map(|followed| &followed.answered)
+                .cloned()
+                .collect::<Vec<_>>();
+            let scope = Scope::of(reference).within(&answered);
+            let turn = scope.remote(&answered).map(|remote| Turn {
+                remote: remote.name.clone(),
+                workspace: match &scope {
+                    Scope::Workspace { workspace, .. } => remote
+                        .offered_workspaces()
+                        .into_iter()
+                        .find(|offered| offered.id == *workspace)
+                        .map(|offered| RememberedWorkspace {
+                            path: offered.path.clone(),
+                            name: remote.paths.workspace_name(offered),
+                        }),
+                    Scope::Everywhere | Scope::Remote { .. } => None,
+                },
+            });
+            state.narrowing.scope = scope;
+            turn
+        };
+        self.shared.render();
+        turn
+    }
+
+    /// Searches the listing by Title for `query`, until the core is opened
+    /// again; an empty one searches for nothing.
+    pub fn search(&self, query: &str) {
+        query.clone_into(&mut self.shared.lock().narrowing.query);
         self.shared.render();
     }
 
@@ -830,6 +1213,7 @@ impl Shared {
                 fingerprint: stored.remote.fingerprint.clone(),
                 paths: WorkspacePaths::default(),
                 sessions: None,
+                workspaces: None,
             },
             generation,
             transport,
@@ -881,6 +1265,7 @@ impl Shared {
                 SessionTimestamp::now(),
                 state.on_show,
                 self.settle_after,
+                &state.narrowing,
             );
             self.renders.fetch_add(1, Ordering::Relaxed);
             self.shown.send_if_modified(|shown| {
@@ -928,12 +1313,14 @@ async fn follow_catalog(
 ) {
     let mut catalog = commands.subscribe_catalog();
     while let Some(event) = catalog.next().await {
-        let paths = match event {
+        let (paths, workspaces) = match event {
             SessionCatalogEvent::SessionCatalogReconciled(snapshot) => {
                 wanted.notify_one();
-                Some(snapshot.workspace_paths)
+                (Some(snapshot.workspace_paths), None)
             }
-            SessionCatalogEvent::WorkspaceListing(listing) => Some(listing.workspace_paths),
+            SessionCatalogEvent::WorkspaceListing(listing) => {
+                (Some(listing.workspace_paths), Some(listing.workspaces))
+            }
             // Nothing a row shows moves with these.
             SessionCatalogEvent::ModelCatalog(_)
             | SessionCatalogEvent::SkillCatalogUpdated(_)
@@ -941,7 +1328,7 @@ async fn follow_catalog(
             | SessionCatalogEvent::Recovering(_)
             | SessionCatalogEvent::RemoteRecovered
             | SessionCatalogEvent::RemoteFailed { .. }
-            | SessionCatalogEvent::ChangeSkipped => None,
+            | SessionCatalogEvent::ChangeSkipped => (None, None),
             SessionCatalogEvent::SessionCreated(_)
             | SessionCatalogEvent::SessionCatalogInvalidated { .. }
             | SessionCatalogEvent::CheckoutStateChanged(_)
@@ -955,14 +1342,21 @@ async fn follow_catalog(
             | SessionCatalogEvent::WorkspaceDescriptionChanged(_)
             | SessionCatalogEvent::SessionRemoteSubsessionsChanged(_) => {
                 wanted.notify_one();
-                None
+                (None, None)
             }
         };
-        if let Some(paths) = paths {
+        if paths.is_some() || workspaces.is_some() {
             let Some(shared) = shared.upgrade() else {
                 return;
             };
-            shared.change(&name, generation, |answered| answered.paths = paths);
+            shared.change(&name, generation, |answered| {
+                if let Some(paths) = paths {
+                    answered.paths = paths;
+                }
+                if let Some(workspaces) = workspaces {
+                    answered.workspaces = Some(workspaces);
+                }
+            });
         }
     }
 }

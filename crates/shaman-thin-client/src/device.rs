@@ -105,15 +105,26 @@ impl DeviceRecord {
     /// remembered for that Remote, or, only where none is remembered, the
     /// Session's own.
     pub fn turn_toward(&mut self, listed: &crate::listing::Listed) {
-        self.turned.retain(|held| *held != listed.remote);
-        self.turned.insert(0, listed.remote.clone());
-        if let Some((path, name)) = &listed.workspace {
-            self.workspaces
-                .entry(listed.remote.clone())
-                .or_insert_with(|| RememberedWorkspace {
-                    path: path.clone(),
-                    name: name.clone(),
-                });
+        let workspace = listed
+            .workspace
+            .as_ref()
+            .filter(|_| !self.workspaces.contains_key(&listed.remote))
+            .map(|(path, name)| RememberedWorkspace {
+                path: path.clone(),
+                name: name.clone(),
+            });
+        self.turn(&listed.remote, workspace);
+    }
+
+    /// Turns the Outlook toward the Remote `remote`, first among those
+    /// turned toward, and toward its Workspace `workspace` where one is
+    /// given, which is remembered for it; given none, the one remembered
+    /// stays.
+    pub fn turn(&mut self, remote: &str, workspace: Option<RememberedWorkspace>) {
+        self.turned.retain(|held| held != remote);
+        self.turned.insert(0, remote.to_owned());
+        if let Some(workspace) = workspace {
+            self.workspaces.insert(remote.to_owned(), workspace);
         }
     }
 }

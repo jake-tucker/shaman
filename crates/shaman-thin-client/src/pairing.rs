@@ -192,10 +192,14 @@ pub(crate) async fn confirm(
     let shown = inner
         .change_record_shown(move |record| {
             record.name = device_name;
-            record
-                .turned
-                .retain(|held| *held != turned && Some(held) != replaced.as_ref());
-            record.turned.insert(0, turned);
+            // The Server is the one it was, so where the Workspace last
+            // turned toward on it is remembered under its old name, it is
+            // remembered under its new.
+            let remembered = replaced
+                .as_ref()
+                .and_then(|replaced| record.workspaces.remove(replaced));
+            record.turned.retain(|held| Some(held) != replaced.as_ref());
+            record.turn(&turned, remembered);
         })
         .await;
     if let Err(error) = shown {
