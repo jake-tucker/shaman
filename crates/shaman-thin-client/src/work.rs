@@ -62,6 +62,9 @@ pub struct WorkRow {
     /// The glyph it is led by, resolved, in the bundled font.
     pub glyph: Option<String>,
     pub title: String,
+    /// How the title reads: monospace where it is what was run or touched,
+    /// a command, a Tool and its input, a path; prose where it is words.
+    pub title_style: BodyStyle,
     /// The line beneath the title.
     pub line: Option<String>,
     /// The words at the right.
@@ -242,13 +245,14 @@ pub(crate) fn row(activity: &Activity, directory: &Path) -> WorkRow {
     let row = |glyph: char, title: String, tone: Tone, tap: Tap| WorkRow {
         glyph: Some(glyph.to_string()),
         title,
+        title_style: BodyStyle::Prose,
         line: None,
         trailing: None,
         tone,
         tap,
     };
     use shaman_icons::activity as glyphs;
-    match activity {
+    let mut made = match activity {
         Activity::Command {
             status,
             command,
@@ -513,7 +517,14 @@ pub(crate) fn row(activity: &Activity, directory: &Path) -> WorkRow {
             Tone::Unknown,
             Tap::Nothing,
         ),
+    };
+    if matches!(
+        activity,
+        Activity::Command { .. } | Activity::ToolCall { .. } | Activity::FileChange { .. }
+    ) {
+        made.title_style = BodyStyle::Monospace;
     }
+    made
 }
 
 /// The whole of `activity`, in a Session whose execution directory is `directory`.

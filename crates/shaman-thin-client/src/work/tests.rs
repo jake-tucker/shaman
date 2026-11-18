@@ -308,6 +308,7 @@ fn a_command_is_its_line_where_it_ran_and_how_it_failed_and_its_detail_holds_its
         &WorkRow {
             glyph: glyph(shaman_icons::activity::COMMAND),
             title: "cargo test --workspace …".to_owned(),
+            title_style: BodyStyle::Monospace,
             line: Some(format!("in {cwd_shown}")),
             trailing: Some("exit 101".to_owned()),
             tone: Tone::Failed,
@@ -386,6 +387,7 @@ fn a_tool_call_is_listed_by_its_tool_and_input_and_its_detail_says_what_its_resu
     let row = row_of(&work, 0);
     assert_eq!(row.glyph, glyph(shaman_icons::activity::TOOL_CALL));
     assert_eq!(row.title, "web/fetch https://example.com");
+    assert_eq!(row.title_style, BodyStyle::Monospace, "what was run");
     assert_eq!(row.tone, Tone::Succeeded);
 
     let detail = built.detail(id);
@@ -444,6 +446,7 @@ fn a_file_change_shows_the_paths_it_touched_and_no_diff() {
     let listed = row_of(&work, 0);
     assert_eq!(listed.glyph, glyph(shaman_icons::activity::FILE_CHANGE));
     assert_eq!(listed.title, format!("Edited {edited_shown}"));
+    assert_eq!(listed.title_style, BodyStyle::Monospace, "a path");
     assert_eq!(listed.line.as_deref(), Some("and 3 more files"));
 
     let detail = built.detail(id);
@@ -509,6 +512,7 @@ fn a_settled_approval_reads_as_the_tuis_row_and_opens_onto_what_was_asked_and_an
         &WorkRow {
             glyph: glyph(shaman_icons::activity::APPROVAL),
             title: "Approval · Command · Accepted once".to_owned(),
+            title_style: BodyStyle::Prose,
             line: Some("rm -rf target".to_owned()),
             trailing: None,
             tone: Tone::Succeeded,
@@ -754,6 +758,7 @@ fn a_status_or_an_error_that_says_all_in_its_row_pushes_nothing_and_a_longer_one
         WorkRow {
             glyph: glyph(shaman_icons::activity::STATUS),
             title: "Retrying in 5s".to_owned(),
+            title_style: BodyStyle::Prose,
             line: None,
             trailing: None,
             tone: Tone::Quiet,
