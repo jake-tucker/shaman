@@ -124,9 +124,23 @@ private final class MemoryStore: KeyStore {
     #expect(!key.isValidSignature(signature, for: Data("another".utf8)))
   }
 
-  @Test func theKeyIsForSigningAloneAfterTheFirstUnlockOnThisPhone() {
-    #expect(KeyPolicy.flags == [.privateKeyUsage], "no user presence, biometry or passcode")
-    #expect(KeyPolicy.accessibility == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
+  /// The access control a key is made under, compared whole with others by the Security framework's own equality.
+  @Test func theKeyIsMadeForSigningAloneAfterTheFirstUnlockOnThisPhone() throws {
+    func control(_ accessibility: CFString, _ flags: SecAccessControlCreateFlags) throws -> SecAccessControl {
+      try #require(SecAccessControlCreateWithFlags(nil, accessibility, flags, nil))
+    }
+    let madeUnder = try KeyPolicy.accessControl()
+    let afterFirstUnlock = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    #expect(CFEqual(madeUnder, try control(afterFirstUnlock, [.privateKeyUsage])))
+    for other in [
+      try control(afterFirstUnlock, [.privateKeyUsage, .userPresence]),
+      try control(afterFirstUnlock, [.privateKeyUsage, .biometryAny]),
+      try control(afterFirstUnlock, [.privateKeyUsage, .devicePasscode]),
+      try control(kSecAttrAccessibleWhenUnlockedThisDeviceOnly, [.privateKeyUsage]),
+      try control(kSecAttrAccessibleAfterFirstUnlock, [.privateKeyUsage]),
+    ] {
+      #expect(!CFEqual(madeUnder, other), "\(other)")
+    }
   }
 
   @Test func aKeyIsMadeAgainFromItsBlob() throws {
@@ -143,6 +157,53 @@ private final class MemoryStore: KeyStore {
     let fingerprint = try #require(await heard.next()?.fingerprint)
     #expect(fingerprint.count == 64)
     #expect(fingerprint.allSatisfy { $0.isHexDigit })
+  }
+}
+
+/// A key that will not sign, as a chip may refuse.
+private final class RefusingSigner: KeySigner {
+  private let key: Data
+
+  init() throws {
+    key = try madeKey().publicKey()
+  }
+
+  func publicKey() -> Data { key }
+
+  func sign(message: Data) throws(SignError) -> Data {
+    throw .Refused(message: "the chip will not take the key")
+  }
+}
+
+@Suite struct OpeningTests {
+  @Test func aKeyThatWillNotSignOffersToStartAgainInTheCoresWords() throws {
+    let base = try scratch()
+    defer { try? FileManager.default.removeItem(at: base) }
+    let opening = Opening.over(try RefusingSigner(), in: try CoreDirectory.prepare(in: base))
+    guard case .keyRefused(let message) = opening else {
+      Issue.record("a key that will not sign was not refused: \(opening)")
+      return
+    }
+    #expect(message == "This phone's identity key would not sign: the chip will not take the key")
+  }
+
+  @Test func aKeyTheChipRefusesOffersToStartAgain() throws {
+    let base = try scratch()
+    defer { try? FileManager.default.removeItem(at: base) }
+    let opening = Opening.of(.refused("refused"), in: try CoreDirectory.prepare(in: base))
+    guard case .keyRefused("refused") = opening else {
+      Issue.record("\(opening)")
+      return
+    }
+  }
+
+  @Test func aKeyThatSignsOpensTheCore() throws {
+    let base = try scratch()
+    defer { try? FileManager.default.removeItem(at: base) }
+    guard case .core = Opening.of(.ready(try madeKey()), in: try CoreDirectory.prepare(in: base)) else {
+      Issue.record("the core did not open")
+      return
+    }
   }
 }
 

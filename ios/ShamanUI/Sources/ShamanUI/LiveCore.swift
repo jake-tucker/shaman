@@ -41,3 +41,33 @@ public final class LiveCore: Core {
     }
   }
 }
+
+/// The live core over the key `IdentityKey` found, or why there is none.
+public enum Opening {
+  case core(LiveCore)
+  /// The records could not be read or kept, or there is no key to open them under.
+  case failed(String)
+  /// The key cannot prove this phone: the chip will not take its blob, or it will not sign. Starting again under a
+  /// new key is the user's to choose.
+  case keyRefused(String)
+
+  /// The core kept in `directory`, over the key `found`.
+  public static func of(_ found: IdentityKey.Found, in directory: URL) -> Opening {
+    switch found {
+    case .ready(let signer): over(signer, in: directory)
+    case .failed(let message): .failed(message)
+    case .refused(let message): .keyRefused(message)
+    }
+  }
+
+  /// The core kept in `directory`, over the key `signer` signs with.
+  static func over(_ signer: any KeySigner, in directory: URL) -> Opening {
+    do {
+      return .core(try LiveCore(directory: directory, signer: signer))
+    } catch .KeyRefused(let message) {
+      return .keyRefused(message)
+    } catch {
+      return .failed(error.message)
+    }
+  }
+}

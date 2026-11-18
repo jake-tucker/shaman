@@ -131,7 +131,9 @@ If the phone is locked, stop and ask for it to be unlocked.
 - The app reaches the core only through the `Core` protocol. A new act or model is added to the core, to `Core`, to
   `LiveCore` and to `FakeCore` together.
 - The core writes every word a screen shows but chrome's labels, and hands Swift finished models; Swift folds nothing.
-  An act's failure is `ActError`: `Invalid` is shown beside the input, the rest in a banner over the screen that asked.
+  The exception is what is said before the core is open, which Swift writes: why the identity key could not be found
+  or made, and why the core's directory could not be made. An act's failure is `ActError`: `Invalid` is shown beside
+  the input, the rest in a banner over the screen that asked.
 - A listener the core tells of changes becomes an `AsyncStream` through `listened`, whose ending cancels the core's
   subscription.
 - Everything the app keeps, the core keeps, in the one directory `CoreDirectory.prepare` makes and keeps out of

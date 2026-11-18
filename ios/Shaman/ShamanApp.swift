@@ -36,8 +36,8 @@ struct ShamanApp: App {
 private enum Opened {
   case core(any Core)
   case failed(String)
-  /// The Keychain gave up a blob the chip will not take: the core in `directory` opens once the user chooses to start
-  /// again under a new key, kept in `item`.
+  /// The key cannot prove this phone, as where the Keychain gave up a blob the chip will not take: the core in
+  /// `directory` opens once the user chooses to start again under a new key, kept in `item`.
   case keyRefused(String, directory: URL, item: KeyItem)
   #if DEBUG
     /// The directory a run kept its records in was removed, as `--remove-core-directory` asks.
@@ -92,15 +92,10 @@ private enum Opened {
 
   /// The live core in `directory`, over the key `found`, kept in `item`.
   static func open(_ directory: URL, _ found: IdentityKey.Found, _ item: KeyItem) -> Self {
-    switch found {
-    case .ready(let signer):
-      do {
-        return .core(try LiveCore(directory: directory, signer: signer))
-      } catch {
-        return .failed(error.message)
-      }
-    case .failed(let message): return .failed(message)
-    case .refused(let message): return .keyRefused(message, directory: directory, item: item)
+    switch Opening.of(found, in: directory) {
+    case .core(let core): .core(core)
+    case .failed(let message): .failed(message)
+    case .keyRefused(let message): .keyRefused(message, directory: directory, item: item)
     }
   }
 }
