@@ -38,6 +38,7 @@ mod pairing;
 mod reach;
 mod remotes;
 mod session;
+mod work;
 
 pub use conversation::{ConversationItem, ItemKind, Tone, TurnCard, TurnOutcome};
 pub use device::ThisDevice;
@@ -53,7 +54,13 @@ pub use listing::{
 pub use pairing::{InviteReading, OfferedWay, PairingOutcome, ReadInvite, TryInstead};
 use remotes::Remotes;
 pub use remotes::{BeginsIn, Outlook, ServerRow, Servers, WayRow, WayState};
-pub use session::{ConversationChange, ConversationListener, FrameListener, OpenSession};
+pub use session::{
+    ConversationChange, ConversationListener, DetailListener, FrameListener, OpenSession,
+    WorkListener,
+};
+pub use work::{
+    ActivityDetail, BodyStyle, DetailSection, Fact, Tap, TurnWork, WorkItem, WorkKind, WorkRow,
+};
 
 uniffi::setup_scaffolding!();
 

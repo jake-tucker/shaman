@@ -73,12 +73,21 @@ pub enum ItemKind {
     Error { text: String },
     /// Where the Agent's memory of the Session was compacted, in the TUI's
     /// words.
-    Compaction { words: String, tone: Tone },
+    Compaction {
+        words: String,
+        tone: Tone,
+        /// The Activity whose detail a tap pushes, where it holds more than
+        /// its words: the instructions it was given, or the summary it left.
+        detail: Option<String>,
+    },
 }
 
-/// The card one Turn's work stands behind: its line and its count alone.
+/// The card one Turn's work stands behind: its line and its count, and the
+/// Turn a tap on it reads the work of.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct TurnCard {
+    /// The Turn, as a tap on the card hands it back to read its work.
+    pub work: String,
     pub outcome: TurnOutcome,
     /// How a settled Turn settled and how long it took, or what a live one is
     /// doing now.
@@ -103,9 +112,13 @@ pub enum TurnOutcome {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum Tone {
     Running,
+    /// Waiting on the reader: an Intervention still to be answered.
+    Waiting,
     Succeeded,
     Failed,
     Stopped,
+    /// Something said rather than done, which settles no way.
+    Quiet,
     /// Standing as a newer Server says, in a way this build does not know.
     Unknown,
 }
@@ -132,68 +145,135 @@ pub(crate) fn loading() -> Vec<ConversationItem> {
     }]
 }
 
+/// A Session's Transcript as a phone reads it: each entry it shows, and what
+/// each is to its Turn's card. The conversation and a Turn's work are both
+/// read from it, so the two never disagree over what stands behind a card.
+pub(crate) struct Read<'a> {
+    entries: Vec<Entry<'a>>,
+    roles: Vec<Role>,
+    turns: &'a [Turn],
+    workspace: &'a Path,
+}
+
+impl<'a> Read<'a> {
+    pub(crate) fn of(snapshot: &'a SessionSnapshot) -> Self {
+        let messages = snapshot
+            .messages
+            .iter()
+            .map(|message| (message.id, message))
+            .collect::<HashMap<_, _>>();
+        let activities = snapshot
+            .activities
+            .iter()
+            .map(|activity| (activity.id(), activity))
+            .collect::<HashMap<_, _>>();
+        let turns = snapshot
+            .turns
+            .iter()
+            .map(|turn| (turn.id, turn))
+            .collect::<HashMap<_, _>>();
+        let entries = snapshot
+            .transcript_in_reading_order()
+            .into_iter()
+            .filter_map(|(_, item)| match item {
+                TranscriptItem::Message { message_id } => {
+                    messages.get(message_id).copied().map(Entry::Message)
+                }
+                TranscriptItem::Activity { activity_id } => activities
+                    .get(activity_id)
+                    .copied()
+                    .filter(|activity| shown(activity))
+                    .map(Entry::Activity),
+                // A kind of entry this build does not know holds no item.
+                TranscriptItem::Unknown => None,
+            })
+            .collect::<Vec<_>>();
+        let closing = Closing::of(&entries, &turns);
+        let roles = entries
+            .iter()
+            .map(|entry| entry.role(&closing))
+            .collect::<Vec<_>>();
+        Self {
+            entries,
+            roles,
+            turns: &snapshot.turns,
+            workspace: snapshot.session.workspace.path.as_path(),
+        }
+    }
+
+    /// Where the Session's Workspace stands, which paths are read against.
+    pub(crate) fn workspace(&self) -> &'a Path {
+        self.workspace
+    }
+
+    /// The Turn `turn` names, where the Session holds it.
+    pub(crate) fn turn(&self, turn: TurnId) -> Option<&'a Turn> {
+        self.turns.iter().find(|held| held.id == turn)
+    }
+
+    /// The work of `turn` behind its card, in the order it happened: its
+    /// Activities, and the Agent's Messages along the way among them.
+    pub(crate) fn work(&self, turn: TurnId) -> impl Iterator<Item = Entry<'a>> + '_ {
+        self.entries
+            .iter()
+            .zip(&self.roles)
+            .filter(move |(_, role)| **role == Role::Work(turn))
+            .map(|(entry, _)| *entry)
+    }
+
+    /// The card of `turn`, whose work is what this reading holds of it.
+    pub(crate) fn card(&self, turn: &Turn) -> TurnCard {
+        let work = self
+            .work(turn.id)
+            .filter_map(|entry| match entry {
+                Entry::Activity(activity) => Some(activity),
+                Entry::Message(_) => None,
+            })
+            .collect::<Vec<_>>();
+        card(turn, &work, self.workspace)
+    }
+
+    /// The conversation this reading makes, in reading order.
+    fn items(&self) -> Vec<ConversationItem> {
+        let (entries, roles) = (&self.entries, &self.roles);
+        let cards = card_positions(entries, roles, self.turns);
+        let mut items = Vec::with_capacity(entries.len());
+        let mut carded = HashSet::new();
+        for (position, (entry, role)) in entries.iter().zip(roles).enumerate() {
+            for turn in cards.get(&position).into_iter().flatten() {
+                if carded.insert(turn.id) {
+                    items.push(self.card_item(turn));
+                }
+            }
+            if let Role::Outside(_) = role
+                && let Some(item) = entry.item()
+            {
+                items.push(item);
+            }
+        }
+        // A live Turn with nothing of its own in the Transcript yet stands as
+        // its card alone, at the foot.
+        for turn in self.turns {
+            if needs_card(turn, entries, roles) && carded.insert(turn.id) {
+                items.push(self.card_item(turn));
+            }
+        }
+        items
+    }
+
+    fn card_item(&self, turn: &Turn) -> ConversationItem {
+        ConversationItem {
+            id: card_id(turn.id),
+            kind: ItemKind::Turn {
+                card: self.card(turn),
+            },
+        }
+    }
+}
+
 /// The conversation `snapshot` reads as, in reading order.
 pub(crate) fn conversation(snapshot: &SessionSnapshot) -> Vec<ConversationItem> {
-    let messages = snapshot
-        .messages
-        .iter()
-        .map(|message| (message.id, message))
-        .collect::<HashMap<_, _>>();
-    let activities = snapshot
-        .activities
-        .iter()
-        .map(|activity| (activity.id(), activity))
-        .collect::<HashMap<_, _>>();
-    let turns = snapshot
-        .turns
-        .iter()
-        .map(|turn| (turn.id, turn))
-        .collect::<HashMap<_, _>>();
-    let entries = snapshot
-        .transcript_in_reading_order()
-        .into_iter()
-        .filter_map(|(_, item)| match item {
-            TranscriptItem::Message { message_id } => {
-                messages.get(message_id).copied().map(Entry::Message)
-            }
-            TranscriptItem::Activity { activity_id } => activities
-                .get(activity_id)
-                .copied()
-                .filter(|activity| shown(activity))
-                .map(Entry::Activity),
-            // A kind of entry this build does not know holds no item.
-            TranscriptItem::Unknown => None,
-        })
-        .collect::<Vec<_>>();
-    let closing = Closing::of(&entries, &turns);
-    let roles = entries
-        .iter()
-        .map(|entry| entry.role(&closing))
-        .collect::<Vec<_>>();
-    let cards = card_positions(&entries, &roles, &snapshot.turns);
-    let workspace = snapshot.session.workspace.path.as_path();
-
-    let mut items = Vec::with_capacity(entries.len());
-    let mut carded = HashSet::new();
-    for (position, (entry, role)) in entries.iter().zip(&roles).enumerate() {
-        for turn in cards.get(&position).into_iter().flatten() {
-            if carded.insert(turn.id) {
-                items.push(card_item(turn, &entries, &roles, workspace));
-            }
-        }
-        if let Role::Outside(_) = role
-            && let Some(item) = entry.item()
-        {
-            items.push(item);
-        }
-    }
-    // A live Turn with nothing of its own in the Transcript yet stands as
-    // its card alone, at the foot.
-    for turn in &snapshot.turns {
-        if needs_card(turn, &entries, &roles) && carded.insert(turn.id) {
-            items.push(card_item(turn, &entries, &roles, workspace));
-        }
-    }
+    let mut items = Read::of(snapshot).items();
     // A Prompt sent and not yet delivered stands at the foot as the Message
     // it will be; one queued behind the working Turn waits elsewhere.
     items.extend(
@@ -219,7 +299,7 @@ pub(crate) fn conversation(snapshot: &SessionSnapshot) -> Vec<ConversationItem> 
 
 /// One entry of the Transcript a conversation reads.
 #[derive(Clone, Copy)]
-enum Entry<'a> {
+pub(crate) enum Entry<'a> {
     Message(&'a Message),
     Activity(&'a Activity),
 }
@@ -393,29 +473,6 @@ fn needs_card(turn: &Turn, entries: &[Entry<'_>], roles: &[Role]) -> bool {
             .any(|(_, role)| *role == Role::Work(turn.id))
 }
 
-fn card_item(
-    turn: &Turn,
-    entries: &[Entry<'_>],
-    roles: &[Role],
-    workspace: &Path,
-) -> ConversationItem {
-    let work = entries
-        .iter()
-        .zip(roles)
-        .filter(|(_, role)| **role == Role::Work(turn.id))
-        .filter_map(|(entry, _)| match entry {
-            Entry::Activity(activity) => Some(*activity),
-            Entry::Message(_) => None,
-        })
-        .collect::<Vec<_>>();
-    ConversationItem {
-        id: card_id(turn.id),
-        kind: ItemKind::Turn {
-            card: card(turn, &work, workspace),
-        },
-    }
-}
-
 /// The id a Turn's card stands under.
 pub(crate) fn card_id(turn: TurnId) -> String {
     format!("turn:{turn}")
@@ -443,6 +500,7 @@ fn card(turn: &Turn, work: &[&Activity], workspace: &Path) -> TurnCard {
         TurnStatus::Failed => (TurnOutcome::Failed, settled_line("Failed", "after", turn)),
     };
     TurnCard {
+        work: turn.id.to_string(),
         outcome,
         line,
         count: count(work),
@@ -451,7 +509,7 @@ fn card(turn: &Turn, work: &[&Activity], workspace: &Path) -> TurnCard {
 
 /// Whether `activity` waits on the reader: an Approval or a Questionnaire
 /// still to be answered.
-fn awaits_reader(activity: &Activity) -> bool {
+pub(crate) fn awaits_reader(activity: &Activity) -> bool {
     match activity {
         Activity::Approval { outcome, .. } => matches!(
             outcome,
@@ -597,15 +655,19 @@ fn activity_item(activity: &Activity) -> Option<ConversationItem> {
     let kind = match activity {
         Activity::Error { text, .. } => ItemKind::Error { text: text.clone() },
         Activity::Compaction {
+            id,
             status,
             trigger,
+            instructions,
             before_tokens,
             after_tokens,
             error,
+            summary,
             ..
         } => ItemKind::Compaction {
             words: compaction_words(*status, *trigger, *before_tokens, *after_tokens, error),
             tone: (*status).into(),
+            detail: (instructions.is_some() || summary.is_some()).then(|| id.to_string()),
         },
         _ => return None,
     };
@@ -616,7 +678,7 @@ fn activity_item(activity: &Activity) -> Option<ConversationItem> {
 }
 
 /// A Compaction, as the TUI's row says it.
-fn compaction_words(
+pub(crate) fn compaction_words(
     status: ActivityStatus,
     trigger: CompactionTrigger,
     before: Option<u64>,
@@ -654,7 +716,7 @@ fn compaction_words(
 
 /// A count of tokens rounded to fit beside another, as the TUI writes one:
 /// "180K", "1.25M".
-fn compact_count(value: u64) -> String {
+pub(crate) fn compact_count(value: u64) -> String {
     if value < 1_000 {
         return value.to_string();
     }

@@ -2,7 +2,8 @@
 //! Icon Catalog ([`glyph`], [`entries`], [`names`], [`search`]), the plain
 //! glyphs that stand where an Icon is absent ([`FOLDER`], [`MONITOR`]), the
 //! glyphs a Checkout State is led by ([`GIT_BRANCH`], [`WORKTREE`],
-//! [`GIT_COMMIT`]), the Icon the Sidekick Workspace stands beside
+//! [`GIT_COMMIT`]), the glyphs a phone leads each kind of Activity's row with
+//! ([`activity`]), the Icon the Sidekick Workspace stands beside
 //! ([`SIDEKICK_ICON`]), and a Provider's glyph ([`provider_glyph`]).
 //!
 //! It holds no I/O and no Shaman type, so the Server, the TUI and a thin
@@ -33,6 +34,44 @@ pub const WORKTREE: char = '\u{ec7e}';
 /// Nerd Fonts `nf-cod-git_commit` (Codicons git-commit): the glyph a Checkout
 /// State on a detached head is led by.
 pub const GIT_COMMIT: char = '\u{eafc}';
+
+/// The glyphs each kind of Activity's row among a Turn's work is led by, on a
+/// phone: fixed, as a Checkout State's are, each a Nerd Fonts 3.5.1 Codicon.
+pub mod activity {
+    /// `nf-cod-terminal`: a command.
+    pub const COMMAND: char = '\u{ea85}';
+    /// `nf-cod-tools`: a Tool Call.
+    pub const TOOL_CALL: char = '\u{eb6d}';
+    /// `nf-cod-edit`: a File Change.
+    pub const FILE_CHANGE: char = '\u{ea73}';
+    /// `nf-cod-shield`: an Approval.
+    pub const APPROVAL: char = '\u{eb53}';
+    /// `nf-cod-question`: a Questionnaire.
+    pub const QUESTIONNAIRE: char = '\u{eb32}';
+    /// `nf-cod-hubot`: a Subagent.
+    pub const SUBAGENT: char = '\u{eb08}';
+    /// `nf-cod-link_external`: a Subsession, the way out into a Session of
+    /// its own.
+    pub const SUBSESSION: char = '\u{eb14}';
+    /// `nf-cod-info`: a Status.
+    pub const STATUS: char = '\u{ea74}';
+    /// `nf-cod-error`: an Error.
+    pub const ERROR: char = '\u{ea87}';
+    /// `nf-cod-eye`: how a Watch settled.
+    pub const WATCH_OUTCOME: char = '\u{ea70}';
+    /// `nf-cod-fold`: a Compaction.
+    pub const COMPACTION: char = '\u{eaf5}';
+    /// `nf-cod-type_hierarchy`: a decision of a Route.
+    pub const ROUTE: char = '\u{ebb9}';
+    /// `nf-cod-arrow_swap`: a Reroute.
+    pub const REROUTE: char = '\u{ebcb}';
+    /// `nf-cod-move`: a Move.
+    pub const MOVE: char = '\u{eb22}';
+    /// `nf-cod-lightbulb`: Reasoning.
+    pub const REASONING: char = '\u{ea61}';
+    /// `nf-cod-circle_slash`: an Activity of a kind this build does not know.
+    pub const UNKNOWN: char = '\u{eabd}';
+}
 
 /// The Catalog name of the Icon the Sidekick Workspace is named beside
 /// wherever it has none of its own: a standing default rather than a stored
@@ -157,6 +196,22 @@ mod tests {
             ("cod-git_branch", GIT_BRANCH),
             ("cod-worktree", WORKTREE),
             ("cod-git_commit", GIT_COMMIT),
+            ("cod-terminal", activity::COMMAND),
+            ("cod-tools", activity::TOOL_CALL),
+            ("cod-edit", activity::FILE_CHANGE),
+            ("cod-shield", activity::APPROVAL),
+            ("cod-question", activity::QUESTIONNAIRE),
+            ("cod-hubot", activity::SUBAGENT),
+            ("cod-link_external", activity::SUBSESSION),
+            ("cod-info", activity::STATUS),
+            ("cod-error", activity::ERROR),
+            ("cod-eye", activity::WATCH_OUTCOME),
+            ("cod-fold", activity::COMPACTION),
+            ("cod-type_hierarchy", activity::ROUTE),
+            ("cod-arrow_swap", activity::REROUTE),
+            ("cod-move", activity::MOVE),
+            ("cod-lightbulb", activity::REASONING),
+            ("cod-circle_slash", activity::UNKNOWN),
         ]
         .into_iter()
         .chain(

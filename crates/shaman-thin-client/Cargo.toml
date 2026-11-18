@@ -26,6 +26,8 @@ shaman-client = { path = "../shaman-client" }
 shaman-icons = { path = "../shaman-icons" }
 shaman-pairing = { path = "../shaman-pairing" }
 shaman-protocol = { path = "../shaman-protocol" }
+# What takes the escape sequences out of a command's output, which a phone draws plain.
+shaman-text = { path = "../shaman-text" }
 anyhow = "1.0.99"
 # What noting whether a Remote answers wraps its transport with.
 async-trait = "0.1"

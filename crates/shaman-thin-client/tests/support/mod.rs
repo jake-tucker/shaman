@@ -33,10 +33,10 @@ use shaman_pairing::{
     signer::{Signer as _, testing::CallbackSigner},
 };
 use shaman_thin_client::{
-    ActsListener, ConversationChange, ConversationItem, ConversationListener, CoreTimings,
-    DeviceListener, FrameListener, KeySigner, Listing, ListingListener, OpenSession, Outlook,
-    OutlookListener, Servers, ServersListener, SessionFrame, SignError, Subscription, ThinClient,
-    ThisDevice,
+    ActivityDetail, ActsListener, ConversationChange, ConversationItem, ConversationListener,
+    CoreTimings, DetailListener, DeviceListener, FrameListener, KeySigner, Listing,
+    ListingListener, OpenSession, Outlook, OutlookListener, Servers, ServersListener, SessionFrame,
+    SignError, Subscription, ThinClient, ThisDevice, TurnWork, WorkListener,
 };
 use tokio::{
     net::TcpListener,
@@ -741,6 +741,72 @@ impl Reading {
     /// The conversation as it was last heard.
     pub fn conversation_now(&self) -> Conversation {
         self.conversation.borrow().clone()
+    }
+
+    /// Attaches the work of the Turn `turn` names, as its screen does while
+    /// it is up.
+    pub fn work(&self, turn: &str) -> Attached<TurnWork> {
+        let (heard, told) = watch::channel(Vec::new());
+        let subscription = self
+            .session
+            .watch_work(turn.to_owned(), Arc::new(Told(heard)));
+        Attached { told, subscription }
+    }
+
+    /// Attaches the whole of the Activity `activity` names, as its screen
+    /// does while it is up.
+    pub fn detail(&self, activity: &str) -> Attached<ActivityDetail> {
+        let (heard, told) = watch::channel(Vec::new());
+        let subscription = self
+            .session
+            .watch_detail(activity.to_owned(), Arc::new(Told(heard)));
+        Attached { told, subscription }
+    }
+}
+
+/// What a screen pushed from an open Session attached, and everything it was
+/// told of it, in the order told.
+pub struct Attached<T> {
+    told: watch::Receiver<Vec<T>>,
+    pub subscription: Arc<Subscription>,
+}
+
+impl<T: Clone + std::fmt::Debug> Attached<T> {
+    /// What it was told last, once that shows what `shown` looks for.
+    pub async fn until(&self, shown: impl Fn(&T) -> bool) -> T {
+        let mut told = self.told.clone();
+        let heard = timeout(
+            PROGRESS_DEADLINE,
+            told.wait_for(|told| told.last().is_some_and(&shown)),
+        )
+        .await;
+        match heard {
+            Ok(Ok(told)) => told.last().cloned().expect("told"),
+            _ => panic!(
+                "never told what was looked for; told {:#?}",
+                self.told.borrow().last()
+            ),
+        }
+    }
+
+    /// How many times it has been told.
+    pub fn told(&self) -> usize {
+        self.told.borrow().len()
+    }
+}
+
+/// A listener keeping everything it was told.
+struct Told<T>(watch::Sender<Vec<T>>);
+
+impl WorkListener for Told<TurnWork> {
+    fn changed(&self, work: TurnWork) {
+        self.0.send_modify(|told| told.push(work));
+    }
+}
+
+impl DetailListener for Told<ActivityDetail> {
+    fn changed(&self, detail: ActivityDetail) {
+        self.0.send_modify(|told| told.push(detail));
     }
 }
 

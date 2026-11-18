@@ -7,8 +7,8 @@ mod support;
 
 use shaman::protocol::{PromptDelivery, SessionId, SessionStatus, TurnStatus, Way};
 use shaman_thin_client::{
-    ActError, ActiveRow, BarKind, ConversationChange, ConversationItem, ItemKind, Outlook,
-    PairingOutcome, TurnOutcome,
+    ActError, ActiveRow, BarKind, BodyStyle, ConversationChange, ConversationItem, ItemKind,
+    Outlook, PairingOutcome, Tap, Tone, TurnOutcome, WorkKind,
 };
 
 use shaman::provider::{ProviderActivityId, ProviderCommandStatus, ProviderEvent};
@@ -286,6 +286,134 @@ async fn a_live_turn_reads_as_it_works_its_answer_streaming_and_settles_into_its
         "agent: The code is drawn in half blocks."
     );
     assert_eq!(cards(&settled.items)[0].count.as_deref(), Some("1 command"));
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_turns_work_and_a_running_commands_detail_cross_while_their_screens_are_up() {
+    let desk = ServingServer::start("thin-open-work").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, SCRIPTED), "Build the relay")
+        .await;
+    let script = desk.script().await;
+    let row = row(&phone, "Build the relay").await;
+    let reading = phone.open(&row.session);
+    let build = ProviderActivityId::new("build");
+    say(
+        &script,
+        [
+            ProviderEvent::AgentMessageStarted,
+            ProviderEvent::AgentMessageDelta {
+                content: "Building first.".to_owned(),
+            },
+            ProviderEvent::AgentMessageCompleted,
+            ProviderEvent::CommandStarted {
+                activity_id: build.clone(),
+                command: "cargo build -p shaman-relay".to_owned(),
+                cwd: None,
+            },
+            ProviderEvent::CommandOutputDelta {
+                activity_id: build.clone(),
+                content: "   Compiling shaman-relay\n".to_owned(),
+            },
+        ],
+    );
+    let working = reading
+        .conversation_until(|items| {
+            cards(items)
+                .iter()
+                .any(|card| card.line == "cargo build -p shaman-relay")
+        })
+        .await;
+    let card = &cards(&working.items)[0];
+
+    // The card pushes the Turn's work.
+    let work = reading.work(&card.work);
+    let listed = work.until(|work| work.items.len() == 2).await;
+    assert_eq!(listed.title, "Working");
+    let WorkKind::AgentMessage { markdown, .. } = &listed.items[0].kind else {
+        panic!("the Agent's Message along the way: {listed:?}");
+    };
+    assert_eq!(markdown, "Building first.");
+    let WorkKind::Row { row: command } = &listed.items[1].kind else {
+        panic!("the command's row: {listed:?}");
+    };
+    assert_eq!(command.title, "cargo build -p shaman-relay");
+    assert_eq!(command.tone, Tone::Running);
+    let Tap::Detail { activity } = &command.tap else {
+        panic!("the command pushes its detail");
+    };
+
+    // Its row pushes the command's detail, whose output grows while it is up.
+    let detail = reading.detail(activity);
+    let output = |detail: &shaman_thin_client::ActivityDetail| {
+        detail
+            .sections
+            .iter()
+            .find(|section| section.heading.as_deref() == Some("Output"))
+            .map(|section| section.body.clone())
+    };
+    let first = detail
+        .until(|detail| output(detail).is_some_and(|output| output.contains("Compiling")))
+        .await;
+    assert_eq!(first.title, "Command");
+    assert_eq!(
+        first.sections[0].style,
+        BodyStyle::Monospace,
+        "output keeps its lines"
+    );
+    say(
+        &script,
+        [ProviderEvent::CommandOutputDelta {
+            activity_id: build.clone(),
+            content: "    Finished `dev` profile\n".to_owned(),
+        }],
+    );
+    let grown = detail
+        .until(|detail| output(detail).is_some_and(|output| output.contains("Finished")))
+        .await;
+    assert_eq!(
+        output(&grown).as_deref(),
+        Some("   Compiling shaman-relay\n    Finished `dev` profile")
+    );
+
+    // Popped, the detail crosses no more; the work still does while it is up.
+    detail.subscription.cancel();
+    let told = detail.told();
+    say(
+        &script,
+        [ProviderEvent::CommandCompleted {
+            activity_id: build,
+            status: ProviderCommandStatus::Completed,
+            exit_status: Some(0),
+        }],
+    );
+    work.until(|work| {
+        work.items
+            .iter()
+            .any(|item| matches!(&item.kind, WorkKind::Row { row } if row.tone == Tone::Succeeded))
+    })
+    .await;
+    assert_eq!(
+        detail.told(),
+        told,
+        "nothing crosses once its screen is gone"
+    );
+
+    // A Turn's work settles with it.
+    say(&script, [ProviderEvent::TurnCompleted]);
+    let settled = work
+        .until(|work| work.title.starts_with("Worked for "))
+        .await;
+    assert_eq!(
+        settled.items.len(),
+        1,
+        "its last Message now its answer, outside the card: {settled:?}"
+    );
 
     phone.shutdown();
     desk.shutdown().await;

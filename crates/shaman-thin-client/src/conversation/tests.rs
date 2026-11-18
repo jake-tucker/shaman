@@ -528,10 +528,46 @@ fn a_compaction_stands_outside_the_card_in_the_tuis_words() {
             .map(|item| item.kind),
             Some(ItemKind::Compaction {
                 words: words.to_owned(),
-                tone
-            })
+                tone,
+                detail: None,
+            }),
+            "nothing behind its words pushes nothing"
         );
     }
+}
+
+#[test]
+fn a_compaction_holding_its_instructions_or_summary_pushes_its_detail() {
+    let mut built = Built::new();
+    let turn = built.turn(TurnStatus::Completed, 1_000, Some(10_000));
+    let id = ActivityId::new();
+    built.activity(Activity::Compaction {
+        id,
+        turn_id: turn,
+        status: ActivityStatus::Completed,
+        trigger: CompactionTrigger::Manual,
+        instructions: Some("Keep the pairing notes".to_owned()),
+        before_tokens: None,
+        after_tokens: None,
+        error: None,
+        summary: Some("We paired the phone.".to_owned()),
+        summary_truncated: false,
+    });
+    let items = built.read();
+    let ItemKind::Compaction { detail, .. } = &items[0].kind else {
+        panic!("a Compaction: {items:?}");
+    };
+    assert_eq!(detail.as_deref(), Some(id.to_string().as_str()));
+}
+
+#[test]
+fn a_card_hands_back_its_turn_to_read_its_work() {
+    let mut built = Built::new();
+    let turn = built.turn(TurnStatus::Completed, 1_000, Some(10_000));
+    built.user(turn, "Build it");
+    built.command(turn, "make", ActivityStatus::Completed);
+    let items = built.read();
+    assert_eq!(cards(&items)[0].work, turn.to_string());
 }
 
 #[test]

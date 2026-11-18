@@ -14,6 +14,10 @@
 //! A Prompt sent stands at once as a bubble marked as sending; where it fails
 //! it goes, and its text is given back to the composer's draft.
 //!
+//! While a screen pushed from it is up, a Turn's work or an Activity's
+//! detail is attached to it, filled again from the Session as it changes and
+//! made no more once that screen goes.
+//!
 //! Closing it stops the reading and cancels nothing on the Server.
 
 use std::{
@@ -42,6 +46,7 @@ use crate::{
     frame::{self, GONE_REMOTE, Local, Outgoing, SessionFrame, frame_of},
     listing::{Listed, Listings},
     watching,
+    work::{self, ActivityDetail, TurnWork},
 };
 
 /// How an open Session's conversation changed.
@@ -74,6 +79,8 @@ pub struct OpenSession {
     reading: Arc<AtomicBool>,
     /// What its acts ask over and keep.
     acting: Acting,
+    /// What screens pushed from it have attached.
+    attached: Arc<Attachments>,
 }
 
 /// What an open Session's acts need: where to find the Session's Remote as
@@ -115,6 +122,34 @@ impl OpenSession {
             }
         });
         Subscription::of(task)
+    }
+
+    /// Tells `listener` the work of the Turn `turn` names, as a card hands
+    /// it, and again on every change, until the subscription is cancelled,
+    /// as its screen goes.
+    pub fn watch_work(&self, turn: String, listener: Arc<dyn WorkListener>) -> Arc<Subscription> {
+        let (attachment, filled) = self.attached.attach(Target::Work(turn));
+        self.told(attachment, filled, move |filled| {
+            if let Filled::Work(work) = filled {
+                listener.changed(work);
+            }
+        })
+    }
+
+    /// Tells `listener` the whole of the Activity `activity` names, as a row
+    /// hands it, and again on every change, until the subscription is
+    /// cancelled, as its screen goes.
+    pub fn watch_detail(
+        &self,
+        activity: String,
+        listener: Arc<dyn DetailListener>,
+    ) -> Arc<Subscription> {
+        let (attachment, filled) = self.attached.attach(Target::Detail(activity));
+        self.told(attachment, filled, move |filled| {
+            if let Filled::Detail(detail) = filled {
+                listener.changed(detail);
+            }
+        })
     }
 
     /// Ends the Session's reading; it cancels nothing on the Server.
@@ -172,6 +207,34 @@ impl OpenSession {
 }
 
 impl OpenSession {
+    /// Tells `tell` what the attachment `attachment` is filled with, once it
+    /// is and on every change, until the subscription is cancelled, when it
+    /// is filled no more.
+    fn told(
+        &self,
+        attachment: u64,
+        mut filled: watch::Receiver<Option<Filled>>,
+        tell: impl Fn(Filled) + Send + 'static,
+    ) -> Arc<Subscription> {
+        let detached = Detached {
+            attached: self.attached.clone(),
+            attachment,
+        };
+        let task = self.runtime.spawn(async move {
+            let _detached = detached;
+            loop {
+                let current = filled.borrow_and_update().clone();
+                if let Some(current) = current {
+                    tell(current);
+                }
+                if filled.changed().await.is_err() {
+                    break;
+                }
+            }
+        });
+        Subscription::of(task)
+    }
+
     /// Runs `act` on the core's runtime to its end, marked under way while
     /// it runs, whatever becomes of the call that asked it.
     async fn act(
@@ -217,6 +280,117 @@ pub trait FrameListener: Send + Sync {
 #[uniffi::export(with_foreign)]
 pub trait ConversationListener: Send + Sync {
     fn changed(&self, change: ConversationChange);
+}
+
+/// Hears a Turn's work, whole at once and on every change.
+#[uniffi::export(with_foreign)]
+pub trait WorkListener: Send + Sync {
+    fn changed(&self, work: TurnWork);
+}
+
+/// Hears the whole of one Activity, at once and on every change.
+#[uniffi::export(with_foreign)]
+pub trait DetailListener: Send + Sync {
+    fn changed(&self, detail: ActivityDetail);
+}
+
+/// What a screen pushed from an open Session attached to it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Target {
+    /// The work of the Turn named.
+    Work(String),
+    /// The whole of the Activity named.
+    Detail(String),
+}
+
+/// What an attachment is filled with.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Filled {
+    Work(TurnWork),
+    Detail(ActivityDetail),
+}
+
+impl Target {
+    fn fill(&self, snapshot: Option<&SessionSnapshot>) -> Filled {
+        match self {
+            Self::Work(turn) => Filled::Work(work::turn_work(snapshot, turn)),
+            Self::Detail(activity) => Filled::Detail(work::activity_detail(snapshot, activity)),
+        }
+    }
+}
+
+/// What the screens pushed from an open Session have attached to it, each
+/// filled by its reader from the Session as it changes, and only while its
+/// screen is up.
+#[derive(Default)]
+pub(crate) struct Attachments {
+    held: Mutex<Held>,
+    /// Moves on as each is attached, so the reader fills it at once.
+    attached: watch::Sender<u64>,
+}
+
+#[derive(Default)]
+struct Held {
+    next: u64,
+    filling: HashMap<u64, (Target, watch::Sender<Option<Filled>>)>,
+}
+
+impl Attachments {
+    /// Attaches `target`, answering under what, and what it is filled with.
+    fn attach(&self, target: Target) -> (u64, watch::Receiver<Option<Filled>>) {
+        let (filling, filled) = watch::channel(None);
+        let attachment = {
+            let mut held = self.held();
+            held.next += 1;
+            let attachment = held.next;
+            held.filling.insert(attachment, (target, filling));
+            attachment
+        };
+        self.attached.send_modify(|attached| *attached += 1);
+        (attachment, filled)
+    }
+
+    fn detach(&self, attachment: u64) {
+        self.held().filling.remove(&attachment);
+    }
+
+    /// Fills every attachment from `snapshot`, telling only those it changes.
+    fn fill(&self, snapshot: Option<&SessionSnapshot>) {
+        for (target, filling) in self.held().filling.values() {
+            let filled = target.fill(snapshot);
+            filling.send_if_modified(|current| {
+                let changed = current.as_ref() != Some(&filled);
+                if changed {
+                    *current = Some(filled);
+                }
+                changed
+            });
+        }
+    }
+
+    fn held(&self) -> std::sync::MutexGuard<'_, Held> {
+        self.held
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    /// Hears each attachment made from now on.
+    fn subscribe(&self) -> watch::Receiver<u64> {
+        self.attached.subscribe()
+    }
+}
+
+/// Detaches its attachment as it is dropped, which its subscription's end
+/// does.
+struct Detached {
+    attached: Arc<Attachments>,
+    attachment: u64,
+}
+
+impl Drop for Detached {
+    fn drop(&mut self) {
+        self.attached.detach(self.attachment);
+    }
 }
 
 /// What one listener has been told of a conversation.
@@ -296,8 +470,10 @@ pub(crate) fn open(
     ));
     let (conversation, conversation_seen) = watch::channel(shown(None, conversation::loading()));
     let reading = Arc::new(AtomicBool::new(true));
+    let attached = Arc::new(Attachments::default());
     let reader = opening.map(|opening| {
         let reader = Reader {
+            attached: attached.clone(),
             gone: None,
             drafts: asked.drafts.clone(),
             reading: reading.clone(),
@@ -330,6 +506,7 @@ pub(crate) fn open(
             asking: asked.asking,
             local,
         },
+        attached,
     })
 }
 
@@ -541,6 +718,8 @@ fn shown(was: Option<&Shown>, items: Vec<ConversationItem>) -> Shown {
 
 /// What reads one open Session, and what it last read.
 struct Reader {
+    /// What screens pushed from it have attached, which it fills.
+    attached: Arc<Attachments>,
     /// Why the Session is gone, once it is.
     gone: Option<String>,
     /// Where a Prompt a stop withdrew goes back to.
@@ -603,14 +782,16 @@ impl Reader {
             || watch::channel(Local::default()).1,
             |local| local.subscribe(),
         );
+        let mut attaching = self.attached.subscribe();
         let mut backoff =
             RecoveryBackoff::new(self.pacing.initial_backoff, self.pacing.max_backoff);
         loop {
-            let attached = self.attach(&mut local).await;
+            let attached = self.attach(&mut local, &mut attaching).await;
             let ended = match attached {
                 Ok(subscription) => {
                     backoff.reset();
-                    self.follow(subscription, &mut listing, &mut local).await
+                    self.follow(subscription, &mut listing, &mut local, &mut attaching)
+                        .await
                 }
                 Err(error) => match error.downcast_ref::<SessionStreamError>() {
                     // A refusal no reopening gets past ends the reading in its
@@ -623,13 +804,13 @@ impl Reader {
                 },
             };
             if let Ended::Gone(why) = ended {
-                return self.show_gone(why, local).await;
+                return self.show_gone(why, local, attaching).await;
             }
             if let Err(why) = self
-                .back_off(backoff.next(), &mut listing, &mut local)
+                .back_off(backoff.next(), &mut listing, &mut local, &mut attaching)
                 .await
             {
-                return self.show_gone(why, local).await;
+                return self.show_gone(why, local, attaching).await;
             }
         }
     }
@@ -640,14 +821,16 @@ impl Reader {
     async fn attach(
         &mut self,
         local: &mut watch::Receiver<Local>,
+        attaching: &mut watch::Receiver<u64>,
     ) -> anyhow::Result<SessionSubscription> {
         let commands = self.commands.clone();
-        let attaching = commands.attach_session(self.session_id);
-        tokio::pin!(attaching);
+        let reading = commands.attach_session(self.session_id);
+        tokio::pin!(reading);
         loop {
             tokio::select! {
-                attached = &mut attaching => return attached,
+                attached = &mut reading => return attached,
                 Ok(()) = local.changed() => self.show(),
+                Ok(()) = attaching.changed() => self.fill_attached(),
             }
         }
     }
@@ -661,6 +844,7 @@ impl Reader {
         retry_in: Duration,
         listing: &mut watch::Receiver<crate::Listing>,
         local: &mut watch::Receiver<Local>,
+        attaching: &mut watch::Receiver<u64>,
     ) -> Result<(), String> {
         let until = tokio::time::Instant::now() + retry_in;
         loop {
@@ -676,6 +860,7 @@ impl Reader {
                 },
                 // A Prompt sent meanwhile stands as it is being sent.
                 Ok(()) = local.changed() => self.show(),
+                Ok(()) = attaching.changed() => self.fill_attached(),
                 Ok(()) = self.unreachable.changed() => self.show_frame(),
             }
         }
@@ -688,6 +873,7 @@ impl Reader {
         mut subscription: SessionSubscription,
         listing: &mut watch::Receiver<crate::Listing>,
         local: &mut watch::Receiver<Local>,
+        attaching: &mut watch::Receiver<u64>,
     ) -> Ended {
         loop {
             tokio::select! {
@@ -714,6 +900,7 @@ impl Reader {
                     }
                 }
                 Ok(()) = local.changed() => self.show(),
+                Ok(()) = attaching.changed() => self.fill_attached(),
                 Ok(()) = self.unreachable.changed() => self.show_frame(),
             }
         }
@@ -799,6 +986,13 @@ impl Reader {
             *current = next;
             changed
         });
+        self.fill_attached();
+    }
+
+    /// Fills what screens pushed from the Session have attached, from what
+    /// it last read.
+    fn fill_attached(&self) {
+        self.attached.fill(self.snapshot.as_ref());
     }
 
     fn show_frame(&self) {
@@ -827,12 +1021,25 @@ impl Reader {
     /// Shows the Session gone, as `why` says, and reads it no more; what
     /// the screen's own acts change meanwhile is shown until it is closed,
     /// so a Prompt whose send fails goes from the conversation all the same.
-    async fn show_gone(mut self, why: String, mut local: watch::Receiver<Local>) {
+    async fn show_gone(
+        mut self,
+        why: String,
+        mut local: watch::Receiver<Local>,
+        mut attaching: watch::Receiver<u64>,
+    ) {
         self.reading.store(false, Ordering::Release);
         self.gone = Some(why);
         self.show_frame();
-        while local.changed().await.is_ok() {
-            self.show();
+        loop {
+            tokio::select! {
+                changed = local.changed() => match changed {
+                    Ok(()) => self.show(),
+                    Err(_) => return,
+                },
+                // A screen pushed before it went still reads what it last
+                // read.
+                Ok(()) = attaching.changed() => self.fill_attached(),
+            }
         }
     }
 }
@@ -874,6 +1081,7 @@ mod tests {
         let (conversation, _) = watch::channel(shown(None, conversation::loading()));
         let try_now = transport.try_now();
         let reader = Reader {
+            attached: Arc::new(Attachments::default()),
             gone: None,
             drafts: Drafts::default(),
             reading: Arc::new(AtomicBool::new(true)),
