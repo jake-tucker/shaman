@@ -201,6 +201,7 @@ pub(crate) async fn confirm(
     if let Err(error) = shown {
         tracing::warn!("a pairing was made but this phone's records were not kept: {error}");
     }
+    inner.listing.follow(&inner.remotes.held());
     let asked = inner.clone();
     let asked_name = name.clone();
     tokio::spawn(async move { asked.remotes.ask_ways(&asked_name).await });

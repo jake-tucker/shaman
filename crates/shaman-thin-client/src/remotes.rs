@@ -142,7 +142,7 @@ impl Remotes {
 
     /// The Remotes held, in the order paired: those whose Pairing is made,
     /// and not one a pairing under way has yet to see committed.
-    fn held(&self) -> Vec<StoredRemote> {
+    pub fn held(&self) -> Vec<StoredRemote> {
         self.redeemer
             .records()
             .into_iter()

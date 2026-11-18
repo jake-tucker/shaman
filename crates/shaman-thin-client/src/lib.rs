@@ -19,6 +19,7 @@ use std::{
     time::Duration,
 };
 
+use shaman_client::SessionCommandTimings;
 use shaman_pairing::{GivenIdentity, IdentityMaterial, Redeemer, RedeemerTimings};
 use tokio::{
     runtime::Runtime,
@@ -28,12 +29,15 @@ use tokio::{
 
 mod device;
 mod identity;
+mod listing;
 mod pairing;
 mod remotes;
 
 pub use device::ThisDevice;
 use device::{DeviceRecord, Records};
 pub use identity::{KeySigner, SignError};
+use listing::Listings;
+pub use listing::{ActiveRow, CheckoutLine, Listing, SettledRow, Slot, Standing};
 pub use pairing::{InviteReading, OfferedWay, PairingOutcome, ReadInvite, TryInstead};
 use remotes::Remotes;
 pub use remotes::{Outlook, ServerRow, Servers, WayRow, WayState};
@@ -52,6 +56,12 @@ pub struct CoreTimings {
     /// How long confirming a pairing waits between one dial that no way
     /// answered and the next.
     pub pairing_redial: Duration,
+    /// How each Remote's readers wait between one failed attempt and the
+    /// next.
+    pub readers: SessionCommandTimings,
+    /// How long an act waits on its Server's answer before it fails as
+    /// Unreachable.
+    pub act_bound: Duration,
 }
 
 impl Default for CoreTimings {
@@ -60,6 +70,12 @@ impl Default for CoreTimings {
             redeemer: RedeemerTimings::default(),
             pairing_keeps_dialling: Duration::from_secs(8),
             pairing_redial: Duration::from_millis(500),
+            readers: SessionCommandTimings {
+                initial_recovery_backoff: Duration::from_millis(50),
+                max_recovery_backoff: Duration::from_secs(5),
+                attachment_fetch_timeout: Duration::from_secs(30),
+            },
+            act_bound: Duration::from_secs(30),
         }
     }
 }
@@ -85,6 +101,8 @@ pub(crate) struct Inner {
     /// Redeems Invites and holds the Remotes they form, in `remotes.json`.
     redeemer: Redeemer,
     remotes: Remotes,
+    /// Every Remote's Sessions, merged into the one listing.
+    listing: Listings,
     /// Held through each pairing, so one pairing at a time is made.
     pairing: AsyncMutex<()>,
     timings: CoreTimings,
@@ -124,6 +142,30 @@ impl ThinClient {
         self.watch(self.inner.remotes.outlook(), move |outlook| {
             listener.changed(outlook);
         })
+    }
+
+    /// Tells `listener` what the listing shows now, and again on every
+    /// change, until the subscription is cancelled.
+    pub fn watch_listing(&self, listener: Arc<dyn ListingListener>) -> Arc<Subscription> {
+        self.watch(self.inner.listing.listing(), move |listing| {
+            listener.changed(listing);
+        })
+    }
+
+    /// Sets the Session `session` names aside as done for now.
+    pub async fn settle(&self, session: String) -> Result<(), ActError> {
+        self.settling(session, true).await
+    }
+
+    /// Brings the Session `session` names back among the active.
+    pub async fn unsettle(&self, session: String) -> Result<(), ActError> {
+        self.settling(session, false).await
+    }
+
+    /// Brings up the next of the settled shelf's rows, until the core is
+    /// opened again.
+    pub fn show_more_settled(&self) {
+        self.inner.listing.show_more();
     }
 
     /// Renames this device to `name`, as the Serving side would keep it,
@@ -210,6 +252,8 @@ impl ThinClient {
         // so or not.
         redeemer.drop_uncommitted();
         let remotes = Remotes::new(redeemer.clone(), &record.turned);
+        let listing = Listings::new(runtime.handle().clone(), redeemer.clone(), timings.readers);
+        listing.follow(&remotes.held());
         let (device, _) = watch::channel(ThisDevice::of(&record));
         let inner = Arc::new(Inner {
             records,
@@ -218,6 +262,7 @@ impl ThinClient {
             device,
             redeemer,
             remotes,
+            listing,
             pairing: AsyncMutex::new(()),
             timings,
         });
@@ -241,6 +286,29 @@ impl ThinClient {
         self.runtime
             .as_ref()
             .expect("the runtime stands until the core goes")
+    }
+
+    async fn settling(&self, session: String, settled: bool) -> Result<(), ActError> {
+        let inner = self.inner.clone();
+        self.act(async move { inner.listing.settle(&session, settled).await })
+            .await
+    }
+
+    /// Runs `act`, which asks a Server, on the core's runtime, failing it as
+    /// Unreachable where no answer came within an act's bound.
+    async fn act(
+        &self,
+        act: impl Future<Output = Result<(), ActError>> + Send + 'static,
+    ) -> Result<(), ActError> {
+        let bound = self.inner.timings.act_bound;
+        self.run(async move {
+            tokio::time::timeout(bound, act).await.unwrap_or_else(|_| {
+                Err(ActError::Unreachable {
+                    message: "The server did not answer in time".to_owned(),
+                })
+            })
+        })
+        .await?
     }
 
     /// Runs `act` on the core's runtime, to its end.
@@ -338,6 +406,12 @@ pub trait DeviceListener: Send + Sync {
 #[uniffi::export(with_foreign)]
 pub trait ServersListener: Send + Sync {
     fn changed(&self, servers: Servers);
+}
+
+/// Hears what the listing shows, at once and on every change.
+#[uniffi::export(with_foreign)]
+pub trait ListingListener: Send + Sync {
+    fn changed(&self, listing: Listing);
 }
 
 /// Hears where the Outlook stands, at once and on every change.

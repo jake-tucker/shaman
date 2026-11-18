@@ -3877,6 +3877,8 @@ dependencies = [
  "serde_json",
  "shaman",
  "shaman-build-id",
+ "shaman-client",
+ "shaman-icons",
  "shaman-pairing",
  "shaman-protocol",
  "tempfile",

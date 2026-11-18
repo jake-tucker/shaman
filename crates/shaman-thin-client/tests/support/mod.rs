@@ -15,7 +15,9 @@ use std::{
 use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
-        AgentSelection, IssueInviteRequest, Peer, ProviderId, SettingMutation, SkillCatalog, Way,
+        AgentSelection, CreateSessionRequest, ExecutionDirectory, InitialPrompt,
+        IssueInviteRequest, Peer, PromptId, ProviderId, SessionId, SettingMutation, SkillCatalog,
+        Way,
     },
     provider::{
         ErrandFuture, ProviderErrand, ProviderError, ProviderFuture, ProviderModelDiscovery,
@@ -23,13 +25,14 @@ use shaman::{
     },
     server::{self, ServerConfig, ServerTimings},
 };
+use shaman_client::SessionCommandTimings;
 use shaman_pairing::{
     Keepalive, RedeemerTimings,
     signer::{Signer as _, testing::CallbackSigner},
 };
 use shaman_thin_client::{
-    CoreTimings, DeviceListener, KeySigner, Outlook, OutlookListener, Servers, ServersListener,
-    SignError, Subscription, ThinClient, ThisDevice,
+    CoreTimings, DeviceListener, KeySigner, Listing, ListingListener, Outlook, OutlookListener,
+    Servers, ServersListener, SignError, Subscription, ThinClient, ThisDevice,
 };
 use tokio::{net::TcpListener, sync::watch, time::timeout};
 
@@ -61,11 +64,19 @@ pub fn timings() -> CoreTimings {
         },
         pairing_keeps_dialling: Duration::from_millis(600),
         pairing_redial: Duration::from_millis(25),
+        readers: SessionCommandTimings {
+            initial_recovery_backoff: Duration::from_millis(5),
+            max_recovery_backoff: Duration::from_millis(50),
+            attachment_fetch_timeout: PROGRESS_DEADLINE,
+        },
+        act_bound: PROGRESS_DEADLINE,
     }
 }
 
 /// A Server of Shaman's own in process, Serving on loopback, whose Sessions
-/// never start.
+/// never start: a Session begun in a directory named [`WORKING`] is left
+/// Working, as its Provider never answers, and any other fails its first
+/// Turn.
 pub struct ServingServer {
     _state: tempfile::TempDir,
     config: ServerConfig,
@@ -129,6 +140,30 @@ impl ServingServer {
             .expect("issue an Invite")
             .invite
             .0
+    }
+
+    /// Begins a Session in `workspace` with the Prompt `text`, as the
+    /// Server's own user would.
+    pub async fn begin(&self, workspace: &std::path::Path, text: &str) -> SessionId {
+        self.client
+            .create_session(CreateSessionRequest {
+                session_id: None,
+                preparation_id: None,
+                agent_selection: None,
+                execution_directory: ExecutionDirectory {
+                    path: workspace.to_owned(),
+                },
+                prompt: InitialPrompt {
+                    id: PromptId::new(),
+                    text: text.to_owned(),
+                    skill_invocations: Vec::new(),
+                    attachments: Vec::new(),
+                },
+            })
+            .await
+            .expect("begin a Session")
+            .session
+            .id
     }
 
     /// The Peers this Server is paired with.
@@ -364,6 +399,21 @@ impl Phone {
         }
     }
 
+    /// What the listing shows once it shows what `shown` looks for.
+    pub async fn listing_until(&self, shown: impl Fn(&Listing) -> bool) -> Listing {
+        let (sender, mut heard) = watch::channel(None);
+        let _subscription = self.core.watch_listing(Arc::new(Heard(sender)));
+        let heard = timeout(
+            PROGRESS_DEADLINE,
+            heard.wait_for(|listing| listing.as_ref().is_some_and(&shown)),
+        )
+        .await;
+        match heard {
+            Ok(Ok(listing)) => listing.clone().expect("heard"),
+            _ => panic!("the listing never showed what was looked for"),
+        }
+    }
+
     pub fn shutdown(self) {
         drop(self.core);
         drop(self.directory);
@@ -416,11 +466,20 @@ impl ServersListener for Heard<Servers> {
     }
 }
 
+impl ListingListener for Heard<Listing> {
+    fn changed(&self, listing: Listing) {
+        self.0.send_replace(Some(listing));
+    }
+}
+
 impl OutlookListener for Heard<Outlook> {
     fn changed(&self, outlook: Outlook) {
         self.0.send_replace(Some(outlook));
     }
 }
+
+/// The name of a directory a Session begun in is left Working.
+pub const WORKING: &str = "working";
 
 /// A Provider no Session of the Server's starts on.
 struct NoProvider;
@@ -444,9 +503,18 @@ impl ProviderRuntime for NoProvider {
 
     fn start_session(
         &self,
-        _request: ProviderSessionRequest,
+        request: ProviderSessionRequest,
     ) -> ProviderFuture<'_, ProviderSessionConnection> {
-        Box::pin(async { Err(ProviderError::new("No Session starts on this test Server.")) })
+        let working = request
+            .execution_directory
+            .file_name()
+            .is_some_and(|name| name == WORKING);
+        Box::pin(async move {
+            if working {
+                std::future::pending::<()>().await;
+            }
+            Err(ProviderError::new("No Session starts on this test Server."))
+        })
     }
 
     fn run_errand(&self, _errand: ProviderErrand) -> ErrandFuture<'_> {
