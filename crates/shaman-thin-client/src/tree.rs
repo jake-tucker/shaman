@@ -98,6 +98,9 @@ pub(crate) struct InTree {
     pub subagent: bool,
     /// The Subagent's name and Model, as its header names them.
     pub named: Option<String>,
+    /// What the Subagent was asked to do, which titles its Session until the
+    /// Session has been read.
+    pub title: Option<String>,
     /// Whether the open Session, a Subagent's, can be stopped alone.
     pub stoppable: bool,
 }
@@ -409,10 +412,17 @@ impl Trees {
             for lease in holders.keys() {
                 held.leases.insert(*lease, already);
             }
-            let tree = held.trees.get_mut(&already).expect("just found");
-            tree.holders.extend(holders);
-            tree.tell();
+            held.trees
+                .get_mut(&already)
+                .expect("just found")
+                .holders
+                .extend(holders);
+            absorb_failed(&mut held, already);
+            held.trees.get(&already).expect("just found").tell();
             return false;
+        }
+        if top_level.is_some() {
+            absorb_failed(&mut held, tree_id);
         }
         let tree = held.trees.get_mut(&tree_id).expect("taken from it");
         tree.tell();
@@ -426,6 +436,53 @@ impl Trees {
     #[cfg(test)]
     fn read(&self) -> usize {
         self.held().trees.len()
+    }
+}
+
+/// Has the Sessions held by a tree no stream could read join the tree `into`,
+/// read now, where it holds them: a failure stands only until another Session
+/// of the same tree is opened and its tree read. The tree they leave, if it
+/// holds nothing more, goes.
+fn absorb_failed(held: &mut Held, into: u64) {
+    let Some(read) = held.trees.get(&into) else {
+        return;
+    };
+    let remote = read.remote.clone();
+    let failed = held
+        .trees
+        .iter()
+        .filter(|(id, other)| {
+            **id != into && other.remote == remote && matches!(other.reading, Reading::Failed(_))
+        })
+        .map(|(id, _)| *id)
+        .collect::<Vec<_>>();
+    for failed in failed {
+        let read = &held.trees[&into];
+        let joining = held.trees[&failed]
+            .holders
+            .iter()
+            .filter(|(_, holder)| read.holds(holder.session_id))
+            .map(|(lease, _)| *lease)
+            .collect::<Vec<_>>();
+        if joining.is_empty() {
+            continue;
+        }
+        let from = held.trees.get_mut(&failed).expect("just found");
+        let moved = joining
+            .iter()
+            .filter_map(|lease| from.holders.remove_entry(lease))
+            .collect::<Vec<_>>();
+        if from.holders.is_empty() {
+            held.trees.remove(&failed);
+        }
+        for (lease, _) in &moved {
+            held.leases.insert(*lease, into);
+        }
+        held.trees
+            .get_mut(&into)
+            .expect("just read")
+            .holders
+            .extend(moved);
     }
 }
 
@@ -471,13 +528,42 @@ fn reference(remote: &str, session_id: SessionId) -> String {
     format!("{remote}/{session_id}")
 }
 
-/// What the frame of the Session `open` takes from the tree as `state` says it.
-pub(crate) fn in_tree(state: &TreeState, open: SessionId) -> InTree {
+/// What the button the sheet is opened by says before the tree is read, or
+/// where it cannot be: that the Session has Subagents, without counting them.
+const SUBAGENTS: &str = "Subagents";
+
+/// Whether `snapshot` shows its Session belongs to a tree with Subagents in
+/// it: it is a Subagent's, or it has spawned one.
+fn has_subagents(snapshot: &SessionSnapshot) -> bool {
+    snapshot.session.parent.is_some()
+        || snapshot
+            .activities
+            .iter()
+            .any(|activity| matches!(activity, Activity::Subagent { .. }))
+}
+
+/// What the frame of the Session `open` takes from the tree as `state` says
+/// it, and from what the Session itself read, `snapshot`: so the button
+/// stands wherever the Session shows it has Subagents, though the tree is not
+/// yet read or cannot be, and the sheet it opens says which.
+pub(crate) fn in_tree(
+    state: &TreeState,
+    open: SessionId,
+    snapshot: Option<&SessionSnapshot>,
+) -> InTree {
+    let shown = snapshot.is_some_and(has_subagents);
+    let uncounted = || TreeButton {
+        working: None,
+        label: SUBAGENTS.to_owned(),
+    };
     let Reading::Read(tree) = &state.reading else {
-        return InTree::default();
+        return InTree {
+            button: shown.then(uncounted),
+            ..InTree::default()
+        };
     };
     let entry = own(tree, open);
-    let button = (!tree.subagents.is_empty()).then(|| {
+    let counted = (!tree.subagents.is_empty()).then(|| {
         let count = tree.subagents.len();
         let working = working_count(tree);
         let subagents = if count == 1 {
@@ -495,8 +581,9 @@ pub(crate) fn in_tree(state: &TreeState, open: SessionId) -> InTree {
         }
     });
     InTree {
-        button,
+        button: counted.or_else(|| shown.then(uncounted)),
         subagent: entry.is_some(),
+        title: entry.map(|entry| entry.title.clone()),
         named: entry.map(|entry| {
             std::iter::once(entry.name.clone())
                 .chain(entry.model.as_ref().map(ToString::to_string))
@@ -517,6 +604,15 @@ fn own(tree: &SubagentTreeSnapshot, session_id: SessionId) -> Option<&SubagentTr
 /// Whether the Subagent `subagent` can be stopped alone: one Shaman spawned
 /// through the Broker always can, and a native one where the Provider its
 /// Agent runs on can stop one of its Subagents alone.
+///
+/// Neither fact is on the wire: which Subagents are brokered is read from the
+/// rows of the tree's Sessions open on this phone, and the Provider from the
+/// nearest open Session above or at the Subagent, else the top-level
+/// Session's. So in a tree whose Providers are mixed the phone may guess: a
+/// brokered Subagent on a Provider that cannot stop one alone, whose spawner
+/// is not open here, offers no Stop; and one whose Provider the phone takes
+/// for its spawner's may offer a Stop its Server refuses, which the banner
+/// says in the Server's words while the entry stays as it stands.
 fn stoppable(state: &TreeState, tree: &SubagentTreeSnapshot, subagent: SessionId) -> bool {
     if state
         .known

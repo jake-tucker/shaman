@@ -453,11 +453,16 @@ fn a_subagents_session_is_named_by_the_subagent_and_offers_stop_only_where_it_st
         }),
         subagent: true,
         named: Some("Explorer · haiku".to_owned()),
+        title: Some("Find what held the lock".to_owned()),
         stoppable,
     };
     let frame = |snapshot: Option<&SessionSnapshot>, stoppable: bool| {
         frame_of(
-            Some(&listed(None)),
+            // No listing carries a Subagent's Session.
+            Some(&Listed {
+                title: None,
+                ..listed(None)
+            }),
             snapshot,
             None,
             &Local::default(),
@@ -477,8 +482,11 @@ fn a_subagents_session_is_named_by_the_subagent_and_offers_stop_only_where_it_st
     );
     assert_eq!(cannot.composer, None);
 
-    // Known from its tree before it has been read, it takes no Prompt.
-    assert_eq!(frame(None, false).composer, None);
+    // Known from its tree before it has been read, it takes no Prompt, and
+    // is titled by what it was asked.
+    let unread = frame(None, false);
+    assert_eq!(unread.composer, None);
+    assert_eq!(unread.title, "Find what held the lock");
 
     // Its Watches it stops whatever its Provider can do.
     let mut monitoring = snapshot();
@@ -490,5 +498,44 @@ fn a_subagents_session_is_named_by_the_subagent_and_offers_stop_only_where_it_st
             .and_then(|bar| bar.stop)
             .as_deref(),
         Some("Stop")
+    );
+}
+
+#[test]
+fn a_session_no_listing_carries_takes_no_prompt_until_it_is_read_as_a_top_level_one() {
+    let unlisted = Listed {
+        title: None,
+        ..listed(None)
+    };
+    let frame = |snapshot: Option<&SessionSnapshot>| {
+        frame_of(
+            Some(&unlisted),
+            snapshot,
+            None,
+            &Local::default(),
+            false,
+            &InTree::default(),
+        )
+    };
+    assert_eq!(frame(None).composer, None, "pushed from a subagent's row");
+    assert!(
+        frame(Some(&snapshot())).composer.is_some(),
+        "read as top-level"
+    );
+    assert!(
+        framed(&snapshot(), &Local::default(), false)
+            .composer
+            .is_some()
+            && frame_of(
+                Some(&listed(None)),
+                None,
+                None,
+                &Local::default(),
+                false,
+                &InTree::default()
+            )
+            .composer
+            .is_some(),
+        "one the listing carries takes Prompts from the first"
     );
 }

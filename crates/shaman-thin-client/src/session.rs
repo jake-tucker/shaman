@@ -571,7 +571,7 @@ pub(crate) fn open(
         .as_ref()
         .map(|opening| (remote.clone(), opening.session_id));
     let in_tree = named.as_ref().map_or_else(InTree::default, |(_, open)| {
-        tree::in_tree(&tree_seen.borrow(), *open)
+        tree::in_tree(&tree_seen.borrow(), *open, None)
     });
     let local = Arc::new(watch::Sender::new(Local::default()));
     let (frame, frame_seen) = watch::channel(frame_of(
@@ -1191,7 +1191,11 @@ impl Reader {
     }
 
     fn show_frame(&self) {
-        let in_tree = tree::in_tree(&self.tree_seen.borrow(), self.session_id);
+        let in_tree = tree::in_tree(
+            &self.tree_seen.borrow(),
+            self.session_id,
+            self.snapshot.as_ref(),
+        );
         let frame = frame_of(
             Some(&self.listed),
             self.snapshot.as_ref(),
@@ -1252,6 +1256,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        TreeButton,
         conversation::ItemKind,
         listing::tests::{listings, remote, session},
     };
@@ -1903,6 +1908,178 @@ mod tests {
         assert_eq!((tree.loading, tree.failed), (None, None));
         assert!(tree.rows.is_empty());
         assert_eq!(opened.frame.borrow().tree, None);
+    }
+
+    /// The tree's sheet over a Session that has spawned a Subagent, read
+    /// over a Server whose tree answers as `tree` does, once the frame
+    /// offers the button that opens it, and once the sheet shows what
+    /// `shown` looks for.
+    fn sheet_over(
+        tree: impl Fn() -> futures_util::future::BoxFuture<
+            'static,
+            Result<shaman_client::TransportResponse, SessionError>,
+        > + Send
+        + Sync
+        + 'static,
+        shown: impl Fn(&SubagentTree) -> bool,
+    ) -> (SessionFrame, SubagentTree) {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let session_id = Arc::new(Mutex::new(None::<SessionId>));
+        let answers: Arc<Answers> = {
+            let session_id = session_id.clone();
+            Arc::new(move |_, path| {
+                if path.ends_with("/subagent-tree") {
+                    return tree();
+                }
+                if path.ends_with("/events") {
+                    let id = session_id.lock().unwrap().expect("the Session is known");
+                    let mut snapshot = shaman_client::testing::session_snapshot(id, 1);
+                    snapshot
+                        .activities
+                        .push(shaman_protocol::Activity::Subagent {
+                            id: shaman_protocol::ActivityId::new(),
+                            turn_id: TurnId::new(),
+                            status: shaman_protocol::ActivityStatus::Active,
+                            name: "Explorer".to_owned(),
+                            description: "Find what held the lock".to_owned(),
+                            model: None,
+                            session_id: SessionId::new(),
+                            brokered: false,
+                            duration_ms: None,
+                            delegated_at: None,
+                        });
+                    let (more, rest) = tokio::sync::mpsc::unbounded_channel();
+                    // Held open for as long as the stream is read.
+                    std::mem::forget(more);
+                    return Box::pin(async move { Ok(stream_from(&snapshot, rest)) });
+                }
+                Box::pin(std::future::pending())
+            })
+        };
+        let (listings, _directory) = listings(&runtime);
+        let (desk, reference) = listed_on("desk", "Map the workspace");
+        *session_id.lock().unwrap() = Some(desk.sessions.as_ref().unwrap()[0].id());
+        listings.hold_over(desk, answering(answers));
+        let opened = open(
+            runtime.handle(),
+            &listings,
+            &reference,
+            Pacing {
+                initial_backoff: Duration::from_millis(1),
+                max_backoff: Duration::from_millis(5),
+            },
+            Asked {
+                drafts: Drafts::default(),
+                acts: Acts::default(),
+                asking: Asking {
+                    initial_backoff: Duration::from_millis(1),
+                    max_backoff: Duration::from_millis(5),
+                    bound: SHOWN_WITHIN,
+                    dialling: Duration::from_millis(50),
+                },
+                trees: Trees::new(runtime.handle().clone()),
+            },
+        );
+        let mut frame = opened.frame.clone();
+        let framed = runtime.block_on(async {
+            tokio::time::timeout(SHOWN_WITHIN, frame.wait_for(|frame| frame.tree.is_some()))
+                .await
+                .expect("the button offered in time")
+                .expect("the frame stands")
+                .clone()
+        });
+        let kept = Arc::new(Kept(Mutex::new(None)));
+        let _subscription = opened.watch_tree(kept.clone());
+        let sheet = runtime.block_on(async {
+            tokio::time::timeout(SHOWN_WITHIN, async {
+                loop {
+                    if let Some(sheet) = kept.0.lock().unwrap().clone().filter(|sheet| shown(sheet))
+                    {
+                        return sheet;
+                    }
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            })
+            .await
+            .expect("the sheet shown in time")
+        });
+        (framed, sheet)
+    }
+
+    #[test]
+    fn a_session_with_subagents_offers_its_tree_and_the_sheet_says_loading_until_it_is_read() {
+        let (framed, sheet) = sheet_over(
+            || Box::pin(std::future::pending()),
+            |sheet| sheet.loading.is_some(),
+        );
+        assert_eq!(
+            framed.tree,
+            Some(TreeButton {
+                working: None,
+                label: "Subagents".to_owned()
+            }),
+            "offered, uncounted, before its tree is read"
+        );
+        assert_eq!(sheet.loading.as_deref(), Some("Loading"));
+        assert!(sheet.rows.is_empty());
+    }
+
+    #[test]
+    fn a_session_whose_tree_cannot_be_read_offers_it_and_the_sheet_says_why() {
+        let (framed, sheet) = sheet_over(
+            || {
+                Box::pin(async {
+                    Ok(shaman_client::testing::refusal(
+                        http::StatusCode::NOT_FOUND,
+                        &SessionError {
+                            code: SessionErrorCode::SessionNotFound,
+                            message: "No such session".to_owned(),
+                            unreachable: None,
+                        },
+                    ))
+                })
+            },
+            |sheet| sheet.failed.is_some(),
+        );
+        assert!(framed.tree.is_some());
+        let failed = sheet.failed.expect("why");
+        assert!(
+            failed.starts_with("Could not load subagents: ") && failed.contains("No such session"),
+            "{failed}"
+        );
+    }
+
+    #[test]
+    fn a_stop_its_server_refuses_fails_in_the_servers_words() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (opened, _drafts, reference, _session, _directory) = opened_over(
+            &runtime,
+            answering(Arc::new(|method, path| {
+                if method == http::Method::POST && path.ends_with("/interrupt") {
+                    return Box::pin(async {
+                        Ok(shaman_client::testing::refusal(
+                            http::StatusCode::CONFLICT,
+                            &SessionError {
+                                code: SessionErrorCode::SubagentStopUnsupported,
+                                message: "This provider cannot stop one subagent alone".to_owned(),
+                                unreachable: None,
+                            },
+                        ))
+                    });
+                }
+                Box::pin(std::future::pending())
+            })),
+        );
+        let refused = runtime
+            .block_on(opened.stop_subagent(reference))
+            .expect_err("refused");
+        let ActError::Refused { message } = refused else {
+            panic!("refused in the Server's words: {refused:?}");
+        };
+        assert!(
+            message.contains("This provider cannot stop one subagent alone"),
+            "{message}"
+        );
     }
 
     /// Hears nothing it keeps.

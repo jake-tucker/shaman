@@ -23,7 +23,8 @@ use shaman::{
         AttributedProviderEvent, ErrandFuture, ProviderDecisionDelivery, ProviderErrand,
         ProviderError, ProviderEvent, ProviderEventStream, ProviderFuture, ProviderInterruption,
         ProviderModelDiscovery, ProviderPostureApplication, ProviderRuntime, ProviderSession,
-        ProviderSessionConnection, ProviderSessionRequest, ProviderSteerInput, ProviderTurnInput,
+        ProviderSessionConnection, ProviderSessionRequest, ProviderSteerInput, ProviderSubagentId,
+        ProviderTurnInput,
     },
     server::{self, ServerConfig, ServerTimings},
 };
@@ -1037,6 +1038,12 @@ impl ProviderRuntime for TestProvider {
         None
     }
 
+    // A scripted Session's Subagents may be stopped one at a time, as
+    // Claude's and Codex's may.
+    fn supports_subagent_stop(&self) -> bool {
+        true
+    }
+
     fn shutdown(&self) -> ProviderFuture<'_, ()> {
         Box::pin(async { Ok(()) })
     }
@@ -1081,6 +1088,10 @@ impl ProviderSession for ScriptedSession {
     }
 
     fn stop_subagents(&self) -> ProviderFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn stop_subagent(&self, _subagent_id: ProviderSubagentId) -> ProviderFuture<'_, ()> {
         Box::pin(async { Ok(()) })
     }
 

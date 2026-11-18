@@ -13,9 +13,7 @@ use shaman::{
         ProviderSubagentStatus,
     },
 };
-use shaman_thin_client::{
-    ActError, ActiveRow, ItemKind, PairingOutcome, Tap, Tone, TreeButton, WorkKind,
-};
+use shaman_thin_client::{ActiveRow, ItemKind, PairingOutcome, Tap, Tone, TreeButton, WorkKind};
 use support::{Phone, SCRIPTED, Script, ServingServer};
 
 async fn pair(phone: &Phone, server: &ServingServer, name: &str) {
@@ -202,14 +200,6 @@ async fn a_subagents_row_opens_its_session_and_the_tree_offers_every_session_of_
     assert!(sheet.rows[1].open);
     assert_eq!(sheet.rows[1].stop, None);
 
-    // Asked all the same, its Server refuses in its own words.
-    let refused = child
-        .session
-        .stop_subagent(session.clone())
-        .await
-        .expect_err("refused");
-    assert!(matches!(refused, ActError::Refused { .. }), "{refused:?}");
-
     // The Turn settles with the Subagent still working: the parent's bar
     // names what it waits on.
     say(
@@ -254,6 +244,81 @@ async fn a_subagents_row_opens_its_session_and_the_tree_offers_every_session_of_
     child
         .frame_until(|frame| frame.bar.is_none() && frame.composer.is_none())
         .await;
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_working_subagent_stopped_from_the_tree_stops_alone_and_reads_stopped() {
+    let desk = ServingServer::start("thin-subagent-stop").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let directory = holder.path().join(SCRIPTED);
+    std::fs::create_dir_all(&directory).expect("make the Workspace");
+    desk.begin(&directory, "Find what holds the lock").await;
+    let script = desk.script().await;
+    let row = row(&phone, "Find what holds the lock").await;
+    let parent = phone.open(&row.session);
+    for name in ["explorer", "writer"] {
+        say(
+            &script,
+            ProviderEventAttribution::OwningSession,
+            ProviderEvent::SubagentStarted {
+                subagent_id: ProviderSubagentId::new(name),
+                name: name.to_owned(),
+                description: format!("{name}'s task"),
+                delegation: None,
+            },
+        );
+    }
+    let tree = parent.tree();
+    let working = tree
+        .until(|sheet| {
+            sheet.rows.len() == 3
+                && sheet.rows[1..]
+                    .iter()
+                    .all(|row| row.marker == Some(Tone::Running))
+        })
+        .await;
+    let explorer = working
+        .rows
+        .iter()
+        .find(|row| row.title == "explorer's task")
+        .and_then(|row| row.session.clone())
+        .expect("the Subagent's entry opens its Session");
+
+    // Stopped from its entry, it alone stops.
+    parent
+        .session
+        .stop_subagent(explorer.clone())
+        .await
+        .expect("stopped");
+    let stopped = tree
+        .until(|sheet| {
+            sheet
+                .rows
+                .iter()
+                .any(|row| row.title == "explorer's task" && row.marker == Some(Tone::Stopped))
+        })
+        .await;
+    let writer = stopped
+        .rows
+        .iter()
+        .find(|row| row.title == "writer's task")
+        .expect("the other entry");
+    assert_eq!(writer.marker, Some(Tone::Running), "the rest work on");
+    let explorer_row = stopped
+        .rows
+        .iter()
+        .find(|row| row.title == "explorer's task")
+        .expect("its entry");
+    assert_eq!(explorer_row.line.as_deref(), Some("explorer · Stopped"));
+    assert_eq!(explorer_row.stop, None, "nothing left to stop");
+    assert_eq!(stopped.count.as_deref(), Some("2 · 1 working"));
+    let child = phone.open(&explorer);
+    child.frame_until(|frame| frame.bar.is_none()).await;
 
     phone.shutdown();
     desk.shutdown().await;

@@ -237,10 +237,13 @@ pub(crate) fn frame_of(
             tree: None,
         };
     };
+    // A Subagent's Session, which no listing carries, is titled by what its
+    // tree says it was asked until it has been read.
     let title = snapshot
         .map(|snapshot| snapshot.title.clone())
         .filter(|title| !title.is_empty())
         .or_else(|| listed.title.clone())
+        .or_else(|| tree.title.clone())
         .unwrap_or_default();
     let workspace = listed
         .workspace
@@ -250,9 +253,13 @@ pub(crate) fn frame_of(
             snapshot.map(|snapshot| listed.paths.workspace_name(&snapshot.session.workspace))
         });
     // A Subagent's Session is read, not written to, and is named beneath its
-    // Title by the Subagent's name and Model.
-    let subagent =
-        tree.subagent || snapshot.is_some_and(|snapshot| snapshot.session.parent.is_some());
+    // Title by the Subagent's name and Model. Until it is known to be one, a
+    // Session the listing does not carry — one pushed from a Subagent's row —
+    // is taken for one, so no composer stands a moment and goes.
+    let subagent = tree.subagent
+        || snapshot.map_or(listed.title.is_none(), |snapshot| {
+            snapshot.session.parent.is_some()
+        });
     let place = match (&tree.named, subagent) {
         (Some(named), true) => named.clone(),
         _ => listed

@@ -205,12 +205,15 @@ fn a_tree_not_in_hand_says_loading_and_one_that_cannot_be_read_says_why() {
 #[test]
 fn the_button_stands_only_where_the_tree_has_subagents_and_counts_those_working() {
     let top = SessionId::new();
-    assert_eq!(in_tree(&read(tree(top, Vec::new())), top).button, None);
-    assert_eq!(in_tree(&TreeState::default(), top).button, None);
+    assert_eq!(
+        in_tree(&read(tree(top, Vec::new())), top, None).button,
+        None
+    );
+    assert_eq!(in_tree(&TreeState::default(), top, None).button, None);
 
     let settled = entry("Reader", top, 0, ActivityStatus::Completed);
     let working = entry("Explorer", top, 1, ActivityStatus::Active);
-    let one = in_tree(&read(tree(top, vec![settled.clone()])), top);
+    let one = in_tree(&read(tree(top, vec![settled.clone()])), top, None);
     assert_eq!(
         one.button,
         Some(TreeButton {
@@ -219,7 +222,7 @@ fn the_button_stands_only_where_the_tree_has_subagents_and_counts_those_working(
         })
     );
     assert!(!one.subagent, "the top-level Session is no Subagent's");
-    let two = in_tree(&read(tree(top, vec![settled, working])), top);
+    let two = in_tree(&read(tree(top, vec![settled, working])), top, None);
     assert_eq!(
         two.button,
         Some(TreeButton {
@@ -237,9 +240,15 @@ fn a_subagents_session_is_named_by_its_name_and_model() {
     let framed = in_tree(
         &read(tree(top, vec![explorer.clone()])),
         explorer.session_id,
+        None,
     );
     assert!(framed.subagent);
     assert_eq!(framed.named.as_deref(), Some("Explorer · haiku"));
+    assert_eq!(
+        framed.title.as_deref(),
+        Some("Explorer's task"),
+        "what it was asked titles it until it is read"
+    );
 }
 
 #[test]
@@ -249,7 +258,7 @@ fn a_subagent_is_stopped_alone_where_brokered_or_where_its_provider_can() {
     let grandchild = entry("Reader", child.session_id, 0, ActivityStatus::Active);
     let mut state = read(tree(top, vec![child.clone(), grandchild.clone()]));
     let stops = |state: &TreeState, session: SessionId| {
-        let offered = in_tree(state, session).stoppable;
+        let offered = in_tree(state, session, None).stoppable;
         let swiped = sheet(state, REMOTE, top)
             .rows
             .iter()
@@ -313,6 +322,58 @@ fn the_providers_that_stop_a_subagent_alone_are_those_whose_runtimes_say_so() {
     let mut held = STOPS_A_SUBAGENT_ALONE.map(str::to_owned).to_vec();
     held.sort();
     assert_eq!(held, declared);
+}
+
+/// A Session's snapshot holding a row of the Subagent `name`, or, where
+/// `parent` names one, a Subagent's own.
+fn snapshot_with_subagents(parent: Option<SessionId>) -> SessionSnapshot {
+    let mut snapshot = shaman_client::testing::session_snapshot(SessionId::new(), 1);
+    snapshot.session.parent = parent;
+    if parent.is_none() {
+        snapshot.activities.push(Activity::Subagent {
+            id: shaman_protocol::ActivityId::new(),
+            turn_id: shaman_protocol::TurnId::new(),
+            status: ActivityStatus::Active,
+            name: "Explorer".to_owned(),
+            description: String::new(),
+            model: None,
+            session_id: SessionId::new(),
+            brokered: false,
+            duration_ms: None,
+            delegated_at: None,
+        });
+    }
+    snapshot
+}
+
+#[test]
+fn the_button_stands_where_the_session_shows_subagents_though_its_tree_is_not_read() {
+    let open = SessionId::new();
+    let uncounted = Some(TreeButton {
+        working: None,
+        label: "Subagents".to_owned(),
+    });
+    let spawner = snapshot_with_subagents(None);
+    let subagent = snapshot_with_subagents(Some(SessionId::new()));
+    let lone = shaman_client::testing::session_snapshot(SessionId::new(), 1);
+    let failed = TreeState {
+        reading: Reading::Failed("No such session".to_owned()),
+        known: HashMap::new(),
+    };
+    for state in [&TreeState::default(), &failed] {
+        assert_eq!(in_tree(state, open, Some(&spawner)).button, uncounted);
+        assert_eq!(in_tree(state, open, Some(&subagent)).button, uncounted);
+        assert_eq!(
+            in_tree(state, open, Some(&lone)).button,
+            None,
+            "no subagents"
+        );
+    }
+    // A tree read that has yet to hear of the spawn still offers it.
+    assert_eq!(
+        in_tree(&read(tree(open, Vec::new())), open, Some(&spawner)).button,
+        uncounted
+    );
 }
 
 /// A Remote whose trees stream as `trees` says, counting each one asked for
@@ -497,6 +558,50 @@ async fn two_sessions_of_one_tree_opened_before_it_is_read_are_made_one_tree() {
     );
     drop(parent);
     drop(subagent);
+    until("the stream let go", || {
+        remote.open.load(Ordering::Acquire) == 0
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_whose_tree_could_not_be_read_joins_it_once_another_reads_it() {
+    let top = SessionId::new();
+    let child = entry("Explorer", top, 0, ActivityStatus::Active);
+    let refusing = SessionCommands::new(
+        Arc::new(shaman_client::testing::ScriptedTransport::new(vec![Ok(
+            shaman_client::testing::refusal(
+                http::StatusCode::NOT_FOUND,
+                &shaman_protocol::SessionError {
+                    code: shaman_protocol::SessionErrorCode::SessionNotFound,
+                    message: "No such session".to_owned(),
+                    unreachable: None,
+                },
+            ),
+        )])),
+        SessionCommandTimings {
+            initial_recovery_backoff: Duration::from_millis(5),
+            max_recovery_backoff: Duration::from_millis(5),
+            attachment_fetch_timeout: Duration::from_secs(5),
+        },
+    );
+    let remote = Remote::new(tree(top, vec![child.clone()]));
+    let trees = Trees::new(Handle::current());
+
+    let first = trees.hold(REMOTE, child.session_id, &refusing);
+    let failed = seen_until(&first, |state| matches!(state.reading, Reading::Failed(_))).await;
+    let Reading::Failed(why) = failed.reading else {
+        unreachable!()
+    };
+    assert!(why.contains("No such session"), "{why}");
+
+    // The parent opened, its tree read, the Subagent's screen reads it too.
+    let parent = trees.hold(REMOTE, top, &remote.commands);
+    seen_until(&parent, is_read).await;
+    seen_until(&first, is_read).await;
+    assert_eq!(trees.read(), 1, "the failure went with the Session it held");
+    drop(parent);
+    drop(first);
     until("the stream let go", || {
         remote.open.load(Ordering::Acquire) == 0
     })
