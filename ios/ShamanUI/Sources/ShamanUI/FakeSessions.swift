@@ -25,24 +25,33 @@
     static let shelfOpening = 10
     static let shelfBatch = 25
 
-    /// The listing `sessions` make on the Remotes `remotes`, of which those `unanswered` have yet to answer, with as
-    /// many as `onShow` of the shelf's rows on show, narrowed to `scope` and searched for `query`.
+    /// The listing `sessions` make on the Remotes `remotes`, of which those `unanswered` have yet to answer and those
+    /// `unreachable` read Unreachable for the reason each says, with as many as `onShow` of the shelf's rows on show,
+    /// narrowed to `scope` and searched for `query`.
     static func listing(
-      of sessions: [FakeSession], on remotes: [String], unanswered: [String], showing onShow: Int,
-      scope: FakeScope = .everywhere, query: String = "", now: Date
+      of sessions: [FakeSession], on remotes: [String], unanswered: [String],
+      unreachable: [String: UnreachableHint] = [:], showing onShow: Int, scope: FakeScope = .everywhere,
+      query: String = "", now: Date
     ) -> Listing {
       let scope = scope.within(remotes, sessions: sessions)
       let originNamed = remotes.count > 1
       let held = sessions.filter { remotes.contains($0.remote) && !unanswered.contains($0.remote) }
       let inScope = held.filter { scope.holds($0) }
-      let active = inScope.filter { !$0.settled }.map { $0.active(originNamed: originNamed, now: now) }
-      let settled = inScope.filter(\.settled).sorted { $0.moved < $1.moved }.map { $0.settledRow(now: now) }
+      let active = inScope.filter { !$0.settled }.map {
+        $0.active(originNamed: originNamed, dimmed: unreachable[$0.remote] != nil, now: now)
+      }
+      let settled = inScope.filter(\.settled).sorted { $0.moved < $1.moved }.map {
+        $0.settledRow(dimmed: unreachable[$0.remote] != nil, now: now)
+      }
       let found: [FoundRow]? =
         query.isEmpty
         ? nil
         : active.filter { $0.title.localizedCaseInsensitiveContains(query) }.map { FoundRow.active(row: $0) }
           + settled.filter { $0.title.localizedCaseInsensitiveContains(query) }.map { FoundRow.settled(row: $0) }
-      let waiting = unanswered.filter { scope.reaches($0) }
+      let waiting = unanswered.filter { scope.reaches($0) && unreachable[$0] == nil }
+      let slim = remotes.filter { scope.reaches($0) }.compactMap { remote in
+        unreachable[remote].map { Self.unreachableRow(remote, hint: $0, originNamed: originNamed) }
+      }
       let nothing = found.map(\.isEmpty) ?? (active.isEmpty && settled.isEmpty)
       let empty: String?
       // A search says it found nothing while it goes on saying who is being reached.
@@ -64,6 +73,7 @@
         searchPrompt: "Search by title",
         active: found == nil ? active : [],
         waiting: reaching(waiting, originNamed: originNamed),
+        unreachable: slim,
         settledHeader: "Settled",
         settled: found == nil ? Array(settled.prefix(onShow)) : [],
         showMore: found == nil && hidden > 0 ? "Show \(min(hidden, shelfBatch)) more" : nil,
@@ -114,6 +124,25 @@
         }
     }
 
+    /// The slim row the core makes for the Remote `remote`, Unreachable as `hint` says.
+    static func unreachableRow(_ remote: String, hint: UnreachableHint, originNamed: Bool) -> UnreachableRow {
+      let named = originNamed ? remote : "the server"
+      let explanation =
+        switch hint {
+        case .noNetwork: "This phone has no network connection. Shaman tries again as soon as it has one."
+        case .localNetwork:
+          "Every way to \(named) is on the local network, and local network access may be off for Shaman. Turn it "
+            + "on in Settings, then try again."
+        case .plain: "No way to \(named) answered. Shaman keeps trying while it is open."
+        }
+      return UnreachableRow(
+        remote: FakeCore.fingerprint(of: remote), words: originNamed ? "\(remote) unreachable" : "Server unreachable",
+        tryAgain: "Try again",
+        sheet: UnreachableSheet(
+          title: originNamed ? "\(remote) is unreachable" : "The server is unreachable", explanation: explanation,
+          hint: hint, openSettings: hint == .localNetwork ? "Open Settings" : nil, tryAgain: "Try again"))
+    }
+
     /// What the core says while the Remotes `unanswered` have yet to answer.
     private static func reaching(_ unanswered: [String], originNamed: Bool) -> String? {
       guard let last = unanswered.last else { return nil }
@@ -122,7 +151,7 @@
       return "Reaching \(named)…"
     }
 
-    private func active(originNamed: Bool, now: Date) -> ActiveRow {
+    private func active(originNamed: Bool, dimmed: Bool, now: Date) -> ActiveRow {
       let slot: Slot =
         switch standing {
         case .working: .running(words: "Working", since: now.addingTimeInterval(-running))
@@ -134,12 +163,13 @@
         }
       return ActiveRow(
         session: id, place: originNamed ? "\(remote) · \(workspace)" : workspace, glyph: glyph, title: title,
-        checkout: checkout, standing: standing, slot: slot, settle: "Settle")
+        checkout: checkout, standing: standing, slot: slot, settle: "Settle", dimmed: dimmed)
     }
 
-    private func settledRow(now: Date) -> SettledRow {
+    private func settledRow(dimmed: Bool, now: Date) -> SettledRow {
       SettledRow(
-        session: id, glyph: glyph, title: title, ended: now.addingTimeInterval(-moved), unsettle: "Unsettle")
+        session: id, glyph: glyph, title: title, ended: now.addingTimeInterval(-moved), unsettle: "Unsettle",
+        dimmed: dimmed)
     }
 
     private static let branch = "\u{ec6f}"

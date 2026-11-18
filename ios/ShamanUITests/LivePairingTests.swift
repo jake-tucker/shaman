@@ -126,5 +126,55 @@ final class LivePairingTests: XCTestCase {
     XCTAssertTrue(
       app.descendants(matching: .any)["home.beginsIn"].waitForExistence(timeout: 10), "the Pairing survives a relaunch")
     XCTAssertEqual(app.descendants(matching: .any)["home.beginsIn"].label, shown)
+
+    try unreachableAndBack(app, signals: environment["SHAMAN_LIVE_SIGNALS"])
+  }
+
+  /// The scratch Server stopped mid-run reads Unreachable, its rows dimmed beneath a slim row, and once started again
+  /// it answers, trying it again where it has not yet by itself; and a switch away and back keeps it answering. The
+  /// script stops and starts the Server as the test asks through files in `signals`.
+  @MainActor
+  private func unreachableAndBack(_ app: XCUIApplication, signals: String?) throws {
+    guard let signals else { return }
+    let slim = app.buttons["listing.unreachable"]
+    XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "listing.active").firstMatch.exists)
+    try signal("stop", in: signals, awaiting: "stopped")
+    XCTAssertTrue(slim.waitForExistence(timeout: 30), "the stopped Server reads Unreachable")
+    XCTAssertTrue(slim.label.contains("Server unreachable"), slim.label)
+    XCTAssertTrue(
+      app.descendants(matching: .any).matching(identifier: "listing.active").firstMatch.exists, "its rows stay")
+    attach(app, "The scratch Server stopped, read Unreachable")
+
+    try signal("resume", in: signals, awaiting: "resumed")
+    if slim.exists {
+      slim.tap()
+      let tryAgain = app.buttons["unreachable.tryAgain"]
+      if tryAgain.waitForExistence(timeout: 5) {
+        attach(app, "The scratch Server's offer to try again")
+        tryAgain.tap()
+      }
+    }
+    XCTAssertTrue(slim.waitForNonExistence(timeout: 30), "the Server started again answers")
+    attach(app, "The scratch Server answering again")
+
+    XCUIDevice.shared.press(.home)
+    app.activate()
+    XCTAssertTrue(app.descendants(matching: .any)["home.beginsIn"].waitForExistence(timeout: 10))
+    XCTAssertFalse(slim.waitForExistence(timeout: 3), "a switch away and back reads no Remote Unreachable")
+  }
+
+  /// Asks the script for `asked` by a file in `signals`, and waits for it to say `done` the same way.
+  private func signal(_ asked: String, in signals: String, awaiting done: String) throws {
+    let directory = URL(filePath: signals, directoryHint: .isDirectory)
+    try Data().write(to: directory.appending(path: asked))
+    let answered = directory.appending(path: done)
+    let deadline = Date().addingTimeInterval(60)
+    while !FileManager.default.fileExists(atPath: answered.path(percentEncoded: false)) {
+      guard Date() < deadline else {
+        XCTFail("the script never said \(done)")
+        return
+      }
+      Thread.sleep(forTimeInterval: 0.2)
+    }
   }
 }

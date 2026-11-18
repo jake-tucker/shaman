@@ -72,8 +72,20 @@ struct ListingScreen: View {
       }
     }
     .task { await model.follow() }
+    .onChange(of: model.listing?.unreachable) {
+      // A Remote that answers again on its own takes its sheet with it.
+      if case .unreachable(let row) = sheet,
+        model.listing?.unreachable.contains(where: { $0.remote == row.remote }) != true
+      {
+        sheet = nil
+      }
+    }
     .sheet(item: $sheet) { sheet in
       switch sheet {
+      case .unreachable(let row):
+        UnreachableSheetView(row: row, model: TryAgainModel(core: core, remote: row.remote)) {
+          self.sheet = nil
+        }
       case .servers:
         DeviceScreen(core: core, appVersion: appVersion)
       case .pairing(let invite):
@@ -101,6 +113,7 @@ struct ListingScreen: View {
       if let waiting = listing.waiting {
         waitingRow(waiting)
       }
+      unreachableRows(listing)
     } else {
       shelves(listing)
     }
@@ -113,6 +126,7 @@ struct ListingScreen: View {
       if let waiting = listing.waiting {
         waitingRow(waiting)
       }
+      unreachableRows(listing)
     }
     if !listing.settled.isEmpty {
       Section {
@@ -140,6 +154,29 @@ struct ListingScreen: View {
     .foregroundStyle(.secondary)
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier("listing.waiting")
+  }
+
+  /// A slim row at the foot of the active rows for each Remote that reads Unreachable, opening the sheet that offers
+  /// to try it again.
+  private func unreachableRows(_ listing: Listing) -> some View {
+    ForEach(listing.unreachable, id: \.remote) { row in
+      Button {
+        sheet = .unreachable(row)
+      } label: {
+        HStack(spacing: 8) {
+          Image(systemName: row.sheet.hint.symbol)
+            .accessibilityHidden(true)
+          Text(verbatim: row.words)
+          Spacer(minLength: 8)
+          Text(verbatim: row.tryAgain)
+            .foregroundStyle(.tint)
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityIdentifier("listing.unreachable")
+    }
   }
 
   private func active(_ row: ActiveRow) -> some View {
@@ -205,6 +242,8 @@ struct ListingScreen: View {
 /// A sheet over the listing.
 private enum ListingSheet: Hashable, Identifiable {
   case servers
+  /// The offer to try an Unreachable Remote again.
+  case unreachable(UnreachableRow)
   /// Confirming an Invite that arrived by the launch environment.
   case pairing(String)
 
@@ -281,6 +320,113 @@ final class ListingModel {
       try? await Task.sleep(for: stands)
       guard !Task.isCancelled else { return }
       self?.failure = nil
+    }
+  }
+}
+
+/// The short sheet an Unreachable Remote's slim row opens: why it may not be answering, the offer to try it again, and
+/// where every way to it is on the local network, the way to the app's page in iOS Settings.
+struct UnreachableSheetView: View {
+  let row: UnreachableRow
+  @State var model: TryAgainModel
+  /// Closes the sheet, once the Remote answers.
+  let answered: () -> Void
+  @Environment(\.openURL) private var openURL
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Label {
+        Text(verbatim: row.sheet.title)
+          .font(.headline)
+      } icon: {
+        Image(systemName: row.sheet.hint.symbol)
+          .foregroundStyle(.secondary)
+      }
+      .accessibilityIdentifier("unreachable.title")
+      Text(verbatim: row.sheet.explanation)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityIdentifier("unreachable.explanation")
+      if let failure = model.failure {
+        Text(verbatim: failure)
+          .font(.footnote)
+          .foregroundStyle(.red)
+          .accessibilityIdentifier("unreachable.failure")
+      }
+      Spacer(minLength: 0)
+      Button {
+        Task {
+          if await model.tryAgain() {
+            answered()
+          }
+        }
+      } label: {
+        ZStack {
+          Text(verbatim: row.sheet.tryAgain).opacity(model.trying ? 0 : 1)
+          if model.trying {
+            ProgressView()
+          }
+        }
+        .frame(maxWidth: .infinity)
+      }
+      .buttonStyle(.borderedProminent)
+      .controlSize(.large)
+      .disabled(model.trying)
+      .accessibilityIdentifier("unreachable.tryAgain")
+      if let openSettings = row.sheet.openSettings, let settings = URL(string: UIApplication.openSettingsURLString) {
+        Button {
+          openURL(settings)
+        } label: {
+          Text(verbatim: openSettings)
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .accessibilityIdentifier("unreachable.openSettings")
+      }
+    }
+    .padding(24)
+    .presentationDetents([.medium])
+  }
+}
+
+/// Trying an Unreachable Remote again, from its sheet.
+@MainActor @Observable
+final class TryAgainModel {
+  private let core: any Core
+  private let remote: String
+  /// Whether the core is trying it now, during which the sheet takes no second try.
+  private(set) var trying = false
+  /// Why the last try did not reach it, in the core's words.
+  private(set) var failure: String?
+
+  init(core: any Core, remote: String) {
+    self.core = core
+    self.remote = remote
+  }
+
+  /// Tries the Remote again, answering whether it answered.
+  func tryAgain() async -> Bool {
+    trying = true
+    defer { trying = false }
+    do {
+      try await core.tryAgain(remote)
+      failure = nil
+      return true
+    } catch {
+      failure = error.message
+      return false
+    }
+  }
+}
+
+extension UnreachableHint {
+  /// The symbol an Unreachable Remote's row and sheet are drawn with.
+  var symbol: String {
+    switch self {
+    case .plain: "exclamationmark.icloud"
+    case .localNetwork: "wifi.exclamationmark"
+    case .noNetwork: "wifi.slash"
     }
   }
 }
@@ -400,6 +546,7 @@ struct ActiveRowView: View {
       }
     }
     .padding(.vertical, 2)
+    .opacity(row.dimmed ? 0.45 : 1)
     .accessibilityElement(children: .combine)
   }
 }
@@ -424,6 +571,7 @@ struct SettledRowView: View {
     }
     .font(.subheadline)
     .foregroundStyle(.secondary)
+    .opacity(row.dimmed ? 0.45 : 1)
     .accessibilityElement(children: .combine)
   }
 }

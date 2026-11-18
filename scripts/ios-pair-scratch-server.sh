@@ -7,9 +7,12 @@
 # is touched. Run it before merging a change to pairing or transport; never in CI.
 #
 #   scripts/ios-pair-scratch-server.sh            # launch the app with the Invite; press Pair in it
-#   scripts/ios-pair-scratch-server.sh --test     # run the UI test that presses Pair, checks where it lands, and
-#                                                  # opens a Session begun there and reads it live
+#   scripts/ios-pair-scratch-server.sh --test     # run the UI test that presses Pair, checks where it lands,
+#                                                  # opens a Session begun there and reads it live, and stops the
+#                                                  # Server mid-run to see it read Unreachable and answer again
 #   scripts/ios-pair-scratch-server.sh --stop     # stop the scratch Server
+#   scripts/ios-pair-scratch-server.sh --resume   # start the stopped scratch Server again, its records kept, so the
+#                                                  # app that was paired sees the Remote answer again
 #
 # Build the app first (see ios/AGENTS.md); the script builds Shaman itself. `SHAMAN_SCRATCH_ROOT` moves the scratch
 # root and `SHAMAN_SCRATCH_PORT` the port the Server listens on.
@@ -34,8 +37,12 @@ case "$mode" in
     scratch_shaman server stop
     exit 0
     ;;
+  --resume)
+    scratch_shaman server start
+    exit 0
+    ;;
   *)
-    echo "usage: $0 [--test|--stop]" >&2
+    echo "usage: $0 [--test|--stop|--resume]" >&2
     exit 2
     ;;
 esac
@@ -80,10 +87,24 @@ if [ "$mode" = --test ]; then
       -H 'Content-Type: application/json' --data @- "$(jq -r .base_url "$runtime")/v1/sessions"
   echo "Began a session on the scratch Server: $prompt" >&2
 
+  # The test asks for the Server to be stopped and started again by files here, to see it read Unreachable and
+  # answer again, and is told each is done the same way.
+  signals="$scratch/signals"
+  rm -rf "$signals"
+  mkdir -p "$signals"
+  (
+    until [ -e "$signals/stop" ]; do sleep 0.2; done
+    scratch_shaman server stop >&2 && touch "$signals/stopped"
+    until [ -e "$signals/resume" ]; do sleep 0.2; done
+    scratch_shaman server start >&2 && touch "$signals/resumed"
+  ) &
+  serving=$!
+  trap 'kill "$serving" 2> /dev/null || true; scratch_shaman server stop >&2 || true' EXIT
+
   cd "$root/ios"
   result="build/results/live-pairing-$(date +%s).xcresult"
   TEST_RUNNER_SHAMAN_LIVE_INVITE="$invite" TEST_RUNNER_SHAMAN_LIVE_RUN="$run" \
-    TEST_RUNNER_SHAMAN_LIVE_PROMPT="$prompt" xcodebuild test \
+    TEST_RUNNER_SHAMAN_LIVE_PROMPT="$prompt" TEST_RUNNER_SHAMAN_LIVE_SIGNALS="$signals" xcodebuild test \
     -project Shaman.xcodeproj -scheme Shaman -destination "platform=iOS Simulator,id=$udid" \
     -derivedDataPath build/xcode -resultBundlePath "$result" -quiet \
     -only-testing:ShamanUITests/LivePairingTests

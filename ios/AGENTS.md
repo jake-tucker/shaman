@@ -71,6 +71,9 @@ is a working Turn, `/7` a settled one, `/8` a stopped one, `/9` a failed one and
 Prompt not yet delivered, which Stop withdraws and gives back to the composer; in `several`, `homelab-key/6` is
 Monitoring, its bar naming its Watch; in `reaching`, `homelab-key/2` is never read, so its loading mark stands; and in
 `unreachable`, the home lab no longer answers, so `homelab-key/2` opens with its composer taking nothing and saying why.
+In `unreachable` the home lab, every way to which is on the local network, stands as a slim row at the foot of the
+listing and answers once tried again; in `offline` the phone has no network, so its one Remote reads Unreachable however
+often it is tried.
 Every act a fake Session is asked is answered as the core would answer it, after a moment: a Prompt holding "fail" is
 refused, one holding "gone" finds the Session gone, which pops its screen, and one holding "unanswered" is never
 answered, so its text stays in the composer with the line saying it may have been sent.
@@ -103,10 +106,11 @@ fails as a dead Invite or one no way answered does.
 from an empty database, Serving on the Mac's addresses, makes an Invite and launches the built app with it, in a core
 directory and under a key of its own, for a person to press Pair; with `--test` it runs `LivePairingTests` instead,
 which pairs, checks where the app lands and what it lists, opens a Session the script began there and reads it live,
-sends a Prompt to it, reads its title's menu and its search, checks that the Pairing survives a relaunch, and stops the
-Server. That Session runs on whichever Agent the scratch Server would give it, asked for one word; where that Agent is
+sends a Prompt to it, reads its title's menu and its search, checks that the Pairing survives a relaunch, has the script
+stop the Server and sees it read Unreachable, has it started again and sees it answer, and stops the Server. That Session runs on whichever Agent the scratch Server would give it, asked for one word; where that Agent is
 not signed in its Turn fails, which reads as well. `--stop` stops it otherwise. Run it before merging a change to
-pairing or transport; never in CI, where `LivePairingTests` skips.
+pairing or transport; never in CI, where `LivePairingTests` skips. By hand, `--stop` while the app runs has the Remote
+read Unreachable within a few seconds, and `--resume` starts the Server again with its records kept.
 
 **Test.** `ShamanUI`'s unit tests run under its own scheme; `ShamanTests` and the UI tests under the app's. A result
 bundle's path must not exist yet. The package's tests run without the Keychain, which answers a test bundle with no

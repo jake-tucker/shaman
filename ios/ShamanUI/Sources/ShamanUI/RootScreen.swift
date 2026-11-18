@@ -12,6 +12,7 @@ public struct RootScreen: View {
   /// The Session the listing opens on, pushed over it at once.
   private let opening: String?
   @State private var outlook: Outlook?
+  @Environment(\.scenePhase) private var scenePhase
 
   /// The app over `core`, showing `appVersion` as its own version, already confirming `invite` where one is given, as
   /// one arriving by the launch environment in a debug build is, and with the Session `opening` names pushed over the
@@ -44,6 +45,20 @@ public struct RootScreen: View {
           invite = nil
         }
         self.outlook = outlook
+      }
+    }
+    .task {
+      for await hasPath in NetworkPath.changes() {
+        core.pathChanged(hasPath: hasPath)
+      }
+    }
+    // The core is told when the app comes to the front, so it checks every Remote, and when it leaves, when it does
+    // nothing to its connections.
+    .onChange(of: scenePhase) { _, phase in
+      switch phase {
+      case .active: core.cameToFront()
+      case .background: core.leftFront()
+      default: break
       }
     }
   }

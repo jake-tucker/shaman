@@ -629,3 +629,42 @@ private final class HeldTime: BackgroundTasks {
     await sending.value
   }
 }
+
+@Suite @MainActor struct TryAgainModelTests {
+  /// The slim row the fake's listing gives the Remote `name`.
+  private func row(on core: FakeCore, _ name: String) async throws -> UnreachableRow {
+    var listings = core.listing().makeAsyncIterator()
+    let listing = try #require(await listings.next())
+    return try #require(listing.unreachable.first { $0.words.hasPrefix(name) || name.isEmpty })
+  }
+
+  @Test func aRemoteThatAnswersAgainIsSaidToAndLeavesTheListing() async throws {
+    let core = FakeCore(.unreachable)
+    let row = try await row(on: core, "homelab")
+    #expect(row.sheet.hint == .localNetwork)
+    #expect(row.sheet.openSettings == "Open Settings")
+    let model = TryAgainModel(core: core, remote: row.remote)
+
+    let trying = Task { await model.tryAgain() }
+    await Task.yield()
+    #expect(model.trying, "it takes no second try meanwhile")
+    #expect(await trying.value)
+    #expect(!model.trying)
+    #expect(model.failure == nil)
+    var listings = core.listing().makeAsyncIterator()
+    #expect(try #require(await listings.next()).unreachable.isEmpty)
+  }
+
+  @Test func aRemoteStillUnreachableSaysWhyInTheCoresWords() async throws {
+    let core = FakeCore(.offline)
+    let row = try await row(on: core, "")
+    #expect(row.words == "Server unreachable", "one server is never named")
+    #expect(row.sheet.hint == .noNetwork)
+    #expect(row.sheet.openSettings == nil)
+    let model = TryAgainModel(core: core, remote: row.remote)
+
+    #expect(await model.tryAgain() == false)
+    #expect(model.failure == "This phone has no network connection")
+    #expect(!model.trying)
+  }
+}

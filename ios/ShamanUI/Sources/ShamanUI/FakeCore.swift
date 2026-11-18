@@ -20,8 +20,11 @@
       case several
       /// The `several` phone while the home lab has yet to answer with its Sessions.
       case reaching
-      /// The `several` phone while the home lab is Unreachable: its Sessions open, and take nothing sent.
+      /// The `several` phone while the home lab, whose every way is on the local network, reads Unreachable: its
+      /// Sessions open and take nothing sent, and trying it again brings it back.
       case unreachable
+      /// The `paired` phone with no network at all, so its one Remote reads Unreachable until a path is back.
+      case offline
     }
 
     /// The Invite the fake reads as the workstation's. One holding "dead" reads as the workstation's too, and fails to
@@ -43,9 +46,11 @@
     /// What the listing is narrowed to and searched for, until the fake goes.
     private let scope = Mutex(FakeScope.everywhere)
     private let query = Mutex("")
+    /// The Remotes held that read Unreachable, and why.
+    private let unreachable: Mutex<[String: UnreachableHint]>
+    /// How long trying a Remote again takes to answer.
+    private let tryingTakes = Duration.milliseconds(400)
 
-    /// The Remotes held that no longer answer.
-    private let unreachable: [String]
     /// Each composer's draft, and whether an act is under way.
     private let acts = FakeActs()
 
@@ -54,14 +59,19 @@
       let remotes: [ServerRow] =
         switch scenario {
         case .fresh, .named, .pairAgain: []
-        case .paired: [Self.workstation(named: "workstation")]
-        case .several, .reaching, .unreachable:
-          [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
+        case .paired, .offline: [Self.workstation(named: "workstation")]
+        case .several, .reaching, .unreachable: [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
         }
       held = Mutex(remotes)
       unanswered = scenario == .reaching ? ["homelab"] : []
-      unreachable = scenario == .unreachable ? ["homelab"] : []
-      if [.several, .reaching, .unreachable].contains(scenario) {
+      let unreachable: [String: UnreachableHint] =
+        switch scenario {
+        case .unreachable: ["homelab": .localNetwork]
+        case .offline: ["workstation": .noNetwork]
+        default: [:]
+        }
+      self.unreachable = Mutex(unreachable)
+      if scenario == .several || scenario == .reaching || scenario == .unreachable {
         turned.withLock { $0 = "workstation" }
       }
     }
@@ -89,7 +99,7 @@
     public func openSession(_ session: String) -> any OpenedSession {
       let remotes = held.withLock { $0.map(\.name) }
       let found = sessions.withLock { $0.first { $0.id == session && remotes.contains($0.remote) } }
-      let cut = found.map { unreachable.contains($0.remote) } ?? false
+      let cut = found.map { found in unreachable.withLock { $0[found.remote] != nil } } ?? false
       let frame =
         found?.frame(originNamed: remotes.count > 1, unreachable: cut, now: Date())
         ?? SessionFrame(
@@ -151,6 +161,31 @@
       listingListeners.tell(currentListing())
     }
 
+    /// Every Remote read again answers but where the phone has no network, after a moment.
+    public func tryAgain(_ remote: String) async throws(ActError) {
+      try? await Task.sleep(for: tryingTakes)
+      let names = held.withLock { $0.filter { $0.fingerprint == remote }.map(\.name) }
+      guard let name = names.first else {
+        throw .Gone(message: "This phone is no longer paired with that server")
+      }
+      let stillUnreachable = unreachable.withLock { unreachable in
+        if unreachable[name] == .noNetwork { return true }
+        unreachable[name] = nil
+        return false
+      }
+      if stillUnreachable {
+        throw .Unreachable(message: "This phone has no network connection")
+      }
+      listingListeners.tell(currentListing())
+    }
+
+    public func cameToFront() {}
+
+    public func leftFront() {}
+
+    /// The fake's network never changes: its scenario says which Remotes read Unreachable.
+    public func pathChanged(hasPath: Bool) {}
+
     private func settling(_ session: String, to settled: Bool) async throws(ActError) {
       try? await Task.sleep(for: .milliseconds(150))
       let found = sessions.withLock { sessions in
@@ -171,7 +206,8 @@
     private func currentListing() -> Listing {
       let remotes = held.withLock { $0.map(\.name) }
       return FakeSession.listing(
-        of: sessions.withLock { $0 }, on: remotes, unanswered: unanswered, showing: onShow.withLock { $0 },
+        of: sessions.withLock { $0 }, on: remotes, unanswered: unanswered,
+        unreachable: unreachable.withLock { $0 }, showing: onShow.withLock { $0 },
         scope: scope.withLock { $0 }, query: query.withLock { $0 }, now: Date())
     }
 
@@ -279,6 +315,15 @@
     }
 
     private static let fingerprint = "9c4e2a7b1d0f3865e2a9c17b4d6f0e3a8b5c2d9f1e7a4b6c3d0e9f8a7b6c5d4e"
+
+    /// The fingerprint of the fake's Remote `name`.
+    static func fingerprint(of name: String) -> String {
+      switch name {
+      case laptop.name: laptop.fingerprint
+      case homelab.name: homelab.fingerprint
+      default: fingerprint
+      }
+    }
 
     private static func workstation(named name: String) -> ServerRow {
       ServerRow(
