@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
-use shaman_pairing_wire::{ChangeKind, Verdict, WireSchema, judge};
+use shaman_pairing_wire::{ChangeKind, HeaderEncoding, HeaderSent, Verdict, WireSchema, judge};
 
 /// The version the fixtures start from, and their floor.
 const BASE: u32 = 117;
@@ -667,4 +667,112 @@ fn a_route_removed_or_added_is_reached_by_itself() {
     for change in &verdict.changes {
         assert_eq!(change.via, change.at, "{}", verdict.report());
     }
+}
+
+/// The base wire with one more header, `x-shaman-session-hint`, sent as
+/// `sent` says and required where `required` holds.
+fn with_header(sent: HeaderSent, required: bool) -> Value {
+    let mut wire = WireSchema::new(BASE + 1, BASE);
+    wire.header::<String>(
+        "x-shaman-session-hint",
+        HeaderEncoding::Text,
+        sent,
+        required,
+    );
+    wire.api("POST /v1/sessions/{session_id}/prompts")
+        .body::<base::AdmitPrompt>()
+        .answer::<base::Prompt>();
+    wire.document()
+}
+
+#[test]
+fn a_newly_required_request_header_fails() {
+    let verdict = judge(&base(), &with_header(HeaderSent::Request, true)).unwrap();
+    assert_breaks(
+        &verdict,
+        &[(ChangeKind::NewlyRequired, "header x-shaman-session-hint")],
+    );
+}
+
+#[test]
+fn a_new_request_header_a_reader_may_do_without_passes() {
+    let verdict = judge(&base(), &with_header(HeaderSent::Request, false)).unwrap();
+    assert_eq!(
+        kinds(&verdict),
+        [(ChangeKind::Added, "header x-shaman-session-hint".to_owned())],
+        "{}",
+        verdict.report()
+    );
+    assert!(verdict.passes(), "{}", verdict.report());
+}
+
+#[test]
+fn a_header_made_required_fails() {
+    let mut optional = with_header(HeaderSent::Request, false);
+    optional["protocol_version"] = serde_json::json!(BASE);
+    let mut required = with_header(HeaderSent::Request, true);
+    required["protocol_version"] = serde_json::json!(BASE + 1);
+    let verdict = judge(&optional, &required).unwrap();
+    assert_breaks(
+        &verdict,
+        &[(ChangeKind::NewlyRequired, "header x-shaman-session-hint")],
+    );
+}
+
+#[allow(dead_code)]
+mod one_kind {
+    use super::*;
+
+    #[derive(Deserialize, JsonSchema)]
+    pub struct Attachment {
+        pub kind: Kind,
+    }
+
+    /// One kind today, and no fallback for the next.
+    #[derive(Deserialize, JsonSchema)]
+    #[serde(tag = "type", rename_all = "snake_case")]
+    pub enum Kind {
+        Image { width: u32 },
+    }
+
+    #[derive(Deserialize, JsonSchema)]
+    #[serde(tag = "readability", rename_all = "snake_case")]
+    pub enum Item {
+        Readable { title: String },
+        Unreadable,
+    }
+
+    /// A list whose reader passes over an item of a kind it does not know.
+    #[derive(Deserialize, JsonSchema)]
+    #[schemars(extend("x-unknown-kinds" = "passed-over"))]
+    #[serde(transparent)]
+    pub struct Listing(pub Vec<Item>);
+
+    /// The same list, which says nothing of what it passes over.
+    #[derive(Deserialize, JsonSchema)]
+    #[serde(transparent)]
+    pub struct Unmarked(pub Vec<Item>);
+}
+
+/// `Answer` alone, answered by one route, judged against itself.
+fn answering<Answer: JsonSchema>() -> Verdict {
+    let mut wire = WireSchema::new(BASE, BASE);
+    wire.api("GET /v1/things").answer::<Answer>();
+    let wire = wire.document();
+    judge(&wire, &wire).unwrap()
+}
+
+#[test]
+fn an_answer_carrying_an_enum_of_one_kind_with_no_fallback_fails() {
+    let verdict = answering::<one_kind::Attachment>();
+    assert_eq!(verdict.intolerant, ["Kind"], "{}", verdict.report());
+    assert!(!verdict.passes(), "{}", verdict.report());
+}
+
+#[test]
+fn a_list_that_passes_over_an_unknown_kind_needs_no_fallback_in_its_items() {
+    let verdict = answering::<one_kind::Listing>();
+    assert!(verdict.passes(), "{}", verdict.report());
+    let verdict = answering::<one_kind::Unmarked>();
+    assert_eq!(verdict.intolerant, ["Item"], "{}", verdict.report());
 }

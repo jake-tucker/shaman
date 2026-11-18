@@ -35,7 +35,7 @@ use shaman_protocol::{
     UsageMetricsReport, ViewSessionRequest, WORKSPACE_LISTING_EVENT, WorkspaceListing,
 };
 
-use crate::{HeaderEncoding, WireSchema};
+use crate::{HeaderEncoding, HeaderSent, WireSchema};
 
 /// Where the schema of the Pairing wire is written down, beside this crate.
 pub const SCHEMA_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/pairing-wire.json");
@@ -54,12 +54,15 @@ pub fn pairing_wire() -> Value {
 }
 
 fn headers(wire: &mut WireSchema) {
-    wire.header::<u32>(PAIRING_PROTOCOL_HEADER, HeaderEncoding::Text)
-        .header::<u32>(PAIRING_FLOOR_HEADER, HeaderEncoding::Text)
-        .header::<SessionErrorCode>(SESSION_ERROR_CODE_HEADER, HeaderEncoding::Text)
-        .header::<Author>(AUTHOR_HEADER, HeaderEncoding::Base64UrlJson)
-        .header::<ActId>(ACT_HEADER, HeaderEncoding::Text)
-        .header::<PromptAdmission>(PROMPT_ADMISSION_HEADER, HeaderEncoding::Text);
+    use HeaderEncoding::{Base64UrlJson, Text};
+    use HeaderSent::{Answer, Both, Request};
+    // A side stating no version is read as older than any floor.
+    wire.header::<u32>(PAIRING_PROTOCOL_HEADER, Text, Both, true)
+        .header::<u32>(PAIRING_FLOOR_HEADER, Text, Request, false)
+        .header::<SessionErrorCode>(SESSION_ERROR_CODE_HEADER, Text, Answer, false)
+        .header::<Author>(AUTHOR_HEADER, Base64UrlJson, Request, false)
+        .header::<ActId>(ACT_HEADER, Text, Request, false)
+        .header::<PromptAdmission>(PROMPT_ADMISSION_HEADER, Text, Answer, false);
 }
 
 /// The Serving listener's own routes: the ceremony that forms a Pairing, and
@@ -210,8 +213,9 @@ fn session(wire: &mut WireSchema) {
         .body::<QuestionnaireSubmission>();
     wire.api(&at("POST /approvals/{id}/decision"))
         .body::<Decision>();
+    // Stopping work answers nothing; withdrawing a Prompt names it.
     wire.api(&at("POST /interrupt"))
-        .answer::<InterruptOutcome>();
+        .answer_or_nothing::<InterruptOutcome>();
     wire.api(&at("POST /compact"))
         .body::<CompactSessionRequest>();
     wire.api(&at("GET /context")).answer::<ContextBreakdown>();

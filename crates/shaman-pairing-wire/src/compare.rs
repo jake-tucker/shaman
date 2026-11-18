@@ -191,8 +191,16 @@ pub fn intolerance(intolerant: &[String]) -> Option<String> {
 }
 
 /// The marker an enum whose reader takes a kind it does not know for a
-/// fallback carries.
+/// fallback carries, as [`TOLERATED`], and a list whose reader passes over an
+/// item of such a kind, as [`PASSED_OVER`].
 pub const TOLERATES_UNKNOWN_KINDS: &str = "x-unknown-kinds";
+
+/// What [`TOLERATES_UNKNOWN_KINDS`] says of an enum that takes a fallback.
+pub const TOLERATED: &str = "tolerated";
+
+/// What [`TOLERATES_UNKNOWN_KINDS`] says of a list that passes over an item
+/// of a kind its reader does not know.
+pub const PASSED_OVER: &str = "passed-over";
 
 /// Judges `current` against `base`, the schema it changes.
 pub fn judge(base: &Value, current: &Value) -> Result<Verdict, String> {
@@ -280,7 +288,12 @@ fn payloads(document: &Value) -> Vec<(&'static str, &Value)> {
         payloads.push(("definition", definition));
     }
     for header in values("headers") {
-        payloads.extend(header.get("value").map(|value| ("answer", value)));
+        let side = if header_sides(header).contains("answer") {
+            "answer"
+        } else {
+            "request"
+        };
+        payloads.extend(header.get("value").map(|value| (side, value)));
     }
     for message in values("messages") {
         payloads.push(("answer", message));
@@ -344,12 +357,14 @@ fn intolerant_enums(document: &Value) -> Vec<String> {
     let defs = section_of(document, "$defs");
     let mut seen = HashSet::new();
     let mut intolerant = BTreeSet::new();
-    let mut waiting: Vec<(String, Value)> = payloads(document)
+    // Each schema waiting, where it was reached, and whether a list holding
+    // it passes over an item of a kind its reader does not know.
+    let mut waiting: Vec<(String, Value, bool)> = payloads(document)
         .into_iter()
         .filter(|(side, _)| *side == "answer")
-        .map(|(_, payload)| ("an answer".to_owned(), payload.clone()))
+        .map(|(_, payload)| ("an answer".to_owned(), payload.clone(), false))
         .collect();
-    while let Some((at, schema)) = waiting.pop() {
+    while let Some((at, schema, passed_over)) = waiting.pop() {
         let (resolved, name) = resolve(&defs, &schema);
         if let Some(name) = name
             && !seen.insert(name.to_owned())
@@ -358,27 +373,41 @@ fn intolerant_enums(document: &Value) -> Vec<String> {
         }
         let at = name.map_or(at, str::to_owned);
         let (_, schema) = without_null(&resolved);
+        let marker = schema
+            .get(TOLERATES_UNKNOWN_KINDS)
+            .or_else(|| resolved.get(TOLERATES_UNKNOWN_KINDS))
+            .and_then(Value::as_str);
         let choices = alternatives(&defs, &schema);
         let kinds = choices.iter().filter(|(_, choice)| is_kind(choice)).count();
-        let tolerated = schema.get(TOLERATES_UNKNOWN_KINDS).is_some()
-            || resolved.get(TOLERATES_UNKNOWN_KINDS).is_some();
-        if choices.len() > 1 && kinds > 0 && !tolerated {
+        if kinds > 0 && marker != Some(TOLERATED) && !passed_over {
             intolerant.insert(at.clone());
         }
+        // A list marked so passes over an item of a kind it does not know,
+        // so its items need no fallback of their own.
+        let passes_over = marker == Some(PASSED_OVER);
         for (_, choice) in choices {
-            if choice.get("$ref").is_some() {
-                waiting.push((at.clone(), choice));
+            // A variant that is a reference is followed to what it names
+            // alone; the tag beside it is the enum's, already judged.
+            if let Some(reference) = choice.get("$ref") {
+                waiting.push((at.clone(), json!({ "$ref": reference }), false));
                 continue;
             }
-            for property in section_of(&choice, "properties").values() {
-                waiting.push((at.clone(), property.clone()));
-            }
-            for keyword in ["items", "additionalProperties"] {
-                if let Some(inner) = choice.get(keyword)
-                    && inner.is_object()
-                {
-                    waiting.push((at.clone(), inner.clone()));
+            // A variant's tag is what tells it apart, not a value of its own.
+            let tag = tag_of(&choice).map(|(tag, _)| tag);
+            for (name, property) in section_of(&choice, "properties") {
+                if Some(&name) != tag.as_ref() {
+                    waiting.push((at.clone(), property, false));
                 }
+            }
+            if let Some(items) = choice.get("items")
+                && items.is_object()
+            {
+                waiting.push((at.clone(), items.clone(), passes_over));
+            }
+            if let Some(values) = choice.get("additionalProperties")
+                && values.is_object()
+            {
+                waiting.push((at.clone(), values.clone(), false));
             }
             for inner in choice
                 .get("prefixItems")
@@ -386,11 +415,126 @@ fn intolerant_enums(document: &Value) -> Vec<String> {
                 .into_iter()
                 .flatten()
             {
-                waiting.push((at.clone(), inner.clone()));
+                waiting.push((at.clone(), inner.clone(), false));
             }
         }
     }
     intolerant.into_iter().collect()
+}
+
+/// A kind no build of Shaman names, which samples of a newer side's kinds
+/// are spelled with.
+pub const INVENTED_KIND: &str = "a_kind_no_build_knows";
+
+/// Samples of what a newer side could send of the definition `name` in
+/// `document`, each of a kind this build does not know, in every shape the
+/// definition tells its kinds apart by: a name alone, a tag, or the one key of
+/// an object. A list marked [`PASSED_OVER`] is sampled as a list of such
+/// items. None where the definition has no kinds.
+pub fn invented_kinds(document: &Value, name: &str) -> Vec<Value> {
+    let defs = section_of(document, "$defs");
+    let Some(definition) = defs.get(name) else {
+        return Vec::new();
+    };
+    if definition
+        .get(TOLERATES_UNKNOWN_KINDS)
+        .and_then(Value::as_str)
+        == Some(PASSED_OVER)
+    {
+        return definition
+            .get("items")
+            .map(|items| kinds_of(&defs, items))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|item| json!([item]))
+            .collect();
+    }
+    kinds_of(&defs, definition)
+}
+
+fn kinds_of(defs: &Map<String, Value>, schema: &Value) -> Vec<Value> {
+    let (schema, _) = resolve(defs, schema);
+    let (_, schema) = without_null(&schema);
+    let alternatives: Vec<Value> = alternatives(defs, &schema)
+        .into_iter()
+        .map(|(_, alternative)| resolve(defs, &alternative).0.into_owned())
+        .collect();
+    // What every variant carries, a newer side's kind would carry too.
+    let shared: Vec<(String, Value)> = alternatives
+        .iter()
+        .filter(|alternative| alternative.get("const").is_none())
+        .map(|alternative| {
+            let tag = tag_of(alternative).map(|(tag, _)| tag);
+            section_of(alternative, "properties")
+                .into_iter()
+                .filter(|(name, _)| {
+                    required(alternative).contains(name) && Some(name) != tag.as_ref()
+                })
+                .collect::<Vec<_>>()
+        })
+        .reduce(|shared, next| {
+            shared
+                .into_iter()
+                .filter(|(name, _)| next.iter().any(|(other, _)| other == name))
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut samples = Vec::new();
+    for alternative in &alternatives {
+        let sample = if alternative.get("const").is_some() {
+            json!(INVENTED_KIND)
+        } else if let Some((tag, _)) = tag_of(alternative) {
+            let mut sample = json!({ tag: INVENTED_KIND, "held": { "anything": true } });
+            for (name, property) in &shared {
+                sample[name] = example(defs, property, 0);
+            }
+            sample
+        } else if external_tag_of(alternative).is_some() {
+            json!({ INVENTED_KIND: { "anything": true } })
+        } else {
+            continue;
+        };
+        if !samples.contains(&sample) {
+            samples.push(sample);
+        }
+    }
+    samples
+}
+
+/// A plain value `schema` takes: the least of its type, a nil identity for a
+/// UUID, and an object of its required fields.
+fn example(defs: &Map<String, Value>, schema: &Value, depth: usize) -> Value {
+    let (schema, _) = resolve(defs, schema);
+    let (_, schema) = without_null(&schema);
+    if depth > 8 {
+        return Value::Null;
+    }
+    if let Some(value) = schema.get("const") {
+        return value.clone();
+    }
+    if let Some((_, first)) = alternatives(defs, &schema).into_iter().next()
+        && is_choice(&schema)
+    {
+        return example(defs, &first, depth + 1);
+    }
+    match type_of(&schema).as_str() {
+        "string" if format_of(&schema) == "uuid" => json!("00000000-0000-0000-0000-000000000000"),
+        "string" => json!("x"),
+        "integer" | "number" => json!(0),
+        "boolean" => json!(false),
+        "array" => json!([]),
+        "object" => Value::Object(
+            section_of(&schema, "properties")
+                .into_iter()
+                .filter(|(name, _)| required(&schema).contains(name))
+                .map(|(name, property)| {
+                    let value = example(defs, &property, depth + 1);
+                    (name, value)
+                })
+                .collect(),
+        ),
+        _ => Value::Null,
+    }
 }
 
 fn numbers(document: &Value, which: &str) -> Result<Numbers, String> {
@@ -443,7 +587,14 @@ impl Comparer {
             &added,
             label,
             |old, new| old == new,
-            |_| (ChangeKind::Added, ""),
+            // A header newly required is one an older side never sends.
+            |name| {
+                if header_required(&new[name]) {
+                    (ChangeKind::NewlyRequired, "an older side sends none")
+                } else {
+                    (ChangeKind::Added, "")
+                }
+            },
             true,
         );
         for (name, old_header) in old {
@@ -456,6 +607,30 @@ impl Comparer {
             if old_encoding != new_encoding {
                 let detail = format!("was spelled {old_encoding}, is {new_encoding}");
                 self.change(ChangeKind::Retyped, &at, detail);
+            }
+            let (old_sides, new_sides) = (header_sides(old_header), header_sides(new_header));
+            for side in old_sides.difference(&new_sides) {
+                self.change(
+                    ChangeKind::Removed,
+                    &at,
+                    format!("no longer sent with {side}s"),
+                );
+            }
+            let required = header_required(new_header);
+            for side in new_sides.difference(&old_sides) {
+                let kind = if required {
+                    ChangeKind::NewlyRequired
+                } else {
+                    ChangeKind::Added
+                };
+                self.change(kind, &at, format!("now sent with {side}s"));
+            }
+            if !header_required(old_header) && required {
+                self.change(
+                    ChangeKind::NewlyRequired,
+                    &at,
+                    "an older side may leave it out",
+                );
             }
             self.schema(&old_header["value"], &new_header["value"], &at);
         }
@@ -900,6 +1075,16 @@ fn default_changed(old: &Value, new: &Value) -> Option<String> {
             shown(&old_taken)
         )
     })
+}
+
+/// What a header is sent with: requests, answers, or both.
+fn header_sides(header: &Value) -> BTreeSet<String> {
+    names(header, "sent")
+}
+
+/// Whether a reader requires a header, where it says.
+fn header_required(header: &Value) -> bool {
+    header.get("required") == Some(&Value::Bool(true))
 }
 
 /// `schema` with its references into `defs` followed, and the definition it

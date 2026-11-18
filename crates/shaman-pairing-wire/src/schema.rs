@@ -67,6 +67,25 @@ impl HeaderEncoding {
     }
 }
 
+/// What a header is sent with: a Peer's requests, a Serving Server's
+/// answers, or both.
+#[derive(Clone, Copy, Debug)]
+pub enum HeaderSent {
+    Request,
+    Answer,
+    Both,
+}
+
+impl HeaderSent {
+    fn sides(self) -> Vec<&'static str> {
+        match self {
+            Self::Request => vec!["request"],
+            Self::Answer => vec!["answer"],
+            Self::Both => vec!["answer", "request"],
+        }
+    }
+}
+
 /// The two sides of every type: what its reader requires, and what its
 /// writer writes.
 struct Generators {
@@ -180,9 +199,21 @@ impl WireSchema {
     }
 
     /// A header the wire speaks, whose value reads as `T` spelled by
-    /// `encoding`.
-    pub fn header<T: JsonSchema>(&mut self, name: &str, encoding: HeaderEncoding) -> &mut Self {
-        let schema = json!({ "encoding": encoding.name(), "value": self.subschema::<T>() });
+    /// `encoding`, sent with what `sent` says, and which a reader requires
+    /// where `required` holds.
+    pub fn header<T: JsonSchema>(
+        &mut self,
+        name: &str,
+        encoding: HeaderEncoding,
+        sent: HeaderSent,
+        required: bool,
+    ) -> &mut Self {
+        let schema = json!({
+            "encoding": encoding.name(),
+            "sent": sent.sides(),
+            "required": required,
+            "value": self.subschema::<T>(),
+        });
         assert!(
             self.headers.insert(name.to_owned(), schema).is_none(),
             "the header {name} is named twice"

@@ -4,6 +4,10 @@
   "headers": {
     "x-shaman-act": {
       "encoding": "text",
+      "sent": [
+        "request"
+      ],
+      "required": false,
       "value": {
         "type": "string",
         "format": "uuid"
@@ -11,24 +15,40 @@
     },
     "x-shaman-author": {
       "encoding": "base64url-json",
+      "sent": [
+        "request"
+      ],
+      "required": false,
       "value": {
         "$ref": "#/$defs/Author"
       }
     },
     "x-shaman-error-code": {
       "encoding": "text",
+      "sent": [
+        "answer"
+      ],
+      "required": false,
       "value": {
         "$ref": "#/$defs/SessionErrorCode"
       }
     },
     "x-shaman-prompt-admission": {
       "encoding": "text",
+      "sent": [
+        "answer"
+      ],
+      "required": false,
       "value": {
         "$ref": "#/$defs/PromptAdmission"
       }
     },
     "x-shaman-protocol-floor": {
       "encoding": "text",
+      "sent": [
+        "request"
+      ],
+      "required": false,
       "value": {
         "type": "integer",
         "format": "uint32",
@@ -37,6 +57,11 @@
     },
     "x-shaman-protocol-version": {
       "encoding": "text",
+      "sent": [
+        "answer",
+        "request"
+      ],
+      "required": true,
       "value": {
         "type": "integer",
         "format": "uint32",
@@ -367,7 +392,8 @@
       "answer": {
         "json": {
           "$ref": "#/$defs/InterruptOutcome"
-        }
+        },
+        "or_nothing": true
       }
     },
     "POST /v1/sessions/{session_id}/move": {
@@ -1884,8 +1910,21 @@
             "width",
             "height"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "type"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "Author": {
       "oneOf": [
@@ -2127,8 +2166,21 @@
             "branch",
             "source_commit"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "system": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "system"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CheckoutReclaim": {
       "type": "object",
@@ -5307,6 +5359,10 @@
         {
           "type": "string",
           "const": "queued"
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
       ],
       "x-unknown-kinds": "tolerated"
@@ -5450,8 +5506,21 @@
             "reason",
             "turn_id"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "reason"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ProviderCatalogStatus": {
       "oneOf": [
@@ -9229,14 +9298,14 @@
             "summary"
           ]
         }
-      ],
-      "x-unknown-kinds": "tolerated"
+      ]
     },
     "SessionListing": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/SessionListItem"
-      }
+      },
+      "x-unknown-kinds": "passed-over"
     },
     "SessionReadingAnswer": {
       "type": "object",

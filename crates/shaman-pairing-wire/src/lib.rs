@@ -6,17 +6,23 @@
 //! in `pairing-wire.json` beside this crate: each route by what it takes and
 //! answers, each header by how its value is spelled, and each type by both
 //! what its reader requires and what its writer always writes. The Serving
-//! side's tests hold the routes it names to exactly those the Server serves a
-//! Peer.
+//! side's tests hold the routes it names to exactly those the Server's route
+//! table serves a Peer, and its listener carries a Peer's request on only to
+//! a route that table serves, so no route escapes the schema.
 //!
 //! CI writes the schema again and fails where the file is stale, and judges
 //! it against the schema the change started from: a removal, a rename, a
 //! retype, a newly required field, a field a writer may now leave out, or a
 //! dropped or changed default fails unless `PROTOCOL_FLOOR` rises to the
 //! change's version with it, and any change to the wire fails unless
-//! `PROTOCOL_VERSION` moves. Every enum an answer carries must take a
-//! fallback for a kind its reader does not know, and say so by
-//! `x-unknown-kinds`, so a new kind never breaks an older reader.
+//! `PROTOCOL_VERSION` moves. Every enum an answer carries, of however many
+//! kinds, must take a fallback for a kind its reader does not know and say
+//! so by `x-unknown-kinds = "tolerated"`, or stand in a list marked
+//! `x-unknown-kinds = "passed-over"` whose reader skips such an item, so a
+//! new kind never breaks an older reader. Each mark is proved: a test reads a
+//! kind no build knows through every marked type (see `fallbacks.rs`).
+//! Headers say which side sends them and whether a reader requires them, so
+//! a newly required header fails as a newly required field does.
 //!
 //! What it cannot see:
 //!
@@ -36,9 +42,12 @@ mod compare;
 mod schema;
 
 pub use compare::{
-    Change, ChangeKind, Numbers, TOLERATES_UNKNOWN_KINDS, Verdict, intolerance, judge,
+    Change, ChangeKind, INVENTED_KIND, Numbers, PASSED_OVER, TOLERATED, TOLERATES_UNKNOWN_KINDS,
+    Verdict, intolerance, invented_kinds, judge,
 };
-pub use schema::{HeaderEncoding, RouteSchema, WireSchema, written};
+pub use schema::{HeaderEncoding, HeaderSent, RouteSchema, WireSchema, written};
+#[cfg(test)]
+mod fallbacks;
 mod pairing;
 
 pub use pairing::{SCHEMA_FILE, pairing_wire};
