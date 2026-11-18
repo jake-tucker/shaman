@@ -95,7 +95,7 @@ async fn pairing_names_both_sides_turns_the_outlook_and_survives_a_relaunch() {
     );
     let outlook = Outlook::Remote {
         name: DESK.to_owned(),
-        begins_in: BeginsIn::remote(DESK),
+        begins_in: BeginsIn::remote(DESK, None),
     };
     assert_eq!(phone.outlook().await, outlook);
     let servers = phone
@@ -337,7 +337,7 @@ async fn an_invite_from_a_server_already_held_says_so_and_replaces_its_pairing()
         phone.outlook().await,
         Outlook::Remote {
             name: "studio".to_owned(),
-            begins_in: BeginsIn::remote("studio"),
+            begins_in: BeginsIn::remote("studio", None),
         }
     );
     assert_eq!(server.peers().await.len(), 1, "updated in place there");
@@ -558,7 +558,7 @@ async fn a_slow_way_answering_late_leaves_the_outlook_at_the_remote_paired_since
         phone.outlook().await,
         Outlook::Remote {
             name: "second".to_owned(),
-            begins_in: BeginsIn::remote("second"),
+            begins_in: BeginsIn::remote("second", None),
         },
         "the Outlook stays where it was last turned"
     );
@@ -598,7 +598,7 @@ async fn a_pairing_made_whose_record_cannot_be_kept_is_shown_paired_and_kept_by_
         phone.outlook().await,
         Outlook::Remote {
             name: DESK.to_owned(),
-            begins_in: BeginsIn::remote(DESK),
+            begins_in: BeginsIn::remote(DESK, None),
         }
     );
     assert_eq!(phone.device().await.name, "Pocket");

@@ -27,12 +27,15 @@ use tokio::{
     task::JoinHandle,
 };
 
+mod conversation;
 mod device;
 mod identity;
 mod listing;
 mod pairing;
 mod remotes;
+mod session;
 
+pub use conversation::{ConversationItem, ItemKind, Tone, TurnCard, TurnOutcome};
 pub use device::ThisDevice;
 use device::{DeviceRecord, Records};
 pub use identity::{KeySigner, SignError};
@@ -41,6 +44,9 @@ pub use listing::{ActiveRow, CheckoutLine, Listing, SettledRow, Slot, Standing};
 pub use pairing::{InviteReading, OfferedWay, PairingOutcome, ReadInvite, TryInstead};
 use remotes::Remotes;
 pub use remotes::{BeginsIn, Outlook, ServerRow, Servers, WayRow, WayState};
+pub use session::{
+    ConversationChange, ConversationListener, FrameListener, OpenSession, SessionFrame,
+};
 
 uniffi::setup_scaffolding!();
 
@@ -156,6 +162,35 @@ impl ThinClient {
         })
     }
 
+    /// Opens the Session `session` names for a screen pushed to read it,
+    /// framed at once by what the listing knows of it, and turns the Outlook
+    /// toward its Origin and Workspace. Closing it cancels nothing on the
+    /// Server.
+    pub fn open_session(&self, session: String) -> Arc<OpenSession> {
+        let pacing = session::Pacing {
+            initial_backoff: self.inner.timings.readers.initial_recovery_backoff,
+            max_backoff: self.inner.timings.readers.max_recovery_backoff,
+        };
+        if let Some(opening) = self.inner.listing.opening(&session) {
+            let inner = self.inner.clone();
+            let listed = opening.listed;
+            self.runtime().spawn(async move {
+                let turned = inner
+                    .change_record_shown(move |record| record.turn_toward(&listed))
+                    .await;
+                if let Err(error) = turned {
+                    tracing::warn!("the Outlook was turned and not kept: {error}");
+                }
+            });
+        }
+        session::open(
+            self.runtime().handle(),
+            &self.inner.listing,
+            &session,
+            pacing,
+        )
+    }
+
     /// Sets the Session `session` names aside as done for now.
     pub async fn settle(&self, session: String) -> Result<(), ActError> {
         self.settling(session, true).await
@@ -255,7 +290,7 @@ impl ThinClient {
         // A pairing the app was ended in the middle of keeps nothing, kept
         // so or not.
         redeemer.drop_uncommitted();
-        let remotes = Remotes::new(redeemer.clone(), &record.turned);
+        let remotes = Remotes::new(redeemer.clone(), &record.turned, &record.workspaces);
         let listing = Listings::new(
             runtime.handle().clone(),
             redeemer.clone(),
@@ -335,20 +370,30 @@ impl ThinClient {
     /// the subscription is cancelled.
     fn watch<T: Clone + Send + Sync + 'static>(
         &self,
-        mut model: watch::Receiver<T>,
+        model: watch::Receiver<T>,
         tell: impl Fn(T) + Send + 'static,
     ) -> Arc<Subscription> {
-        let task = self.runtime().spawn(async move {
-            loop {
-                let current = model.borrow_and_update().clone();
-                tell(current);
-                if model.changed().await.is_err() {
-                    break;
-                }
-            }
-        });
-        Subscription::of(task)
+        watching(self.runtime().handle(), model, tell)
     }
+}
+
+/// Tells `tell`, on `runtime`, what `model` holds now, and again on every
+/// change, until the subscription is cancelled or the model goes.
+pub(crate) fn watching<T: Clone + Send + Sync + 'static>(
+    runtime: &tokio::runtime::Handle,
+    mut model: watch::Receiver<T>,
+    tell: impl Fn(T) + Send + 'static,
+) -> Arc<Subscription> {
+    let task = runtime.spawn(async move {
+        loop {
+            let current = model.borrow_and_update().clone();
+            tell(current);
+            if model.changed().await.is_err() {
+                break;
+            }
+        }
+    });
+    Subscription::of(task)
 }
 
 impl Drop for ThinClient {
@@ -397,7 +442,7 @@ impl Inner {
             .and_then(|kept| kept.map_err(ActError::failed));
         if kept.is_ok() || shown_unkept {
             self.device.send_replace(ThisDevice::of(&changed));
-            self.remotes.show(&changed.turned);
+            self.remotes.show(&changed.turned, &changed.workspaces);
             *held = changed;
         }
         kept

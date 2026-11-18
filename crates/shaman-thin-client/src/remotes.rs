@@ -7,13 +7,15 @@
 //! opens and when the Remote is paired.
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     sync::{Arc, Mutex},
 };
 
 use shaman_pairing::{Redeemer, StoredRemote, WayStanding};
 use shaman_protocol::{Remote, Way};
 use tokio::sync::watch;
+
+use crate::device::RememberedWorkspace;
 
 /// The Servers section of the sheet of Servers, Relays and This device.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -100,15 +102,28 @@ pub struct BeginsIn {
 }
 
 impl BeginsIn {
-    /// New Sessions beginning in the Remote `remote`.
-    pub fn remote(remote: &str) -> Self {
+    /// New Sessions beginning in the Remote `remote`, in its Workspace
+    /// `workspace` where one is remembered for it.
+    pub fn remote(remote: &str, workspace: Option<&str>) -> Self {
         let lead = "New sessions begin in";
+        let place = match workspace {
+            Some(workspace) => format!("{remote} · {workspace}"),
+            None => remote.to_owned(),
+        };
         Self {
             lead: lead.to_owned(),
-            place: remote.to_owned(),
-            said: format!("{lead} {remote}"),
+            said: format!("{lead} {place}"),
+            place,
         }
     }
+}
+
+/// Where the Outlook has been turned: the Remotes in the order last turned
+/// toward, and the Workspace last turned toward on each.
+#[derive(Clone, Default)]
+struct Turned {
+    order: Vec<String>,
+    workspaces: BTreeMap<String, RememberedWorkspace>,
 }
 
 /// How each way of one Remote stood when last asked.
@@ -126,13 +141,17 @@ pub(crate) struct Remotes {
     standings: Arc<Mutex<HashMap<String, (u64, Standings)>>>,
     /// The Remotes, by name, in the order last turned toward, as last shown:
     /// whatever shows the Remotes again shows the Outlook by it.
-    turned: Arc<Mutex<Vec<String>>>,
+    turned: Arc<Mutex<Turned>>,
 }
 
 impl Remotes {
     /// The Remotes `redeemer` holds, the Outlook standing at the first of
-    /// `turned` it holds.
-    pub fn new(redeemer: Redeemer, turned: &[String]) -> Self {
+    /// `turned` it holds, in the Workspace `workspaces` remembers for it.
+    pub fn new(
+        redeemer: Redeemer,
+        turned: &[String],
+        workspaces: &BTreeMap<String, RememberedWorkspace>,
+    ) -> Self {
         let remotes = Self {
             redeemer,
             servers: watch::Sender::new(Servers {
@@ -142,7 +161,7 @@ impl Remotes {
             standings: Arc::default(),
             turned: Arc::default(),
         };
-        remotes.show(turned);
+        remotes.show(turned, workspaces);
         remotes
     }
 
@@ -173,15 +192,16 @@ impl Remotes {
     }
 
     /// Shows the Remotes as they are held now, the Outlook at the first of
-    /// `turned` held, or at the first Remote paired where none of them is;
-    /// whatever shows them again shows the Outlook by `turned` until it is
-    /// shown by another.
-    pub fn show(&self, turned: &[String]) {
+    /// `turned` held, or at the first Remote paired where none of them is,
+    /// in the Workspace `workspaces` remembers for it; whatever shows them
+    /// again shows the Outlook by these until it is shown by others.
+    pub fn show(&self, turned: &[String], workspaces: &BTreeMap<String, RememberedWorkspace>) {
         let mut shown = self
             .turned
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        turned.clone_into(&mut shown);
+        turned.clone_into(&mut shown.order);
+        workspaces.clone_into(&mut shown.workspaces);
         self.render(&shown);
     }
 
@@ -198,15 +218,22 @@ impl Remotes {
     /// Shows the Remotes as they are held now, the Outlook by `turned`: done
     /// holding the order shown, so no showing by an older order lands after
     /// one by a newer.
-    fn render(&self, turned: &[String]) {
+    fn render(&self, turned: &Turned) {
         let held = self.held();
         let outlook = turned
+            .order
             .iter()
             .find(|name| held.iter().any(|stored| &stored.remote.name == *name))
             .or_else(|| held.first().map(|stored| &stored.remote.name))
             .map_or(Outlook::Nowhere, |name| Outlook::Remote {
                 name: name.clone(),
-                begins_in: BeginsIn::remote(name),
+                begins_in: BeginsIn::remote(
+                    name,
+                    turned
+                        .workspaces
+                        .get(name)
+                        .map(|workspace| workspace.name.as_str()),
+                ),
             });
         let standings = self
             .standings

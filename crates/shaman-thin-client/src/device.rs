@@ -1,7 +1,10 @@
 //! This device: the name the phone goes by and the key it proves itself by,
 //! kept in the thin Client's own file, and what "This device" shows of them.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -70,6 +73,19 @@ pub(crate) struct DeviceRecord {
     /// latest first: the Outlook stands at the first still held.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub turned: Vec<String>,
+    /// The Workspace last turned toward on each Remote, by the Remote's
+    /// name: where a Session begun there begins.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub workspaces: BTreeMap<String, RememberedWorkspace>,
+}
+
+/// A Workspace of a Remote, as the Outlook remembers it.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub(crate) struct RememberedWorkspace {
+    /// Its path on the Remote, as the Remote spells it.
+    pub path: PathBuf,
+    /// Its name, as the Remote names it.
+    pub name: String,
 }
 
 impl DeviceRecord {
@@ -80,6 +96,24 @@ impl DeviceRecord {
             key: None,
             pair_again: false,
             turned: Vec::new(),
+            workspaces: BTreeMap::new(),
+        }
+    }
+
+    /// Turns the Outlook toward the Remote and Workspace of the Session
+    /// `listed` speaks of: the Remote first among those turned toward, and
+    /// its Workspace the one remembered for it, where the Session has one.
+    pub fn turn_toward(&mut self, listed: &crate::listing::Listed) {
+        self.turned.retain(|held| *held != listed.remote);
+        self.turned.insert(0, listed.remote.clone());
+        if let Some((path, name)) = &listed.workspace {
+            self.workspaces.insert(
+                listed.remote.clone(),
+                RememberedWorkspace {
+                    path: path.clone(),
+                    name: name.clone(),
+                },
+            );
         }
     }
 }

@@ -6,7 +6,7 @@
 use std::{
     net::{Ipv4Addr, SocketAddr},
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
     time::Duration,
@@ -15,13 +15,15 @@ use std::{
 use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
-        AgentSelection, CreateSessionRequest, ExecutionDirectory, InitialPrompt,
-        IssueInviteRequest, Peer, PromptId, ProviderId, SessionId, SettingMutation, SkillCatalog,
-        Way,
+        AgentId, AgentIdentity, AgentSelection, ApprovalPosture, CreateSessionRequest,
+        ExecutionDirectory, InitialPrompt, IssueInviteRequest, ModelId, Peer, PromptId, ProviderId,
+        SessionId, SettingMutation, SkillCatalog, Way,
     },
     provider::{
-        ErrandFuture, ProviderErrand, ProviderError, ProviderFuture, ProviderModelDiscovery,
-        ProviderRuntime, ProviderSessionConnection, ProviderSessionRequest,
+        AttributedProviderEvent, ErrandFuture, ProviderErrand, ProviderError, ProviderEvent,
+        ProviderEventStream, ProviderFuture, ProviderInterruption, ProviderModelDiscovery,
+        ProviderPostureApplication, ProviderRuntime, ProviderSession, ProviderSessionConnection,
+        ProviderSessionRequest, ProviderSteerInput, ProviderTurnInput,
     },
     server::{self, ServerConfig, ServerTimings},
 };
@@ -31,10 +33,15 @@ use shaman_pairing::{
     signer::{Signer as _, testing::CallbackSigner},
 };
 use shaman_thin_client::{
-    CoreTimings, DeviceListener, KeySigner, Listing, ListingListener, Outlook, OutlookListener,
-    Servers, ServersListener, SignError, Subscription, ThinClient, ThisDevice,
+    ConversationChange, ConversationItem, ConversationListener, CoreTimings, DeviceListener,
+    FrameListener, KeySigner, Listing, ListingListener, OpenSession, Outlook, OutlookListener,
+    Servers, ServersListener, SessionFrame, SignError, Subscription, ThinClient, ThisDevice,
 };
-use tokio::{net::TcpListener, sync::watch, time::timeout};
+use tokio::{
+    net::TcpListener,
+    sync::{mpsc, watch},
+    time::timeout,
+};
 
 /// The marker `src/main.rs` gives Shaman's binary, so a Server a test starts
 /// in process identifies this test binary without hashing the whole of it.
@@ -84,6 +91,7 @@ pub struct ServingServer {
     _config_root: tempfile::TempDir,
     server: server::RunningServer,
     client: ManagedClient,
+    scripts: Arc<Mutex<Vec<Script>>>,
 }
 
 impl ServingServer {
@@ -97,10 +105,11 @@ impl ServingServer {
             shutdown_grace: Duration::from_millis(5),
             ..ServerTimings::default()
         };
-        let server =
-            server::spawn_with_provider_and_timings(config.clone(), Arc::new(NoProvider), timings)
-                .await
-                .expect("spawn the Server");
+        let provider = Arc::new(TestProvider::default());
+        let scripts = provider.scripts.clone();
+        let server = server::spawn_with_provider_and_timings(config.clone(), provider, timings)
+            .await
+            .expect("spawn the Server");
         let client = ManagedClient::connect(
             ManagedClientConfig::new(state.path(), channel).expect("configure the Client"),
         )
@@ -124,7 +133,23 @@ impl ServingServer {
             _config_root: config_root,
             server,
             client,
+            scripts,
         }
+    }
+
+    /// What the scripted Session this Server started last hears from its
+    /// Provider, once it has started.
+    pub async fn script(&self) -> Script {
+        timeout(PROGRESS_DEADLINE, async {
+            loop {
+                if let Some(script) = self.scripts.lock().unwrap().last().cloned() {
+                    return script;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("a scripted Session started")
     }
 
     pub fn serving_address(&self) -> SocketAddr {
@@ -165,6 +190,22 @@ impl ServingServer {
             .expect("begin a Session")
             .session
             .id
+    }
+
+    /// Interrupts the Session `session`, as the Server's own user would.
+    pub async fn interrupt(&self, session: SessionId) {
+        self.client
+            .interrupt_session(session)
+            .await
+            .expect("interrupt the Session");
+    }
+
+    /// What the Server holds of the Session `session` now.
+    pub async fn read(&self, session: SessionId) -> shaman::protocol::SessionSnapshot {
+        self.client
+            .read_session(session)
+            .await
+            .expect("read the Session")
     }
 
     /// The Peers this Server is paired with.
@@ -372,6 +413,21 @@ impl Phone {
         heard_at_once(&mut heard).await
     }
 
+    /// Where the Outlook stands once it stands where `shown` looks for.
+    pub async fn outlook_until(&self, shown: impl Fn(&Outlook) -> bool) -> Outlook {
+        let (sender, mut heard) = watch::channel(None);
+        let _subscription = self.core.watch_outlook(Arc::new(Heard(sender)));
+        let heard = timeout(
+            PROGRESS_DEADLINE,
+            heard.wait_for(|outlook| outlook.as_ref().is_some_and(&shown)),
+        )
+        .await;
+        match heard {
+            Ok(Ok(outlook)) => outlook.clone().expect("heard"),
+            _ => panic!("the Outlook never stood where it was looked for"),
+        }
+    }
+
     pub async fn device(&self) -> ThisDevice {
         let (sender, mut heard) = watch::channel(None);
         let _subscription = self.core.watch_device(Arc::new(Heard(sender)));
@@ -415,9 +471,119 @@ impl Phone {
         }
     }
 
+    /// Opens the Session `reference` names, as a screen pushed to read it.
+    pub fn open(&self, reference: &str) -> Reading {
+        let session = self.core.open_session(reference.to_owned());
+        let (frame_heard, frame) = watch::channel(None);
+        let (conversation_heard, conversation) = watch::channel(Conversation::default());
+        let frame_subscription = session.watch_frame(Arc::new(Heard(frame_heard)));
+        let conversation_subscription =
+            session.watch_conversation(Arc::new(Held(conversation_heard)));
+        Reading {
+            session,
+            frame,
+            conversation,
+            _subscriptions: [frame_subscription, conversation_subscription],
+        }
+    }
+
     pub fn shutdown(self) {
         drop(self.core);
         drop(self.directory);
+    }
+}
+
+/// An open Session, and what its listeners have heard of it.
+pub struct Reading {
+    pub session: Arc<OpenSession>,
+    frame: watch::Receiver<Option<SessionFrame>>,
+    conversation: watch::Receiver<Conversation>,
+    _subscriptions: [Arc<Subscription>; 2],
+}
+
+/// A conversation as a listener holds it: each item by its id, the order
+/// they stand in, and every change it was told, in the order told.
+#[derive(Clone, Debug, Default)]
+pub struct Conversation {
+    pub items: Vec<ConversationItem>,
+    pub told: Vec<ConversationChange>,
+}
+
+impl Reading {
+    /// The frame once it shows what `shown` looks for.
+    pub async fn frame_until(&self, shown: impl Fn(&SessionFrame) -> bool) -> SessionFrame {
+        let mut frame = self.frame.clone();
+        let heard = timeout(
+            PROGRESS_DEADLINE,
+            frame.wait_for(|frame| frame.as_ref().is_some_and(&shown)),
+        )
+        .await;
+        match heard {
+            Ok(Ok(frame)) => frame.clone().expect("heard"),
+            _ => panic!(
+                "the frame never showed what was looked for; it shows {:?}",
+                self.frame.borrow()
+            ),
+        }
+    }
+
+    /// The frame as it stands at once.
+    pub async fn frame(&self) -> SessionFrame {
+        self.frame_until(|_| true).await
+    }
+
+    /// The conversation once it holds what `shown` looks for.
+    pub async fn conversation_until(
+        &self,
+        shown: impl Fn(&[ConversationItem]) -> bool,
+    ) -> Conversation {
+        let mut conversation = self.conversation.clone();
+        let heard = timeout(
+            PROGRESS_DEADLINE,
+            conversation.wait_for(|conversation| {
+                !conversation.told.is_empty() && shown(&conversation.items)
+            }),
+        )
+        .await;
+        match heard {
+            Ok(Ok(conversation)) => conversation.clone(),
+            _ => panic!(
+                "the conversation never showed what was looked for; it holds {:#?}",
+                self.conversation.borrow().items
+            ),
+        }
+    }
+
+    /// The conversation as it was last heard.
+    pub fn conversation_now(&self) -> Conversation {
+        self.conversation.borrow().clone()
+    }
+}
+
+/// A conversation's listener, holding what it is told as Swift does:
+/// replacing each item by its id and standing them in the order told.
+struct Held(watch::Sender<Conversation>);
+
+impl ConversationListener for Held {
+    fn changed(&self, change: ConversationChange) {
+        self.0.send_modify(|held| {
+            held.items = match &change {
+                ConversationChange::Whole { items } => items.clone(),
+                ConversationChange::Changed { items, order } => {
+                    let mut by_id = held
+                        .items
+                        .drain(..)
+                        .chain(items.iter().cloned())
+                        .map(|item| (item.id.clone(), item))
+                        .collect::<std::collections::HashMap<_, _>>();
+                    order
+                        .iter()
+                        .map(|id| by_id.remove(id).expect("every item ordered was told"))
+                        .collect()
+                }
+            };
+            held.told.push(change);
+        });
     }
 }
 
@@ -473,6 +639,12 @@ impl ListingListener for Heard<Listing> {
     }
 }
 
+impl FrameListener for Heard<SessionFrame> {
+    fn changed(&self, frame: SessionFrame) {
+        self.0.send_replace(Some(frame));
+    }
+}
+
 impl OutlookListener for Heard<Outlook> {
     fn changed(&self, outlook: Outlook) {
         self.0.send_replace(Some(outlook));
@@ -482,10 +654,22 @@ impl OutlookListener for Heard<Outlook> {
 /// The name of a directory a Session begun in is left Working.
 pub const WORKING: &str = "working";
 
-/// A Provider no Session of the Server's starts on.
-struct NoProvider;
+/// The name of a directory a Session begun in starts at once, its Turns
+/// doing whatever the test scripts and ending as it says.
+pub const SCRIPTED: &str = "scripted";
 
-impl ProviderRuntime for NoProvider {
+/// What a scripted Session's Provider sends, where the test scripts it.
+pub type Script = mpsc::UnboundedSender<Result<AttributedProviderEvent, ProviderError>>;
+
+/// A Provider whose Sessions, but a scripted one, never start: one begun in
+/// a directory named [`WORKING`] waits on it for ever, and any other fails.
+#[derive(Default)]
+struct TestProvider {
+    /// What each scripted Session's Provider sends, the latest started last.
+    scripts: Arc<Mutex<Vec<Script>>>,
+}
+
+impl ProviderRuntime for TestProvider {
     fn provider_id(&self) -> ProviderId {
         ProviderId::new("none")
     }
@@ -506,11 +690,36 @@ impl ProviderRuntime for NoProvider {
         &self,
         request: ProviderSessionRequest,
     ) -> ProviderFuture<'_, ProviderSessionConnection> {
-        let working = request
-            .execution_directory
-            .file_name()
-            .is_some_and(|name| name == WORKING);
+        let named = |name: &str| {
+            request
+                .execution_directory
+                .file_name()
+                .is_some_and(|named| named == name)
+        };
+        let (working, scripted) = (named(WORKING), named(SCRIPTED));
+        let scripts = self.scripts.clone();
         Box::pin(async move {
+            if scripted {
+                let (script, events) = mpsc::unbounded_channel();
+                scripts.lock().unwrap().push(script.clone());
+                let events: ProviderEventStream =
+                    Box::pin(futures_util::stream::unfold(events, |mut events| async {
+                        events.recv().await.map(|event| (event, events))
+                    }));
+                return Ok(ProviderSessionConnection::new(
+                    AgentIdentity {
+                        agent: AgentId::new("scripted"),
+                        selection: AgentSelection {
+                            provider: ProviderId::new("none"),
+                            model: ModelId::new("scripted"),
+                            options: Vec::new(),
+                        },
+                    },
+                    None,
+                    Arc::new(ScriptedSession(script)),
+                    events,
+                ));
+            }
             if working {
                 std::future::pending::<()>().await;
             }
@@ -524,6 +733,41 @@ impl ProviderRuntime for NoProvider {
 
     fn errand_selection(&self) -> Option<AgentSelection> {
         None
+    }
+
+    fn shutdown(&self) -> ProviderFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// A scripted Session's Provider side: it takes every Turn and steer, and
+/// stops a Turn by saying so.
+struct ScriptedSession(Script);
+
+impl ProviderSession for ScriptedSession {
+    fn update_approval_posture(
+        &self,
+        _posture: ApprovalPosture,
+        _has_active_work: bool,
+    ) -> ProviderFuture<'_, ProviderPostureApplication> {
+        Box::pin(async { Ok(ProviderPostureApplication::NextTurn) })
+    }
+
+    fn start_turn(&self, _input: ProviderTurnInput) -> ProviderFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn steer_turn(&self, _input: ProviderSteerInput) -> ProviderFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn interrupt_turn(&self) -> ProviderFuture<'_, ProviderInterruption> {
+        let _ = self.0.send(Ok(ProviderEvent::TurnInterrupted.into()));
+        Box::pin(async { Ok(ProviderInterruption::Stopped) })
+    }
+
+    fn stop_subagents(&self) -> ProviderFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
     }
 
     fn shutdown(&self) -> ProviderFuture<'_, ()> {

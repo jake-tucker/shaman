@@ -549,6 +549,8 @@ struct State {
 struct Followed {
     answered: Answered,
     generation: u64,
+    /// What its Sessions are read over, which says when to try again now.
+    transport: Arc<PairingTransport>,
     commands: SessionCommands,
     /// Its catalog's reader and its listing's asker, which go with it.
     _readers: Readers,
@@ -677,6 +679,74 @@ impl Listings {
     }
 }
 
+impl Listings {
+    /// What opening the Session `reference` names reads it over, and what
+    /// the listing knows of it now; none where its Remote is not held.
+    pub fn opening(&self, reference: &str) -> Option<Opening> {
+        let (fingerprint, session_id) = referenced(reference)?;
+        let state = self.shared.lock();
+        let origin_named = state.remotes.len() > 1;
+        let followed = state
+            .remotes
+            .iter()
+            .find(|followed| followed.answered.fingerprint == fingerprint)?;
+        let remote = &followed.answered;
+        let item = remote
+            .sessions
+            .iter()
+            .flatten()
+            .find(|session| session.id() == session_id);
+        let summary = item.and_then(SessionListItem::readable);
+        Some(Opening {
+            session_id,
+            commands: followed.commands.clone(),
+            try_now: followed.transport.try_now(),
+            listed: Listed {
+                remote: remote.name.clone(),
+                origin: origin_named.then(|| remote.name.clone()),
+                paths: remote.paths.clone(),
+                title: item.map(title),
+                workspace: item.and_then(SessionListItem::workspace).map(|workspace| {
+                    (
+                        workspace.path.clone(),
+                        remote.paths.workspace_name(workspace),
+                    )
+                }),
+                branch: summary
+                    .and_then(|summary| summary.checkout_state.as_ref())
+                    .and_then(checkout_state)
+                    .map(|line| line.words),
+            },
+        })
+    }
+}
+
+/// What opening a Session reads it over, and what the listing knows of it.
+pub(crate) struct Opening {
+    pub session_id: SessionId,
+    pub commands: SessionCommands,
+    pub try_now: TryNow,
+    pub listed: Listed,
+}
+
+/// What the listing knows of one Session, which its open screen is framed
+/// by until the Session has been read, and as the listing moves after.
+#[derive(Clone, Debug)]
+pub(crate) struct Listed {
+    /// The name this phone knows the Session's Remote by.
+    pub remote: String,
+    /// The Remote, where the phone names Origins at all.
+    pub origin: Option<String>,
+    /// How its Remote spells and names its paths.
+    pub paths: WorkspacePaths,
+    /// Its Title, where it is listed.
+    pub title: Option<String>,
+    /// Its Workspace, by path and by name, where it is listed.
+    pub workspace: Option<(std::path::PathBuf, String)>,
+    /// Its Worktree's Checkout State, where it has one.
+    pub branch: Option<String>,
+}
+
 #[cfg(test)]
 impl Listings {
     /// Holds `answered` as a Remote the listing follows, read by nothing.
@@ -688,6 +758,7 @@ impl Listings {
         self.shared.lock().remotes.push(Followed {
             answered,
             generation: 0,
+            transport: transport.clone(),
             commands: SessionCommands::new(transport, self.shared.timings),
             _readers: Readers(Vec::new()),
         });
@@ -712,7 +783,7 @@ impl Shared {
         let name = stored.remote.name.clone();
         let transport = Arc::new(PairingTransport::new(self.redeemer.clone(), name.clone()));
         let try_now = transport.try_now();
-        let commands = SessionCommands::new(transport, self.timings);
+        let commands = SessionCommands::new(transport.clone(), self.timings);
         let wanted = Arc::new(Notify::new());
         let generation = stored.generation;
         let reader = self.runtime.spawn(follow_catalog(
@@ -747,6 +818,7 @@ impl Shared {
                 sessions: None,
             },
             generation,
+            transport,
             commands,
             _readers: Readers(vec![reader, asker]),
         }

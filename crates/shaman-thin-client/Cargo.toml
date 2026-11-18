@@ -47,6 +47,8 @@ shaman-build-id = { path = "../shaman-build-id" }
 shaman-pairing = { path = "../shaman-pairing", features = ["test-support"] }
 # `testing::ScriptedTransport`, which a listing is asked for over where no Server answers.
 shaman-client = { path = "../shaman-client", features = ["test-support"] }
+# The stream a scripted Session's Provider sends its events down.
+futures-util = "0.3.31"
 http = "1.5.0"
 # `Session::for_tests`, which the listing's tests build what a Remote answers from.
 shaman-protocol = { path = "../shaman-protocol", features = ["test-support"] }
