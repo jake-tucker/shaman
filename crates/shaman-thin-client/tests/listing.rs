@@ -216,3 +216,48 @@ async fn settling_a_session_no_longer_listed_says_it_is_gone() {
     phone.shutdown();
     desk.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_settled_by_being_left_alone_is_brought_back_and_stays_back() {
+    let desk = ServingServer::start("thin-list-idle").await;
+    let left_alone = std::time::Duration::from_millis(400);
+    let phone = Phone::with(shaman_thin_client::CoreTimings {
+        settle_after: left_alone,
+        ..support::timings()
+    });
+    pair(&phone, &desk, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+
+    // Nothing sets it aside: it settles by being left alone.
+    let listing = phone
+        .listing_until(|listing| !listing.settled.is_empty())
+        .await;
+    assert!(listing.active.is_empty());
+    let shelved = listing.settled[0].clone();
+    assert_eq!(shelved.title, "Map the workspace");
+
+    phone
+        .core
+        .unsettle(shelved.session.clone())
+        .await
+        .expect("brought back");
+    let listing = phone
+        .listing_until(|listing| listing.settled.is_empty())
+        .await;
+    assert_eq!(
+        titles(&listing),
+        ["Map the workspace"],
+        "brought back, its last activity moved to now, so it is not settled again at once"
+    );
+
+    // Once left alone as long again, it settles again on its own.
+    let listing = phone
+        .listing_until(|listing| !listing.settled.is_empty())
+        .await;
+    assert_eq!(listing.settled[0].session, shelved.session);
+
+    phone.shutdown();
+    desk.shutdown().await;
+}

@@ -2,12 +2,15 @@
 //! the split into the active and the shelf, and every word and glyph a row
 //! carries. A real Serving Server is read in `tests/listing.rs`.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use shaman_protocol::{
     ApprovalId, Author, CheckoutAssociation, CheckoutId, CheckoutKind, CheckoutRevision,
-    CheckoutSummary, LatestTurnStatus, RepositoryId, Session, SessionListItem, SessionStanding,
-    SessionSummary, SessionTimestamp, SourceControlAvailability, TurnStatus,
+    CheckoutSummary, LatestTurnStatus, RemoteSession, RepositoryId, Session, SessionListItem,
+    SessionStanding, SessionSummary, SessionTimestamp, SourceControlAvailability, TurnStatus,
     UnreadableSessionSummary, Workspace, WorkspacePaths,
 };
 
@@ -60,7 +63,7 @@ fn remote(name: &str, sessions: Vec<SessionSummary>) -> Answered {
 }
 
 fn read(remotes: &[Answered]) -> Listing {
-    present(remotes, NOW, SHELF_OPENING).0
+    present(remotes, NOW, SHELF_OPENING, SETTLE_AFTER).0
 }
 
 fn titles(rows: &[ActiveRow]) -> Vec<&str> {
@@ -120,6 +123,7 @@ fn a_session_settles_when_set_aside_or_after_three_idle_days() {
         )],
         NOW,
         SHELF_OPENING,
+        SETTLE_AFTER,
     );
     assert_eq!(
         titles(&listing.active),
@@ -170,16 +174,16 @@ fn the_shelf_opens_on_its_first_rows_and_shows_more_a_batch_at_a_time() {
         .collect::<Vec<_>>();
     let desk = [remote("desk", settled)];
 
-    let (opened, _) = present(&desk, NOW, SHELF_OPENING);
+    let (opened, _) = present(&desk, NOW, SHELF_OPENING, SETTLE_AFTER);
     assert_eq!(opened.settled.len(), 10);
     assert_eq!(opened.settled[0].title, "Settled 0");
     assert_eq!(opened.show_more.as_deref(), Some("Show 25 more"));
 
-    let (more, _) = present(&desk, NOW, SHELF_OPENING + SHELF_BATCH);
+    let (more, _) = present(&desk, NOW, SHELF_OPENING + SHELF_BATCH, SETTLE_AFTER);
     assert_eq!(more.settled.len(), 35);
     assert_eq!(more.show_more.as_deref(), Some("Show 2 more"));
 
-    let (whole, _) = present(&desk, NOW, SHELF_OPENING + 2 * SHELF_BATCH);
+    let (whole, _) = present(&desk, NOW, SHELF_OPENING + 2 * SHELF_BATCH, SETTLE_AFTER);
     assert_eq!(whole.settled.len(), 37);
     assert_eq!(whole.show_more, None);
 }
@@ -467,4 +471,291 @@ fn the_sidekick_workspace_is_named_as_its_server_names_it() {
     );
     desk.paths = WorkspacePaths::default().with_sidekick_workspace(&home);
     assert_eq!(read(&[desk]).active[0].place, "Sidekick");
+}
+
+/// A Sidekick's Session left alone for days, held among the active by the
+/// work of a Subsession it began, and that Subsession.
+fn idle_sidekick_with_working_subsession() -> Vec<SessionSummary> {
+    let sidekick = session("Sidekick", "Sidekick", 0, NOW.0 - 9 * DAY);
+    let mut subsession = recent("Subsession", 5);
+    subsession.session.begun_by = Some(Author::Sidekick {
+        session_id: sidekick.session.id,
+        title: "Sidekick".to_owned(),
+    });
+    subsession.session.working_since = Some(SessionTimestamp(NOW.0 - 90_000));
+    vec![sidekick, subsession]
+}
+
+#[test]
+fn a_row_held_among_the_active_past_its_settling_waits_on_no_moment() {
+    let (listing, next) = present(
+        &[remote("desk", idle_sidekick_with_working_subsession())],
+        NOW,
+        SHELF_OPENING,
+        SETTLE_AFTER,
+    );
+    assert_eq!(titles(&listing.active), ["Sidekick"]);
+    assert_eq!(
+        next, None,
+        "its Session was left alone long ago, so nothing is to be waited for"
+    );
+
+    // A moment still to come is waited for beside it.
+    let mut sessions = idle_sidekick_with_working_subsession();
+    sessions.push(session("Lately", "shaman", 1, NOW.0 - DAY));
+    let (_, next) = present(
+        &[remote("desk", sessions)],
+        NOW,
+        SHELF_OPENING,
+        SETTLE_AFTER,
+    );
+    assert_eq!(next, Some(SessionTimestamp(NOW.0 + 2 * DAY)));
+}
+
+#[test]
+fn a_shorter_settling_settles_sooner() {
+    let quiet = session("Quiet", "shaman", 0, NOW.0 - 2_000);
+    let (listing, next) = present(
+        &[remote("desk", vec![quiet])],
+        NOW,
+        SHELF_OPENING,
+        Duration::from_secs(1),
+    );
+    assert_eq!(shelved(&listing.settled), ["Quiet"]);
+    assert_eq!(next, None);
+}
+
+#[test]
+fn a_subsession_a_sidekick_on_another_remote_began_is_carried_by_its_row() {
+    let sidekick = session("Sidekick", "Sidekick", 0, NOW.0 - 9 * DAY);
+    let mut begun = recent("Begun from the desk", 5);
+    begun.session.working_since = Some(SessionTimestamp(NOW.0 - 90_000));
+    begun.session.begun_by = Some(Author::PeerSidekick {
+        peer: "desk-machine".to_owned(),
+        fingerprint: "DESK-KEY".to_owned(),
+        act: None,
+    });
+    let mut sidekick = sidekick;
+    sidekick.remote_subsessions = vec![RemoteSession {
+        origin: "what the desk calls the lab".to_owned(),
+        session_id: begun.session.id,
+    }];
+    // One a Sidekick on a Peer the phone does not hold began stands on its
+    // own, as does one its Sidekick's Session does not name.
+    let mut stranger = recent("Begun from elsewhere", 6);
+    stranger.session.begun_by = Some(Author::PeerSidekick {
+        peer: "elsewhere".to_owned(),
+        fingerprint: "elsewhere-key".to_owned(),
+        act: None,
+    });
+    let mut unnamed = recent("Not named by the Sidekick", 7);
+    unnamed.session.begun_by = Some(Author::PeerSidekick {
+        peer: "desk-machine".to_owned(),
+        fingerprint: "desk-key".to_owned(),
+        act: None,
+    });
+
+    let listing = read(&[
+        remote("desk", vec![sidekick]),
+        remote("lab", vec![begun, stranger, unnamed]),
+    ]);
+    assert_eq!(
+        titles(&listing.active),
+        [
+            "Begun from elsewhere",
+            "Not named by the Sidekick",
+            "Sidekick"
+        ],
+        "the Subsession is left out, and its work holds its Sidekick's row among the active"
+    );
+    let row = &listing.active[2];
+    assert_eq!(row.place, "desk · Sidekick");
+    assert_eq!(row.standing, Some(Standing::Working));
+}
+
+#[test]
+fn a_remote_yet_to_answer_is_said_to_be_reached_naming_it_only_beside_others() {
+    let waiting = |name: &str| Answered {
+        sessions: None,
+        ..remote(name, Vec::new())
+    };
+    let alone = read(&[waiting("desk")]);
+    assert_eq!(alone.waiting.as_deref(), Some("Reaching the server…"));
+    assert_eq!(alone.empty, None);
+
+    let beside = read(&[
+        remote("desk", vec![recent("Mine", 1)]),
+        waiting("lab"),
+        waiting("homelab"),
+    ]);
+    assert_eq!(beside.waiting.as_deref(), Some("Reaching lab and homelab…"));
+    assert_eq!(titles(&beside.active), ["Mine"]);
+
+    let three = read(&[waiting("desk"), waiting("lab"), waiting("homelab")]);
+    assert_eq!(
+        three.waiting.as_deref(),
+        Some("Reaching desk, lab and homelab…")
+    );
+    assert_eq!(read(&[remote("desk", Vec::new())]).waiting, None);
+}
+
+/// The listing held over a redeemer of no Remote, its Remotes' answers put in
+/// by the test.
+fn listings(runtime: &tokio::runtime::Runtime) -> (Listings, tempfile::TempDir) {
+    let directory = tempfile::tempdir().unwrap();
+    let redeemer = Redeemer::new(
+        directory.path(),
+        shaman_pairing::PairingProtocol::CURRENT,
+        Arc::new(shaman_pairing::GivenIdentity(
+            shaman_pairing::IdentityMaterial::fresh(),
+        )),
+        shaman_pairing::RedeemerTimings::default(),
+    )
+    .unwrap();
+    let timings = SessionCommandTimings {
+        initial_recovery_backoff: Duration::from_millis(1),
+        max_recovery_backoff: Duration::from_millis(1),
+        attachment_fetch_timeout: Duration::from_secs(1),
+    };
+    let listings = Listings::new(runtime.handle().clone(), redeemer, timings, SETTLE_AFTER);
+    (listings, directory)
+}
+
+#[test]
+fn a_row_held_past_its_settling_is_not_made_again_and_again() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let (listings, _directory) = listings(&runtime);
+    let now = SessionTimestamp::now();
+    let mut sidekick = session("Sidekick", "Sidekick", 0, now.0 - 9 * DAY);
+    sidekick.created_at = SessionTimestamp(1);
+    let mut subsession = session("Subsession", "shaman", now.0 - 5, now.0 - 1);
+    subsession.session.begun_by = Some(Author::Sidekick {
+        session_id: sidekick.session.id,
+        title: "Sidekick".to_owned(),
+    });
+    subsession.session.working_since = Some(SessionTimestamp(now.0 - 1));
+    listings.hold(remote("desk", vec![sidekick, subsession]));
+
+    let made = listings.renders();
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(
+        listings.renders() - made <= 1,
+        "made {} times while nothing changed",
+        listings.renders() - made
+    );
+    assert_eq!(titles(&listings.listing().borrow().active), ["Sidekick"]);
+}
+
+#[test]
+fn a_session_left_alone_settles_onto_the_shelf_as_it_comes_to_be() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let redeemer = Redeemer::new(
+        directory.path(),
+        shaman_pairing::PairingProtocol::CURRENT,
+        Arc::new(shaman_pairing::GivenIdentity(
+            shaman_pairing::IdentityMaterial::fresh(),
+        )),
+        shaman_pairing::RedeemerTimings::default(),
+    )
+    .unwrap();
+    let timings = SessionCommandTimings {
+        initial_recovery_backoff: Duration::from_millis(1),
+        max_recovery_backoff: Duration::from_millis(1),
+        attachment_fetch_timeout: Duration::from_secs(1),
+    };
+    let listings = Listings::new(
+        runtime.handle().clone(),
+        redeemer,
+        timings,
+        Duration::from_millis(100),
+    );
+    let now = SessionTimestamp::now();
+    listings.hold(remote("desk", vec![session("Quiet", "shaman", 1, now.0)]));
+    assert_eq!(titles(&listings.listing().borrow().active), ["Quiet"]);
+
+    let mut listing = listings.listing();
+    runtime
+        .block_on(async {
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                listing.wait_for(|listing| !listing.settled.is_empty()),
+            )
+            .await
+        })
+        .expect("settled in time")
+        .expect("the listing stands");
+}
+
+/// A listing's answer: `sessions` as a Server lists them.
+fn answered(sessions: &[SessionSummary]) -> shaman_client::TransportResponse {
+    let listed = sessions.iter().cloned().map(listed).collect::<Vec<_>>();
+    http::Response::new(shaman_client::full_body(
+        serde_json::to_vec(&listed).unwrap(),
+    ))
+}
+
+/// Asks for listings over `transport`, waiting `backoff` between failed asks,
+/// handing what is taken to the receiver it answers with.
+fn asking(
+    runtime: &tokio::runtime::Runtime,
+    transport: Arc<shaman_client::testing::ScriptedTransport>,
+    backoff: Duration,
+) -> (Arc<Notify>, std::sync::mpsc::Receiver<Vec<SessionListItem>>) {
+    let commands = SessionCommands::new(
+        transport.clone(),
+        SessionCommandTimings {
+            initial_recovery_backoff: backoff,
+            max_recovery_backoff: backoff,
+            attachment_fetch_timeout: Duration::from_secs(1),
+        },
+    );
+    let wanted = Arc::new(Notify::new());
+    let (taken, heard) = std::sync::mpsc::channel();
+    runtime.spawn(ask_for_listings(
+        commands,
+        transport.try_now(),
+        wanted.clone(),
+        "desk".to_owned(),
+        move |sessions| taken.send(sessions).is_ok(),
+    ));
+    (wanted, heard)
+}
+
+#[test]
+fn a_listing_not_answered_is_asked_for_again_on_the_readers_backoff() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let transport = Arc::new(shaman_client::testing::ScriptedTransport::new(vec![
+        Err(shaman_client::testing::unreachable()),
+        Err(shaman_client::testing::unreachable()),
+        Ok(answered(&[recent("Mine", 1)])),
+    ]));
+    let (wanted, heard) = asking(&runtime, transport.clone(), Duration::from_millis(5));
+    wanted.notify_one();
+    let taken = heard
+        .recv_timeout(Duration::from_secs(5))
+        .expect("answered in the end");
+    assert_eq!(taken.len(), 1);
+    assert_eq!(transport.asked(), 3);
+}
+
+#[test]
+fn a_listing_not_answered_is_asked_for_at_once_when_told_to_try_now() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let transport = Arc::new(shaman_client::testing::ScriptedTransport::new(vec![
+        Err(shaman_client::testing::unreachable()),
+        Ok(answered(&[])),
+    ]));
+    let (wanted, heard) = asking(&runtime, transport.clone(), Duration::from_secs(3600));
+    wanted.notify_one();
+    assert!(
+        heard.recv_timeout(Duration::from_millis(100)).is_err(),
+        "the hour's backoff is waited"
+    );
+    assert_eq!(transport.asked(), 1);
+    transport.say_try_now();
+    heard
+        .recv_timeout(Duration::from_secs(5))
+        .expect("asked again at once");
+    assert_eq!(transport.asked(), 2);
 }

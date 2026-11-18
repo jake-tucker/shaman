@@ -85,8 +85,30 @@ pub enum Outlook {
         /// The name this phone knows the Remote by.
         name: String,
         /// Where a Session begun now would begin.
-        begins_in: String,
+        begins_in: BeginsIn,
     },
+}
+
+/// Where a Session begun now would begin, as the bottom bar says it: what
+/// leads, over where, which is kept to one line however long, and the two as
+/// one sentence, as it is spoken.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct BeginsIn {
+    pub lead: String,
+    pub place: String,
+    pub said: String,
+}
+
+impl BeginsIn {
+    /// New Sessions beginning in the Remote `remote`.
+    pub fn remote(remote: &str) -> Self {
+        let lead = "New sessions begin in";
+        Self {
+            lead: lead.to_owned(),
+            place: remote.to_owned(),
+            said: format!("{lead} {remote}"),
+        }
+    }
 }
 
 /// How each way of one Remote stood when last asked.
@@ -184,7 +206,7 @@ impl Remotes {
             .or_else(|| held.first().map(|stored| &stored.remote.name))
             .map_or(Outlook::Nowhere, |name| Outlook::Remote {
                 name: name.clone(),
-                begins_in: format!("New sessions begin in {name}"),
+                begins_in: BeginsIn::remote(name),
             });
         let standings = self
             .standings

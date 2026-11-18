@@ -45,6 +45,9 @@ shaman = { path = "../.." }
 shaman-build-id = { path = "../shaman-build-id" }
 # A signer whose key the test holds apart from it, as the app holds a phone's.
 shaman-pairing = { path = "../shaman-pairing", features = ["test-support"] }
+# `testing::ScriptedTransport`, which a listing is asked for over where no Server answers.
+shaman-client = { path = "../shaman-client", features = ["test-support"] }
+http = "1.5.0"
 # `Session::for_tests`, which the listing's tests build what a Remote answers from.
 shaman-protocol = { path = "../shaman-protocol", features = ["test-support"] }
 tempfile = "3.21.0"

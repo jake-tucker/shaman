@@ -14,26 +14,31 @@
 
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, Weak},
+    sync::{
+        Arc, Mutex, Weak,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use shaman_client::{
-    NotReached, PairingTransport, SessionCatalogEvent, SessionCommandTimings, SessionCommands,
+    NotReached, PairingTransport, RecoveryBackoff, SessionCatalogEvent, SessionCommandTimings,
+    SessionCommands, Transport as _, TryNow,
 };
 use shaman_pairing::{Redeemer, StoredRemote};
 use shaman_protocol::{
-    Author, AutoSettle, CheckoutKind, CheckoutRevision, CheckoutSummary, SessionError,
-    SessionErrorCode, SessionId, SessionListItem, SessionStanding, SessionSummary,
-    SessionTimestamp, SourceControlAvailability, StandingReading, WorkspacePaths,
+    Author, CheckoutKind, CheckoutRevision, CheckoutSummary, SessionError, SessionErrorCode,
+    SessionId, SessionListItem, SessionStanding, SessionSummary, SessionTimestamp,
+    SourceControlAvailability, StandingReading, WorkspacePaths,
 };
 use tokio::{runtime::Handle, sync::Notify, sync::watch, task::JoinHandle};
 
 use crate::ActError;
 
 /// How long a phone leaves a Session untouched before it settles on its own:
-/// the schema's default, which a phone offers no Setting to change.
-const AUTO_SETTLE: AutoSettle = AutoSettle::Idle(3);
+/// the schema's default of three days, which a phone offers no Setting to
+/// change, and a test shortens.
+pub(crate) const SETTLE_AFTER: Duration = Duration::from_secs(3 * 24 * 60 * 60);
 
 /// The settled rows the shelf opens on, as the Sidebar's does.
 const SHELF_OPENING: usize = 10;
@@ -49,6 +54,9 @@ pub struct Listing {
     pub title: String,
     /// The active Sessions, the most recently begun first.
     pub active: Vec<ActiveRow>,
+    /// Said at the foot of the active rows while a Remote held has yet to
+    /// answer with its Sessions.
+    pub waiting: Option<String>,
     /// What the shelf of settled Sessions is headed.
     pub settled_header: String,
     /// The settled Sessions on show, the most recently ended first.
@@ -152,31 +160,31 @@ pub(crate) struct Answered {
 }
 
 /// The listing every held Remote's last answer makes, as of `now`, with the
-/// shelf showing as many as `on_show` of its rows; and the next moment a
-/// Session in it settles by being left alone, when it must be made again.
+/// shelf showing as many as `on_show` of its rows and a Session settling once
+/// left alone for `settle_after`; and the next moment after `now` a Session
+/// in it settles so, when it must be made again.
 pub(crate) fn present(
     remotes: &[Answered],
     now: SessionTimestamp,
     on_show: usize,
+    settle_after: Duration,
 ) -> (Listing, Option<SessionTimestamp>) {
+    let idle = u64::try_from(settle_after.as_millis()).unwrap_or(u64::MAX);
     let origin_named = remotes.len() > 1;
     let mut active = Vec::new();
     let mut settled = Vec::new();
     let mut next_settling: Option<SessionTimestamp> = None;
-    for remote in remotes {
-        let Some(sessions) = &remote.sessions else {
-            continue;
-        };
-        for row in rows(sessions) {
-            let settles = row.settles(now);
-            if !settles && let Some(at) = row.settles_at() {
-                next_settling = Some(next_settling.map_or(at, |next| next.min(at)));
-            }
-            if settles {
-                settled.push((ended_at(row.session), remote, row));
-            } else {
-                active.push((row.session.created_at(), remote, row));
-            }
+    for (remote, row) in rows(remotes) {
+        // Only a moment still to come: a row whose Session was left alone
+        // long ago, held among the active by a Subsession's work, settles at
+        // no moment a timer could wait for.
+        if let Some(at) = row.settles_at(idle).filter(|at| *at > now) {
+            next_settling = Some(next_settling.map_or(at, |next| next.min(at)));
+        }
+        if row.settles(idle, now) {
+            settled.push((ended_at(row.session), remote, row));
+        } else {
+            active.push((row.session.created_at(), remote, row));
         }
     }
     active.sort_by(|(left, _, a), (right, _, b)| {
@@ -190,8 +198,14 @@ pub(crate) fn present(
             .then_with(|| a.session.id().to_string().cmp(&b.session.id().to_string()))
     });
     let hidden = settled.len().saturating_sub(on_show);
-    let answered = remotes.iter().all(|remote| remote.sessions.is_some());
+    let unanswered = remotes
+        .iter()
+        .filter(|remote| remote.sessions.is_none())
+        .map(|remote| remote.name.as_str())
+        .collect::<Vec<_>>();
+    let answered = unanswered.is_empty();
     let listing = Listing {
+        waiting: (!answered).then(|| reaching(&unanswered, origin_named)),
         title: if origin_named {
             "Everywhere"
         } else {
@@ -221,9 +235,24 @@ pub(crate) fn present(
     (listing, next_settling)
 }
 
+/// What stands at the foot of the active rows while the Remotes `unanswered`
+/// have yet to answer: each named, where the phone names Origins at all.
+fn reaching(unanswered: &[&str], origin_named: bool) -> String {
+    if !origin_named {
+        return "Reaching the server…".to_owned();
+    }
+    let named = match unanswered {
+        [] => String::new(),
+        [one] => (*one).to_owned(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    };
+    format!("Reaching {named}…")
+}
+
 /// One row the listing draws: a Session in its own right, and the
 /// Subsessions it carries, left out of the listing, where it is a
-/// Sidekick's.
+/// Sidekick's: on its own Remote, or on another a Sidekick there began them
+/// on.
 struct Row<'a> {
     session: &'a SessionListItem,
     subsessions: Vec<&'a SessionListItem>,
@@ -243,54 +272,85 @@ impl Row<'_> {
             .fold(StandingReading::default(), StandingReading::alongside)
     }
 
-    /// Whether the row stands on the shelf: where its Session is settled, by
-    /// the user's say-so or by being left alone, and no Subsession it carries
-    /// has anything to say, which would be hidden there.
-    fn settles(&self, now: SessionTimestamp) -> bool {
-        AUTO_SETTLE.settles(self.session, now)
+    /// Whether the row stands on the shelf as of `now`: where its Session is
+    /// settled, by the user's say-so or by being left alone for `idle`
+    /// milliseconds, and no Subsession it carries has anything to say, which
+    /// would be hidden there.
+    fn settles(&self, idle: u64, now: SessionTimestamp) -> bool {
+        (self.session.settled_at().is_some() || self.session.left_alone_for(idle, now))
             && !self
                 .subsessions
                 .iter()
                 .any(|subsession| subsession.standing().is_some())
     }
 
-    /// When the row's Session would settle by being left alone, where it
-    /// would.
-    fn settles_at(&self) -> Option<SessionTimestamp> {
-        let idle = AUTO_SETTLE.idle_millis()?;
-        let session = self.session;
-        let moved = session.updated_at();
-        (session.readable().is_some()
-            && session.settled_at().is_none()
-            && moved != session.created_at()
-            && session.working_since().is_none()
-            && session.monitoring_since().is_none())
-        .then(|| SessionTimestamp(moved.0.saturating_add(idle)))
+    /// When the row's Session settles by being left alone for `idle`
+    /// milliseconds, where it settles so: one the user set aside never does.
+    fn settles_at(&self, idle: u64) -> Option<SessionTimestamp> {
+        if self.session.settled_at().is_some() {
+            return None;
+        }
+        self.session
+            .left_alone_since()
+            .map(|moved| SessionTimestamp(moved.0.saturating_add(idle)))
     }
 }
 
-/// The rows `sessions` make: each Subsession whose Sidekick's Session is
-/// listed beside it carried by that Session's row and left out on its own.
-fn rows(sessions: &[SessionListItem]) -> Vec<Row<'_>> {
-    let sidekick_of = |session: &SessionListItem| {
-        let begun_by = session.readable()?.session.begun_by.as_ref()?;
-        let sidekick = begun_by.sidekick_session()?;
-        matches!(begun_by, Author::Sidekick { .. })
-            .then_some(sidekick)
-            .filter(|sidekick| sessions.iter().any(|listed| listed.id() == *sidekick))
+/// The rows every Remote's Sessions make, each with the Remote it is on:
+/// each Subsession whose Sidekick's Session is listed carried by that
+/// Session's row and left out on its own, whether the Sidekick is on its own
+/// Remote or on another the phone holds.
+fn rows(remotes: &[Answered]) -> Vec<(&Answered, Row<'_>)> {
+    let listed = |remote: usize| remotes[remote].sessions.iter().flatten();
+    // The Remote and Session of the Sidekick whose row carries `session`, on
+    // the Remote `remote`, where that Session is listed.
+    let sidekick_of = |remote: usize, session: &SessionListItem| {
+        match session.readable()?.session.begun_by.as_ref()? {
+            Author::Sidekick { session_id, .. } => listed(remote)
+                .any(|sidekick| sidekick.id() == *session_id)
+                .then_some((remote, *session_id)),
+            // A Sidekick on a Peer names that Peer by its key, which the
+            // phone holds it by too where it holds it, and the Sidekick's
+            // Session there names the Sessions it began here among its own.
+            Author::PeerSidekick { fingerprint, .. } => remotes
+                .iter()
+                .enumerate()
+                .filter(|(_, peer)| peer.fingerprint.eq_ignore_ascii_case(fingerprint))
+                .find_map(|(peer, _)| {
+                    listed(peer)
+                        .find(|sidekick| {
+                            sidekick.readable().is_some_and(|summary| {
+                                summary
+                                    .remote_subsessions
+                                    .iter()
+                                    .any(|begun| begun.session_id == session.id())
+                            })
+                        })
+                        .map(|sidekick| (peer, sidekick.id()))
+                }),
+        }
     };
-    let mut carried: HashMap<SessionId, Vec<&SessionListItem>> = HashMap::new();
-    for session in sessions {
-        if let Some(sidekick) = sidekick_of(session) {
-            carried.entry(sidekick).or_default().push(session);
+    let mut carried: HashMap<(usize, SessionId), Vec<&SessionListItem>> = HashMap::new();
+    let mut standing = Vec::new();
+    for (remote, answered) in remotes.iter().enumerate() {
+        for session in answered.sessions.iter().flatten() {
+            match sidekick_of(remote, session) {
+                Some(sidekick) => carried.entry(sidekick).or_default().push(session),
+                None => standing.push((remote, session)),
+            }
         }
     }
-    sessions
-        .iter()
-        .filter(|session| sidekick_of(session).is_none())
-        .map(|session| Row {
-            session,
-            subsessions: carried.remove(&session.id()).unwrap_or_default(),
+    standing
+        .into_iter()
+        .map(|(remote, session)| {
+            let subsessions = carried.remove(&(remote, session.id())).unwrap_or_default();
+            (
+                &remotes[remote],
+                Row {
+                    session,
+                    subsessions,
+                },
+            )
         })
         .collect()
 }
@@ -457,7 +517,12 @@ struct Shared {
     runtime: Handle,
     redeemer: Redeemer,
     timings: SessionCommandTimings,
+    /// How long a Session is left alone before it settles on its own.
+    settle_after: Duration,
     shown: watch::Sender<Listing>,
+    /// How many times the listing has been made, for a test to see it is
+    /// made no more often than something changes.
+    renders: AtomicU64,
     state: Mutex<State>,
     /// Told whenever the next moment a Session settles by being left alone
     /// may have moved.
@@ -495,13 +560,21 @@ impl Drop for Readers {
 
 impl Listings {
     /// The listing of the Remotes `redeemer` holds, each read over its
-    /// Pairing on `runtime`, its readers waiting as `timings` say.
-    pub fn new(runtime: Handle, redeemer: Redeemer, timings: SessionCommandTimings) -> Self {
-        let (listing, _) = present(&[], SessionTimestamp::now(), SHELF_OPENING);
+    /// Pairing on `runtime`, its readers waiting as `timings` say, a Session
+    /// settling once left alone for `settle_after`.
+    pub fn new(
+        runtime: Handle,
+        redeemer: Redeemer,
+        timings: SessionCommandTimings,
+        settle_after: Duration,
+    ) -> Self {
+        let (listing, _) = present(&[], SessionTimestamp::now(), SHELF_OPENING, settle_after);
         let shared = Arc::new(Shared {
             runtime: runtime.clone(),
             redeemer,
             timings,
+            settle_after,
+            renders: AtomicU64::new(0),
             shown: watch::Sender::new(listing),
             state: Mutex::new(State {
                 on_show: SHELF_OPENING,
@@ -597,6 +670,29 @@ impl Listings {
     }
 }
 
+#[cfg(test)]
+impl Listings {
+    /// Holds `answered` as a Remote the listing follows, read by nothing.
+    fn hold(&self, answered: Answered) {
+        let transport = Arc::new(PairingTransport::new(
+            self.shared.redeemer.clone(),
+            answered.name.clone(),
+        ));
+        self.shared.lock().remotes.push(Followed {
+            answered,
+            generation: 0,
+            commands: SessionCommands::new(transport, self.shared.timings),
+            _readers: Readers(Vec::new()),
+        });
+        self.shared.render();
+    }
+
+    /// How many times the listing has been made.
+    fn renders(&self) -> u64 {
+        self.shared.renders.load(Ordering::Relaxed)
+    }
+}
+
 impl Shared {
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
         self.state
@@ -608,6 +704,7 @@ impl Shared {
     fn read(self: &Arc<Self>, stored: &StoredRemote) -> Followed {
         let name = stored.remote.name.clone();
         let transport = Arc::new(PairingTransport::new(self.redeemer.clone(), name.clone()));
+        let try_now = transport.try_now();
         let commands = SessionCommands::new(transport, self.timings);
         let wanted = Arc::new(Notify::new());
         let generation = stored.generation;
@@ -618,12 +715,22 @@ impl Shared {
             generation,
             wanted.clone(),
         ));
+        let shared = Arc::downgrade(self);
+        let taker = name.clone();
         let asker = self.runtime.spawn(ask_for_listings(
-            Arc::downgrade(self),
             commands.clone(),
-            name.clone(),
-            generation,
+            try_now,
             wanted,
+            name.clone(),
+            move |sessions| {
+                let Some(shared) = shared.upgrade() else {
+                    return false;
+                };
+                shared.change(&taker, generation, |answered| {
+                    answered.sessions = Some(sessions);
+                });
+                true
+            },
         ));
         Followed {
             answered: Answered {
@@ -676,7 +783,13 @@ impl Shared {
                 .iter()
                 .map(|followed| followed.answered.clone())
                 .collect::<Vec<_>>();
-            let (listing, next) = present(&answered, SessionTimestamp::now(), state.on_show);
+            let (listing, next) = present(
+                &answered,
+                SessionTimestamp::now(),
+                state.on_show,
+                self.settle_after,
+            );
+            self.renders.fetch_add(1, Ordering::Relaxed);
             self.shown.send_if_modified(|shown| {
                 let changed = *shown != listing;
                 *shown = listing;
@@ -732,7 +845,6 @@ async fn follow_catalog(
             SessionCatalogEvent::ModelCatalog(_)
             | SessionCatalogEvent::SkillCatalogUpdated(_)
             | SessionCatalogEvent::SessionUsageChanged(_)
-            | SessionCatalogEvent::SessionRemoteSubsessionsChanged(_)
             | SessionCatalogEvent::Recovering(_)
             | SessionCatalogEvent::RemoteRecovered
             | SessionCatalogEvent::RemoteFailed { .. }
@@ -747,7 +859,8 @@ async fn follow_catalog(
             | SessionCatalogEvent::SessionMonitoringChanged(_)
             | SessionCatalogEvent::SessionStandingInputsChanged(_)
             | SessionCatalogEvent::WorkspaceIconChanged(_)
-            | SessionCatalogEvent::WorkspaceDescriptionChanged(_) => {
+            | SessionCatalogEvent::WorkspaceDescriptionChanged(_)
+            | SessionCatalogEvent::SessionRemoteSubsessionsChanged(_) => {
                 wanted.notify_one();
                 None
             }
@@ -761,30 +874,40 @@ async fn follow_catalog(
     }
 }
 
-/// Asks the Remote `name` for its listing each time `wanted` says, taking
-/// each answer whole; asked again while an ask is under way, it asks once
-/// more after it.
+/// Asks the Remote `name` for its listing each time `wanted` says, handing
+/// each answer whole to `take`, until it says nothing is left to take them.
+/// Asked again while an ask is under way, it asks once more after it; an ask
+/// that is not answered is made again on the readers' backoff, or at once
+/// when the transport says to try now or something more moves.
 async fn ask_for_listings(
-    shared: Weak<Shared>,
     commands: SessionCommands,
-    name: String,
-    generation: u64,
+    mut try_now: TryNow,
     wanted: Arc<Notify>,
+    name: String,
+    take: impl Fn(Vec<SessionListItem>) -> bool,
 ) {
+    let (initial, max) = commands.recovery_backoff();
+    let mut backoff = RecoveryBackoff::new(initial, max);
     loop {
         wanted.notified().await;
-        match commands.list_sessions(None).await {
-            Ok(sessions) => {
-                let Some(shared) = shared.upgrade() else {
-                    return;
-                };
-                shared.change(&name, generation, |answered| {
-                    answered.sessions = Some(sessions);
-                });
+        loop {
+            match commands.list_sessions(None).await {
+                Ok(sessions) => {
+                    backoff.reset();
+                    if !take(sessions) {
+                        return;
+                    }
+                    break;
+                }
+                Err(error) => {
+                    tracing::debug!("the listing of {name} was not answered: {error:#}");
+                    let retry_in = backoff.next();
+                    tokio::select! {
+                        () = wanted.notified() => {}
+                        _ = try_now.or_after(retry_in) => {}
+                    }
+                }
             }
-            // The next change the catalog hears, or its reconnection, asks
-            // again.
-            Err(error) => tracing::debug!("the listing of {name} was not answered: {error:#}"),
         }
     }
 }

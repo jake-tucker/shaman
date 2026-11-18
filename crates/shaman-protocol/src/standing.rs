@@ -125,18 +125,32 @@ impl AutoSettle {
     /// or a Watch can outlast the threshold without any output — so it is
     /// never left alone.
     pub fn left_alone(self, session: &SessionListItem, now: SessionTimestamp) -> bool {
-        let Some(idle) = self.idle_millis() else {
-            return false;
-        };
-        let last_activity = session.updated_at();
-        if session.readable().is_none()
-            || last_activity == session.created_at()
-            || session.working_since().is_some()
-            || session.monitoring_since().is_some()
-        {
-            return false;
-        }
-        now.0.saturating_sub(last_activity.0) >= idle
+        self.idle_millis()
+            .is_some_and(|idle| session.left_alone_for(idle, now))
+    }
+}
+
+impl SessionListItem {
+    /// Whether this Session has been left alone for `idle` milliseconds as of
+    /// `now`, as [`AutoSettle::left_alone`] reads it under a Setting of that
+    /// many: for a reader whose threshold is not a whole number of days, as a
+    /// test's is.
+    pub fn left_alone_for(&self, idle: u64, now: SessionTimestamp) -> bool {
+        self.left_alone_since()
+            .is_some_and(|moved| now.0.saturating_sub(moved.0) >= idle)
+    }
+
+    /// When this Session was last left alone, from which its idle is counted:
+    /// its last activity, and none where it has none a reader can see — it
+    /// never moved since it was made, it could not be read — or it is Working
+    /// or Monitoring, which is not done however long ago it last moved.
+    pub fn left_alone_since(&self) -> Option<SessionTimestamp> {
+        let last_activity = self.updated_at();
+        (self.readable().is_some()
+            && last_activity != self.created_at()
+            && self.working_since().is_none()
+            && self.monitoring_since().is_none())
+        .then_some(last_activity)
     }
 }
 

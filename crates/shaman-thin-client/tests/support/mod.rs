@@ -70,6 +70,7 @@ pub fn timings() -> CoreTimings {
             attachment_fetch_timeout: PROGRESS_DEADLINE,
         },
         act_bound: PROGRESS_DEADLINE,
+        settle_after: shaman_thin_client::CoreTimings::default().settle_after,
     }
 }
 

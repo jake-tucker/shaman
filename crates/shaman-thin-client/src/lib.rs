@@ -40,7 +40,7 @@ use listing::Listings;
 pub use listing::{ActiveRow, CheckoutLine, Listing, SettledRow, Slot, Standing};
 pub use pairing::{InviteReading, OfferedWay, PairingOutcome, ReadInvite, TryInstead};
 use remotes::Remotes;
-pub use remotes::{Outlook, ServerRow, Servers, WayRow, WayState};
+pub use remotes::{BeginsIn, Outlook, ServerRow, Servers, WayRow, WayState};
 
 uniffi::setup_scaffolding!();
 
@@ -62,6 +62,9 @@ pub struct CoreTimings {
     /// How long an act waits on its Server's answer before it fails as
     /// Unreachable.
     pub act_bound: Duration,
+    /// How long a Session is left alone before it settles on its own: three
+    /// days, the schema's default, which a phone offers no Setting for.
+    pub settle_after: Duration,
 }
 
 impl Default for CoreTimings {
@@ -76,6 +79,7 @@ impl Default for CoreTimings {
                 attachment_fetch_timeout: Duration::from_secs(30),
             },
             act_bound: Duration::from_secs(30),
+            settle_after: listing::SETTLE_AFTER,
         }
     }
 }
@@ -252,7 +256,12 @@ impl ThinClient {
         // so or not.
         redeemer.drop_uncommitted();
         let remotes = Remotes::new(redeemer.clone(), &record.turned);
-        let listing = Listings::new(runtime.handle().clone(), redeemer.clone(), timings.readers);
+        let listing = Listings::new(
+            runtime.handle().clone(),
+            redeemer.clone(),
+            timings.readers,
+            timings.settle_after,
+        );
         listing.follow(&remotes.held());
         let (device, _) = watch::channel(ThisDevice::of(&record));
         let inner = Arc::new(Inner {
@@ -938,6 +947,29 @@ mod tests {
 
         act(core.rename_device("phone".to_owned())).expect("renamed");
         assert!(heard.recv_timeout(Duration::from_millis(50)).is_err());
+    }
+
+    #[test]
+    fn an_act_its_server_does_not_answer_fails_as_unreachable_within_its_bound() {
+        let directory = tempfile::tempdir().unwrap();
+        let core = ThinClient::open_with(
+            directory.path().to_string_lossy().into_owned(),
+            TestKey::new(),
+            CoreTimings {
+                act_bound: Duration::from_millis(20),
+                ..CoreTimings::default()
+            },
+        )
+        .expect("open the core");
+
+        let unanswered = act(core.act(std::future::pending())).expect_err("bounded");
+        assert_eq!(
+            unanswered,
+            ActError::Unreachable {
+                message: "The server did not answer in time".to_owned()
+            }
+        );
+        assert_eq!(act(core.act(async { Ok(()) })), Ok(()));
     }
 
     #[test]

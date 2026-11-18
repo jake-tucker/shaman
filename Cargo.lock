@@ -3873,6 +3873,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "http",
  "serde",
  "serde_json",
  "shaman",

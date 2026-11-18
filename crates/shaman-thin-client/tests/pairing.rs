@@ -13,7 +13,7 @@ use std::{
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use shaman::protocol::Way;
-use shaman_thin_client::{InviteReading, Outlook, PairingOutcome, TryInstead, WayState};
+use shaman_thin_client::{BeginsIn, InviteReading, Outlook, PairingOutcome, TryInstead, WayState};
 
 use support::{Gate, Phone, ServingServer};
 
@@ -95,7 +95,7 @@ async fn pairing_names_both_sides_turns_the_outlook_and_survives_a_relaunch() {
     );
     let outlook = Outlook::Remote {
         name: DESK.to_owned(),
-        begins_in: format!("New sessions begin in {DESK}"),
+        begins_in: BeginsIn::remote(DESK),
     };
     assert_eq!(phone.outlook().await, outlook);
     let servers = phone
@@ -337,7 +337,7 @@ async fn an_invite_from_a_server_already_held_says_so_and_replaces_its_pairing()
         phone.outlook().await,
         Outlook::Remote {
             name: "studio".to_owned(),
-            begins_in: "New sessions begin in studio".to_owned(),
+            begins_in: BeginsIn::remote("studio"),
         }
     );
     assert_eq!(server.peers().await.len(), 1, "updated in place there");
@@ -558,7 +558,7 @@ async fn a_slow_way_answering_late_leaves_the_outlook_at_the_remote_paired_since
         phone.outlook().await,
         Outlook::Remote {
             name: "second".to_owned(),
-            begins_in: "New sessions begin in second".to_owned(),
+            begins_in: BeginsIn::remote("second"),
         },
         "the Outlook stays where it was last turned"
     );
@@ -598,7 +598,7 @@ async fn a_pairing_made_whose_record_cannot_be_kept_is_shown_paired_and_kept_by_
         phone.outlook().await,
         Outlook::Remote {
             name: DESK.to_owned(),
-            begins_in: format!("New sessions begin in {DESK}"),
+            begins_in: BeginsIn::remote(DESK),
         }
     );
     assert_eq!(phone.device().await.name, "Pocket");
