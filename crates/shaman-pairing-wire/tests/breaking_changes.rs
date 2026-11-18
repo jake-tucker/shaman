@@ -60,13 +60,17 @@ mod base {
     }
 
     #[derive(Deserialize, JsonSchema)]
+    #[schemars(extend("x-unknown-kinds" = "tolerated"))]
     #[serde(rename_all = "snake_case")]
     pub enum PromptStatus {
         Queued,
         Delivered,
+        #[serde(other)]
+        Unknown,
     }
 
     #[derive(Deserialize, JsonSchema)]
+    #[schemars(extend("x-unknown-kinds" = "tolerated"))]
     #[serde(tag = "kind", rename_all = "snake_case")]
     pub enum Activity {
         Message {
@@ -167,15 +171,19 @@ mod added {
 
     /// A new kind of status.
     #[derive(Deserialize, JsonSchema)]
+    #[schemars(extend("x-unknown-kinds" = "tolerated"))]
     #[serde(rename_all = "snake_case")]
     pub enum PromptStatus {
         Queued,
         Delivered,
         Withdrawn,
+        #[serde(other)]
+        Unknown,
     }
 
     /// A new kind of Activity.
     #[derive(Deserialize, JsonSchema)]
+    #[schemars(extend("x-unknown-kinds" = "tolerated"))]
     #[serde(tag = "kind", rename_all = "snake_case")]
     pub enum Activity {
         Message {
@@ -206,10 +214,13 @@ mod type_renamed {
     }
 
     #[derive(Deserialize, JsonSchema)]
+    #[schemars(extend("x-unknown-kinds" = "tolerated"))]
     #[serde(rename_all = "snake_case")]
     pub enum Standing {
         Queued,
         Delivered,
+        #[serde(other)]
+        Unknown,
     }
 }
 
@@ -400,4 +411,260 @@ fn a_fixed_length_array_lengthened_is_retyped() {
         "{}",
         verdict.report()
     );
+}
+
+/// `old` and `new` answered by one route, judged at the next version.
+fn answered<Old: JsonSchema, New: JsonSchema>() -> Verdict {
+    let answering = |version| {
+        let mut wire = WireSchema::new(version, BASE);
+        wire.api("GET /v1/enrollment").answer::<Old>();
+        wire
+    };
+    let mut current = WireSchema::new(BASE + 1, BASE);
+    current.api("GET /v1/enrollment").answer::<New>();
+    judge(&answering(BASE).document(), &current.document()).unwrap()
+}
+
+#[allow(dead_code)]
+mod writer_leaves_out {
+    use super::*;
+
+    #[derive(Deserialize, schemars::JsonSchema, serde::Serialize)]
+    pub struct Before {
+        pub hostname: String,
+    }
+
+    /// The reader now does without it, and the writer leaves it out where it
+    /// is empty, which an older reader that requires it cannot read.
+    #[derive(Deserialize, schemars::JsonSchema, serde::Serialize)]
+    pub struct After {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        pub hostname: String,
+    }
+}
+
+#[test]
+fn a_required_answer_field_a_writer_may_now_leave_out_fails() {
+    let verdict = answered::<writer_leaves_out::Before, writer_leaves_out::After>();
+    assert_breaks(&verdict, &[(ChangeKind::LeftOut, "After.hostname")]);
+}
+
+#[allow(dead_code)]
+mod closed {
+    use super::*;
+
+    #[derive(Deserialize, JsonSchema)]
+    #[serde(deny_unknown_fields)]
+    pub struct AdmitPrompt {
+        pub text: String,
+        #[serde(default)]
+        pub attachments: Vec<String>,
+    }
+}
+
+#[test]
+fn refusing_unknown_fields_fails() {
+    assert_breaks(
+        &next::<closed::AdmitPrompt, base::Prompt>(),
+        &[(ChangeKind::Retyped, "AdmitPrompt")],
+    );
+}
+
+#[allow(dead_code)]
+mod skipped_default {
+    use super::*;
+
+    fn yes() -> bool {
+        true
+    }
+
+    #[derive(Deserialize, schemars::JsonSchema, serde::Serialize)]
+    pub struct Before {
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pub new_worktree: bool,
+    }
+
+    /// A writer still leaves out `false`, which a reader now takes for
+    /// `true`.
+    #[derive(Deserialize, schemars::JsonSchema, serde::Serialize)]
+    pub struct After {
+        #[serde(default = "yes", skip_serializing_if = "std::ops::Not::not")]
+        pub new_worktree: bool,
+    }
+
+    /// Only the writer changed: it leaves out the `false` a reader takes
+    /// for a field left out anyway.
+    #[derive(Deserialize, schemars::JsonSchema, serde::Serialize)]
+    pub struct Skipping {
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pub new_worktree: bool,
+    }
+
+    #[derive(Deserialize, schemars::JsonSchema, serde::Serialize)]
+    pub struct Writing {
+        #[serde(default)]
+        pub new_worktree: bool,
+    }
+}
+
+#[test]
+fn flipping_a_default_a_writer_skips_fails() {
+    let verdict = answered::<skipped_default::Before, skipped_default::After>();
+    assert_breaks(
+        &verdict,
+        &[(ChangeKind::DroppedDefault, "After.new_worktree")],
+    );
+}
+
+#[test]
+fn skipping_the_default_a_reader_takes_anyway_passes() {
+    let verdict = answered::<skipped_default::Writing, skipped_default::Skipping>();
+    assert_eq!(verdict.breaks().count(), 0, "{}", verdict.report());
+}
+
+#[allow(dead_code)]
+mod newtype_variants {
+    use super::*;
+
+    #[derive(Deserialize, JsonSchema)]
+    pub struct Words {
+        pub text: String,
+    }
+
+    #[derive(Deserialize, JsonSchema)]
+    pub struct Picture {
+        pub url: String,
+    }
+
+    pub mod before {
+        use super::*;
+
+        #[derive(Deserialize, JsonSchema)]
+        #[schemars(extend("x-unknown-kinds" = "tolerated"))]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        pub enum Item {
+            Text(Words),
+            Image(Picture),
+        }
+    }
+
+    pub mod after {
+        use super::*;
+
+        /// `text` is now `words`: the same body under another tag.
+        #[derive(Deserialize, JsonSchema)]
+        #[schemars(extend("x-unknown-kinds" = "tolerated"))]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        pub enum Item {
+            Words(Words),
+            Image(Picture),
+        }
+    }
+}
+
+#[test]
+fn renaming_a_variant_that_holds_a_struct_beside_its_tag_fails() {
+    let verdict = answered::<newtype_variants::before::Item, newtype_variants::after::Item>();
+    assert_breaks(&verdict, &[(ChangeKind::Renamed, "Item(kind=\"text\")")]);
+}
+
+#[allow(dead_code)]
+mod flattened {
+    use super::*;
+
+    pub mod before {
+        use super::*;
+
+        #[derive(Deserialize, JsonSchema)]
+        pub struct Holder {
+            pub id: String,
+            #[serde(flatten)]
+            pub held: Held,
+        }
+
+        #[derive(Deserialize, JsonSchema)]
+        #[schemars(extend("x-unknown-kinds" = "tolerated"))]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        pub enum Held {
+            File { path: String },
+            Link { url: String },
+        }
+    }
+
+    pub mod after {
+        use super::*;
+
+        #[derive(Deserialize, JsonSchema)]
+        pub struct Holder {
+            pub id: String,
+            #[serde(flatten)]
+            pub held: Held,
+        }
+
+        /// A file's path is now a number.
+        #[derive(Deserialize, JsonSchema)]
+        #[schemars(extend("x-unknown-kinds" = "tolerated"))]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        pub enum Held {
+            File { path: u64 },
+            Link { url: String },
+        }
+    }
+}
+
+#[test]
+fn retyping_a_field_of_an_enum_a_struct_flattens_fails() {
+    let verdict = answered::<flattened::before::Holder, flattened::after::Holder>();
+    assert_breaks(
+        &verdict,
+        &[(ChangeKind::Retyped, "Holder(kind=\"file\").path")],
+    );
+}
+
+#[allow(dead_code)]
+mod intolerant {
+    use super::*;
+
+    #[derive(Deserialize, JsonSchema)]
+    pub struct Prompt {
+        pub status: Status,
+    }
+
+    /// No fallback, and no mark of one.
+    #[derive(Deserialize, JsonSchema)]
+    #[serde(rename_all = "snake_case")]
+    pub enum Status {
+        Queued,
+        Delivered,
+    }
+}
+
+#[test]
+fn an_answer_carrying_an_enum_with_no_fallback_fails() {
+    let verdict = judge(
+        &base(),
+        &wire::<base::AdmitPrompt, intolerant::Prompt>(BASE + 1, BASE + 1),
+    )
+    .unwrap();
+    assert_eq!(verdict.intolerant, ["Status"], "{}", verdict.report());
+    assert!(!verdict.passes(), "{}", verdict.report());
+}
+
+#[test]
+fn a_request_carrying_an_enum_with_no_fallback_passes() {
+    let mut asking = WireSchema::new(BASE, BASE);
+    asking.api("POST /v1/prompts").body::<intolerant::Prompt>();
+    let asking = asking.document();
+    let verdict = judge(&asking, &asking).unwrap();
+    assert!(verdict.passes(), "{}", verdict.report());
+}
+
+#[test]
+fn a_route_removed_or_added_is_reached_by_itself() {
+    let mut more = WireSchema::new(BASE + 1, BASE);
+    more.api("POST /v1/sessions/{session_id}/interrupt");
+    let verdict = judge(&base(), &more.document()).unwrap();
+    for change in &verdict.changes {
+        assert_eq!(change.via, change.at, "{}", verdict.report());
+    }
 }

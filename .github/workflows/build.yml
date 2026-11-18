@@ -107,12 +107,18 @@ jobs:
         run: |
           set -euo pipefail
           schema=crates/shaman-pairing-wire/pairing-wire.json
-          base=$(mktemp)
-          if git show "HEAD^1:$schema" > "$base" 2> /dev/null; then
-            cargo run --locked -p shaman-pairing-wire -- check --base "$base"
-          else
-            echo "The base holds no schema of the Pairing wire to judge against; checking it is current."
+          # Any failure to read the base fails the job; only a base that holds no schema at all, before the first
+          # change that writes one, is judged for staleness alone.
+          git rev-parse --verify --quiet 'HEAD^1^{commit}' > /dev/null \
+            || { echo "::error::The base this pull request merges into could not be read."; exit 1; }
+          listed=$(git ls-tree --name-only 'HEAD^1' -- "$schema")
+          if [ -z "$listed" ]; then
+            echo "::notice::The base holds no schema of the Pairing wire yet, so this change is judged only for whether the schema it commits is current."
             cargo run --locked -p shaman-pairing-wire -- check
+          else
+            base=$(mktemp)
+            git show "HEAD^1:$schema" > "$base"
+            cargo run --locked -p shaman-pairing-wire -- check --base "$base"
           fi
 
   build:
@@ -267,7 +273,9 @@ jobs:
       - name: Build
         id: build
         if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
-        run: cargo build --profile "$BUILD_PROFILE" --locked --target "$TARGET"
+        # Shaman's package alone, so the schema the Pairing wire's guard turns on in the shared crates is never built
+        # into the binary that ships.
+        run: cargo build --profile "$BUILD_PROFILE" --locked --target "$TARGET" --package shaman
 
       # A release's macOS binary is signed with the maintainer's Developer ID and notarized, so the login keychain
       # trusts every Shaman release by its publisher rather than by one binary's hash, and an upgrade never asks

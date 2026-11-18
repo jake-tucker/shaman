@@ -1,13 +1,18 @@
-//! Judging a wire's schema against the one it changes: what an older reader
+//! Judging a wire's schema against the one it changes: what an older side
 //! could not survive, and whether the version and floor moved as they must
 //! (ADR-0078).
 //!
 //! Types are compared by what they look like on the wire, never by their Rust
 //! names, so renaming a type changes nothing here. Each change is found where
 //! a payload leads to it, from a route, header or message, and a type reached
-//! from several places is compared once.
+//! from several places is compared once. Both sides of a type are read: what
+//! its reader requires, and what its writer always writes. Any difference in
+//! a keyword this check does not otherwise compare is reported as a break,
+//! and a keyword it does not know at all refuses the schema, so nothing
+//! passes unread.
 
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashSet},
     fmt,
     rc::Rc,
@@ -37,6 +42,8 @@ pub enum ChangeKind {
     Retyped,
     /// A reader requires what an older writer does not send.
     NewlyRequired,
+    /// A writer may leave out what an older reader requires.
+    LeftOut,
     /// A reader requires, or reads otherwise, what an older writer leaves out.
     DroppedDefault,
     /// Something new that an older side does without: a field it may leave
@@ -56,6 +63,7 @@ impl ChangeKind {
             Self::Renamed => "renamed",
             Self::Retyped => "retyped",
             Self::NewlyRequired => "newly required",
+            Self::LeftOut => "may be left out",
             Self::DroppedDefault => "dropped its default",
             Self::Added => "added",
         }
@@ -88,6 +96,9 @@ pub struct Verdict {
     pub base: Numbers,
     pub current: Numbers,
     pub changes: Vec<Change>,
+    /// Each enum an answer carries that takes no fallback for a kind its
+    /// reader does not know, so an older reader could not read a new kind.
+    pub intolerant: Vec<String>,
 }
 
 impl Verdict {
@@ -138,6 +149,7 @@ impl Verdict {
                 current.floor, current.version
             ));
         }
+        problems.extend(intolerance(&self.intolerant));
         problems
     }
 
@@ -165,6 +177,23 @@ impl Verdict {
     }
 }
 
+/// What is wrong of `intolerant`, the enums an answer carries with no
+/// fallback for a kind they do not know.
+pub fn intolerance(intolerant: &[String]) -> Option<String> {
+    (!intolerant.is_empty()).then(|| {
+        format!(
+            "an answer carries {}, which an older reader could not read a new kind of: give \
+             each a fallback for a kind it does not know, and mark it \
+             `x-unknown-kinds = \"tolerated\"`",
+            intolerant.join(", ")
+        )
+    })
+}
+
+/// The marker an enum whose reader takes a kind it does not know for a
+/// fallback carries.
+pub const TOLERATES_UNKNOWN_KINDS: &str = "x-unknown-kinds";
+
 /// Judges `current` against `base`, the schema it changes.
 pub fn judge(base: &Value, current: &Value) -> Result<Verdict, String> {
     let base_numbers = numbers(base, "base")?;
@@ -184,13 +213,16 @@ pub fn judge(base: &Value, current: &Value) -> Result<Verdict, String> {
         changes: Vec::new(),
         via: String::new(),
     };
-    for (section, what) in [("headers", "header"), ("messages", "message")] {
-        comparer.named(
-            &section_of(base, section),
-            &section_of(current, section),
-            &|name| format!("{what} {name}"),
-        );
-    }
+    comparer.headers(
+        &section_of(base, "headers"),
+        &section_of(current, "headers"),
+    );
+    comparer.named(
+        &section_of(base, "messages"),
+        &section_of(current, "messages"),
+        &|name| format!("message {name}"),
+        true,
+    );
     for (section, prefix) in [("listener", "listener "), ("api", "")] {
         comparer.routes(
             &section_of(base, section),
@@ -202,77 +234,163 @@ pub fn judge(base: &Value, current: &Value) -> Result<Verdict, String> {
         base: base_numbers,
         current: current_numbers,
         changes: comparer.changes,
+        intolerant: intolerant_enums(current),
     })
+}
+
+/// The keywords a schema's object may carry that this check reads.
+const READ: [&str; 22] = [
+    "$ref",
+    "additionalProperties",
+    "anyOf",
+    "const",
+    "default",
+    "enum",
+    "format",
+    "items",
+    "maxItems",
+    "maximum",
+    "maxLength",
+    "minItems",
+    "minimum",
+    "minLength",
+    "oneOf",
+    "pattern",
+    "prefixItems",
+    "properties",
+    "required",
+    "type",
+    "x-always-written",
+    TOLERATES_UNKNOWN_KINDS,
+];
+
+/// Every schema `document` holds at its top, each by the side that reads it:
+/// a definition, or what a request or an answer carries.
+fn payloads(document: &Value) -> Vec<(&'static str, &Value)> {
+    let values = |section: &str| {
+        document
+            .get(section)
+            .and_then(Value::as_object)
+            .into_iter()
+            .flat_map(Map::values)
+            .collect::<Vec<_>>()
+    };
+    let mut payloads: Vec<(&'static str, &Value)> = Vec::new();
+    for definition in values("$defs") {
+        payloads.push(("definition", definition));
+    }
+    for header in values("headers") {
+        payloads.extend(header.get("value").map(|value| ("answer", value)));
+    }
+    for message in values("messages") {
+        payloads.push(("answer", message));
+    }
+    for section in ["listener", "api"] {
+        for route in values(section) {
+            payloads.extend(route.get("query").map(|query| ("request", query)));
+            for (part, side) in [("body", "request"), ("answer", "answer")] {
+                let Some(part) = route.get(part) else {
+                    continue;
+                };
+                payloads.extend(part.get("json").map(|json| (side, json)));
+                payloads.extend(part.get("lines").map(|lines| (side, lines)));
+                for event in part
+                    .get("events")
+                    .and_then(Value::as_object)
+                    .into_iter()
+                    .flat_map(Map::values)
+                {
+                    payloads.push((side, event));
+                }
+            }
+        }
+    }
+    payloads
 }
 
 /// The first keyword anywhere in `document`'s schemas that this check does
 /// not read, so a schema that came to use one fails rather than passes
-/// unread. Bounds on a number or a string's length say nothing a format does
-/// not, and are passed over.
+/// unread.
 fn unread_keyword(document: &Value) -> Option<String> {
     fn schema(value: &Value) -> Option<String> {
         let Value::Object(schema_map) = value else {
             return None;
         };
         for (keyword, value) in schema_map {
-            match keyword.as_str() {
-                "type" | "required" | "const" | "default" | "enum" | "format" | "minimum"
-                | "maximum" | "minItems" | "maxItems" | "minLength" | "maxLength" | "$ref" => {}
-                "properties" => {
-                    for property in value.as_object()?.values() {
-                        if let Some(keyword) = schema(property) {
-                            return Some(keyword);
-                        }
-                    }
-                }
-                "items" | "additionalProperties" => {
-                    if let Some(keyword) = schema(value) {
-                        return Some(keyword);
-                    }
-                }
-                "anyOf" | "oneOf" | "prefixItems" => {
-                    for choice in value.as_array()? {
-                        if let Some(keyword) = schema(choice) {
-                            return Some(keyword);
-                        }
-                    }
-                }
-                keyword => return Some(keyword.to_owned()),
+            if !READ.contains(&keyword.as_str()) {
+                return Some(keyword.clone());
+            }
+            let found = match keyword.as_str() {
+                "properties" => value.as_object()?.values().find_map(schema),
+                "items" | "additionalProperties" => schema(value),
+                "anyOf" | "oneOf" | "prefixItems" => value.as_array()?.iter().find_map(schema),
+                _ => None,
+            };
+            if found.is_some() {
+                return found;
             }
         }
         None
     }
-    let mut schemas: Vec<&Value> = Vec::new();
-    for section in ["$defs", "headers", "messages"] {
-        schemas.extend(
-            document
-                .get(section)
-                .and_then(Value::as_object)
-                .into_iter()
-                .flat_map(Map::values),
-        );
-    }
-    for section in ["listener", "api"] {
-        for route in document
-            .get(section)
-            .and_then(Value::as_object)
-            .into_iter()
-            .flat_map(Map::values)
+    payloads(document)
+        .into_iter()
+        .find_map(|(_, payload)| schema(payload))
+}
+
+/// Each enum an answer of `document` carries, by its definition's name or
+/// the type it lies within, that takes no fallback for a kind its reader does
+/// not know.
+fn intolerant_enums(document: &Value) -> Vec<String> {
+    let defs = section_of(document, "$defs");
+    let mut seen = HashSet::new();
+    let mut intolerant = BTreeSet::new();
+    let mut waiting: Vec<(String, Value)> = payloads(document)
+        .into_iter()
+        .filter(|(side, _)| *side == "answer")
+        .map(|(_, payload)| ("an answer".to_owned(), payload.clone()))
+        .collect();
+    while let Some((at, schema)) = waiting.pop() {
+        let (resolved, name) = resolve(&defs, &schema);
+        if let Some(name) = name
+            && !seen.insert(name.to_owned())
         {
-            schemas.extend(route.get("query"));
-            for part in ["body", "answer"].iter().filter_map(|part| route.get(part)) {
-                schemas.extend(part.get("json"));
-                schemas.extend(part.get("lines"));
-                schemas.extend(
-                    part.get("events")
-                        .and_then(Value::as_object)
-                        .into_iter()
-                        .flat_map(Map::values),
-                );
+            continue;
+        }
+        let at = name.map_or(at, str::to_owned);
+        let (_, schema) = without_null(&resolved);
+        let choices = alternatives(&defs, &schema);
+        let kinds = choices.iter().filter(|(_, choice)| is_kind(choice)).count();
+        let tolerated = schema.get(TOLERATES_UNKNOWN_KINDS).is_some()
+            || resolved.get(TOLERATES_UNKNOWN_KINDS).is_some();
+        if choices.len() > 1 && kinds > 0 && !tolerated {
+            intolerant.insert(at.clone());
+        }
+        for (_, choice) in choices {
+            if choice.get("$ref").is_some() {
+                waiting.push((at.clone(), choice));
+                continue;
+            }
+            for property in section_of(&choice, "properties").values() {
+                waiting.push((at.clone(), property.clone()));
+            }
+            for keyword in ["items", "additionalProperties"] {
+                if let Some(inner) = choice.get(keyword)
+                    && inner.is_object()
+                {
+                    waiting.push((at.clone(), inner.clone()));
+                }
+            }
+            for inner in choice
+                .get("prefixItems")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                waiting.push((at.clone(), inner.clone()));
             }
         }
     }
-    schemas.into_iter().find_map(schema)
+    intolerant.into_iter().collect()
 }
 
 fn numbers(document: &Value, which: &str) -> Result<Numbers, String> {
@@ -317,12 +435,40 @@ impl Comparer {
         });
     }
 
-    /// Compares two maps of named schemas, such as headers or events.
+    fn headers(&mut self, old: &Map<String, Value>, new: &Map<String, Value>) {
+        let label = |name: &str| format!("header {name}");
+        let (removed, added) = unmatched(old, new);
+        self.removed_and_added(
+            &removed,
+            &added,
+            label,
+            |old, new| old == new,
+            |_| (ChangeKind::Added, ""),
+            true,
+        );
+        for (name, old_header) in old {
+            let Some(new_header) = new.get(name) else {
+                continue;
+            };
+            let at = label(name);
+            self.via = at.clone();
+            let (old_encoding, new_encoding) = (&old_header["encoding"], &new_header["encoding"]);
+            if old_encoding != new_encoding {
+                let detail = format!("was spelled {old_encoding}, is {new_encoding}");
+                self.change(ChangeKind::Retyped, &at, detail);
+            }
+            self.schema(&old_header["value"], &new_header["value"], &at);
+        }
+    }
+
+    /// Compares two maps of named schemas, such as messages or events, the
+    /// top of the wire's where `top` holds.
     fn named(
         &mut self,
         old: &Map<String, Value>,
         new: &Map<String, Value>,
         label: &dyn Fn(&str) -> String,
+        top: bool,
     ) {
         let (removed, added) = unmatched(old, new);
         self.removed_and_added(
@@ -331,14 +477,17 @@ impl Comparer {
             label,
             |old, new| old == new,
             |_| (ChangeKind::Added, ""),
+            top,
         );
+        let via = self.via.clone();
         for (name, old_schema) in old {
             if let Some(new_schema) = new.get(name) {
                 let at = label(name);
-                self.via = at.clone();
+                self.via = if top { at.clone() } else { via.clone() };
                 self.schema(old_schema, new_schema, &at);
             }
         }
+        self.via = via;
     }
 
     fn routes(&mut self, old: &Map<String, Value>, new: &Map<String, Value>, prefix: &str) {
@@ -349,6 +498,7 @@ impl Comparer {
             |route| format!("{prefix}{route}"),
             |old, new| old == new,
             |_| (ChangeKind::Added, ""),
+            true,
         );
         for (route, old_parts) in old {
             let Some(new_parts) = new.get(route) else {
@@ -381,8 +531,9 @@ impl Comparer {
 
     fn part(&mut self, old: &Value, new: &Value, at: &str) {
         let kind = |part: &Value| {
-            part.as_object()
-                .and_then(|part| part.keys().next().cloned())
+            ["json", "bytes", "events", "lines"]
+                .into_iter()
+                .find(|kind| part.get(kind).is_some())
                 .unwrap_or_default()
         };
         let (old_kind, new_kind) = (kind(old), kind(new));
@@ -390,12 +541,34 @@ impl Comparer {
             let detail = format!("was {old_kind}, is {new_kind}");
             return self.change(ChangeKind::Retyped, at, detail);
         }
-        let (old, new) = (&old[&old_kind], &new[&new_kind]);
-        match old_kind.as_str() {
-            "bytes" if old != new => {
-                self.change(ChangeKind::Retyped, at, format!("was {old}, is {new}"));
+        let or_nothing = |part: &Value| part.get("or_nothing") == Some(&Value::Bool(true));
+        match (or_nothing(old), or_nothing(new)) {
+            (false, true) => self.change(ChangeKind::LeftOut, at, "may now be nothing at all"),
+            (true, false) => self.change(ChangeKind::Added, at, "is now always given"),
+            _ => {}
+        }
+        let (old, new) = (&old[old_kind], &new[new_kind]);
+        match old_kind {
+            "bytes" => {
+                let types = |part: &Value| -> Map<String, Value> {
+                    part.as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .map(|kind| (kind.to_owned(), Value::Null))
+                        .collect()
+                };
+                let (old_types, new_types) = (types(old), types(new));
+                let (removed, added) = unmatched(&old_types, &new_types);
+                self.removed_and_added(
+                    &removed,
+                    &added,
+                    |kind| format!("{at} of {kind}"),
+                    |_, _| false,
+                    |_| (ChangeKind::Added, ""),
+                    false,
+                );
             }
-            "bytes" => {}
             "events" => {
                 let empty = Map::new();
                 let (old, new) = (
@@ -403,8 +576,7 @@ impl Comparer {
                     new.as_object().unwrap_or(&empty),
                 );
                 let route = at.to_owned();
-                self.named(old, new, &|event| format!("{route} event {event}"));
-                self.via = route;
+                self.named(old, new, &|event| format!("{route} event {event}"), false);
             }
             _ => self.schema(old, new, at),
         }
@@ -412,7 +584,8 @@ impl Comparer {
 
     /// Reports what is in `old` alone and `new` alone: one of each as a rename
     /// where `renamed` says their bodies match, and each added by the kind
-    /// `added_kind` gives its name.
+    /// `added_kind` gives its name. Each is reached by itself where it stands
+    /// at the `top` of the wire.
     fn removed_and_added(
         &mut self,
         removed: &[(&str, &Value)],
@@ -420,19 +593,26 @@ impl Comparer {
         label: impl Fn(&str) -> String,
         renamed: impl Fn(&Value, &Value) -> bool,
         added_kind: impl Fn(&str) -> (ChangeKind, &'static str),
+        top: bool,
     ) {
+        let report = |comparer: &mut Self, kind, at: String, detail: String| {
+            if top {
+                comparer.via = at.clone();
+            }
+            comparer.change(kind, &at, detail);
+        };
         if let ([(old_name, old_body)], [(new_name, new_body)]) = (removed, added)
             && renamed(old_body, new_body)
         {
             let detail = format!("now {}", label(new_name));
-            return self.change(ChangeKind::Renamed, &label(old_name), detail);
+            return report(self, ChangeKind::Renamed, label(old_name), detail);
         }
         for (name, _) in removed {
-            self.change(ChangeKind::Removed, &label(name), "");
+            report(self, ChangeKind::Removed, label(name), String::new());
         }
         for (name, _) in added {
             let (kind, detail) = added_kind(name);
-            self.change(kind, &label(name), detail);
+            report(self, kind, label(name), detail.to_owned());
         }
     }
 
@@ -449,8 +629,8 @@ impl Comparer {
         if let Some(new_name) = new_name {
             new_name.clone_into(&mut at);
         }
-        let (old_null, old) = without_null(old);
-        let (new_null, new) = without_null(new);
+        let (old_null, old) = without_null(&old);
+        let (new_null, new) = without_null(&new);
         if old_null != new_null {
             let detail = if new_null {
                 "may now be null"
@@ -470,6 +650,18 @@ impl Comparer {
         {
             return self.shape(old_one, new_one, &at);
         }
+        let marked = |schema: &Value| schema.get(TOLERATES_UNKNOWN_KINDS).cloned();
+        if marked(&old) != marked(&new) {
+            let (kind, detail) = if marked(&new).is_some() {
+                (ChangeKind::Added, "now reads a kind it does not know")
+            } else {
+                (
+                    ChangeKind::Retyped,
+                    "no longer reads a kind it does not know",
+                )
+            };
+            self.change(kind, &at, detail);
+        }
         self.alternatives(old_alternatives, new_alternatives, &at);
     }
 
@@ -486,6 +678,7 @@ impl Comparer {
             |key| format!("{at}({key})"),
             |old, new| body_of(old, &old_defs) == body_of(new, &new_defs),
             |_| (ChangeKind::Added, ""),
+            false,
         );
         for (key, old_alternative) in &old {
             let Some(new_alternative) = new.get(key) else {
@@ -507,6 +700,7 @@ impl Comparer {
             let detail = format!("was {old_type}, is {new_type}");
             return self.change(ChangeKind::Retyped, at, detail);
         }
+        self.unread(old, new, at);
         match old_type.as_str() {
             "integer" | "number" | "string" => {
                 let (old_format, new_format) = (format_of(old), format_of(new));
@@ -518,6 +712,49 @@ impl Comparer {
             "array" => self.array(old, new, at),
             "object" => self.object(old, new, at),
             _ => {}
+        }
+    }
+
+    /// Reports as a break every difference between `old` and `new` in a
+    /// keyword nothing else here compares, such as a bound.
+    fn unread(&mut self, old: &Value, new: &Value, at: &str) {
+        const COMPARED: [&str; 17] = [
+            "$ref",
+            "additionalProperties",
+            "anyOf",
+            "const",
+            "default",
+            "enum",
+            "format",
+            "items",
+            "maxItems",
+            "minItems",
+            "oneOf",
+            "prefixItems",
+            "properties",
+            "required",
+            "type",
+            "x-always-written",
+            TOLERATES_UNKNOWN_KINDS,
+        ];
+        let keywords: BTreeSet<&String> = [old, new]
+            .into_iter()
+            .filter_map(Value::as_object)
+            .flat_map(Map::keys)
+            .filter(|keyword| !COMPARED.contains(&keyword.as_str()))
+            .collect();
+        for keyword in keywords {
+            let (old_value, new_value) = (old.get(keyword), new.get(keyword));
+            if old_value != new_value {
+                let shown =
+                    |value: Option<&Value>| value.map_or("absent".to_owned(), Value::to_string);
+                let detail = format!(
+                    "its {keyword} was {}, is {}",
+                    shown(old_value),
+                    shown(new_value)
+                );
+                self.change(ChangeKind::Retyped, at, detail);
+            }
         }
     }
 
@@ -558,9 +795,19 @@ impl Comparer {
             (None, None) => {}
             _ => return self.change(ChangeKind::Retyped, at, "was a map, or is one now"),
         }
+        let closed =
+            |schema: &Value| schema.get("additionalProperties") == Some(&Value::Bool(false));
+        match (closed(old), closed(new)) {
+            (false, true) => {
+                self.change(ChangeKind::Retyped, at, "refuses fields it does not know");
+            }
+            (true, false) => self.change(ChangeKind::Added, at, "takes fields it does not know"),
+            _ => {}
+        }
         let (old_properties, new_properties) =
             (section_of(old, "properties"), section_of(new, "properties"));
         let (old_required, new_required) = (required(old), required(new));
+        let (old_written, new_written) = (always_written(old), always_written(new));
         let (removed, added) = unmatched(&old_properties, &new_properties);
         self.removed_and_added(
             &removed,
@@ -576,6 +823,7 @@ impl Comparer {
                     (ChangeKind::Added, "")
                 }
             },
+            false,
         );
         for (name, old_property) in &old_properties {
             let Some(new_property) = new_properties.get(name) else {
@@ -584,10 +832,8 @@ impl Comparer {
             let field = format!("{at}.{name}");
             let was_required = old_required.contains(name);
             let is_required = new_required.contains(name);
-            let old_default = old_property.get("default");
-            let new_default = new_property.get("default");
             if !was_required && is_required {
-                if old_default.is_some() {
+                if old_property.get("default").is_some() {
                     self.change(ChangeKind::DroppedDefault, &field, "is now required");
                 } else {
                     self.change(
@@ -596,37 +842,123 @@ impl Comparer {
                         "may no longer be left out",
                     );
                 }
-            } else if let (Some(old_default), Some(new_default)) = (old_default, new_default)
-                && old_default != new_default
+            } else if !was_required
+                && !is_required
+                && let Some(detail) = default_changed(old_property, new_property)
             {
-                let detail = format!("was {old_default}, is {new_default}");
                 self.change(ChangeKind::DroppedDefault, &field, detail);
+            }
+            if was_required && old_written.contains(name) && !new_written.contains(name) {
+                self.change(
+                    ChangeKind::LeftOut,
+                    &field,
+                    "a writer may now leave out what an older reader requires",
+                );
             }
             self.schema(old_property, new_property, &field);
         }
     }
 }
 
+/// How the value a reader takes for a field left out changed between `old`
+/// and `new`, where it did.
+///
+/// A default its writer would leave out goes unrecorded, and is taken to be
+/// the empty value of its type — `false`, `0`, an empty string, list or map,
+/// or null — as a writer skipping a field skips that value.
+fn default_changed(old: &Value, new: &Value) -> Option<String> {
+    let taken = |property: &Value| -> Option<Value> {
+        property
+            .get("default")
+            .cloned()
+            .or_else(|| without_null(property).0.then_some(Value::Null))
+    };
+    let empty = |value: &Value| match value {
+        Value::Null => true,
+        Value::Bool(value) => !value,
+        Value::Number(number) => number.as_f64() == Some(0.0),
+        Value::String(text) => text.is_empty(),
+        Value::Array(values) => values.is_empty(),
+        Value::Object(values) => values.is_empty(),
+    };
+    let shown = |value: &Option<Value>| {
+        value.as_ref().map_or(
+            "the value its writer leaves out".to_owned(),
+            Value::to_string,
+        )
+    };
+    let (old_taken, new_taken) = (taken(old), taken(new));
+    let differs = match (&old_taken, &new_taken) {
+        (Some(old), Some(new)) => old != new,
+        (None, Some(known)) | (Some(known), None) => !empty(known),
+        (None, None) => false,
+    };
+    differs.then(|| {
+        format!(
+            "a field left out now reads as {}, where it read as {}",
+            shown(&new_taken),
+            shown(&old_taken)
+        )
+    })
+}
+
 /// `schema` with its references into `defs` followed, and the definition it
-/// was last named by.
+/// was last named by. What a reference stands beside, such as an enum
+/// variant's tag, is taken in with what it names.
 fn resolve<'a>(
     defs: &'a Map<String, Value>,
-    mut schema: &'a Value,
-) -> (&'a Value, Option<&'a str>) {
+    schema: &'a Value,
+) -> (Cow<'a, Value>, Option<&'a str>) {
     let mut name = None;
+    let mut resolved = Cow::Borrowed(schema);
     // A reference to a reference is followed a few steps at most.
     for _ in 0..8 {
-        let Some(reference) = schema.get("$ref").and_then(Value::as_str) else {
+        let Some(reference) = resolved.get("$ref").and_then(Value::as_str) else {
             break;
         };
         let defined = reference.strip_prefix("#/$defs/").unwrap_or(reference);
-        let Some(definition) = defs.get(defined) else {
+        let Some((defined, definition)) = defs.get_key_value(defined) else {
             break;
         };
-        name = Some(defined);
-        schema = definition;
+        name = Some(defined.as_str());
+        let mut beside = resolved.as_object().cloned().unwrap_or_default();
+        beside.remove("$ref");
+        // A field's default belongs to the field, not to what it holds.
+        beside.remove("default");
+        resolved = if beside.is_empty() {
+            Cow::Borrowed(definition)
+        } else {
+            Cow::Owned(merged(definition, &beside))
+        };
     }
-    (schema, name)
+    (resolved, name)
+}
+
+/// `schema` with `beside` taken into it: their fields, required fields and
+/// fields always written joined, and any other keyword of `beside` kept.
+fn merged(schema: &Value, beside: &Map<String, Value>) -> Value {
+    let mut merged = schema.as_object().cloned().unwrap_or_default();
+    for (keyword, value) in beside {
+        match (keyword.as_str(), merged.get_mut(keyword)) {
+            ("properties", Some(Value::Object(properties))) => {
+                for (name, property) in value.as_object().into_iter().flatten() {
+                    properties.insert(name.clone(), property.clone());
+                }
+            }
+            ("required" | "x-always-written", Some(Value::Array(names))) => {
+                for name in value.as_array().into_iter().flatten() {
+                    if !names.contains(name) {
+                        names.push(name.clone());
+                    }
+                }
+            }
+            (_, Some(_)) => {}
+            (_, None) => {
+                merged.insert(keyword.clone(), value.clone());
+            }
+        }
+    }
+    Value::Object(merged)
 }
 
 /// Named values, as found in one schema alone.
@@ -647,8 +979,22 @@ fn unmatched<'a>(
 }
 
 fn required(schema: &Value) -> BTreeSet<String> {
+    names(schema, "required")
+}
+
+/// The fields a writer of `schema` always writes: those its reader requires,
+/// unless it says otherwise.
+fn always_written(schema: &Value) -> BTreeSet<String> {
+    if schema.get("x-always-written").is_some() {
+        names(schema, "x-always-written")
+    } else {
+        required(schema)
+    }
+}
+
+fn names(schema: &Value, keyword: &str) -> BTreeSet<String> {
     schema
-        .get("required")
+        .get(keyword)
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
@@ -688,12 +1034,23 @@ fn collect_alternatives(
         .and_then(Value::as_array)
         && depth < 8
     {
+        // What stands beside the choice, such as the fields of a struct an
+        // enum is flattened into, belongs to each alternative.
+        let mut beside = schema.as_object().cloned().unwrap_or_default();
+        for keyword in ["oneOf", "anyOf", TOLERATES_UNKNOWN_KINDS] {
+            beside.remove(keyword);
+        }
         for choice in choices {
-            let (resolved, _) = resolve(defs, choice);
-            if is_choice(resolved) {
-                collect_alternatives(defs, resolved, into, depth + 1);
+            let choice = if beside.is_empty() {
+                Cow::Borrowed(choice)
             } else {
-                into.push((key_of(resolved), choice.clone()));
+                Cow::Owned(merged(choice, &beside))
+            };
+            let (resolved, _) = resolve(defs, &choice);
+            if is_choice(&resolved) {
+                collect_alternatives(defs, &resolved, into, depth + 1);
+            } else {
+                into.push((key_of(&resolved), choice.into_owned()));
             }
         }
         return;
@@ -734,10 +1091,19 @@ fn without_null(schema: &Value) -> (bool, Value) {
                 .filter(|choice| !is_null(choice))
                 .cloned()
                 .collect();
-            return match &rest[..] {
-                [one] => (true, one.clone()),
-                _ => (true, json!({ keyword: rest })),
+            let mut beside = schema.as_object().cloned().unwrap_or_default();
+            beside.remove(keyword);
+            beside.remove("default");
+            let rest = match &rest[..] {
+                [one] => one.clone(),
+                _ => json!({ keyword: rest }),
             };
+            let schema = if beside.is_empty() {
+                rest
+            } else {
+                merged(&rest, &beside)
+            };
+            return (true, schema);
         }
     }
     (false, schema.clone())
@@ -798,20 +1164,22 @@ fn body_of(alternative: &Value, defs: &Map<String, Value>) -> Value {
     if schema.get("const").is_some() {
         return Value::Null;
     }
-    if let Some((tag, _)) = tag_of(schema) {
-        let mut schema = schema.clone();
+    if let Some((tag, _)) = tag_of(&schema) {
+        let mut schema = schema.into_owned();
         if let Some(properties) = schema.get_mut("properties").and_then(Value::as_object_mut) {
             properties.remove(&tag);
         }
-        if let Some(required) = schema.get_mut("required").and_then(Value::as_array_mut) {
-            required.retain(|required| *required != tag);
+        for keyword in ["required", "x-always-written"] {
+            if let Some(names) = schema.get_mut(keyword).and_then(Value::as_array_mut) {
+                names.retain(|name| *name != tag);
+            }
         }
         return schema;
     }
-    if let Some(tag) = external_tag_of(schema) {
+    if let Some(tag) = external_tag_of(&schema) {
         return schema["properties"][&tag].clone();
     }
-    schema.clone()
+    schema.into_owned()
 }
 
 fn type_of(schema: &Value) -> String {

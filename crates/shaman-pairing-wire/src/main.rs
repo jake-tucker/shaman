@@ -6,9 +6,10 @@
 //! ```
 //!
 //! `write` writes `pairing-wire.json` from the types. `check` fails where
-//! that file is not what `write` would write, and, given the schema a change
-//! started from as `--base`, where the change is one an older side could not
-//! survive and the floor did not rise with it.
+//! that file is not what `write` would write, or where an answer carries an
+//! enum an older reader could not read a new kind of; and, given the schema a
+//! change started from as `--base`, where the change is one an older side
+//! could not survive and the floor did not rise with it.
 
 use std::{fs, path::PathBuf, process::ExitCode};
 
@@ -53,15 +54,16 @@ fn check(base: Option<PathBuf>) -> Result<(), String> {
              with `cargo run -p shaman-pairing-wire -- write` and commit it"
         ));
     }
-    let Some(base) = base else {
-        println!("{SCHEMA_FILE} is current");
-        return Ok(());
+    // Without the schema a change started from, the schema is judged against
+    // itself, which says what it holds that no older reader could read.
+    let base: Value = match base {
+        None => current.clone(),
+        Some(base) => serde_json::from_str(
+            &fs::read_to_string(&base)
+                .map_err(|error| format!("could not read {}: {error}", base.display()))?,
+        )
+        .map_err(|error| format!("{} is not a schema: {error}", base.display()))?,
     };
-    let base: Value = serde_json::from_str(
-        &fs::read_to_string(&base)
-            .map_err(|error| format!("could not read {}: {error}", base.display()))?,
-    )
-    .map_err(|error| format!("{} is not a schema: {error}", base.display()))?;
     let verdict = judge(&base, &current)?;
     print!("{}", verdict.report());
     if verdict.passes() {

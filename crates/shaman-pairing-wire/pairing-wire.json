@@ -3,27 +3,45 @@
   "protocol_floor": 117,
   "headers": {
     "x-shaman-act": {
-      "type": "string",
-      "format": "uuid"
+      "encoding": "text",
+      "value": {
+        "type": "string",
+        "format": "uuid"
+      }
     },
     "x-shaman-author": {
-      "$ref": "#/$defs/Author"
+      "encoding": "base64url-json",
+      "value": {
+        "$ref": "#/$defs/Author"
+      }
     },
     "x-shaman-error-code": {
-      "$ref": "#/$defs/SessionErrorCode"
+      "encoding": "text",
+      "value": {
+        "$ref": "#/$defs/SessionErrorCode"
+      }
     },
     "x-shaman-prompt-admission": {
-      "type": "string"
+      "encoding": "text",
+      "value": {
+        "$ref": "#/$defs/PromptAdmission"
+      }
     },
     "x-shaman-protocol-floor": {
-      "type": "integer",
-      "format": "uint32",
-      "minimum": 0
+      "encoding": "text",
+      "value": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0
+      }
     },
     "x-shaman-protocol-version": {
-      "type": "integer",
-      "format": "uint32",
-      "minimum": 0
+      "encoding": "text",
+      "value": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0
+      }
     }
   },
   "messages": {
@@ -88,7 +106,12 @@
     },
     "GET /v1/attachments/{attachment_id}": {
       "answer": {
-        "bytes": "*/*"
+        "bytes": [
+          "image/gif",
+          "image/jpeg",
+          "image/png",
+          "image/webp"
+        ]
       }
     },
     "GET /v1/models": {
@@ -128,10 +151,7 @@
       },
       "answer": {
         "json": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/SessionListItem"
-          }
+          "$ref": "#/$defs/SessionListing"
         }
       }
     },
@@ -224,7 +244,12 @@
     "HEAD /v1/attachments/{attachment_id}": {},
     "POST /v1/attachments": {
       "body": {
-        "bytes": "image/png"
+        "bytes": [
+          "image/gif",
+          "image/jpeg",
+          "image/png",
+          "image/webp"
+        ]
       },
       "answer": {
         "json": {
@@ -608,6 +633,17 @@
             "turn_id",
             "approval",
             "outcome"
+          ],
+          "x-always-written": [
+            "kind",
+            "id",
+            "turn_id",
+            "approval",
+            "tool_activity_id",
+            "detail_truncated",
+            "outcome",
+            "decision",
+            "follow_up_error"
           ]
         },
         {
@@ -678,6 +714,14 @@
             "turn_id",
             "questionnaire",
             "outcome"
+          ],
+          "x-always-written": [
+            "kind",
+            "id",
+            "turn_id",
+            "questionnaire",
+            "outcome",
+            "answer"
           ]
         },
         {
@@ -810,6 +854,17 @@
             "command",
             "output",
             "output_truncated"
+          ],
+          "x-always-written": [
+            "kind",
+            "id",
+            "turn_id",
+            "status",
+            "command",
+            "cwd",
+            "output",
+            "output_truncated",
+            "exit_status"
           ]
         },
         {
@@ -901,6 +956,19 @@
             "output",
             "output_truncated",
             "omitted_parts"
+          ],
+          "x-always-written": [
+            "kind",
+            "id",
+            "turn_id",
+            "status",
+            "name",
+            "server",
+            "input",
+            "input_truncated",
+            "output",
+            "output_truncated",
+            "omitted_parts"
           ]
         },
         {
@@ -949,6 +1017,16 @@
             "status",
             "content",
             "content_truncated"
+          ],
+          "x-always-written": [
+            "kind",
+            "id",
+            "turn_id",
+            "status",
+            "title",
+            "content",
+            "content_truncated",
+            "duration_ms"
           ]
         },
         {
@@ -1017,6 +1095,18 @@
             "name",
             "description",
             "session_id"
+          ],
+          "x-always-written": [
+            "kind",
+            "id",
+            "turn_id",
+            "status",
+            "name",
+            "description",
+            "model",
+            "session_id",
+            "brokered",
+            "duration_ms"
           ]
         },
         {
@@ -1053,6 +1143,14 @@
             "turn_id",
             "status",
             "description"
+          ],
+          "x-always-written": [
+            "kind",
+            "id",
+            "turn_id",
+            "status",
+            "description",
+            "summary"
           ]
         },
         {
@@ -1120,6 +1218,19 @@
             "turn_id",
             "status",
             "trigger",
+            "summary_truncated"
+          ],
+          "x-always-written": [
+            "kind",
+            "id",
+            "turn_id",
+            "status",
+            "trigger",
+            "instructions",
+            "before_tokens",
+            "after_tokens",
+            "error",
+            "summary",
             "summary_truncated"
           ]
         },
@@ -1274,7 +1385,8 @@
             "to"
           ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ActivityStatus": {
       "oneOf": [
@@ -1289,8 +1401,13 @@
         {
           "type": "string",
           "const": "interrupted"
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "AdmitPromptRequest": {
       "type": "object",
@@ -1378,6 +1495,11 @@
       "required": [
         "id",
         "subject"
+      ],
+      "x-always-written": [
+        "id",
+        "subject",
+        "reason"
       ]
     },
     "ApprovalInsights": {
@@ -1449,8 +1571,13 @@
         {
           "type": "string",
           "const": "submission_rejected"
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ApprovalPosture": {
       "oneOf": [
@@ -1505,17 +1632,39 @@
             "provider",
             "permissions"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "provider"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ApprovalPostureApplication": {
-      "type": "string",
-      "enum": [
-        "applied",
-        "applying",
-        "next_turn",
-        "failed"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "applied",
+            "applying",
+            "next_turn",
+            "failed"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ApprovalSubject": {
       "oneOf": [
@@ -1546,6 +1695,12 @@
             "kind",
             "command",
             "actions"
+          ],
+          "x-always-written": [
+            "kind",
+            "command",
+            "cwd",
+            "actions"
           ]
         },
         {
@@ -1571,6 +1726,11 @@
           "required": [
             "kind",
             "paths"
+          ],
+          "x-always-written": [
+            "kind",
+            "paths",
+            "grant_root"
           ]
         },
         {
@@ -1636,8 +1796,21 @@
             "name",
             "input"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "kind"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "AttachmentBinding": {
       "type": "object",
@@ -1763,8 +1936,21 @@
             "peer",
             "fingerprint"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "kind"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CacheInsights": {
       "type": "object",
@@ -1799,6 +1985,12 @@
       },
       "required": [
         "saving"
+      ],
+      "x-always-written": [
+        "fresh_input_tokens",
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "saving"
       ]
     },
     "CacheWritePrice": {
@@ -1815,7 +2007,8 @@
           "type": "string",
           "const": "unlisted"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CannotOffer": {
       "type": "string",
@@ -1865,21 +2058,47 @@
         "repository",
         "root",
         "kind"
+      ],
+      "x-always-written": [
+        "recovery_revision",
+        "reclaim",
+        "id",
+        "repository",
+        "root",
+        "kind"
       ]
     },
     "CheckoutBranchOutcome": {
-      "type": "string",
-      "enum": [
-        "deleted",
-        "retained"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "deleted",
+            "retained"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CheckoutKind": {
-      "type": "string",
-      "enum": [
-        "main",
-        "linked"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "main",
+            "linked"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CheckoutPreparationPlan": {
       "oneOf": [
@@ -1931,11 +2150,20 @@
       ]
     },
     "CheckoutReclaimPhase": {
-      "type": "string",
-      "enum": [
-        "removing",
-        "removed"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "removing",
+            "removed"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CheckoutRemovalInspection": {
       "type": "object",
@@ -1980,6 +2208,14 @@
         "untracked",
         "ignored",
         "initialized_submodules"
+      ],
+      "x-always-written": [
+        "checkout",
+        "tracked",
+        "untracked",
+        "ignored",
+        "lock",
+        "initialized_submodules"
       ]
     },
     "CheckoutRemovalPreview": {
@@ -2017,6 +2253,14 @@
         "branch_outcome",
         "affected_sessions",
         "working_sessions"
+      ],
+      "x-always-written": [
+        "target",
+        "inspection",
+        "branch_outcome",
+        "affected_sessions",
+        "working_sessions",
+        "pending_moves"
       ]
     },
     "CheckoutRemovalTarget": {
@@ -2056,6 +2300,11 @@
           "required": [
             "kind",
             "name"
+          ],
+          "x-always-written": [
+            "kind",
+            "name",
+            "commit"
           ]
         },
         {
@@ -2073,8 +2322,21 @@
             "kind",
             "commit"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "kind"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CheckoutSummary": {
       "type": "object",
@@ -2098,6 +2360,11 @@
       },
       "required": [
         "association",
+        "availability"
+      ],
+      "x-always-written": [
+        "association",
+        "revision",
         "availability"
       ]
     },
@@ -2125,14 +2392,23 @@
       ]
     },
     "ClaudePermissionMode": {
-      "type": "string",
-      "enum": [
-        "default",
-        "acceptEdits",
-        "dontAsk",
-        "bypassPermissions",
-        "auto"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "dontAsk",
+            "bypassPermissions",
+            "auto"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CloneWorkspaceRequest": {
       "type": "object",
@@ -2179,20 +2455,38 @@
       ]
     },
     "CodexApprovalPolicy": {
-      "type": "string",
-      "enum": [
-        "untrusted",
-        "on-request",
-        "never"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "untrusted",
+            "on-request",
+            "never"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CodexSandboxMode": {
-      "type": "string",
-      "enum": [
-        "read-only",
-        "workspace-write",
-        "danger-full-access"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "read-only",
+            "workspace-write",
+            "danger-full-access"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CommandAction": {
       "oneOf": [
@@ -2240,6 +2534,11 @@
           "required": [
             "kind",
             "command"
+          ],
+          "x-always-written": [
+            "kind",
+            "command",
+            "path"
           ]
         },
         {
@@ -2268,6 +2567,12 @@
           "required": [
             "kind",
             "command"
+          ],
+          "x-always-written": [
+            "kind",
+            "command",
+            "query",
+            "path"
           ]
         },
         {
@@ -2285,8 +2590,21 @@
             "kind",
             "command"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unrecognized"
+            }
+          },
+          "required": [
+            "kind"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CompactSessionRequest": {
       "type": "object",
@@ -2298,7 +2616,10 @@
           ],
           "default": null
         }
-      }
+      },
+      "x-always-written": [
+        "instructions"
+      ]
     },
     "CompactionCounts": {
       "type": "object",
@@ -2358,14 +2679,29 @@
         "automatic",
         "manual",
         "scheduled"
+      ],
+      "x-always-written": [
+        "automatic",
+        "manual",
+        "scheduled",
+        "freed"
       ]
     },
     "CompactionRequest": {
-      "type": "string",
-      "enum": [
-        "manual",
-        "scheduled"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "manual",
+            "scheduled"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CompactionTrigger": {
       "oneOf": [
@@ -2380,8 +2716,13 @@
         {
           "type": "string",
           "const": "scheduled"
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ContextBreakdown": {
       "type": "object",
@@ -2407,6 +2748,11 @@
       "required": [
         "fill",
         "parts"
+      ],
+      "x-always-written": [
+        "fill",
+        "reserved_tokens",
+        "parts"
       ]
     },
     "ContextFill": {
@@ -2428,6 +2774,10 @@
       },
       "required": [
         "occupied_tokens"
+      ],
+      "x-always-written": [
+        "occupied_tokens",
+        "capacity_tokens"
       ]
     },
     "ContextItem": {
@@ -2572,8 +2922,21 @@
             "kind",
             "label"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "kind"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CopilotPermissions": {
       "oneOf": [
@@ -2587,19 +2950,33 @@
         {
           "type": "string",
           "const": "auto"
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "Cost": {
       "type": "number",
       "format": "double"
     },
     "CostBasis": {
-      "type": "string",
-      "enum": [
-        "reported",
-        "estimated"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "reported",
+            "estimated"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CostCoverage": {
       "oneOf": [
@@ -2630,8 +3007,21 @@
             "scope",
             "reporting_lifetime"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "scope"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "CostDetails": {
       "type": "object",
@@ -2657,6 +3047,12 @@
         "coverage",
         "recorded_at",
         "is_partial"
+      ],
+      "x-always-written": [
+        "coverage",
+        "recorded_at",
+        "is_partial",
+        "prior"
       ]
     },
     "CostRecord": {
@@ -2720,6 +3116,10 @@
       },
       "required": [
         "is_partial"
+      ],
+      "x-always-written": [
+        "amount",
+        "is_partial"
       ]
     },
     "CreateSessionRequest": {
@@ -2763,16 +3163,31 @@
       "required": [
         "execution_directory",
         "prompt"
+      ],
+      "x-always-written": [
+        "preparation_id",
+        "agent_selection",
+        "execution_directory",
+        "prompt"
       ]
     },
     "Decision": {
-      "type": "string",
-      "enum": [
-        "accept",
-        "accept_for_session",
-        "decline",
-        "decline_and_interrupt"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "accept",
+            "accept_for_session",
+            "decline",
+            "decline_and_interrupt"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "DelegationInsights": {
       "type": "object",
@@ -2822,6 +3237,10 @@
       },
       "required": [
         "session_id"
+      ],
+      "x-always-written": [
+        "session_id",
+        "name"
       ]
     },
     "Detail": {
@@ -2898,6 +3317,10 @@
           },
           "required": [
             "kind"
+          ],
+          "x-always-written": [
+            "kind",
+            "revision"
           ]
         },
         {
@@ -2920,6 +3343,10 @@
           },
           "required": [
             "kind"
+          ],
+          "x-always-written": [
+            "kind",
+            "revision"
           ]
         },
         {
@@ -2933,8 +3360,21 @@
           "required": [
             "kind"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "kind"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "EnrollmentPhase": {
       "type": "string",
@@ -3013,6 +3453,10 @@
       },
       "required": [
         "is_partial"
+      ],
+      "x-always-written": [
+        "nano_usd",
+        "is_partial"
       ]
     },
     "ExcerptQuestionnaire": {
@@ -3082,8 +3526,21 @@
           "required": [
             "status"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "status"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "FileChange": {
       "oneOf": [
@@ -3139,9 +3596,27 @@
           "required": [
             "kind",
             "path"
+          ],
+          "x-always-written": [
+            "kind",
+            "path",
+            "moved_to"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "kind"
           ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "FreedShare": {
       "type": "object",
@@ -3209,6 +3684,16 @@
         "lifecycle",
         "protocol_version",
         "build_identity",
+        "onboarded"
+      ],
+      "x-always-written": [
+        "workspace_paths",
+        "instance_id",
+        "pid",
+        "lifecycle",
+        "protocol_version",
+        "build_identity",
+        "landing_agent_selection",
         "onboarded"
       ]
     },
@@ -3351,9 +3836,27 @@
           "required": [
             "kind",
             "name"
+          ],
+          "x-always-written": [
+            "kind",
+            "name",
+            "server"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "kind"
           ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "InterruptOutcome": {
       "oneOf": [
@@ -3384,8 +3887,21 @@
             "outcome",
             "prompt"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "outcome": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "outcome"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "InvitePayload": {
       "type": "object",
@@ -3454,16 +3970,29 @@
       },
       "required": [
         "status"
+      ],
+      "x-always-written": [
+        "status",
+        "settled_at"
       ]
     },
     "LifecycleState": {
-      "type": "string",
-      "enum": [
-        "starting",
-        "ready",
-        "stopping",
-        "failed"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "starting",
+            "ready",
+            "stopping",
+            "failed"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ListDirectoryRequest": {
       "type": "object",
@@ -3585,8 +4114,13 @@
             "delegation"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "MessageStatus": {
       "oneOf": [
@@ -3600,8 +4134,13 @@
         {
           "type": "string",
           "const": "superseded"
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ModelAdvisory": {
       "type": "object",
@@ -3622,6 +4161,11 @@
       "required": [
         "severity",
         "text"
+      ],
+      "x-always-written": [
+        "severity",
+        "title",
+        "text"
       ]
     },
     "ModelAdvisorySeverity": {
@@ -3635,8 +4179,13 @@
         {
           "type": "string",
           "const": "warning"
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ModelAttribution": {
       "type": "object",
@@ -3658,11 +4207,20 @@
       ]
     },
     "ModelAvailability": {
-      "type": "string",
-      "enum": [
-        "available",
-        "unavailable"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "available",
+            "unavailable"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ModelCatalog": {
       "type": "object",
@@ -3780,6 +4338,14 @@
       },
       "required": [
         "advisories"
+      ],
+      "x-always-written": [
+        "price_category",
+        "context_window_tokens",
+        "output_limit_tokens",
+        "accepts_images",
+        "prices",
+        "advisories"
       ]
     },
     "ModelOptionChoice": {
@@ -3804,6 +4370,12 @@
       "required": [
         "id",
         "label",
+        "availability"
+      ],
+      "x-always-written": [
+        "id",
+        "label",
+        "description",
         "availability"
       ]
     },
@@ -3832,6 +4404,13 @@
       "required": [
         "id",
         "label",
+        "role",
+        "kind"
+      ],
+      "x-always-written": [
+        "id",
+        "label",
+        "description",
         "role",
         "kind"
       ]
@@ -3876,8 +4455,21 @@
             "type",
             "default"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "type"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ModelOptionRole": {
       "oneOf": [
@@ -3894,8 +4486,13 @@
         {
           "type": "string",
           "const": "routing_tier"
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ModelOptionSelection": {
       "type": "object",
@@ -3945,8 +4542,21 @@
             "type",
             "enabled"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "type"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ModelPrice": {
       "type": "integer",
@@ -3954,13 +4564,22 @@
       "minimum": 0
     },
     "ModelPriceCategory": {
-      "type": "string",
-      "enum": [
-        "low",
-        "medium",
-        "high",
-        "very_high"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "very_high"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ModelPriceTier": {
       "type": "object",
@@ -4029,6 +4648,15 @@
       },
       "required": [
         "label"
+      ],
+      "x-always-written": [
+        "label",
+        "max_prompt_tokens",
+        "input",
+        "output",
+        "cache_read",
+        "cache_write",
+        "cache_write_1h"
       ]
     },
     "ModelPrices": {
@@ -4082,6 +4710,12 @@
       "required": [
         "model",
         "usage"
+      ],
+      "x-always-written": [
+        "model",
+        "usage",
+        "cost",
+        "cost_is_partial"
       ]
     },
     "MoveDestination": {
@@ -4202,8 +4836,21 @@
             "outcome",
             "session"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "outcome": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "outcome"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "MoveSessionRequest": {
       "type": "object",
@@ -4257,8 +4904,13 @@
         {
           "type": "string",
           "const": "not_formed"
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "OfferWord": {
       "oneOf": [
@@ -4373,11 +5025,20 @@
       ]
     },
     "PathStyle": {
-      "type": "string",
-      "enum": [
-        "unix",
-        "windows"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "unix",
+            "windows"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "PendingMove": {
       "type": "object",
@@ -4487,6 +5148,11 @@
       },
       "required": [
         "preparation"
+      ],
+      "x-always-written": [
+        "preparation",
+        "location",
+        "error"
       ]
     },
     "PreparedCheckout": {
@@ -4541,6 +5207,18 @@
         "checkout_created",
         "ready",
         "intended_session"
+      ],
+      "x-always-written": [
+        "id",
+        "persisted_at",
+        "source",
+        "repository",
+        "destination",
+        "plan",
+        "checkout_created",
+        "ready",
+        "intended_session",
+        "admitted_session"
       ]
     },
     "Prompt": {
@@ -4616,6 +5294,23 @@
         "status"
       ]
     },
+    "PromptAdmission": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "new_turn"
+        },
+        {
+          "type": "string",
+          "const": "steer"
+        },
+        {
+          "type": "string",
+          "const": "queued"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
+    },
     "PromptCache": {
       "type": "object",
       "properties": {
@@ -4678,20 +5373,38 @@
       ]
     },
     "PromptDelivery": {
-      "type": "string",
-      "enum": [
-        "steer",
-        "queue"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "steer",
+            "queue"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "PromptStatus": {
-      "type": "string",
-      "enum": [
-        "pending",
-        "delivered",
-        "failed",
-        "cancelled"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "pending",
+            "delivered",
+            "failed",
+            "cancelled"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "PromptTaking": {
       "type": "object",
@@ -4713,6 +5426,10 @@
       },
       "required": [
         "turn_id"
+      ],
+      "x-always-written": [
+        "turn_id",
+        "taken_at"
       ]
     },
     "PromptWithdrawal": {
@@ -4845,8 +5562,21 @@
           "required": [
             "state"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "state"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ProviderModelCatalog": {
       "type": "object",
@@ -4875,12 +5605,21 @@
       ]
     },
     "ProviderUnavailability": {
-      "type": "string",
-      "enum": [
-        "not_installed",
-        "not_signed_in",
-        "incompatible_version"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "not_installed",
+            "not_signed_in",
+            "incompatible_version"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "QuarterHourTurns": {
       "type": "object",
@@ -4908,6 +5647,12 @@
       "required": [
         "start",
         "turns",
+        "cost"
+      ],
+      "x-always-written": [
+        "start",
+        "turns",
+        "tokens",
         "cost"
       ]
     },
@@ -4950,6 +5695,17 @@
       },
       "required": [
         "id",
+        "text",
+        "choices",
+        "multiple",
+        "freeform",
+        "combine_freeform",
+        "secret",
+        "required"
+      ],
+      "x-always-written": [
+        "id",
+        "title",
         "text",
         "choices",
         "multiple",
@@ -5042,8 +5798,21 @@
           "required": [
             "kind"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "kind"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "QuestionChoice": {
       "type": "object",
@@ -5067,6 +5836,12 @@
       "required": [
         "id",
         "label",
+        "recommended"
+      ],
+      "x-always-written": [
+        "id",
+        "label",
+        "description",
         "recommended"
       ]
     },
@@ -5110,8 +5885,13 @@
         {
           "type": "string",
           "const": "submission_rejected"
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "QuestionnaireSubmission": {
       "oneOf": [
@@ -5200,8 +5980,13 @@
             "no_such_entry"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ReadingSpan": {
       "oneOf": [
@@ -5228,8 +6013,13 @@
             "names"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ReclaimOperationId": {
       "type": "string",
@@ -5300,6 +6090,11 @@
       "required": [
         "preview",
         "removed"
+      ],
+      "x-always-written": [
+        "preview",
+        "removed",
+        "error"
       ]
     },
     "Repository": {
@@ -5378,8 +6173,21 @@
           "required": [
             "kind"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "kind"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "Reroute": {
       "type": "object",
@@ -5406,6 +6214,12 @@
       "required": [
         "provider",
         "to"
+      ],
+      "x-always-written": [
+        "provider",
+        "from",
+        "to",
+        "reason"
       ]
     },
     "ResolveWorkspaceRequest": {
@@ -5447,6 +6261,13 @@
         }
       },
       "required": [
+        "path"
+      ],
+      "x-always-written": [
+        "checkout_id",
+        "remembered_execution_directory",
+        "workspace_id",
+        "base",
         "path"
       ]
     },
@@ -5490,6 +6311,13 @@
         "execution_status",
         "workspace",
         "checkouts"
+      ],
+      "x-always-written": [
+        "execution_status",
+        "workspace",
+        "execution_directory",
+        "checkout",
+        "checkouts"
       ]
     },
     "Result_of_SessionExcerpt_or_ReadRefusal": {
@@ -5531,8 +6359,13 @@
         {
           "type": "string",
           "const": "revises"
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "RouteDecision": {
       "oneOf": [
@@ -5579,6 +6412,12 @@
             "type",
             "reviewer",
             "verdict"
+          ],
+          "x-always-written": [
+            "type",
+            "reviewer",
+            "verdict",
+            "detail"
           ]
         },
         {
@@ -5625,6 +6464,12 @@
           },
           "required": [
             "type"
+          ],
+          "x-always-written": [
+            "type",
+            "failed",
+            "stand_in",
+            "reason"
           ]
         },
         {
@@ -5642,8 +6487,21 @@
             "type",
             "provider"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "type"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "RouteStep": {
       "type": "object",
@@ -5672,8 +6530,13 @@
         {
           "type": "string",
           "const": "unread"
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "ServerReference": {
       "oneOf": [
@@ -5714,6 +6577,11 @@
               },
               "required": [
                 "session_id"
+              ],
+              "x-always-written": [
+                "session_id",
+                "origin",
+                "origin_fingerprint"
               ]
             }
           },
@@ -5740,15 +6608,24 @@
                     "null"
                   ]
                 }
-              }
+              },
+              "x-always-written": [
+                "origin",
+                "origin_fingerprint"
+              ]
             }
           },
           "required": [
             "subsession_reach"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "Session": {
       "type": "object",
@@ -5878,6 +6755,20 @@
         "execution_directory",
         "agent_selection_availability",
         "status"
+      ],
+      "x-always-written": [
+        "context_fill",
+        "id",
+        "workspace",
+        "execution_directory",
+        "checkout",
+        "agent_selection",
+        "agent_selection_availability",
+        "approval_posture",
+        "status",
+        "working_since",
+        "monitoring_since",
+        "parent"
       ]
     },
     "SessionApprovalPosture": {
@@ -5942,6 +6833,11 @@
           "required": [
             "type",
             "checkout_id"
+          ],
+          "x-always-written": [
+            "type",
+            "checkout_id",
+            "checkout_state"
           ]
         },
         {
@@ -6003,6 +6899,12 @@
             "type",
             "session_id",
             "title"
+          ],
+          "x-always-written": [
+            "type",
+            "session_id",
+            "title",
+            "icon"
           ]
         },
         {
@@ -6030,6 +6932,11 @@
           "required": [
             "type",
             "session_id"
+          ],
+          "x-always-written": [
+            "type",
+            "session_id",
+            "settled_at"
           ]
         },
         {
@@ -6057,6 +6964,11 @@
           "required": [
             "type",
             "session_id"
+          ],
+          "x-always-written": [
+            "type",
+            "session_id",
+            "working_since"
           ]
         },
         {
@@ -6084,6 +6996,11 @@
           "required": [
             "type",
             "session_id"
+          ],
+          "x-always-written": [
+            "type",
+            "session_id",
+            "monitoring_since"
           ]
         },
         {
@@ -6142,6 +7059,12 @@
           "required": [
             "type",
             "session_id"
+          ],
+          "x-always-written": [
+            "type",
+            "session_id",
+            "total_usage",
+            "own_cost"
           ]
         },
         {
@@ -6164,6 +7087,11 @@
           "required": [
             "type",
             "workspace_id"
+          ],
+          "x-always-written": [
+            "type",
+            "workspace_id",
+            "icon"
           ]
         },
         {
@@ -6190,6 +7118,11 @@
           "required": [
             "type",
             "workspace_id"
+          ],
+          "x-always-written": [
+            "type",
+            "workspace_id",
+            "description"
           ]
         },
         {
@@ -6228,7 +7161,8 @@
             "type"
           ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "SessionCatalogQuery": {
       "type": "object",
@@ -6237,7 +7171,10 @@
           "type": "boolean",
           "default": false
         }
-      }
+      },
+      "x-always-written": [
+        "warm_models"
+      ]
     },
     "SessionCatalogSnapshot": {
       "type": "object",
@@ -6314,6 +7251,11 @@
           "required": [
             "type",
             "workspace"
+          ],
+          "x-always-written": [
+            "type",
+            "workspace",
+            "checkout"
           ]
         },
         {
@@ -6344,6 +7286,12 @@
             "type",
             "execution_directory",
             "workspace"
+          ],
+          "x-always-written": [
+            "type",
+            "execution_directory",
+            "workspace",
+            "checkout"
           ]
         },
         {
@@ -6379,6 +7327,14 @@
             "status",
             "from",
             "to"
+          ],
+          "x-always-written": [
+            "type",
+            "activity_id",
+            "status",
+            "from",
+            "to",
+            "error"
           ]
         },
         {
@@ -6425,6 +7381,11 @@
           "required": [
             "type",
             "title"
+          ],
+          "x-always-written": [
+            "type",
+            "title",
+            "icon"
           ]
         },
         {
@@ -6447,6 +7408,10 @@
           },
           "required": [
             "type"
+          ],
+          "x-always-written": [
+            "type",
+            "context_fill"
           ]
         },
         {
@@ -6469,6 +7434,10 @@
           },
           "required": [
             "type"
+          ],
+          "x-always-written": [
+            "type",
+            "prompt_cache"
           ]
         },
         {
@@ -6523,6 +7492,10 @@
           },
           "required": [
             "type"
+          ],
+          "x-always-written": [
+            "type",
+            "approval_posture"
           ]
         },
         {
@@ -6771,6 +7744,16 @@
             "turn_id",
             "usage",
             "cost_is_partial"
+          ],
+          "x-always-written": [
+            "type",
+            "turn_id",
+            "usage",
+            "cost",
+            "cost_basis",
+            "cost_coverage",
+            "cost_is_partial",
+            "cost_recorded_at"
           ]
         },
         {
@@ -6833,6 +7816,10 @@
           },
           "required": [
             "type"
+          ],
+          "x-always-written": [
+            "type",
+            "subagent_usage"
           ]
         },
         {
@@ -6865,6 +7852,11 @@
           },
           "required": [
             "type"
+          ],
+          "x-always-written": [
+            "type",
+            "total_cost",
+            "own_cost"
           ]
         },
         {
@@ -6887,6 +7879,10 @@
           },
           "required": [
             "type"
+          ],
+          "x-always-written": [
+            "type",
+            "working_since"
           ]
         },
         {
@@ -6909,6 +7905,10 @@
           },
           "required": [
             "type"
+          ],
+          "x-always-written": [
+            "type",
+            "monitoring_since"
           ]
         },
         {
@@ -6947,6 +7947,10 @@
           },
           "required": [
             "type"
+          ],
+          "x-always-written": [
+            "type",
+            "waiting_on_subagents"
           ]
         },
         {
@@ -6974,6 +7978,11 @@
           "required": [
             "type",
             "turn_id"
+          ],
+          "x-always-written": [
+            "type",
+            "turn_id",
+            "model"
           ]
         },
         {
@@ -7038,6 +8047,11 @@
           "required": [
             "type",
             "message_id"
+          ],
+          "x-always-written": [
+            "type",
+            "message_id",
+            "model"
           ]
         },
         {
@@ -7178,6 +8192,12 @@
             "type",
             "activity_id",
             "outcome"
+          ],
+          "x-always-written": [
+            "type",
+            "activity_id",
+            "outcome",
+            "answer"
           ]
         },
         {
@@ -7226,6 +8246,12 @@
             "type",
             "activity_id",
             "outcome"
+          ],
+          "x-always-written": [
+            "type",
+            "activity_id",
+            "outcome",
+            "decision"
           ]
         },
         {
@@ -7329,6 +8355,12 @@
             "type",
             "activity_id",
             "status"
+          ],
+          "x-always-written": [
+            "type",
+            "activity_id",
+            "status",
+            "exit_status"
           ]
         },
         {
@@ -7552,6 +8584,12 @@
             "type",
             "activity_id",
             "status"
+          ],
+          "x-always-written": [
+            "type",
+            "activity_id",
+            "status",
+            "duration_ms"
           ]
         },
         {
@@ -7623,6 +8661,12 @@
             "type",
             "activity_id",
             "status"
+          ],
+          "x-always-written": [
+            "type",
+            "activity_id",
+            "status",
+            "duration_ms"
           ]
         },
         {
@@ -7675,6 +8719,16 @@
             "type",
             "activity_id",
             "status",
+            "summary_truncated"
+          ],
+          "x-always-written": [
+            "type",
+            "activity_id",
+            "status",
+            "before_tokens",
+            "after_tokens",
+            "error",
+            "summary",
             "summary_truncated"
           ]
         },
@@ -7751,6 +8805,12 @@
             "type",
             "turn_id",
             "status"
+          ],
+          "x-always-written": [
+            "type",
+            "turn_id",
+            "status",
+            "settled_at"
           ]
         },
         {
@@ -7781,7 +8841,8 @@
             "type"
           ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "SessionError": {
       "type": "object",
@@ -8061,7 +9122,8 @@
           "type": "string",
           "const": "other"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "SessionExcerpt": {
       "type": "object",
@@ -8122,6 +9184,15 @@
         "approvals",
         "subagent_interventions",
         "transcript"
+      ],
+      "x-always-written": [
+        "questionnaires",
+        "approvals",
+        "subagent_interventions",
+        "transcript",
+        "before",
+        "earlier",
+        "begun_by"
       ]
     },
     "SessionListItem": {
@@ -8158,7 +9229,14 @@
             "summary"
           ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
+    },
+    "SessionListing": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SessionListItem"
+      }
     },
     "SessionReadingAnswer": {
       "type": "object",
@@ -8390,6 +9468,28 @@
         "messages",
         "activities",
         "transcript"
+      ],
+      "x-always-written": [
+        "title",
+        "icon",
+        "session",
+        "revision",
+        "prompts",
+        "turns",
+        "messages",
+        "activities",
+        "transcript",
+        "subagent_usage",
+        "total_cost",
+        "own_cost",
+        "subagent_interventions",
+        "pending_approvals",
+        "submitting_approvals",
+        "pending_approvals_revision",
+        "watches",
+        "attachments",
+        "waiting_on_subagents",
+        "current_model"
       ]
     },
     "SessionStandingInputs": {
@@ -8468,14 +9568,34 @@
           ],
           "default": null
         }
-      }
+      },
+      "x-always-written": [
+        "subagent_interventions",
+        "pending_questionnaires",
+        "submitting_questionnaires",
+        "pending_questionnaires_revision",
+        "pending_approvals",
+        "submitting_approvals",
+        "pending_approvals_revision",
+        "latest_turn",
+        "viewed_at"
+      ]
     },
     "SessionStatus": {
-      "type": "string",
-      "enum": [
-        "idle",
-        "active"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "idle",
+            "active"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "SessionSummary": {
       "type": "object",
@@ -8688,6 +9808,29 @@
         "title",
         "created_at",
         "updated_at"
+      ],
+      "x-always-written": [
+        "checkout_state",
+        "context_fill",
+        "id",
+        "workspace",
+        "execution_directory",
+        "checkout",
+        "agent_selection",
+        "agent_selection_availability",
+        "approval_posture",
+        "status",
+        "working_since",
+        "monitoring_since",
+        "parent",
+        "title",
+        "icon",
+        "settled_at",
+        "standing_inputs",
+        "total_usage",
+        "own_cost",
+        "created_at",
+        "updated_at"
       ]
     },
     "SessionTimestamp": {
@@ -8802,6 +9945,11 @@
       "required": [
         "workspace_id",
         "description"
+      ],
+      "x-always-written": [
+        "workspace_id",
+        "path",
+        "description"
       ]
     },
     "SetWorkspaceIconRequest": {
@@ -8880,6 +10028,10 @@
       },
       "required": [
         "supported_deliveries"
+      ],
+      "x-always-written": [
+        "max_distinct_invocations",
+        "supported_deliveries"
       ]
     },
     "SkillCatalogRequest": {
@@ -8927,6 +10079,10 @@
           },
           "required": [
             "state"
+          ],
+          "x-always-written": [
+            "state",
+            "warning"
           ]
         },
         {
@@ -8972,8 +10128,21 @@
             "state",
             "message"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "state"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "SkillDescriptor": {
       "type": "object",
@@ -8998,6 +10167,12 @@
         "id",
         "name",
         "description"
+      ],
+      "x-always-written": [
+        "id",
+        "name",
+        "description",
+        "scope"
       ]
     },
     "SkillInvocation": {
@@ -9023,15 +10198,30 @@
         "skill_id",
         "name",
         "span"
+      ],
+      "x-always-written": [
+        "skill_id",
+        "name",
+        "scope",
+        "span"
       ]
     },
     "SkillPromptDelivery": {
-      "type": "string",
-      "enum": [
-        "initial",
-        "queue",
-        "steer"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "initial",
+            "queue",
+            "steer"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "SnapshotWithSummary": {
       "type": "object",
@@ -9089,8 +10279,21 @@
             "status",
             "reason"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "status"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "SourceControlCapabilities": {
       "type": "object",
@@ -9144,8 +10347,21 @@
             "status",
             "reason"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "status"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "SubagentInterventions": {
       "type": "object",
@@ -9268,6 +10484,14 @@
             "type",
             "session_id",
             "status"
+          ],
+          "x-always-written": [
+            "type",
+            "session_id",
+            "status",
+            "worked_ms",
+            "working_since",
+            "monitoring_since"
           ]
         },
         {
@@ -9394,6 +10618,14 @@
           },
           "required": [
             "type"
+          ],
+          "x-always-written": [
+            "type",
+            "working_since",
+            "monitoring_since",
+            "status",
+            "worked_ms",
+            "own_working_since"
           ]
         },
         {
@@ -9417,6 +10649,11 @@
           "required": [
             "type",
             "workspace_path"
+          ],
+          "x-always-written": [
+            "type",
+            "workspace_path",
+            "workspace_icon"
           ]
         },
         {
@@ -9443,6 +10680,11 @@
           },
           "required": [
             "type"
+          ],
+          "x-always-written": [
+            "type",
+            "provider",
+            "model"
           ]
         },
         {
@@ -9529,7 +10771,8 @@
             "type"
           ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "SubagentTreeEntry": {
       "type": "object",
@@ -9613,6 +10856,19 @@
         "name",
         "title",
         "status"
+      ],
+      "x-always-written": [
+        "session_id",
+        "parent_session_id",
+        "spawn_order",
+        "name",
+        "title",
+        "model",
+        "status",
+        "worked_ms",
+        "working_since",
+        "monitoring_since",
+        "needs_intervention"
       ]
     },
     "SubagentTreeRevision": {
@@ -9724,6 +10980,20 @@
         "session_id",
         "title",
         "workspace_path",
+        "acted_at"
+      ],
+      "x-always-written": [
+        "session_id",
+        "title",
+        "workspace_path",
+        "workspace_icon",
+        "provider",
+        "model",
+        "status",
+        "worked_ms",
+        "working_since",
+        "monitoring_since",
+        "needs_intervention",
         "acted_at"
       ]
     },
@@ -9854,6 +11124,20 @@
         "session_id",
         "title",
         "workspace_path"
+      ],
+      "x-always-written": [
+        "session_id",
+        "title",
+        "working_since",
+        "monitoring_since",
+        "status",
+        "worked_ms",
+        "own_working_since",
+        "needs_intervention",
+        "workspace_path",
+        "workspace_icon",
+        "provider",
+        "model"
       ]
     },
     "SubagentTreeUpdate": {
@@ -9964,8 +11248,21 @@
             "type",
             "activity_id"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "type"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "Turn": {
       "type": "object",
@@ -10088,6 +11385,20 @@
       "required": [
         "id",
         "status"
+      ],
+      "x-always-written": [
+        "id",
+        "prompt_id",
+        "compaction_requested",
+        "agent",
+        "status",
+        "started_at",
+        "settled_at",
+        "last_output_at",
+        "usage",
+        "cost",
+        "cost_basis",
+        "cost_details"
       ]
     },
     "TurnDurations": {
@@ -10159,16 +11470,31 @@
         "completed",
         "failed",
         "interrupted"
-      ]
-    },
-    "TurnStatus": {
-      "type": "string",
-      "enum": [
-        "active",
+      ],
+      "x-always-written": [
+        "durations",
         "completed",
         "failed",
         "interrupted"
       ]
+    },
+    "TurnStatus": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "active",
+            "completed",
+            "failed",
+            "interrupted"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "UnreachableReason": {
       "oneOf": [
@@ -10229,8 +11555,21 @@
             "reason",
             "relay"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "reason"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "UnreadableSessionSummary": {
       "type": "object",
@@ -10264,6 +11603,13 @@
         "title",
         "created_at",
         "updated_at"
+      ],
+      "x-always-written": [
+        "id",
+        "title",
+        "created_at",
+        "updated_at",
+        "workspace"
       ]
     },
     "UpdateAgentSelectionRequest": {
@@ -10295,7 +11641,10 @@
             }
           ]
         }
-      }
+      },
+      "x-always-written": [
+        "posture"
+      ]
     },
     "Usage": {
       "type": "object",
@@ -10350,7 +11699,15 @@
             }
           ]
         }
-      }
+      },
+      "x-always-written": [
+        "fresh_input_tokens",
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+        "native_meter"
+      ]
     },
     "UsageMetricsAggregate": {
       "type": "object",
@@ -10436,6 +11793,20 @@
       },
       "required": [
         "cost",
+        "sessions",
+        "subagent_sessions",
+        "turns",
+        "failed_turns",
+        "interrupted_turns"
+      ],
+      "x-always-written": [
+        "fresh_input_tokens",
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+        "cost",
+        "estimated_cost",
         "sessions",
         "subagent_sessions",
         "turns",
@@ -10569,8 +11940,21 @@
           "required": [
             "kind"
           ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unrecognized"
+            }
+          },
+          "required": [
+            "kind"
+          ]
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "UsageMetricsKeyLabel": {
       "type": "object",
@@ -10635,6 +12019,13 @@
         "buckets",
         "breakdown",
         "top_sessions"
+      ],
+      "x-always-written": [
+        "buckets",
+        "breakdown",
+        "model_view",
+        "comparison",
+        "top_sessions"
       ]
     },
     "UsageMetricsReport": {
@@ -10695,6 +12086,16 @@
         "across_buckets_and_untimed",
         "keys",
         "top_sessions"
+      ],
+      "x-always-written": [
+        "buckets",
+        "across_buckets",
+        "untimed",
+        "across_buckets_and_untimed",
+        "comparison",
+        "earliest_at",
+        "keys",
+        "top_sessions"
       ]
     },
     "UsageMetricsSession": {
@@ -10724,6 +12125,13 @@
         "session_id",
         "title",
         "workspace",
+        "cost"
+      ],
+      "x-always-written": [
+        "session_id",
+        "title",
+        "workspace",
+        "model",
         "cost"
       ]
     },
@@ -10784,7 +12192,16 @@
           "type": "boolean",
           "default": false
         }
-      }
+      },
+      "x-always-written": [
+        "fresh_input_tokens",
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+        "cost",
+        "cost_is_partial"
+      ]
     },
     "ViewSessionRequest": {
       "type": "object",
@@ -10799,12 +12216,21 @@
       ]
     },
     "WatchOutcomeStatus": {
-      "type": "string",
-      "enum": [
-        "completed",
-        "failed",
-        "stopped"
-      ]
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "completed",
+            "failed",
+            "stopped"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "unknown"
+        }
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "WatchSummary": {
       "type": "object",
@@ -10846,8 +12272,13 @@
             "relay"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     },
     "WorkingModel": {
       "type": "object",
@@ -10918,6 +12349,14 @@
         "id",
         "path",
         "source_control"
+      ],
+      "x-always-written": [
+        "id",
+        "path",
+        "repository",
+        "source_control",
+        "icon",
+        "description"
       ]
     },
     "WorkspaceDescription": {
@@ -10996,6 +12435,10 @@
       },
       "required": [
         "style"
+      ],
+      "x-always-written": [
+        "home",
+        "style"
       ]
     },
     "WorkspaceUnavailability": {
@@ -11015,8 +12458,13 @@
         {
           "type": "string",
           "const": "unanswered"
+        },
+        {
+          "type": "string",
+          "const": "unknown"
         }
-      ]
+      ],
+      "x-unknown-kinds": "tolerated"
     }
   }
 }

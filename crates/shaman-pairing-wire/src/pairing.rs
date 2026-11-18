@@ -14,19 +14,19 @@ use shaman_pairing::{
     PAIRING_WITHDRAWAL_PATH, PairingHealth,
 };
 use shaman_protocol::{
-    ACT_HEADER, AUTHOR_HEADER, ActId, AdmitPromptRequest, AgentSelection, AttachmentDescriptor,
-    Author, CheckoutRemovalPreview, CheckoutRemovalTarget, CloneWorkspaceRequest, ClonedWorkspace,
-    CompactSessionRequest, ContextBreakdown, CreateSessionRequest, Decision, DirectoryListing,
-    Health, InsightsQuery, InsightsReport, InterruptOutcome, ListDirectoryRequest,
-    ListSessionsQuery, MODEL_CATALOG_EVENT, ModelCatalog, MoveOutcome, MoveSessionRequest,
-    PROMPT_ADMISSION_HEADER, PROTOCOL_FLOOR, PROTOCOL_VERSION, PrepareCheckoutRequest,
-    PrepareCheckoutResult, Prompt, QuestionnaireSubmission, RemoveCheckoutRequest,
-    RemoveCheckoutResult, ResolveWorkspaceRequest, ResolvedWorkspace,
-    SESSION_CATALOG_SNAPSHOT_EVENT, SESSION_CATALOG_UPDATED_EVENT, SESSION_ERROR_CODE_HEADER,
-    SESSION_READING_PATH, SESSION_SNAPSHOT_EVENT, SESSION_UPDATED_EVENT,
+    ACT_HEADER, ATTACHMENT_CONTENT_TYPES, AUTHOR_HEADER, ActId, AdmitPromptRequest, AgentSelection,
+    AttachmentDescriptor, Author, CheckoutRemovalPreview, CheckoutRemovalTarget,
+    CloneWorkspaceRequest, ClonedWorkspace, CompactSessionRequest, ContextBreakdown,
+    CreateSessionRequest, Decision, DirectoryListing, Health, InsightsQuery, InsightsReport,
+    InterruptOutcome, ListDirectoryRequest, ListSessionsQuery, MODEL_CATALOG_EVENT, ModelCatalog,
+    MoveOutcome, MoveSessionRequest, PROMPT_ADMISSION_HEADER, PROTOCOL_FLOOR, PROTOCOL_VERSION,
+    PrepareCheckoutRequest, PrepareCheckoutResult, Prompt, PromptAdmission,
+    QuestionnaireSubmission, RemoveCheckoutRequest, RemoveCheckoutResult, ResolveWorkspaceRequest,
+    ResolvedWorkspace, SESSION_CATALOG_SNAPSHOT_EVENT, SESSION_CATALOG_UPDATED_EVENT,
+    SESSION_ERROR_CODE_HEADER, SESSION_READING_PATH, SESSION_SNAPSHOT_EVENT, SESSION_UPDATED_EVENT,
     SKILL_CATALOG_UPDATED_EVENT, SUBAGENT_TREE_SNAPSHOT_EVENT, SUBAGENT_TREE_UPDATED_EVENT,
     SessionApprovalPosture, SessionCatalogQuery, SessionCatalogSnapshot, SessionCatalogUpdate,
-    SessionError, SessionErrorCode, SessionListItem, SessionReadingAnswer, SessionReadingQuery,
+    SessionError, SessionErrorCode, SessionListing, SessionReadingAnswer, SessionReadingQuery,
     SessionSnapshot, SessionSummary, SessionTitleProposal, SessionTitleProposalOffer,
     SessionTreeOutline, SessionUpdate, SetSessionIconRequest, SetSessionTitleRequest,
     SetWorkspaceDescriptionRequest, SetWorkspaceIconRequest, SettleSessionRequest, SkillCatalog,
@@ -35,7 +35,7 @@ use shaman_protocol::{
     UsageMetricsReport, ViewSessionRequest, WORKSPACE_LISTING_EVENT, WorkspaceListing,
 };
 
-use crate::WireSchema;
+use crate::{HeaderEncoding, WireSchema};
 
 /// Where the schema of the Pairing wire is written down, beside this crate.
 pub const SCHEMA_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/pairing-wire.json");
@@ -54,12 +54,12 @@ pub fn pairing_wire() -> Value {
 }
 
 fn headers(wire: &mut WireSchema) {
-    wire.header::<u32>(PAIRING_PROTOCOL_HEADER)
-        .header::<u32>(PAIRING_FLOOR_HEADER)
-        .header::<SessionErrorCode>(SESSION_ERROR_CODE_HEADER)
-        .header::<Author>(AUTHOR_HEADER)
-        .header::<ActId>(ACT_HEADER)
-        .header::<String>(PROMPT_ADMISSION_HEADER);
+    wire.header::<u32>(PAIRING_PROTOCOL_HEADER, HeaderEncoding::Text)
+        .header::<u32>(PAIRING_FLOOR_HEADER, HeaderEncoding::Text)
+        .header::<SessionErrorCode>(SESSION_ERROR_CODE_HEADER, HeaderEncoding::Text)
+        .header::<Author>(AUTHOR_HEADER, HeaderEncoding::Base64UrlJson)
+        .header::<ActId>(ACT_HEADER, HeaderEncoding::Text)
+        .header::<PromptAdmission>(PROMPT_ADMISSION_HEADER, HeaderEncoding::Text);
 }
 
 /// The Serving listener's own routes: the ceremony that forms a Pairing, and
@@ -128,10 +128,10 @@ fn workspaces(wire: &mut WireSchema) {
         .body::<RemoveCheckoutRequest>()
         .answer::<RemoveCheckoutResult>();
     wire.api("POST /v1/attachments")
-        .bytes_body("image/png")
+        .bytes_body(&ATTACHMENT_CONTENT_TYPES)
         .answer::<AttachmentDescriptor>();
     wire.api("GET /v1/attachments/{attachment_id}")
-        .bytes_answer();
+        .bytes_answer(&ATTACHMENT_CONTENT_TYPES);
     wire.api("HEAD /v1/attachments/{attachment_id}");
     wire.api("POST /v1/usage-metrics")
         .body::<UsageMetricsQuery>()
@@ -148,7 +148,7 @@ fn workspaces(wire: &mut WireSchema) {
 fn sessions(wire: &mut WireSchema) {
     wire.api("GET /v1/sessions")
         .query::<ListSessionsQuery>()
-        .answer::<Vec<SessionListItem>>();
+        .answer::<SessionListing>();
     wire.api("POST /v1/sessions")
         .body::<CreateSessionRequest>()
         .answer::<SessionSnapshot>();
