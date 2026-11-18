@@ -479,10 +479,10 @@ private final class RefusingSigner: KeySigner {
     let working = SessionRoute(session: "workstation-key/1")
     let settled = SessionRoute(session: "workstation-key/7")
     let stack = SessionStack(core: core)
-    stack.path = [working]
+    stack.path = [.session(working)]
     let model = stack.model(for: working)
     #expect(stack.model(for: working) === model, "opened once for its screen")
-    stack.path.append(settled)
+    stack.path.append(.session(settled))
     _ = stack.model(for: settled)
     let sessions = core.opened.withLock { $0 }
     #expect(sessions.count == 2)
@@ -493,6 +493,22 @@ private final class RefusingSigner: KeySigner {
     #expect(sessions[1].isClosed, "popped, so closed")
     stack.path = []
     #expect(sessions[0].isClosed, "popped to the listing, so closed")
+  }
+
+  @Test func aSessionStaysOpenWhileItsTurnsWorkOrAnActivityIsPushedOverIt() {
+    let core = FakeCore(.paired)
+    let settled = SessionRoute(session: "workstation-key/7")
+    let stack = SessionStack(core: core)
+    stack.path = [.session(settled)]
+    let model = stack.model(for: settled)
+    stack.path.append(.work(settled, turn: "work"))
+    stack.path.append(.detail(settled, activity: "check"))
+    #expect(stack.model(for: settled) === model, "the work and the detail read through the Session's own")
+    let session = core.opened.withLock { $0[0] }
+    stack.path.removeLast(2)
+    #expect(!session.isClosed, "its own screen is still pushed")
+    stack.path = []
+    #expect(session.isClosed)
   }
 
   @Test func theSameSessionPushedTwiceIsTwoScreens() {

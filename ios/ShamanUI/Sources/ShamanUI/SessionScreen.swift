@@ -16,7 +16,7 @@ struct SessionScreen: View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 12) {
         ForEach(model.conversation.shown, id: \.id) { item in
-          ItemView(item: item)
+          ItemView(item: item, route: model.route)
         }
         ForEach(model.frame?.queued ?? [], id: \.prompt) { queued in
           QueuedBubble(queued: queued, model: model)
@@ -95,9 +95,11 @@ private struct SessionHeader: View {
   }
 }
 
-/// One item of the conversation, drawn as what it is.
+/// One item of the conversation, drawn as what it is: a Turn's card and a Compaction with more behind it push what
+/// they hold over the Session `route` pushed.
 private struct ItemView: View {
   let item: ConversationItem
+  let route: SessionRoute
 
   var body: some View {
     switch item.kind {
@@ -116,7 +118,12 @@ private struct ItemView: View {
     case .agentMessage(let markdown, let model, _):
       AgentMessage(markdown: markdown, model: model)
     case .turn(let card):
-      TurnCardView(card: card)
+      // The card pushes the Turn's work.
+      NavigationLink(value: Pushed.work(route, turn: card.work)) {
+        TurnCardView(card: card)
+      }
+      .buttonStyle(.plain)
+      .accessibilityIdentifier("session.turn")
     case .error(let text):
       Label {
         Text(verbatim: text)
@@ -130,16 +137,32 @@ private struct ItemView: View {
       .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
       .accessibilityElement(children: .combine)
       .accessibilityIdentifier("session.error")
-    case .compaction(let words, let tone):
-      Label {
+    case .compaction(let words, let tone, let detail):
+      let compaction = Label {
         Text(verbatim: words)
       } icon: {
         CompactionSymbol(tone: tone)
       }
       .font(.footnote)
       .foregroundStyle(.secondary)
-      .accessibilityElement(children: .combine)
-      .accessibilityIdentifier("session.compaction")
+      if let detail {
+        // What it was asked to keep, and what it left, stand behind it.
+        NavigationLink(value: Pushed.detail(route, activity: detail)) {
+          HStack {
+            compaction
+            Image(systemName: "chevron.right")
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+              .accessibilityHidden(true)
+          }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("session.compaction")
+      } else {
+        compaction
+          .accessibilityElement(children: .combine)
+          .accessibilityIdentifier("session.compaction")
+      }
     }
   }
 }
@@ -484,13 +507,17 @@ private struct TurnCardView: View {
         }
       }
       Spacer(minLength: 0)
+      Image(systemName: "chevron.right")
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+        .accessibilityHidden(true)
     }
+    .contentShape(RoundedRectangle(cornerRadius: 12))
     .padding(.horizontal, 12)
     .padding(.vertical, 10)
     .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
     .padding(.trailing, 24)
     .accessibilityElement(children: .combine)
-    .accessibilityIdentifier("session.turn")
   }
 }
 
@@ -501,7 +528,8 @@ private struct CompactionSymbol: View {
   var body: some View {
     switch tone {
     case .running: ProgressView().controlSize(.mini)
-    case .succeeded: Image(systemName: "rectangle.compress.vertical")
+    case .succeeded, .quiet: Image(systemName: "rectangle.compress.vertical")
+    case .waiting: Image(systemName: "hand.raised").foregroundStyle(.orange)
     case .failed: Image(systemName: "exclamationmark.triangle").foregroundStyle(.red)
     case .stopped: Image(systemName: "stop.circle").foregroundStyle(.yellow)
     case .unknown: Image(systemName: "questionmark.circle")
@@ -541,8 +569,10 @@ struct Conversation: Equatable {
 /// the input where the core refused the input, and where the Session is gone the screen pops.
 @MainActor @Observable
 final class SessionModel {
+  /// The screen it was pushed as, which what it pushes is pushed over.
+  let route: SessionRoute
   /// The reference the row it was opened from handed over.
-  let session: String
+  var session: String { route.session }
   private let core: any Core
   private let opened: any OpenedSession
   private(set) var frame: SessionFrame?
@@ -572,8 +602,13 @@ final class SessionModel {
   @ObservationIgnored private let failureStands: Duration
   @ObservationIgnored private var clearing: Task<Void, Never>?
 
-  init(core: any Core, session: String, failureStands: Duration = .seconds(6)) {
-    self.session = session
+  convenience init(core: any Core, session: String, failureStands: Duration = .seconds(6)) {
+    self.init(core: core, route: SessionRoute(session: session), failureStands: failureStands)
+  }
+
+  init(core: any Core, route: SessionRoute, failureStands: Duration = .seconds(6)) {
+    self.route = route
+    let session = route.session
     self.core = core
     self.failureStands = failureStands
     opened = core.openSession(session)
@@ -695,24 +730,35 @@ final class SessionModel {
     }
   }
 
+  /// The work of the Turn a card handed back, while the screen reading it is up.
+  func work(_ turn: String) -> AsyncStream<TurnWork> {
+    opened.work(turn)
+  }
+
+  /// The whole of the Activity a row handed back, while the screen reading it is up.
+  func detail(_ activity: String) -> AsyncStream<ActivityDetail> {
+    opened.detail(activity)
+  }
+
   /// Ends the Session in the core, as its screen is popped.
   func close() {
     opened.close()
   }
 }
 
-/// The Sessions pushed over the listing, as its navigation stack holds them: each opened in the core as its screen is
-/// first drawn, and closed there as its screen leaves the path, however it leaves.
+/// The Sessions pushed over the listing, and what is pushed over each, as its navigation stack holds them: each
+/// Session opened in the core as its screen is first drawn, and closed there once no screen of it is on the path,
+/// however it leaves.
 @MainActor @Observable
 final class SessionStack {
   /// The screens pushed, the one on top last.
-  var path: [SessionRoute] {
+  var path: [Pushed] {
     didSet { closeUnpushed() }
   }
   @ObservationIgnored private let core: any Core
   @ObservationIgnored private var models: [SessionRoute: SessionModel] = [:]
 
-  init(core: any Core, path: [SessionRoute] = []) {
+  init(core: any Core, path: [Pushed] = []) {
     self.core = core
     self.path = path
   }
@@ -722,14 +768,14 @@ final class SessionStack {
     if let model = models[route] {
       return model
     }
-    let model = SessionModel(core: core, session: route.session)
+    let model = SessionModel(core: core, route: route)
     models[route] = model
     return model
   }
 
-  /// Closes every Session whose screen is no longer on the path.
+  /// Closes every Session no screen of which is on the path.
   private func closeUnpushed() {
-    let pushed = Set(path)
+    let pushed = Set(path.map(\.route))
     for (route, model) in models where !pushed.contains(route) {
       model.close()
       models[route] = nil
@@ -741,6 +787,21 @@ final class SessionStack {
 struct SessionRoute: Hashable {
   let session: String
   let push = UUID()
+}
+
+/// A screen pushed over the listing: a Session's, or a Turn's work or an Activity's whole pushed from one, which
+/// read through the Session `route` names for as long as they are up.
+enum Pushed: Hashable {
+  case session(SessionRoute)
+  case work(SessionRoute, turn: String)
+  case detail(SessionRoute, activity: String)
+
+  /// The Session's screen it is, or was pushed from.
+  var route: SessionRoute {
+    switch self {
+    case .session(let route), .work(let route, _), .detail(let route, _): route
+    }
+  }
 }
 
 #if DEBUG

@@ -126,6 +126,14 @@ final class LiveOpenedSession: OpenedSession {
     listened(everyChange: true) { send in session.watchConversation(listener: Forwarder(send)) }
   }
 
+  func work(_ turn: String) -> AsyncStream<TurnWork> {
+    listened { send in session.watchWork(turn: turn, listener: Forwarder(send)) }
+  }
+
+  func detail(_ activity: String) -> AsyncStream<ActivityDetail> {
+    listened { send in session.watchDetail(activity: activity, listener: Forwarder(send)) }
+  }
+
   func close() {
     session.close()
   }

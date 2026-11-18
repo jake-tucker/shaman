@@ -74,6 +74,9 @@ Monitoring, its bar naming its Watch; in `reaching`, `homelab-key/2` is never re
 In `unreachable` the home lab, every way to which is on the local network, stands as a slim row at the foot of the
 listing and answers once tried again; in `offline` the phone has no network, so its one Remote reads Unreachable however
 often it is tried.
+A card pushes its Turn's work from `FakeWork`, and a row its Activity's whole: in `/7` the work holds a settled
+Approval, File Changes and the placeholder for a kind a newer Server sent, and in `/1` the running command's output
+grows a line at a time while its screen is up.
 Every act a fake Session is asked is answered as the core would answer it, after a moment: a Prompt holding "fail" is
 refused, one holding "gone" finds the Session gone, which pops its screen, and one holding "unanswered" is never
 answered, so its text stays in the composer with the line saying it may have been sent.

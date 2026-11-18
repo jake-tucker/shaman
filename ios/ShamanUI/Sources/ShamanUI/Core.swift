@@ -93,6 +93,14 @@ public protocol OpenedSession: AnyObject, Sendable {
   /// The conversation, whole at first and then each change to it, every one in the order the core made them.
   func conversation() -> AsyncStream<ConversationChange>
 
+  /// The work of the Turn a card hands back, now and whole on every change, for as long as the stream is read: while
+  /// its screen is up.
+  func work(_ turn: String) -> AsyncStream<TurnWork>
+
+  /// The whole of the Activity a row hands back, now and on every change, for as long as the stream is read: while
+  /// its screen is up. A running command's output grows in it.
+  func detail(_ activity: String) -> AsyncStream<ActivityDetail>
+
   /// Ends the Session's reading in the core; it cancels nothing on the Server.
   func close()
 

@@ -38,7 +38,8 @@
           card("work", .worked, "Worked for 3m 12s", "3 tools · 3 commands · 2 edits"),
           ConversationItem(
             id: "compaction",
-            kind: .compaction(words: "Compacted context · 180K → 40K (automatic)", tone: .succeeded)),
+            kind: .compaction(
+              words: "Compacted context · 180K → 40K (automatic)", tone: .succeeded, detail: "compaction")),
           agent("answer", answer, model: "auto · gpt-5.5"),
         ]
       case .stopped:
@@ -111,7 +112,8 @@
     static func card(_ id: String, _ outcome: TurnOutcome, _ line: String, _ count: String?)
       -> ConversationItem
     {
-      ConversationItem(id: id, kind: .turn(card: TurnCard(outcome: outcome, line: line, count: count)))
+      // The card hands back its id as its Turn, whose work `FakeWork` reads.
+      ConversationItem(id: id, kind: .turn(card: TurnCard(work: id, outcome: outcome, line: line, count: count)))
     }
   }
 #endif

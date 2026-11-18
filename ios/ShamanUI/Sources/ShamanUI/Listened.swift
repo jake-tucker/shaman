@@ -61,6 +61,18 @@ extension Forwarder: ConversationListener where Model == ConversationChange {
   }
 }
 
+extension Forwarder: WorkListener where Model == TurnWork {
+  func changed(work: TurnWork) {
+    send(work)
+  }
+}
+
+extension Forwarder: DetailListener where Model == ActivityDetail {
+  func changed(detail: ActivityDetail) {
+    send(detail)
+  }
+}
+
 extension Forwarder: ActsListener where Model == Bool {
   func changed(underWay: Bool) {
     send(underWay)

@@ -166,6 +166,14 @@
       }
     }
 
+    func work(_ turn: String) -> AsyncStream<TurnWork> {
+      FakeWork.work(of: turn, in: scenario)
+    }
+
+    func detail(_ activity: String) -> AsyncStream<ActivityDetail> {
+      FakeWork.detail(of: activity, in: scenario)
+    }
+
     func close() {
       closed.store(true, ordering: .relaxed)
       landing.withLock { $0?.cancel() }

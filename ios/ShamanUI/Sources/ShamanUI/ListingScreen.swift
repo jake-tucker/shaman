@@ -21,7 +21,8 @@ struct ListingScreen: View {
     self.beginsIn = beginsIn
     _model = State(initialValue: ListingModel(core: core))
     _sheet = State(initialValue: invite.map(ListingSheet.pairing))
-    _stack = State(initialValue: SessionStack(core: core, path: opening.map { [SessionRoute(session: $0)] } ?? []))
+    _stack = State(
+      initialValue: SessionStack(core: core, path: opening.map { [.session(SessionRoute(session: $0))] } ?? []))
   }
 
   var body: some View {
@@ -67,8 +68,15 @@ struct ListingScreen: View {
         }
         bottomBar
       }
-      .navigationDestination(for: SessionRoute.self) { route in
-        SessionScreen(model: stack.model(for: route))
+      .navigationDestination(for: Pushed.self) { pushed in
+        switch pushed {
+        case .session(let route):
+          SessionScreen(model: stack.model(for: route))
+        case .work(let route, let turn):
+          TurnWorkScreen(session: stack.model(for: route), turn: turn)
+        case .detail(let route, let activity):
+          ActivityDetailScreen(session: stack.model(for: route), activity: activity)
+        }
       }
     }
     .task { await model.follow() }
@@ -181,7 +189,7 @@ struct ListingScreen: View {
   }
 
   private func active(_ row: ActiveRow) -> some View {
-    NavigationLink(value: SessionRoute(session: row.session)) {
+    NavigationLink(value: Pushed.session(SessionRoute(session: row.session))) {
       ActiveRowView(row: row)
     }
     .accessibilityIdentifier("listing.active")
@@ -194,7 +202,7 @@ struct ListingScreen: View {
   }
 
   private func settled(_ row: SettledRow) -> some View {
-    NavigationLink(value: SessionRoute(session: row.session)) {
+    NavigationLink(value: Pushed.session(SessionRoute(session: row.session))) {
       SettledRowView(row: row)
     }
     .accessibilityIdentifier("listing.settled")
