@@ -14,6 +14,9 @@ let package = Package(
     .target(
       name: "ShamanUI",
       dependencies: [.product(name: "ShamanCore", package: "ShamanCore")],
+      // The Symbols Nerd Font every Icon is drawn from (Nerd Fonts 3.5.1, whole), with the licence it ships under.
+      // `crates/shaman-icons` reads the same file to see it draws every glyph the core resolves.
+      resources: [.copy("Resources/Fonts")],
       swiftSettings: [.treatAllWarnings(as: .error)]
     ),
     .testTarget(
