@@ -206,10 +206,9 @@ impl ThinClient {
             timings.redeemer,
         )
         .map_err(OpenError::from)?;
-        // A pairing the app was ended in the middle of keeps nothing.
-        redeemer
-            .drop_uncommitted()
-            .map_err(|failure| OpenError::from(anyhow::anyhow!(failure.message)))?;
+        // A pairing the app was ended in the middle of keeps nothing, kept
+        // so or not.
+        redeemer.drop_uncommitted();
         let remotes = Remotes::new(redeemer.clone(), &record.turned);
         let (device, _) = watch::channel(ThisDevice::of(&record));
         let inner = Arc::new(Inner {

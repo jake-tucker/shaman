@@ -11,7 +11,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use shaman_pairing::{Redeemer, WayStanding};
+use shaman_pairing::{Redeemer, StoredRemote, WayStanding};
 use shaman_protocol::{Remote, Way};
 use tokio::sync::watch;
 
@@ -98,8 +98,10 @@ pub(crate) struct Remotes {
     redeemer: Redeemer,
     servers: watch::Sender<Servers>,
     outlook: watch::Sender<Outlook>,
-    /// How each Remote's ways stood when last asked, by the Remote's name.
-    standings: Arc<Mutex<HashMap<String, Standings>>>,
+    /// How each Remote's ways stood when last asked, by the Remote's name,
+    /// with the generation of the Pairing asked: shown only while that
+    /// Pairing stands.
+    standings: Arc<Mutex<HashMap<String, (u64, Standings)>>>,
     /// The Remotes, by name, in the order last turned toward, as last shown:
     /// whatever shows the Remotes again shows the Outlook by it.
     turned: Arc<Mutex<Vec<String>>>,
@@ -132,10 +134,19 @@ impl Remotes {
 
     /// The names of the Remotes held, in the order paired.
     pub fn names(&self) -> Vec<String> {
-        self.redeemer
-            .list_remotes()
+        self.held()
             .into_iter()
-            .map(|remote| remote.name)
+            .map(|stored| stored.remote.name)
+            .collect()
+    }
+
+    /// The Remotes held, in the order paired: those whose Pairing is made,
+    /// and not one a pairing under way has yet to see committed.
+    fn held(&self) -> Vec<StoredRemote> {
+        self.redeemer
+            .records()
+            .into_iter()
+            .filter(|stored| !stored.uncommitted)
             .collect()
     }
 
@@ -154,7 +165,7 @@ impl Remotes {
 
     /// Shows the Remotes as they are held now, the Outlook by the order they
     /// were last shown turned toward in.
-    fn refresh(&self) {
+    pub fn refresh(&self) {
         let shown = self
             .turned
             .lock()
@@ -166,11 +177,11 @@ impl Remotes {
     /// holding the order shown, so no showing by an older order lands after
     /// one by a newer.
     fn render(&self, turned: &[String]) {
-        let held = self.redeemer.list_remotes();
+        let held = self.held();
         let outlook = turned
             .iter()
-            .find(|name| held.iter().any(|remote| &remote.name == *name))
-            .or_else(|| held.first().map(|remote| &remote.name))
+            .find(|name| held.iter().any(|stored| &stored.remote.name == *name))
+            .or_else(|| held.first().map(|stored| &stored.remote.name))
             .map_or(Outlook::Nowhere, |name| Outlook::Remote {
                 name: name.clone(),
                 begins_in: format!("New sessions begin in {name}"),
@@ -183,7 +194,13 @@ impl Remotes {
         let servers = Servers {
             remotes: held
                 .iter()
-                .map(|remote| row(remote, standings.get(&remote.name)))
+                .map(|stored| {
+                    let asked = standings
+                        .get(&stored.remote.name)
+                        .filter(|(generation, _)| *generation == stored.generation)
+                        .map(|(_, standings)| standings);
+                    row(&stored.remote, asked)
+                })
                 .collect(),
         };
         self.servers.send_if_modified(|shown| {
@@ -199,19 +216,39 @@ impl Remotes {
     }
 
     /// Asks each way of the Remote `name` alone whether it answers, showing
-    /// how each stands once all have said.
+    /// how each stands once all have said, where the Pairing asked still
+    /// stands then.
     pub async fn ask_ways(&self, name: &str) {
+        let Some(generation) = self.generation_of(name) else {
+            return;
+        };
         self.forget_ways(name);
         self.refresh();
         let Ok(standings) = self.redeemer.probe_ways(name).await else {
             // Gone meanwhile: nothing of it is shown.
             return;
         };
-        self.standings
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .insert(name.to_owned(), standings);
+        {
+            let mut held = self
+                .standings
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            // What a Pairing since replaced said is not the Pairing in its
+            // place's to show.
+            if self.generation_of(name) != Some(generation) {
+                return;
+            }
+            held.insert(name.to_owned(), (generation, standings));
+        }
         self.refresh();
+    }
+
+    /// The generation of the Pairing the Remote `name` is held under.
+    fn generation_of(&self, name: &str) -> Option<u64> {
+        self.held()
+            .into_iter()
+            .find(|stored| stored.remote.name == name)
+            .map(|stored| stored.generation)
     }
 
     /// Forgets how the ways of the Remote `name` stood, so they read as

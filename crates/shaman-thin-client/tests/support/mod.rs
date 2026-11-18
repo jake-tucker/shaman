@@ -190,8 +190,23 @@ impl Gate {
         gate
     }
 
+    /// A way to `target` carrying its first connection there, and holding
+    /// each after it, which connects and hears nothing: a Pairing's
+    /// preparation is carried and its commit is not.
+    pub async fn once(target: SocketAddr) -> Self {
+        let gate = Self::carrying(target, 1).await;
+        gate.open_now();
+        gate
+    }
+
     /// A way to `target` held shut until it is opened.
     pub async fn held(target: SocketAddr) -> Self {
+        Self::carrying(target, u64::MAX).await
+    }
+
+    /// A way to `target` held shut until it is opened, then carrying as many
+    /// as `carried` connections there and holding each after them.
+    async fn carrying(target: SocketAddr, carried: u64) -> Self {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .await
             .expect("listen for the way");
@@ -206,8 +221,12 @@ impl Gate {
             if opened.wait_for(|open| *open).await.is_err() {
                 return;
             }
+            let mut holding = Vec::new();
             while let Ok((mut inbound, _)) = listener.accept().await {
-                counted.fetch_add(1, Ordering::AcqRel);
+                if counted.fetch_add(1, Ordering::AcqRel) >= carried {
+                    holding.push(inbound);
+                    continue;
+                }
                 tokio::spawn(async move {
                     if let Ok(mut outbound) = tokio::net::TcpStream::connect(target).await {
                         let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;

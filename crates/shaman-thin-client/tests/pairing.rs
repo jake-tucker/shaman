@@ -648,3 +648,121 @@ async fn a_remote_whose_commit_never_landed_is_dropped_as_the_core_opens() {
     phone.shutdown();
     server.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn what_a_replaced_pairings_slow_way_says_is_not_shown_of_the_pairing_in_its_place() {
+    let server = ServingServer::start("thin-stale-ways").await;
+    // Asking the way that holds its connection takes this phone a moment.
+    let mut timings = support::timings();
+    timings.redeemer.handshake_timeout = Duration::from_millis(500);
+    let phone = Phone::with(timings);
+    let before = Gate::open(server.serving_address()).await;
+    let slow = Gate::held(server.serving_address()).await;
+    let invite = server
+        .invite(vec![
+            Way::Direct(before.address()),
+            Way::Direct(slow.address()),
+        ])
+        .await;
+    assert!(matches!(
+        phone
+            .core
+            .confirm_pairing(invite, DESK.to_owned(), "iPhone".to_owned())
+            .await,
+        PairingOutcome::Paired { .. }
+    ));
+    // Paired again at once, under the same name, by a way of its own, while
+    // the first Pairing's slow way is still being asked.
+    let after = Gate::open(server.serving_address()).await;
+    let invite = server.invite(vec![Way::Direct(after.address())]).await;
+    assert!(matches!(
+        phone
+            .core
+            .confirm_pairing(invite, DESK.to_owned(), "iPhone".to_owned())
+            .await,
+        PairingOutcome::Paired { .. }
+    ));
+    let answering = |servers: &shaman_thin_client::Servers| {
+        servers.remotes.len() == 1
+            && servers.remotes[0].ways.len() == 1
+            && servers.remotes[0].ways[0].state == WayState::Answering
+    };
+    phone.servers_until(answering).await;
+
+    // Past when the first Pairing's slow way is given up on.
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    let servers = phone.servers().await;
+    assert!(answering(&servers), "{servers:?}");
+    phone.shutdown();
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pairing_under_way_is_not_shown_and_one_whose_commit_fails_leaves_what_was_shown() {
+    let server = ServingServer::start("thin-under-way").await;
+    // The commit hears nothing for a while before it is given up on.
+    let mut timings = support::timings();
+    timings.redeemer.handshake_timeout = Duration::from_secs(1);
+    timings.pairing_keeps_dialling = Duration::from_millis(100);
+    let phone = Phone::with(timings);
+    let invite = server
+        .invite(vec![Way::Direct(server.serving_address())])
+        .await;
+    assert!(matches!(
+        phone
+            .core
+            .confirm_pairing(invite, DESK.to_owned(), "iPhone".to_owned())
+            .await,
+        PairingOutcome::Paired { .. }
+    ));
+    let once = Gate::once(server.serving_address()).await;
+    let invite = server.invite(vec![Way::Direct(once.address())]).await;
+    let core = phone.core.clone();
+    let pairing = tokio::spawn(async move {
+        core.confirm_pairing(invite, "studio".to_owned(), "iPhone".to_owned())
+            .await
+    });
+
+    let records = phone.directory().join("remotes.json");
+    tokio::time::timeout(support::PROGRESS_DEADLINE, async {
+        while !String::from_utf8_lossy(&std::fs::read(&records).unwrap()).contains("uncommitted") {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the Remote is stored ahead of its commit");
+    // Anything shown meanwhile shows the Remotes as they stood.
+    phone
+        .core
+        .rename_device("Pocket".to_owned())
+        .await
+        .expect("renamed");
+    let names = |servers: shaman_thin_client::Servers| {
+        servers
+            .remotes
+            .into_iter()
+            .map(|remote| remote.name)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(names(phone.servers().await), [DESK]);
+    assert!(
+        matches!(
+            phone.outlook().await,
+            Outlook::Remote { name, .. } if name == DESK
+        ),
+        "the Outlook stays"
+    );
+
+    let failed = pairing.await.unwrap();
+    assert!(
+        matches!(failed, PairingOutcome::Failed { .. }),
+        "{failed:?}"
+    );
+    assert_eq!(names(phone.servers().await), [DESK]);
+    assert!(
+        !String::from_utf8_lossy(&std::fs::read(&records).unwrap()).contains("uncommitted"),
+        "nothing kept of it"
+    );
+    phone.shutdown();
+    server.shutdown().await;
+}

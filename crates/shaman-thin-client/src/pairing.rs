@@ -179,7 +179,11 @@ pub(crate) async fn confirm(
     let replaced = held_as(inner, &invite);
     let remote = match keep_dialling(inner, invite, &remote_name, &device_name).await {
         Ok(remote) => remote,
-        Err(failure) => return failed(failure),
+        Err(failure) => {
+            // Whatever was shown of it while it was under way goes.
+            inner.remotes.refresh();
+            return failed(failure);
+        }
     };
     let name = remote.name.clone();
     let turned = name.clone();
