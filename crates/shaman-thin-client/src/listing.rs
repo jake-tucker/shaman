@@ -23,6 +23,7 @@
 
 use std::{
     collections::HashMap,
+    path::Path,
     sync::{
         Arc, Mutex, Weak,
         atomic::{AtomicU64, Ordering},
@@ -1014,6 +1015,9 @@ struct Shared {
     /// How long a Session is left alone before it settles on its own.
     settle_after: Duration,
     shown: watch::Sender<Listing>,
+    /// Moves on each time the listing is made, so what is drawn from what
+    /// a Remote last answered beside it is drawn again.
+    moved: watch::Sender<u64>,
     /// How many times the listing has been made, for a test to see it is
     /// made no more often than something changes.
     renders: AtomicU64,
@@ -1086,6 +1090,7 @@ impl Listings {
             settle_after,
             renders: AtomicU64::new(0),
             shown: watch::Sender::new(listing),
+            moved: watch::Sender::new(0),
             state: Mutex::new(State {
                 on_show: SHELF_OPENING,
                 ..State::default()
@@ -1298,6 +1303,49 @@ impl Listings {
 }
 
 impl Listings {
+    /// Moves on each time what any Remote answered changes.
+    pub fn moved(&self) -> watch::Receiver<u64> {
+        self.shared.moved.subscribe()
+    }
+
+    /// The fingerprint of the Remote `name`, where it is held.
+    pub fn fingerprint(&self, name: &str) -> Option<String> {
+        self.shared
+            .lock()
+            .remotes
+            .iter()
+            .find(|followed| followed.answered.name == name)
+            .map(|followed| followed.answered.fingerprint.clone())
+    }
+
+    /// What the listing knows of the Workspace at `workspace` on the Remote
+    /// `name`, as the Landing names it.
+    pub fn landing(&self, name: &str, workspace: Option<&Path>) -> crate::beginning::Known {
+        let state = self.shared.lock();
+        let Some(remote) = state
+            .remotes
+            .iter()
+            .map(|followed| &followed.answered)
+            .find(|answered| answered.name == name)
+        else {
+            return crate::beginning::Known::default();
+        };
+        let listed = workspace.and_then(|path| {
+            remote
+                .offered_workspaces()
+                .into_iter()
+                .find(|offered| offered.path == path)
+        });
+        crate::beginning::Known {
+            glyph: listed.and_then(|listed| icon_glyph(listed.icon.as_deref())),
+            description: listed
+                .and_then(|listed| listed.description.as_ref())
+                .map(|description| description.text.clone())
+                .filter(|text| !text.trim().is_empty()),
+            unreachable: remote.unreached.is_some(),
+        }
+    }
+
     /// What opening the Session `reference` names reads it over, and what
     /// the listing knows of it now; none where its Remote is not held.
     pub fn opening(&self, reference: &str) -> Option<Opening> {
@@ -1571,6 +1619,7 @@ impl Shared {
                 &state.narrowing,
             );
             self.renders.fetch_add(1, Ordering::Relaxed);
+            self.moved.send_modify(|moved| *moved += 1);
             self.shown.send_if_modified(|shown| {
                 let changed = *shown != listing;
                 *shown = listing;

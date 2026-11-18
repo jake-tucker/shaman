@@ -295,6 +295,23 @@ impl Trees {
     /// belongs to, read over `commands`: the one already read where it holds
     /// that Session, and otherwise one read for it now.
     pub fn hold(&self, remote: &str, session_id: SessionId, commands: &SessionCommands) -> Lease {
+        self.hold_through(
+            remote,
+            session_id,
+            commands,
+            watch::Sender::new(TreeState::default()),
+        )
+    }
+
+    /// [`Self::hold`], the tree seen through `seen`, which whoever watches
+    /// it already holds.
+    pub fn hold_through(
+        &self,
+        remote: &str,
+        session_id: SessionId,
+        commands: &SessionCommands,
+        seen: watch::Sender<TreeState>,
+    ) -> Lease {
         let mut held = self.held();
         held.next += 1;
         let lease = held.next;
@@ -323,7 +340,7 @@ impl Trees {
             );
             tree_id
         });
-        let (seen, watched) = watch::channel(TreeState::default());
+        let watched = seen.subscribe();
         held.leases.insert(lease, tree_id);
         let tree = held.trees.get_mut(&tree_id).expect("just found or made");
         tree.holders.insert(

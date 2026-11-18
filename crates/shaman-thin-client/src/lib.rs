@@ -28,6 +28,7 @@ use tokio::{
 };
 
 mod acts;
+mod beginning;
 mod conversation;
 mod device;
 mod drafts;
@@ -42,6 +43,7 @@ mod session;
 mod tree;
 mod work;
 
+pub use beginning::{Landing, LandingWorkspace};
 pub use conversation::{ConversationItem, ItemKind, Tone, TurnCard, TurnOutcome};
 pub use device::ThisDevice;
 use device::{DeviceRecord, Records};
@@ -238,15 +240,91 @@ impl ThinClient {
         })
     }
 
+    /// Tells `listener` what the Landing shows now, where the Outlook
+    /// stands, and again on every change, until the subscription is
+    /// cancelled.
+    pub fn watch_landing(&self, listener: Arc<dyn LandingListener>) -> Arc<Subscription> {
+        let inner = self.inner.clone();
+        let mut outlook = inner.remotes.outlook();
+        let mut moved = inner.listing.moved();
+        let task = self.runtime().spawn(async move {
+            let mut told = None;
+            loop {
+                outlook.borrow_and_update();
+                moved.borrow_and_update();
+                let landing = inner.landing();
+                if told.as_ref() != Some(&landing) {
+                    listener.changed(landing.clone());
+                    told = Some(landing);
+                }
+                tokio::select! {
+                    changed = outlook.changed() => if changed.is_err() { break },
+                    changed = moved.changed() => if changed.is_err() { break },
+                }
+            }
+        });
+        Subscription::of(task)
+    }
+
+    /// Begins a Session with the Prompt `text` where the Outlook stands, on
+    /// its Workspace's main Worktree, under an identity the core chooses,
+    /// and opens it at once as the Provisional Session for the Landing's
+    /// screen to turn into: until its Server answers with the Session it
+    /// made, which replaces it in place, or refuses it, which stands in its
+    /// conversation. The beginning goes on whatever becomes of the screen,
+    /// as an act under way. Refused at once where nothing is written, or
+    /// where no Workspace is remembered for the Outlook's Remote.
+    pub fn begin_session(&self, text: String) -> Result<Arc<OpenSession>, ActError> {
+        let text = text.trim().to_owned();
+        if text.is_empty() {
+            return Err(ActError::Invalid {
+                message: "Write something to send".to_owned(),
+            });
+        }
+        let Some((remote, workspace)) = self.inner.remotes.standing() else {
+            return Err(ActError::Gone {
+                message: "This phone is paired with no server to begin a session on".to_owned(),
+            });
+        };
+        let Some(workspace) = workspace else {
+            return Err(ActError::Invalid {
+                message: beginning::asks(&remote),
+            });
+        };
+        let Some(fingerprint) = self.inner.listing.fingerprint(&remote) else {
+            return Err(ActError::Gone {
+                message: frame::GONE_REMOTE.to_owned(),
+            });
+        };
+        let session_id = shaman_protocol::SessionId::new();
+        let reference = format!("{fingerprint}/{session_id}");
+        let origin = self
+            .inner
+            .listing
+            .opening(&reference)
+            .and_then(|opening| opening.listed.origin);
+        let place = origin
+            .into_iter()
+            .chain([workspace.name.clone()])
+            .collect::<Vec<_>>()
+            .join(" · ");
+        let provisional =
+            beginning::Provisional::new(session_id, workspace.path.clone(), text, place);
+        Ok(session::begin(
+            self.runtime().handle(),
+            &self.inner.listing,
+            &reference,
+            self.pacing(),
+            self.asked(),
+            provisional,
+        ))
+    }
+
     /// Opens the Session `session` names for a screen pushed to read it,
     /// framed at once by what the listing knows of it, and turns the Outlook
     /// toward its Origin and Workspace. Closing it cancels nothing on the
     /// Server.
     pub fn open_session(&self, session: String) -> Arc<OpenSession> {
-        let pacing = session::Pacing {
-            initial_backoff: self.inner.timings.readers.initial_recovery_backoff,
-            max_backoff: self.inner.timings.readers.max_recovery_backoff,
-        };
         if let Some(opening) = self.inner.listing.opening(&session) {
             let inner = self.inner.clone();
             let listed = opening.listed;
@@ -263,20 +341,8 @@ impl ThinClient {
             self.runtime().handle(),
             &self.inner.listing,
             &session,
-            pacing,
-            session::Asked {
-                drafts: self.inner.drafts.clone(),
-                acts: self.inner.acts.clone(),
-                asking: acts::Asking {
-                    initial_backoff: pacing.initial_backoff,
-                    max_backoff: pacing.max_backoff,
-                    bound: self.inner.timings.act_bound,
-                    // Every way's dial, the last begun after its head start.
-                    dialling: self.inner.timings.redeemer.direct_head_start
-                        + self.inner.timings.redeemer.handshake_timeout * 2,
-                },
-                trees: self.inner.trees.clone(),
-            },
+            self.pacing(),
+            self.asked(),
         )
     }
 
@@ -482,6 +548,32 @@ impl ThinClient {
         &self.inner.identity
     }
 
+    /// How an open Session waits between attempts to read it.
+    fn pacing(&self) -> session::Pacing {
+        session::Pacing {
+            initial_backoff: self.inner.timings.readers.initial_recovery_backoff,
+            max_backoff: self.inner.timings.readers.max_recovery_backoff,
+        }
+    }
+
+    /// What the core hands each open Session for its acts.
+    fn asked(&self) -> session::Asked {
+        let pacing = self.pacing();
+        session::Asked {
+            drafts: self.inner.drafts.clone(),
+            acts: self.inner.acts.clone(),
+            asking: acts::Asking {
+                initial_backoff: pacing.initial_backoff,
+                max_backoff: pacing.max_backoff,
+                bound: self.inner.timings.act_bound,
+                // Every way's dial, the last begun after its head start.
+                dialling: self.inner.timings.redeemer.direct_head_start
+                    + self.inner.timings.redeemer.handshake_timeout * 2,
+            },
+            trees: self.inner.trees.clone(),
+        }
+    }
+
     /// Checks every Remote, in the background.
     fn check(&self) {
         let inner = self.inner.clone();
@@ -571,6 +663,26 @@ impl Drop for ThinClient {
 }
 
 impl Inner {
+    /// The Landing where the Outlook stands now.
+    fn landing(&self) -> Landing {
+        let standing = self.remotes.standing();
+        let known =
+            standing
+                .as_ref()
+                .map_or_else(beginning::Known::default, |(remote, workspace)| {
+                    self.listing.landing(
+                        remote,
+                        workspace.as_ref().map(|workspace| workspace.path.as_path()),
+                    )
+                });
+        beginning::landing(
+            standing
+                .as_ref()
+                .map(|(remote, workspace)| (remote.as_str(), workspace.as_ref())),
+            &known,
+        )
+    }
+
     /// Changes the thin Client's own file by `change`, keeping it before
     /// "This device" and the Outlook are told: where it cannot be kept,
     /// nothing changes.
@@ -638,6 +750,12 @@ pub trait ListingListener: Send + Sync {
 #[uniffi::export(with_foreign)]
 pub trait OutlookListener: Send + Sync {
     fn changed(&self, outlook: Outlook);
+}
+
+/// Hears what the Landing shows, at once and on every change.
+#[uniffi::export(with_foreign)]
+pub trait LandingListener: Send + Sync {
+    fn changed(&self, landing: Landing);
 }
 
 /// Hears a composer's draft, at once and each time the core changes it on its

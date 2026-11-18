@@ -71,6 +71,9 @@ pub enum ItemKind {
     Turn { card: TurnCard },
     /// What a failed Turn ended on.
     Error { text: String },
+    /// Where the work of a Session being begun would be, once its Server
+    /// refused it: why, and the offer to ask again.
+    Refused { words: String, try_again: String },
     /// Where the Agent's memory of the Session was compacted, in the TUI's
     /// words.
     Compaction {

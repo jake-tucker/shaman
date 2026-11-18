@@ -215,26 +215,43 @@ impl Remotes {
         self.render(&shown);
     }
 
+    /// Where the Outlook stands: the Remote, by name, and the Workspace
+    /// remembered for it, where one is; none while the phone holds no Remote.
+    pub fn standing(&self) -> Option<(String, Option<RememberedWorkspace>)> {
+        let turned = self
+            .turned
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        Self::stands(&self.held(), &turned)
+    }
+
+    /// Where the Outlook stands among the Remotes `held`, by `turned`.
+    fn stands(
+        held: &[StoredRemote],
+        turned: &Turned,
+    ) -> Option<(String, Option<RememberedWorkspace>)> {
+        let name = turned
+            .order
+            .iter()
+            .find(|name| held.iter().any(|stored| &stored.remote.name == *name))
+            .or_else(|| held.first().map(|stored| &stored.remote.name))?;
+        Some((name.clone(), turned.workspaces.get(name).cloned()))
+    }
+
     /// Shows the Remotes as they are held now, the Outlook by `turned`: done
     /// holding the order shown, so no showing by an older order lands after
     /// one by a newer.
     fn render(&self, turned: &Turned) {
         let held = self.held();
-        let outlook = turned
-            .order
-            .iter()
-            .find(|name| held.iter().any(|stored| &stored.remote.name == *name))
-            .or_else(|| held.first().map(|stored| &stored.remote.name))
-            .map_or(Outlook::Nowhere, |name| Outlook::Remote {
-                name: name.clone(),
+        let outlook = Self::stands(&held, turned).map_or(Outlook::Nowhere, |(name, workspace)| {
+            Outlook::Remote {
                 begins_in: BeginsIn::remote(
-                    name,
-                    turned
-                        .workspaces
-                        .get(name)
-                        .map(|workspace| workspace.name.as_str()),
+                    &name,
+                    workspace.as_ref().map(|workspace| workspace.name.as_str()),
                 ),
-            });
+                name,
+            }
+        });
         let standings = self
             .standings
             .lock()

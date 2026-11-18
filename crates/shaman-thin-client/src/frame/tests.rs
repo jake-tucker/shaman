@@ -81,6 +81,7 @@ fn a_working_session_has_a_bar_saying_so_since_it_began_with_stop_and_a_composer
             queue: Some("Queue for after this turn".to_owned()),
             unreachable: None,
             note: None,
+            can_send: true,
         })
     );
 }
@@ -862,4 +863,108 @@ fn on_an_unreachable_origin_a_subagents_intervention_marks_the_bar_with_nothing_
             .as_deref(),
         Some("Approval waiting")
     );
+}
+
+fn provisional(refused: Option<&str>) -> Local {
+    let mut provisional = Provisional::new(
+        SessionId::new(),
+        std::path::PathBuf::from("shaman"),
+        "Draw the invite as a QR code\nin half-blocks".to_owned(),
+        "shaman".to_owned(),
+    );
+    provisional.refused = refused.map(str::to_owned);
+    Local {
+        provisional: Some(provisional),
+        ..Local::default()
+    }
+}
+
+fn provisionally_framed(local: &Local, unreachable: bool) -> SessionFrame {
+    let mut listed = listed(None);
+    listed.title = None;
+    frame_of(
+        "desk-key",
+        Some(&listed),
+        None,
+        None,
+        local,
+        unreachable,
+        &InTree::default(),
+    )
+}
+
+#[test]
+fn a_session_being_begun_is_titled_by_its_prompt_and_starts_with_no_time_and_no_stop() {
+    let frame = provisionally_framed(&provisional(None), false);
+    assert_eq!(frame.title, "Draw the invite as a QR code");
+    assert_eq!(frame.place, "shaman");
+    assert_eq!(
+        frame.bar,
+        Some(Bar {
+            kind: BarKind::Working,
+            words: "Starting".to_owned(),
+            since: None,
+            watching: None,
+            stop: None,
+            review: None,
+        })
+    );
+    let composer = frame.composer.expect("a composer, though not listed");
+    assert!(!composer.can_send, "it takes a draft and delivers nothing");
+    assert_eq!(composer.queue, None);
+    assert_eq!(frame.tree, None);
+    assert_eq!(frame.intervention, None);
+}
+
+#[test]
+fn a_refused_beginning_stands_without_a_bar_and_its_composer_replaces_the_prompt() {
+    let local = provisional(Some("the workspace's directory is gone"));
+    let frame = provisionally_framed(&local, false);
+    assert_eq!(frame.bar, None);
+    let composer = frame.composer.expect("a composer");
+    assert!(composer.can_send);
+    assert_eq!(composer.placeholder, "Write a new prompt instead");
+
+    let items = provisional_items(local.provisional.as_ref().unwrap());
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item.kind.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            ItemKind::UserMessage {
+                text: "Draw the invite as a QR code\nin half-blocks".to_owned(),
+                note: None,
+                sending: false,
+            },
+            ItemKind::Refused {
+                words: "Could not create session: the workspace's directory is gone".to_owned(),
+                try_again: "Try again".to_owned(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_session_being_begun_on_an_unreachable_origin_says_so_above_its_composer() {
+    let frame = provisionally_framed(&provisional(Some("no")), true);
+    assert!(
+        frame
+            .composer
+            .and_then(|composer| composer.unreachable)
+            .is_some()
+    );
+}
+
+#[test]
+fn a_session_being_begun_shows_its_prompt_as_a_bubble_marked_as_sending_until_answered() {
+    let local = provisional(None);
+    let provisional = local.provisional.as_ref().unwrap();
+    let items = provisional_items(provisional);
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].id, prompt_item_id(provisional.prompt.id));
+    assert!(matches!(
+        items[0].kind,
+        ItemKind::UserMessage { sending: true, .. }
+    ));
 }

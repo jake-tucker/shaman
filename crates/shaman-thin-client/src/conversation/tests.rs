@@ -217,6 +217,7 @@ fn read_as(items: &[ConversationItem]) -> Vec<String> {
             ItemKind::Turn { card } => format!("card: {}", card.line),
             ItemKind::Error { text } => format!("error: {text}"),
             ItemKind::Compaction { words, .. } => format!("compaction: {words}"),
+            ItemKind::Refused { words, .. } => format!("refused: {words}"),
         })
         .collect()
 }

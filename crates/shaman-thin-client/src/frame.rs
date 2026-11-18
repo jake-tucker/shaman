@@ -16,6 +16,7 @@ use shaman_protocol::{
 };
 
 use crate::{
+    beginning::{self, Provisional},
     conversation::{ConversationItem, ItemKind},
     intervention::{self, Intervention, InterventionId, Standing},
     listing::Listed,
@@ -127,6 +128,9 @@ pub struct Composer {
     /// Said beneath the composer after a send went unanswered: its text is
     /// back in the field, and it may have been sent.
     pub note: Option<String>,
+    /// Whether send is offered: not while a Session being begun waits on its
+    /// Server, when the composer takes a draft and delivers nothing.
+    pub can_send: bool,
 }
 
 /// A Prompt queued for after the working Turn: a dashed bubble at the foot.
@@ -164,6 +168,11 @@ pub(crate) struct Local {
     /// The Interventions swiped away on this screen, which wait behind
     /// "Review" for as long as it stays open.
     pub dismissed: HashSet<InterventionId>,
+    /// The Session being begun, until its Server answers with the one it
+    /// made: what the screen is drawn from in the meantime.
+    pub provisional: Option<Provisional>,
+    /// Whether the screen has gone.
+    pub closed: bool,
 }
 
 /// A Prompt this screen sent, until its Server is seen holding it.
@@ -274,6 +283,9 @@ pub(crate) fn frame_of(
             waiting: Vec::new(),
         };
     };
+    if let (Some(provisional), None, None) = (&local.provisional, snapshot, &gone) {
+        return provisional_frame(provisional, listed, local, unreachable);
+    }
     // A Subagent's Session, which no listing carries, is titled by what its
     // tree says it was asked until it has been read.
     let title = snapshot
@@ -332,6 +344,7 @@ pub(crate) fn frame_of(
         queue: working.then(|| "Queue for after this turn".to_owned()),
         unreachable: unreachable.then(|| unreachable_line(listed)),
         note: local.note.clone(),
+        can_send: true,
     });
     let standing = snapshot.map_or(Standing::None, |snapshot| {
         intervention::standing(snapshot, &local.dismissed, unreachable)
@@ -377,6 +390,78 @@ pub(crate) fn frame_of(
                 .collect()
         }),
     }
+}
+
+/// What frames a Session being begun, until its Server answers: its Prompt's
+/// first line as the Title, and a bar reading "Starting", with no elapsed
+/// time and no Stop, while it waits; once refused, no bar, the refusal
+/// standing in the conversation, and a composer whose Prompt replaces the
+/// refused one.
+fn provisional_frame(
+    provisional: &Provisional,
+    listed: &Listed,
+    local: &Local,
+    unreachable: bool,
+) -> SessionFrame {
+    let refused = provisional.refused.is_some();
+    SessionFrame {
+        title: provisional.title(),
+        place: provisional.place.clone(),
+        gone: None,
+        bar: (!refused).then(|| Bar {
+            kind: BarKind::Working,
+            words: STARTING.to_owned(),
+            since: None,
+            watching: None,
+            stop: None,
+            review: None,
+        }),
+        composer: Some(Composer {
+            placeholder: if refused {
+                "Write a new prompt instead"
+            } else {
+                "Message"
+            }
+            .to_owned(),
+            queue: None,
+            unreachable: unreachable.then(|| unreachable_line(listed)),
+            note: local.note.clone(),
+            can_send: refused,
+        }),
+        queued: Vec::new(),
+        intervention: None,
+        waiting: Vec::new(),
+        tree: None,
+    }
+}
+
+/// What the bar of a Session being begun reads until its Server answers.
+pub(crate) const STARTING: &str = "Starting";
+
+/// The id the row a refused beginning stands as is under.
+pub(crate) const REFUSED: &str = "refused";
+
+/// The conversation of a Session being begun: its Prompt as a bubble, marked
+/// as sending until its Server answers, and the row its refusal stands as.
+pub(crate) fn provisional_items(provisional: &Provisional) -> Vec<ConversationItem> {
+    let mut items = vec![ConversationItem {
+        id: prompt_item_id(provisional.prompt.id),
+        kind: ItemKind::UserMessage {
+            text: provisional.prompt.text.clone(),
+            note: None,
+            sending: provisional.refused.is_none(),
+        },
+    }];
+    if let Some(why) = &provisional.refused {
+        items.push(ConversationItem {
+            id: REFUSED.to_owned(),
+            kind: ItemKind::Refused {
+                words: beginning::refused_words(why),
+                try_again: "Try again".to_owned(),
+            },
+        });
+    }
+    items
 }
 
 /// The bar while an Intervention waits on the reader out of sight: orange,

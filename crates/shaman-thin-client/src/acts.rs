@@ -183,6 +183,48 @@ where
     }
 }
 
+/// [`deliver`], for a request its Server answers the same however often it
+/// is asked: one whose answer was lost is asked again too, until it is
+/// answered or `asking`'s bound passes, when it may have been done.
+pub(crate) async fn deliver_again<T, F>(
+    asking: Asking,
+    try_now: &mut TryNow,
+    mut ask: impl FnMut() -> F,
+) -> Result<T, Unanswered>
+where
+    F: Future<Output = anyhow::Result<T>>,
+{
+    let deadline = tokio::time::Instant::now() + asking.bound;
+    let mut backoff = RecoveryBackoff::new(asking.initial_backoff, asking.max_backoff);
+    loop {
+        let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let answered = deliver(
+            Asking {
+                bound: left,
+                ..asking
+            },
+            try_now,
+            &mut ask,
+        )
+        .await;
+        match answered {
+            Err(Unanswered::MaybeDone) if tokio::time::Instant::now() < deadline => {
+                tracing::debug!(
+                    "a request its Server answers alike went unanswered, and goes again"
+                );
+                let retry_in = backoff.next();
+                if tokio::time::timeout_at(deadline, try_now.or_after(retry_in))
+                    .await
+                    .is_err()
+                {
+                    return Err(Unanswered::MaybeDone);
+                }
+            }
+            answered => return answered,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -269,6 +311,47 @@ mod tests {
         .await;
         assert_eq!(lost, Err(Unanswered::MaybeDone));
         assert_eq!(transport.asked(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_request_its_server_answers_alike_whose_answer_was_lost_is_asked_again() {
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            Err(failure(
+                SessionErrorCode::PairingOutcomeUnknown,
+                "Remote API request was delivered, and its answer was lost",
+            )),
+            Ok(interrupted()),
+        ]));
+        let commands = commands(&transport);
+        let mut try_now = transport.try_now();
+        let session = SessionId::new();
+        let answered = deliver_again(asking(Duration::from_secs(5)), &mut try_now, || {
+            commands.interrupt_session(session)
+        })
+        .await;
+        assert_eq!(answered, Ok(()));
+        assert_eq!(transport.asked(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_request_its_server_answers_alike_still_unanswered_at_its_bound_may_have_been_done() {
+        let stalled = shaman_client::testing::Answering::new(|_| std::future::pending());
+        let commands = SessionCommands::new(
+            stalled,
+            SessionCommandTimings {
+                initial_recovery_backoff: Duration::from_millis(1),
+                max_recovery_backoff: Duration::from_millis(5),
+                attachment_fetch_timeout: Duration::from_secs(5),
+            },
+        );
+        let session = SessionId::new();
+        let unanswered = deliver_again(
+            asking(Duration::from_millis(20)),
+            &mut TryNow::never(),
+            || commands.interrupt_session(session),
+        )
+        .await;
+        assert_eq!(unanswered, Err(Unanswered::MaybeDone));
     }
 
     #[tokio::test]

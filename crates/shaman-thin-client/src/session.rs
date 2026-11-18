@@ -48,6 +48,7 @@ use tokio::{runtime::Handle, sync::watch, task::JoinHandle};
 use crate::{
     ActError, Subscription,
     acts::{self, Acts, Asking, Unanswered},
+    beginning::{self, Provisional},
     conversation::{self, ConversationItem},
     drafts::Drafts,
     frame::{self, GONE_REMOTE, Local, Outgoing, SessionFrame, frame_of},
@@ -184,6 +185,12 @@ impl OpenSession {
         })
     }
 
+    /// The Session, as the core is handed it back: its Origin's key and its
+    /// identity there, which for a Session being begun the core chose.
+    pub fn reference(&self) -> String {
+        self.acting.reference.clone()
+    }
+
     /// Stops the working Subagent `subagent` names, as its entry in the tree
     /// hands it back, and whatever it delegated.
     pub async fn stop_subagent(&self, subagent: String) -> Result<(), ActError> {
@@ -194,8 +201,29 @@ impl OpenSession {
         self.act(async move { acting.stop_alone().await }).await
     }
 
-    /// Ends the Session's reading; it cancels nothing on the Server.
+    /// Ends the Session's reading; it cancels nothing on the Server, and a
+    /// Session being begun goes on being begun. One whose beginning was
+    /// refused is discarded, its Prompt's text kept as the Landing's draft.
     pub fn close(&self) {
+        let mut discarded = None;
+        self.acting.local.send_modify(|local| {
+            local.closed = true;
+            if local
+                .provisional
+                .as_ref()
+                .is_some_and(|provisional| provisional.refused.is_some())
+            {
+                discarded = local
+                    .provisional
+                    .take()
+                    .map(|provisional| provisional.prompt.text);
+            }
+        });
+        if let Some(text) = discarded {
+            self.acting
+                .drafts
+                .give_back(beginning::LANDING_DRAFT, &text);
+        }
         if let Some(reader) = self
             .reader
             .lock()
@@ -206,9 +234,20 @@ impl OpenSession {
         }
     }
 
+    /// Asks again to begin the Session being begun, whose Server refused it,
+    /// with the same Prompt, answering once its Server has: the refusal, or
+    /// the Session made, arrives by the frame and the conversation.
+    pub async fn try_again(&self) -> Result<(), ActError> {
+        let acting = self.acting.clone();
+        self.act(async move { acting.begin_again(None).await })
+            .await
+    }
+
     /// Sends `text` as a Prompt: it steers the working Turn, or begins one.
     /// It stands at once as a bubble marked as sending; where the send fails
     /// the bubble goes and the text is given back to the composer's draft.
+    /// On a Session being begun whose Server refused it, it replaces the
+    /// refused Prompt and asks again.
     pub async fn send(&self, text: String) -> Result<(), ActError> {
         let acting = self.acting.clone();
         self.act(async move { acting.prompt(text, PromptDelivery::Steer).await })
@@ -593,39 +632,94 @@ pub(crate) fn open(
     pacing: Pacing,
     asked: Asked,
 ) -> Arc<OpenSession> {
+    opened(runtime, listings, reference, pacing, asked, None)
+}
+
+/// Begins the Session `provisional` says, on the Remote `reference` names
+/// it under, and opens it at once as the Provisional Session, until its
+/// Server answers with the Session it made, which replaces it in place. The
+/// beginning goes on whatever becomes of the screen.
+pub(crate) fn begin(
+    runtime: &Handle,
+    listings: &Listings,
+    reference: &str,
+    pacing: Pacing,
+    asked: Asked,
+    provisional: Provisional,
+) -> Arc<OpenSession> {
+    let session = opened(
+        runtime,
+        listings,
+        reference,
+        pacing,
+        asked,
+        Some(provisional),
+    );
+    let acting = session.acting.clone();
+    let under_way = acting.acts.begin();
+    runtime.spawn(async move {
+        let _under_way = under_way;
+        acting.create().await;
+    });
+    session
+}
+
+fn opened(
+    runtime: &Handle,
+    listings: &Listings,
+    reference: &str,
+    pacing: Pacing,
+    asked: Asked,
+    provisional: Option<Provisional>,
+) -> Arc<OpenSession> {
     let opening = listings.opening(reference);
+    let beginning = provisional.is_some();
     let listed = opening.as_ref().map(|opening| opening.listed.clone());
     let remote = reference
         .split_once('/')
         .map_or(reference, |(remote, _)| remote)
         .to_owned();
     // The tree it belongs to is held from the moment it opens: one already
-    // read frames it at once.
-    let lease = opening.as_ref().map(|opening| {
+    // read frames it at once. A Session being begun belongs to none until
+    // its Server holds it.
+    let lease = opening.as_ref().filter(|_| !beginning).map(|opening| {
         asked
             .trees
             .hold(&remote, opening.session_id, &opening.commands)
     });
-    let tree_seen = lease
-        .as_ref()
-        .map_or_else(|| watch::channel(TreeState::default()).1, Lease::seen);
+    let (tree_seeing, tree_seen) = match &lease {
+        Some(lease) => (None, lease.seen()),
+        None => {
+            let (seeing, seen) = watch::channel(TreeState::default());
+            (Some(seeing), seen)
+        }
+    };
     let named = opening
         .as_ref()
         .map(|opening| (remote.clone(), opening.session_id));
     let in_tree = named.as_ref().map_or_else(InTree::default, |(_, open)| {
         tree::in_tree(&tree_seen.borrow(), *open, None)
     });
-    let local = Arc::new(watch::Sender::new(Local::default()));
+    let held = Local {
+        provisional,
+        ..Local::default()
+    };
     let (frame, frame_seen) = watch::channel(frame_of(
         &remote,
         listed.as_ref(),
         None,
         None,
-        &Local::default(),
+        &held,
         false,
         &in_tree,
     ));
-    let (conversation, conversation_seen) = watch::channel(shown(None, conversation::loading()));
+    let (conversation, conversation_seen) = watch::channel(shown(
+        None,
+        held.provisional
+            .as_ref()
+            .map_or_else(conversation::loading, frame::provisional_items),
+    ));
+    let local = Arc::new(watch::Sender::new(held));
     let reading = Arc::new(AtomicBool::new(true));
     let attached = Arc::new(if opening.is_some() {
         Attachments::default()
@@ -636,6 +730,8 @@ pub(crate) fn open(
         let reader = Reader {
             tree: lease,
             tree_seen: tree_seen.clone(),
+            beginning: tree_seeing.filter(|_| beginning),
+            trees: asked.trees.clone(),
             remote,
             attached: attached.clone(),
             gone: None,
@@ -694,6 +790,9 @@ const GONE_PROMPT: &str = "That prompt is no longer queued";
 /// Said where a Prompt with nothing in it is sent.
 const EMPTY_PROMPT: &str = "Write something to send";
 
+/// Said where an act is asked of a Session its Server does not hold yet.
+const NOT_YET_BEGUN: &str = "Nothing is sent until the session has begun";
+
 /// Said where an Approval a Decision names no longer waits on one.
 const GONE_APPROVAL: &str = "That approval is no longer waiting";
 
@@ -729,6 +828,107 @@ impl Acting {
         .await
     }
 
+    /// Whether the Session is still being begun, its Server yet to be seen
+    /// holding it.
+    fn beginning(&self) -> bool {
+        self.local.borrow().provisional.is_some()
+    }
+
+    /// Refuses an act on a Session its Server does not hold yet.
+    fn begun(&self) -> Result<(), ActError> {
+        if self.beginning() {
+            return Err(ActError::Invalid {
+                message: NOT_YET_BEGUN.to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Asks again to begin the Session being begun whose Server refused it:
+    /// with `text` in place of its Prompt where one is written instead, and
+    /// otherwise with the same Prompt.
+    async fn begin_again(&self, text: Option<String>) -> Result<(), ActError> {
+        let mut asked = false;
+        self.local.send_modify(|local| {
+            let Some(provisional) = local
+                .provisional
+                .as_mut()
+                .filter(|provisional| provisional.refused.is_some())
+            else {
+                return;
+            };
+            match text.clone() {
+                Some(text) => provisional.replace(text),
+                None => provisional.refused = None,
+            }
+            asked = true;
+        });
+        if !asked {
+            if let Some(text) = text {
+                self.drafts.give_back(&self.reference, &text);
+            }
+            return Err(ActError::Invalid {
+                message: NOT_YET_BEGUN.to_owned(),
+            });
+        }
+        self.create().await;
+        Ok(())
+    }
+
+    /// Asks the Session's Server to begin it, as it is being begun, until it
+    /// answers or the act's bound passes: the identity the core chose makes
+    /// asking again safe, as the Server answers it with the Session it made,
+    /// so one whose answer was lost is asked again too. What it answers
+    /// stands in the screen's own state: the Session made, or why it was
+    /// refused; where the screen has gone by then, a refused Prompt's text
+    /// is kept as the Landing's draft.
+    async fn create(&self) {
+        let Some(request) = self
+            .local
+            .borrow()
+            .provisional
+            .as_ref()
+            .map(Provisional::request)
+        else {
+            return;
+        };
+        let answered = match self.opening() {
+            Err(gone) => Err(gone.to_string()),
+            Ok(opening) => {
+                let commands = opening.commands;
+                let mut try_now = opening.try_now;
+                acts::deliver_again(self.asking, &mut try_now, || {
+                    let (commands, request) = (commands.clone(), request.clone());
+                    async move { commands.create_session(request).await }
+                })
+                .await
+                .map_err(|unanswered| match unanswered {
+                    Unanswered::NotDone(refused) => refused.to_string(),
+                    Unanswered::MaybeDone => beginning::MAYBE_BEGUN.to_owned(),
+                })
+            }
+        };
+        let mut discarded = None;
+        self.local.send_modify(|local| {
+            let closed = local.closed;
+            let Some(provisional) = local.provisional.as_mut() else {
+                return;
+            };
+            match answered {
+                Ok(created) => provisional.created = Some(Box::new(created)),
+                Err(why) if closed => {
+                    discarded = Some(provisional.prompt.text.clone());
+                    local.provisional = None;
+                    tracing::debug!("a session begun from a screen since gone was refused: {why}");
+                }
+                Err(why) => provisional.refused = Some(why),
+            }
+        });
+        if let Some(text) = discarded {
+            self.drafts.give_back(beginning::LANDING_DRAFT, &text);
+        }
+    }
+
     /// Sends `text` as a Prompt delivered as `delivery`, standing as a
     /// bubble marked as sending until its Server holds it, and given back to
     /// the composer's draft where it fails.
@@ -738,6 +938,10 @@ impl Acting {
             return Err(ActError::Invalid {
                 message: EMPTY_PROMPT.to_owned(),
             });
+        }
+        if self.beginning() {
+            // A Prompt written on a refused beginning replaces its own.
+            return self.begin_again(Some(text)).await;
         }
         let mut opening = self.opening()?;
         let id = PromptId::new();
@@ -790,6 +994,7 @@ impl Acting {
     }
 
     async fn steer_now(&self, prompt: &str) -> Result<(), ActError> {
+        self.begun()?;
         let prompt = queued_prompt(prompt)?;
         let mut opening = self.opening()?;
         self.deliver(&mut opening, |commands, session_id| async move {
@@ -806,6 +1011,7 @@ impl Acting {
     }
 
     async fn cancel_queued(&self, prompt: &str) -> Result<(), ActError> {
+        self.begun()?;
         let prompt = queued_prompt(prompt)?;
         let mut opening = self.opening()?;
         self.deliver(&mut opening, |commands, session_id| async move {
@@ -822,6 +1028,8 @@ impl Acting {
     }
 
     async fn stop(&self) -> Result<(), ActError> {
+        // A Session being begun offers no Stop, and nothing is stopped.
+        self.begun()?;
         let mut opening = self.opening()?;
         let asked = self
             .deliver(&mut opening, |commands, session_id| async move {
@@ -874,6 +1082,7 @@ impl Acting {
 
 impl Acting {
     async fn decide(&self, reference: &str, decision: DecisionKind) -> Result<(), ActError> {
+        self.begun()?;
         // The Session stands; only the Approval is no longer there to answer.
         let approval =
             intervention::approval_referenced(reference).ok_or_else(|| ActError::Refused {
@@ -910,6 +1119,7 @@ impl Acting {
         submission: QuestionnaireSubmission,
         maybe: &str,
     ) -> Result<(), ActError> {
+        self.begun()?;
         // The Session stands; only the Questionnaire is no longer there.
         let questionnaire =
             intervention::questionnaire_referenced(reference).ok_or_else(|| ActError::Refused {
@@ -982,6 +1192,10 @@ struct Reader {
     tree: Option<Lease>,
     /// The tree as it sees it.
     tree_seen: watch::Receiver<TreeState>,
+    /// While the Session is being begun, what it is to see its tree through
+    /// once its Server holds it.
+    beginning: Option<watch::Sender<TreeState>>,
+    trees: Trees,
     /// The Remote it is on, by its key.
     remote: String,
     /// What screens pushed from it have attached, which it fills.
@@ -1052,6 +1266,13 @@ impl Reader {
         // Whatever was attached before the reader heard of attachments is
         // filled now, from nothing read yet.
         self.fill_attached();
+        if let Some(seeing) = self.beginning.take()
+            && let Err(why) = self
+                .await_beginning(seeing, &mut listing, &mut local, &mut attaching)
+                .await
+        {
+            return self.show_gone(why, local, attaching).await;
+        }
         let mut backoff =
             RecoveryBackoff::new(self.pacing.initial_backoff, self.pacing.max_backoff);
         loop {
@@ -1080,6 +1301,59 @@ impl Reader {
                 .await
             {
                 return self.show_gone(why, local, attaching).await;
+            }
+        }
+    }
+
+    /// Waits for the Session being begun to be made, showing meanwhile what
+    /// the screen holds of it: then the Session its Server answered with
+    /// stands in its place, and its tree is seen through `seeing`. Fails
+    /// with why where its Remote is no longer held.
+    async fn await_beginning(
+        &mut self,
+        seeing: watch::Sender<TreeState>,
+        listing: &mut watch::Receiver<crate::Listing>,
+        local: &mut watch::Receiver<Local>,
+        attaching: &mut watch::Receiver<u64>,
+    ) -> Result<(), String> {
+        loop {
+            let created = local
+                .borrow_and_update()
+                .provisional
+                .as_ref()
+                .map(|provisional| provisional.created.clone());
+            match created {
+                // Discarded: nothing stands to be made.
+                None => return Ok(()),
+                Some(Some(created)) => {
+                    self.snapshot = Some(*created);
+                    if let Some(held) = self.local.upgrade() {
+                        held.send_modify(|local| local.provisional = None);
+                    }
+                    self.tree = Some(self.trees.hold_through(
+                        &self.remote,
+                        self.session_id,
+                        &self.commands,
+                        seeing,
+                    ));
+                    self.show();
+                    return Ok(());
+                }
+                Some(None) => self.show(),
+            }
+            tokio::select! {
+                changed = local.changed() => {
+                    if changed.is_err() {
+                        return Ok(());
+                    }
+                }
+                Ok(()) = attaching.changed() => self.fill_attached(),
+                Ok(()) = listing.changed() => {
+                    if self.relist() == Relisted::Gone {
+                        return Err(GONE_REMOTE.to_owned());
+                    }
+                }
+                Ok(()) = self.unreachable.changed() => self.show_frame(),
             }
         }
     }
@@ -1247,11 +1521,14 @@ impl Reader {
         self.show_frame();
         // A Prompt being sent stands at the foot even before the Session has
         // been read, beneath the loading mark.
+        let local = self.local();
         let items = frame::with_outgoing(
-            self.snapshot
-                .as_ref()
-                .map_or_else(conversation::loading, conversation::conversation),
-            &self.local(),
+            match (&self.snapshot, &local.provisional) {
+                (Some(snapshot), _) => conversation::conversation(snapshot),
+                (None, Some(provisional)) => frame::provisional_items(provisional),
+                (None, None) => conversation::loading(),
+            },
+            &local,
         );
         self.conversation.send_if_modified(|current| {
             let next = shown(Some(current), items);
@@ -1373,6 +1650,8 @@ mod tests {
         let reader = Reader {
             tree: None,
             tree_seen: watch::channel(TreeState::default()).1,
+            beginning: None,
+            trees: Trees::new(runtime.handle().clone()),
             remote: reference.split_once('/').unwrap().0.to_owned(),
             attached,
             gone: None,

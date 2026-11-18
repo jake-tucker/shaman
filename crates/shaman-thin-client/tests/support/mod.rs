@@ -36,10 +36,10 @@ use shaman_pairing::{
 };
 use shaman_thin_client::{
     ActivityDetail, ActsListener, ConversationChange, ConversationItem, ConversationListener,
-    CoreTimings, DetailListener, DeviceListener, FrameListener, KeySigner, Listing,
-    ListingListener, OpenSession, Outlook, OutlookListener, Servers, ServersListener, SessionFrame,
-    SignError, SubagentTree, Subscription, ThinClient, ThisDevice, TreeListener, TurnWork,
-    WorkListener,
+    CoreTimings, DetailListener, DeviceListener, FrameListener, KeySigner, Landing,
+    LandingListener, Listing, ListingListener, OpenSession, Outlook, OutlookListener, Servers,
+    ServersListener, SessionFrame, SignError, SubagentTree, Subscription, ThinClient, ThisDevice,
+    TreeListener, TurnWork, WorkListener,
 };
 use tokio::{
     net::TcpListener,
@@ -698,9 +698,37 @@ impl Phone {
         .expect("heard");
     }
 
+    /// What the Landing shows once it shows what `shown` looks for.
+    pub async fn landing_until(&self, shown: impl Fn(&Landing) -> bool) -> Landing {
+        let (sender, mut heard) = watch::channel(None);
+        let _subscription = self.core.watch_landing(Arc::new(Heard(sender)));
+        let heard = timeout(
+            PROGRESS_DEADLINE,
+            heard.wait_for(|landing| landing.as_ref().is_some_and(&shown)),
+        )
+        .await;
+        match heard {
+            Ok(Ok(landing)) => landing.clone().expect("heard"),
+            _ => panic!("the Landing never showed what was looked for"),
+        }
+    }
+
+    /// Begins a Session with the Prompt `text` where the Outlook stands, as
+    /// the Landing's send does, and reads it as its screen turns into it.
+    pub fn begin(&self, text: &str) -> Reading {
+        let session = self
+            .core
+            .begin_session(text.to_owned())
+            .expect("a Session begun");
+        Self::reading(session)
+    }
+
     /// Opens the Session `reference` names, as a screen pushed to read it.
     pub fn open(&self, reference: &str) -> Reading {
-        let session = self.core.open_session(reference.to_owned());
+        Self::reading(self.core.open_session(reference.to_owned()))
+    }
+
+    fn reading(session: Arc<OpenSession>) -> Reading {
         let (frame_heard, frame) = watch::channel(None);
         let (conversation_heard, conversation) = watch::channel(Conversation::default());
         let frame_subscription = session.watch_frame(Arc::new(Heard(frame_heard)));
@@ -957,6 +985,12 @@ impl FrameListener for Heard<SessionFrame> {
 impl ActsListener for Heard<bool> {
     fn changed(&self, under_way: bool) {
         self.0.send_replace(Some(under_way));
+    }
+}
+
+impl LandingListener for Heard<Landing> {
+    fn changed(&self, landing: Landing) {
+        self.0.send_replace(Some(landing));
     }
 }
 
