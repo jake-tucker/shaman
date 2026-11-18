@@ -22,6 +22,7 @@ impl Built {
     fn new() -> Self {
         let mut snapshot = shaman_client_snapshot();
         snapshot.session.workspace.path = workspace();
+        snapshot.session.execution_directory.path = workspace();
         Self { snapshot }
     }
 
@@ -558,6 +559,42 @@ fn a_compaction_holding_its_instructions_or_summary_pushes_its_detail() {
         panic!("a Compaction: {items:?}");
     };
     assert_eq!(detail.as_deref(), Some(id.to_string().as_str()));
+}
+
+#[test]
+fn a_compactions_blank_instructions_and_summary_push_nothing() {
+    let mut built = Built::new();
+    let turn = built.turn(TurnStatus::Completed, 1_000, Some(10_000));
+    built.activity(Activity::Compaction {
+        id: ActivityId::new(),
+        turn_id: turn,
+        status: ActivityStatus::Completed,
+        trigger: CompactionTrigger::Manual,
+        instructions: Some(" ".to_owned()),
+        before_tokens: None,
+        after_tokens: None,
+        error: None,
+        summary: Some("\n\t".to_owned()),
+        summary_truncated: false,
+    });
+    let ItemKind::Compaction { detail, .. } = &built.read()[0].kind else {
+        panic!("a Compaction");
+    };
+    assert_eq!(*detail, None);
+}
+
+#[test]
+fn a_live_card_names_a_windows_servers_path_from_where_the_session_works() {
+    let mut built = Built::new();
+    built.snapshot.session.execution_directory.path = PathBuf::from(r"C:\work\shaman");
+    let turn = built.turn(TurnStatus::Active, 1_000, None);
+    built.user(turn, "Draw it");
+    built.edit(
+        turn,
+        PathBuf::from(r"C:\work\shaman\src\tui\qr.rs"),
+        ActivityStatus::Active,
+    );
+    assert_eq!(cards(&built.read())[0].line, r"src\tui\qr.rs");
 }
 
 #[test]

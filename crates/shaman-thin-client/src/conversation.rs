@@ -152,7 +152,8 @@ pub(crate) struct Read<'a> {
     entries: Vec<Entry<'a>>,
     roles: Vec<Role>,
     turns: &'a [Turn],
-    workspace: &'a Path,
+    /// The directory the Session works in, which paths are read against.
+    directory: &'a Path,
 }
 
 impl<'a> Read<'a> {
@@ -197,13 +198,13 @@ impl<'a> Read<'a> {
             entries,
             roles,
             turns: &snapshot.turns,
-            workspace: snapshot.session.workspace.path.as_path(),
+            directory: snapshot.session.execution_directory.path.as_path(),
         }
     }
 
-    /// Where the Session's Workspace stands, which paths are read against.
-    pub(crate) fn workspace(&self) -> &'a Path {
-        self.workspace
+    /// The directory the Session works in, which paths are read against.
+    pub(crate) fn directory(&self) -> &'a Path {
+        self.directory
     }
 
     /// The Turn `turn` names, where the Session holds it.
@@ -230,7 +231,7 @@ impl<'a> Read<'a> {
                 Entry::Message(_) => None,
             })
             .collect::<Vec<_>>();
-        card(turn, &work, self.workspace)
+        card(turn, &work, self.directory)
     }
 
     /// The conversation this reading makes, in reading order.
@@ -479,7 +480,7 @@ pub(crate) fn card_id(turn: TurnId) -> String {
 }
 
 /// The card of `turn`, whose work is `work`.
-fn card(turn: &Turn, work: &[&Activity], workspace: &Path) -> TurnCard {
+fn card(turn: &Turn, work: &[&Activity], directory: &Path) -> TurnCard {
     let (outcome, line) = match turn.status {
         // A status a newer Server sent holds the Turn open, as working.
         TurnStatus::Active | TurnStatus::Unknown
@@ -492,7 +493,7 @@ fn card(turn: &Turn, work: &[&Activity], workspace: &Path) -> TurnCard {
             work.iter()
                 .rev()
                 .find(|activity| activity.status() == Some(ActivityStatus::Active))
-                .and_then(|activity| running_line(activity, workspace))
+                .and_then(|activity| running_line(activity, directory))
                 .unwrap_or_else(|| "Working".to_owned()),
         ),
         TurnStatus::Completed => (TurnOutcome::Worked, settled_line("Worked", "for", turn)),
@@ -552,7 +553,7 @@ pub(crate) fn humanized_duration(duration_ms: u64) -> String {
 /// What a live Turn's card says of the work running now: a command or a Tool
 /// Call as its own row leads, a File Change by the first path it names, and
 /// any other work by what it is.
-fn running_line(activity: &Activity, workspace: &Path) -> Option<String> {
+fn running_line(activity: &Activity, directory: &Path) -> Option<String> {
     let line = match activity {
         Activity::Command { command, .. } => command.clone(),
         Activity::ToolCall {
@@ -577,10 +578,7 @@ fn running_line(activity: &Activity, workspace: &Path) -> Option<String> {
                 | FileChange::Update { path, .. } => Some(path),
                 FileChange::Unknown => None,
             })?;
-            path.strip_prefix(workspace)
-                .unwrap_or(path)
-                .display()
-                .to_string()
+            crate::work::shown_path(path, directory)
         }
         Activity::Subagent { name, .. } => name.clone(),
         _ => return None,
@@ -667,7 +665,8 @@ fn activity_item(activity: &Activity) -> Option<ConversationItem> {
         } => ItemKind::Compaction {
             words: compaction_words(*status, *trigger, *before_tokens, *after_tokens, error),
             tone: (*status).into(),
-            detail: (instructions.is_some() || summary.is_some()).then(|| id.to_string()),
+            detail: crate::work::compaction_holds_more(instructions.as_deref(), summary.as_deref())
+                .then(|| id.to_string()),
         },
         _ => return None,
     };

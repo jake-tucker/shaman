@@ -36,6 +36,7 @@ impl Built {
     fn new() -> Self {
         let mut snapshot = shaman_client::testing::session_snapshot(SessionId::new(), 1);
         snapshot.session.workspace.path = workspace();
+        snapshot.session.execution_directory.path = workspace();
         Self { snapshot }
     }
 
@@ -1084,5 +1085,93 @@ fn an_activity_of_a_kind_this_build_does_not_know_holds_its_place_as_a_placehold
             "Not shown: web search, from a newer Shaman",
             BodyStyle::Prose
         )]
+    );
+}
+
+/// A Session on a Windows Server, read on whatever platform the test runs on.
+fn on_windows() -> Built {
+    let mut built = Built::new();
+    built.snapshot.session.workspace.path = PathBuf::from(r"C:\work\shaman");
+    built.snapshot.session.execution_directory.path = PathBuf::from(r"C:\work\shaman");
+    built
+}
+
+#[test]
+fn a_windows_servers_paths_are_shown_from_where_the_session_works_on_every_platform() {
+    let mut built = on_windows();
+    let turn = built.turn(TurnStatus::Completed, Some(1_000));
+    let mut ran = command(turn, "cargo test", ActivityStatus::Completed);
+    if let Activity::Command { cwd, .. } = &mut ran {
+        *cwd = Some(PathBuf::from(r"C:\work\shaman\crates\relay"));
+    }
+    built.activity(ran);
+    let edited = built.activity(Activity::FileChange {
+        id: ActivityId::new(),
+        turn_id: turn,
+        status: ActivityStatus::Completed,
+        changes: vec![
+            FileChange::Update {
+                path: PathBuf::from("C:/work/shaman/src/tui/qr.rs"),
+                moved_to: None,
+            },
+            FileChange::Add {
+                path: PathBuf::from(r"\\?\C:\work\shaman\docs\qr.md"),
+            },
+            FileChange::Delete {
+                path: PathBuf::from(r"D:\elsewhere\notes.md"),
+            },
+        ],
+    });
+    let work = built.work(turn);
+    assert_eq!(row_of(&work, 0).line.as_deref(), Some(r"in crates\relay"));
+    assert_eq!(row_of(&work, 1).title, r"Edited src\tui\qr.rs");
+    assert_eq!(
+        facts(&built.detail(edited)),
+        [
+            ("Edited", r"src\tui\qr.rs", BodyStyle::Monospace),
+            ("Created", r"docs\qr.md", BodyStyle::Monospace),
+            ("Deleted", r"D:\elsewhere\notes.md", BodyStyle::Monospace),
+        ]
+    );
+}
+
+#[test]
+fn a_command_run_where_the_session_works_says_so_as_the_tui_does() {
+    let mut built = on_windows();
+    let turn = built.turn(TurnStatus::Completed, Some(1_000));
+    let mut ran = command(turn, "cargo check", ActivityStatus::Completed);
+    if let Activity::Command { cwd, .. } = &mut ran {
+        *cwd = Some(PathBuf::from(r"C:\work\shaman"));
+    }
+    let id = built.activity(ran);
+    assert_eq!(
+        row_of(&built.work(turn), 0).line,
+        None,
+        "the row says nothing of where"
+    );
+    assert_eq!(
+        facts(&built.detail(id))[1],
+        ("Directory", ".", BodyStyle::Monospace)
+    );
+}
+
+#[test]
+fn a_compactions_blank_instructions_and_summary_say_nothing_and_push_nothing() {
+    let blank = Activity::Compaction {
+        id: ActivityId::new(),
+        turn_id: TurnId::new(),
+        status: ActivityStatus::Completed,
+        trigger: CompactionTrigger::Manual,
+        instructions: Some("  ".to_owned()),
+        before_tokens: None,
+        after_tokens: None,
+        error: None,
+        summary: Some("\n".to_owned()),
+        summary_truncated: true,
+    };
+    assert_eq!(row(&blank, &workspace()).tap, Tap::Nothing);
+    assert!(
+        detail(&blank, &workspace()).sections.is_empty(),
+        "nor that a blank summary was cut short"
     );
 }

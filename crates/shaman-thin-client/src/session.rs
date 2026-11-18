@@ -317,6 +317,14 @@ impl Target {
             Self::Detail(activity) => Filled::Detail(work::activity_detail(snapshot, activity)),
         }
     }
+
+    /// What it is filled with where its Session will never be read.
+    fn unread(&self) -> Filled {
+        match self {
+            Self::Work(_) => Filled::Work(work::gone_work()),
+            Self::Detail(_) => Filled::Detail(work::gone_detail()),
+        }
+    }
 }
 
 /// What the screens pushed from an open Session have attached to it, each
@@ -327,6 +335,9 @@ pub(crate) struct Attachments {
     held: Mutex<Held>,
     /// Moves on as each is attached, so the reader fills it at once.
     attached: watch::Sender<u64>,
+    /// Whether no reader will ever fill them, the Session's Remote being
+    /// held by none when it opened, so each is filled as it is attached.
+    unread: bool,
 }
 
 #[derive(Default)]
@@ -338,7 +349,7 @@ struct Held {
 impl Attachments {
     /// Attaches `target`, answering under what, and what it is filled with.
     fn attach(&self, target: Target) -> (u64, watch::Receiver<Option<Filled>>) {
-        let (filling, filled) = watch::channel(None);
+        let (filling, filled) = watch::channel(self.unread.then(|| target.unread()));
         let attachment = {
             let mut held = self.held();
             held.next += 1;
@@ -348,6 +359,14 @@ impl Attachments {
         };
         self.attached.send_modify(|attached| *attached += 1);
         (attachment, filled)
+    }
+
+    /// Attachments no reader will ever fill.
+    fn unread() -> Self {
+        Self {
+            unread: true,
+            ..Self::default()
+        }
     }
 
     fn detach(&self, attachment: u64) {
@@ -470,7 +489,11 @@ pub(crate) fn open(
     ));
     let (conversation, conversation_seen) = watch::channel(shown(None, conversation::loading()));
     let reading = Arc::new(AtomicBool::new(true));
-    let attached = Arc::new(Attachments::default());
+    let attached = Arc::new(if opening.is_some() {
+        Attachments::default()
+    } else {
+        Attachments::unread()
+    });
     let reader = opening.map(|opening| {
         let reader = Reader {
             attached: attached.clone(),
@@ -783,6 +806,9 @@ impl Reader {
             |local| local.subscribe(),
         );
         let mut attaching = self.attached.subscribe();
+        // Whatever was attached before the reader heard of attachments is
+        // filled now, from nothing read yet.
+        self.fill_attached();
         let mut backoff =
             RecoveryBackoff::new(self.pacing.initial_backoff, self.pacing.max_backoff);
         loop {
@@ -1049,7 +1075,7 @@ mod tests {
     use std::sync::Arc;
 
     use shaman_client::{SessionCommandTimings, Transport as _, testing::ScriptedTransport};
-    use shaman_protocol::{SessionError, SessionErrorCode};
+    use shaman_protocol::{SessionError, SessionErrorCode, TurnId};
 
     use super::*;
     use crate::{
@@ -1069,6 +1095,7 @@ mod tests {
         reference: &str,
         transport: Arc<ScriptedTransport>,
         backoff: Duration,
+        attached: Arc<Attachments>,
     ) -> (JoinHandle<()>, watch::Receiver<SessionFrame>) {
         let opening = listings.opening(reference).expect("its Remote is held");
         let (frame, seen) = watch::channel(frame_of(
@@ -1081,7 +1108,7 @@ mod tests {
         let (conversation, _) = watch::channel(shown(None, conversation::loading()));
         let try_now = transport.try_now();
         let reader = Reader {
-            attached: Arc::new(Attachments::default()),
+            attached,
             gone: None,
             drafts: Drafts::default(),
             reading: Arc::new(AtomicBool::new(true)),
@@ -1154,6 +1181,7 @@ mod tests {
             &reference,
             transport.clone(),
             Duration::from_millis(1),
+            Arc::default(),
         );
         assert_eq!(
             gone_within(&runtime, &mut frame),
@@ -1177,6 +1205,7 @@ mod tests {
             &reference,
             transport.clone(),
             Duration::from_secs(60),
+            Arc::default(),
         );
         runtime.block_on(async {
             while transport.asked() == 0 {
@@ -1203,6 +1232,7 @@ mod tests {
             &reference,
             transport.clone(),
             Duration::from_secs(60),
+            Arc::default(),
         );
         let asked_at_least = |times: usize| {
             runtime.block_on(async {
@@ -1571,5 +1601,129 @@ mod tests {
             .expect("given back in time");
         });
         assert_eq!(drafts.get(&reference).text, "Tidy the build\nand the docs");
+    }
+
+    /// What `attached` fills its attachment `filled` with, once it does.
+    fn filled_within(
+        runtime: &tokio::runtime::Runtime,
+        filled: &mut watch::Receiver<Option<Filled>>,
+    ) -> Filled {
+        runtime.block_on(async {
+            tokio::time::timeout(SHOWN_WITHIN, filled.wait_for(Option::is_some))
+                .await
+                .expect("filled in time")
+                .expect("the attachment stands")
+                .clone()
+                .expect("filled")
+        })
+    }
+
+    #[test]
+    fn an_attachment_made_before_the_reader_first_polls_is_filled_all_the_same() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (listings, _directory) = listings(&runtime);
+        let (desk, reference) = listed_on("desk", "Map the workspace");
+        listings.hold(desk);
+        let attached = Arc::new(Attachments::default());
+        // Attached before the reader is so much as spawned.
+        let (_, mut filled) = attached.attach(Target::Work(TurnId::new().to_string()));
+        let transport = Arc::new(ScriptedTransport::new(Vec::new()));
+        let _reader = reading(
+            &runtime,
+            &listings,
+            &reference,
+            transport,
+            Duration::from_secs(60),
+            attached,
+        );
+        let Filled::Work(work) = filled_within(&runtime, &mut filled) else {
+            panic!("a Turn's work");
+        };
+        assert_eq!(work.empty.as_deref(), Some("Loading"), "nothing read yet");
+    }
+
+    #[test]
+    fn an_attachment_to_a_session_never_read_is_filled_at_once_with_it_gone() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (listings, _directory) = listings(&runtime);
+        let opened = open(
+            runtime.handle(),
+            &listings,
+            &format!("nobody/{}", SessionId::new()),
+            Pacing {
+                initial_backoff: Duration::from_millis(1),
+                max_backoff: Duration::from_millis(5),
+            },
+            Asked {
+                drafts: Drafts::default(),
+                acts: Acts::default(),
+                asking: Asking {
+                    initial_backoff: Duration::from_millis(1),
+                    max_backoff: Duration::from_millis(5),
+                    bound: SHOWN_WITHIN,
+                    dialling: Duration::from_millis(50),
+                },
+            },
+        );
+        let (_, mut work) = opened
+            .attached
+            .attach(Target::Work(TurnId::new().to_string()));
+        let Filled::Work(work) = filled_within(&runtime, &mut work) else {
+            panic!("a Turn's work");
+        };
+        assert_eq!(
+            work.empty.as_deref(),
+            Some("This turn is no longer in the session")
+        );
+        let (_, mut detail) = opened.attached.attach(Target::Detail(
+            shaman_protocol::ActivityId::new().to_string(),
+        ));
+        let Filled::Detail(detail) = filled_within(&runtime, &mut detail) else {
+            panic!("an Activity's detail");
+        };
+        assert_eq!(detail.sections[0].body, "This is no longer in the session");
+    }
+
+    /// Hears nothing it keeps.
+    struct Deaf;
+
+    impl WorkListener for Deaf {
+        fn changed(&self, _: TurnWork) {}
+    }
+
+    impl DetailListener for Deaf {
+        fn changed(&self, _: ActivityDetail) {}
+    }
+
+    #[test]
+    fn an_attachment_is_filled_no_more_once_its_screen_goes() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (opened, _drafts, _reference, _session, _directory) = opened_over(
+            &runtime,
+            answering(Arc::new(|_, _| Box::pin(std::future::pending()))),
+        );
+        let attached = || opened.attached.held().filling.len();
+        let work = opened.watch_work(TurnId::new().to_string(), Arc::new(Deaf));
+        let detail = opened.watch_detail(
+            shaman_protocol::ActivityId::new().to_string(),
+            Arc::new(Deaf),
+        );
+        assert_eq!(attached(), 2, "attached while their screens are up");
+        let detached_within = |count: usize| {
+            runtime.block_on(async {
+                tokio::time::timeout(SHOWN_WITHIN, async {
+                    while attached() != count {
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                    }
+                })
+                .await
+                .expect("detached in time");
+            });
+        };
+        detail.cancel();
+        detached_within(1);
+        // Dropped as Swift drops it when the stream ends, it detaches too.
+        drop(work);
+        detached_within(0);
     }
 }

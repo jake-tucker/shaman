@@ -134,11 +134,7 @@ pub(crate) fn turn_work(snapshot: Option<&SessionSnapshot>, turn: &str) -> TurnW
     };
     let read = Read::of(snapshot);
     let Some(turn) = referenced::<TurnId>(turn).and_then(|turn| read.turn(turn)) else {
-        return TurnWork {
-            title: String::new(),
-            items: Vec::new(),
-            empty: Some(GONE_TURN.to_owned()),
-        };
+        return gone_work();
     };
     let card = read.card(turn);
     let title = match card.outcome {
@@ -153,7 +149,7 @@ pub(crate) fn turn_work(snapshot: Option<&SessionSnapshot>, turn: &str) -> TurnW
             Entry::Activity(activity) => Some(WorkItem {
                 id: format!("activity:{}", activity.id()),
                 kind: WorkKind::Row {
-                    row: row(activity, read.workspace()),
+                    row: row(activity, read.directory()),
                 },
             }),
             Entry::Message(message) => match message.role {
@@ -193,10 +189,26 @@ pub(crate) fn activity_detail(
     };
     referenced::<ActivityId>(activity)
         .and_then(|id| snapshot.activities.iter().find(|held| held.id() == id))
-        .map_or_else(
-            || said(String::new(), GONE_ACTIVITY),
-            |activity| detail(activity, snapshot.session.workspace.path.as_path()),
-        )
+        .map_or_else(gone_detail, |activity| {
+            detail(
+                activity,
+                snapshot.session.execution_directory.path.as_path(),
+            )
+        })
+}
+
+/// A Turn's work where its Session will never be read.
+pub(crate) fn gone_work() -> TurnWork {
+    TurnWork {
+        title: String::new(),
+        items: Vec::new(),
+        empty: Some(GONE_TURN.to_owned()),
+    }
+}
+
+/// An Activity's detail where its Session will never be read.
+pub(crate) fn gone_detail() -> ActivityDetail {
+    said(String::new(), GONE_ACTIVITY)
 }
 
 /// The identity a reference handed back names, where it names one.
@@ -214,8 +226,8 @@ fn said(title: String, words: &str) -> ActivityDetail {
 }
 
 /// The row `activity` stands as among its Turn's work, in a Session whose
-/// Workspace is `workspace`.
-pub(crate) fn row(activity: &Activity, workspace: &Path) -> WorkRow {
+/// execution directory is `directory`.
+pub(crate) fn row(activity: &Activity, directory: &Path) -> WorkRow {
     let detail = Tap::Detail {
         activity: activity.id().to_string(),
     };
@@ -244,10 +256,13 @@ pub(crate) fn row(activity: &Activity, workspace: &Path) -> WorkRow {
             exit_status,
             ..
         } => WorkRow {
+            // Run where the Session works, the row says nothing of where;
+            // its detail says ".".
             line: cwd
                 .as_deref()
-                .filter(|cwd| *cwd != workspace)
-                .map(|cwd| format!("in {}", shown_path(cwd, workspace))),
+                .map(|cwd| shown_path(cwd, directory))
+                .filter(|cwd| cwd != ".")
+                .map(|cwd| format!("in {cwd}")),
             trailing: match (status, exit_status) {
                 (ActivityStatus::Failed, Some(exit)) => Some(format!("exit {exit}")),
                 _ => None,
@@ -289,7 +304,7 @@ pub(crate) fn row(activity: &Activity, workspace: &Path) -> WorkRow {
                     changes.first().map_or_else(
                         || actions.edit.to_owned(),
                         |change| {
-                            let (action, path) = actions.of_change(change, workspace);
+                            let (action, path) = actions.of_change(change, directory);
                             format!("{action} {path}")
                         },
                     ),
@@ -432,7 +447,7 @@ pub(crate) fn row(activity: &Activity, workspace: &Path) -> WorkRow {
             glyphs::COMPACTION,
             compaction_words(*status, *trigger, *before_tokens, *after_tokens, error),
             (*status).into(),
-            if instructions.is_some() || summary.is_some() {
+            if compaction_holds_more(instructions.as_deref(), summary.as_deref()) {
                 detail.clone()
             } else {
                 Tap::Nothing
@@ -501,8 +516,8 @@ pub(crate) fn row(activity: &Activity, workspace: &Path) -> WorkRow {
     }
 }
 
-/// The whole of `activity`, in a Session whose Workspace is `workspace`.
-pub(crate) fn detail(activity: &Activity, workspace: &Path) -> ActivityDetail {
+/// The whole of `activity`, in a Session whose execution directory is `directory`.
+pub(crate) fn detail(activity: &Activity, directory: &Path) -> ActivityDetail {
     match activity {
         Activity::Command {
             status,
@@ -515,7 +530,7 @@ pub(crate) fn detail(activity: &Activity, workspace: &Path) -> ActivityDetail {
         } => {
             let mut facts = vec![mono("Command", command.trim_end())];
             if let Some(cwd) = cwd {
-                facts.push(mono("Directory", &shown_path(cwd, workspace)));
+                facts.push(mono("Directory", &shown_path(cwd, directory)));
             }
             facts.push(fact(
                 "Status",
@@ -588,7 +603,7 @@ pub(crate) fn detail(activity: &Activity, workspace: &Path) -> ActivityDetail {
                 facts: changes
                     .iter()
                     .map(|change| {
-                        let (action, path) = actions.of_change(change, workspace);
+                        let (action, path) = actions.of_change(change, directory);
                         mono(action, &path)
                     })
                     .collect(),
@@ -778,14 +793,15 @@ pub(crate) fn detail(activity: &Activity, workspace: &Path) -> ActivityDetail {
                 },
             ));
             let mut sections = Vec::new();
-            if let Some(instructions) = instructions {
+            if let Some(instructions) = saying(instructions.as_deref()) {
                 sections.push(prose(Some("Instructions"), instructions));
             }
-            if let Some(summary) = summary {
+            // A blank summary says nothing, nor that the cap cut it short.
+            if let Some(summary) = saying(summary.as_deref()) {
                 sections.push(prose(Some("Summary"), summary));
-            }
-            if *summary_truncated {
-                sections.push(prose(None, "Summary truncated"));
+                if *summary_truncated {
+                    sections.push(prose(None, "Summary truncated"));
+                }
             }
             ActivityDetail {
                 title: "Compaction".to_owned(),
@@ -1157,11 +1173,11 @@ impl FileActions {
     }
 
     /// What was done to the file `change` names, and the path it names, in a
-    /// Session whose Workspace is `workspace`.
-    fn of_change(&self, change: &FileChange, workspace: &Path) -> (&'static str, String) {
+    /// Session whose execution directory is `directory`.
+    fn of_change(&self, change: &FileChange, directory: &Path) -> (&'static str, String) {
         match change {
-            FileChange::Add { path } => (self.create, shown_path(path, workspace)),
-            FileChange::Delete { path } => (self.delete, shown_path(path, workspace)),
+            FileChange::Add { path } => (self.create, shown_path(path, directory)),
+            FileChange::Delete { path } => (self.delete, shown_path(path, directory)),
             FileChange::Update {
                 path,
                 moved_to: Some(moved_to),
@@ -1169,14 +1185,14 @@ impl FileActions {
                 self.rename,
                 format!(
                     "{} → {}",
-                    shown_path(path, workspace),
-                    shown_path(moved_to, workspace)
+                    shown_path(path, directory),
+                    shown_path(moved_to, directory)
                 ),
             ),
             FileChange::Update {
                 path,
                 moved_to: None,
-            } => (self.edit, shown_path(path, workspace)),
+            } => (self.edit, shown_path(path, directory)),
             FileChange::Unknown => (
                 "Changed",
                 "a file, in a way this Shaman does not know".to_owned(),
@@ -1313,14 +1329,21 @@ fn plain(text: &str) -> String {
     plain
 }
 
-/// `path` as a Transcript names it: within the Workspace, from there.
-fn shown_path(path: &Path, workspace: &Path) -> String {
-    path.strip_prefix(workspace)
-        .ok()
-        .filter(|inside| !inside.as_os_str().is_empty())
-        .unwrap_or(path)
-        .display()
-        .to_string()
+/// `path` as a Transcript names it: within the directory the Session works
+/// in, from there, read as its Server wrote it, whatever platform each is on.
+pub(crate) fn shown_path(path: &Path, directory: &Path) -> String {
+    shaman_text::paths::within(&path.to_string_lossy(), &directory.to_string_lossy()).into_owned()
+}
+
+/// Whether a Compaction holds more than its row's words, as the TUI's fold
+/// does: instructions or a summary that say something.
+pub(crate) fn compaction_holds_more(instructions: Option<&str>, summary: Option<&str>) -> bool {
+    saying(instructions).is_some() || saying(summary).is_some()
+}
+
+/// `text`, where it says anything.
+fn saying(text: Option<&str>) -> Option<&str> {
+    text.filter(|text| !text.trim().is_empty())
 }
 
 /// The first line of `text`, marked where more follows.
