@@ -8,7 +8,8 @@
 #
 #   scripts/ios-pair-scratch-server.sh            # launch the app with the Invite; press Pair in it
 #   scripts/ios-pair-scratch-server.sh --test     # run the UI test that presses Pair, checks where it lands,
-#                                                  # opens a Session begun there and reads it live, and stops the
+#                                                  # opens a Session begun there and reads it live, its Turn's
+#                                                  # work where its Agent did some, and stops the
 #                                                  # Server mid-run to see it read Unreachable and answer again
 #   scripts/ios-pair-scratch-server.sh --stop     # stop the scratch Server
 #   scripts/ios-pair-scratch-server.sh --resume   # start the stopped scratch Server again, its records kept, so the
@@ -76,8 +77,9 @@ run="scratch-$(date +%s)"
 
 if [ "$mode" = --test ]; then
   # One Session for the test to open over the Pairing, begun as the Server's own user would, over its loopback API, in
-  # an empty directory of the scratch root's. It runs on whichever Agent the Server would give it, asked for one word.
-  prompt="Reply with the single word ready, and nothing else. Use no tools."
+  # an empty directory of the scratch root's. It runs on whichever Agent the Server would give it, asked to run one
+  # command and say one word, so that where the Agent is signed in its Turn has work behind a card to tap through.
+  prompt="Run the shell command \`echo ready\`, then reply with the single word ready."
   workspace="$scratch/workspace"
   mkdir -p "$workspace"
   runtime="$scratch/state/scratch-$checkout/runtime.json"

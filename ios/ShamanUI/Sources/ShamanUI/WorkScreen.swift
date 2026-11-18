@@ -68,8 +68,9 @@ struct WorkRowView: View {
       ToneGlyph(glyph: row.glyph, tone: row.tone)
         .frame(width: 24)
       VStack(alignment: .leading, spacing: 2) {
+        // What was run or touched in monospace, as it was written; words in prose.
         Text(verbatim: row.title)
-          .font(.subheadline.monospaced())
+          .font(row.titleStyle == .monospace ? .subheadline.monospaced() : .subheadline)
           .lineLimit(2)
         if let line = row.line {
           Text(verbatim: line)

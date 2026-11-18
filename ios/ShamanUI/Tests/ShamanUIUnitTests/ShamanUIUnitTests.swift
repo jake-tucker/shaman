@@ -303,6 +303,19 @@ private final class RefusingSigner: KeySigner {
     try await core.dismissPairAgain()
     #expect(await device.next()?.pairAgain == nil)
   }
+
+  @Test func aTurnsWorkAndAnActivitysDetailCrossFromTheCoreThroughTheirStreams() async throws {
+    let base = try scratch()
+    defer { try? FileManager.default.removeItem(at: base) }
+    let core = try LiveCore(directory: try CoreDirectory.prepare(in: base), signer: try madeKey())
+    // A Session on a Remote the phone does not hold is never read, so what is attached to it says it is gone at once.
+    let session = core.openSession("nobody/\(UUID().uuidString.lowercased())")
+    defer { session.close() }
+    var work = session.work(UUID().uuidString.lowercased()).makeAsyncIterator()
+    #expect(await work.next()?.empty == "This turn is no longer in the session")
+    var detail = session.detail(UUID().uuidString.lowercased()).makeAsyncIterator()
+    #expect(await detail.next()?.sections.first?.body == "This is no longer in the session")
+  }
 }
 
 @Suite struct RunningTimeTests {

@@ -128,7 +128,9 @@
         id: "activity:\(id)",
         kind: .row(
           row: WorkRow(
-            glyph: kind.rawValue, title: title, line: line, trailing: trailing, tone: tone,
+            glyph: kind.rawValue, title: title,
+            titleStyle: [.command, .toolCall, .fileChange].contains(kind) ? .monospace : .prose, line: line,
+            trailing: trailing, tone: tone,
             tap: tap ?? .detail(activity: id))))
     }
 

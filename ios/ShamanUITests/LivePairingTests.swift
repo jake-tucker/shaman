@@ -75,6 +75,7 @@ final class LivePairingTests: XCTestCase {
     ).firstMatch
     XCTAssertTrue(answered.waitForExistence(timeout: 90), "its Turn was read as it went")
     attach(app, "A session on the scratch Server, read live")
+    readWork(app)
 
     // A Prompt sent from the composer goes over the Pairing, and stands as the Server holds it.
     let again = "Reply with the single word again, and nothing else. Use no tools."
@@ -128,6 +129,34 @@ final class LivePairingTests: XCTestCase {
     XCTAssertEqual(app.descendants(matching: .any)["home.beginsIn"].label, shown)
 
     try unreachableAndBack(app, signals: environment["SHAMAN_LIVE_SIGNALS"])
+  }
+
+  /// Where the Session's Agent did some work, its card pushes that work as the live core fills it, and a row pushes
+  /// the whole of its Activity. Where the Agent could not run, as where it is not signed in, its Turn failed with no
+  /// work and no card stands, which is said and passed over.
+  @MainActor
+  private func readWork(_ app: XCUIApplication) {
+    let card = app.descendants(matching: .any).matching(identifier: "session.turn").firstMatch
+    let failed = app.descendants(matching: .any).matching(identifier: "session.error").firstMatch
+    guard card.exists || (!failed.exists && card.waitForExistence(timeout: 60)) else {
+      XCTContext.runActivity(named: "No card: the scratch Server's Agent did no work, so none is read") { _ in }
+      return
+    }
+    card.tap()
+    let row = app.descendants(matching: .any).matching(identifier: "work.row").firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout: 30), "the Turn's work crossed from the live core")
+    attach(app, "A turn's work on the scratch Server")
+    if row.elementType == .button {
+      row.tap()
+      XCTAssertTrue(
+        app.descendants(matching: .any)["detail.screen"].waitForExistence(timeout: 10), "its Activity's whole")
+      XCTAssertTrue(
+        app.descendants(matching: .any).matching(identifier: "detail.fact").firstMatch.waitForExistence(timeout: 10))
+      attach(app, "An activity on the scratch Server")
+      app.navigationBars.buttons.firstMatch.tap()
+    }
+    app.navigationBars.buttons.firstMatch.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["session.composer"].waitForExistence(timeout: 10))
   }
 
   /// The scratch Server stopped mid-run reads Unreachable, its rows dimmed beneath a slim row, and once started again
