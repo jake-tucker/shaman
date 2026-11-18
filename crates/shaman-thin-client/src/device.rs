@@ -1,10 +1,12 @@
-//! This device: the name the phone goes by, kept in the thin Client's own
-//! file, and what "This device" shows of it.
+//! This device: the name the phone goes by and the key it proves itself by,
+//! kept in the thin Client's own file, and what "This device" shows of them.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+
+use crate::identity::KeptKey;
 
 /// The thin Client's own file in its directory, beside the records it keeps
 /// in the Server's shapes.
@@ -20,6 +22,12 @@ pub struct ThisDevice {
     pub name: String,
     /// What a change to the name reaches.
     pub name_note: String,
+    /// The fingerprint of this phone's identity key, whole, as a Serving
+    /// Server shows this phone among its Peers.
+    pub fingerprint: String,
+    /// Said where the phone has a new key and so must pair again with every
+    /// Server it had, until it is dismissed.
+    pub pair_again: Option<String>,
     /// The version of the protocol the core speaks to a Server.
     pub protocol_version: u32,
 }
@@ -31,6 +39,16 @@ impl ThisDevice {
             name_note: "Servers paired from now on know this phone by this name. Those already \
                         paired keep the name they were given."
                 .to_owned(),
+            fingerprint: record
+                .key
+                .as_ref()
+                .map(|key| key.fingerprint.clone())
+                .unwrap_or_default(),
+            pair_again: record.pair_again.then(|| {
+                "This phone has a new identity key, so no server it was paired with knows it \
+                 any more. Pair with each of them again."
+                    .to_owned()
+            }),
             protocol_version: shaman_protocol::PROTOCOL_VERSION,
         }
     }
@@ -42,11 +60,28 @@ pub(crate) struct DeviceRecord {
     /// The name, as the Serving side would keep it.
     #[serde(default = "first_name")]
     pub name: String,
+    /// The key every other record is of, where one has been taken up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<KeptKey>,
+    /// Whether the phone is yet to be told it must pair again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pair_again: bool,
+}
+
+impl DeviceRecord {
+    /// The record of a phone called `name`, and nothing else.
+    pub fn named(name: String) -> Self {
+        Self {
+            name,
+            key: None,
+            pair_again: false,
+        }
+    }
 }
 
 impl Default for DeviceRecord {
     fn default() -> Self {
-        Self { name: first_name() }
+        Self::named(first_name())
     }
 }
 
@@ -66,6 +101,10 @@ impl Records {
         std::fs::create_dir_all(&directory)
             .with_context(|| format!("make the directory {}", directory.display()))?;
         Ok(Self { directory })
+    }
+
+    pub fn directory(&self) -> &Path {
+        &self.directory
     }
 
     fn file(&self) -> PathBuf {

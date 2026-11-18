@@ -66,8 +66,8 @@ pub use client::{
 };
 pub use peer_name::{MAX_PEER_NAME_CHARS, PeerNameRefusal, shown_peer_name};
 pub use redeemer::{
-    AWAITED_AT_ONCE, Carried, Redeemer, RedeemerHooks, RedeemerTimings, StoredMadeOffer,
-    StoredRemote,
+    AWAITED_AT_ONCE, Carried, REMOTES_FILE, Redeemer, RedeemerHooks, RedeemerTimings,
+    StoredMadeOffer, StoredRemote,
 };
 
 /// Any error a body or a connector gives, as `http` and `hyper` box one.
