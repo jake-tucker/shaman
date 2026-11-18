@@ -848,15 +848,16 @@ async fn a_stale_address_is_said_and_the_next_try_forms_the_pairing() {
 
     assert_eq!(told, "not_formed");
     failed_as(&workstation, RedemptionFailure::NotReached).await;
+    // The workstation stores its Remote ahead of the commit that enrolls it
+    // on the laptop, so the Pairing is formed once both stand.
     timeout(PROGRESS_DEADLINE, async {
-        while workstation.remote_named(LAPTOP).await.is_none() {
+        while workstation.remote_named(LAPTOP).await.is_none() || laptop.peer_count().await != 1 {
             laptop.looks_at_remote().await;
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
     .expect("the next try forms it");
-    assert_eq!(laptop.peer_count().await, 1);
 
     workstation.shutdown().await;
     laptop.shutdown().await;
