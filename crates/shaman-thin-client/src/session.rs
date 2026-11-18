@@ -48,7 +48,7 @@ use tokio::{runtime::Handle, sync::watch, task::JoinHandle};
 use crate::{
     ActError, Subscription,
     acts::{self, Acts, Asking, Unanswered},
-    beginning::{self, Provisional},
+    beginning::{self, Progress, Provisional},
     conversation::{self, ConversationItem},
     drafts::Drafts,
     frame::{self, GONE_REMOTE, Local, Outgoing, SessionFrame, frame_of},
@@ -108,6 +108,7 @@ pub(crate) struct Acting {
     pub acts: Acts,
     pub asking: Asking,
     pub local: Arc<watch::Sender<Local>>,
+    pub landing_note: Arc<watch::Sender<Option<String>>>,
 }
 
 #[uniffi::export]
@@ -202,8 +203,9 @@ impl OpenSession {
     }
 
     /// Ends the Session's reading; it cancels nothing on the Server, and a
-    /// Session being begun goes on being begun. One whose beginning was
-    /// refused is discarded, its Prompt's text kept as the Landing's draft.
+    /// Session being begun goes on being begun. One refused, or whose answer
+    /// never came, is discarded, its Prompt's text kept as the Landing's
+    /// draft, and the Landing saying where it may have begun all the same.
     pub fn close(&self) {
         let mut discarded = None;
         self.acting.local.send_modify(|local| {
@@ -211,18 +213,16 @@ impl OpenSession {
             if local
                 .provisional
                 .as_ref()
-                .is_some_and(|provisional| provisional.refused.is_some())
+                .is_some_and(|provisional| !provisional.starting())
             {
-                discarded = local
-                    .provisional
-                    .take()
-                    .map(|provisional| provisional.prompt.text);
+                discarded = local.provisional.take().map(|provisional| {
+                    let maybe = provisional.progress == Progress::MayHaveBegun;
+                    (provisional.prompt.text, maybe)
+                });
             }
         });
-        if let Some(text) = discarded {
-            self.acting
-                .drafts
-                .give_back(beginning::LANDING_DRAFT, &text);
+        if let Some((text, may_have_begun)) = discarded {
+            self.acting.left(&text, may_have_begun);
         }
         if let Some(reader) = self
             .reader
@@ -234,9 +234,10 @@ impl OpenSession {
         }
     }
 
-    /// Asks again to begin the Session being begun, whose Server refused it,
-    /// with the same Prompt, answering once its Server has: the refusal, or
-    /// the Session made, arrives by the frame and the conversation.
+    /// Asks again to begin the Session being begun, whose Server refused it
+    /// or never answered, with the same Prompt, which the Server answers as
+    /// the same creation, answering once its Server has: the refusal, or the
+    /// Session made, arrives by the frame and the conversation.
     pub async fn try_again(&self) -> Result<(), ActError> {
         let acting = self.acting.clone();
         self.act(async move { acting.begin_again(None).await })
@@ -246,8 +247,10 @@ impl OpenSession {
     /// Sends `text` as a Prompt: it steers the working Turn, or begins one.
     /// It stands at once as a bubble marked as sending; where the send fails
     /// the bubble goes and the text is given back to the composer's draft.
-    /// On a Session being begun whose Server refused it, it replaces the
-    /// refused Prompt and asks again.
+    /// On a Session being begun whose Server refused it, or never answered,
+    /// it replaces the Prompt and asks again; where the Server holds the
+    /// Session begun with the first after all, the screen turns into it and
+    /// this one goes back to the composer, saying so.
     pub async fn send(&self, text: String) -> Result<(), ActError> {
         let acting = self.acting.clone();
         self.act(async move { acting.prompt(text, PromptDelivery::Steer).await })
@@ -765,6 +768,7 @@ fn opened(
             acts: asked.acts,
             asking: asked.asking,
             local,
+            landing_note: asked.landing_note,
         },
         attached,
         tree: tree_seen,
@@ -779,6 +783,8 @@ pub(crate) struct Asked {
     pub acts: Acts,
     pub asking: Asking,
     pub trees: Trees,
+    /// What the Landing says of a beginning left before it was known.
+    pub landing_note: Arc<watch::Sender<Option<String>>>,
 }
 
 /// Said where the Session's Server no longer holds it.
@@ -789,6 +795,10 @@ const GONE_PROMPT: &str = "That prompt is no longer queued";
 
 /// Said where a Prompt with nothing in it is sent.
 const EMPTY_PROMPT: &str = "Write something to send";
+
+/// How long a Session being begun that the listing carries is given to be
+/// read.
+const LOOKING: Duration = Duration::from_secs(5);
 
 /// Said where an act is asked of a Session its Server does not hold yet.
 const NOT_YET_BEGUN: &str = "Nothing is sent until the session has begun";
@@ -844,23 +854,24 @@ impl Acting {
         Ok(())
     }
 
-    /// Asks again to begin the Session being begun whose Server refused it:
-    /// with `text` in place of its Prompt where one is written instead, and
-    /// otherwise with the same Prompt.
+    /// Asks again to begin the Session being begun whose Server refused it,
+    /// or never answered: with `text` in place of its Prompt where one is
+    /// written instead, and otherwise as the same creation.
     async fn begin_again(&self, text: Option<String>) -> Result<(), ActError> {
         let mut asked = false;
         self.local.send_modify(|local| {
             let Some(provisional) = local
                 .provisional
                 .as_mut()
-                .filter(|provisional| provisional.refused.is_some())
+                .filter(|provisional| !provisional.starting())
             else {
                 return;
             };
             match text.clone() {
                 Some(text) => provisional.replace(text),
-                None => provisional.refused = None,
+                None => provisional.ask_again(),
             }
+            local.note = None;
             asked = true;
         });
         if !asked {
@@ -876,56 +887,117 @@ impl Acting {
     }
 
     /// Asks the Session's Server to begin it, as it is being begun, until it
-    /// answers or the act's bound passes: the identity the core chose makes
-    /// asking again safe, as the Server answers it with the Session it made,
-    /// so one whose answer was lost is asked again too. What it answers
-    /// stands in the screen's own state: the Session made, or why it was
-    /// refused; where the screen has gone by then, a refused Prompt's text
-    /// is kept as the Landing's draft.
+    /// answers or the act's bound passes. The Server answers a repeat of the
+    /// same creation, the same Session id and the same Prompt id, with the
+    /// Session it made, so one whose answer was lost is asked again too.
+    /// Where it is not answered with the Session, the Server is asked whether
+    /// it holds the Session after all, as it does where an earlier asking
+    /// began it and this one was refused for it; and where it does, that is
+    /// the Session made. Otherwise it stands refused, in the Server's words,
+    /// or, where any asking may have reached the Server, as having maybe
+    /// begun. Where the screen has gone by then, its Prompt's text is kept as
+    /// the Landing's draft.
     async fn create(&self) {
-        let Some(request) = self
+        let Some((request, session_id)) = self
             .local
             .borrow()
             .provisional
             .as_ref()
-            .map(Provisional::request)
+            .map(|provisional| (provisional.request(), provisional.session_id))
         else {
             return;
         };
         let answered = match self.opening() {
-            Err(gone) => Err(gone.to_string()),
+            Err(gone) => Err(Progress::Refused(gone.to_string())),
             Ok(opening) => {
                 let commands = opening.commands;
                 let mut try_now = opening.try_now;
-                acts::deliver_again(self.asking, &mut try_now, || {
+                let created = acts::deliver_again(self.asking, &mut try_now, || {
                     let (commands, request) = (commands.clone(), request.clone());
                     async move { commands.create_session(request).await }
                 })
-                .await
-                .map_err(|unanswered| match unanswered {
-                    Unanswered::NotDone(refused) => refused.to_string(),
-                    Unanswered::MaybeDone => beginning::MAYBE_BEGUN.to_owned(),
-                })
+                .await;
+                match created {
+                    Ok(created) => Ok(created),
+                    Err(unanswered) => {
+                        // An asking no way carried reached no Server to ask.
+                        let reached = !matches!(
+                            unanswered,
+                            Unanswered::NotDone(ActError::Unreachable { .. })
+                        );
+                        let held = if reached {
+                            self.held(&commands, &mut try_now, session_id).await
+                        } else {
+                            None
+                        };
+                        match (held, unanswered) {
+                            (Some(held), _) => Ok(held),
+                            (None, Unanswered::MaybeDone) => Err(Progress::MayHaveBegun),
+                            (None, Unanswered::NotDone(refused)) => {
+                                Err(Progress::Refused(refused.to_string()))
+                            }
+                        }
+                    }
+                }
             }
         };
-        let mut discarded = None;
+        let mut left = None;
         self.local.send_modify(|local| {
             let closed = local.closed;
             let Some(provisional) = local.provisional.as_mut() else {
                 return;
             };
             match answered {
-                Ok(created) => provisional.created = Some(Box::new(created)),
-                Err(why) if closed => {
-                    discarded = Some(provisional.prompt.text.clone());
-                    local.provisional = None;
-                    tracing::debug!("a session begun from a screen since gone was refused: {why}");
+                Ok(created) => {
+                    if closed && !holds(&created, provisional) {
+                        // Begun with an earlier Prompt: this one was not sent.
+                        left = Some((provisional.prompt.text.clone(), false));
+                    }
+                    provisional.created = Some(Box::new(created));
                 }
-                Err(why) => provisional.refused = Some(why),
+                Err(standing) if closed => {
+                    left = Some((
+                        provisional.prompt.text.clone(),
+                        standing == Progress::MayHaveBegun,
+                    ));
+                    local.provisional = None;
+                }
+                Err(standing) => provisional.progress = standing,
             }
         });
-        if let Some(text) = discarded {
-            self.drafts.give_back(beginning::LANDING_DRAFT, &text);
+        if let Some((text, may_have_begun)) = left {
+            self.left(&text, may_have_begun);
+        }
+    }
+
+    /// The Session `session_id`, where its Server answers that it holds it.
+    async fn held(
+        &self,
+        commands: &SessionCommands,
+        try_now: &mut TryNow,
+        session_id: SessionId,
+    ) -> Option<SessionSnapshot> {
+        let asking = Asking {
+            // As long as a dial may take, twice: the Server is asked one
+            // thing more, not waited on again.
+            bound: self.asking.dialling * 2,
+            ..self.asking
+        };
+        acts::deliver(asking, try_now, || {
+            let commands = commands.clone();
+            async move { commands.read_session(session_id).await }
+        })
+        .await
+        .ok()
+    }
+
+    /// Keeps the text of a beginning whose screen has gone as the Landing's
+    /// draft, the Landing saying so where it `may_have_begun`.
+    fn left(&self, text: &str, may_have_begun: bool) {
+        self.drafts.give_back(beginning::LANDING_DRAFT, text);
+        if may_have_begun {
+            self.landing_note
+                .send_replace(Some(beginning::MAYBE_BEGUN_LEFT.to_owned()));
         }
     }
 
@@ -1149,6 +1221,15 @@ impl Acting {
     }
 }
 
+/// Whether `snapshot` holds the Prompt `provisional` was being begun with,
+/// rather than one an earlier asking began it with.
+fn holds(snapshot: &SessionSnapshot, provisional: &Provisional) -> bool {
+    snapshot
+        .prompts
+        .iter()
+        .any(|prompt| prompt.id == provisional.prompt.id)
+}
+
 /// The queued Prompt `reference` names.
 fn queued_prompt(reference: &str) -> Result<PromptId, ActError> {
     // The Session stands; only the Prompt is no longer there to act on.
@@ -1306,9 +1387,12 @@ impl Reader {
     }
 
     /// Waits for the Session being begun to be made, showing meanwhile what
-    /// the screen holds of it: then the Session its Server answered with
-    /// stands in its place, and its tree is seen through `seeing`. Fails
-    /// with why where its Remote is no longer held.
+    /// the screen holds of it, and looking for it in the listing whenever
+    /// that moves or the beginning stands unanswered: then the Session its
+    /// Server holds stands in its place, and its tree is seen through
+    /// `seeing`. A Prompt written instead that the Session was not begun
+    /// with goes back to the composer, saying so. Fails with why where its
+    /// Remote is no longer held.
     async fn await_beginning(
         &mut self,
         seeing: watch::Sender<TreeState>,
@@ -1317,29 +1401,38 @@ impl Reader {
         attaching: &mut watch::Receiver<u64>,
     ) -> Result<(), String> {
         loop {
-            let created = local
-                .borrow_and_update()
-                .provisional
-                .as_ref()
-                .map(|provisional| provisional.created.clone());
-            match created {
+            let provisional = local.borrow_and_update().provisional.clone();
+            let Some(provisional) = provisional else {
                 // Discarded: nothing stands to be made.
-                None => return Ok(()),
-                Some(Some(created)) => {
-                    self.snapshot = Some(*created);
-                    if let Some(held) = self.local.upgrade() {
-                        held.send_modify(|local| local.provisional = None);
-                    }
-                    self.tree = Some(self.trees.hold_through(
-                        &self.remote,
-                        self.session_id,
-                        &self.commands,
-                        seeing,
-                    ));
-                    self.show();
-                    return Ok(());
+                return Ok(());
+            };
+            if let Some(created) = provisional.created.clone() {
+                let superseded = !holds(&created, &provisional);
+                self.snapshot = Some(*created);
+                if let Some(held) = self.local.upgrade() {
+                    held.send_modify(|local| {
+                        local.provisional = None;
+                        if superseded {
+                            local.note = Some(beginning::BEGUN_WITH_THE_FIRST.to_owned());
+                        }
+                    });
                 }
-                Some(None) => self.show(),
+                if superseded {
+                    self.drafts
+                        .give_back(&self.reference, &provisional.prompt.text);
+                }
+                self.tree = Some(self.trees.hold_through(
+                    &self.remote,
+                    self.session_id,
+                    &self.commands,
+                    seeing,
+                ));
+                self.show();
+                return Ok(());
+            }
+            self.show();
+            if provisional.progress == Progress::MayHaveBegun {
+                self.look_for_it().await;
             }
             tokio::select! {
                 changed = local.changed() => {
@@ -1352,9 +1445,34 @@ impl Reader {
                     if self.relist() == Relisted::Gone {
                         return Err(GONE_REMOTE.to_owned());
                     }
+                    self.look_for_it().await;
                 }
                 Ok(()) = self.unreachable.changed() => self.show_frame(),
             }
+        }
+    }
+
+    /// Where the listing carries the Session being begun, reads it, and
+    /// takes it as the Session made.
+    async fn look_for_it(&mut self) {
+        let listed = self
+            .listings
+            .opening(&self.reference)
+            .is_some_and(|opening| opening.listed.title.is_some());
+        if !listed {
+            return;
+        }
+        let read = tokio::time::timeout(LOOKING, self.commands.read_session(self.session_id)).await;
+        let Ok(Ok(held)) = read else {
+            tracing::debug!("a session being begun is listed and was not read");
+            return;
+        };
+        if let Some(local) = self.local.upgrade() {
+            local.send_modify(|local| {
+                if let Some(provisional) = local.provisional.as_mut() {
+                    provisional.created = Some(Box::new(held));
+                }
+            });
         }
     }
 
@@ -1952,6 +2070,7 @@ mod tests {
                     dialling: Duration::from_millis(50),
                 },
                 trees: Trees::new(runtime.handle().clone()),
+                landing_note: Arc::new(watch::Sender::new(None)),
             },
         );
         (opened, drafts, reference, session_id, directory)
@@ -2118,6 +2237,7 @@ mod tests {
                     dialling: Duration::from_millis(50),
                 },
                 trees: Trees::new(runtime.handle().clone()),
+                landing_note: Arc::new(watch::Sender::new(None)),
             },
         );
         conversation_until(&runtime, &opened, |items| {
@@ -2211,6 +2331,7 @@ mod tests {
                     dialling: Duration::from_millis(50),
                 },
                 trees: Trees::new(runtime.handle().clone()),
+                landing_note: Arc::new(watch::Sender::new(None)),
             },
         );
         let (_, mut work) = opened
@@ -2263,6 +2384,7 @@ mod tests {
                     dialling: Duration::from_millis(50),
                 },
                 trees: Trees::new(runtime.handle().clone()),
+                landing_note: Arc::new(watch::Sender::new(None)),
             },
         );
         let kept = Arc::new(Kept(Mutex::new(None)));
@@ -2341,6 +2463,7 @@ mod tests {
                     dialling: Duration::from_millis(50),
                 },
                 trees: Trees::new(runtime.handle().clone()),
+                landing_note: Arc::new(watch::Sender::new(None)),
             },
         );
         let mut frame = opened.frame.clone();

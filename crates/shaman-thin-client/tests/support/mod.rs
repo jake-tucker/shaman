@@ -215,9 +215,24 @@ impl ServingServer {
     /// Begins a Session in `workspace` with the Prompt `text`, as the
     /// Server's own user would.
     pub async fn begin(&self, workspace: &std::path::Path, text: &str) -> SessionId {
+        self.begin_under(workspace, text, None).await
+    }
+
+    /// Begins the Session `session` in `workspace` with the Prompt `text`, as
+    /// the Server's own user would under an identity chosen beforehand.
+    pub async fn begin_as(&self, workspace: &std::path::Path, text: &str, session: SessionId) {
+        self.begin_under(workspace, text, Some(session)).await;
+    }
+
+    async fn begin_under(
+        &self,
+        workspace: &std::path::Path,
+        text: &str,
+        session: Option<SessionId>,
+    ) -> SessionId {
         self.client
             .create_session(CreateSessionRequest {
-                session_id: None,
+                session_id: session,
                 preparation_id: None,
                 agent_selection: None,
                 execution_directory: ExecutionDirectory {
@@ -463,6 +478,12 @@ impl Gate {
     /// nothing the Server says back reaches the phone, on every connection.
     pub fn mute_now(&self) {
         self.muted.send_replace(true);
+    }
+
+    /// Carries what the Server says back again; what was dropped while the
+    /// way was muted stays lost, so what it carried then breaks.
+    pub fn unmute_now(&self) {
+        self.muted.send_replace(false);
     }
 
     /// Shuts the way again: every connection it carries is cut, and each

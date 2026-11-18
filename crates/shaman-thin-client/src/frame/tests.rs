@@ -872,7 +872,9 @@ fn provisional(refused: Option<&str>) -> Local {
         "Draw the invite as a QR code\nin half-blocks".to_owned(),
         "shaman".to_owned(),
     );
-    provisional.refused = refused.map(str::to_owned);
+    if let Some(why) = refused {
+        provisional.progress = Progress::Refused(why.to_owned());
+    }
     Local {
         provisional: Some(provisional),
         ..Local::default()
@@ -939,6 +941,7 @@ fn a_refused_beginning_stands_without_a_bar_and_its_composer_replaces_the_prompt
             },
             ItemKind::Refused {
                 words: "Could not create session: the workspace's directory is gone".to_owned(),
+                may_have_begun: false,
                 try_again: "Try again".to_owned(),
             },
         ]
@@ -966,5 +969,27 @@ fn a_session_being_begun_shows_its_prompt_as_a_bubble_marked_as_sending_until_an
     assert!(matches!(
         items[0].kind,
         ItemKind::UserMessage { sending: true, .. }
+    ));
+}
+
+#[test]
+fn a_beginning_never_answered_says_it_may_have_begun_and_never_that_it_was_refused() {
+    let mut local = provisional(None);
+    local.provisional.as_mut().unwrap().progress = Progress::MayHaveBegun;
+    let frame = provisionally_framed(&local, false);
+    assert_eq!(frame.bar, None);
+    assert!(frame.composer.expect("a composer").can_send);
+    let items = provisional_items(local.provisional.as_ref().unwrap());
+    assert_eq!(
+        items[1].kind,
+        ItemKind::Refused {
+            words: "The server did not answer, so the session may have begun".to_owned(),
+            may_have_begun: true,
+            try_again: "Try again".to_owned(),
+        }
+    );
+    assert!(matches!(
+        items[0].kind,
+        ItemKind::UserMessage { sending: false, .. }
     ));
 }

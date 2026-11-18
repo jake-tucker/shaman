@@ -14,9 +14,20 @@
 //! "Starting" with no elapsed time and no Stop, until the Server answers with
 //! the Session it made, which replaces it in place. The beginning goes on
 //! whatever becomes of the screen, so the Session appears in the listing
-//! however soon it is left. A refusal stands as a row where the work would
+//! however soon it is left.
+//!
+//! The Server answers a repeat of the same creation — the same Session id
+//! and the same Prompt id — with the Session it made, so a creation whose
+//! answer was lost is asked again; and whatever else becomes of one, the
+//! Server is asked whether it holds the Session after all, and the screen
+//! turns into it where it does. One whose answer never came stands as having
+//! maybe begun, the screen watching for the Session meanwhile, and is never
+//! said to have been refused. A refusal stands as a row where the work would
 //! be, with "Try again", and a Prompt written instead replaces the refused
-//! one; leaving it discards it and keeps its text as the Landing's draft.
+//! one; where the Session turns out to have begun with the first, the one
+//! written instead goes back to the composer, saying so. Leaving either
+//! discards it and keeps its text as the Landing's draft, the Landing saying
+//! where the Session may have begun all the same.
 
 use std::path::PathBuf;
 
@@ -24,7 +35,7 @@ use shaman_protocol::{
     CreateSessionRequest, ExecutionDirectory, InitialPrompt, SessionId, SessionSnapshot,
 };
 
-use crate::{device::RememberedWorkspace, remotes::BeginsIn};
+use crate::device::RememberedWorkspace;
 
 /// The key the Landing's own draft is kept under, which no Session's
 /// reference can be.
@@ -42,8 +53,9 @@ const PLACEHOLDER: &str = "Message";
 pub struct Landing {
     /// What the navigation bar reads: "New session".
     pub title: String,
-    /// Where it will begin, beneath the title: the Remote, and the Workspace
-    /// where one is remembered for it.
+    /// Where it will begin, beneath the title: the Workspace, where one is
+    /// remembered for the Outlook's Remote, preceded by that Remote where the
+    /// phone holds more than one; empty where that says nothing.
     pub place: String,
     /// The Workspace it will begin in, as the middle of the screen names it,
     /// where one is remembered for the Outlook's Remote.
@@ -54,6 +66,9 @@ pub struct Landing {
     /// Said above the composer while the Outlook's Remote is Unreachable,
     /// when the composer takes a draft and nothing begins.
     pub unreachable: Option<String>,
+    /// Said beneath the composer where a Session begun from here may have
+    /// begun though its Server never answered, its Prompt back in the field.
+    pub note: Option<String>,
     /// What the empty composer says.
     pub placeholder: String,
     /// Whether send is offered: only where a Workspace is remembered and its
@@ -87,12 +102,18 @@ pub(crate) struct Known {
     pub description: Option<String>,
     /// Whether its Remote reads Unreachable.
     pub unreachable: bool,
+    /// Whether the phone holds more than one Remote, and so names Origins.
+    pub origin_named: bool,
 }
 
 /// The Landing where the Outlook stands at the Remote `remote`, in the
-/// Workspace `workspace` remembered for it, as the listing knows it; or
-/// where it stands nowhere.
-pub(crate) fn landing(at: Option<(&str, Option<&RememberedWorkspace>)>, known: &Known) -> Landing {
+/// Workspace `workspace` remembered for it, as the listing knows it, saying
+/// `note` beneath its composer; or where it stands nowhere.
+pub(crate) fn landing(
+    at: Option<(&str, Option<&RememberedWorkspace>)>,
+    known: &Known,
+    note: Option<String>,
+) -> Landing {
     let Some((remote, workspace)) = at else {
         return Landing {
             title: TITLE.to_owned(),
@@ -100,15 +121,28 @@ pub(crate) fn landing(at: Option<(&str, Option<&RememberedWorkspace>)>, known: &
             workspace: None,
             asks: Some("Pair with a server to begin a session there".to_owned()),
             unreachable: None,
+            note,
             placeholder: PLACEHOLDER.to_owned(),
             can_send: false,
             draft: LANDING_DRAFT.to_owned(),
         };
     };
-    let place = BeginsIn::remote(remote, workspace.map(|workspace| workspace.name.as_str())).place;
+    // With one Remote, naming it says nothing.
+    let place = known
+        .origin_named
+        .then_some(remote)
+        .into_iter()
+        .chain(workspace.map(|workspace| workspace.name.as_str()))
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let named = if known.origin_named {
+        remote.to_owned()
+    } else {
+        "The server".to_owned()
+    };
     let unreachable = known
         .unreachable
-        .then(|| format!("{remote} is unreachable. Nothing begins there until it answers."));
+        .then(|| format!("{named} is unreachable. Nothing begins there until it answers."));
     Landing {
         title: TITLE.to_owned(),
         place,
@@ -118,21 +152,39 @@ pub(crate) fn landing(at: Option<(&str, Option<&RememberedWorkspace>)>, known: &
             origin: remote.to_owned(),
             description: known.description.clone(),
         }),
-        asks: workspace.is_none().then(|| asks(remote)),
+        asks: workspace
+            .is_none()
+            .then(|| asks(known.origin_named.then_some(remote))),
         can_send: workspace.is_some() && unreachable.is_none(),
         unreachable,
+        note,
         placeholder: PLACEHOLDER.to_owned(),
         draft: LANDING_DRAFT.to_owned(),
     }
 }
 
-/// What the Landing says where no Workspace is remembered for the Remote
-/// `remote`, as after a first pairing.
-pub(crate) fn asks(remote: &str) -> String {
+/// What the Landing says where no Workspace is remembered for the Outlook's
+/// Remote, as after a first pairing, naming the Remote `named` where the
+/// phone names Origins at all.
+pub(crate) fn asks(named: Option<&str>) -> String {
+    let on = named
+        .map(|remote| format!(" on {remote}"))
+        .unwrap_or_default();
     format!(
-        "Choose a workspace on {remote} to begin in: narrow the listing to one, or open a \
-         session there."
+        "Choose a workspace{on} to begin in: narrow the listing to one, or open a session there."
     )
+}
+
+/// How a Session being begun stands, until its Server is seen holding it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Progress {
+    /// Its Server has yet to answer.
+    Starting,
+    /// Its Server refused it, as it says, and holds no Session of it.
+    Refused(String),
+    /// Its Server never answered, so it may have begun: the screen watches
+    /// for the Session, and never says it was refused.
+    MayHaveBegun,
 }
 
 /// A Session being begun from the Landing, until its Server answers with
@@ -148,9 +200,8 @@ pub(crate) struct Provisional {
     pub prompt: InitialPrompt,
     /// Where it stands, beneath its Title, as its frame names it.
     pub place: String,
-    /// Why its Server refused it, once it has.
-    pub refused: Option<String>,
-    /// The Session its Server made, once it answers, which replaces it.
+    pub progress: Progress,
+    /// The Session its Server holds, once it is seen, which replaces it.
     pub created: Option<Box<SessionSnapshot>>,
 }
 
@@ -163,12 +214,13 @@ impl Provisional {
             directory,
             prompt: prompt(text),
             place,
-            refused: None,
+            progress: Progress::Starting,
             created: None,
         }
     }
 
-    /// The request that begins it.
+    /// The request that begins it. Its Session id and its Prompt id make it
+    /// the same creation however often it is asked.
     pub fn request(&self) -> CreateSessionRequest {
         CreateSessionRequest {
             preparation_id: None,
@@ -193,10 +245,22 @@ impl Provisional {
             .to_owned()
     }
 
-    /// Replaces its refused Prompt with `text`, and asks again.
+    /// Whether its Server has yet to answer.
+    pub fn starting(&self) -> bool {
+        self.progress == Progress::Starting
+    }
+
+    /// Asks again, as "Try again" does: the same creation.
+    pub fn ask_again(&mut self) {
+        self.progress = Progress::Starting;
+    }
+
+    /// Replaces its Prompt with `text`, under a Prompt id of its own, and
+    /// asks again: a creation of its own, unless the Server holds the
+    /// Session already.
     pub fn replace(&mut self, text: String) {
         self.prompt = prompt(text);
-        self.refused = None;
+        self.progress = Progress::Starting;
     }
 }
 
@@ -216,8 +280,18 @@ pub(crate) fn refused_words(why: &str) -> String {
     format!("Could not create session: {why}")
 }
 
-/// Said where a beginning's answer never came.
+/// What the row a beginning whose answer never came stands as says.
 pub(crate) const MAYBE_BEGUN: &str = "The server did not answer, so the session may have begun";
+
+/// What the Landing says once a beginning whose answer never came is left,
+/// its Prompt back in the field.
+pub(crate) const MAYBE_BEGUN_LEFT: &str = "The server did not answer, so a session may have begun \
+     with this prompt. Look for it in the listing before sending it again.";
+
+/// What the composer says where a Prompt written instead of a refused one
+/// found the Session begun with the first after all.
+pub(crate) const BEGUN_WITH_THE_FIRST: &str =
+    "The session had begun with its first prompt, so this one was not sent";
 
 #[cfg(test)]
 mod tests {
@@ -237,8 +311,9 @@ mod tests {
             glyph: Some("\u{e7a8}".to_owned()),
             description: Some("A terminal client for coding agents".to_owned()),
             unreachable: false,
+            origin_named: true,
         };
-        let landing = landing(Some(("desk", Some(&workspace))), &known);
+        let landing = landing(Some(("desk", Some(&workspace))), &known, None);
         assert_eq!(landing.title, "New session");
         assert_eq!(landing.place, "desk · shaman");
         assert_eq!(
@@ -252,34 +327,65 @@ mod tests {
         );
         assert_eq!(landing.asks, None);
         assert_eq!(landing.unreachable, None);
+        assert_eq!(landing.note, None);
         assert!(landing.can_send);
         assert_eq!(landing.draft, LANDING_DRAFT);
     }
 
     #[test]
+    fn with_one_remote_the_landing_names_no_origin_beneath_its_title() {
+        let workspace = remembered("shaman");
+        let one = Known::default();
+        assert_eq!(
+            landing(Some(("desk", Some(&workspace))), &one, None).place,
+            "shaman"
+        );
+        let nowhere = landing(Some(("desk", None)), &one, None);
+        assert_eq!(nowhere.place, "");
+        assert_eq!(nowhere.asks, Some(asks(None)));
+        assert!(!nowhere.asks.unwrap().contains("desk"));
+    }
+
+    #[test]
     fn on_an_unreachable_remote_nothing_begins_and_send_is_not_offered() {
         let workspace = remembered("shaman");
-        let landing = landing(
-            Some(("desk", Some(&workspace))),
-            &Known {
-                unreachable: true,
-                ..Known::default()
-            },
-        );
+        let unreachable = |origin_named| {
+            landing(
+                Some(("desk", Some(&workspace))),
+                &Known {
+                    unreachable: true,
+                    origin_named,
+                    ..Known::default()
+                },
+                None,
+            )
+        };
+        let landing = unreachable(true);
         assert_eq!(
             landing.unreachable.as_deref(),
             Some("desk is unreachable. Nothing begins there until it answers.")
         );
         assert!(!landing.can_send);
         assert!(landing.workspace.is_some(), "it still says where");
+        assert_eq!(
+            unreachable(false).unreachable.as_deref(),
+            Some("The server is unreachable. Nothing begins there until it answers.")
+        );
     }
 
     #[test]
     fn where_no_workspace_is_remembered_the_landing_asks_for_one_and_offers_no_send() {
-        let landing = landing(Some(("desk", None)), &Known::default());
+        let landing = landing(
+            Some(("desk", None)),
+            &Known {
+                origin_named: true,
+                ..Known::default()
+            },
+            None,
+        );
         assert_eq!(landing.place, "desk");
         assert_eq!(landing.workspace, None);
-        assert_eq!(landing.asks, Some(asks("desk")));
+        assert_eq!(landing.asks, Some(asks(Some("desk"))));
         assert!(!landing.can_send);
     }
 
@@ -294,24 +400,31 @@ mod tests {
         assert_eq!(provisional.title(), "Draw the invite as a QR code");
         let request = provisional.request();
         assert_eq!(request.session_id, Some(provisional.session_id));
+        assert_eq!(request.prompt.id, provisional.prompt.id);
         assert_eq!(request.agent_selection, None, "a phone chooses no Agent");
         assert_eq!(request.preparation_id, None, "on the main Worktree");
         assert_eq!(request.execution_directory.path, PathBuf::from("shaman"));
     }
 
     #[test]
-    fn a_prompt_written_instead_replaces_the_refused_one_under_an_identity_of_its_own() {
+    fn asked_again_it_is_the_same_creation_and_written_instead_a_prompt_of_its_own() {
         let mut provisional = Provisional::new(
             SessionId::new(),
             PathBuf::from("shaman"),
             "Draw the invite".to_owned(),
             "shaman".to_owned(),
         );
-        let first = provisional.prompt.id;
-        provisional.refused = Some("no".to_owned());
+        let first = provisional.request();
+        provisional.progress = Progress::MayHaveBegun;
+        provisional.ask_again();
+        assert!(provisional.starting());
+        assert_eq!(provisional.request(), first, "the same creation");
+
+        provisional.progress = Progress::Refused("no".to_owned());
         provisional.replace("Trim the quiet zone".to_owned());
         assert_eq!(provisional.prompt.text, "Trim the quiet zone");
-        assert_ne!(provisional.prompt.id, first);
-        assert_eq!(provisional.refused, None);
+        assert_ne!(provisional.prompt.id, first.prompt.id);
+        assert_eq!(provisional.session_id, first.session_id.unwrap());
+        assert!(provisional.starting());
     }
 }

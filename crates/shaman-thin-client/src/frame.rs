@@ -16,7 +16,7 @@ use shaman_protocol::{
 };
 
 use crate::{
-    beginning::{self, Provisional},
+    beginning::{self, Progress, Provisional},
     conversation::{ConversationItem, ItemKind},
     intervention::{self, Intervention, InterventionId, Standing},
     listing::Listed,
@@ -392,23 +392,23 @@ pub(crate) fn frame_of(
     }
 }
 
-/// What frames a Session being begun, until its Server answers: its Prompt's
-/// first line as the Title, and a bar reading "Starting", with no elapsed
-/// time and no Stop, while it waits; once refused, no bar, the refusal
-/// standing in the conversation, and a composer whose Prompt replaces the
-/// refused one.
+/// What frames a Session being begun, until its Server is seen holding it:
+/// its Prompt's first line as the Title, and a bar reading "Starting", with
+/// no elapsed time and no Stop, while it waits; once refused, or unanswered
+/// so that it may have begun, no bar, its row standing in the conversation,
+/// and a composer whose Prompt is written instead.
 fn provisional_frame(
     provisional: &Provisional,
     listed: &Listed,
     local: &Local,
     unreachable: bool,
 ) -> SessionFrame {
-    let refused = provisional.refused.is_some();
+    let starting = provisional.starting();
     SessionFrame {
         title: provisional.title(),
         place: provisional.place.clone(),
         gone: None,
-        bar: (!refused).then(|| Bar {
+        bar: starting.then(|| Bar {
             kind: BarKind::Working,
             words: STARTING.to_owned(),
             since: None,
@@ -417,16 +417,16 @@ fn provisional_frame(
             review: None,
         }),
         composer: Some(Composer {
-            placeholder: if refused {
-                "Write a new prompt instead"
-            } else {
+            placeholder: if starting {
                 "Message"
+            } else {
+                "Write a new prompt instead"
             }
             .to_owned(),
             queue: None,
             unreachable: unreachable.then(|| unreachable_line(listed)),
             note: local.note.clone(),
-            can_send: refused,
+            can_send: !starting,
         }),
         queued: Vec::new(),
         intervention: None,
@@ -438,25 +438,33 @@ fn provisional_frame(
 /// What the bar of a Session being begun reads until its Server answers.
 pub(crate) const STARTING: &str = "Starting";
 
-/// The id the row a refused beginning stands as is under.
+/// The id the row a beginning refused, or never answered, stands as is
+/// under.
 pub(crate) const REFUSED: &str = "refused";
 
 /// The conversation of a Session being begun: its Prompt as a bubble, marked
-/// as sending until its Server answers, and the row its refusal stands as.
+/// as sending until its Server answers, and the row a refusal, or an answer
+/// that never came, stands as.
 pub(crate) fn provisional_items(provisional: &Provisional) -> Vec<ConversationItem> {
     let mut items = vec![ConversationItem {
         id: prompt_item_id(provisional.prompt.id),
         kind: ItemKind::UserMessage {
             text: provisional.prompt.text.clone(),
             note: None,
-            sending: provisional.refused.is_none(),
+            sending: provisional.starting(),
         },
     }];
-    if let Some(why) = &provisional.refused {
+    let row = match &provisional.progress {
+        Progress::Starting => None,
+        Progress::Refused(why) => Some((beginning::refused_words(why), false)),
+        Progress::MayHaveBegun => Some((beginning::MAYBE_BEGUN.to_owned(), true)),
+    };
+    if let Some((words, may_have_begun)) = row {
         items.push(ConversationItem {
             id: REFUSED.to_owned(),
             kind: ItemKind::Refused {
-                words: beginning::refused_words(why),
+                words,
+                may_have_begun,
                 try_again: "Try again".to_owned(),
             },
         });

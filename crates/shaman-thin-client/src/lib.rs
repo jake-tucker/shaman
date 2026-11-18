@@ -155,6 +155,9 @@ pub(crate) struct Inner {
     acts: acts::Acts,
     /// The trees the open Sessions belong to, each read once.
     trees: tree::Trees,
+    /// What the Landing says of a Session begun from it and left before its
+    /// Server was seen holding it.
+    landing_note: Arc<watch::Sender<Option<String>>>,
     timings: CoreTimings,
 }
 
@@ -247,11 +250,13 @@ impl ThinClient {
         let inner = self.inner.clone();
         let mut outlook = inner.remotes.outlook();
         let mut moved = inner.listing.moved();
+        let mut noted = inner.landing_note.subscribe();
         let task = self.runtime().spawn(async move {
             let mut told = None;
             loop {
                 outlook.borrow_and_update();
                 moved.borrow_and_update();
+                noted.borrow_and_update();
                 let landing = inner.landing();
                 if told.as_ref() != Some(&landing) {
                     listener.changed(landing.clone());
@@ -260,6 +265,7 @@ impl ThinClient {
                 tokio::select! {
                     changed = outlook.changed() => if changed.is_err() { break },
                     changed = moved.changed() => if changed.is_err() { break },
+                    changed = noted.changed() => if changed.is_err() { break },
                 }
             }
         });
@@ -287,8 +293,9 @@ impl ThinClient {
             });
         };
         let Some(workspace) = workspace else {
+            let origin_named = self.inner.remotes.names().len() > 1;
             return Err(ActError::Invalid {
-                message: beginning::asks(&remote),
+                message: beginning::asks(origin_named.then_some(remote.as_str())),
             });
         };
         let Some(fingerprint) = self.inner.listing.fingerprint(&remote) else {
@@ -310,6 +317,8 @@ impl ThinClient {
             .join(" · ");
         let provisional =
             beginning::Provisional::new(session_id, workspace.path.clone(), text, place);
+        // A Session begun anew says nothing more of one left before.
+        self.inner.landing_note.send_replace(None);
         Ok(session::begin(
             self.runtime().handle(),
             &self.inner.listing,
@@ -530,6 +539,7 @@ impl ThinClient {
             drafts: drafts::Drafts::default(),
             acts: acts::Acts::default(),
             trees: tree::Trees::new(runtime.handle().clone()),
+            landing_note: Arc::new(watch::Sender::new(None)),
             timings,
         });
         for name in inner.remotes.names() {
@@ -571,6 +581,7 @@ impl ThinClient {
                     + self.inner.timings.redeemer.handshake_timeout * 2,
             },
             trees: self.inner.trees.clone(),
+            landing_note: self.inner.landing_note.clone(),
         }
     }
 
@@ -680,6 +691,7 @@ impl Inner {
                 .as_ref()
                 .map(|(remote, workspace)| (remote.as_str(), workspace.as_ref())),
             &known,
+            self.landing_note.borrow().clone(),
         )
     }
 

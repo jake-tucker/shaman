@@ -185,7 +185,10 @@ where
 
 /// [`deliver`], for a request its Server answers the same however often it
 /// is asked: one whose answer was lost is asked again too, until it is
-/// answered or `asking`'s bound passes, when it may have been done.
+/// answered or `asking`'s bound passes. Once any attempt may have reached the
+/// Server, the request may have been done however the attempts after it go
+/// unreached, so it never fails as unreached; a later refusal in the
+/// Server's own words is its answer to the same request, and stands.
 pub(crate) async fn deliver_again<T, F>(
     asking: Asking,
     try_now: &mut TryNow,
@@ -196,6 +199,7 @@ where
 {
     let deadline = tokio::time::Instant::now() + asking.bound;
     let mut backoff = RecoveryBackoff::new(asking.initial_backoff, asking.max_backoff);
+    let mut reached = false;
     loop {
         let left = deadline.saturating_duration_since(tokio::time::Instant::now());
         let answered = deliver(
@@ -208,7 +212,12 @@ where
         )
         .await;
         match answered {
-            Err(Unanswered::MaybeDone) if tokio::time::Instant::now() < deadline => {
+            Ok(answered) => return Ok(answered),
+            Err(Unanswered::MaybeDone) => {
+                reached = true;
+                if tokio::time::Instant::now() >= deadline {
+                    return Err(Unanswered::MaybeDone);
+                }
                 tracing::debug!(
                     "a request its Server answers alike went unanswered, and goes again"
                 );
@@ -220,7 +229,10 @@ where
                     return Err(Unanswered::MaybeDone);
                 }
             }
-            answered => return answered,
+            Err(Unanswered::NotDone(ActError::Unreachable { .. })) if reached => {
+                return Err(Unanswered::MaybeDone);
+            }
+            Err(not_done) => return Err(not_done),
         }
     }
 }
@@ -331,6 +343,61 @@ mod tests {
         .await;
         assert_eq!(answered, Ok(()));
         assert_eq!(transport.asked(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_request_its_server_answers_alike_lost_and_then_unreached_at_its_bound_may_have_been_done()
+     {
+        // Lost once, and carried by no way after, until the bound passes.
+        let mut answers = vec![Err(failure(
+            SessionErrorCode::PairingOutcomeUnknown,
+            "Remote API request was delivered, and its answer was lost",
+        ))];
+        answers.extend((0..1_000).map(|_| {
+            Err(failure(
+                SessionErrorCode::PairingConnectionFailed,
+                "could not reach Remote at any paired address",
+            ))
+        }));
+        let transport = Arc::new(ScriptedTransport::new(answers));
+        let commands = commands(&transport);
+        let mut try_now = transport.try_now();
+        let session = SessionId::new();
+        let unanswered = deliver_again(asking(Duration::from_millis(60)), &mut try_now, || {
+            commands.interrupt_session(session)
+        })
+        .await;
+        assert_eq!(unanswered, Err(Unanswered::MaybeDone), "never as not done");
+        assert!(transport.asked() > 1, "asked again until the bound passed");
+    }
+
+    #[tokio::test]
+    async fn a_request_its_server_answers_alike_lost_and_then_refused_is_refused_in_its_words() {
+        let refused = failure(SessionErrorCode::PromptConflict, "Prompt conflict");
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            Err(failure(
+                SessionErrorCode::PairingOutcomeUnknown,
+                "Remote API request was delivered, and its answer was lost",
+            )),
+            Ok(shaman_client::testing::refusal(
+                http::StatusCode::CONFLICT,
+                &refused,
+            )),
+        ]));
+        let commands = commands(&transport);
+        let mut try_now = transport.try_now();
+        let session = SessionId::new();
+        let unanswered = deliver_again(asking(Duration::from_secs(5)), &mut try_now, || {
+            commands.interrupt_session(session)
+        })
+        .await;
+        assert_eq!(
+            unanswered,
+            Err(Unanswered::NotDone(ActError::Refused {
+                message: "Prompt conflict".to_owned()
+            })),
+            "the Server's answer to the same request"
+        );
     }
 
     #[tokio::test]

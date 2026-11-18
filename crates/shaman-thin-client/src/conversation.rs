@@ -72,8 +72,14 @@ pub enum ItemKind {
     /// What a failed Turn ended on.
     Error { text: String },
     /// Where the work of a Session being begun would be, once its Server
-    /// refused it: why, and the offer to ask again.
-    Refused { words: String, try_again: String },
+    /// refused it, or never answered so that it may have begun, which Swift
+    /// picks a symbol and colour by: what is known, and the offer to ask
+    /// again.
+    Refused {
+        words: String,
+        may_have_begun: bool,
+        try_again: String,
+    },
     /// Where the Agent's memory of the Session was compacted, in the TUI's
     /// words.
     Compaction {

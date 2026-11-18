@@ -74,7 +74,14 @@ fn read_as(items: &[ConversationItem]) -> Vec<String> {
             ItemKind::UserMessage { text, sending, .. } => {
                 format!("user{}: {text}", if *sending { " (sending)" } else { "" })
             }
-            ItemKind::Refused { words, try_again } => format!("refused: {words} [{try_again}]"),
+            ItemKind::Refused {
+                words,
+                may_have_begun,
+                try_again,
+            } => format!(
+                "{}: {words} [{try_again}]",
+                if *may_have_begun { "maybe" } else { "refused" }
+            ),
             ItemKind::Loading { .. } => "loading".to_owned(),
             ItemKind::Delegation { .. } => "delegation".to_owned(),
             ItemKind::AgentMessage { .. } => "agent".to_owned(),
@@ -113,7 +120,10 @@ async fn a_first_prompt_turns_the_landing_into_the_session_it_begins_where_the_o
 
     let landing = phone.landing_until(ready).await;
     assert_eq!(landing.title, "New session");
-    assert_eq!(landing.place, "desk · working", "where it will begin");
+    assert_eq!(
+        landing.place, "working",
+        "where it will begin, and with one Remote no Origin"
+    );
     let named = landing.workspace.expect("the Workspace is named");
     assert_eq!(named.name, WORKING);
     assert_eq!(named.origin, "desk");
@@ -370,7 +380,7 @@ async fn on_an_unreachable_remote_the_landing_takes_a_draft_and_offers_no_send()
         .await;
     assert_eq!(
         landing.unreachable.as_deref(),
-        Some("desk is unreachable. Nothing begins there until it answers.")
+        Some("The server is unreachable. Nothing begins there until it answers.")
     );
     assert!(!landing.can_send);
     assert!(landing.workspace.is_some(), "it still says where");
@@ -396,10 +406,10 @@ async fn where_no_workspace_is_remembered_the_landing_asks_for_one_and_nothing_b
     let phone = paired_through(&desk, &gate).await;
 
     let landing = phone.landing_until(|_| true).await;
-    assert_eq!(landing.place, "desk");
+    assert_eq!(landing.place, "", "with one Remote no Origin is named");
     assert_eq!(landing.workspace, None);
     let asks = landing.asks.expect("it asks for a Workspace");
-    assert!(asks.starts_with("Choose a workspace on desk"), "{asks}");
+    assert!(asks.starts_with("Choose a workspace to begin in"), "{asks}");
     assert!(!landing.can_send);
     let Err(ActError::Invalid { message }) = phone.core.begin_session("Tidy the build".to_owned())
     else {
@@ -412,6 +422,275 @@ async fn where_no_workspace_is_remembered_the_landing_asks_for_one_and_nothing_b
     let Err(ActError::Invalid { .. }) = phone.core.begin_session("  \n ".to_owned()) else {
         panic!("began with nothing written");
     };
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+fn may_have_begun(items: &[ConversationItem]) -> bool {
+    items.iter().any(|item| {
+        matches!(
+            item.kind,
+            ItemKind::Refused {
+                may_have_begun: true,
+                ..
+            }
+        )
+    })
+}
+
+fn working(frame: &shaman_thin_client::SessionFrame) -> bool {
+    frame.bar.as_ref().is_some_and(|bar| bar.since.is_some())
+}
+
+/// A phone paired with `desk` through `gate`, remembering its Workspace
+/// [`WORKING`], whose acts are given up as unanswered within a moment.
+async fn hurried(desk: &ServingServer, gate: &Gate, holder: &tempfile::TempDir) -> Phone {
+    let phone = Phone::with(shaman_thin_client::CoreTimings {
+        act_bound: std::time::Duration::from_millis(800),
+        ..support::timings()
+    });
+    let invite = desk.invite(vec![Way::Direct(gate.address())]).await;
+    assert!(matches!(
+        phone
+            .core
+            .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
+            .await,
+        PairingOutcome::Paired { .. }
+    ));
+    remember(&phone, desk, &workspace(holder, WORKING), WORKING).await;
+    phone.landing_until(ready).await;
+    phone
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_beginning_whose_answer_was_lost_may_have_begun_and_turns_into_the_session_once_seen() {
+    let desk = ServingServer::start("thin-begin-lost").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let phone = hurried(&desk, &gate, &holder).await;
+
+    // What the phone says reaches the Server, and nothing comes back.
+    gate.mute_now();
+    let reading = phone.begin("Tidy the build");
+    let reference = reading.session.reference();
+    let conversation = reading.conversation_until(may_have_begun).await;
+    assert_eq!(
+        read_as(&conversation.items),
+        [
+            "user: Tidy the build",
+            "maybe: The server did not answer, so the session may have begun [Try again]"
+        ],
+        "never that it could not be created"
+    );
+    assert_eq!(reading.frame().await.bar, None);
+    let held = desk.read(session_id(&reference)).await;
+    assert_eq!(held.prompts.len(), 1, "the Server holds it");
+
+    // Once the way carries answers again the Session is seen, and asked
+    // again it is the same creation.
+    gate.unmute_now();
+    phone.core.came_to_front();
+    let _ = reading.session.try_again().await;
+    let frame = reading.frame_until(working).await;
+    assert_eq!(frame.bar.expect("a bar").words, "Working");
+    let conversation = reading
+        .conversation_until(|items| !may_have_begun(items))
+        .await;
+    assert_eq!(
+        read_as(&conversation.items)
+            .iter()
+            .filter(|said| said.starts_with("user"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        desk.read(session_id(&reference))
+            .await
+            .prompts
+            .iter()
+            .map(|prompt| prompt.text.as_str())
+            .collect::<Vec<_>>(),
+        ["Tidy the build"],
+        "one Session, one Prompt"
+    );
+    let listing = phone
+        .listing_until(|listing| listing.active.iter().any(|row| row.session == reference))
+        .await;
+    assert_eq!(
+        listing
+            .active
+            .iter()
+            .filter(|row| row.title.starts_with("Tidy the build"))
+            .count(),
+        1,
+        "one Session"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_beginning_left_while_it_may_have_begun_keeps_its_text_and_the_landing_says_so() {
+    let desk = ServingServer::start("thin-begin-lost-left").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let phone = hurried(&desk, &gate, &holder).await;
+
+    gate.mute_now();
+    let reading = phone.begin("Tidy the build");
+    reading.conversation_until(may_have_begun).await;
+    drop(reading);
+    let landing = phone.landing_until(|landing| landing.note.is_some()).await;
+    let note = landing.note.expect("a note");
+    assert!(note.contains("may have begun"), "{note}");
+    assert_eq!(
+        phone.core.draft(landing.draft.clone()).text,
+        "Tidy the build"
+    );
+
+    // A Session begun anew says nothing more of it.
+    gate.unmute_now();
+    phone.core.came_to_front();
+    phone.landing_until(ready).await;
+    let again = phone.begin("Trim the shell");
+    phone.landing_until(|landing| landing.note.is_none()).await;
+    drop(again);
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refusal_arriving_once_the_screen_has_gone_gives_its_text_back_to_the_landing() {
+    let desk = ServingServer::start("thin-begin-refused-left").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let phone = refusing(&desk, &gate, &holder).await;
+    let draft = phone.landing_until(|_| true).await.draft;
+
+    gate.shut_now();
+    let reading = phone.begin("Tidy the build");
+    reading.frame().await;
+    drop(reading);
+    assert_eq!(phone.core.draft(draft.clone()).text, "", "not yet answered");
+    gate.open_now();
+    tokio::time::timeout(support::PROGRESS_DEADLINE, async {
+        while phone.core.draft(draft.clone()).text != "Tidy the build" {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the refused Prompt's text is the Landing's draft again");
+    assert_eq!(
+        phone.landing_until(|_| true).await.note,
+        None,
+        "refused, it did not begin"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn where_the_server_holds_the_session_already_the_screen_turns_into_it() {
+    let desk = ServingServer::start("thin-begin-held").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let phone = paired_through(&desk, &gate).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let working = workspace(&holder, WORKING);
+    remember(&phone, &desk, &working, WORKING).await;
+    phone.landing_until(ready).await;
+
+    // An earlier asking began it, under the identity the core chose, and its
+    // answer never came: this asking is refused for it.
+    gate.shut_now();
+    let reading = phone.begin("Tidy the build");
+    let reference = reading.session.reference();
+    desk.begin_as(&working, "Map the workspace first", session_id(&reference))
+        .await;
+    gate.open_now();
+
+    let frame = reading.frame_until(working_frame).await;
+    assert_eq!(frame.bar.expect("a bar").words, "Working");
+    assert_eq!(
+        frame.composer.expect("a composer").note.as_deref(),
+        Some("The session had begun with its first prompt, so this one was not sent")
+    );
+    let conversation = reading
+        .conversation_until(|items| {
+            read_as(items)
+                .iter()
+                .any(|said| said == "user: Map the workspace first")
+        })
+        .await;
+    assert!(
+        read_as(&conversation.items)
+            .iter()
+            .all(|said| !said.contains("Tidy the build")),
+        "{:?}",
+        read_as(&conversation.items)
+    );
+    assert_eq!(
+        phone.core.draft(reference.clone()).text,
+        "Tidy the build",
+        "back in the composer"
+    );
+    assert_eq!(
+        desk.read(session_id(&reference))
+            .await
+            .prompts
+            .iter()
+            .map(|prompt| prompt.text.as_str())
+            .collect::<Vec<_>>(),
+        ["Map the workspace first"]
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+fn working_frame(frame: &shaman_thin_client::SessionFrame) -> bool {
+    working(frame)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_prompt_written_instead_once_the_first_began_the_session_goes_back_as_it_turns_into_it() {
+    let desk = ServingServer::start("thin-begin-instead-held").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let phone = refusing(&desk, &gate, &holder).await;
+
+    let reading = phone.begin("Tidy the build");
+    reading.conversation_until(refused).await;
+    let reference = reading.session.reference();
+    // The first had begun it after all, its answer lost.
+    let working = workspace(&holder, WORKING);
+    desk.begin_as(&working, "Tidy the build", session_id(&reference))
+        .await;
+
+    reading
+        .session
+        .send("Trim the shell".to_owned())
+        .await
+        .expect("asked in its place");
+    let frame = reading.frame_until(working_frame).await;
+    assert_eq!(
+        frame.composer.expect("a composer").note.as_deref(),
+        Some("The session had begun with its first prompt, so this one was not sent")
+    );
+    assert_eq!(phone.core.draft(reference.clone()).text, "Trim the shell");
+    assert_eq!(
+        desk.read(session_id(&reference))
+            .await
+            .prompts
+            .iter()
+            .map(|prompt| prompt.text.as_str())
+            .collect::<Vec<_>>(),
+        ["Tidy the build"],
+        "one Session, begun with the first"
+    );
 
     phone.shutdown();
     desk.shutdown().await;

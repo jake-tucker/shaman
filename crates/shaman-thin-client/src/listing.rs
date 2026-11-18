@@ -1328,7 +1328,10 @@ impl Listings {
             .map(|followed| &followed.answered)
             .find(|answered| answered.name == name)
         else {
-            return crate::beginning::Known::default();
+            return crate::beginning::Known {
+                origin_named: state.remotes.len() > 1,
+                ..crate::beginning::Known::default()
+            };
         };
         let listed = workspace.and_then(|path| {
             remote
@@ -1343,6 +1346,7 @@ impl Listings {
                 .map(|description| description.text.clone())
                 .filter(|text| !text.trim().is_empty()),
             unreachable: remote.unreached.is_some(),
+            origin_named: state.remotes.len() > 1,
         }
     }
 
