@@ -88,6 +88,33 @@ jobs:
         # The script talks to the person running it, which is what Write-Host is for.
         run: Invoke-ScriptAnalyzer -Path scripts/install.ps1 -ExcludeRule PSAvoidUsingWriteHost -EnableExit
 
+  # What a Peer may ask of a Serving Server is held to compatibility (ADR-0078). A PR's schema of that wire is judged
+  # against its base's: a removal, rename, retype, newly required field or dropped default fails unless PROTOCOL_FLOOR
+  # rises to the PR's version with it, and any change fails unless PROTOCOL_VERSION moves. Every platform's tests
+  # already fail where the committed schema is stale.
+  pairing-wire:
+    name: Pairing wire
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # A PR is checked out as its merge commit, whose first parent is the base it is judged against.
+          fetch-depth: 2
+      - run: rustup toolchain install
+      - name: Judge the Pairing wire against the base
+        run: |
+          set -euo pipefail
+          schema=crates/shaman-pairing-wire/pairing-wire.json
+          base=$(mktemp)
+          if git show "HEAD^1:$schema" > "$base" 2> /dev/null; then
+            cargo run --locked -p shaman-pairing-wire -- check --base "$base"
+          else
+            echo "The base holds no schema of the Pairing wire to judge against; checking it is current."
+            cargo run --locked -p shaman-pairing-wire -- check
+          fi
+
   build:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
