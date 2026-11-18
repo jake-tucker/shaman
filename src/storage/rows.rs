@@ -1137,11 +1137,16 @@ impl ActivityRow {
         session_id: SessionId,
         activity: &Activity,
     ) -> Result<String, StorageError> {
-        encode(
-            session_id,
-            "Activity payload",
-            &StoredActivityPayload::from(activity),
-        )
+        let Some(payload) = StoredActivityPayload::of(activity) else {
+            return Err(StorageError::Write {
+                session_id,
+                message: format!(
+                    "Activity {} is of a kind this build does not know, and is never stored",
+                    activity.id()
+                ),
+            });
+        };
+        encode(session_id, "Activity payload", &payload)
     }
 
     /// The stored identity of the Session whose Transcript holds the row.
@@ -1648,12 +1653,6 @@ enum StoredActivityPayload<'a> {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         settled_at: Option<usize>,
     },
-    /// A placeholder for an Activity of a kind this build does not know. A
-    /// Server records none of its own; it is stored as it reads, should one
-    /// ever reach storage, rather than lost.
-    Unknown {
-        sent_as: Cow<'a, str>,
-    },
 }
 
 impl StoredActivityPayload<'_> {
@@ -1867,18 +1866,18 @@ impl StoredActivityPayload<'_> {
                 to_checkout: to_checkout.map(Cow::into_owned),
                 settled_at,
             },
-            Self::Unknown { sent_as } => Activity::Unknown {
-                id,
-                turn_id,
-                kind: sent_as.into_owned(),
-            },
         })
     }
 }
 
-impl<'a> From<&'a Activity> for StoredActivityPayload<'a> {
-    fn from(activity: &'a Activity) -> Self {
-        match activity {
+impl<'a> StoredActivityPayload<'a> {
+    /// The payload `activity` is stored as, or `None` for a placeholder of a
+    /// kind this build does not know, which is never stored: a Server
+    /// records no such Activity of its own, and one stored would leave a
+    /// later build that knows the kind nothing of it to read.
+    fn of(activity: &'a Activity) -> Option<Self> {
+        Some(match activity {
+            Activity::Unknown { .. } => return None,
             Activity::Approval {
                 approval,
                 tool_activity_id,
@@ -2066,10 +2065,7 @@ impl<'a> From<&'a Activity> for StoredActivityPayload<'a> {
                 to_checkout: to_checkout.as_ref().map(Cow::Borrowed),
                 settled_at: *settled_at,
             },
-            Activity::Unknown { kind, .. } => Self::Unknown {
-                sent_as: Cow::Borrowed(kind),
-            },
-        }
+        })
     }
 }
 
@@ -2209,6 +2205,27 @@ mod tests {
         assert_eq!(
             prompt.author, None,
             "a Prompt stored before authors were is the user's own"
+        );
+    }
+
+    #[test]
+    fn an_activity_of_a_kind_this_build_does_not_know_is_refused_rather_than_stored() {
+        let session_id = SessionId::new();
+        let placeholder = Activity::Unknown {
+            id: ActivityId::new(),
+            turn_id: Some(TurnId::new()),
+            kind: "deploy_preview".to_owned(),
+        };
+
+        let refused = ActivityRow::payload(session_id, &placeholder);
+
+        assert!(
+            matches!(
+                &refused,
+                Err(StorageError::Write { session_id: refused, message })
+                    if *refused == session_id && message.contains("never stored")
+            ),
+            "{refused:?}"
         );
     }
 

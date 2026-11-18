@@ -3665,8 +3665,9 @@ pub enum Activity {
 
 /// Every kind of [`Activity`] this build knows, as the wire names it: a kind
 /// not among them reads as [`Activity::Unknown`]. It names each kind
-/// [`Activity`] does, and no other.
-#[derive(Deserialize)]
+/// [`Activity`] does, and no other; [`Activity::known_kind`] holds the two in
+/// step, a kind of Activity left off this list failing to compile there.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq)]
 #[serde(rename_all = "snake_case")]
 enum KnownActivityKind {
     Approval,
@@ -3699,24 +3700,56 @@ struct UnknownActivity {
     turn_id: Option<TurnId>,
 }
 
+impl Activity {
+    /// The kind this Activity is of among those this build knows, or `None`
+    /// for a placeholder of one it does not. Every kind is named, so a kind
+    /// added to [`Activity`] does not compile until [`KnownActivityKind`]
+    /// knows it too, and is never read back by its own build as unknown.
+    const fn known_kind(&self) -> Option<KnownActivityKind> {
+        Some(match self {
+            Self::Approval { .. } => KnownActivityKind::Approval,
+            Self::Questionnaire { .. } => KnownActivityKind::Questionnaire,
+            Self::Status { .. } => KnownActivityKind::Status,
+            Self::Error { .. } => KnownActivityKind::Error,
+            Self::ModelCalls { .. } => KnownActivityKind::ModelCalls,
+            Self::Command { .. } => KnownActivityKind::Command,
+            Self::FileChange { .. } => KnownActivityKind::FileChange,
+            Self::ToolCall { .. } => KnownActivityKind::ToolCall,
+            Self::Reasoning { .. } => KnownActivityKind::Reasoning,
+            Self::Subagent { .. } => KnownActivityKind::Subagent,
+            Self::WatchOutcome { .. } => KnownActivityKind::WatchOutcome,
+            Self::Compaction { .. } => KnownActivityKind::Compaction,
+            Self::Route { .. } => KnownActivityKind::Route,
+            Self::Reroute { .. } => KnownActivityKind::Reroute,
+            Self::Subsession { .. } => KnownActivityKind::Subsession,
+            Self::Move { .. } => KnownActivityKind::Move,
+            Self::Unknown { .. } => return None,
+        })
+    }
+}
+
 impl Serialize for Activity {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
+        match (self.known_kind(), self) {
             // Written as it was read, so a reader passing it on — a Server
             // proxying a newer Remote — hands on the same placeholder.
-            Self::Unknown { id, turn_id, kind } => UnknownActivity {
+            (None, Self::Unknown { id, turn_id, kind }) => UnknownActivity {
                 kind: kind.clone(),
                 id: *id,
                 turn_id: *turn_id,
             }
             .serialize(serializer),
-            known => Self::serialize(known, serializer),
+            (_, known) => Self::serialize(known, serializer),
         }
     }
 }
 
 impl<'de> Deserialize<'de> for Activity {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // The kind may stand anywhere among the fields, so the Activity is
+        // held whole before it is read: an internally tagged enum's own
+        // reading holds it the same way, in a buffer serde keeps private,
+        // and no reading of the kind alone could leave the fields unread.
         let value = serde_json::Value::deserialize(deserializer)?;
         let known = value
             .get("kind")
@@ -4181,6 +4214,197 @@ mod newer_kind_tests {
         assert_eq!(read.id(), id);
         assert_eq!(read.turn_id(), Some(turn_id));
         assert_eq!(read.status(), None, "nothing is known of how it settles");
+    }
+
+    /// One Activity of every kind this build knows.
+    fn one_of_every_kind() -> Vec<Activity> {
+        let id = ActivityId::new;
+        let turn_id = TurnId::new();
+        let at = |path: &str| MoveLocation {
+            execution_directory: ExecutionDirectory {
+                path: PathBuf::from(path),
+            },
+            branch: None,
+        };
+        vec![
+            Activity::Approval {
+                id: id(),
+                turn_id,
+                approval: Approval {
+                    id: ApprovalId::new(),
+                    subject: approval::ApprovalSubject::Read {
+                        path: PathBuf::from("notes.txt"),
+                    },
+                    reason: None,
+                },
+                tool_activity_id: None,
+                detail_truncated: false,
+                outcome: ApprovalOutcome::Pending,
+                decision: None,
+                follow_up_error: None,
+                asked_at: None,
+            },
+            Activity::Questionnaire {
+                id: id(),
+                turn_id,
+                questionnaire: Questionnaire {
+                    id: QuestionnaireId::new(),
+                    questions: Vec::new(),
+                },
+                outcome: QuestionnaireOutcome::Pending,
+                answer: None,
+                author: None,
+                asked_at: None,
+                settled_at: None,
+            },
+            Activity::Status {
+                id: id(),
+                turn_id,
+                text: "Planning".to_owned(),
+            },
+            Activity::Error {
+                id: id(),
+                turn_id,
+                text: "Build failed".to_owned(),
+            },
+            Activity::ModelCalls {
+                id: id(),
+                turn_id,
+                calls: Vec::new(),
+            },
+            Activity::Command {
+                id: id(),
+                turn_id,
+                status: ActivityStatus::Active,
+                command: "cargo test".to_owned(),
+                cwd: None,
+                output: String::new(),
+                output_truncated: false,
+                exit_status: None,
+            },
+            Activity::FileChange {
+                id: id(),
+                turn_id,
+                status: ActivityStatus::Active,
+                changes: Vec::new(),
+            },
+            Activity::ToolCall {
+                id: id(),
+                turn_id,
+                status: ActivityStatus::Active,
+                name: "search".to_owned(),
+                server: None,
+                input: String::new(),
+                input_truncated: false,
+                output: String::new(),
+                output_truncated: false,
+                omitted_parts: 0,
+            },
+            Activity::Reasoning {
+                id: id(),
+                turn_id,
+                status: ActivityStatus::Active,
+                title: None,
+                content: String::new(),
+                content_truncated: false,
+                duration_ms: None,
+            },
+            Activity::Subagent {
+                id: id(),
+                turn_id,
+                status: ActivityStatus::Active,
+                name: "explore".to_owned(),
+                description: "Map the seams".to_owned(),
+                model: None,
+                session_id: SessionId::new(),
+                brokered: false,
+                duration_ms: None,
+                delegated_at: None,
+            },
+            Activity::WatchOutcome {
+                id: id(),
+                turn_id,
+                status: WatchOutcomeStatus::Completed,
+                description: "CI".to_owned(),
+                summary: None,
+            },
+            Activity::Compaction {
+                id: id(),
+                turn_id,
+                status: ActivityStatus::Active,
+                trigger: CompactionTrigger::Manual,
+                instructions: None,
+                before_tokens: None,
+                after_tokens: None,
+                error: None,
+                summary: None,
+                summary_truncated: false,
+            },
+            Activity::Route {
+                id: id(),
+                turn_id,
+                decision: RouteDecision::Handoff {
+                    to: ModelId::new("second"),
+                },
+            },
+            Activity::Reroute {
+                id: id(),
+                turn_id,
+                reroute: Reroute {
+                    provider: ProviderId::new("copilot"),
+                    from: None,
+                    to: ModelId::new("second"),
+                    reason: None,
+                },
+            },
+            Activity::Subsession {
+                id: id(),
+                turn_id,
+                session_id: SessionId::new(),
+                origin: None,
+                origin_fingerprint: None,
+                title: "Map the seams".to_owned(),
+                prompt: "Map the seams".to_owned(),
+            },
+            Activity::Move {
+                id: id(),
+                status: ActivityStatus::Active,
+                from: at("before"),
+                to: at("after"),
+                error: None,
+                new_worktree: false,
+                to_checkout: None,
+                settled_at: None,
+            },
+        ]
+    }
+
+    #[test]
+    fn every_kind_this_build_knows_is_written_and_read_back_as_itself() {
+        let activities = one_of_every_kind();
+        let kinds = activities
+            .iter()
+            .map(|activity| activity.known_kind().expect("a kind this build knows"))
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(
+            kinds.len(),
+            activities.len(),
+            "one of each kind, none twice"
+        );
+
+        for activity in activities {
+            let written = serde_json::to_value(&activity).expect("encode the Activity");
+            assert_eq!(
+                KnownActivityKind::deserialize(&written["kind"]).ok(),
+                activity.known_kind(),
+                "{written} is written under the kind it is"
+            );
+            assert_eq!(
+                serde_json::from_value::<Activity>(written).expect("decode the Activity"),
+                activity,
+                "a kind this build knows is never read back as a placeholder"
+            );
+        }
     }
 
     #[test]

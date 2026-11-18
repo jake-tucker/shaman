@@ -2045,6 +2045,33 @@ mod tests {
     }
 
     #[test]
+    fn an_activity_of_a_kind_this_build_does_not_know_reads_as_what_it_was_sent_as() {
+        let mut fixture = Fixture::new();
+        let turn = fixture.turn(TurnStatus::Completed);
+        fixture.message(turn, MessageRole::User, "Ship it.");
+        fixture.activity(Activity::Unknown {
+            id: ActivityId::new(),
+            turn_id: Some(turn),
+            kind: "deploy_preview".to_owned(),
+        });
+        fixture.message(turn, MessageRole::Agent, "It is shipped.");
+
+        let expected =
+            "1.2 deploy preview: an Activity this Shaman cannot read, from a newer Shaman";
+        assert_eq!(fixture.read(entry("1.2")).transcript, expected);
+        assert!(
+            fixture
+                .window(Window {
+                    detail: Detail::Activities,
+                    ..Window::default()
+                })
+                .transcript
+                .contains(expected),
+            "its one line holds its place among the rest"
+        );
+    }
+
+    #[test]
     fn a_default_read_is_the_latest_turns_user_message_and_final_agent_message() {
         let fixture = three_turns();
         let reading = fixture.window(Window::default());

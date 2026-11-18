@@ -61,9 +61,10 @@ use super::{
 };
 use crate::protocol::{
     SESSION_CATALOG_SNAPSHOT_EVENT, SESSION_CATALOG_UPDATED_EVENT, SUBAGENT_TREE_SNAPSHOT_EVENT,
-    SUBAGENT_TREE_UPDATED_EVENT, SessionCatalogChange, SessionCatalogSnapshot,
-    SessionCatalogUpdate, SessionId, SessionTreeOutline, SnapshotWithSummary, SubagentTreeChange,
-    SubagentTreeSnapshot, SubagentTreeUpdate,
+    SUBAGENT_TREE_UPDATED_EVENT, SessionCatalogChange, SessionCatalogRevision,
+    SessionCatalogSnapshot, SessionCatalogUpdate, SessionId, SessionTreeOutline,
+    SnapshotWithSummary, SubagentTreeChange, SubagentTreeRevision, SubagentTreeSnapshot,
+    SubagentTreeUpdate,
 };
 use crate::provider::SidekickOriginLoss;
 use crate::server::RemoteWatchLimits;
@@ -174,6 +175,7 @@ enum Followed {
 }
 
 /// How following the tree a Remote's Session heads there ended.
+#[derive(Debug, PartialEq)]
 enum TreeFollowed {
     /// It lost its place among the changes, so it is read afresh at once.
     Behind,
@@ -495,23 +497,12 @@ impl SessionOperations {
                     if event.event != SESSION_CATALOG_UPDATED_EVENT {
                         continue;
                     }
-                    let Ok(update) = serde_json::from_str::<SessionCatalogUpdate>(&event.data)
-                    else {
+                    let Some(step) = catalog_step(&event.data, revision) else {
                         return Followed::Silent;
                     };
-                    let in_place = update.revision.immediately_follows(revision);
-                    revision = update.revision;
-                    // A Session begun there may be one a Sidekick here is
-                    // about to name, a change missed leaves the reading
-                    // behind, and the Remote may say what it holds is to be
-                    // read again, so each reads the listing again.
-                    let reread = !in_place
-                        || matches!(
-                            update.change,
-                            SessionCatalogChange::Created { .. }
-                                | SessionCatalogChange::Invalidated { .. }
-                        );
-                    if reread {
+                    revision = step.update.revision;
+                    let update = step.update;
+                    if step.reread {
                         if let Err(refusal) = self.read_remote(remote).await {
                             if let Some(ended) = ended_by(refusal) {
                                 return ended;
@@ -749,17 +740,11 @@ impl SessionOperations {
                 self.sessions
                     .remote_tree_read(remote, session_id, tree, self.tree_bounds());
             } else if event.event == SUBAGENT_TREE_UPDATED_EVENT {
-                let Ok(update) = serde_json::from_str::<SubagentTreeUpdate>(&event.data) else {
-                    return Some(TreeFollowed::Silent);
+                let update = match tree_step(&event.data, revision) {
+                    Ok(update) => update,
+                    Err(followed) => return followed,
                 };
-                // A change missed leaves the reading behind.
-                if !revision.is_some_and(|revision| update.revision.immediately_follows(revision)) {
-                    return Some(TreeFollowed::Behind);
-                }
                 revision = Some(update.revision);
-                if update.change == SubagentTreeChange::TreeDeleted {
-                    return None;
-                }
                 self.sessions.remote_tree_changed(
                     remote,
                     session_id,
@@ -1108,6 +1093,57 @@ fn ended_by(refusal: OriginRefusal) -> Option<Followed> {
 /// The Session whose work `change`, a Remote's catalog said, may have moved
 /// on — a Turn begun or settled, an Intervention asked or settled, its work
 /// beneath it working or not — where it says of one.
+/// What following a Remote's catalog does with one update, `data`, its last
+/// revision `revision`.
+#[derive(Debug, PartialEq)]
+struct CatalogStep {
+    update: SessionCatalogUpdate,
+    /// Whether the listing is read again, rather than the change taken in
+    /// place.
+    reread: bool,
+}
+
+/// The step `data` asks of following a Remote's catalog after `revision`,
+/// or `None` where it does not read, which ends the following. A change of
+/// a kind this build does not know, from a newer Remote, is taken in place
+/// as moving nothing, and the following carries on (ADR-0078).
+fn catalog_step(data: &str, revision: SessionCatalogRevision) -> Option<CatalogStep> {
+    let update = serde_json::from_str::<SessionCatalogUpdate>(data).ok()?;
+    // A Session begun there may be one a Sidekick here is about to name, a
+    // change missed leaves the reading behind, and the Remote may say what it
+    // holds is to be read again, so each reads the listing again.
+    let reread = !update.revision.immediately_follows(revision)
+        || matches!(
+            update.change,
+            SessionCatalogChange::Created { .. } | SessionCatalogChange::Invalidated { .. }
+        );
+    Some(CatalogStep { update, reread })
+}
+
+/// The change `data` carries that following a Remote's tree after
+/// `revision` takes up, or how the following ends, as
+/// [`SessionOperations::follow_remote_tree_once`] answers: a change it cannot
+/// read leaves the tree unread, one out of sequence leaves it behind, and its
+/// deletion ends it. A change of a kind this build does
+/// not know, from a newer Remote, is taken up as moving nothing, and the
+/// following carries on (ADR-0078).
+fn tree_step(
+    data: &str,
+    revision: Option<SubagentTreeRevision>,
+) -> Result<SubagentTreeUpdate, Option<TreeFollowed>> {
+    let Ok(update) = serde_json::from_str::<SubagentTreeUpdate>(data) else {
+        return Err(Some(TreeFollowed::Silent));
+    };
+    // A change missed leaves the reading behind.
+    if !revision.is_some_and(|revision| update.revision.immediately_follows(revision)) {
+        return Err(Some(TreeFollowed::Behind));
+    }
+    if update.change == SubagentTreeChange::TreeDeleted {
+        return Err(None);
+    }
+    Ok(update)
+}
+
 fn stirring(change: &SessionCatalogChange) -> Option<SessionId> {
     match change {
         SessionCatalogChange::WorkingChanged { session_id, .. }
@@ -1170,8 +1206,8 @@ fn top_level_in(tree: &SubagentTreeSnapshot, session_id: SessionId) -> SessionId
 mod tests {
     use super::*;
     use crate::protocol::{
-        ActivityStatus, SessionTimestamp, SubagentTreeEntry, SubagentTreeRevision,
-        SubagentTreeSession, SubagentTreeTopLevel,
+        ActivityStatus, SessionTimestamp, SubagentTreeEntry, SubagentTreeSession,
+        SubagentTreeTopLevel,
     };
 
     fn entry(session_id: SessionId, parent_session_id: SessionId) -> SubagentTreeEntry {
@@ -1190,6 +1226,68 @@ mod tests {
             monitoring_since: None,
             needs_intervention: false,
         }
+    }
+
+    #[test]
+    fn following_a_remotes_catalog_carries_on_past_a_change_this_build_does_not_know() {
+        let unknown = serde_json::json!({
+            "revision": 4,
+            "change": { "type": "session_mood_changed", "session_id": SessionId::new() },
+        })
+        .to_string();
+
+        let step = catalog_step(&unknown, SessionCatalogRevision(3))
+            .expect("a newer Remote's change does not end the following");
+
+        assert_eq!(
+            step,
+            CatalogStep {
+                update: SessionCatalogUpdate {
+                    revision: SessionCatalogRevision(4),
+                    change: SessionCatalogChange::Unknown,
+                },
+                reread: false,
+            },
+            "it is taken in place, its revision counted"
+        );
+        assert_eq!(stirring(&step.update.change), None, "it stirs nothing");
+        assert!(
+            catalog_step("not json at all", SessionCatalogRevision(3)).is_none(),
+            "what does not read at all still ends it"
+        );
+    }
+
+    #[test]
+    fn following_a_remotes_tree_carries_on_past_a_change_this_build_does_not_know() {
+        let update = |revision: u64, change: serde_json::Value| {
+            serde_json::json!({ "revision": revision, "change": change }).to_string()
+        };
+
+        let step = tree_step(
+            &update(5, serde_json::json!({ "type": "subagent_mood_changed" })),
+            Some(SubagentTreeRevision(4)),
+        );
+
+        assert_eq!(
+            step,
+            Ok(SubagentTreeUpdate {
+                revision: SubagentTreeRevision(5),
+                change: SubagentTreeChange::Unknown,
+            }),
+            "it is taken up, its revision counted, and the following goes on"
+        );
+        assert_eq!(
+            tree_step(
+                &update(6, serde_json::json!({ "type": "tree_deleted" })),
+                Some(SubagentTreeRevision(5)),
+            ),
+            Err(None),
+            "the change after it follows in sequence"
+        );
+        assert_eq!(
+            tree_step("not json at all", Some(SubagentTreeRevision(5))),
+            Err(Some(TreeFollowed::Silent))
+        );
     }
 
     #[test]

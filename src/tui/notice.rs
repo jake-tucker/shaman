@@ -19,9 +19,9 @@
 //! reaches the Log (ADR-0008), so that Notice points at where its reader logs
 //! in instead.
 //!
-//! A Server newer than this Client sending a change it does not know says so
-//! once for each Server, quietly: nothing went wrong and there is nothing to
-//! do here, but some of what that Server moves may not show (ADR-0078).
+//! A Remote newer than this Client sending a change it does not know says so
+//! once for each Remote, quietly: nothing went wrong and there is nothing to
+//! do here, but some of what that Remote moves may not show (ADR-0078).
 
 use std::cell::Cell;
 use std::path::Path;
@@ -32,7 +32,7 @@ use ratatui::style::Style;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    protocol::{Outlook, SettingsDiagnostic, SettingsDiagnosticSeverity, ShortCodeState},
+    protocol::{SettingsDiagnostic, SettingsDiagnosticSeverity, ShortCodeState},
     shown_text::shown,
     theme::{Theme, ThemeDiagnostic},
 };
@@ -183,19 +183,18 @@ impl ApplicationNotice {
         );
     }
 
-    /// Reports that the Server `outlook` names sent a change this Client does
-    /// not know, being newer than it. It is said once for each Server: once
+    /// Reports that the Remote named `remote` sent a change this Client does
+    /// not know, being newer than it. It is said once for each Remote: once
     /// raised it is neither raised again while it shows nor after it is
-    /// dismissed, however many more such changes that Server sends.
-    pub(super) fn receive_newer_server(&mut self, outlook: &Outlook) {
-        let server = match outlook {
-            Outlook::Local => "This machine's server".to_owned(),
-            Outlook::Remote(name) => shown(name, 40),
-        };
+    /// dismissed, however many more such changes that Remote sends.
+    pub(super) fn receive_newer_remote(&mut self, remote: &str) {
         self.raise(
-            NoticeIdentity::NewerServer(outlook.clone()),
+            NoticeIdentity::NewerRemote(remote.to_owned()),
             SettingsDiagnosticSeverity::Warning,
-            format!("{server} runs a newer Shaman; some things may not show"),
+            format!(
+                "{} runs a newer Shaman; some things may not show",
+                shown(remote, 40)
+            ),
         );
     }
 
@@ -382,9 +381,9 @@ pub(super) enum NoticeIdentity {
     ShortCodeBurned(u64),
     /// A Peer offered to be reached, by this offer.
     PairBackOffered(Uuid),
-    /// The Server this Outlook names is newer than this Client, and sent a
-    /// change it does not know.
-    NewerServer(Outlook),
+    /// The Remote so named is newer than this Client, and sent a change it
+    /// does not know.
+    NewerRemote(String),
 }
 
 impl NoticeIdentity {
@@ -597,7 +596,7 @@ impl Notice {
     /// nothing of them, so it reads quietly.
     fn only_informs(&self) -> bool {
         self.identities()
-            .all(|identity| matches!(identity, NoticeIdentity::NewerServer(_)))
+            .all(|identity| matches!(identity, NoticeIdentity::NewerRemote(_)))
     }
 
     /// The Relays this Notice says need a login, in the order it said so.
@@ -619,7 +618,7 @@ impl Notice {
                 NoticeIdentity::RelayLoginNeeded { .. }
                     | NoticeIdentity::ShortCodeBurned(_)
                     | NoticeIdentity::PairBackOffered(_)
-                    | NoticeIdentity::NewerServer(_)
+                    | NoticeIdentity::NewerRemote(_)
             )
         });
         let relay = !self.relays_needing_login().is_empty();
@@ -729,12 +728,11 @@ mod tests {
     }
 
     #[test]
-    fn a_newer_server_is_said_once_quietly_and_never_again() {
-        let studio = Outlook::Remote("studio".to_owned());
+    fn a_newer_remote_is_said_once_quietly_and_never_again() {
         let mut notice = ApplicationNotice::default();
 
-        notice.receive_newer_server(&studio);
-        let shown = notice.showing().expect("the newer Server is said").clone();
+        notice.receive_newer_remote("studio");
+        let shown = notice.showing().expect("the newer Remote is said").clone();
         assert_eq!(
             shown.text(120),
             "i studio runs a newer Shaman; some things may not show",
@@ -742,34 +740,34 @@ mod tests {
         );
         assert!(shown.only_informs(), "it reads quietly");
 
-        notice.receive_newer_server(&studio);
+        notice.receive_newer_remote("studio");
         assert_eq!(
             notice.showing(),
             Some(&shown),
-            "another change from the same Server says nothing more"
+            "another change from the same Remote says nothing more"
         );
 
         notice.showing().expect("still shown").mark_shown();
         assert!(notice.dismiss());
-        notice.receive_newer_server(&studio);
+        notice.receive_newer_remote("studio");
         assert!(
             notice.showing().is_none(),
-            "once dismissed it does not return for that Server"
+            "once dismissed it does not return for that Remote"
         );
 
-        notice.receive_newer_server(&Outlook::Local);
+        notice.receive_newer_remote("attic");
         assert!(
-            notice.showing().is_some_and(|shown| shown
-                .text(120)
-                .starts_with("i This machine's server runs a newer Shaman")),
-            "another Server is said of in its own right"
+            notice
+                .showing()
+                .is_some_and(|shown| shown.text(120).starts_with("i attic runs a newer Shaman")),
+            "another Remote is said of in its own right"
         );
     }
 
     #[test]
-    fn a_newer_server_beside_a_warning_reads_as_the_warning_does() {
+    fn a_newer_remote_beside_a_warning_reads_as_the_warning_does() {
         let mut notice = ApplicationNotice::default();
-        notice.receive_newer_server(&Outlook::Remote("studio".to_owned()));
+        notice.receive_newer_remote("studio");
         notice.receive_relay_login_needed("relay.example.test", Uuid::nil());
 
         let shown = notice.showing().expect("both are said");

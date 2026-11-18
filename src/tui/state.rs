@@ -2887,9 +2887,9 @@ impl TuiState {
                 self.fatal_error = None;
             }
             ManagedEvent::RemoteRecovered => self.end_recovery(&Outlook::Local),
-            // A change the local Server's catalog passed over says that
-            // Server is newer.
-            ManagedEvent::ChangeSkipped => self.note_newer_server(&Outlook::Local),
+            // The local Server is never newer than this Client, whose wire to
+            // it matches exactly, so its catalog has nothing to pass over.
+            ManagedEvent::ChangeSkipped => {}
             // The managed catalog stream is the local Server's, so the
             // listing it pushes is the Local Outlook's whichever Outlook is
             // on screen; a Remote's is taken in `apply_origin_catalog`.
@@ -3387,12 +3387,15 @@ impl TuiState {
         self.sync_composer_completion();
     }
 
-    /// Says, once for each Server, that the Server `outlook` names is newer
+    /// Says, once for each Remote, that the Remote `outlook` names is newer
     /// than this Client and some things may not show: one of its streams
     /// sent a change this Client does not know, which was passed over
-    /// (ADR-0078).
+    /// (ADR-0078). The local Server says nothing: the wire to it matches
+    /// this Client's exactly, so it is never newer.
     pub(super) fn note_newer_server(&mut self, outlook: &Outlook) {
-        self.application_notice.receive_newer_server(outlook);
+        if let Outlook::Remote(name) = outlook {
+            self.application_notice.receive_newer_remote(name);
+        }
     }
 
     /// Lands `event` on the open Session, answering whether it moved
