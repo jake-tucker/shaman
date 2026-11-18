@@ -50,6 +50,7 @@ fn prompt(text: &str, delivery: PromptDelivery, order: u64) -> Prompt {
 
 fn framed(snapshot: &SessionSnapshot, local: &Local, unreachable: bool) -> SessionFrame {
     frame_of(
+        "desk-key",
         Some(&listed(None)),
         Some(snapshot),
         None,
@@ -126,6 +127,7 @@ fn an_idle_session_has_no_bar_and_a_composer_that_offers_no_queue() {
 #[test]
 fn on_an_unreachable_origin_the_composer_says_nothing_sent_goes_anywhere_until_it_answers() {
     let one = frame_of(
+        "desk-key",
         Some(&listed(None)),
         Some(&snapshot()),
         None,
@@ -140,6 +142,7 @@ fn on_an_unreachable_origin_the_composer_says_nothing_sent_goes_anywhere_until_i
         Some("The server is unreachable. Nothing sent goes anywhere until it answers.")
     );
     let named = frame_of(
+        "desk-key",
         Some(&listed(Some("desk"))),
         Some(&snapshot()),
         None,
@@ -166,6 +169,7 @@ fn a_subagents_session_and_one_gone_have_no_composer() {
     assert!(frame.bar.is_some(), "its bar stands alone");
 
     let gone = frame_of(
+        "desk-key",
         Some(&listed(None)),
         Some(&working()),
         Some("This session no longer exists".to_owned()),
@@ -360,7 +364,10 @@ fn an_approval_dismissed_waits_behind_an_orange_bar_whose_review_brings_it_back(
             since: None,
             watching: None,
             stop: Some("Stop".to_owned()),
-            review: Some("Review".to_owned()),
+            review: Some(Review {
+                label: "Review".to_owned(),
+                opens: ReviewOpens::Interventions,
+            }),
         })
     );
 
@@ -458,9 +465,11 @@ fn a_subagents_session_is_named_by_the_subagent_and_offers_stop_only_where_it_st
         named: Some("Explorer · haiku".to_owned()),
         title: Some("Find what held the lock".to_owned()),
         stoppable,
+        names: Vec::new(),
     };
     let frame = |snapshot: Option<&SessionSnapshot>, stoppable: bool| {
         frame_of(
+            "desk-key",
             // No listing carries a Subagent's Session.
             Some(&Listed {
                 title: None,
@@ -512,6 +521,7 @@ fn a_session_no_listing_carries_takes_no_prompt_until_it_is_read_as_a_top_level_
     };
     let frame = |snapshot: Option<&SessionSnapshot>| {
         frame_of(
+            "desk-key",
             Some(&unlisted),
             snapshot,
             None,
@@ -530,6 +540,7 @@ fn a_session_no_listing_carries_takes_no_prompt_until_it_is_read_as_a_top_level_
             .composer
             .is_some()
             && frame_of(
+                "desk-key",
                 Some(&listed(None)),
                 None,
                 None,
@@ -579,7 +590,13 @@ fn a_questionnaire_dismissed_waits_behind_an_orange_bar_saying_so() {
     let bar = frame.bar.expect("a bar");
     assert_eq!(bar.kind, BarKind::Waiting);
     assert_eq!(bar.words, "Questionnaire waiting");
-    assert_eq!(bar.review.as_deref(), Some("Review"));
+    assert_eq!(
+        bar.review,
+        Some(Review {
+            label: "Review".to_owned(),
+            opens: ReviewOpens::Interventions,
+        })
+    );
 }
 
 #[test]
@@ -609,5 +626,240 @@ fn the_frame_lists_every_intervention_still_waiting_presented_dismissed_or_out_o
             .waiting
             .is_empty(),
         "answered, it is listed no more"
+    );
+}
+
+/// `snapshot`, with the Intervention of each of `owed` waiting in the
+/// Subagent whose Session is its first, reached through its own Subagent
+/// the second: Approvals and Questionnaires as many as it says.
+fn with_beneath(
+    mut snapshot: SessionSnapshot,
+    owed: &[(SessionId, SessionId, usize, usize)],
+) -> SessionSnapshot {
+    snapshot.subagent_interventions = owed
+        .iter()
+        .map(|(session_id, via_session_id, approvals, questionnaires)| {
+            shaman_protocol::SubagentInterventions {
+                session_id: *session_id,
+                via_session_id: *via_session_id,
+                revision: shaman_protocol::SessionRevision(3),
+                pending_questionnaires: (0..*questionnaires)
+                    .map(|_| shaman_protocol::QuestionnaireId::new())
+                    .collect(),
+                submitting_questionnaires: Vec::new(),
+                pending_approvals: (0..*approvals).map(|_| ApprovalId::new()).collect(),
+                submitting_approvals: Vec::new(),
+            }
+        })
+        .collect();
+    snapshot
+}
+
+/// A working Session whose Agent delegated to the Subagent `name`, and that
+/// Subagent's Session.
+fn delegating(name: &str) -> (SessionSnapshot, SessionId) {
+    let mut snapshot = working();
+    let row = subagent_row(name, ActivityStatus::Active);
+    let Activity::Subagent { session_id, .. } = &row else {
+        unreachable!("a Subagent's row");
+    };
+    let session_id = *session_id;
+    snapshot.activities.push(row);
+    (snapshot, session_id)
+}
+
+fn review(opens: ReviewOpens) -> Option<Review> {
+    Some(Review {
+        label: "Review".to_owned(),
+        opens,
+    })
+}
+
+#[test]
+fn a_subagents_intervention_presents_no_sheet_and_the_bar_names_it_with_review_pushing_its_session()
+{
+    let (snapshot, explorer) = delegating("Explorer");
+    let said = |approvals, questionnaires| {
+        let frame = framed(
+            &with_beneath(
+                snapshot.clone(),
+                &[(explorer, explorer, approvals, questionnaires)],
+            ),
+            &Local::default(),
+            false,
+        );
+        assert_eq!(frame.intervention, None, "it is not this Session's own");
+        assert!(frame.waiting.is_empty(), "nor among its own");
+        frame.bar.expect("a bar")
+    };
+    let bar = said(1, 0);
+    assert_eq!(
+        bar,
+        Bar {
+            kind: BarKind::Waiting,
+            words: "Explorer needs approval".to_owned(),
+            since: None,
+            watching: None,
+            stop: Some("Stop".to_owned()),
+            review: review(ReviewOpens::Session {
+                session: format!("desk-key/{explorer}")
+            }),
+        }
+    );
+    assert_eq!(said(0, 1).words, "Explorer needs an answer");
+    assert_eq!(said(2, 0).words, "Explorer needs you");
+    assert_eq!(said(1, 1).words, "Explorer needs you");
+
+    // Answered, the bar is the work's again.
+    let answered = framed(
+        &with_beneath(snapshot.clone(), &[(explorer, explorer, 0, 0)]),
+        &Local::default(),
+        false,
+    );
+    assert_eq!(answered.bar.map(|bar| bar.kind), Some(BarKind::Working));
+}
+
+#[test]
+fn one_waiting_deeper_down_is_named_as_its_tree_names_it_and_pushed_itself() {
+    let (snapshot, explorer) = delegating("Explorer");
+    let grepper = SessionId::new();
+    let in_tree = InTree {
+        names: vec![
+            (explorer, "Explorer".to_owned()),
+            (grepper, "Grepper".to_owned()),
+        ],
+        ..InTree::default()
+    };
+    let snapshot = with_beneath(snapshot, &[(grepper, explorer, 0, 1)]);
+    let frame = |in_tree: &InTree| {
+        frame_of(
+            "desk-key",
+            Some(&listed(None)),
+            Some(&snapshot),
+            None,
+            &Local::default(),
+            false,
+            in_tree,
+        )
+        .bar
+        .expect("a bar")
+    };
+    let bar = frame(&in_tree);
+    assert_eq!(bar.words, "Grepper needs an answer");
+    assert_eq!(
+        bar.review,
+        review(ReviewOpens::Session {
+            session: format!("desk-key/{grepper}")
+        })
+    );
+    assert_eq!(
+        frame(&InTree::default()).words,
+        "A subagent needs an answer",
+        "before the tree that names it is read"
+    );
+}
+
+#[test]
+fn several_subagents_waiting_are_counted_and_review_opens_the_tree() {
+    let (snapshot, explorer) = delegating("Explorer");
+    let grepper = SessionId::new();
+    let frame = framed(
+        &with_beneath(
+            snapshot,
+            &[(explorer, explorer, 1, 0), (grepper, explorer, 0, 1)],
+        ),
+        &Local::default(),
+        false,
+    );
+    assert_eq!(frame.intervention, None);
+    let bar = frame.bar.expect("a bar");
+    assert_eq!(bar.kind, BarKind::Waiting);
+    assert_eq!(bar.words, "2 subagents need you");
+    assert_eq!(bar.review, review(ReviewOpens::Tree));
+}
+
+#[test]
+fn the_sessions_own_intervention_comes_first_and_a_subagents_shows_once_it_is_dismissed() {
+    let id = ApprovalId::new();
+    let mut own = approving(id);
+    let row = subagent_row("Explorer", ActivityStatus::Active);
+    let Activity::Subagent { session_id, .. } = &row else {
+        unreachable!("a Subagent's row");
+    };
+    let explorer = *session_id;
+    own.activities.push(row);
+    let both = with_beneath(own.clone(), &[(explorer, explorer, 1, 0)]);
+    let mut local = Local::default();
+    local.reconcile(&both);
+
+    // Its own presents itself; the bar beneath is the work's.
+    let first = framed(&both, &local, false);
+    assert!(matches!(
+        first.intervention,
+        Some(Intervention::Approval { .. })
+    ));
+    assert_eq!(first.bar.map(|bar| bar.kind), Some(BarKind::Working));
+
+    // Swiped away, the Subagent's shows on the bar.
+    local.dismiss();
+    let then = framed(&both, &local, false).bar.expect("a bar");
+    assert_eq!(then.words, "Explorer needs approval");
+    assert!(matches!(
+        then.review.map(|review| review.opens),
+        Some(ReviewOpens::Session { .. })
+    ));
+
+    // The Subagent's answered, its own waits behind Review again.
+    let alone = framed(
+        &with_beneath(own.clone(), &[(explorer, explorer, 0, 0)]),
+        &local,
+        false,
+    )
+    .bar
+    .expect("a bar");
+    assert_eq!(alone.words, "Approval waiting");
+    assert_eq!(alone.review, review(ReviewOpens::Interventions));
+
+    // Its own answered, the Subagent's shows.
+    let mut answered = working();
+    answered.activities = both.activities.clone();
+    answered
+        .activities
+        .retain(|activity| matches!(activity, Activity::Subagent { .. }));
+    let answered = with_beneath(answered, &[(explorer, explorer, 1, 0)]);
+    assert_eq!(
+        framed(&answered, &Local::default(), false)
+            .bar
+            .map(|bar| bar.words)
+            .as_deref(),
+        Some("Explorer needs approval")
+    );
+}
+
+#[test]
+fn on_an_unreachable_origin_a_subagents_intervention_marks_the_bar_with_nothing_to_review() {
+    let (snapshot, explorer) = delegating("Explorer");
+    let bar = framed(
+        &with_beneath(snapshot.clone(), &[(explorer, explorer, 1, 0)]),
+        &Local::default(),
+        true,
+    )
+    .bar
+    .expect("a bar");
+    assert_eq!(bar.kind, BarKind::Waiting);
+    assert_eq!(bar.words, "Explorer needs approval");
+    assert_eq!(bar.review, None);
+
+    // Its own, out of sight there too, comes first.
+    let mut own = approving(ApprovalId::new());
+    own.activities
+        .push(subagent_row("Explorer", ActivityStatus::Active));
+    let own = with_beneath(own, &[(explorer, explorer, 1, 0)]);
+    assert_eq!(
+        framed(&own, &Local::default(), true)
+            .bar
+            .map(|bar| bar.words)
+            .as_deref(),
+        Some("Approval waiting")
     );
 }

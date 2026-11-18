@@ -1,5 +1,6 @@
 //! An open Session's own Interventions: the one it presents as a sheet, and
-//! what its bar says of those that wait behind "Review".
+//! what its bar says of those that wait behind "Review"; and what waits in
+//! the Subagents beneath it, which never presents itself there.
 //!
 //! The Session's own pending Interventions present themselves one by one,
 //! oldest first in Transcript order. Swiping a sheet away dismisses every one
@@ -21,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 use shaman_protocol::{
     Activity, Answer, Approval, ApprovalId, ApprovalOutcome, ApprovalSubject, Decision, Question,
     QuestionAnswer, QuestionChoice, Questionnaire, QuestionnaireId, QuestionnaireOutcome,
-    SessionSnapshot, TranscriptItem, TurnStatus,
+    SessionId, SessionSnapshot, SubagentInterventions, TranscriptItem, TurnStatus,
 };
 
 use crate::work::{DetailSection, Fact, approval_facts};
@@ -287,6 +288,94 @@ fn found(snapshot: &SessionSnapshot, submitting: bool) -> Vec<(InterventionId, &
             _ => None,
         })
         .collect()
+}
+
+/// What waits on the reader in one Session: how many Approvals and how many
+/// Questionnaires.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Owed {
+    pub approvals: usize,
+    pub questionnaires: usize,
+}
+
+impl Owed {
+    fn of(entry: &SubagentInterventions) -> Self {
+        Self {
+            approvals: entry.pending_approvals.len(),
+            questionnaires: entry.pending_questionnaires.len(),
+        }
+    }
+
+    /// What `snapshot`'s Session owes the reader of its own.
+    pub(crate) fn own(snapshot: &SessionSnapshot) -> Self {
+        pending(snapshot)
+            .into_iter()
+            .fold(Self::default(), |owed, (id, _)| match id {
+                InterventionId::Approval(_) => Self {
+                    approvals: owed.approvals + 1,
+                    ..owed
+                },
+                InterventionId::Questionnaire(_) => Self {
+                    questionnaires: owed.questionnaires + 1,
+                    ..owed
+                },
+            })
+    }
+
+    fn and(self, other: Self) -> Self {
+        Self {
+            approvals: self.approvals + other.approvals,
+            questionnaires: self.questionnaires + other.questionnaires,
+        }
+    }
+
+    /// What it needs of the reader, as "Explorer needs …" ends it: one
+    /// Approval "approval", one Questionnaire "an answer", and several of
+    /// either "you"; none where nothing waits.
+    pub(crate) const fn needs(self) -> Option<&'static str> {
+        match (self.approvals, self.questionnaires) {
+            (0, 0) => None,
+            (1, 0) => Some("approval"),
+            (0, 1) => Some("an answer"),
+            _ => Some("you"),
+        }
+    }
+
+    /// What a row says of it, in its tone of waiting: "Needs approval",
+    /// "Needs an answer", "Needs you".
+    pub(crate) fn row_words(self) -> Option<String> {
+        self.needs().map(|needs| format!("Needs {needs}"))
+    }
+}
+
+/// The Subagents beneath `snapshot`'s Session, at any depth, in which an
+/// Intervention waits on the reader, each by the Session that owns it with
+/// what it owes, in the order its Server lists them.
+pub(crate) fn beneath(snapshot: &SessionSnapshot) -> Vec<(SessionId, Owed)> {
+    let mut waiting = Vec::<(SessionId, Owed)>::new();
+    for entry in &snapshot.subagent_interventions {
+        let owed = Owed::of(entry);
+        if owed.needs().is_none() {
+            continue;
+        }
+        match waiting
+            .iter_mut()
+            .find(|(owner, _)| *owner == entry.session_id)
+        {
+            Some((_, held)) => *held = held.and(owed),
+            None => waiting.push((entry.session_id, owed)),
+        }
+    }
+    waiting
+}
+
+/// What waits on the reader in `snapshot`'s Subagent `child` or beneath it.
+pub(crate) fn through(snapshot: &SessionSnapshot, child: SessionId) -> Owed {
+    snapshot
+        .subagent_interventions
+        .iter()
+        .filter(|entry| entry.via_session_id == child)
+        .fold(Owed::default(), |owed, entry| owed.and(Owed::of(entry)))
 }
 
 /// How the Session's own Interventions stand on its screen.

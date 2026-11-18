@@ -29,7 +29,10 @@ use shaman_protocol::{
 };
 use tokio::{runtime::Handle, sync::watch, task::JoinHandle};
 
-use crate::conversation::{Tone, humanized_duration};
+use crate::{
+    conversation::{Tone, humanized_duration},
+    intervention::{self, Owed},
+};
 
 /// The button an open Session's navigation bar offers its tree by, where the
 /// tree has Subagents.
@@ -103,6 +106,9 @@ pub(crate) struct InTree {
     pub title: Option<String>,
     /// Whether the open Session, a Subagent's, can be stopped alone.
     pub stoppable: bool,
+    /// The name of each of this Server's Subagents in the tree, by its
+    /// Session, which its bar names one by where its Intervention waits.
+    pub names: Vec<(SessionId, String)>,
 }
 
 /// What reading a tree has found.
@@ -118,12 +124,14 @@ pub(crate) enum Reading {
 }
 
 /// What an open Session has read of its own that the tree does not say:
-/// which Provider its Agent runs on, and which of the Subagents it spawned
-/// Shaman spawned through the Broker.
+/// which Provider its Agent runs on, which of the Subagents it spawned
+/// Shaman spawned through the Broker, and what waits on the reader in it and
+/// in each Subagent beneath it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Known {
     pub provider: Option<ProviderId>,
     pub brokered: Vec<SessionId>,
+    pub owed: Vec<(SessionId, Owed)>,
 }
 
 impl Known {
@@ -157,7 +165,17 @@ impl Known {
             .collect::<Vec<_>>();
         brokered.sort_by_key(ToString::to_string);
         brokered.dedup();
-        Self { provider, brokered }
+        let own = Owed::own(snapshot);
+        let owed = (own.needs().is_some())
+            .then_some((snapshot.session.id, own))
+            .into_iter()
+            .chain(intervention::beneath(snapshot))
+            .collect();
+        Self {
+            provider,
+            brokered,
+            owed,
+        }
     }
 }
 
@@ -524,7 +542,7 @@ impl Drop for Lease {
 }
 
 /// A reference to the Session `session_id` on the Remote `remote`.
-fn reference(remote: &str, session_id: SessionId) -> String {
+pub(crate) fn reference(remote: &str, session_id: SessionId) -> String {
     format!("{remote}/{session_id}")
 }
 
@@ -591,6 +609,12 @@ pub(crate) fn in_tree(
                 .join(" · ")
         }),
         stoppable: entry.is_some() && stoppable(state, tree, open),
+        names: tree
+            .subagents
+            .iter()
+            .filter(|entry| entry.origin.is_none())
+            .map(|entry| (entry.session_id, entry.name.clone()))
+            .collect(),
     }
 }
 
@@ -783,11 +807,13 @@ pub(crate) fn sheet(state: &TreeState, remote: &str, open: SessionId) -> Subagen
         open: top.session_id == open,
         stop: None,
         ..slot(Slot {
+            waits_on: top
+                .needs_intervention
+                .then(|| waits_on(state, top.session_id)),
             working: top.status == Some(ActivityStatus::Active),
             worked_ms: top.worked_ms,
             working_since: top.own_working_since,
             monitoring: top.monitoring_since.is_some(),
-            needs_intervention: top.needs_intervention,
         })
     }];
     for (depth, entry) in depth_first(tree) {
@@ -838,11 +864,13 @@ pub(crate) fn sheet(state: &TreeState, remote: &str, open: SessionId) -> Subagen
                 .then(|| STOP.to_owned()),
             session,
             ..slot(Slot {
+                waits_on: entry
+                    .needs_intervention
+                    .then(|| waits_on(state, entry.session_id)),
                 working,
                 worked_ms: entry.worked_ms,
                 working_since: entry.working_since,
                 monitoring: entry.monitoring_since.is_some(),
-                needs_intervention: entry.needs_intervention,
             })
         });
     }
@@ -863,11 +891,32 @@ pub(crate) fn sheet(state: &TreeState, remote: &str, open: SessionId) -> Subagen
 
 /// What an entry's right-hand slot is read from.
 struct Slot {
+    /// What it waits on, where it waits on the reader.
+    waits_on: Option<String>,
     working: bool,
     worked_ms: Option<u64>,
     working_since: Option<SessionTimestamp>,
     monitoring: bool,
-    needs_intervention: bool,
+}
+
+/// What the entry of the Session `session_id` says it waits on, where it
+/// waits on the reader: what the Session read of its own, where it is open,
+/// or else what a Session open above it read of those beneath it.
+fn waits_on(state: &TreeState, session_id: SessionId) -> String {
+    let owed = |known: &Known| {
+        known
+            .owed
+            .iter()
+            .find(|(owner, _)| *owner == session_id)
+            .map(|(_, owed)| *owed)
+    };
+    state
+        .known
+        .get(&session_id)
+        .and_then(owed)
+        .or_else(|| state.known.values().find_map(owed))
+        .and_then(Owed::row_words)
+        .unwrap_or_else(|| "Needs you".to_owned())
 }
 
 /// An entry's right-hand slot: that it needs the reader; or, while it works,
@@ -875,8 +924,9 @@ struct Slot {
 /// as its earlier work took; or that a settled one is monitoring; or how
 /// long it worked.
 fn slot(slot: Slot) -> TreeRow {
-    let (trailing, since) = if slot.needs_intervention {
-        (Some("Needs intervention".to_owned()), None)
+    let needs_you = slot.waits_on.is_some();
+    let (trailing, since) = if let Some(waits_on) = slot.waits_on {
+        (Some(waits_on), None)
     } else if slot.working {
         (
             None,
@@ -899,7 +949,7 @@ fn slot(slot: Slot) -> TreeRow {
         title: String::new(),
         line: None,
         trailing,
-        needs_you: slot.needs_intervention,
+        needs_you,
         since,
         open: false,
         stop: None,

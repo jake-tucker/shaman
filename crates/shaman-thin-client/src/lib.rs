@@ -46,7 +46,7 @@ pub use conversation::{ConversationItem, ItemKind, Tone, TurnCard, TurnOutcome};
 pub use device::ThisDevice;
 use device::{DeviceRecord, Records};
 pub use drafts::Draft;
-pub use frame::{Bar, BarKind, Composer, QueuedPrompt, SessionFrame};
+pub use frame::{Bar, BarKind, Composer, QueuedPrompt, Review, ReviewOpens, SessionFrame};
 pub use identity::{KeySigner, SignError};
 pub use intervention::{
     AnswerField, ChoiceCard, DecisionKind, DecisionOffer, GivenAnswer, Intervention,

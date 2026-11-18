@@ -33,7 +33,8 @@ pub struct SessionFrame {
     /// Said where the Session, or the Remote it is on, is gone.
     pub gone: Option<String>,
     /// The bar above the composer, while the Session is Working or
-    /// Monitoring, or one of its own Interventions waits out of sight.
+    /// Monitoring, one of its own Interventions waits out of sight, or one of
+    /// a Subagent's beneath it waits.
     pub bar: Option<Bar>,
     /// The composer, where the Session takes Prompts from this phone: none
     /// where it is gone, or is a Subagent's.
@@ -57,13 +58,15 @@ pub struct SessionFrame {
 
 /// The bar above the composer: what the Session's work is doing, since when,
 /// and the one tap that stops it; or that an Intervention waits on the reader,
-/// and the tap that brings it back.
+/// its own or a Subagent's, and the tap that leads to it.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct Bar {
     pub kind: BarKind,
     /// "Working", "Monitoring", "Approval waiting" or "Questionnaire
     /// waiting", or, while the Agent only waits on its Subagents, which:
-    /// "Waiting on 2 subagents", "Waiting on Explorer".
+    /// "Waiting on 2 subagents", "Waiting on Explorer"; or who beneath it
+    /// needs the reader: "Explorer needs approval", "Explorer needs an
+    /// answer", "Explorer needs you", "2 subagents need you".
     pub words: String,
     /// When the work began, as its Server gave it, which Swift counts the
     /// elapsed time from: none while an Intervention waits.
@@ -73,9 +76,31 @@ pub struct Bar {
     /// The tap that stops it, and on a Subagent's Session whatever it
     /// delegated; none where a Subagent cannot be stopped alone.
     pub stop: Option<String>,
-    /// The tap that presents the Interventions dismissed again: "Review",
-    /// where there is anything to present.
-    pub review: Option<String>,
+    /// The tap that leads to the Intervention waiting, where it may: to the
+    /// Session's own dismissed, presenting them again, or to a Subagent's.
+    pub review: Option<Review>,
+}
+
+/// The bar's "Review", and where it leads.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct Review {
+    pub label: String,
+    pub opens: ReviewOpens,
+}
+
+/// Where the bar's "Review" leads.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ReviewOpens {
+    /// The Session's own Interventions dismissed, which the core's `review`
+    /// presents again.
+    Interventions,
+    /// The Session `session` names, which Swift hands back unread as it
+    /// pushes it: the one Subagent whose Intervention waits, where its sheet
+    /// presents itself.
+    Session { session: String },
+    /// The tree the Session belongs to, as its sheet, where several
+    /// Subagents' Interventions wait and each entry says what it waits on.
+    Tree,
 }
 
 /// What the bar stands for, by which Swift picks its colour and symbol.
@@ -83,7 +108,8 @@ pub struct Bar {
 pub enum BarKind {
     Working,
     Monitoring,
-    /// One of the Session's own Interventions waits out of sight.
+    /// One of the Session's own Interventions waits out of sight, or one of
+    /// a Subagent's beneath it waits.
     Waiting,
 }
 
@@ -221,12 +247,13 @@ pub(crate) fn prompt_referenced(reference: &str) -> Option<PromptId> {
     serde_json::from_value(serde_json::Value::String(reference.to_owned())).ok()
 }
 
-/// What frames a Session: its Title and place as the listing and its
-/// snapshot last said them, or that it is gone; what its work is doing; and
-/// what this screen sent of its own. `unreachable` says whether its Origin
-/// answered the last time it was asked, and `tree` what the tree the Session
-/// belongs to says of it.
+/// What frames a Session on the Remote `remote` names: its Title and place
+/// as the listing and its snapshot last said them, or that it is gone; what
+/// its work is doing; and what this screen sent of its own. `unreachable`
+/// says whether its Origin answered the last time it was asked, and `tree`
+/// what the tree the Session belongs to says of it.
 pub(crate) fn frame_of(
+    remote: &str,
     listed: Option<&Listed>,
     snapshot: Option<&SessionSnapshot>,
     gone: Option<String>,
@@ -311,10 +338,28 @@ pub(crate) fn frame_of(
     });
     let stops_work = !subagent || tree.stoppable;
     let bar_of = |snapshot: &SessionSnapshot| bar(snapshot, stops_work);
+    // A Subagent's Intervention never presents itself here: it marks the bar,
+    // once the Session's own has been answered or swiped away.
+    let beneath = || {
+        snapshot
+            .and_then(|snapshot| subagents_waiting(snapshot, tree, remote, unreachable))
+            .map(|(words, opens)| waiting(opens, &words, stops_work))
+    };
     let (bar, intervention) = match standing {
-        Standing::None => (snapshot.and_then(bar_of), None),
+        Standing::None => (beneath().or_else(|| snapshot.and_then(bar_of)), None),
         Standing::Presented(intervention) => (snapshot.and_then(bar_of), Some(*intervention)),
-        Standing::Waiting { review, words } => (Some(waiting(review, words, stops_work)), None),
+        Standing::Waiting {
+            review: false,
+            words,
+        } => (Some(waiting(None, words, stops_work)), None),
+        Standing::Waiting {
+            review: true,
+            words,
+        } => (
+            beneath()
+                .or_else(|| Some(waiting(Some(ReviewOpens::Interventions), words, stops_work))),
+            None,
+        ),
     };
     SessionFrame {
         title,
@@ -334,18 +379,72 @@ pub(crate) fn frame_of(
     }
 }
 
-/// The bar while the Session's own Interventions wait out of sight: orange,
-/// saying `words` of the oldest, with "Review" where it may bring them back,
-/// and Stop where `stops_work`.
-fn waiting(review: bool, words: &str, stops_work: bool) -> Bar {
+/// The bar while an Intervention waits on the reader out of sight: orange,
+/// saying `words` of it, with "Review" where it `opens` something, and Stop
+/// where `stops_work`.
+fn waiting(opens: Option<ReviewOpens>, words: &str, stops_work: bool) -> Bar {
     Bar {
         kind: BarKind::Waiting,
         words: words.to_owned(),
         since: None,
         watching: None,
         stop: stops_work.then(|| "Stop".to_owned()),
-        review: review.then(|| intervention::REVIEW.to_owned()),
+        review: opens.map(|opens| Review {
+            label: intervention::REVIEW.to_owned(),
+            opens,
+        }),
     }
+}
+
+/// What the bar says while Interventions wait in the Subagents beneath
+/// `snapshot`'s Session, on the Remote `remote` names, and where its Review
+/// leads: the one Subagent waiting by its name, pushed, or several by how
+/// many, in the tree. Nothing is reviewed on an Unreachable Origin, as no
+/// answer would go anywhere.
+fn subagents_waiting(
+    snapshot: &SessionSnapshot,
+    tree: &InTree,
+    remote: &str,
+    unreachable: bool,
+) -> Option<(String, Option<ReviewOpens>)> {
+    let waiting = intervention::beneath(snapshot);
+    let (words, opens) = match waiting.as_slice() {
+        [] => return None,
+        [(session_id, owed)] => {
+            let named = tree
+                .names
+                .iter()
+                .find(|(named, _)| named == session_id)
+                .map(|(_, name)| name.as_str())
+                .or_else(|| {
+                    snapshot
+                        .activities
+                        .iter()
+                        .find_map(|activity| match activity {
+                            Activity::Subagent {
+                                session_id: spawned,
+                                name,
+                                ..
+                            } if spawned == session_id => Some(name.as_str()),
+                            _ => None,
+                        })
+                })
+                .map(|name| name.split_whitespace().collect::<Vec<_>>().join(" "))
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| "A subagent".to_owned());
+            (
+                format!("{named} needs {}", owed.needs().unwrap_or("you")),
+                ReviewOpens::Session {
+                    session: crate::tree::reference(remote, *session_id),
+                },
+            )
+        }
+        several => (
+            format!("{} subagents need you", several.len()),
+            ReviewOpens::Tree,
+        ),
+    };
+    Some((words, (!unreachable).then_some(opens)))
 }
 
 /// Said where the Remote a Session was opened on is no longer held.

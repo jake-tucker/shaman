@@ -69,6 +69,10 @@ pub struct WorkRow {
     pub line: Option<String>,
     /// The words at the right.
     pub trailing: Option<String>,
+    /// Whether the words at the right say that it needs the reader, which
+    /// Swift draws in orange: a Subagent's, where an Intervention waits in it
+    /// or beneath it.
+    pub needs_you: bool,
     pub tone: Tone,
     pub tap: Tap,
 }
@@ -128,6 +132,23 @@ const GONE_TURN: &str = "This turn is no longer in the session";
 /// Said where an Activity handed back is no longer in its Session.
 const GONE_ACTIVITY: &str = "This is no longer in the session";
 
+/// `row`, of `activity` in `snapshot`, saying at its right that it needs the
+/// reader where it is a Subagent's in which, or beneath which, an
+/// Intervention waits.
+fn waiting_beneath(row: WorkRow, activity: &Activity, snapshot: &SessionSnapshot) -> WorkRow {
+    let Activity::Subagent { session_id, .. } = activity else {
+        return row;
+    };
+    match crate::intervention::through(snapshot, *session_id).row_words() {
+        Some(words) => WorkRow {
+            trailing: Some(words),
+            needs_you: true,
+            ..row
+        },
+        None => row,
+    }
+}
+
 /// The work of the Turn `turn` names, as `snapshot` of a Session on the Remote
 /// `remote` names holds it, or none read yet.
 pub(crate) fn turn_work(snapshot: Option<&SessionSnapshot>, turn: &str, remote: &str) -> TurnWork {
@@ -155,7 +176,11 @@ pub(crate) fn turn_work(snapshot: Option<&SessionSnapshot>, turn: &str, remote: 
             Entry::Activity(activity) => Some(WorkItem {
                 id: format!("activity:{}", activity.id()),
                 kind: WorkKind::Row {
-                    row: row(activity, read.directory(), remote),
+                    row: waiting_beneath(
+                        row(activity, read.directory(), remote),
+                        activity,
+                        snapshot,
+                    ),
                 },
             }),
             Entry::Message(message) => match message.role {
@@ -251,6 +276,7 @@ pub(crate) fn row(activity: &Activity, directory: &Path, remote: &str) -> WorkRo
         title_style: BodyStyle::Prose,
         line: None,
         trailing: None,
+        needs_you: false,
         tone,
         tap,
     };

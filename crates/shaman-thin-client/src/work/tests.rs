@@ -313,6 +313,7 @@ fn a_command_is_its_line_where_it_ran_and_how_it_failed_and_its_detail_holds_its
             title_style: BodyStyle::Monospace,
             line: Some(format!("in {cwd_shown}")),
             trailing: Some("exit 101".to_owned()),
+            needs_you: false,
             tone: Tone::Failed,
             tap: Tap::Detail {
                 activity: id.to_string()
@@ -517,6 +518,7 @@ fn a_settled_approval_reads_as_the_tuis_row_and_opens_onto_what_was_asked_and_an
             title_style: BodyStyle::Prose,
             line: Some("rm -rf target".to_owned()),
             trailing: None,
+            needs_you: false,
             tone: Tone::Succeeded,
             tap: Tap::Detail {
                 activity: id.to_string()
@@ -763,6 +765,7 @@ fn a_status_or_an_error_that_says_all_in_its_row_pushes_nothing_and_a_longer_one
             title_style: BodyStyle::Prose,
             line: None,
             trailing: None,
+            needs_you: false,
             tone: Tone::Quiet,
             tap: Tap::Nothing,
         }
@@ -879,6 +882,80 @@ fn a_subagent_is_its_name_over_what_it_was_asked_with_its_outcome_and_duration()
             BodyStyle::Prose
         )]
     );
+}
+
+#[test]
+fn a_subagents_row_says_in_orange_that_it_needs_the_reader_where_an_intervention_waits_in_it_or_beneath_it()
+ {
+    let mut built = Built::new();
+    let turn = built.turn(TurnStatus::Active, None);
+    let subagent = |name: &str| Activity::Subagent {
+        id: ActivityId::new(),
+        turn_id: turn,
+        status: ActivityStatus::Active,
+        name: name.to_owned(),
+        description: format!("{name}'s task"),
+        model: None,
+        session_id: SessionId::new(),
+        brokered: false,
+        duration_ms: None,
+        delegated_at: None,
+    };
+    let (explorer, writer, tester) = (subagent("Explorer"), subagent("Writer"), subagent("Tester"));
+    let session = |activity: &Activity| match activity {
+        Activity::Subagent { session_id, .. } => *session_id,
+        _ => unreachable!("a Subagent's row"),
+    };
+    let waiting = |session_id, via_session_id, approvals: usize, questionnaires: usize| {
+        shaman_protocol::SubagentInterventions {
+            session_id,
+            via_session_id,
+            revision: shaman_protocol::SessionRevision(2),
+            pending_questionnaires: (0..questionnaires)
+                .map(|_| shaman_protocol::QuestionnaireId::new())
+                .collect(),
+            submitting_questionnaires: Vec::new(),
+            pending_approvals: (0..approvals)
+                .map(|_| shaman_protocol::ApprovalId::new())
+                .collect(),
+            submitting_approvals: Vec::new(),
+        }
+    };
+    built.snapshot.subagent_interventions = vec![
+        // Its own.
+        waiting(session(&explorer), session(&explorer), 1, 0),
+        // Beneath it, in one it delegated to.
+        waiting(SessionId::new(), session(&writer), 0, 1),
+        // Answered, and so nothing.
+        waiting(session(&tester), session(&tester), 0, 0),
+    ];
+    built
+        .snapshot
+        .subagent_interventions
+        .push(waiting(SessionId::new(), session(&explorer), 0, 1));
+    for activity in [explorer, writer, tester] {
+        built.activity(activity);
+    }
+    let work = built.work(turn);
+    let said = |index| {
+        let row = row_of(&work, index);
+        (
+            row.title.as_str(),
+            row.trailing.as_deref(),
+            row.needs_you,
+            row.tone,
+        )
+    };
+    assert_eq!(
+        said(0),
+        ("Explorer", Some("Needs you"), true, Tone::Running),
+        "one in it and one beneath it"
+    );
+    assert_eq!(
+        said(1),
+        ("Writer", Some("Needs an answer"), true, Tone::Running)
+    );
+    assert_eq!(said(2), ("Tester", None, false, Tone::Running));
 }
 
 fn row_of_activity(activity: Activity) -> WorkRow {

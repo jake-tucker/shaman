@@ -177,8 +177,75 @@ fn an_entry_reads_as_the_sections_does() {
     assert_eq!(monitoring.since, None);
 
     let waiting = row("Asker");
-    assert_eq!(waiting.trailing.as_deref(), Some("Needs intervention"));
+    assert_eq!(
+        waiting.trailing.as_deref(),
+        Some("Needs you"),
+        "what it waits on is not known where no Session above it is open"
+    );
     assert!(waiting.needs_you);
+}
+
+#[test]
+fn an_entry_waiting_on_the_reader_says_what_it_waits_on_as_a_session_open_above_it_read() {
+    let top = SessionId::new();
+    let mut approving = entry("Explorer", top, 0, ActivityStatus::Active);
+    approving.needs_intervention = true;
+    let mut asking = entry("Grepper", approving.session_id, 0, ActivityStatus::Active);
+    asking.needs_intervention = true;
+    let mut both = entry("Tester", top, 1, ActivityStatus::Active);
+    both.needs_intervention = true;
+    let mut state = read(tree(
+        top,
+        vec![approving.clone(), asking.clone(), both.clone()],
+    ));
+    let owed = |approvals, questionnaires| intervention::Owed {
+        approvals,
+        questionnaires,
+    };
+    state.known.insert(
+        top,
+        Known {
+            owed: vec![
+                (approving.session_id, owed(1, 0)),
+                (asking.session_id, owed(0, 1)),
+                (both.session_id, owed(1, 1)),
+            ],
+            ..Known::default()
+        },
+    );
+    let sheet = sheet(&state, REMOTE, top);
+    let said = |name: &str| {
+        let row = sheet
+            .rows
+            .iter()
+            .find(|row| {
+                row.line
+                    .as_deref()
+                    .is_some_and(|line| line.starts_with(name))
+            })
+            .unwrap_or_else(|| panic!("{name}'s entry"));
+        assert!(row.needs_you, "{name}'s says so in orange");
+        row.trailing.clone()
+    };
+    assert_eq!(said("Explorer").as_deref(), Some("Needs approval"));
+    assert_eq!(said("Grepper").as_deref(), Some("Needs an answer"));
+    assert_eq!(said("Tester").as_deref(), Some("Needs you"));
+
+    // What a Session read of its own, where it is open, is what it says.
+    state.known.insert(
+        asking.session_id,
+        Known {
+            owed: vec![(asking.session_id, owed(0, 2))],
+            ..Known::default()
+        },
+    );
+    let sheet = super::sheet(&state, REMOTE, top);
+    let grepper = sheet
+        .rows
+        .iter()
+        .find(|row| row.title == "Grepper's task")
+        .expect("Grepper's entry");
+    assert_eq!(grepper.trailing.as_deref(), Some("Needs you"));
 }
 
 #[test]
@@ -285,6 +352,7 @@ fn a_subagent_is_stopped_alone_where_brokered_or_where_its_provider_can() {
         Known {
             provider: Some(ProviderId::new("codex")),
             brokered: Vec::new(),
+            owed: Vec::new(),
         },
     );
     assert!(stops(&state, child.session_id));
@@ -301,6 +369,7 @@ fn a_subagent_is_stopped_alone_where_brokered_or_where_its_provider_can() {
         Known {
             provider: None,
             brokered: vec![grandchild.session_id],
+            owed: Vec::new(),
         },
     );
     assert!(stops(&state, grandchild.session_id));
@@ -550,6 +619,7 @@ async fn two_sessions_of_one_tree_opened_before_it_is_read_are_made_one_tree() {
     subagent.know(Known {
         provider: Some(ProviderId::new("codex")),
         brokered: Vec::new(),
+        owed: Vec::new(),
     });
     let known = seen_until(&parent, |state| state.known.contains_key(&child.session_id)).await;
     assert_eq!(

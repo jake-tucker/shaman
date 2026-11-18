@@ -1572,7 +1572,10 @@ fn questionnaire_waiting(frame: &SessionFrame) -> bool {
         && frame.bar.as_ref().is_some_and(|bar| {
             bar.kind == BarKind::Waiting
                 && bar.words == "Questionnaire waiting"
-                && bar.review.as_deref() == Some("Review")
+                && bar.review.as_ref().is_some_and(|review| {
+                    review.label == "Review"
+                        && review.opens == shaman_thin_client::ReviewOpens::Interventions
+                })
         })
 }
 

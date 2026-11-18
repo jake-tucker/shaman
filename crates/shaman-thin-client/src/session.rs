@@ -617,6 +617,7 @@ pub(crate) fn open(
     });
     let local = Arc::new(watch::Sender::new(Local::default()));
     let (frame, frame_seen) = watch::channel(frame_of(
+        &remote,
         listed.as_ref(),
         None,
         None,
@@ -1278,6 +1279,7 @@ impl Reader {
             self.snapshot.as_ref(),
         );
         let frame = frame_of(
+            &self.remote,
             Some(&self.listed),
             self.snapshot.as_ref(),
             self.gone.clone(),
@@ -1358,6 +1360,7 @@ mod tests {
     ) -> (JoinHandle<()>, watch::Receiver<SessionFrame>) {
         let opening = listings.opening(reference).expect("its Remote is held");
         let (frame, seen) = watch::channel(frame_of(
+            "desk-key",
             Some(&opening.listed),
             None,
             None,
@@ -2308,7 +2311,11 @@ mod tests {
         let waiting = |frame: &SessionFrame| {
             frame.intervention.is_none()
                 && frame.bar.as_ref().is_some_and(|bar| {
-                    bar.kind == frame::BarKind::Waiting && bar.review.as_deref() == Some("Review")
+                    bar.kind == frame::BarKind::Waiting
+                        && bar.review.as_ref().is_some_and(|review| {
+                            review.label == "Review"
+                                && review.opens == frame::ReviewOpens::Interventions
+                        })
                 })
         };
         runtime.block_on(async {
