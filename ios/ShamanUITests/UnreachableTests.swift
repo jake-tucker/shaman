@@ -76,9 +76,10 @@ final class UnreachableTests: XCTestCase {
     XCTAssertTrue(explanation.label.contains("no network connection"), explanation.label)
     XCTAssertFalse(app.buttons["unreachable.openSettings"].exists, "no Settings to lead to")
     app.buttons["unreachable.tryAgain"].tap()
-    let failure = app.staticTexts["unreachable.failure"]
-    XCTAssertTrue(failure.waitForExistence(timeout: 10))
-    XCTAssertEqual(failure.label, "This phone has no network connection")
+    let banner = app.descendants(matching: .any)["banner"]
+    XCTAssertTrue(banner.waitForExistence(timeout: 10))
+    XCTAssertEqual(banner.label, "This phone has no network connection")
+    XCTAssertTrue(explanation.exists, "the sheet stays up")
     attach(app, "No network: the sheet stays and says why")
   }
 }

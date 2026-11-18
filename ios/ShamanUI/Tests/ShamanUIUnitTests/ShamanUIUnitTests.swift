@@ -396,6 +396,20 @@ private final class RefusingSigner: KeySigner {
     return try #require(model.listing)
   }
 
+  @Test func anUnreachableRemotesRowIsTheOneTheListingHoldsNowAndGoesWithIt() async throws {
+    let core = FakeCore(.unreachable)
+    let model = ListingModel(core: core, failureStands: .seconds(3600))
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    let listing = try await listing(of: model) { !$0.unreachable.isEmpty }
+    let remote = try #require(listing.unreachable.first).remote
+    #expect(model.unreachable(remote)?.words == "homelab unreachable")
+
+    try await core.tryAgain(remote)
+    _ = try await self.listing(of: model) { $0.unreachable.isEmpty }
+    #expect(model.unreachable(remote) == nil, "the sheet it opened goes with it")
+  }
+
   @Test func aSearchIsHandedToTheCoreWhichAnswersWithWhatItFound() async throws {
     let model = ListingModel(core: FakeCore(.paired), failureStands: .seconds(3600))
     let following = Task { await model.follow() }

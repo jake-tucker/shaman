@@ -74,17 +74,18 @@ struct ListingScreen: View {
     .task { await model.follow() }
     .onChange(of: model.listing?.unreachable) {
       // A Remote that answers again on its own takes its sheet with it.
-      if case .unreachable(let row) = sheet,
-        model.listing?.unreachable.contains(where: { $0.remote == row.remote }) != true
-      {
+      if case .unreachable(let remote) = sheet, model.unreachable(remote) == nil {
         sheet = nil
       }
     }
     .sheet(item: $sheet) { sheet in
       switch sheet {
-      case .unreachable(let row):
-        UnreachableSheetView(row: row, model: TryAgainModel(core: core, remote: row.remote)) {
-          self.sheet = nil
+      case .unreachable(let remote):
+        // The sheet follows the Remote's row as the core changes it, so what it says may be in the way stays true.
+        if let row = model.unreachable(remote) {
+          UnreachableSheetView(row: row, model: TryAgainModel(core: core, remote: remote)) {
+            self.sheet = nil
+          }
         }
       case .servers:
         DeviceScreen(core: core, appVersion: appVersion)
@@ -161,7 +162,7 @@ struct ListingScreen: View {
   private func unreachableRows(_ listing: Listing) -> some View {
     ForEach(listing.unreachable, id: \.remote) { row in
       Button {
-        sheet = .unreachable(row)
+        sheet = .unreachable(row.remote)
       } label: {
         HStack(spacing: 8) {
           Image(systemName: row.sheet.hint.symbol)
@@ -242,8 +243,8 @@ struct ListingScreen: View {
 /// A sheet over the listing.
 private enum ListingSheet: Hashable, Identifiable {
   case servers
-  /// The offer to try an Unreachable Remote again.
-  case unreachable(UnreachableRow)
+  /// The offer to try the Unreachable Remote it names again.
+  case unreachable(String)
   /// Confirming an Invite that arrived by the launch environment.
   case pairing(String)
 
@@ -272,6 +273,11 @@ final class ListingModel {
     clearing?.cancel()
     clearing = nil
     failure = nil
+  }
+
+  /// The slim row of the Unreachable Remote `remote` names, while it reads Unreachable.
+  func unreachable(_ remote: String) -> UnreachableRow? {
+    listing?.unreachable.first { $0.remote == remote }
   }
 
   /// Follows what the core lists until the screen goes.
@@ -347,12 +353,6 @@ struct UnreachableSheetView: View {
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityIdentifier("unreachable.explanation")
-      if let failure = model.failure {
-        Text(verbatim: failure)
-          .font(.footnote)
-          .foregroundStyle(.red)
-          .accessibilityIdentifier("unreachable.failure")
-      }
       Spacer(minLength: 0)
       Button {
         Task {
@@ -386,6 +386,16 @@ struct UnreachableSheetView: View {
       }
     }
     .padding(24)
+    .safeAreaInset(edge: .top) {
+      // A try that did not reach it stands in the banner every act's failure does.
+      if let failure = model.failure {
+        Banner(text: failure)
+          .padding(.top, 12)
+          .onTapGesture { model.dismissFailure() }
+          .accessibilityAddTraits(.isButton)
+          .accessibilityHint("Dismisses this")
+      }
+    }
     .presentationDetents([.medium])
   }
 }
@@ -397,7 +407,8 @@ final class TryAgainModel {
   private let remote: String
   /// Whether the core is trying it now, during which the sheet takes no second try.
   private(set) var trying = false
-  /// Why the last try did not reach it, in the core's words.
+  /// Why the last try did not reach it, in the core's words, shown in a banner over the sheet until it is tapped away
+  /// or tried again.
   private(set) var failure: String?
 
   init(core: any Core, remote: String) {
@@ -405,8 +416,14 @@ final class TryAgainModel {
     self.remote = remote
   }
 
+  /// Takes the banner away.
+  func dismissFailure() {
+    failure = nil
+  }
+
   /// Tries the Remote again, answering whether it answered.
   func tryAgain() async -> Bool {
+    failure = nil
     trying = true
     defer { trying = false }
     do {
