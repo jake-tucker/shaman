@@ -505,6 +505,7 @@ impl Redeemer {
     ) -> std::result::Result<Vec<(Way, WayStanding)>, PairingFailure> {
         let remote = self.stored_remote(name)?;
         let client = self.pairing_client(&remote).await?;
+        let protocol = self.protocol;
         let probes = remote.remote.ways.iter().map(|way| {
             let client = client.clone();
             async move {
@@ -512,9 +513,11 @@ impl Redeemer {
                     return (way.clone(), WayStanding::NotDialled);
                 }
                 let asking = || {
-                    Request::get("/health")
+                    let mut request = Request::get("/health")
                         .body(RequestBody::default())
-                        .expect("a health check is well formed")
+                        .expect("a health check is well formed");
+                    request.headers_mut().extend(protocol.stated());
+                    request
                 };
                 let answered =
                     first_answer(&client, std::slice::from_ref(way), asking, |answer| async {
@@ -523,6 +526,17 @@ impl Redeemer {
                                 match small_answer::<PairingHealth>(response).await {
                                     Some(_) => WayAttempt::Answered(()),
                                     None => WayAttempt::TryNext,
+                                }
+                            }
+                            // The way reaches the Serving Server, which
+                            // refused one side as behind: that is the
+                            // Remote's standing, not the way's.
+                            Ok(response) if response.status() == StatusCode::CONFLICT => {
+                                match small_answer::<SessionError>(response).await {
+                                    Some(error) if behind_status(error.code).is_some() => {
+                                        WayAttempt::Answered(())
+                                    }
+                                    _ => WayAttempt::TryNext,
                                 }
                             }
                             Ok(_) | Err(_) => WayAttempt::TryNext,
@@ -2351,6 +2365,7 @@ mod tests {
             answered: Vec::new(),
             generation: 0,
             offer: None,
+            uncommitted: false,
         };
         let records = ["protocol_mismatch", "a_status_added_since_this_build"].map(|status| {
             let mut record = serde_json::to_value(stored(status)).expect("encode a record");

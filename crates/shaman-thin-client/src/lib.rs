@@ -201,7 +201,7 @@ impl ThinClient {
             .map_err(|error| OpenError::from(anyhow::Error::from(error)))?;
         let redeemer = Redeemer::new(
             records.directory(),
-            shaman_protocol::PROTOCOL_VERSION,
+            shaman_pairing::PairingProtocol::CURRENT,
             Arc::new(GivenIdentity(identity.clone())),
             timings.redeemer,
         )
