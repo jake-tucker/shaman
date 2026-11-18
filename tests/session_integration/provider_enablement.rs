@@ -839,7 +839,11 @@ async fn health_says_no_agent_selection_where_no_provider_can_serve() {
 
     let said = health(&descriptor).await;
     assert_eq!(said.landing_agent_selection, None);
-    assert!(said.says_new_session_agent_selection());
+    assert_eq!(
+        said.new_session_agent(),
+        shaman::protocol::NewSessionAgent::NoAgent,
+        "a Server saying none is told from one too old to say"
+    );
     a_new_session_gets(
         &descriptor,
         workspace.path(),

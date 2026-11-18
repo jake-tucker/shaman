@@ -483,6 +483,10 @@ fn health_says_the_agent_selection_a_new_session_would_get() {
         health
     );
     assert!(health.says_new_session_agent_selection());
+    assert_eq!(
+        health.new_session_agent(),
+        shaman::protocol::NewSessionAgent::Agent(fallen_back.clone())
+    );
 
     let none = health.clone().with_new_session_agent_selection(None);
     let encoded = serde_json::to_value(&none).expect("encode health");
@@ -494,6 +498,11 @@ fn health_says_the_agent_selection_a_new_session_would_get() {
     assert_eq!(
         serde_json::from_value::<shaman::protocol::Health>(encoded).expect("decode health"),
         none
+    );
+    assert_eq!(
+        none.new_session_agent(),
+        shaman::protocol::NewSessionAgent::NoAgent,
+        "a Server saying none is read as saying none"
     );
 
     let mut older = serde_json::to_value(
@@ -515,6 +524,10 @@ fn health_says_the_agent_selection_a_new_session_would_get() {
     assert!(
         !older.says_new_session_agent_selection(),
         "a Server that does not say is not read as saying none"
+    );
+    assert_eq!(
+        older.new_session_agent(),
+        shaman::protocol::NewSessionAgent::NotSaid
     );
 }
 

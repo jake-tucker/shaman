@@ -578,10 +578,9 @@ async fn a_client_with_no_server_reads_the_agent_a_new_session_would_get() {
 
     let health = commands.health().await.expect("read the Remote's health");
     assert_eq!(health.landing_agent_selection, None, "nothing is stored");
-    assert!(health.says_new_session_agent_selection());
     assert_eq!(
-        health.new_session_agent_selection,
-        Some(served.clone()),
+        health.new_session_agent(),
+        shaman::protocol::NewSessionAgent::Agent(served.clone()),
         "the first Provider's default is what a Session begun with none gets"
     );
 

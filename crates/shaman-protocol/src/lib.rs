@@ -8231,11 +8231,12 @@ pub struct Health {
     /// The Agent Selection this Server's Landing has stored, as a Client
     /// last confirmed it, whatever has become of its Provider since.
     pub landing_agent_selection: Option<AgentSelection>,
-    /// The Agent Selection a Session begun with none would get now: the
-    /// stored one where its Provider is still hosted and enabled, and
+    /// What beginning a Session with no Agent Selection would get right now:
+    /// the stored one where its Provider is still hosted and enabled, and
     /// otherwise the first enabled, available Provider's default. None where
-    /// no Provider can serve — and where the Server is one too old to say,
-    /// which [`Health::says_new_session_agent_selection`] tells apart.
+    /// that is none, as where no Provider can serve or the Model Catalog is
+    /// not known yet — and where the Server is one too old to say, which
+    /// [`Health::new_session_agent`] tells apart.
     pub new_session_agent_selection: Option<AgentSelection>,
     /// Whether a Client has taken this Server's Onboarding, finishing it or
     /// leaving it. A Server's own fact, kept in its storage rather than any
@@ -8284,11 +8285,34 @@ impl Health {
     }
 
     /// Whether this Server says the Agent a new Session would get, so that
-    /// [`Health::new_session_agent_selection`] being none means no Provider
-    /// can serve; a Server older than that says nothing of it.
+    /// [`Health::new_session_agent_selection`] being none means a Session
+    /// begun now would get none; a Server older than that says nothing of it.
     pub fn says_new_session_agent_selection(&self) -> bool {
         self.protocol_version >= NEW_SESSION_AGENT_SELECTION_SINCE
     }
+
+    /// The Agent a Session begun with none would get, as this Server says
+    /// it, telling a Server that says none from one too old to say.
+    pub fn new_session_agent(&self) -> NewSessionAgent {
+        match &self.new_session_agent_selection {
+            _ if !self.says_new_session_agent_selection() => NewSessionAgent::NotSaid,
+            None => NewSessionAgent::NoAgent,
+            Some(selection) => NewSessionAgent::Agent(selection.clone()),
+        }
+    }
+}
+
+/// The Agent a Session begun with none would get, as a Server's [`Health`]
+/// says it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NewSessionAgent {
+    /// The Server is one too old to say.
+    NotSaid,
+    /// A Session begun now would get none: no Provider can serve, or the
+    /// Model Catalog is not known yet.
+    NoAgent,
+    /// A Session begun now would get this.
+    Agent(AgentSelection),
 }
 
 impl std::ops::Deref for Health {
