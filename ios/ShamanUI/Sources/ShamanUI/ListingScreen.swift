@@ -9,17 +9,21 @@ struct ListingScreen: View {
   let beginsIn: BeginsIn
   @State private var model: ListingModel
   @State private var sheet: ListingSheet?
+  /// The Sessions pushed over the listing, the one on top last.
+  @State private var path: [SessionRoute] = []
+  @State private var opened = OpenedSessions()
 
-  init(core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?) {
+  init(core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?, opening: String? = nil) {
     self.core = core
     self.appVersion = appVersion
     self.beginsIn = beginsIn
     _model = State(initialValue: ListingModel(core: core))
     _sheet = State(initialValue: invite.map(ListingSheet.pairing))
+    _path = State(initialValue: opening.map { [SessionRoute(session: $0)] } ?? [])
   }
 
   var body: some View {
-    NavigationStack {
+    NavigationStack(path: $path) {
       List {
         if let listing = model.listing {
           rows(listing)
@@ -49,7 +53,12 @@ struct ListingScreen: View {
         }
       }
       .toolbar { bottomBar }
+      .navigationDestination(for: SessionRoute.self) { route in
+        SessionScreen(model: opened.model(for: route, core: core))
+      }
     }
+    // A screen popped ends its Session in the core.
+    .onChange(of: path) { _, path in opened.keep(only: path) }
     .task { await model.follow() }
     .sheet(item: $sheet) { sheet in
       switch sheet {
@@ -71,14 +80,16 @@ struct ListingScreen: View {
   private func rows(_ listing: Listing) -> some View {
     Section {
       ForEach(listing.active, id: \.session) { row in
-        ActiveRowView(row: row)
-          .accessibilityIdentifier("listing.active")
-          .swipeActions(edge: .trailing) {
-            if let settle = row.settle {
-              Button(settle) { Task { await model.settle(row.session) } }
-                .tint(.indigo)
-            }
+        NavigationLink(value: SessionRoute(session: row.session)) {
+          ActiveRowView(row: row)
+        }
+        .accessibilityIdentifier("listing.active")
+        .swipeActions(edge: .trailing) {
+          if let settle = row.settle {
+            Button(settle) { Task { await model.settle(row.session) } }
+              .tint(.indigo)
           }
+        }
       }
       if let waiting = listing.waiting {
         HStack(spacing: 8) {
@@ -95,12 +106,14 @@ struct ListingScreen: View {
     if !listing.settled.isEmpty {
       Section {
         ForEach(listing.settled, id: \.session) { row in
-          SettledRowView(row: row)
-            .accessibilityIdentifier("listing.settled")
-            .swipeActions(edge: .trailing) {
-              Button(row.unsettle) { Task { await model.unsettle(row.session) } }
-                .tint(.indigo)
-            }
+          NavigationLink(value: SessionRoute(session: row.session)) {
+            SettledRowView(row: row)
+          }
+          .accessibilityIdentifier("listing.settled")
+          .swipeActions(edge: .trailing) {
+            Button(row.unsettle) { Task { await model.unsettle(row.session) } }
+              .tint(.indigo)
+          }
         }
         if let showMore = listing.showMore {
           Button(showMore) { model.showMore() }

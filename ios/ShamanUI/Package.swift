@@ -9,11 +9,19 @@ let package = Package(
   defaultLocalization: "en",
   platforms: [.iOS("27.0")],
   products: [.library(name: "ShamanUI", targets: ["ShamanUI"])],
-  dependencies: [.package(path: "../ShamanCore")],
+  dependencies: [
+    .package(path: "../ShamanCore"),
+    // What draws an agent Message's Markdown: GitHub-flavoured tables and fenced code, each scrolling sideways, over
+    // SwiftUI's own Text, so a streaming Message re-renders cheaply. Pinned exactly; move it deliberately.
+    .package(url: "https://github.com/gonzalezreal/textual", exact: "0.5.0"),
+  ],
   targets: [
     .target(
       name: "ShamanUI",
-      dependencies: [.product(name: "ShamanCore", package: "ShamanCore")],
+      dependencies: [
+        .product(name: "ShamanCore", package: "ShamanCore"),
+        .product(name: "Textual", package: "textual"),
+      ],
       // The Symbols Nerd Font every Icon is drawn from (Nerd Fonts 3.5.1, whole), with the licence it ships under.
       // `crates/shaman-icons` reads the same file to see it draws every glyph the core resolves.
       resources: [.copy("Resources/Fonts")],

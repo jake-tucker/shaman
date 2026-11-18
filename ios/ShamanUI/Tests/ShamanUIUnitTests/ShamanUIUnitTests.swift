@@ -379,3 +379,66 @@ private final class RefusingSigner: KeySigner {
     #expect(model.failure == nil)
   }
 }
+
+@Suite struct ConversationTests {
+  private func item(_ id: String, _ text: String) -> ConversationItem {
+    ConversationItem(id: id, kind: .error(text: text))
+  }
+
+  @Test func theWholeIsTakenAndThenEachChangeReplacesItsItemsByIdInTheOrderSaid() {
+    var conversation = Conversation()
+    conversation.take(.whole(items: [item("loading", "…")]))
+    #expect(conversation.shown == [item("loading", "…")])
+
+    conversation.take(.changed(items: [item("a", "one"), item("b", "two")], order: ["a", "b"]))
+    #expect(conversation.shown == [item("a", "one"), item("b", "two")], "the loading mark gave way to the whole")
+
+    conversation.take(.changed(items: [item("b", "two, longer")], order: ["a", "b"]))
+    #expect(conversation.shown == [item("a", "one"), item("b", "two, longer")], "only the item that changed moved")
+
+    conversation.take(.changed(items: [], order: ["b"]))
+    #expect(conversation.shown == [item("b", "two, longer")], "an item left out of the order is gone")
+    conversation.take(.changed(items: [], order: ["b", "a"]))
+    #expect(conversation.shown == [item("b", "two, longer")], "and stays gone")
+  }
+}
+
+@Suite struct ListenedInOrderTests {
+  @Test func everyChangeIsKeptInOrder() async {
+    let subscription = CountedSubscription()
+    let stream: AsyncStream<Int> = listened(everyChange: true) { send in
+      for value in 1...3 { send(value) }
+      return subscription
+    }
+    var heard: [Int] = []
+    for await value in stream {
+      heard.append(value)
+      if heard.count == 3 { break }
+    }
+    #expect(heard == [1, 2, 3])
+  }
+}
+
+@Suite @MainActor struct OpenedSessionsTests {
+  @Test func aSessionIsClosedInTheCoreOnceItsScreenLeavesThePath() {
+    let core = FakeCore(.paired)
+    let opened = OpenedSessions()
+    let working = SessionRoute(session: "workstation-key/1")
+    let settled = SessionRoute(session: "workstation-key/7")
+    let model = opened.model(for: working, core: core)
+    #expect(opened.model(for: working, core: core) === model, "opened once for its screen")
+    _ = opened.model(for: settled, core: core)
+    let sessions = core.opened.withLock { $0 }
+    #expect(sessions.count == 2)
+
+    opened.keep(only: [working])
+    #expect(!sessions[0].isClosed, "still pushed")
+    #expect(sessions[1].isClosed, "popped, so closed")
+    opened.keep(only: [])
+    #expect(sessions[0].isClosed)
+  }
+
+  @Test func theSameSessionPushedTwiceIsTwoScreens() {
+    #expect(SessionRoute(session: "a") != SessionRoute(session: "a"))
+  }
+}

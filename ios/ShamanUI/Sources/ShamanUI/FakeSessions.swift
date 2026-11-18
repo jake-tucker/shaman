@@ -19,6 +19,8 @@
     /// Seconds since the Session last moved.
     var moved: TimeInterval
     var settled: Bool
+    /// How its last Turn stands, which its open screen reads as.
+    let reads: FakeConversation.Scenario
 
     static let shelfOpening = 10
     static let shelfBatch = 25
@@ -80,11 +82,25 @@
     private static func session(
       _ number: Int, _ remote: String, _ workspace: String, _ title: String, _ glyph: String?,
       _ standing: Standing? = nil, checkout: CheckoutLine? = nil, running: TimeInterval = 0, moved: TimeInterval,
-      settled: Bool = false
+      settled: Bool = false, reads: FakeConversation.Scenario? = nil
     ) -> FakeSession {
-      FakeSession(
+      let byStanding: FakeConversation.Scenario =
+        switch standing {
+        case .working, .monitoring, .needsIntervention: .working
+        case .failed: .failed
+        case .done, nil: .settled
+        }
+      let read = reads ?? byStanding
+      return FakeSession(
         id: "\(remote)-key/\(number)", remote: remote, workspace: workspace, title: title, glyph: glyph,
-        checkout: checkout, standing: standing, running: running, moved: moved, settled: settled)
+        checkout: checkout, standing: standing, running: running, moved: moved, settled: settled, reads: read)
+    }
+
+    /// What frames this Session's open screen at once, as the core frames it from what the listing knows.
+    func frame(originNamed: Bool) -> SessionFrame {
+      let place = ((originNamed ? [remote] : []) + [workspace] + [checkout?.words].compactMap { $0 })
+        .joined(separator: " · ")
+      return SessionFrame(title: title, place: place, gone: nil)
     }
 
     static let canned: [FakeSession] =
@@ -111,9 +127,10 @@
           7, "workstation", "dotfiles", "Tidy zsh startup time", "\u{f018d}", .done, checkout: on("main"), moved: 3_700),
         session(
           8, "workstation", "shaman", "Stop /serve offering link-local addresses", "\u{f06f3}",
-          checkout: on("fix/serve-link-local", linked: true), moved: 3 * 3_600),
+          checkout: on("fix/serve-link-local", linked: true), moved: 3 * 3_600, reads: .stopped),
         session(
-          9, "workstation", "Sidekick", "Find the workspace that holds the deploy scripts", nil, moved: 5 * 3_600),
+          9, "workstation", "Sidekick", "Find the workspace that holds the deploy scripts", nil, .failed,
+          moved: 5 * 3_600),
         session(
           10, "laptop", "shaman", "Sketch the thin client glossary entry", "\u{f0219}", checkout: on("main"),
           moved: 26 * 3_600),

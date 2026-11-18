@@ -14,7 +14,7 @@ struct ShamanApp: App {
           if Launch.serversAndDevice {
             DeviceScreen(core: core, appVersion: Self.version)
           } else {
-            RootScreen(core: core, appVersion: Self.version, invite: Launch.invite)
+            RootScreen(core: core, appVersion: Self.version, invite: Launch.invite, opening: Launch.opening)
           }
         #else
           RootScreen(core: core, appVersion: Self.version)
@@ -47,6 +47,15 @@ struct ShamanApp: App {
     /// An Invite arriving by the launch environment's `SHAMAN_INVITE`, confirmed at once, as a pasted one is.
     static var invite: String? {
       ProcessInfo.processInfo.environment["SHAMAN_INVITE"].flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// The Session `--open <reference>` asks to be pushed over the listing at launch, so a screenshot or a UI test
+    /// reaches it without a tap: over the fake, `workstation-key/1` is the working one, 7 the settled one, 8 the
+    /// stopped one and 9 the failed one.
+    static var opening: String? {
+      let arguments = ProcessInfo.processInfo.arguments
+      guard let flag = arguments.firstIndex(of: "--open"), arguments.indices.contains(flag + 1) else { return nil }
+      return arguments[flag + 1]
     }
 
     /// Whether `--servers-and-device` asks for the sheet of Servers, Relays and This device alone, which a phone

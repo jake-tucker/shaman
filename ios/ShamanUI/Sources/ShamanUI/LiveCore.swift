@@ -64,6 +64,10 @@ public final class LiveCore: Core {
     client.showMoreSettled()
   }
 
+  public func openSession(_ session: String) -> any OpenedSession {
+    LiveOpenedSession(client.openSession(session: session))
+  }
+
   public func pairingPrompt() -> String {
     client.pairingPrompt()
   }
@@ -74,6 +78,27 @@ public final class LiveCore: Core {
 
   public func confirmPairing(invite: String, remoteName: String, deviceName: String) async -> PairingOutcome {
     await client.confirmPairing(invite: invite, remoteName: remoteName, deviceName: deviceName)
+  }
+}
+
+/// A Session the core holds open.
+final class LiveOpenedSession: OpenedSession {
+  private let session: OpenSession
+
+  init(_ session: OpenSession) {
+    self.session = session
+  }
+
+  func frame() -> AsyncStream<SessionFrame> {
+    listened { send in session.watchFrame(listener: Forwarder(send)) }
+  }
+
+  func conversation() -> AsyncStream<ConversationChange> {
+    listened(everyChange: true) { send in session.watchConversation(listener: Forwarder(send)) }
+  }
+
+  func close() {
+    session.close()
   }
 }
 

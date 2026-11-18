@@ -65,6 +65,15 @@ scenarios are `FakeCore.Scenario`'s cases. Anything after the bundle identifier 
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake named
 ```
 
+`--open <session>` pushes the Session a listing row names over the listing at launch, so a screenshot reaches it
+without a tap. Over the fake each Session reads as one of `FakeConversation.Scenario`'s cases: in `paired`,
+`workstation-key/1` is a working Turn, `/7` a settled one, `/8` a stopped one and `/9` a failed one; in `reaching`,
+`homelab-key/2` is never read, so its loading mark stands.
+
+```sh
+xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake paired --open workstation-key/1
+```
+
 Over the live core a debug build keeps its records in Application Support's `Core`, or in the directory
 `SHAMAN_CORE_DIRECTORY` names, for a run that starts afresh. `simctl` passes `SIMCTL_CHILD_`-prefixed variables on:
 
@@ -88,8 +97,10 @@ fails as a dead Invite or one no way answered does.
 **A real Server.** `../scripts/ios-pair-scratch-server.sh` builds Shaman, starts a scratch Server of this checkout's
 own from an empty database, Serving on the Mac's addresses, makes an Invite and launches the built app with it, in a
 core directory and under a key of its own, for a person to press Pair; with `--test` it runs `LivePairingTests`
-instead, which pairs, checks where the app lands and what it lists and that the Pairing survives a relaunch, and stops
-the Server. `--stop` stops it otherwise. Run it before merging a change to pairing or transport; never in CI, where
+instead, which pairs, checks where the app lands and what it lists, opens a Session the script began there and reads it
+live, checks that the Pairing survives a relaunch, and stops the Server. That Session runs on whichever Agent the
+scratch Server would give it, asked for one word; where that Agent is not signed in its Turn fails, which reads as
+well. `--stop` stops it otherwise. Run it before merging a change to pairing or transport; never in CI, where
 `LivePairingTests` skips.
 
 **Test.** `ShamanUI`'s unit tests run under its own scheme; `ShamanTests` and the UI tests under the app's. A result
@@ -152,6 +163,8 @@ If the phone is locked, stop and ask for it to be unlocked.
 - Everything the app keeps, the core keeps, in the one directory `CoreDirectory.prepare` makes and keeps out of
   backups. Nothing goes in `UserDefaults` or `@AppStorage`.
 - The fake and every debug-only path stay behind `#if DEBUG`.
+- `ShamanUI` depends on one package from outside, Textual, which draws an agent Message's Markdown; it is pinned
+  exactly, and both `Package.resolved` files are committed. Move it deliberately.
 - Add a Swift file by creating it in a synced folder; the project does not list files. Change a build setting with
   `xcrun xcodeproj setting set`, and keep `Shaman.xcodeproj` committed.
 - The app's version is its own (`MARKETING_VERSION`, from 0.1.0) and its build number is set by hand. Commits under

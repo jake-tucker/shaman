@@ -7,7 +7,8 @@
 # is touched. Run it before merging a change to pairing or transport; never in CI.
 #
 #   scripts/ios-pair-scratch-server.sh            # launch the app with the Invite; press Pair in it
-#   scripts/ios-pair-scratch-server.sh --test     # run the UI test that presses Pair and checks where it lands
+#   scripts/ios-pair-scratch-server.sh --test     # run the UI test that presses Pair, checks where it lands, and
+#                                                  # opens a Session begun there and reads it live
 #   scripts/ios-pair-scratch-server.sh --stop     # stop the scratch Server
 #
 # Build the app first (see ios/AGENTS.md); the script builds Shaman itself. `SHAMAN_SCRATCH_ROOT` moves the scratch
@@ -67,9 +68,22 @@ app="$root/ios/build/xcode/Build/Products/Debug-iphonesimulator/Shaman.app"
 run="scratch-$(date +%s)"
 
 if [ "$mode" = --test ]; then
+  # One Session for the test to open over the Pairing, begun as the Server's own user would, over its loopback API, in
+  # an empty directory of the scratch root's. It runs on whichever Agent the Server would give it, asked for one word.
+  prompt="Reply with the single word ready, and nothing else. Use no tools."
+  workspace="$scratch/workspace"
+  mkdir -p "$workspace"
+  runtime="$scratch/state/scratch-$checkout/runtime.json"
+  jq -n --arg path "$workspace" --arg text "$prompt" --arg id "$(uuidgen | tr '[:upper:]' '[:lower:]')" \
+    '{execution_directory: {path: $path}, prompt: {id: $id, text: $text, skill_invocations: []}}' |
+    curl --fail --silent --show-error -o /dev/null -H "Authorization: Bearer $(jq -r .token "$runtime")" \
+      -H 'Content-Type: application/json' --data @- "$(jq -r .base_url "$runtime")/v1/sessions"
+  echo "Began a session on the scratch Server: $prompt" >&2
+
   cd "$root/ios"
   result="build/results/live-pairing-$(date +%s).xcresult"
-  TEST_RUNNER_SHAMAN_LIVE_INVITE="$invite" TEST_RUNNER_SHAMAN_LIVE_RUN="$run" xcodebuild test \
+  TEST_RUNNER_SHAMAN_LIVE_INVITE="$invite" TEST_RUNNER_SHAMAN_LIVE_RUN="$run" \
+    TEST_RUNNER_SHAMAN_LIVE_PROMPT="$prompt" xcodebuild test \
     -project Shaman.xcodeproj -scheme Shaman -destination "platform=iOS Simulator,id=$udid" \
     -derivedDataPath build/xcode -resultBundlePath "$result" -quiet \
     -only-testing:ShamanUITests/LivePairingTests

@@ -71,6 +71,30 @@
       listingListeners.tell(currentListing())
     }
 
+    /// Every Session the fake has opened, the latest last, for a test to see each closed as its screen goes.
+    let opened = Mutex<[FakeOpenedSession]>([])
+
+    public func openSession(_ session: String) -> any OpenedSession {
+      let remotes = held.withLock { $0.map(\.name) }
+      let found = sessions.withLock { $0.first { $0.id == session && remotes.contains($0.remote) } }
+      let frame =
+        found?.frame(originNamed: remotes.count > 1)
+        ?? SessionFrame(title: "", place: "", gone: "This session no longer exists")
+      if let found {
+        turned.withLock { $0 = found.remote }
+        turnedWorkspace.withLock { $0[found.remote] = found.workspace }
+        outlookListeners.tell(currentOutlook())
+      }
+      // A Session on a Remote yet to answer is never read: its loading mark stands.
+      let read = found.flatMap { unanswered.contains($0.remote) ? nil : $0.reads }
+      let opened = FakeOpenedSession(frame: frame, scenario: read)
+      self.opened.withLock { $0.append(opened) }
+      return opened
+    }
+
+    /// The Workspace last turned toward on each Remote.
+    private let turnedWorkspace = Mutex<[String: String]>([:])
+
     private func settling(_ session: String, to settled: Bool) async throws(ActError) {
       try? await Task.sleep(for: .milliseconds(150))
       let found = sessions.withLock { sessions in
@@ -183,9 +207,10 @@
       guard let name = turned.withLock({ $0 }).flatMap({ names.contains($0) ? $0 : nil }) ?? names.first else {
         return .nowhere
       }
+      let place = turnedWorkspace.withLock { $0[name] }.map { "\(name) · \($0)" } ?? name
       return .remote(
         name: name,
-        beginsIn: BeginsIn(lead: "New sessions begin in", place: name, said: "New sessions begin in \(name)"))
+        beginsIn: BeginsIn(lead: "New sessions begin in", place: place, said: "New sessions begin in \(place)"))
     }
 
     private func change(_ change: (inout ThisDevice) -> Void) {

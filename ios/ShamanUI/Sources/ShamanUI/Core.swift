@@ -33,6 +33,10 @@ public protocol Core: AnyObject, Sendable {
   /// Brings up the next of the settled shelf's rows.
   func showMoreSettled()
 
+  /// Opens the Session a row names for a screen pushed to read it, framed at once by what the listing knows of it,
+  /// and turns the Outlook toward its Origin and Workspace. Closing it cancels nothing on the Server.
+  func openSession(_ session: String) -> any OpenedSession
+
   /// What the screen where pairing begins says to do.
   func pairingPrompt() -> String
 
@@ -43,6 +47,18 @@ public protocol Core: AnyObject, Sendable {
   /// with that Server, and turns the Outlook toward it. It keeps dialling for a few seconds while no way answers, and
   /// keeps nothing where it fails.
   func confirmPairing(invite: String, remoteName: String, deviceName: String) async -> PairingOutcome
+}
+
+/// One Session open on a pushed screen, read live until it is closed.
+public protocol OpenedSession: AnyObject, Sendable {
+  /// What frames the screen, now and whole on every change.
+  func frame() -> AsyncStream<SessionFrame>
+
+  /// The conversation, whole at first and then each change to it, every one in the order the core made them.
+  func conversation() -> AsyncStream<ConversationChange>
+
+  /// Ends the Session's reading in the core; it cancels nothing on the Server.
+  func close()
 }
 
 extension ActError {

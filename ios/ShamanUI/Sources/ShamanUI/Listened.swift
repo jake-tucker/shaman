@@ -4,11 +4,13 @@ import ShamanCore
 /// each value it hears, and the stream ending, however it ends, cancels the subscription the core gave back.
 /// Cancelling a Swift task does not reach the core; the cancellation is what does.
 ///
-/// Each value is a whole model, so only the newest unread one is kept.
+/// Where each value is a whole model only the newest unread one is kept; where each is a change to what came before,
+/// `everyChange` keeps every one, in order.
 func listened<Value: Sendable>(
+  everyChange: Bool = false,
   _ subscribe: (_ send: @escaping @Sendable (Value) -> Void) -> any SubscriptionProtocol
 ) -> AsyncStream<Value> {
-  AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+  AsyncStream(bufferingPolicy: everyChange ? .unbounded : .bufferingNewest(1)) { continuation in
     let subscription = subscribe { value in continuation.yield(value) }
     continuation.onTermination = { _ in subscription.cancel() }
   }
@@ -44,5 +46,17 @@ extension Forwarder: OutlookListener where Model == Outlook {
 extension Forwarder: ListingListener where Model == Listing {
   func changed(listing: Listing) {
     send(listing)
+  }
+}
+
+extension Forwarder: FrameListener where Model == SessionFrame {
+  func changed(frame: SessionFrame) {
+    send(frame)
+  }
+}
+
+extension Forwarder: ConversationListener where Model == ConversationChange {
+  func changed(change: ConversationChange) {
+    send(change)
   }
 }
