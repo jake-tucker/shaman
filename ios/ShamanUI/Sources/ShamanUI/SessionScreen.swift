@@ -586,9 +586,13 @@ private struct BarView: View {
           .controlSize(.mini)
           .accessibilityHidden(true)
       }
+      // A Subagent's name may run to any length: the words give way, cut in the middle so what it waits on or needs
+      // still shows, before Review and Stop do, and before what a Monitoring Session waits on takes any room.
       Text(verbatim: bar.words)
         .fontWeight(.medium)
-        .fixedSize()
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .layoutPriority(1)
         .accessibilityIdentifier("session.barWords")
       if let since = bar.since {
         TimelineView(.periodic(from: .now, by: 1)) { context in

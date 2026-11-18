@@ -35,6 +35,9 @@
       /// The `paired` phone where two of the tree's Subagents wait: Explorer on an Approval, and Grepper, beneath it,
       /// on a Questionnaire.
       case subagentsWait
+      /// The `subagentWaits` phone, but that `/12` waits on nothing of its own and Explorer goes by a name far longer
+      /// than any bar has room for.
+      case longSubagentName
     }
 
     /// The Invite the fake reads as the workstation's. One holding "dead" reads as the workstation's too, and fails to
@@ -68,13 +71,19 @@
 
     public init(_ scenario: Scenario) {
       device = Mutex(Self.device(in: scenario))
+      let waits: FakeTree.Waits =
+        switch scenario {
+        case .subagentWaits: .one
+        case .subagentsWait: .several
+        case .longSubagentName: .longNamed
+        default: .none
+        }
       tree = FakeTree(
-        reading: scenario == .unreadTree ? .never : scenario == .unreadableTree ? .fails : .lands,
-        waits: scenario == .subagentWaits ? .one : scenario == .subagentsWait ? .several : .none)
+        reading: scenario == .unreadTree ? .never : scenario == .unreadableTree ? .fails : .lands, waits: waits)
       let remotes: [ServerRow] =
         switch scenario {
         case .fresh, .named, .pairAgain: []
-        case .paired, .offline, .unreadTree, .unreadableTree, .subagentWaits, .subagentsWait:
+        case .paired, .offline, .unreadTree, .unreadableTree, .subagentWaits, .subagentsWait, .longSubagentName:
           [Self.workstation(named: "workstation")]
         case .several, .reaching, .unreachable: [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
         }

@@ -74,7 +74,12 @@
       case one
       /// Explorer waits on an Approval, and Grepper, beneath it, on a Questionnaire.
       case several
+      /// Explorer, named at a length no bar has room for, waits on an Approval.
+      case longNamed
     }
+
+    /// The name Explorer goes by where its tree `Waits.longNamed`.
+    static let longName = "security-code-reviewer-for-the-session-store-and-the-lock-it-holds"
 
     /// An Approval one of the tree's Sessions waits on.
     static let explorerApproval = PendingApproval(
@@ -146,11 +151,16 @@
       self.waits = waits
     }
 
+    /// The name `member` goes by in this tree.
+    private func name(_ member: Member) -> String {
+      waits == .longNamed && member.session == "workstation-key/12.1" ? Self.longName : member.name
+    }
+
     /// Every Intervention the Session `session` of the tree was asked, oldest first, answered or not.
     private func asked(of session: String) -> [Intervention] {
       switch (waits, session) {
       case (.one, Self.top): [.approval(approval: Self.topApproval)]
-      case (.one, "workstation-key/12.1"), (.several, "workstation-key/12.1"):
+      case (.one, "workstation-key/12.1"), (.several, "workstation-key/12.1"), (.longNamed, "workstation-key/12.1"):
         [.approval(approval: Self.explorerApproval)]
       case (.several, "workstation-key/12.4"): [.questionnaire(questionnaire: Self.grepperQuestionnaire)]
       default: []
@@ -214,7 +224,7 @@
       case 0: return nil
       case 1:
         let needs = Self.needs(interventions(of: waiting[0].session)) ?? "you"
-        (words, opens) = ("\(waiting[0].name) needs \(needs)", .session(session: waiting[0].session))
+        (words, opens) = ("\(name(waiting[0])) needs \(needs)", .session(session: waiting[0].session))
       default: (words, opens) = ("\(waiting.count) subagents need you", .tree)
       }
       let stops = Self.member(session)?.stoppable ?? true
@@ -357,7 +367,7 @@
         let needs = needs(member.session).map { "Needs \($0)" }
         return TreeRow(
           id: member.session, session: member.session, depth: member.depth, marker: marker, title: member.title,
-          line: ([member.name, member.model] + [outcome].compactMap { $0 }).joined(separator: " · "),
+          line: ([name(member), member.model] + [outcome].compactMap { $0 }).joined(separator: " · "),
           trailing: needs ?? (working ? nil : member.monitoring ? "monitoring" : worked), needsYou: needs != nil,
           since: member.working.flatMap { working && needs == nil ? opened.addingTimeInterval(-$0) : nil },
           open: open == member.session, stop: working && member.stoppable ? "Stop" : nil)
@@ -379,7 +389,7 @@
           ? nil
           : Bar(
             kind: .working,
-            words: waiting.count == 1 ? "Waiting on \(waiting[0].name)" : "Waiting on \(waiting.count) subagents",
+            words: waiting.count == 1 ? "Waiting on \(name(waiting[0]))" : "Waiting on \(waiting.count) subagents",
             since: opened.addingTimeInterval(-190), watching: nil, stop: "Stop", review: nil)
         frame.tree = button
         return frame
@@ -396,7 +406,7 @@
         } else { nil }
       // A Subagent's Session takes no Prompt, so it has no composer at all.
       return SessionFrame(
-        title: member.title, place: "\(member.name) · \(member.model)", gone: nil, bar: bar, composer: nil, queued: [],
+        title: member.title, place: "\(name(member)) · \(member.model)", gone: nil, bar: bar, composer: nil, queued: [],
         intervention: nil, tree: button, waiting: [])
     }
 
@@ -465,7 +475,7 @@
             id: "activity:\(member.session)",
             kind: .row(
               row: WorkRow(
-                glyph: "\u{f167a}", title: member.name, titleStyle: .prose, line: member.title,
+                glyph: "\u{f167a}", title: name(member), titleStyle: .prose, line: member.title,
                 trailing: needs ?? (trailing.isEmpty ? nil : trailing), needsYou: needs != nil, tone: tone,
                 tap: .session(session: member.session))))
         }
