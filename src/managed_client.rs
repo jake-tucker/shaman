@@ -1094,8 +1094,9 @@ impl ManagedClient {
     }
 
     /// The commands a Peer may ask, sent to the Server `outlook` names over
-    /// a loopback transport through this Client's own Server.
-    pub(crate) fn session_commands_for(&self, outlook: Outlook) -> SessionCommands {
+    /// a loopback transport through this Client's own Server: the same
+    /// commands and readers a thin Client runs over a Pairing transport.
+    pub fn session_commands_for(&self, outlook: Outlook) -> SessionCommands {
         SessionCommands::new(
             std::sync::Arc::new(loopback::LoopbackTransport::new(
                 self.http.clone(),

@@ -49,6 +49,8 @@ mod pair_back;
 mod pair_back_faults;
 #[path = "relays/pairing.rs"]
 mod pairing;
+#[path = "relays/pairing_transport.rs"]
+mod pairing_transport;
 #[path = "relays/pinning.rs"]
 mod pinning;
 #[path = "relays/serving.rs"]
@@ -271,6 +273,8 @@ struct TestServer {
     config: ServerConfig,
     timings: ServerTimings,
     channel: String,
+    /// The Provider its Sessions run on, across restarts.
+    provider: Arc<dyn shaman::provider::ProviderRuntime>,
     server: Option<server::RunningServer>,
     client: ManagedClient,
 }
@@ -289,18 +293,29 @@ impl TestServer {
     }
 
     async fn with_timings(channel: &str, timings: ServerTimings) -> Self {
+        Self::on_provider(channel, timings, failing_provider()).await
+    }
+
+    /// A Server whose Sessions run on `provider`, which a test drives.
+    async fn on_provider(
+        channel: &str,
+        timings: ServerTimings,
+        provider: Arc<dyn shaman::provider::ProviderRuntime>,
+    ) -> Self {
         let state = tempfile::tempdir().expect("create the Server's state directory");
         let config_root = tempfile::tempdir().expect("create the Server's config root");
         let config = ServerConfig::new(state.path(), channel)
             .expect("configure the Server")
             .with_config_dir(config_root.path());
-        let (server, client) = run_server(&config, &timings, state.path(), channel).await;
+        let (server, client) =
+            run_server(&config, &timings, &provider, state.path(), channel).await;
         Self {
             state,
             _config_root: config_root,
             config,
             timings,
             channel: channel.to_owned(),
+            provider,
             server: Some(server),
             client,
         }
@@ -316,6 +331,7 @@ impl TestServer {
         let (server, client) = run_server(
             &self.config,
             &self.timings,
+            &self.provider,
             self.state.path(),
             &self.channel,
         )
@@ -442,19 +458,23 @@ impl TestServer {
     }
 }
 
+/// The Provider a Server runs on where its test drives none: every Session's
+/// start fails.
+fn failing_provider() -> Arc<dyn shaman::provider::ProviderRuntime> {
+    Arc::new(crate::support::failing_provider::FailingProviderRuntime)
+}
+
 async fn run_server(
     config: &ServerConfig,
     timings: &ServerTimings,
+    provider: &Arc<dyn shaman::provider::ProviderRuntime>,
     state: &std::path::Path,
     channel: &str,
 ) -> (server::RunningServer, ManagedClient) {
-    let server = server::spawn_with_provider_and_timings(
-        config.clone(),
-        Arc::new(crate::support::failing_provider::FailingProviderRuntime),
-        timings.clone(),
-    )
-    .await
-    .expect("spawn the Server");
+    let server =
+        server::spawn_with_provider_and_timings(config.clone(), provider.clone(), timings.clone())
+            .await
+            .expect("spawn the Server");
     // A Remote the Client looks at through the Server is tried again at the
     // pace of a test.
     let mut client = ManagedClient::connect(

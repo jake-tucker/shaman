@@ -53,13 +53,15 @@ async fn server_starting_pinned(channel: &str, relays: serde_json::Value) -> Tes
         .expect("configure the Server")
         .with_config_dir(config_root.path());
     let timings = pinning_timings();
-    let (server, client) = run_server(&config, &timings, state.path(), channel).await;
+    let provider = failing_provider();
+    let (server, client) = run_server(&config, &timings, &provider, state.path(), channel).await;
     TestServer {
         state,
         _config_root: config_root,
         config,
         timings,
         channel: channel.to_owned(),
+        provider,
         server: Some(server),
         client,
     }
@@ -260,6 +262,7 @@ async fn unpinning_leaves_the_entry_and_its_login_standing_though_the_server_was
     let (running, client) = run_server(
         &server.config,
         &server.timings,
+        &server.provider,
         server.state.path(),
         &server.channel,
     )
@@ -646,7 +649,9 @@ async fn pins_follow_a_document_deleted_and_hold_through_one_broken_while_the_re
         .expect("configure the Server")
         .with_config_dir(config_root.path());
     let timings = pinning_timings();
-    let (server, mut client) = run_server(&config, &timings, state.path(), channel).await;
+    let provider = failing_provider();
+    let (server, mut client) =
+        run_server(&config, &timings, &provider, state.path(), channel).await;
     let pinned_now = async |client: &ManagedClient| {
         client
             .list_relays()
@@ -791,7 +796,8 @@ async fn a_pin_is_spelled_from_the_home_of_the_servers_user() {
         .with_config_dir(&config_root)
         .with_home_dir(&home_path);
     let timings = pinning_timings();
-    let (server, client) = run_server(&config, &timings, state.path(), channel).await;
+    let provider = failing_provider();
+    let (server, client) = run_server(&config, &timings, &provider, state.path(), channel).await;
 
     let separator = std::path::MAIN_SEPARATOR;
     let spelled = format!("~{separator}.config{separator}shaman{separator}shaman.jsonc");
