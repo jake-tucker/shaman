@@ -3736,7 +3736,9 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
+ "shaman-pairing",
  "shaman-protocol",
+ "tempfile",
  "tokio",
  "tracing",
 ]

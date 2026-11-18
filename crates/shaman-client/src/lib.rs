@@ -3,8 +3,8 @@
 //!
 //! A [`Transport`] carries a request to one Server's work and its answer
 //! back: the root crate's loopback transport reaches the machine's own Server
-//! turned toward an Outlook, and a Pairing transport, later, a Remote
-//! directly. Over one, the readers follow a Session
+//! turned toward an Outlook, and the [`PairingTransport`] a Remote over its
+//! Pairing alone, with no Server of the reader's own. Over one, the readers follow a Session
 //! ([`SessionSubscription`]), the Session catalog
 //! ([`SessionCatalogSubscription`]) and a Subagent tree
 //! ([`SubagentTreeSubscription`]), each reconnecting on the
@@ -18,6 +18,7 @@
 //! decoding of what a Server answers.
 
 mod backoff;
+mod pairing_transport;
 mod remote_connection;
 mod session_catalog_stream;
 mod session_commands;
@@ -30,6 +31,7 @@ mod transport;
 use shaman_protocol as protocol;
 
 pub use backoff::{RecoveryBackoff, RecoveryStatus};
+pub use pairing_transport::PairingTransport;
 pub use session_catalog_stream::{
     SessionCatalogEvent, SessionCatalogOutcome, SessionCatalogSubscription, consume_session_catalog,
 };

@@ -1,7 +1,7 @@
 //! The commands a Peer may ask of a Server's work, and the readers of its
-//! Sessions, catalog and Subagent trees, all sent over a transport: today the
-//! root crate's loopback one, and once a Pairing transport is added, a Remote
-//! reached over its Pairing. Nothing here learns which.
+//! Sessions, catalog and Subagent trees, all sent over a transport: the root
+//! crate's loopback one, or the Pairing transport to a Remote reached over
+//! its Pairing alone. Nothing here learns which.
 //!
 //! These are exactly the commands whose routes the Serving side lets a Peer
 //! ask. What only a Client's own Server answers — its Settings, its

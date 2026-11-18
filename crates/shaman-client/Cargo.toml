@@ -6,14 +6,17 @@ edition = "2024"
 publish = false
 
 # What every Client reads one Server's work with: the transport a reader runs over, the backoff and classification of
-# what a request came to, the Session, Session catalog and Subagent tree readers, and the commands a Peer may ask. The
-# TUI runs it over loopback and a thin Client, later, over a Pairing; it knows neither, so it builds for iOS.
+# what a request came to, the Session, Session catalog and Subagent tree readers, the commands a Peer may ask, and the
+# Pairing transport. The TUI runs the readers over loopback and a thin Client over a Pairing; nothing above the
+# transport knows which, and the crate builds for iOS.
 
 [features]
 # Fixtures, such as `testing::ScriptedTransport`, that Shaman's own tests stand a Server in with.
 test-support = []
 
 [dependencies]
+# The redeemer whose "ask this Remote" the Pairing transport carries every request by.
+shaman-pairing = { path = "../shaman-pairing" }
 shaman-protocol = { path = "../shaman-protocol" }
 anyhow = "1.0.99"
 async-trait = "0.1"
@@ -34,5 +37,7 @@ tokio = { version = "1.47.1", features = ["macros", "rt", "sync", "time"] }
 tracing = "0.1"
 
 [dev-dependencies]
+shaman-pairing = { path = "../shaman-pairing", features = ["test-support"] }
 shaman-protocol = { path = "../shaman-protocol", features = ["test-support"] }
+tempfile = "3.21.0"
 tokio = { version = "1.47.1", features = ["macros", "rt", "sync", "test-util", "time"] }
