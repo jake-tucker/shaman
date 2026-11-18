@@ -11,13 +11,13 @@ use std::{
 };
 
 use shaman_protocol::{
-    Activity, ActivityStatus, ApprovalId, PromptDelivery, PromptId, PromptStatus, SessionId,
-    SessionSnapshot, SessionStatus, SessionTimestamp, WatchSummary,
+    Activity, ActivityStatus, PromptDelivery, PromptId, PromptStatus, SessionId, SessionSnapshot,
+    SessionStatus, SessionTimestamp, WatchSummary,
 };
 
 use crate::{
     conversation::{ConversationItem, ItemKind},
-    intervention::{self, Intervention, Standing},
+    intervention::{self, Intervention, InterventionId, Standing},
     listing::Listed,
     tree::{InTree, TreeButton},
 };
@@ -55,9 +55,9 @@ pub struct SessionFrame {
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct Bar {
     pub kind: BarKind,
-    /// "Working", "Monitoring" or "Approval waiting", or, while the Agent
-    /// only waits on its Subagents, which: "Waiting on 2 subagents",
-    /// "Waiting on Explorer".
+    /// "Working", "Monitoring", "Approval waiting" or "Questionnaire
+    /// waiting", or, while the Agent only waits on its Subagents, which:
+    /// "Waiting on 2 subagents", "Waiting on Explorer".
     pub words: String,
     /// When the work began, as its Server gave it, which Swift counts the
     /// elapsed time from: none while an Intervention waits.
@@ -128,10 +128,10 @@ pub(crate) struct Local {
     pub owed: Vec<(PromptId, String)>,
     /// The Session's own Interventions pending as it last read, which a
     /// dismissal takes in.
-    pub pending: Vec<ApprovalId>,
+    pub pending: Vec<InterventionId>,
     /// The Interventions swiped away on this screen, which wait behind
     /// "Review" for as long as it stays open.
-    pub dismissed: HashSet<ApprovalId>,
+    pub dismissed: HashSet<InterventionId>,
 }
 
 /// A Prompt this screen sent, until its Server is seen holding it.
@@ -158,7 +158,10 @@ impl Local {
     /// takes out each owed Prompt it shows settled: answering the text of
     /// those it shows withdrawn, which are owed back to the composer.
     pub fn reconcile(&mut self, snapshot: &SessionSnapshot) -> Vec<String> {
-        self.pending = snapshot.pending_approvals.clone();
+        self.pending = intervention::pending(snapshot)
+            .into_iter()
+            .map(|(asked, _)| asked)
+            .collect();
         self.withdrawable = snapshot
             .prompts
             .iter()
@@ -303,7 +306,7 @@ pub(crate) fn frame_of(
     let (bar, intervention) = match standing {
         Standing::None => (snapshot.and_then(bar_of), None),
         Standing::Presented(intervention) => (snapshot.and_then(bar_of), Some(*intervention)),
-        Standing::Waiting { review } => (Some(waiting(review, stops_work)), None),
+        Standing::Waiting { review, words } => (Some(waiting(review, words, stops_work)), None),
     };
     SessionFrame {
         title,
@@ -318,11 +321,12 @@ pub(crate) fn frame_of(
 }
 
 /// The bar while the Session's own Interventions wait out of sight: orange,
-/// with "Review" where it may bring them back, and Stop where `stops_work`.
-fn waiting(review: bool, stops_work: bool) -> Bar {
+/// saying `words` of the oldest, with "Review" where it may bring them back,
+/// and Stop where `stops_work`.
+fn waiting(review: bool, words: &str, stops_work: bool) -> Bar {
     Bar {
         kind: BarKind::Waiting,
-        words: intervention::APPROVAL_WAITING.to_owned(),
+        words: words.to_owned(),
         since: None,
         watching: None,
         stop: stops_work.then(|| "Stop".to_owned()),

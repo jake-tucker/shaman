@@ -17,7 +17,8 @@ use shaman::{
     protocol::{
         AgentId, AgentIdentity, AgentSelection, ApprovalId, ApprovalPosture, CreateSessionRequest,
         Decision, ExecutionDirectory, InitialPrompt, IssueInviteRequest, ModelId, Peer, PromptId,
-        ProviderId, SessionId, SettingMutation, SkillCatalog, Way,
+        ProviderId, QuestionnaireId, QuestionnaireSubmission, SessionId, SettingMutation,
+        SkillCatalog, Way,
     },
     provider::{
         AttributedProviderEvent, ErrandFuture, ProviderDecisionDelivery, ProviderErrand,
@@ -96,6 +97,7 @@ pub struct ServingServer {
     client: ManagedClient,
     scripts: Arc<Mutex<Vec<Script>>>,
     decisions: Decisions,
+    submissions: Submissions,
 }
 
 impl ServingServer {
@@ -112,6 +114,7 @@ impl ServingServer {
         let provider = Arc::new(TestProvider::default());
         let scripts = provider.scripts.clone();
         let decisions = provider.decisions.clone();
+        let submissions = provider.submissions.clone();
         let server = server::spawn_with_provider_and_timings(config.clone(), provider, timings)
             .await
             .expect("spawn the Server");
@@ -140,7 +143,14 @@ impl ServingServer {
             client,
             scripts,
             decisions,
+            submissions,
         }
+    }
+
+    /// Every Questionnaire submission a scripted Session's Provider has been
+    /// delivered, in the order delivered.
+    pub fn submissions(&self) -> Vec<(QuestionnaireId, QuestionnaireSubmission)> {
+        self.submissions.lock().unwrap().clone()
     }
 
     /// Every Decision a scripted Session's Provider has been delivered, in
@@ -962,6 +972,10 @@ pub type Script = mpsc::UnboundedSender<Result<AttributedProviderEvent, Provider
 /// The Decisions every scripted Session's Provider was delivered.
 type Decisions = Arc<Mutex<Vec<(ApprovalId, Decision)>>>;
 
+/// The Questionnaire submissions every scripted Session's Provider was
+/// delivered.
+type Submissions = Arc<Mutex<Vec<(QuestionnaireId, QuestionnaireSubmission)>>>;
+
 /// A Provider whose Sessions, but a scripted one, never start: one begun in
 /// a directory named [`WORKING`] waits on it for ever, and any other fails.
 #[derive(Default)]
@@ -969,6 +983,7 @@ struct TestProvider {
     /// What each scripted Session's Provider sends, the latest started last.
     scripts: Arc<Mutex<Vec<Script>>>,
     decisions: Decisions,
+    submissions: Submissions,
 }
 
 impl ProviderRuntime for TestProvider {
@@ -1001,6 +1016,7 @@ impl ProviderRuntime for TestProvider {
         let (working, scripted) = (named(WORKING), named(SCRIPTED));
         let scripts = self.scripts.clone();
         let decisions = self.decisions.clone();
+        let submissions = self.submissions.clone();
         Box::pin(async move {
             if scripted {
                 let (script, events) = mpsc::unbounded_channel();
@@ -1019,7 +1035,11 @@ impl ProviderRuntime for TestProvider {
                         },
                     },
                     None,
-                    Arc::new(ScriptedSession { script, decisions }),
+                    Arc::new(ScriptedSession {
+                        script,
+                        decisions,
+                        submissions,
+                    }),
                     events,
                 ));
             }
@@ -1049,11 +1069,12 @@ impl ProviderRuntime for TestProvider {
     }
 }
 
-/// A scripted Session's Provider side: it takes every Turn, steer and
-/// Decision, and stops a Turn by saying so.
+/// A scripted Session's Provider side: it takes every Turn, steer, Decision
+/// and Questionnaire submission, and stops a Turn by saying so.
 struct ScriptedSession {
     script: Script,
     decisions: Decisions,
+    submissions: Submissions,
 }
 
 impl ProviderSession for ScriptedSession {
@@ -1072,6 +1093,15 @@ impl ProviderSession for ScriptedSession {
     ) -> ProviderFuture<'_, ProviderDecisionDelivery> {
         self.decisions.lock().unwrap().push((id, decision));
         Box::pin(async { Ok(ProviderDecisionDelivery::complete()) })
+    }
+
+    fn submit_questionnaire(
+        &self,
+        id: QuestionnaireId,
+        submission: QuestionnaireSubmission,
+    ) -> ProviderFuture<'_, ()> {
+        self.submissions.lock().unwrap().push((id, submission));
+        Box::pin(async { Ok(()) })
     }
 
     fn start_turn(&self, _input: ProviderTurnInput) -> ProviderFuture<'_, ()> {

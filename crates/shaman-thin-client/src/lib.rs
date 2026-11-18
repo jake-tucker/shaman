@@ -48,7 +48,10 @@ use device::{DeviceRecord, Records};
 pub use drafts::Draft;
 pub use frame::{Bar, BarKind, Composer, QueuedPrompt, SessionFrame};
 pub use identity::{KeySigner, SignError};
-pub use intervention::{DecisionKind, DecisionOffer, Intervention, PendingApproval};
+pub use intervention::{
+    AnswerField, ChoiceCard, DecisionKind, DecisionOffer, GivenAnswer, Intervention,
+    PendingApproval, PendingQuestion, PendingQuestionnaire,
+};
 use listing::Listings;
 pub use listing::{
     ActiveRow, CheckoutLine, FoundRow, Listing, ScopeChoice, ScopeKind, ScopeSection, SettledRow,

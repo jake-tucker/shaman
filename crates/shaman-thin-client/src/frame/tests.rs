@@ -4,9 +4,9 @@
 //! behind "Review". A real Serving Server is read in `tests/session.rs`.
 
 use shaman_protocol::{
-    Activity, ActivityId, Approval, ApprovalOutcome, ApprovalSubject, Prompt, PromptOrder,
-    SessionId, SessionStatus, SkillId, SkillInvocation, TextSpan, TranscriptItem, Turn, TurnStatus,
-    WorkspacePaths,
+    Activity, ActivityId, Approval, ApprovalId, ApprovalOutcome, ApprovalSubject, Prompt,
+    PromptOrder, SessionId, SessionStatus, SkillId, SkillInvocation, TextSpan, TranscriptItem,
+    Turn, TurnStatus, WorkspacePaths,
 };
 
 use super::*;
@@ -377,7 +377,10 @@ fn a_dismissal_takes_in_only_what_was_pending_as_the_session_last_read() {
     let mut local = Local::default();
     local.reconcile(&approving(first));
     local.dismiss();
-    assert_eq!(local.dismissed, HashSet::from([first]));
+    assert_eq!(
+        local.dismissed,
+        HashSet::from([intervention::InterventionId::Approval(first)])
+    );
 }
 
 #[test]
@@ -538,4 +541,43 @@ fn a_session_no_listing_carries_takes_no_prompt_until_it_is_read_as_a_top_level_
             .is_some(),
         "one the listing carries takes Prompts from the first"
     );
+}
+
+#[test]
+fn a_questionnaire_dismissed_waits_behind_an_orange_bar_saying_so() {
+    let mut snapshot = working();
+    let mut turn = Turn::unprompted(None);
+    turn.status = TurnStatus::Active;
+    let turn_id = turn.id;
+    snapshot.turns.push(turn);
+    let activity_id = ActivityId::new();
+    snapshot.activities.push(Activity::Questionnaire {
+        id: activity_id,
+        turn_id,
+        questionnaire: shaman_protocol::Questionnaire {
+            id: shaman_protocol::QuestionnaireId::new(),
+            questions: Vec::new(),
+        },
+        outcome: shaman_protocol::QuestionnaireOutcome::Pending,
+        answer: None,
+        author: None,
+        asked_at: None,
+        settled_at: None,
+    });
+    snapshot
+        .transcript
+        .push(TranscriptItem::Activity { activity_id });
+    let mut local = Local::default();
+    local.reconcile(&snapshot);
+    assert!(matches!(
+        framed(&snapshot, &local, false).intervention,
+        Some(Intervention::Questionnaire { .. })
+    ));
+    local.dismiss();
+    let frame = framed(&snapshot, &local, false);
+    assert_eq!(frame.intervention, None);
+    let bar = frame.bar.expect("a bar");
+    assert_eq!(bar.kind, BarKind::Waiting);
+    assert_eq!(bar.words, "Questionnaire waiting");
+    assert_eq!(bar.review.as_deref(), Some("Review"));
 }

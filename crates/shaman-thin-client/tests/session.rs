@@ -2,18 +2,20 @@
 //! what the listing knows, its conversation landing in one piece once the
 //! Session has been read and changing by item after, the Outlook turned
 //! toward it, and nothing on the Server cancelled when it closes; and its
-//! own Approvals presented, dismissed, reviewed and answered.
+//! own Approvals and Questionnaires presented, dismissed, reviewed and
+//! answered.
 
 mod support;
 
 use shaman::protocol::{
-    Activity, Approval, ApprovalId, ApprovalOutcome, ApprovalSubject, Decision, PromptDelivery,
-    SessionId, SessionStatus, TurnStatus, Way,
+    Activity, Answer, Approval, ApprovalId, ApprovalOutcome, ApprovalSubject, Decision,
+    PromptDelivery, Question, QuestionAnswer, QuestionChoice, Questionnaire, QuestionnaireId,
+    QuestionnaireOutcome, QuestionnaireSubmission, SessionId, SessionStatus, TurnStatus, Way,
 };
 use shaman_thin_client::{
     ActError, ActiveRow, BarKind, BodyStyle, ConversationChange, ConversationItem, DecisionKind,
-    Intervention, ItemKind, Outlook, PairingOutcome, PendingApproval, SessionFrame, Tap, Tone,
-    TurnOutcome, WorkKind,
+    GivenAnswer, Intervention, ItemKind, Outlook, PairingOutcome, PendingApproval,
+    PendingQuestionnaire, SessionFrame, Tap, Tone, TurnOutcome, WorkKind,
 };
 
 use shaman::provider::{ProviderActivityId, ProviderCommandStatus, ProviderEvent};
@@ -1182,7 +1184,7 @@ fn command_approval(command: &str, reason: Option<&str>) -> Approval {
 fn presented(frame: &SessionFrame) -> Option<&PendingApproval> {
     match &frame.intervention {
         Some(Intervention::Approval { approval }) => Some(approval),
-        None => None,
+        _ => None,
     }
 }
 
@@ -1313,7 +1315,10 @@ async fn an_approval_presents_itself_is_dismissed_reviewed_and_answered_against_
         .frame_until(|frame| presents(frame, &asked))
         .await
         .intervention
-        .map(|Intervention::Approval { approval }| approval.reference)
+        .and_then(|intervention| match intervention {
+            Intervention::Approval { approval } => Some(approval.reference),
+            _ => None,
+        })
         .expect("presented");
     reading
         .session
@@ -1490,6 +1495,407 @@ async fn a_decision_on_an_approval_no_longer_waiting_is_refused_in_the_servers_w
         })
     );
     assert!(desk.decisions().is_empty());
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+/// Has the scripted Session's Provider ask the Questionnaire `questionnaire`.
+fn ask_questionnaire(script: &Script, questionnaire: &Questionnaire) {
+    say(
+        script,
+        [ProviderEvent::QuestionnaireRequested {
+            questionnaire: questionnaire.clone(),
+        }],
+    );
+}
+
+/// Two Questions: where the tests run, one of two machines with a note
+/// beside it, required; and a deploy token, secret, that may be skipped.
+fn where_and_token() -> Questionnaire {
+    let choice = |id: &str, label: &str, description: &str, recommended| QuestionChoice {
+        id: id.to_owned(),
+        label: label.to_owned(),
+        description: Some(description.to_owned()),
+        recommended,
+    };
+    Questionnaire {
+        id: QuestionnaireId::new(),
+        questions: vec![
+            Question {
+                id: "machine".to_owned(),
+                title: Some("Machine".to_owned()),
+                text: "Where should the tests run?".to_owned(),
+                choices: vec![
+                    choice("staging", "Staging", "The shared box.", true),
+                    choice("local", "Local", "This laptop.", false),
+                ],
+                multiple: false,
+                freeform: true,
+                combine_freeform: true,
+                secret: false,
+                required: true,
+            },
+            Question {
+                id: "token".to_owned(),
+                title: None,
+                text: "The deploy token, if there is one?".to_owned(),
+                choices: Vec::new(),
+                multiple: false,
+                freeform: true,
+                combine_freeform: false,
+                secret: true,
+                required: false,
+            },
+        ],
+    }
+}
+
+/// The Questionnaire the frame presents, where it presents one.
+fn presented_questionnaire(frame: &SessionFrame) -> Option<&PendingQuestionnaire> {
+    match &frame.intervention {
+        Some(Intervention::Questionnaire { questionnaire }) => Some(questionnaire),
+        _ => None,
+    }
+}
+
+/// Whether the frame presents the Questionnaire `questionnaire`.
+fn presents_questionnaire(frame: &SessionFrame, questionnaire: &Questionnaire) -> bool {
+    presented_questionnaire(frame)
+        .is_some_and(|presented| presented.reference == questionnaire.id.to_string())
+}
+
+/// Whether the frame's bar says a Questionnaire waits out of sight, with
+/// "Review".
+fn questionnaire_waiting(frame: &SessionFrame) -> bool {
+    frame.intervention.is_none()
+        && frame.bar.as_ref().is_some_and(|bar| {
+            bar.kind == BarKind::Waiting
+                && bar.words == "Questionnaire waiting"
+                && bar.review.as_deref() == Some("Review")
+        })
+}
+
+/// How the Server holds the Questionnaire `questionnaire` now, and the
+/// Answer it keeps of it.
+async fn questionnaire_outcome(
+    server: &ServingServer,
+    session: SessionId,
+    questionnaire: &Questionnaire,
+) -> (QuestionnaireOutcome, Option<Answer>) {
+    server
+        .read(session)
+        .await
+        .activities
+        .into_iter()
+        .find_map(|activity| match activity {
+            Activity::Questionnaire {
+                questionnaire: asked,
+                outcome,
+                answer,
+                ..
+            } if asked.id == questionnaire.id => Some((outcome, answer)),
+            _ => None,
+        })
+        .expect("the Server holds the Questionnaire")
+}
+
+fn given(choices: &[&str], text: &str) -> GivenAnswer {
+    GivenAnswer {
+        choices: choices.iter().map(|choice| (*choice).to_owned()).collect(),
+        text: text.to_owned(),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_questionnaire_presents_itself_is_dismissed_reviewed_and_answered_against_a_serving_server()
+ {
+    let desk = ServingServer::start("thin-questionnaire").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let (phone, session, row, reading, script) =
+        scripted_through(&desk, &gate, &holder, "Run the tests somewhere").await;
+    let asked = where_and_token();
+    ask_questionnaire(&script, &asked);
+
+    let frame = reading
+        .frame_until(|frame| presents_questionnaire(frame, &asked))
+        .await;
+    let sheet = presented_questionnaire(&frame).expect("presented");
+    assert_eq!(
+        sheet
+            .questions
+            .iter()
+            .map(|question| question.position.as_str())
+            .collect::<Vec<_>>(),
+        ["Question 1 of 2", "Question 2 of 2"]
+    );
+    let machine = &sheet.questions[0];
+    assert_eq!(machine.text, "Where should the tests run?");
+    assert_eq!(
+        machine
+            .choices
+            .iter()
+            .map(|card| (card.label.as_str(), card.badge.as_deref()))
+            .collect::<Vec<_>>(),
+        [("Staging", Some("Recommended")), ("Local", None)]
+    );
+    assert_eq!(
+        machine.field.as_ref().map(|field| field.label.as_str()),
+        Some("Additional text")
+    );
+    assert_eq!(machine.skip, None, "a required Question holds Next");
+    let token = &sheet.questions[1];
+    assert!(token.field.as_ref().is_some_and(|field| field.secure));
+    assert_eq!(token.skip.as_deref(), Some("Skip"));
+    assert_eq!(
+        cards(&reading.conversation_now().items)
+            .last()
+            .map(|card| card.line.clone()),
+        Some("Waiting on you".to_owned()),
+        "the live Turn's card says it waits on the reader"
+    );
+
+    // Swiped away, it waits behind the orange bar, and Review brings it back.
+    reading.session.dismiss();
+    reading.frame_until(questionnaire_waiting).await;
+    reading.session.review();
+    reading
+        .frame_until(|frame| presents_questionnaire(frame, &asked))
+        .await;
+
+    // Opened again on another screen, it presents itself however it was
+    // dismissed on this one.
+    reading.session.dismiss();
+    reading.frame_until(questionnaire_waiting).await;
+    let again = phone.open(&row.session);
+    again
+        .frame_until(|frame| presents_questionnaire(frame, &asked))
+        .await;
+    drop(again);
+    reading.session.review();
+    reading
+        .frame_until(|frame| presents_questionnaire(frame, &asked))
+        .await;
+
+    reading
+        .session
+        .answer(
+            asked.id.to_string(),
+            vec![given(&["staging"], "after lunch"), given(&[], "hunter2")],
+        )
+        .await
+        .expect("answered once the Server has");
+    let delivered = desk.submissions();
+    assert_eq!(delivered.len(), 1, "delivered once");
+    let (id, QuestionnaireSubmission::Answer { answer }) = &delivered[0] else {
+        panic!("an Answer delivered");
+    };
+    assert_eq!(*id, asked.id);
+    assert_eq!(
+        answer.questions,
+        [
+            QuestionAnswer::SelectedWithFreeform {
+                choices: vec!["staging".to_owned()],
+                text: "after lunch".to_owned(),
+            },
+            QuestionAnswer::Freeform {
+                text: "hunter2".to_owned(),
+            },
+        ]
+    );
+    let (outcome, _) = questionnaire_outcome(&desk, session, &asked).await;
+    assert_eq!(outcome, QuestionnaireOutcome::Answered);
+    reading
+        .frame_until(|frame| frame.intervention.is_none() && !questionnaire_waiting(frame))
+        .await;
+
+    // Settled, it is a row among the Turn's work, its secret never shown
+    // again.
+    let conversation = reading
+        .conversation_until(|items| {
+            cards(items)
+                .last()
+                .is_some_and(|card| card.outcome != TurnOutcome::Waiting)
+        })
+        .await;
+    let card = cards(&conversation.items).last().cloned().expect("a card");
+    let work = reading.work(&card.work);
+    let listed = work
+        .until(|work| {
+            work.items.iter().any(|item| {
+                matches!(&item.kind, WorkKind::Row { row } if row.title == "Questionnaire · Answered")
+            })
+        })
+        .await;
+    let activity = listed
+        .items
+        .iter()
+        .find_map(|item| match &item.kind {
+            WorkKind::Row { row } if row.title == "Questionnaire · Answered" => match &row.tap {
+                Tap::Detail { activity } => Some(activity.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("its row pushes what was asked and answered");
+    let detail = reading.detail(&activity).until(|_| true).await;
+    assert_eq!(
+        detail
+            .sections
+            .iter()
+            .map(|section| (section.heading.clone(), section.body.clone()))
+            .collect::<Vec<_>>(),
+        [
+            (
+                Some("Where should the tests run?".to_owned()),
+                "Staging; after lunch".to_owned()
+            ),
+            (
+                Some("The deploy token, if there is one?".to_owned()),
+                "Answered (secret)".to_owned()
+            ),
+        ]
+    );
+    phone.acts_until(false).await;
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_questionnaire_declined_is_declined_whole() {
+    let desk = ServingServer::start("thin-questionnaire-decline").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let (phone, session, _row, reading, script) =
+        scripted_through(&desk, &gate, &holder, "Run the tests somewhere").await;
+    let asked = where_and_token();
+    ask_questionnaire(&script, &asked);
+    reading
+        .frame_until(|frame| presents_questionnaire(frame, &asked))
+        .await;
+
+    reading
+        .session
+        .decline(asked.id.to_string())
+        .await
+        .expect("declined once the Server has");
+    assert!(matches!(
+        desk.submissions().as_slice(),
+        [(id, QuestionnaireSubmission::Decline)] if *id == asked.id
+    ));
+    assert_eq!(
+        questionnaire_outcome(&desk, session, &asked).await.0,
+        QuestionnaireOutcome::Declined
+    );
+    reading
+        .frame_until(|frame| frame.intervention.is_none())
+        .await;
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn answers_a_required_question_lacks_are_refused_and_nothing_is_delivered() {
+    let desk = ServingServer::start("thin-questionnaire-refused").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let (phone, _session, _row, reading, script) =
+        scripted_through(&desk, &gate, &holder, "Run the tests somewhere").await;
+    let asked = where_and_token();
+    ask_questionnaire(&script, &asked);
+    reading
+        .frame_until(|frame| presents_questionnaire(frame, &asked))
+        .await;
+
+    let refused = reading
+        .session
+        .answer(asked.id.to_string(), vec![given(&[], ""), given(&[], "")])
+        .await;
+    let Err(ActError::Refused { message }) = refused else {
+        panic!("refused in the Server's words: {refused:?}");
+    };
+    assert!(message.contains("required"), "{message}");
+    assert!(desk.submissions().is_empty(), "nothing was delivered");
+    assert!(
+        presents_questionnaire(&reading.frame().await, &asked),
+        "it still asks"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn answers_delivered_whose_answer_is_lost_are_not_sent_again() {
+    let desk = ServingServer::start("thin-questionnaire-lost").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let (phone, session, _row, reading, script) =
+        scripted_through(&desk, &gate, &holder, "Run the tests somewhere").await;
+    let asked = where_and_token();
+    ask_questionnaire(&script, &asked);
+    reading
+        .frame_until(|frame| presents_questionnaire(frame, &asked))
+        .await;
+
+    // What the phone says reaches the Server; nothing it says comes back.
+    gate.mute_now();
+    let failed = reading
+        .session
+        .answer(
+            asked.id.to_string(),
+            vec![given(&["local"], ""), given(&[], "")],
+        )
+        .await;
+    assert_eq!(
+        failed,
+        Err(ActError::Unreachable {
+            message: "The server did not answer, so the answers may have been sent".to_owned()
+        })
+    );
+    assert_eq!(desk.submissions().len(), 1, "delivered once, never again");
+    assert_eq!(
+        questionnaire_outcome(&desk, session, &asked).await.0,
+        QuestionnaireOutcome::Answered
+    );
+    assert!(
+        reading.frame().await.intervention.is_none(),
+        "it does not spring back to be answered twice"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn answers_to_a_questionnaire_no_longer_waiting_are_refused() {
+    let desk = ServingServer::start("thin-questionnaire-gone").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let (phone, _session, _row, reading, _script) =
+        scripted_through(&desk, &gate, &holder, "Run the tests somewhere").await;
+    let refused = reading
+        .session
+        .decline("not a questionnaire".to_owned())
+        .await;
+    assert_eq!(
+        refused,
+        Err(ActError::Refused {
+            message: "That questionnaire is no longer waiting".to_owned()
+        })
+    );
+    let refused = reading
+        .session
+        .decline(QuestionnaireId::new().to_string())
+        .await;
+    assert!(
+        matches!(refused, Err(ActError::Refused { .. })),
+        "refused in the Server's words: {refused:?}"
+    );
+    assert!(desk.submissions().is_empty());
 
     phone.shutdown();
     desk.shutdown().await;

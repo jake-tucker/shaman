@@ -10,8 +10,8 @@
 //! conversation lands in one piece.
 //!
 //! Its acts are a Prompt sent, to steer the working Turn or begin one, or
-//! queued for after it; a queued Prompt steered now or withdrawn; a stop; and
-//! a Decision on an Approval. A Prompt sent stands at once as a bubble marked
+//! queued for after it; a queued Prompt steered now or withdrawn; a stop; a
+//! Decision on an Approval; and a Questionnaire answered or declined whole. A Prompt sent stands at once as a bubble marked
 //! as sending; where it fails it goes, and its text is given back to the
 //! composer's draft. Its own Interventions are dismissed and reviewed on the
 //! screen alone, asking nothing of the Server.
@@ -40,8 +40,8 @@ use shaman_client::{
     RecoveryBackoff, SessionCommands, SessionEvent, SessionStreamError, SessionSubscription, TryNow,
 };
 use shaman_protocol::{
-    AdmitPromptRequest, InitialPrompt, InterruptOutcome, PromptDelivery, PromptId, SessionId,
-    SessionSnapshot,
+    AdmitPromptRequest, InitialPrompt, InterruptOutcome, PromptDelivery, PromptId,
+    QuestionnaireSubmission, SessionId, SessionSnapshot,
 };
 use tokio::{runtime::Handle, sync::watch, task::JoinHandle};
 
@@ -51,7 +51,7 @@ use crate::{
     conversation::{self, ConversationItem},
     drafts::Drafts,
     frame::{self, GONE_REMOTE, Local, Outgoing, SessionFrame, frame_of},
-    intervention::{self, DecisionKind},
+    intervention::{self, DecisionKind, GivenAnswer, InterventionId},
     listing::{Listed, Listings},
     tree::{self, InTree, Known, Lease, SubagentTree, TreeState, Trees},
     watching,
@@ -254,6 +254,48 @@ impl OpenSession {
         let acting = self.acting.clone();
         self.act(async move { acting.decide(&approval, decision).await })
             .await
+    }
+
+    /// Answers the Questionnaire `questionnaire` names with `answers`, one
+    /// for each of its Questions in their order, once its Server has. Answers
+    /// whose delivery was lost are never sent again: the Questionnaire waits
+    /// behind "Review", as one dismissed does, until the Session shows it
+    /// answered.
+    pub async fn answer(
+        &self,
+        questionnaire: String,
+        answers: Vec<GivenAnswer>,
+    ) -> Result<(), ActError> {
+        let acting = self.acting.clone();
+        let submission = QuestionnaireSubmission::Answer {
+            answer: intervention::answer_of(answers),
+        };
+        self.act(async move {
+            acting
+                .submit(
+                    &questionnaire,
+                    submission,
+                    "The server did not answer, so the answers may have been sent",
+                )
+                .await
+        })
+        .await
+    }
+
+    /// Declines the Questionnaire `questionnaire` names whole, once its
+    /// Server has, as an answer is sent.
+    pub async fn decline(&self, questionnaire: String) -> Result<(), ActError> {
+        let acting = self.acting.clone();
+        self.act(async move {
+            acting
+                .submit(
+                    &questionnaire,
+                    QuestionnaireSubmission::Decline,
+                    "The server did not answer, so the questionnaire may have been declined",
+                )
+                .await
+        })
+        .await
     }
 
     /// Dismisses every one of the Session's own Interventions pending now,
@@ -654,6 +696,9 @@ const EMPTY_PROMPT: &str = "Write something to send";
 /// Said where an Approval a Decision names no longer waits on one.
 const GONE_APPROVAL: &str = "That approval is no longer waiting";
 
+/// Said where a Questionnaire answers name no longer waits on any.
+const GONE_QUESTIONNAIRE: &str = "That questionnaire is no longer waiting";
+
 impl Acting {
     /// What the Session's acts are asked over now: its Remote as the
     /// listing holds it, which may have been paired again since it opened.
@@ -845,7 +890,7 @@ impl Acting {
             // It may have been delivered: it waits out of sight, and is not
             // offered again until the reader asks.
             self.local.send_modify(|local| {
-                local.dismissed.insert(approval);
+                local.dismissed.insert(InterventionId::Approval(approval));
             });
         }
         decided.map_err(|unanswered| {
@@ -854,6 +899,42 @@ impl Acting {
                 "The server did not answer, so the decision may have been sent",
             )
         })
+    }
+
+    /// Hands the Questionnaire `reference` names `submission`, saying
+    /// `maybe` where it may have been delivered.
+    async fn submit(
+        &self,
+        reference: &str,
+        submission: QuestionnaireSubmission,
+        maybe: &str,
+    ) -> Result<(), ActError> {
+        // The Session stands; only the Questionnaire is no longer there.
+        let questionnaire =
+            intervention::questionnaire_referenced(reference).ok_or_else(|| ActError::Refused {
+                message: GONE_QUESTIONNAIRE.to_owned(),
+            })?;
+        let mut opening = self.opening()?;
+        let submitted = self
+            .deliver(&mut opening, |commands, session_id| {
+                let submission = submission.clone();
+                async move {
+                    commands
+                        .submit_questionnaire(session_id, questionnaire, submission)
+                        .await
+                }
+            })
+            .await;
+        if submitted == Err(Unanswered::MaybeDone) {
+            // It may have been delivered: it waits out of sight, and is not
+            // offered again until the reader asks.
+            self.local.send_modify(|local| {
+                local
+                    .dismissed
+                    .insert(InterventionId::Questionnaire(questionnaire));
+            });
+        }
+        submitted.map_err(|unanswered| said(unanswered, maybe))
     }
 }
 
