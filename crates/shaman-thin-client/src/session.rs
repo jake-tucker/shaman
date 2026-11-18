@@ -20,6 +20,11 @@
 //! detail is attached to it, filled again from the Session as it changes and
 //! made no more once that screen goes.
 //!
+//! It holds the tree it belongs to for as long as it is open, which frames
+//! it — the button that opens the tree's sheet, a Subagent's name and Model,
+//! whether a Subagent's bar offers Stop — and fills the sheet while it is up;
+//! a working Subagent is stopped from there.
+//!
 //! Closing it stops the reading and cancels nothing on the Server.
 
 use std::{
@@ -48,6 +53,7 @@ use crate::{
     frame::{self, GONE_REMOTE, Local, Outgoing, SessionFrame, frame_of},
     intervention::{self, DecisionKind},
     listing::{Listed, Listings},
+    tree::{self, InTree, Known, Lease, SubagentTree, TreeState, Trees},
     watching,
     work::{self, ActivityDetail, TurnWork},
 };
@@ -84,6 +90,11 @@ pub struct OpenSession {
     acting: Acting,
     /// What screens pushed from it have attached.
     attached: Arc<Attachments>,
+    /// The tree it belongs to, as it sees it, for as long as it is open.
+    tree: watch::Receiver<TreeState>,
+    /// The Remote it is on, by its key, and its identity there, where its
+    /// reference names them.
+    named: Option<(String, SessionId)>,
 }
 
 /// What an open Session's acts need: where to find the Session's Remote as
@@ -153,6 +164,34 @@ impl OpenSession {
                 listener.changed(detail);
             }
         })
+    }
+
+    /// Tells `listener` the tree the Session belongs to, as its sheet shows
+    /// it, and again on every change, until the subscription is cancelled,
+    /// as the sheet goes.
+    pub fn watch_tree(&self, listener: Arc<dyn TreeListener>) -> Arc<Subscription> {
+        let Some((remote, open)) = self.named.clone() else {
+            // A Session never read belongs to no tree this phone can read.
+            let none = TreeState {
+                reading: tree::Reading::Gone,
+                known: HashMap::new(),
+            };
+            listener.changed(tree::sheet(&none, "", SessionId::new()));
+            return Subscription::of(self.runtime.spawn(async {}));
+        };
+        watching(&self.runtime, self.tree.clone(), move |state| {
+            listener.changed(tree::sheet(&state, &remote, open));
+        })
+    }
+
+    /// Stops the working Subagent `subagent` names, as its entry in the tree
+    /// hands it back, and whatever it delegated.
+    pub async fn stop_subagent(&self, subagent: String) -> Result<(), ActError> {
+        let acting = Acting {
+            reference: subagent,
+            ..self.acting.clone()
+        };
+        self.act(async move { acting.stop_alone().await }).await
     }
 
     /// Ends the Session's reading; it cancels nothing on the Server.
@@ -320,6 +359,12 @@ pub trait DetailListener: Send + Sync {
     fn changed(&self, detail: ActivityDetail);
 }
 
+/// Hears the tree an open Session belongs to, at once and on every change.
+#[uniffi::export(with_foreign)]
+pub trait TreeListener: Send + Sync {
+    fn changed(&self, tree: SubagentTree);
+}
+
 /// What a screen pushed from an open Session attached to it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Target {
@@ -337,9 +382,11 @@ enum Filled {
 }
 
 impl Target {
-    fn fill(&self, snapshot: Option<&SessionSnapshot>) -> Filled {
+    /// What it is filled with from `snapshot`, of a Session on the Remote
+    /// `remote` names.
+    fn fill(&self, snapshot: Option<&SessionSnapshot>, remote: &str) -> Filled {
         match self {
-            Self::Work(turn) => Filled::Work(work::turn_work(snapshot, turn)),
+            Self::Work(turn) => Filled::Work(work::turn_work(snapshot, turn, remote)),
             Self::Detail(activity) => Filled::Detail(work::activity_detail(snapshot, activity)),
         }
     }
@@ -399,10 +446,11 @@ impl Attachments {
         self.held().filling.remove(&attachment);
     }
 
-    /// Fills every attachment from `snapshot`, telling only those it changes.
-    fn fill(&self, snapshot: Option<&SessionSnapshot>) {
+    /// Fills every attachment from `snapshot`, of a Session on the Remote
+    /// `remote` names, telling only those it changes.
+    fn fill(&self, snapshot: Option<&SessionSnapshot>, remote: &str) {
         for (target, filling) in self.held().filling.values() {
-            let filled = target.fill(snapshot);
+            let filled = target.fill(snapshot, remote);
             filling.send_if_modified(|current| {
                 let changed = current.as_ref() != Some(&filled);
                 if changed {
@@ -505,6 +553,26 @@ pub(crate) fn open(
 ) -> Arc<OpenSession> {
     let opening = listings.opening(reference);
     let listed = opening.as_ref().map(|opening| opening.listed.clone());
+    let remote = reference
+        .split_once('/')
+        .map_or(reference, |(remote, _)| remote)
+        .to_owned();
+    // The tree it belongs to is held from the moment it opens: one already
+    // read frames it at once.
+    let lease = opening.as_ref().map(|opening| {
+        asked
+            .trees
+            .hold(&remote, opening.session_id, &opening.commands)
+    });
+    let tree_seen = lease
+        .as_ref()
+        .map_or_else(|| watch::channel(TreeState::default()).1, Lease::seen);
+    let named = opening
+        .as_ref()
+        .map(|opening| (remote.clone(), opening.session_id));
+    let in_tree = named.as_ref().map_or_else(InTree::default, |(_, open)| {
+        tree::in_tree(&tree_seen.borrow(), *open)
+    });
     let local = Arc::new(watch::Sender::new(Local::default()));
     let (frame, frame_seen) = watch::channel(frame_of(
         listed.as_ref(),
@@ -512,6 +580,7 @@ pub(crate) fn open(
         None,
         &Local::default(),
         false,
+        &in_tree,
     ));
     let (conversation, conversation_seen) = watch::channel(shown(None, conversation::loading()));
     let reading = Arc::new(AtomicBool::new(true));
@@ -522,6 +591,9 @@ pub(crate) fn open(
     });
     let reader = opening.map(|opening| {
         let reader = Reader {
+            tree: lease,
+            tree_seen: tree_seen.clone(),
+            remote,
             attached: attached.clone(),
             gone: None,
             drafts: asked.drafts.clone(),
@@ -556,14 +628,18 @@ pub(crate) fn open(
             local,
         },
         attached,
+        tree: tree_seen,
+        named,
     })
 }
 
-/// What the core hands each open Session for its acts.
+/// What the core hands each open Session for its acts, and the trees it
+/// holds the one it belongs to among.
 pub(crate) struct Asked {
     pub drafts: Drafts,
     pub acts: Acts,
     pub asking: Asking,
+    pub trees: Trees,
 }
 
 /// Said where the Session's Server no longer holds it.
@@ -729,6 +805,25 @@ impl Acting {
         }
         Ok(())
     }
+
+    /// Stops the Subagent the act's reference names alone, and whatever it
+    /// delegated.
+    async fn stop_alone(&self) -> Result<(), ActError> {
+        let mut opening = self.opening()?;
+        self.deliver(&mut opening, |commands, session_id| async move {
+            commands
+                .interrupt_session_reporting_outcome(session_id)
+                .await
+        })
+        .await
+        .map(drop)
+        .map_err(|unanswered| {
+            said(
+                unanswered,
+                "The server did not answer, so the subagent may have been stopped",
+            )
+        })
+    }
 }
 
 impl Acting {
@@ -801,6 +896,12 @@ fn shown(was: Option<&Shown>, items: Vec<ConversationItem>) -> Shown {
 
 /// What reads one open Session, and what it last read.
 struct Reader {
+    /// Its hold on the tree it belongs to, let go as the reading ends.
+    tree: Option<Lease>,
+    /// The tree as it sees it.
+    tree_seen: watch::Receiver<TreeState>,
+    /// The Remote it is on, by its key.
+    remote: String,
     /// What screens pushed from it have attached, which it fills.
     attached: Arc<Attachments>,
     /// Why the Session is gone, once it is.
@@ -917,6 +1018,7 @@ impl Reader {
                 attached = &mut reading => return attached,
                 Ok(()) = local.changed() => self.show(),
                 Ok(()) = attaching.changed() => self.fill_attached(),
+                Ok(()) = self.tree_seen.changed() => self.show_frame(),
             }
         }
     }
@@ -948,6 +1050,7 @@ impl Reader {
                 Ok(()) = local.changed() => self.show(),
                 Ok(()) = attaching.changed() => self.fill_attached(),
                 Ok(()) = self.unreachable.changed() => self.show_frame(),
+                Ok(()) = self.tree_seen.changed() => self.show_frame(),
             }
         }
     }
@@ -988,6 +1091,7 @@ impl Reader {
                 Ok(()) = local.changed() => self.show(),
                 Ok(()) = attaching.changed() => self.fill_attached(),
                 Ok(()) = self.unreachable.changed() => self.show_frame(),
+                Ok(()) = self.tree_seen.changed() => self.show_frame(),
             }
         }
     }
@@ -1053,6 +1157,11 @@ impl Reader {
                 self.drafts.give_back(&self.reference, &text);
             }
         }
+        // What the tree does not say of the Session, its Provider and the
+        // Subagents it spawned through the Broker, the tree is told.
+        if let (Some(snapshot), Some(tree)) = (&self.snapshot, &self.tree) {
+            tree.know(Known::of(snapshot));
+        }
         self.show_frame();
         // A Prompt being sent stands at the foot even before the Session has
         // been read, beneath the loading mark.
@@ -1078,16 +1187,18 @@ impl Reader {
     /// Fills what screens pushed from the Session have attached, from what
     /// it last read.
     fn fill_attached(&self) {
-        self.attached.fill(self.snapshot.as_ref());
+        self.attached.fill(self.snapshot.as_ref(), &self.remote);
     }
 
     fn show_frame(&self) {
+        let in_tree = tree::in_tree(&self.tree_seen.borrow(), self.session_id);
         let frame = frame_of(
             Some(&self.listed),
             self.snapshot.as_ref(),
             self.gone.clone(),
             &self.local(),
             self.unreachable.borrow().is_some(),
+            &in_tree,
         );
         self.frame.send_if_modified(|current| {
             let changed = *current != frame;
@@ -1115,6 +1226,8 @@ impl Reader {
     ) {
         self.reading.store(false, Ordering::Release);
         self.gone = Some(why);
+        // A Session gone holds its tree no more.
+        self.tree = None;
         self.show_frame();
         loop {
             tokio::select! {
@@ -1164,10 +1277,14 @@ mod tests {
             None,
             &Local::default(),
             false,
+            &InTree::default(),
         ));
         let (conversation, _) = watch::channel(shown(None, conversation::loading()));
         let try_now = transport.try_now();
         let reader = Reader {
+            tree: None,
+            tree_seen: watch::channel(TreeState::default()).1,
+            remote: reference.split_once('/').unwrap().0.to_owned(),
             attached,
             gone: None,
             drafts: Drafts::default(),
@@ -1466,6 +1583,7 @@ mod tests {
                     bound: SHOWN_WITHIN,
                     dialling: Duration::from_millis(50),
                 },
+                trees: Trees::new(runtime.handle().clone()),
             },
         );
         (opened, drafts, reference, session_id, directory)
@@ -1631,6 +1749,7 @@ mod tests {
                     bound: SHOWN_WITHIN,
                     dialling: Duration::from_millis(50),
                 },
+                trees: Trees::new(runtime.handle().clone()),
             },
         );
         conversation_until(&runtime, &opened, |items| {
@@ -1723,6 +1842,7 @@ mod tests {
                     bound: SHOWN_WITHIN,
                     dialling: Duration::from_millis(50),
                 },
+                trees: Trees::new(runtime.handle().clone()),
             },
         );
         let (_, mut work) = opened
@@ -1742,6 +1862,47 @@ mod tests {
             panic!("an Activity's detail");
         };
         assert_eq!(detail.sections[0].body, "This is no longer in the session");
+    }
+
+    /// Keeps the last tree it heard.
+    struct Kept(Mutex<Option<SubagentTree>>);
+
+    impl TreeListener for Kept {
+        fn changed(&self, tree: SubagentTree) {
+            *self.0.lock().unwrap() = Some(tree);
+        }
+    }
+
+    #[test]
+    fn a_session_never_read_has_a_tree_that_shows_nothing_and_never_says_loading() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (listings, _directory) = listings(&runtime);
+        let opened = open(
+            runtime.handle(),
+            &listings,
+            &format!("nobody/{}", SessionId::new()),
+            Pacing {
+                initial_backoff: Duration::from_millis(1),
+                max_backoff: Duration::from_millis(5),
+            },
+            Asked {
+                drafts: Drafts::default(),
+                acts: Acts::default(),
+                asking: Asking {
+                    initial_backoff: Duration::from_millis(1),
+                    max_backoff: Duration::from_millis(5),
+                    bound: SHOWN_WITHIN,
+                    dialling: Duration::from_millis(50),
+                },
+                trees: Trees::new(runtime.handle().clone()),
+            },
+        );
+        let kept = Arc::new(Kept(Mutex::new(None)));
+        let _subscription = opened.watch_tree(kept.clone());
+        let tree = kept.0.lock().unwrap().clone().expect("told at once");
+        assert_eq!((tree.loading, tree.failed), (None, None));
+        assert!(tree.rows.is_empty());
+        assert_eq!(opened.frame.borrow().tree, None);
     }
 
     /// Hears nothing it keeps.

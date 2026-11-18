@@ -11,14 +11,15 @@ use std::{
 };
 
 use shaman_protocol::{
-    ApprovalId, PromptDelivery, PromptId, PromptStatus, SessionSnapshot, SessionTimestamp,
-    WatchSummary,
+    Activity, ActivityStatus, ApprovalId, PromptDelivery, PromptId, PromptStatus, SessionId,
+    SessionSnapshot, SessionStatus, SessionTimestamp, WatchSummary,
 };
 
 use crate::{
     conversation::{ConversationItem, ItemKind},
     intervention::{self, Intervention, Standing},
     listing::Listed,
+    tree::{InTree, TreeButton},
 };
 
 /// What frames an open Session's screen, whole on each change.
@@ -43,6 +44,9 @@ pub struct SessionFrame {
     /// The Session's own Intervention to present as a sheet: the oldest
     /// pending that this screen has not dismissed, while its Origin answers.
     pub intervention: Option<Intervention>,
+    /// The button in the navigation bar that opens the tree the Session
+    /// belongs to, where that tree has Subagents.
+    pub tree: Option<TreeButton>,
 }
 
 /// The bar above the composer: what the Session's work is doing, since when,
@@ -51,15 +55,18 @@ pub struct SessionFrame {
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct Bar {
     pub kind: BarKind,
-    /// "Working", "Monitoring" or "Approval waiting".
+    /// "Working", "Monitoring" or "Approval waiting", or, while the Agent
+    /// only waits on its Subagents, which: "Waiting on 2 subagents",
+    /// "Waiting on Explorer".
     pub words: String,
     /// When the work began, as its Server gave it, which Swift counts the
     /// elapsed time from: none while an Intervention waits.
     pub since: Option<SystemTime>,
     /// What a Monitoring Session waits on: its one Watch, or how many.
     pub watching: Option<String>,
-    /// The tap that stops it.
-    pub stop: String,
+    /// The tap that stops it, and on a Subagent's Session whatever it
+    /// delegated; none where a Subagent cannot be stopped alone.
+    pub stop: Option<String>,
     /// The tap that presents the Interventions dismissed again: "Review",
     /// where there is anything to present.
     pub review: Option<String>,
@@ -208,13 +215,15 @@ pub(crate) fn prompt_referenced(reference: &str) -> Option<PromptId> {
 /// What frames a Session: its Title and place as the listing and its
 /// snapshot last said them, or that it is gone; what its work is doing; and
 /// what this screen sent of its own. `unreachable` says whether its Origin
-/// answered the last time it was asked.
+/// answered the last time it was asked, and `tree` what the tree the Session
+/// belongs to says of it.
 pub(crate) fn frame_of(
     listed: Option<&Listed>,
     snapshot: Option<&SessionSnapshot>,
     gone: Option<String>,
     local: &Local,
     unreachable: bool,
+    tree: &InTree,
 ) -> SessionFrame {
     let Some(listed) = listed else {
         return SessionFrame {
@@ -225,6 +234,7 @@ pub(crate) fn frame_of(
             composer: None,
             queued: Vec::new(),
             intervention: None,
+            tree: None,
         };
     };
     let title = snapshot
@@ -239,14 +249,21 @@ pub(crate) fn frame_of(
         .or_else(|| {
             snapshot.map(|snapshot| listed.paths.workspace_name(&snapshot.session.workspace))
         });
-    let place = listed
-        .origin
-        .iter()
-        .cloned()
-        .chain(workspace)
-        .chain(listed.branch.clone())
-        .collect::<Vec<_>>()
-        .join(" · ");
+    // A Subagent's Session is read, not written to, and is named beneath its
+    // Title by the Subagent's name and Model.
+    let subagent =
+        tree.subagent || snapshot.is_some_and(|snapshot| snapshot.session.parent.is_some());
+    let place = match (&tree.named, subagent) {
+        (Some(named), true) => named.clone(),
+        _ => listed
+            .origin
+            .iter()
+            .cloned()
+            .chain(workspace)
+            .chain(listed.branch.clone())
+            .collect::<Vec<_>>()
+            .join(" · "),
+    };
     if gone.is_some() {
         return SessionFrame {
             title,
@@ -256,11 +273,10 @@ pub(crate) fn frame_of(
             composer: None,
             queued: Vec::new(),
             intervention: None,
+            tree: None,
         };
     }
     let working = snapshot.is_some_and(|snapshot| snapshot.working_since().is_some());
-    // A Subagent's Session is read, not written to.
-    let subagent = snapshot.is_some_and(|snapshot| snapshot.session.parent.is_some());
     let composer = (!subagent).then(|| Composer {
         placeholder: if working {
             "Steer, or hold send to queue"
@@ -275,10 +291,12 @@ pub(crate) fn frame_of(
     let standing = snapshot.map_or(Standing::None, |snapshot| {
         intervention::standing(snapshot, &local.dismissed, unreachable)
     });
+    let stops_work = !subagent || tree.stoppable;
+    let bar_of = |snapshot: &SessionSnapshot| bar(snapshot, stops_work);
     let (bar, intervention) = match standing {
-        Standing::None => (snapshot.and_then(bar), None),
-        Standing::Presented(intervention) => (snapshot.and_then(bar), Some(*intervention)),
-        Standing::Waiting { review } => (Some(waiting(review)), None),
+        Standing::None => (snapshot.and_then(bar_of), None),
+        Standing::Presented(intervention) => (snapshot.and_then(bar_of), Some(*intervention)),
+        Standing::Waiting { review } => (Some(waiting(review, stops_work)), None),
     };
     SessionFrame {
         title,
@@ -288,18 +306,19 @@ pub(crate) fn frame_of(
         composer,
         queued: queued(snapshot, local),
         intervention,
+        tree: tree.button.clone(),
     }
 }
 
 /// The bar while the Session's own Interventions wait out of sight: orange,
-/// with "Review" where it may bring them back.
-fn waiting(review: bool) -> Bar {
+/// with "Review" where it may bring them back, and Stop where `stops_work`.
+fn waiting(review: bool, stops_work: bool) -> Bar {
     Bar {
         kind: BarKind::Waiting,
         words: intervention::APPROVAL_WAITING.to_owned(),
         since: None,
         watching: None,
-        stop: "Stop".to_owned(),
+        stop: stops_work.then(|| "Stop".to_owned()),
         review: review.then(|| intervention::REVIEW.to_owned()),
     }
 }
@@ -318,27 +337,71 @@ fn unreachable_line(listed: &Listed) -> String {
     format!("{named}. Nothing sent goes anywhere until it answers.")
 }
 
-/// The bar, while the Session is Working, or else Monitoring.
-fn bar(snapshot: &SessionSnapshot) -> Option<Bar> {
-    let (kind, words, since, watching) = if let Some(since) = snapshot.working_since() {
-        (BarKind::Working, "Working", since, None)
+/// The bar, while the Session is Working, or else Monitoring. Stop stops a
+/// Session's Watches whatever it is, and its work where `stops_work`.
+fn bar(snapshot: &SessionSnapshot, stops_work: bool) -> Option<Bar> {
+    let (kind, words, since, watching, stop) = if let Some(since) = snapshot.working_since() {
+        (
+            BarKind::Working,
+            working_words(snapshot),
+            since,
+            None,
+            stops_work,
+        )
     } else {
         let since = snapshot.monitoring_since()?;
         (
             BarKind::Monitoring,
-            "Monitoring",
+            "Monitoring".to_owned(),
             since,
             watching(&snapshot.watches),
+            true,
         )
     };
     Some(Bar {
         kind,
-        words: words.to_owned(),
+        words,
         since: Some(instant(since)),
         watching,
-        stop: "Stop".to_owned(),
+        stop: stop.then(|| "Stop".to_owned()),
         review: None,
     })
+}
+
+/// What a Working Session's bar says: "Working", or, once its Turn has
+/// settled with Subagents still at work or while its Turn's only work is its
+/// Agent's wait on them, which it waits on: the one by its name, several by
+/// how many.
+fn working_words(snapshot: &SessionSnapshot) -> String {
+    if snapshot.session.status == SessionStatus::Active && !snapshot.only_waiting_on_subagents() {
+        return "Working".to_owned();
+    }
+    let mut seen = Vec::<SessionId>::new();
+    let working = snapshot
+        .activities
+        .iter()
+        .filter_map(|activity| match activity {
+            Activity::Subagent {
+                status: ActivityStatus::Active,
+                session_id,
+                name,
+                ..
+            } => Some((*session_id, name)),
+            _ => None,
+        })
+        .filter(|(session_id, _)| {
+            let new = !seen.contains(session_id);
+            seen.push(*session_id);
+            new
+        })
+        .map(|(_, name)| name.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect::<Vec<_>>();
+    match working.as_slice() {
+        [one] if !one.is_empty() => format!("Waiting on {one}"),
+        [_] => "Waiting on 1 subagent".to_owned(),
+        [] => "Waiting on subagents".to_owned(),
+        several => format!("Waiting on {} subagents", several.len()),
+    }
 }
 
 /// What a Monitoring Session waits on, as the Working Indicator names it:

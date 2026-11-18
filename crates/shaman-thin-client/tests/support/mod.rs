@@ -36,7 +36,8 @@ use shaman_thin_client::{
     ActivityDetail, ActsListener, ConversationChange, ConversationItem, ConversationListener,
     CoreTimings, DetailListener, DeviceListener, FrameListener, KeySigner, Listing,
     ListingListener, OpenSession, Outlook, OutlookListener, Servers, ServersListener, SessionFrame,
-    SignError, Subscription, ThinClient, ThisDevice, TurnWork, WorkListener,
+    SignError, SubagentTree, Subscription, ThinClient, ThisDevice, TreeListener, TurnWork,
+    WorkListener,
 };
 use tokio::{
     net::TcpListener,
@@ -788,6 +789,16 @@ impl Reading {
     }
 }
 
+impl Reading {
+    /// Attaches the tree the Session belongs to, as its sheet does while it
+    /// is up.
+    pub fn tree(&self) -> Attached<SubagentTree> {
+        let (heard, told) = watch::channel(Vec::new());
+        let subscription = self.session.watch_tree(Arc::new(Told(heard)));
+        Attached { told, subscription }
+    }
+}
+
 /// What a screen pushed from an open Session attached, and everything it was
 /// told of it, in the order told.
 pub struct Attached<T> {
@@ -825,6 +836,12 @@ struct Told<T>(watch::Sender<Vec<T>>);
 impl WorkListener for Told<TurnWork> {
     fn changed(&self, work: TurnWork) {
         self.0.send_modify(|told| told.push(work));
+    }
+}
+
+impl TreeListener for Told<SubagentTree> {
+    fn changed(&self, tree: SubagentTree) {
+        self.0.send_modify(|told| told.push(tree));
     }
 }
 

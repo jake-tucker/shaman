@@ -39,6 +39,7 @@ mod pairing;
 mod reach;
 mod remotes;
 mod session;
+mod tree;
 mod work;
 
 pub use conversation::{ConversationItem, ItemKind, Tone, TurnCard, TurnOutcome};
@@ -58,8 +59,9 @@ use remotes::Remotes;
 pub use remotes::{BeginsIn, Outlook, ServerRow, Servers, WayRow, WayState};
 pub use session::{
     ConversationChange, ConversationListener, DetailListener, FrameListener, OpenSession,
-    WorkListener,
+    TreeListener, WorkListener,
 };
+pub use tree::{SubagentTree, TreeButton, TreeRow};
 pub use work::{
     ActivityDetail, BodyStyle, DetailSection, Fact, Tap, TurnWork, WorkItem, WorkKind, WorkRow,
 };
@@ -146,6 +148,8 @@ pub(crate) struct Inner {
     drafts: drafts::Drafts,
     /// The acts under way, which Swift holds background time for.
     acts: acts::Acts,
+    /// The trees the open Sessions belong to, each read once.
+    trees: tree::Trees,
     timings: CoreTimings,
 }
 
@@ -268,6 +272,7 @@ impl ThinClient {
                     dialling: self.inner.timings.redeemer.direct_head_start
                         + self.inner.timings.redeemer.handshake_timeout * 2,
                 },
+                trees: self.inner.trees.clone(),
             },
         )
     }
@@ -455,6 +460,7 @@ impl ThinClient {
             pairing: AsyncMutex::new(()),
             drafts: drafts::Drafts::default(),
             acts: acts::Acts::default(),
+            trees: tree::Trees::new(runtime.handle().clone()),
             timings,
         });
         for name in inner.remotes.names() {

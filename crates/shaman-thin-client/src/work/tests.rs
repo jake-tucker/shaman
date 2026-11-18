@@ -81,7 +81,7 @@ impl Built {
     }
 
     fn work(&self, turn: TurnId) -> TurnWork {
-        turn_work(Some(&self.snapshot), &turn.to_string())
+        turn_work(Some(&self.snapshot), &turn.to_string(), REMOTE)
     }
 
     fn detail(&self, activity: ActivityId) -> ActivityDetail {
@@ -258,13 +258,15 @@ fn a_live_turns_work_reads_working_or_waiting_and_says_where_it_has_done_nothing
 #[test]
 fn a_turn_not_read_yet_or_no_longer_held_says_so_and_so_does_an_activity() {
     assert_eq!(
-        turn_work(None, &TurnId::new().to_string()).empty.as_deref(),
+        turn_work(None, &TurnId::new().to_string(), REMOTE)
+            .empty
+            .as_deref(),
         Some("Loading")
     );
     let built = Built::new();
     for reference in [TurnId::new().to_string(), "not a turn".to_owned()] {
         assert_eq!(
-            turn_work(Some(&built.snapshot), &reference)
+            turn_work(Some(&built.snapshot), &reference, REMOTE)
                 .empty
                 .as_deref(),
             Some("This turn is no longer in the session")
@@ -486,7 +488,7 @@ fn a_file_change_shows_the_paths_it_touched_and_no_diff() {
             }],
         };
         assert_eq!(
-            row(&change, &workspace()).title,
+            row(&change, &workspace(), REMOTE).title,
             format!("{action} {shown}")
         );
     }
@@ -606,7 +608,7 @@ fn every_kind_of_approval_names_its_facts_as_the_tuis_panel_does() {
             *detail_truncated = true;
             *decision = Some(Decision::DeclineAndInterrupt);
         }
-        let row = row(&asked, &workspace());
+        let row = row(&asked, &workspace(), REMOTE);
         assert_eq!(
             row.title,
             format!("Approval · {kind} · Declined and interrupted")
@@ -754,7 +756,7 @@ fn a_status_or_an_error_that_says_all_in_its_row_pushes_nothing_and_a_longer_one
         text: "Retrying in 5s".to_owned(),
     };
     assert_eq!(
-        row(&short, &workspace()),
+        row(&short, &workspace(), REMOTE),
         WorkRow {
             glyph: glyph(shaman_icons::activity::STATUS),
             title: "Retrying in 5s".to_owned(),
@@ -770,7 +772,7 @@ fn a_status_or_an_error_that_says_all_in_its_row_pushes_nothing_and_a_longer_one
         turn_id: turn,
         text: "The provider stopped answering\nconnection reset by peer".to_owned(),
     };
-    let long_row = row(&long, &workspace());
+    let long_row = row(&long, &workspace(), REMOTE);
     assert_eq!(long_row.glyph, glyph(shaman_icons::activity::ERROR));
     assert_eq!(long_row.title, "The provider stopped answering …");
     assert_eq!(long_row.tone, Tone::Failed);
@@ -793,8 +795,12 @@ fn a_status_or_an_error_that_says_all_in_its_row_pushes_nothing_and_a_longer_one
     assert_eq!(super::detail(&short, &workspace()).title, "Status");
 }
 
+/// The Remote every Session here is on, by its key.
+const REMOTE: &str = "desk-key";
+
 #[test]
 fn a_subagent_is_its_name_over_what_it_was_asked_with_its_outcome_and_duration() {
+    let session_id = SessionId::new();
     let subagent = Activity::Subagent {
         id: ActivityId::new(),
         turn_id: TurnId::new(),
@@ -802,17 +808,59 @@ fn a_subagent_is_its_name_over_what_it_was_asked_with_its_outcome_and_duration()
         name: "Explorer".to_owned(),
         description: "Find where the\ninvite is drawn".to_owned(),
         model: Some(ModelId::new("haiku")),
-        session_id: SessionId::new(),
+        session_id,
         brokered: false,
         duration_ms: Some(65_000),
         delegated_at: None,
     };
-    let row = row(&subagent, &workspace());
+    let row = row(&subagent, &workspace(), REMOTE);
     assert_eq!(row.glyph, glyph(shaman_icons::activity::SUBAGENT));
     assert_eq!(row.title, "Explorer");
     assert_eq!(row.line.as_deref(), Some("Find where the invite is drawn"));
-    assert_eq!(row.trailing.as_deref(), Some("1m 5s"));
+    assert_eq!(
+        row.trailing.as_deref(),
+        Some("Stopped · 1m 5s"),
+        "its outcome where its Marker would not tell, and its duration"
+    );
     assert_eq!(row.tone, Tone::Stopped);
+    assert_eq!(
+        row.tap,
+        Tap::Session {
+            session: format!("{REMOTE}/{session_id}")
+        },
+        "it opens the Subagent's own Session"
+    );
+    let completed = row_of_activity(Activity::Subagent {
+        id: ActivityId::new(),
+        turn_id: TurnId::new(),
+        status: ActivityStatus::Completed,
+        name: "Explorer".to_owned(),
+        description: String::new(),
+        model: None,
+        session_id,
+        brokered: false,
+        duration_ms: Some(3_000),
+        delegated_at: None,
+    });
+    assert_eq!(completed.trailing.as_deref(), Some("3s"));
+    assert_eq!(completed.line, None);
+    let working = row_of_activity(Activity::Subagent {
+        id: ActivityId::new(),
+        turn_id: TurnId::new(),
+        status: ActivityStatus::Active,
+        name: "Explorer".to_owned(),
+        description: "Look".to_owned(),
+        model: None,
+        session_id,
+        brokered: true,
+        duration_ms: None,
+        delegated_at: None,
+    });
+    assert_eq!(
+        (working.tone, working.trailing),
+        (Tone::Running, None),
+        "its Marker says it works"
+    );
     let detail = detail(&subagent, &workspace());
     assert_eq!(detail.title, "Explorer");
     assert_eq!(
@@ -833,6 +881,10 @@ fn a_subagent_is_its_name_over_what_it_was_asked_with_its_outcome_and_duration()
     );
 }
 
+fn row_of_activity(activity: Activity) -> WorkRow {
+    row(&activity, &workspace(), REMOTE)
+}
+
 #[test]
 fn a_subsession_names_its_title_what_it_was_asked_and_where_it_was_begun() {
     let subsession = Activity::Subsession {
@@ -844,7 +896,7 @@ fn a_subsession_names_its_title_what_it_was_asked_and_where_it_was_begun() {
         title: "Rotate the relay certs".to_owned(),
         prompt: "Rotate the relay's certificates before Friday".to_owned(),
     };
-    let row = row(&subsession, &workspace());
+    let row = row(&subsession, &workspace(), REMOTE);
     assert_eq!(row.glyph, glyph(shaman_icons::activity::SUBSESSION));
     assert_eq!(row.title, "Rotate the relay certs");
     assert_eq!(
@@ -873,7 +925,7 @@ fn a_watch_outcome_a_route_and_a_reroute_read_in_the_tuis_words() {
         description: "nightly backup".to_owned(),
         summary: None,
     };
-    let watch_row = row(&watched, &workspace());
+    let watch_row = row(&watched, &workspace(), REMOTE);
     assert_eq!(
         watch_row.glyph,
         glyph(shaman_icons::activity::WATCH_OUTCOME)
@@ -898,7 +950,7 @@ fn a_watch_outcome_a_route_and_a_reroute_read_in_the_tuis_words() {
             detail: Some("The tests do not cover the light theme.".to_owned()),
         },
     };
-    let route_row = row(&verdict, &workspace());
+    let route_row = row(&verdict, &workspace(), REMOTE);
     assert_eq!(route_row.glyph, glyph(shaman_icons::activity::ROUTE));
     assert_eq!(route_row.title, "opus rejected the work");
     assert_eq!(route_row.tone, Tone::Quiet);
@@ -921,7 +973,7 @@ fn a_watch_outcome_a_route_and_a_reroute_read_in_the_tuis_words() {
             provider: ProviderId::new("claude"),
         },
     };
-    let discarded_row = row(&discarded, &workspace());
+    let discarded_row = row(&discarded, &workspace(), REMOTE);
     assert!(
         discarded_row.title.starts_with("Claude discarded"),
         "{}",
@@ -939,7 +991,7 @@ fn a_watch_outcome_a_route_and_a_reroute_read_in_the_tuis_words() {
             reason: None,
         },
     };
-    let reroute_row = row(&rerouted, &workspace());
+    let reroute_row = row(&rerouted, &workspace(), REMOTE);
     assert_eq!(reroute_row.glyph, glyph(shaman_icons::activity::REROUTE));
     assert_eq!(
         reroute_row.title,
@@ -963,7 +1015,7 @@ fn a_compactions_detail_holds_its_instructions_and_summary() {
         summary: Some("We paired the phone.".to_owned()),
         summary_truncated: true,
     };
-    let row = row(&compaction, &workspace());
+    let row = row(&compaction, &workspace(), REMOTE);
     assert_eq!(row.glyph, glyph(shaman_icons::activity::COMPACTION));
     assert_eq!(row.title, "Compacted context · 180K → 40K");
     let detail = detail(&compaction, &workspace());
@@ -994,7 +1046,7 @@ fn a_compactions_detail_holds_its_instructions_and_summary() {
 fn reasoning_model_calls_and_a_move_are_filled_though_a_turns_work_shows_none_of_them() {
     let turn = TurnId::new();
     let thought = reasoning(turn);
-    let thought_row = row(&thought, &workspace());
+    let thought_row = row(&thought, &workspace(), REMOTE);
     assert_eq!(thought_row.glyph, glyph(shaman_icons::activity::REASONING));
     assert_eq!(thought_row.title, "Weighing the layout");
     assert_eq!(thought_row.trailing.as_deref(), Some("2s"));
@@ -1012,7 +1064,10 @@ fn reasoning_model_calls_and_a_move_are_filled_though_a_turns_work_shows_none_of
             actual: ModelId::new("gpt-5.5"),
         }],
     };
-    assert_eq!(row(&calls, &workspace()).line.as_deref(), Some("gpt-5.5"));
+    assert_eq!(
+        row(&calls, &workspace(), REMOTE).line.as_deref(),
+        Some("gpt-5.5")
+    );
     assert_eq!(
         facts(&detail(&calls, &workspace())),
         [("Codex", "auto · gpt-5.5", BodyStyle::Prose)]
@@ -1035,7 +1090,7 @@ fn reasoning_model_calls_and_a_move_are_filled_though_a_turns_work_shows_none_of
         to_checkout: None,
         settled_at: None,
     };
-    let move_row = row(&moved, &workspace());
+    let move_row = row(&moved, &workspace(), REMOTE);
     assert_eq!(move_row.glyph, glyph(shaman_icons::activity::MOVE));
     assert!(
         move_row.title.starts_with("Moved from "),
@@ -1174,7 +1229,7 @@ fn a_compactions_blank_instructions_and_summary_say_nothing_and_push_nothing() {
         summary: Some("\n".to_owned()),
         summary_truncated: true,
     };
-    assert_eq!(row(&blank, &workspace()).tap, Tap::Nothing);
+    assert_eq!(row(&blank, &workspace(), REMOTE).tap, Tap::Nothing);
     assert!(
         detail(&blank, &workspace()).sections.is_empty(),
         "nor that a blank summary was cut short"

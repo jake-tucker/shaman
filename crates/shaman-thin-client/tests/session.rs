@@ -696,7 +696,7 @@ async fn a_prompt_sent_to_a_live_turn_steers_it_and_the_bar_says_it_works_until_
     let bar = frame.bar.expect("a bar");
     assert_eq!(bar.kind, BarKind::Working);
     assert_eq!(bar.words, "Working");
-    assert_eq!(bar.stop, "Stop");
+    assert_eq!(bar.stop.as_deref(), Some("Stop"));
     let composer = frame.composer.expect("a composer");
     assert_eq!(composer.queue.as_deref(), Some("Queue for after this turn"));
     assert_eq!(composer.unreachable, None);

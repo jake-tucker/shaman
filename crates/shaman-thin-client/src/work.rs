@@ -81,6 +81,9 @@ pub enum Tap {
     /// Pushes the detail of the Activity `activity` names, which Swift hands
     /// back unread.
     Detail { activity: String },
+    /// Pushes the Session `session` names over the one it was tapped in: a
+    /// Subagent's own, which Swift hands back unread as it opens it.
+    Session { session: String },
 }
 
 /// The whole of one Activity, on a screen of its own.
@@ -125,9 +128,9 @@ const GONE_TURN: &str = "This turn is no longer in the session";
 /// Said where an Activity handed back is no longer in its Session.
 const GONE_ACTIVITY: &str = "This is no longer in the session";
 
-/// The work of the Turn `turn` names, as `snapshot` holds it, or none read
-/// yet.
-pub(crate) fn turn_work(snapshot: Option<&SessionSnapshot>, turn: &str) -> TurnWork {
+/// The work of the Turn `turn` names, as `snapshot` of a Session on the Remote
+/// `remote` names holds it, or none read yet.
+pub(crate) fn turn_work(snapshot: Option<&SessionSnapshot>, turn: &str, remote: &str) -> TurnWork {
     let Some(snapshot) = snapshot else {
         return TurnWork {
             title: String::new(),
@@ -152,7 +155,7 @@ pub(crate) fn turn_work(snapshot: Option<&SessionSnapshot>, turn: &str) -> TurnW
             Entry::Activity(activity) => Some(WorkItem {
                 id: format!("activity:{}", activity.id()),
                 kind: WorkKind::Row {
-                    row: row(activity, read.directory()),
+                    row: row(activity, read.directory(), remote),
                 },
             }),
             Entry::Message(message) => match message.role {
@@ -229,8 +232,8 @@ fn said(title: String, words: &str) -> ActivityDetail {
 }
 
 /// The row `activity` stands as among its Turn's work, in a Session whose
-/// execution directory is `directory`.
-pub(crate) fn row(activity: &Activity, directory: &Path) -> WorkRow {
+/// execution directory is `directory` on the Remote `remote` names.
+pub(crate) fn row(activity: &Activity, directory: &Path, remote: &str) -> WorkRow {
     let detail = Tap::Detail {
         activity: activity.id().to_string(),
     };
@@ -408,20 +411,38 @@ pub(crate) fn row(activity: &Activity, directory: &Path) -> WorkRow {
                 detail.clone(),
             )
         },
+        // The way into the Subagent's own Session: its name over what it was
+        // asked, its Marker the row's tone, and its outcome where the Marker
+        // would not tell, with how long it worked, at the right.
         Activity::Subagent {
             status,
             name,
             description,
             duration_ms,
+            session_id,
             ..
         } => WorkRow {
             line: Some(one_line(description)).filter(|line| !line.is_empty()),
-            trailing: duration_ms.map(humanized_duration),
+            trailing: Some(
+                match status {
+                    ActivityStatus::Failed => Some("Failed"),
+                    ActivityStatus::Interrupted => Some("Stopped"),
+                    _ => None,
+                }
+                .map(str::to_owned)
+                .into_iter()
+                .chain(duration_ms.map(humanized_duration))
+                .collect::<Vec<_>>()
+                .join(" · "),
+            )
+            .filter(|trailing| !trailing.is_empty()),
             ..row(
                 glyphs::SUBAGENT,
                 one_line(name),
                 (*status).into(),
-                detail.clone(),
+                Tap::Session {
+                    session: format!("{remote}/{session_id}"),
+                },
             )
         },
         Activity::WatchOutcome {
@@ -1271,7 +1292,7 @@ fn reroute_sentence(reroute: &shaman_protocol::Reroute) -> String {
 
 /// What a Provider is called, by those Shaman ships; any other by its
 /// identifier.
-fn provider_name(provider: &ProviderId) -> String {
+pub(crate) fn provider_name(provider: &ProviderId) -> String {
     match provider.as_str() {
         "claude" => "Claude".to_owned(),
         "codex" => "Codex".to_owned(),

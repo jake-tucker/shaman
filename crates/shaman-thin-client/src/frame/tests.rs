@@ -55,6 +55,7 @@ fn framed(snapshot: &SessionSnapshot, local: &Local, unreachable: bool) -> Sessi
         None,
         local,
         unreachable,
+        &InTree::default(),
     )
 }
 
@@ -68,7 +69,7 @@ fn a_working_session_has_a_bar_saying_so_since_it_began_with_stop_and_a_composer
             words: "Working".to_owned(),
             since: Some(UNIX_EPOCH + Duration::from_secs(90)),
             watching: None,
-            stop: "Stop".to_owned(),
+            stop: Some("Stop".to_owned()),
             review: None,
         })
     );
@@ -98,7 +99,7 @@ fn a_monitoring_session_names_its_watch_or_counts_them() {
     assert_eq!(bar.words, "Monitoring");
     assert_eq!(bar.since, Some(UNIX_EPOCH + Duration::from_secs(30)));
     assert_eq!(bar.watching.as_deref(), Some("the nightly backup"));
-    assert_eq!(bar.stop, "Stop");
+    assert_eq!(bar.stop.as_deref(), Some("Stop"));
 
     monitoring.watches.push(WatchSummary {
         description: "the deploy".to_owned(),
@@ -130,6 +131,7 @@ fn on_an_unreachable_origin_the_composer_says_nothing_sent_goes_anywhere_until_i
         None,
         &Local::default(),
         true,
+        &InTree::default(),
     );
     assert_eq!(
         one.composer
@@ -143,6 +145,7 @@ fn on_an_unreachable_origin_the_composer_says_nothing_sent_goes_anywhere_until_i
         None,
         &Local::default(),
         true,
+        &InTree::default(),
     );
     assert_eq!(
         named
@@ -168,6 +171,7 @@ fn a_subagents_session_and_one_gone_have_no_composer() {
         Some("This session no longer exists".to_owned()),
         &Local::default(),
         false,
+        &InTree::default(),
     );
     assert_eq!(
         (gone.composer, gone.bar, gone.title.as_str()),
@@ -355,7 +359,7 @@ fn an_approval_dismissed_waits_behind_an_orange_bar_whose_review_brings_it_back(
             words: "Approval waiting".to_owned(),
             since: None,
             watching: None,
-            stop: "Stop".to_owned(),
+            stop: Some("Stop".to_owned()),
             review: Some("Review".to_owned()),
         })
     );
@@ -384,4 +388,107 @@ fn on_an_unreachable_origin_an_approval_waits_out_of_sight_with_nothing_to_revie
     assert_eq!(bar.kind, BarKind::Waiting);
     assert_eq!(bar.words, "Approval waiting");
     assert_eq!(bar.review, None);
+}
+
+fn subagent_row(name: &str, status: ActivityStatus) -> Activity {
+    Activity::Subagent {
+        id: shaman_protocol::ActivityId::new(),
+        turn_id: shaman_protocol::TurnId::new(),
+        status,
+        name: name.to_owned(),
+        description: String::new(),
+        model: None,
+        session_id: SessionId::new(),
+        brokered: false,
+        duration_ms: None,
+        delegated_at: None,
+    }
+}
+
+#[test]
+fn after_a_turn_settles_with_subagents_working_the_bar_names_what_it_waits_on() {
+    let mut waiting = working();
+    waiting.session.status = SessionStatus::Idle;
+    waiting.activities = vec![
+        subagent_row("Explorer", ActivityStatus::Active),
+        subagent_row("Writer", ActivityStatus::Completed),
+    ];
+    let bar = framed(&waiting, &Local::default(), false)
+        .bar
+        .expect("a bar");
+    assert_eq!(bar.words, "Waiting on Explorer");
+    assert_eq!(bar.kind, BarKind::Working);
+    assert_eq!(bar.stop.as_deref(), Some("Stop"), "Stop there stops them");
+
+    waiting
+        .activities
+        .push(subagent_row("Reviewer", ActivityStatus::Active));
+    assert_eq!(
+        framed(&waiting, &Local::default(), false)
+            .bar
+            .map(|bar| bar.words)
+            .as_deref(),
+        Some("Waiting on 2 subagents")
+    );
+
+    // While its Turn works of its own, it is Working.
+    waiting.session.status = SessionStatus::Active;
+    assert_eq!(
+        framed(&waiting, &Local::default(), false)
+            .bar
+            .map(|bar| bar.words)
+            .as_deref(),
+        Some("Working")
+    );
+}
+
+#[test]
+fn a_subagents_session_is_named_by_the_subagent_and_offers_stop_only_where_it_stops_alone() {
+    let mut subagent = working();
+    subagent.session.parent = Some(SessionId::new());
+    let in_tree = |stoppable: bool| InTree {
+        button: Some(TreeButton {
+            working: Some("1".to_owned()),
+            label: "1 subagent, 1 working".to_owned(),
+        }),
+        subagent: true,
+        named: Some("Explorer · haiku".to_owned()),
+        stoppable,
+    };
+    let frame = |snapshot: Option<&SessionSnapshot>, stoppable: bool| {
+        frame_of(
+            Some(&listed(None)),
+            snapshot,
+            None,
+            &Local::default(),
+            false,
+            &in_tree(stoppable),
+        )
+    };
+    let stops = frame(Some(&subagent), true);
+    assert_eq!(stops.place, "Explorer · haiku");
+    assert_eq!(stops.tree, in_tree(true).button);
+    assert_eq!(stops.bar.and_then(|bar| bar.stop).as_deref(), Some("Stop"));
+    let cannot = frame(Some(&subagent), false);
+    assert_eq!(
+        cannot.bar.expect("its bar").stop,
+        None,
+        "and nothing says why"
+    );
+    assert_eq!(cannot.composer, None);
+
+    // Known from its tree before it has been read, it takes no Prompt.
+    assert_eq!(frame(None, false).composer, None);
+
+    // Its Watches it stops whatever its Provider can do.
+    let mut monitoring = snapshot();
+    monitoring.session.parent = Some(SessionId::new());
+    monitoring.session.monitoring_since = Some(SessionTimestamp(30_000));
+    assert_eq!(
+        frame(Some(&monitoring), false)
+            .bar
+            .and_then(|bar| bar.stop)
+            .as_deref(),
+        Some("Stop")
+    );
 }
