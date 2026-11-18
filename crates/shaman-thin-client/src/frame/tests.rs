@@ -581,3 +581,33 @@ fn a_questionnaire_dismissed_waits_behind_an_orange_bar_saying_so() {
     assert_eq!(bar.words, "Questionnaire waiting");
     assert_eq!(bar.review.as_deref(), Some("Review"));
 }
+
+#[test]
+fn the_frame_lists_every_intervention_still_waiting_presented_dismissed_or_out_of_sight() {
+    let id = ApprovalId::new();
+    let snapshot = approving(id);
+    let mut local = Local::default();
+    local.reconcile(&snapshot);
+    assert_eq!(
+        framed(&snapshot, &local, false).waiting,
+        [id.to_string()],
+        "presented"
+    );
+    local.dismiss();
+    assert_eq!(
+        framed(&snapshot, &local, false).waiting,
+        [id.to_string()],
+        "dismissed"
+    );
+    assert_eq!(
+        framed(&snapshot, &local, true).waiting,
+        [id.to_string()],
+        "out of sight on an Unreachable Origin"
+    );
+    assert!(
+        framed(&working(), &Local::default(), false)
+            .waiting
+            .is_empty(),
+        "answered, it is listed no more"
+    );
+}

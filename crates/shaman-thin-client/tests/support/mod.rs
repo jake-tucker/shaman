@@ -150,7 +150,14 @@ impl ServingServer {
     /// Every Questionnaire submission a scripted Session's Provider has been
     /// delivered, in the order delivered.
     pub fn submissions(&self) -> Vec<(QuestionnaireId, QuestionnaireSubmission)> {
-        self.submissions.lock().unwrap().clone()
+        self.submissions.delivered.lock().unwrap().clone()
+    }
+
+    /// Has a scripted Session's Provider refuse the next `count`
+    /// Questionnaire submissions, as one that took none of them does: the
+    /// Questionnaire stays live, to be answered again.
+    pub fn refuse_submissions(&self, count: usize) {
+        self.submissions.refusing.store(count, Ordering::Release);
     }
 
     /// Every Decision a scripted Session's Provider has been delivered, in
@@ -973,8 +980,14 @@ pub type Script = mpsc::UnboundedSender<Result<AttributedProviderEvent, Provider
 type Decisions = Arc<Mutex<Vec<(ApprovalId, Decision)>>>;
 
 /// The Questionnaire submissions every scripted Session's Provider was
-/// delivered.
-type Submissions = Arc<Mutex<Vec<(QuestionnaireId, QuestionnaireSubmission)>>>;
+/// delivered, and how many more it refuses.
+type Submissions = Arc<Submitted>;
+
+#[derive(Default)]
+struct Submitted {
+    delivered: Mutex<Vec<(QuestionnaireId, QuestionnaireSubmission)>>,
+    refusing: std::sync::atomic::AtomicUsize,
+}
 
 /// A Provider whose Sessions, but a scripted one, never start: one begun in
 /// a directory named [`WORKING`] waits on it for ever, and any other fails.
@@ -1100,7 +1113,25 @@ impl ProviderSession for ScriptedSession {
         id: QuestionnaireId,
         submission: QuestionnaireSubmission,
     ) -> ProviderFuture<'_, ()> {
-        self.submissions.lock().unwrap().push((id, submission));
+        let refused = self
+            .submissions
+            .refusing
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |left| {
+                left.checked_sub(1)
+            })
+            .is_ok();
+        if refused {
+            return Box::pin(async {
+                Err(ProviderError::questionnaire_rejected(
+                    "The agent did not take the answers.",
+                ))
+            });
+        }
+        self.submissions
+            .delivered
+            .lock()
+            .unwrap()
+            .push((id, submission));
         Box::pin(async { Ok(()) })
     }
 

@@ -47,6 +47,12 @@ pub struct SessionFrame {
     /// The button in the navigation bar that opens the tree the Session
     /// belongs to, where that tree has Subagents.
     pub tree: Option<TreeButton>,
+    /// The references of every one of the Session's own Interventions still
+    /// live, oldest first: presented, dismissed, out of sight on an
+    /// Unreachable Origin, or answered and on its way to the Agent, which may
+    /// refuse it. What the screen holds of one it no longer lists, such as
+    /// answers half given, is let go.
+    pub waiting: Vec<String>,
 }
 
 /// The bar above the composer: what the Session's work is doing, since when,
@@ -238,6 +244,7 @@ pub(crate) fn frame_of(
             queued: Vec::new(),
             intervention: None,
             tree: None,
+            waiting: Vec::new(),
         };
     };
     // A Subagent's Session, which no listing carries, is titled by what its
@@ -284,6 +291,7 @@ pub(crate) fn frame_of(
             queued: Vec::new(),
             intervention: None,
             tree: None,
+            waiting: Vec::new(),
         };
     }
     let working = snapshot.is_some_and(|snapshot| snapshot.working_since().is_some());
@@ -317,6 +325,12 @@ pub(crate) fn frame_of(
         queued: queued(snapshot, local),
         intervention,
         tree: tree.button.clone(),
+        waiting: snapshot.map_or_else(Vec::new, |snapshot| {
+            intervention::live(snapshot)
+                .into_iter()
+                .map(InterventionId::reference)
+                .collect()
+        }),
     }
 }
 

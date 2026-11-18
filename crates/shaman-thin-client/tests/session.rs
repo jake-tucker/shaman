@@ -1900,3 +1900,66 @@ async fn answers_to_a_questionnaire_no_longer_waiting_are_refused() {
     phone.shutdown();
     desk.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn answers_its_provider_refuses_present_it_again_saying_so_and_it_stays_listed_until_answered()
+ {
+    let desk = ServingServer::start("thin-questionnaire-rejected").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let (phone, session, _row, reading, script) =
+        scripted_through(&desk, &gate, &holder, "Run the tests somewhere").await;
+    let asked = where_and_token();
+    ask_questionnaire(&script, &asked);
+    let first = reading
+        .frame_until(|frame| presents_questionnaire(frame, &asked))
+        .await;
+    assert_eq!(first.waiting, [asked.id.to_string()]);
+    assert_eq!(
+        presented_questionnaire(&first).and_then(|q| q.note.clone()),
+        None
+    );
+
+    desk.refuse_submissions(1);
+    let answers = || vec![given(&["local"], ""), given(&[], "hunter2")];
+    let refused = reading
+        .session
+        .answer(asked.id.to_string(), answers())
+        .await;
+    assert!(
+        matches!(refused, Err(ActError::Refused { .. })),
+        "refused in the Server's words: {refused:?}"
+    );
+    assert!(desk.submissions().is_empty(), "nothing was taken");
+    assert_eq!(
+        questionnaire_outcome(&desk, session, &asked).await.0,
+        QuestionnaireOutcome::SubmissionRejected
+    );
+    // It presents itself again, saying the answers did not go, and stays
+    // listed, so the answers half given on the phone are kept to send again.
+    let again = reading
+        .frame_until(|frame| {
+            presented_questionnaire(frame).is_some_and(|presented| presented.note.is_some())
+        })
+        .await;
+    assert_eq!(
+        presented_questionnaire(&again).and_then(|presented| presented.note.clone()),
+        Some("Your answers were not delivered. Look them over and send them again.".to_owned())
+    );
+    assert_eq!(again.waiting, [asked.id.to_string()]);
+
+    reading
+        .session
+        .answer(asked.id.to_string(), answers())
+        .await
+        .expect("answered again, and taken");
+    assert_eq!(desk.submissions().len(), 1);
+    // Answered, it is listed no more, once its Server is seen to have
+    // delivered it: on its way, it is no longer presented and still listed.
+    reading
+        .frame_until(|frame| frame.intervention.is_none() && frame.waiting.is_empty())
+        .await;
+
+    phone.shutdown();
+    desk.shutdown().await;
+}

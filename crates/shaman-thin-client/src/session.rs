@@ -11,9 +11,9 @@
 //!
 //! Its acts are a Prompt sent, to steer the working Turn or begin one, or
 //! queued for after it; a queued Prompt steered now or withdrawn; a stop; a
-//! Decision on an Approval; and a Questionnaire answered or declined whole. A Prompt sent stands at once as a bubble marked
-//! as sending; where it fails it goes, and its text is given back to the
-//! composer's draft. Its own Interventions are dismissed and reviewed on the
+//! Decision on an Approval; and a Questionnaire answered or declined whole.
+//! A Prompt sent stands at once as a bubble marked as sending; where it fails
+//! it goes, and its text is given back to the composer's draft. Its own Interventions are dismissed and reviewed on the
 //! screen alone, asking nothing of the Server.
 //!
 //! While a screen pushed from it is up, a Turn's work or an Activity's

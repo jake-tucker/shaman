@@ -40,6 +40,16 @@ pub(crate) enum InterventionId {
     Questionnaire(QuestionnaireId),
 }
 
+impl InterventionId {
+    /// The reference its sheet is handed it under.
+    pub(crate) fn reference(self) -> String {
+        match self {
+            Self::Approval(id) => id.to_string(),
+            Self::Questionnaire(id) => id.to_string(),
+        }
+    }
+}
+
 /// An Approval waiting on a Decision: what it asks, and the Decisions
 /// offered.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -210,7 +220,31 @@ pub(crate) const REVIEW: &str = "Review";
 /// working, as the TUI finds them; each as a card reads "Waiting on you"
 /// for.
 pub(crate) fn pending(snapshot: &SessionSnapshot) -> Vec<(InterventionId, &Activity)> {
-    let waiting = snapshot.pending_approvals.iter().collect::<HashSet<_>>();
+    found(snapshot, false)
+}
+
+/// The Session's own Interventions still live, oldest first in Transcript
+/// order: those [`pending`] finds, and those whose answer is on its way to
+/// the Agent, which may yet be refused and asked again.
+pub(crate) fn live(snapshot: &SessionSnapshot) -> Vec<InterventionId> {
+    found(snapshot, true)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// What [`pending`] finds, and with `submitting` those on their way too.
+fn found(snapshot: &SessionSnapshot, submitting: bool) -> Vec<(InterventionId, &Activity)> {
+    let waiting = snapshot
+        .pending_approvals
+        .iter()
+        .chain(
+            submitting
+                .then_some(&snapshot.submitting_approvals)
+                .into_iter()
+                .flatten(),
+        )
+        .collect::<HashSet<_>>();
     let working = snapshot
         .turns
         .iter()
@@ -230,10 +264,15 @@ pub(crate) fn pending(snapshot: &SessionSnapshot) -> Vec<(InterventionId, &Activ
                 questionnaire,
                 outcome,
                 ..
-            } if outcome.is_answerable() && working.contains(turn_id) => Some((
-                *id,
-                (InterventionId::Questionnaire(questionnaire.id), activity),
-            )),
+            } if (outcome.is_answerable()
+                || (submitting && *outcome == QuestionnaireOutcome::Submitting))
+                && working.contains(turn_id) =>
+            {
+                Some((
+                    *id,
+                    (InterventionId::Questionnaire(questionnaire.id), activity),
+                ))
+            }
             _ => None,
         })
         .collect::<HashMap<_, _>>();

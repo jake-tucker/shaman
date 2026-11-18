@@ -727,3 +727,35 @@ fn a_reference_handed_back_names_its_questionnaire() {
     assert_eq!(questionnaire_referenced(&id.to_string()), Some(id));
     assert_eq!(questionnaire_referenced("not a questionnaire"), None);
 }
+
+#[test]
+fn an_answer_on_its_way_is_live_though_no_longer_pending_and_a_settled_one_is_neither() {
+    let asked = questionnaire(vec![question("palette", "Which?", Vec::new())]);
+    let approval = approval(command("cargo build"), None);
+    let submitting = holding(&[
+        Held::Questionnaire(&asked, QuestionnaireOutcome::Submitting),
+        Held::Approval(&approval, ApprovalOutcome::Submitting),
+    ]);
+    assert!(pending(&submitting).is_empty());
+    assert_eq!(
+        live(&submitting),
+        [
+            InterventionId::Questionnaire(asked.id),
+            InterventionId::Approval(approval.id)
+        ],
+        "either may yet be refused and asked again"
+    );
+    let settled = holding(&[
+        Held::Questionnaire(&asked, QuestionnaireOutcome::Answered),
+        Held::Approval(&approval, ApprovalOutcome::Decided),
+    ]);
+    assert!(live(&settled).is_empty());
+    let ended = holding_in(
+        TurnStatus::Interrupted,
+        &[Held::Questionnaire(
+            &asked,
+            QuestionnaireOutcome::Submitting,
+        )],
+    );
+    assert!(live(&ended).is_empty(), "a Turn that ended takes nothing");
+}
