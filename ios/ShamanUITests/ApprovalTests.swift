@@ -53,9 +53,12 @@ final class ApprovalTests: XCTestCase {
 
   @MainActor
   func testAnApprovalPresentsItselfTakesNoTapForAMomentAndIsAnsweredThere() {
-    let app = launched("paired", opening: "workstation-key/3", arming: 3)
+    let app = launched("paired", opening: "workstation-key/3", arming: 5)
+    // Looked at the moment it appears, before anything slower is asked of the screen.
+    let accept = element("approval.acceptOnce", in: app)
+    XCTAssertTrue(accept.waitForExistence(timeout: 10))
+    XCTAssertFalse(accept.isEnabled, "it takes no tap for a moment after it appears")
     let title = element("approval.title", in: app)
-    XCTAssertTrue(title.waitForExistence(timeout: 10))
     XCTAssertEqual(title.label, "Run this command?")
     XCTAssertEqual(
       facts(in: app),
@@ -64,12 +67,10 @@ final class ApprovalTests: XCTestCase {
         "Directory, ~/Projects/shaman/.worktrees/peer-version-floor",
         "Reason, Needs network access outside the sandbox.",
       ])
-    let accept = element("approval.acceptOnce", in: app)
     XCTAssertEqual(accept.label, "Accept once")
     XCTAssertEqual(element("approval.decline", in: app).label, "Decline")
     XCTAssertEqual(element("approval.declineAndInterrupt", in: app).label, "Decline and interrupt")
     XCTAssertEqual(element("approval.acceptForSession", in: app).label, "Accept for session")
-    XCTAssertFalse(accept.isEnabled, "it takes no tap for a moment after it appears")
     attach(app, "An approval presenting itself")
 
     wait(for: "isEnabled == true", accept)
