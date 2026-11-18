@@ -17,6 +17,7 @@ path = "tests/relay_system.rs"
 [workspace]
 members = [
     "crates/shaman-client",
+    "crates/shaman-icons",
     "crates/shaman-pairing",
     "crates/shaman-private-files",
     "crates/shaman-protocol",
@@ -27,10 +28,12 @@ members = [
 ]
 # The Relay, the protocol it shares with the Server, the protocol every Client shares with the Server, the readers and
 # commands every Client reads a Server with, the redeeming side of a Pairing, the text and private-file helpers they
-# share, and the thin Client's core are linted and tested beside Shaman itself.
+# share, the Icon Catalog every Client draws Icons from, and the thin Client's core are linted and tested beside Shaman
+# itself.
 default-members = [
     ".",
     "crates/shaman-client",
+    "crates/shaman-icons",
     "crates/shaman-pairing",
     "crates/shaman-private-files",
     "crates/shaman-protocol",
@@ -43,6 +46,7 @@ default-members = [
 [dependencies]
 shaman-build-id = { path = "crates/shaman-build-id" }
 shaman-client = { path = "crates/shaman-client" }
+shaman-icons = { path = "crates/shaman-icons" }
 shaman-pairing = { path = "crates/shaman-pairing" }
 shaman-protocol = { path = "crates/shaman-protocol" }
 shaman-private-files = { path = "crates/shaman-private-files" }

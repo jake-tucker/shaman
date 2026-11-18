@@ -26,14 +26,6 @@ use super::{
 const ALL_WORKSPACES: &str = "All workspaces";
 const EVERYWHERE: &str = "Everywhere";
 
-/// The plain folder glyph a scope entry narrowed to one Workspace draws in
-/// place of its own derived Icon. Kept in step with
-/// `crate::tui::render::NF_COD_FOLDER` by hand: the two live in different
-/// modules for the same reason a scope entry resolves its own Icon here
-/// rather than in `render` — this module already owns every other fact a
-/// scope entry draws.
-const SCOPE_ENTRY_FOLDER_GLYPH: char = '\u{ea83}';
-
 /// The new-Session affordance beside the selector, which opens the Landing in
 /// the current Workspace exactly as `/new` does. It shares the selector's line,
 /// so it is drawn — and pressed — within its own columns of it.
@@ -2354,7 +2346,7 @@ impl Sidebar {
                                     .icon
                                     .as_deref()
                                     .and_then(crate::icon_catalog::glyph)
-                                    .unwrap_or(SCOPE_ENTRY_FOLDER_GLYPH),
+                                    .unwrap_or(crate::icon_catalog::FOLDER),
                             ),
                             SidebarListingScope::Everywhere
                             | SidebarListingScope::AllWorkspaces => None,

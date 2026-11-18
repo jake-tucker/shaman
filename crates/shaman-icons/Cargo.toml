@@ -1,0 +1,15 @@
+[package]
+name = "shaman-icons"
+# Never published.
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# The Icon Catalog and the fixed glyphs beside it: what turns an Icon's name into the Nerd Font glyph it is drawn with,
+# the plain glyphs that stand where an Icon is absent, and a Provider's glyph. The Server, the TUI and a thin Client's
+# core share it, so it builds wherever a thin Client runs (iOS) and holds no I/O.
+
+[dev-dependencies]
+serde_json = "1.0.143"
+# Reads the Nerd Font the iOS app bundles, so a test sees every glyph this crate resolves is one that font draws.
+ttf-parser = "0.25.1"

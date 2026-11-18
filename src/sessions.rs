@@ -443,7 +443,7 @@ pub(crate) struct DeletedSession {
 /// whatever that copy carried before: the table is authoritative, and every
 /// copy this store hands out is read against it. The Sidekick Workspace,
 /// where `sidekick` names it, is the one Workspace with an Icon to wear where
-/// the table holds none: its standing default ([`crate::sidekick::ICON`]).
+/// the table holds none: its standing default ([`crate::icon_catalog::SIDEKICK_ICON`]).
 fn dress_workspace(
     workspaces: &HashMap<WorkspaceId, StoredWorkspace>,
     sidekick: Option<&crate::sidekick::SidekickWorkspace>,
@@ -453,7 +453,7 @@ fn dress_workspace(
     workspace.icon = stored.and_then(|stored| stored.icon.clone()).or_else(|| {
         sidekick
             .is_some_and(|sidekick| sidekick.holds(workspace))
-            .then(|| crate::sidekick::ICON.to_owned())
+            .then(|| crate::icon_catalog::SIDEKICK_ICON.to_owned())
     });
     workspace.description = stored.and_then(|stored| stored.description.clone());
 }

@@ -106,14 +106,10 @@ const LANDING_LOGO: [&str; 7] = [
     "  ▄▄▀       ▀▄                  ▀       ▄▄▀",
     "▀▀           ▀                        ▀▀",
 ];
-/// Nerd Fonts `nf-cod-folder` (Codicons folder).
-pub(super) const NF_COD_FOLDER: char = '\u{ea83}';
 /// Nerd Fonts `nf-cod-repo` (Codicons repo).
 const NF_COD_REPO: char = '\u{ea62}';
 /// Nerd Fonts `nf-fa-folder_tree` (Font Awesome folder tree).
 const NF_FA_FOLDER_TREE: char = '\u{ef81}';
-/// Nerd Fonts `nf-md-monitor` (Material Design monitor).
-const NF_MD_MONITOR: char = '\u{f0379}';
 /// Nerd Fonts `nf-cod-git_branch` (Codicons git-branch).
 pub(super) const NF_COD_GIT_BRANCH: char = '\u{ec6f}';
 /// Nerd Fonts `nf-cod-worktree` (Codicons worktree).
@@ -3121,7 +3117,7 @@ fn directory_browser_row_text(
         .and_then(crate::icon_catalog::glyph);
     let (glyph, word) = match (icon, source_control) {
         (Some(icon), _) => (icon, Some("[workspace]")),
-        (None, None | Some(DirectorySourceControl::Plain)) => (NF_COD_FOLDER, None),
+        (None, None | Some(DirectorySourceControl::Plain)) => (crate::icon_catalog::FOLDER, None),
         (None, Some(_)) => (NF_COD_REPO, Some("[repository]")),
     };
     let mut text = format!("{lead}{}", icon_label(known.show_icons, glyph, name));
@@ -3562,7 +3558,11 @@ fn workspace_picker_row_line(
         .chain(unavailable)
         .map(|mark| separator.width() + mark.width())
         .sum::<usize>();
-    let name = icon_label(show_icons, row.icon.unwrap_or(NF_COD_FOLDER), &row.name);
+    let name = icon_label(
+        show_icons,
+        row.icon.unwrap_or(crate::icon_catalog::FOLDER),
+        &row.name,
+    );
     let name = truncate_to_width(
         &name,
         width
@@ -6034,7 +6034,9 @@ fn sidebar_entry_lines(
                         .reference
                         .origin
                         .remote_name()
-                        .map_or(NF_MD_MONITOR, |remote| remote_glyph(state, remote)),
+                        .map_or(crate::icon_catalog::MONITOR, |remote| {
+                            remote_glyph(state, remote)
+                        }),
                 },
                 sidebar_active_slot(
                     row.standing,
@@ -6238,7 +6240,7 @@ fn sidebar_active_row_lines(
     } else {
         icon_label(
             show_icons,
-            workspace_icon.unwrap_or(NF_COD_FOLDER),
+            workspace_icon.unwrap_or(crate::icon_catalog::FOLDER),
             &workspace,
         )
     };
@@ -8269,7 +8271,7 @@ fn header_orientation_readings(
                 .icon
                 .as_deref()
                 .and_then(crate::icon_catalog::glyph)
-                .unwrap_or(NF_COD_FOLDER);
+                .unwrap_or(crate::icon_catalog::FOLDER);
             let icon = format!("{workspace_icon} ");
             readings.push(match state.session_reference.as_ref() {
                 Some(reference) => ExecutionReading::pressable(
@@ -8965,7 +8967,9 @@ fn connection_status_text(state: &TuiState, detail: ResponsiveDetail) -> String 
 /// The glyph the Remote `name` is drawn beside: the Icon chosen for it, or
 /// the plain monitor where none was.
 fn remote_glyph(state: &TuiState, name: &str) -> char {
-    state.remote_icon(name).unwrap_or(NF_MD_MONITOR)
+    state
+        .remote_icon(name)
+        .unwrap_or(crate::icon_catalog::MONITOR)
 }
 
 /// The Workspace an execution context names: its Remote, when it has one, and
@@ -8989,7 +8993,7 @@ fn workspace_readings(
         .icon
         .as_deref()
         .and_then(crate::icon_catalog::glyph)
-        .unwrap_or(NF_COD_FOLDER);
+        .unwrap_or(crate::icon_catalog::FOLDER);
     let path_budget = width
         .saturating_sub(remote.width() + separator.width())
         .saturating_sub(icon_label(show_icons, workspace_icon, "").width())

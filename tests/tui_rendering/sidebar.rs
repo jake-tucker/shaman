@@ -47,9 +47,8 @@ use shaman::{
 /// window.
 const WINDOWED: u16 = 13;
 
-/// The glyph `md-bug` resolves to, pinned here rather than read through
-/// `icon_catalog` because integration tests are a separate crate and cannot
-/// reach it; see the Icon Catalog API notes for why literal names are used.
+/// The glyph `md-bug` resolves to, written out rather than read through
+/// `shaman_icons`, so these tests see the very glyph the TUI draws.
 const MD_BUG: char = '\u{f00e4}';
 
 #[test]

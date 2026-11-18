@@ -149,11 +149,6 @@ impl ProviderRuntime for CopilotRuntime {
         "Copilot"
     }
 
-    fn nerd_font_icon(&self) -> Option<char> {
-        // Nerd Fonts `nf-cod-copilot` (Codicons Copilot).
-        Some('\u{ec1e}')
-    }
-
     // `session.history.compact` compacts a Session on request, keeping what its
     // `customInstructions` say the summary should.
     fn manual_compaction(&self) -> ManualCompaction {

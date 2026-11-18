@@ -37,11 +37,6 @@ const DIRECTORY: &str = "sidekick";
 /// platform gives up on a path leading through as many.
 const RELOCATION_HOPS: usize = 40;
 
-/// The Icon the Sidekick Workspace is named beside wherever it has none of
-/// its own: a standing default rather than a stored one, so it is never
-/// derived and a user's own choice still replaces it.
-pub(crate) const ICON: &str = "md-robot";
-
 /// Where a Server's Sidekick Workspace is.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SidekickWorkspace {
@@ -255,11 +250,6 @@ mod tests {
         );
         assert!(sidekick.encloses(&made.join("atlas")));
         assert!(!sidekick.encloses(&data.join("atlas")));
-    }
-
-    #[test]
-    fn the_sidekick_workspaces_icon_is_one_the_icon_catalog_carries() {
-        assert!(crate::icon_catalog::glyph(ICON).is_some());
     }
 
     /// A Sidekick Workspace relocated by a symlink to a place not there yet

@@ -226,7 +226,7 @@ async fn an_answered_errand_updates_the_open_session_title_and_icon() {
     );
     assert_eq!(
         schema["properties"]["icon"]["enum"],
-        json!(shaman::icon_catalog_names()),
+        json!(shaman_icons::names()),
         "the reply schema carries the Icon Catalog as a strict enum: {schema}"
     );
     errand.succeed(json!({

@@ -5,7 +5,6 @@ mod change_count;
 pub mod cli;
 mod clock;
 mod errands;
-mod icon_catalog;
 pub mod logging;
 pub mod login_start;
 pub mod managed_client;
@@ -37,13 +36,7 @@ pub use serving::IdentityStoreChoice;
 use shaman_pairing::{self as pairing, signer};
 pub use shaman_protocol as protocol;
 pub use shaman_protocol::{approval, questionnaire};
+// The Icon Catalog, the plain glyphs standing where an Icon is absent and the Providers' glyphs, which a thin Client's
+// core resolves alike.
+use shaman_icons as icon_catalog;
 use shaman_text::{ansi, shown_text};
-
-/// The Icon Catalog's names, in listing order — the same list the Title
-/// Errand's reply schema enumerates an Icon over. The Catalog itself stays
-/// crate-private; this is a deliberate, narrow seam so integration tests (a
-/// separate crate) can assert a schema's `icon` enum matches it without
-/// reaching into `icon_catalog` itself.
-pub fn icon_catalog_names() -> &'static [&'static str] {
-    icon_catalog::names()
-}

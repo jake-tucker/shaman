@@ -65,18 +65,8 @@ const NOT_CONFIRMED: &str = "not confirmed";
 /// What stands between a Remote's name and the Workspace it leads.
 const REMOTE_SEPARATOR: &str = " · ";
 
-/// The glyph a Remote is named beside, where Icons are drawn. It mirrors
-/// `crate::tui::render::NF_MD_MONITOR` by hand, as `FOLDER_GLYPH` does its
-/// own.
-const REMOTE_GLYPH: char = '\u{f0379}';
-
 /// What the Section is headed where a Sidekick's Session heads the tree.
 const SESSIONS: &str = "Sessions";
-
-/// The glyph a Workspace without an Icon is named beside: the plain folder
-/// the Sidebar and the Workspace Picker draw. It mirrors
-/// `crate::tui::render::NF_COD_FOLDER` by hand, as the Sidebar's does.
-const FOLDER_GLYPH: char = '\u{ea83}';
 
 impl Section for SubagentsSection {
     fn name(&self) -> &'static str {
@@ -534,12 +524,12 @@ impl<'a> SessionParts<'a> {
         let icon = (context.show_icons && !workspace.is_empty()).then(|| {
             self.workspace_icon
                 .and_then(crate::icon_catalog::glyph)
-                .unwrap_or(FOLDER_GLYPH)
+                .unwrap_or(crate::icon_catalog::FOLDER)
         });
         LocationParts {
             guides,
             remote: self.origin,
-            remote_icon: context.show_icons.then_some(REMOTE_GLYPH),
+            remote_icon: context.show_icons.then_some(crate::icon_catalog::MONITOR),
             icon,
             workspace,
         }

@@ -6,8 +6,10 @@
 //! table's name rather than as a codepoint.
 //!
 //! Every entry's codepoint is pinned in `tests` against Nerd Fonts' published
-//! `glyphnames.json`, checked in under `tests/fixtures`, so a typo here fails
-//! the build rather than drawing as a missing glyph.
+//! `glyphnames.json`, checked in under this crate's `tests/fixtures`, so a typo
+//! here fails the build rather than drawing as a missing glyph; and each is
+//! looked up in the Symbols Nerd Font the iOS app bundles, so a Catalog edit
+//! the font cannot draw fails on every platform rather than only on a phone.
 //!
 //! Glyphs come mostly from Material Design (`md-*`) for a consistent stroke
 //! style, with Devicons (`dev-*`) and Seti (`seti-*`) filling in the
@@ -20,7 +22,7 @@ use std::sync::LazyLock;
 /// standing for what a Session's work is about never sits beside one standing
 /// for what it is written in.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum IconGroup {
+pub enum IconGroup {
     /// What a Session's or Workspace's work is about: a bug, a feature, a
     /// test, and the like.
     Subject,
@@ -32,21 +34,21 @@ pub(crate) enum IconGroup {
 /// One glyph the Icon Catalog offers, addressable by its `name` — the form an
 /// Icon is derived, stored, and carried over the protocol as.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct IconEntry {
+pub struct IconEntry {
     /// The Catalog name, e.g. `md-bug` or `dev-rust`. Stable once shipped: a
     /// stored Icon that no longer resolves draws as absent rather than as
     /// something else, so renaming an entry is a retirement, not an edit.
-    pub(crate) name: &'static str,
+    pub name: &'static str,
     /// The Nerd Font codepoint this name resolves to, pinned by
     /// [`tests::every_codepoint_is_pinned_to_the_nerd_fonts_fixture`] against
     /// the fixture in `tests/fixtures/glyphnames.json`.
-    pub(crate) glyph: char,
+    pub glyph: char,
     /// Which half of the Catalog this entry belongs to. The Icon Picker's
     /// grid groups by it.
-    pub(crate) group: IconGroup,
+    pub group: IconGroup,
     /// Lowercase words [`search`] matches against, in addition to `name`
     /// itself.
-    pub(crate) keywords: &'static [&'static str],
+    pub keywords: &'static [&'static str],
 }
 
 /// The Icon Catalog's entries, in the Icon Picker's deliberate order: every
@@ -1413,11 +1415,11 @@ static CATALOG: &[IconEntry] = &[
 static NAMES: LazyLock<Vec<&'static str>> =
     LazyLock::new(|| CATALOG.iter().map(|entry| entry.name).collect());
 
-/// The glyph a Catalog `name` resolves to, or `None` for a name the Catalog
-/// does not — or no longer — carry. What a client draws an Icon with; an
-/// unresolved name draws as no Icon at all, which is the point of storing a
-/// name rather than a codepoint.
-pub(crate) fn glyph(name: &str) -> Option<char> {
+/// The glyph a Catalog `name` resolves to, or `None` for a name this build's
+/// Catalog does not — or no longer — carry. What every client draws an Icon
+/// with; an unresolved name draws as no Icon at all, which is the point of
+/// storing a name rather than a codepoint.
+pub fn glyph(name: &str) -> Option<char> {
     entries()
         .iter()
         .find(|entry| entry.name == name)
@@ -1426,13 +1428,13 @@ pub(crate) fn glyph(name: &str) -> Option<char> {
 
 /// The Icon Catalog's whole listing, in the order the Icon Picker's grid
 /// presents it.
-pub(crate) fn entries() -> &'static [IconEntry] {
+pub fn entries() -> &'static [IconEntry] {
     CATALOG
 }
 
 /// The Catalog names this Catalog carries, in listing order. What an Errand's
 /// reply schema enumerates an Icon over.
-pub(crate) fn names() -> &'static [&'static str] {
+pub fn names() -> &'static [&'static str] {
     &NAMES
 }
 
@@ -1440,7 +1442,7 @@ pub(crate) fn names() -> &'static [&'static str] {
 /// listing order — what the Icon Picker narrows its grid to as the user
 /// types. An empty or all-whitespace `query` matches everything, which is
 /// what the Picker opens showing.
-pub(crate) fn search(query: &str) -> Vec<&'static IconEntry> {
+pub fn search(query: &str) -> Vec<&'static IconEntry> {
     let query = query.trim().to_lowercase();
     if query.is_empty() {
         return entries().iter().collect();
@@ -1459,49 +1461,37 @@ pub(crate) fn search(query: &str) -> Vec<&'static IconEntry> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, path::Path};
-
-    use serde_json::Value;
+    use std::collections::HashSet;
 
     use super::*;
-
-    /// Nerd Fonts' published glyph names, checked in under `tests/fixtures`
-    /// so this pins against a copy Shaman controls rather than the network.
-    /// Located through `CARGO_MANIFEST_DIR` rather than a relative literal so
-    /// the path is correct regardless of the working directory a test runner
-    /// starts in, and built with `Path::join` rather than a literal separator
-    /// so it resolves on Windows too.
-    fn nerd_fonts_glyph_names() -> Value {
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("fixtures")
-            .join("glyphnames.json");
-        let raw = std::fs::read_to_string(&fixture)
-            .unwrap_or_else(|error| panic!("read {}: {error}", fixture.display()));
-        serde_json::from_str(&raw).expect("glyphnames.json fixture is valid JSON")
-    }
+    use crate::nerd_fonts;
 
     /// The Catalog exists to be trusted by name: every entry's codepoint must
     /// match what Nerd Fonts itself publishes for that name, or a client
     /// drawing the glyph a name is supposed to mean draws the wrong one.
     #[test]
     fn every_codepoint_is_pinned_to_the_nerd_fonts_fixture() {
-        let published = nerd_fonts_glyph_names();
         for entry in entries() {
-            let record = published
-                .get(entry.name)
-                .unwrap_or_else(|| panic!("`{}` is not a Nerd Font glyph name", entry.name));
-            let code = record["code"]
-                .as_str()
-                .unwrap_or_else(|| panic!("`{}` has no `code` in the fixture", entry.name));
-            let published_codepoint = u32::from_str_radix(code, 16)
-                .unwrap_or_else(|_| panic!("`{}` has a non-hex `code`: {code}", entry.name));
-            let published_glyph = char::from_u32(published_codepoint)
-                .unwrap_or_else(|| panic!("`{}` publishes an invalid codepoint", entry.name));
             assert_eq!(
-                entry.glyph, published_glyph,
+                entry.glyph,
+                nerd_fonts::published(entry.name),
                 "`{}` is pinned to the wrong codepoint",
                 entry.name
+            );
+        }
+    }
+
+    /// The phone draws every Icon from the font it bundles, and no iOS build
+    /// runs on a Catalog edit: so this is what sees an entry the font cannot
+    /// draw.
+    #[test]
+    fn every_codepoint_has_a_glyph_in_the_bundled_font() {
+        for entry in entries() {
+            assert!(
+                nerd_fonts::draws(entry.glyph),
+                "the bundled font has no glyph for `{}` (U+{:X})",
+                entry.name,
+                entry.glyph as u32
             );
         }
     }

@@ -84,8 +84,9 @@ pub struct BuiltInProvider {
     pub id: ProviderId,
     pub display_name: String,
     /// The Nerd Font glyph this Provider uses on icon-enabled client
-    /// surfaces. Optional at the generic boundary so a Provider without a
-    /// suitable glyph still has a complete text presentation.
+    /// surfaces, as the shared Icon crate resolves it for every Client.
+    /// Optional at the generic boundary so a Provider without a suitable
+    /// glyph still has a complete text presentation.
     pub nerd_font_icon: Option<char>,
     /// Whether one of this Provider's working Subagents can be stopped on its
     /// own. Read off the runtime's own declaration, so the surface offering
@@ -328,7 +329,7 @@ pub fn built_in_providers() -> &'static [BuiltInProvider] {
             .map(|runtime| BuiltInProvider {
                 id: runtime.provider_id(),
                 display_name: runtime.display_name().to_owned(),
-                nerd_font_icon: runtime.nerd_font_icon(),
+                nerd_font_icon: crate::icon_catalog::provider_glyph(runtime.provider_id().as_str()),
                 supports_subagent_stop: runtime.supports_subagent_stop(),
                 manual_compaction: runtime.manual_compaction(),
             })
@@ -1961,13 +1962,6 @@ pub trait ProviderRuntime: Send + Sync + 'static {
     /// surface prints, and required rather than defaulted so a new Provider
     /// cannot ship without one.
     fn display_name(&self) -> &str;
-
-    /// The glyph shown beside this Provider when the client has Nerd Font
-    /// icons enabled. Providers may remain text-only where no suitable glyph
-    /// exists.
-    fn nerd_font_icon(&self) -> Option<char> {
-        None
-    }
 
     fn list_models(&self) -> ProviderFuture<'_, ProviderModelDiscovery>;
 
