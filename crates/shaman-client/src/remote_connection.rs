@@ -46,6 +46,9 @@ pub(crate) async fn classify(
     match transport::read_json::<SessionError>(response).await {
         Some(error) => Err(failure_of(error, status.is_server_error())),
         None if status.is_server_error() => Err(RemoteConnectionFailure::Transient(None)),
+        None if status == http::StatusCode::NOT_FOUND => Err(RemoteConnectionFailure::Rejected(
+            too_old_for_this().message,
+        )),
         None => Err(RemoteConnectionFailure::Rejected(format!(
             "Server rejected the request with {status}"
         ))),
@@ -60,8 +63,14 @@ fn failure_of(error: SessionError, server_error: bool) -> RemoteConnectionFailur
             status: RemoteStatus::Revoked,
             message: "Remote revoked this pairing".to_owned(),
         },
-        SessionErrorCode::PairingProtocolMismatch => RemoteConnectionFailure::Terminal {
-            status: RemoteStatus::ProtocolMismatch,
+        // The Pairing stands, so nothing is tried again until the side
+        // behind is updated.
+        SessionErrorCode::PairingPeerBehind => RemoteConnectionFailure::Terminal {
+            status: RemoteStatus::Ahead,
+            message: error.message,
+        },
+        SessionErrorCode::PairingServerBehind => RemoteConnectionFailure::Terminal {
+            status: RemoteStatus::Behind,
             message: error.message,
         },
         SessionErrorCode::PairingConnectionFailed | SessionErrorCode::ServerUnreachable => {
@@ -75,6 +84,17 @@ fn failure_of(error: SessionError, server_error: bool) -> RemoteConnectionFailur
         _ if server_error => RemoteConnectionFailure::Transient(error.unreachable),
         SessionErrorCode::SessionNotFound => RemoteConnectionFailure::Missing(error.message),
         _ => RemoteConnectionFailure::Rejected(error.message),
+    }
+}
+
+/// What a Server answering a bare not-found is refused as: one older than
+/// what was asked of it, which knows no such route, since a Server that has
+/// the route says in a Session error what it did not find (ADR-0078).
+pub(crate) fn too_old_for_this() -> SessionError {
+    SessionError {
+        code: SessionErrorCode::ServerTooOld,
+        message: "That Server is too old for this; update Shaman there".to_owned(),
+        unreachable: None,
     }
 }
 
@@ -158,6 +178,50 @@ mod tests {
                 "{way}, the Remote's absence is a refusal, not a failure to reach"
             );
         }
+    }
+
+    /// A refusal that says which side of the Pairing is behind ends the
+    /// reading under the status naming the side to update, in the words
+    /// the refusal gave.
+    #[tokio::test]
+    async fn a_refusal_naming_the_side_behind_ends_the_reading_under_that_side() {
+        for (code, status) in [
+            ("pairing_peer_behind", RemoteStatus::Ahead),
+            ("pairing_server_behind", RemoteStatus::Behind),
+        ] {
+            let refused = classify(answered(
+                409,
+                serde_json::json!({ "code": code, "message": "update Shaman" }),
+            ))
+            .await;
+            assert!(
+                matches!(
+                    refused,
+                    Err(RemoteConnectionFailure::Terminal { status: ended, ref message })
+                        if ended == status && message == "update Shaman"
+                ),
+                "{code}"
+            );
+        }
+    }
+
+    /// A Server that answers a route it does not have with a bare not-found
+    /// is older than what was asked of it.
+    #[tokio::test]
+    async fn a_not_found_saying_nothing_reads_as_that_server_being_too_old_for_this() {
+        let mut response = http::Response::new(transport::full_body(String::new()));
+        *response.status_mut() = http::StatusCode::NOT_FOUND;
+
+        let refused = classify(Ok(response)).await;
+
+        assert!(
+            matches!(
+                refused,
+                Err(RemoteConnectionFailure::Rejected(ref message))
+                    if message == "That Server is too old for this; update Shaman there"
+            ),
+            "the reader is told which side to update"
+        );
     }
 
     #[tokio::test]

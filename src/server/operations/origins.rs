@@ -196,7 +196,8 @@ impl RemoteReach {
                     RemoteStatus::Available => return Ok(()),
                     RemoteStatus::Unavailable => Silence::Unreachable,
                     RemoteStatus::Revoked => Silence::Revoked,
-                    RemoteStatus::ProtocolMismatch => Silence::ProtocolMismatch,
+                    RemoteStatus::Behind => Silence::Behind,
+                    RemoteStatus::Ahead => Silence::Ahead,
                 },
             };
         Err(OriginRefusal::Silent(SilentRemote::new(name, silence)))
@@ -229,6 +230,7 @@ impl RemoteReach {
             Ok(Err(failure)) => Err(match failure.code {
                 SessionErrorCode::RemoteNotFound => OriginRefusal::UnknownRemote(name.to_owned()),
                 SessionErrorCode::PairingAuthenticationFailed => silent(Silence::Revoked),
+                SessionErrorCode::PairingServerBehind => silent(Silence::Behind),
                 SessionErrorCode::PairingOutcomeUnknown => silent(Silence::BrokeOff),
                 _ => silent(Silence::Unreachable),
             }),
@@ -243,8 +245,11 @@ impl RemoteReach {
                     .flatten();
                 // The Pairing's own refusals say the Remote was never asked.
                 match error.as_ref().map(|error| error.code) {
-                    Some(SessionErrorCode::PairingProtocolMismatch) => {
-                        return Err(silent(Silence::ProtocolMismatch));
+                    Some(SessionErrorCode::PairingServerBehind) => {
+                        return Err(silent(Silence::Behind));
+                    }
+                    Some(SessionErrorCode::PairingPeerBehind) => {
+                        return Err(silent(Silence::Ahead));
                     }
                     Some(SessionErrorCode::PairingAuthenticationFailed) => {
                         return Err(silent(Silence::Revoked));
@@ -258,6 +263,11 @@ impl RemoteReach {
                     // was lost.
                     Some(SessionErrorCode::PairingOutcomeUnknown) => {
                         return Err(silent(Silence::BrokeOff));
+                    }
+                    // A not-found saying nothing is a route it does not have:
+                    // it is older than what was asked.
+                    None if status == StatusCode::NOT_FOUND => {
+                        return Err(silent(Silence::TooOld));
                     }
                     _ => {}
                 }
@@ -410,13 +420,13 @@ impl RemoteReach {
             Ok(Err(failure)) => Err(match failure.code {
                 SessionErrorCode::RemoteNotFound => OriginRefusal::UnknownRemote(name.to_owned()),
                 SessionErrorCode::PairingAuthenticationFailed => silent(Silence::Revoked),
+                SessionErrorCode::PairingServerBehind => silent(Silence::Behind),
                 _ => silent(Silence::Unreachable),
             }),
             Ok(Ok(Err(refused))) => Err(
                 match serde_json::from_slice::<SessionError>(&refused).map(|error| error.code) {
-                    Ok(SessionErrorCode::PairingProtocolMismatch) => {
-                        silent(Silence::ProtocolMismatch)
-                    }
+                    Ok(SessionErrorCode::PairingServerBehind) => silent(Silence::Behind),
+                    Ok(SessionErrorCode::PairingPeerBehind) => silent(Silence::Ahead),
                     Ok(SessionErrorCode::PairingAuthenticationFailed) => silent(Silence::Revoked),
                     _ => silent(Silence::Unreachable),
                 },
@@ -683,10 +693,10 @@ impl SilentRemote {
         matches!(self.silence, Silence::Repaired)
     }
 
-    /// Whether it speaks another version of the protocol Servers speak to
-    /// each other, so it understands nothing this Server asks of it.
-    pub(crate) fn speaks_another_protocol(&self) -> bool {
-        matches!(self.silence, Silence::ProtocolMismatch)
+    /// Whether it is older than what was asked of it: too old to be spoken
+    /// with at all, or answering that it knows no such thing.
+    pub(crate) fn is_too_old(&self) -> bool {
+        matches!(self.silence, Silence::Behind | Silence::TooOld)
     }
 
     /// Whether an act asked of the Remote may have been done there all the
@@ -694,7 +704,11 @@ impl SilentRemote {
     /// not be read. An act never carried there was never done.
     pub(crate) fn may_have_acted(&self) -> bool {
         match self.silence {
-            Silence::Unreachable | Silence::Revoked | Silence::ProtocolMismatch => false,
+            Silence::Unreachable
+            | Silence::Revoked
+            | Silence::Behind
+            | Silence::Ahead
+            | Silence::TooOld => false,
             Silence::BrokeOff
             | Silence::TimedOut(_)
             | Silence::PastBudget(_)
@@ -717,8 +731,15 @@ enum Silence {
     /// It refused this Server's key: its user ended the Pairing on their
     /// side.
     Revoked,
-    /// It speaks another version of the protocol Servers speak to each other.
-    ProtocolMismatch,
+    /// It is older than this Server still speaks with, so nothing was asked
+    /// of it: Shaman there needs updating.
+    Behind,
+    /// It no longer speaks with a Server as old as this one, and refused
+    /// what was asked: Shaman here needs updating.
+    Ahead,
+    /// It answered that it knows no such thing as what was asked: it is
+    /// older than that, and Shaman there needs updating.
+    TooOld,
     /// It answered with more than the reach budget, in bytes.
     PastBudget(usize),
     /// Its name was paired anew, to another key, while it was asked.
@@ -750,10 +771,20 @@ impl fmt::Display for SilentRemote {
                 "The Remote `{name}` refused this Shaman server's key: its user has ended the \
                  Pairing on their side, and reaching it again takes a new Invite."
             ),
-            Silence::ProtocolMismatch => write!(
+            Silence::Behind => write!(
                 formatter,
-                "The Remote `{name}` runs a version of Shaman that speaks another protocol than this \
-                 server's, so nothing can be asked of it until one of them is updated."
+                "The Remote `{name}` runs a Shaman too old for this server to work with, so nothing \
+                 was asked of it; it works again once Shaman there is updated."
+            ),
+            Silence::Ahead => write!(
+                formatter,
+                "The Remote `{name}` no longer works with a Shaman as old as this server's, so it \
+                 refused what was asked; it works again once Shaman here is updated."
+            ),
+            Silence::TooOld => write!(
+                formatter,
+                "The Remote `{name}` is too old for this: it does not know what was asked, and \
+                 knows it once Shaman there is updated."
             ),
             Silence::PastBudget(budget) => write!(
                 formatter,
@@ -1321,7 +1352,16 @@ mod tests {
         );
         assert!(said(Silence::Unreachable).contains("could not reach it at any address"));
         assert!(said(Silence::Revoked).contains("reaching it again takes a new Invite"));
-        assert!(said(Silence::ProtocolMismatch).contains("until one of them is updated"));
+        assert!(said(Silence::Behind).contains("once Shaman there is updated"));
+        assert!(said(Silence::Ahead).contains("once Shaman here is updated"));
+        assert!(said(Silence::TooOld).contains("once Shaman there is updated"));
+        for silence in [Silence::Behind, Silence::Ahead, Silence::TooOld] {
+            let words = said(silence).to_lowercase();
+            assert!(
+                !words.contains("version") && !words.contains("floor"),
+                "{words}"
+            );
+        }
         assert_eq!(
             said(Silence::PastBudget(64 * 1024 * 1024)),
             "The Remote `laptop` answered with more than the 64 MiB this server reads of one \
@@ -1344,7 +1384,9 @@ mod tests {
             Silence::BrokeOff,
             Silence::TimedOut(Duration::from_secs(1)),
             Silence::Revoked,
-            Silence::ProtocolMismatch,
+            Silence::Behind,
+            Silence::Ahead,
+            Silence::TooOld,
             Silence::PastBudget(1),
             Silence::Repaired,
         ] {

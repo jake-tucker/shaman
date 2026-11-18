@@ -32,17 +32,18 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 use super::{
-    BoxError, EnrollmentPhase, EnrollmentRequest, FORWARDED_AUTHOR_PROOF_HEADER, GivenRelays,
-    Identity, Keepalive, MAX_TOLD_RELAY_LEN, MAX_TOLD_RELAYS, OFFERED_RELAYS_PATH, OfferedRelays,
-    PAIRING_ANSWER_BUDGET, PAIRING_WITHDRAWAL_PATH, PEER_API_PREFIX, PairingFailure, PairingHealth,
-    ParsedInvite, RelayWays, STREAMS_AT_ONCE, ToldOffer, author_header, canonical_relay,
+    Behind, BoxError, EnrollmentPhase, EnrollmentRequest, FORWARDED_AUTHOR_PROOF_HEADER,
+    GivenRelays, Identity, Keepalive, MAX_TOLD_RELAY_LEN, MAX_TOLD_RELAYS, OFFERED_RELAYS_PATH,
+    OfferedRelays, PAIRING_ANSWER_BUDGET, PAIRING_WITHDRAWAL_PATH, PEER_API_PREFIX, PairingFailure,
+    PairingHealth, PairingProtocol, ParsedInvite, RelayWays, STREAMS_AT_ONCE, ToldOffer,
+    author_header, canonical_relay,
     client::{
         Answer, AnswerBody, DirectProxies, NoAnswer, PairingHttpClient, RequestBody, StrongClient,
         Unanswered, WayAttempt, WayDialer, dial_enrollment, first_answer, paired_http_client,
     },
-    fingerprint, internal_pairing_failure, machine_hostname, parse_invite, passed_on,
-    protocol_mismatch, read_records, remote_forward_headers, remove_hop_by_hop_headers,
-    small_answer, undelivered_or_lost, validate_remote_name, write_private_json,
+    fingerprint, internal_pairing_failure, machine_hostname, parse_invite, passed_on, read_records,
+    remove_hop_by_hop_headers, small_answer, stated_version, undelivered_or_lost,
+    validate_remote_name, write_private_json,
 };
 use crate::protocol::{
     AUTHOR_HEADER, Author, RedeemInviteRequest, Remote, RemoteHealth, RemoteRemoval, RemoteStatus,
@@ -182,7 +183,7 @@ pub struct StoredMadeOffer {
 #[derive(Clone)]
 pub struct Redeemer {
     data_dir: PathBuf,
-    protocol_version: u32,
+    protocol: PairingProtocol,
     identity: Arc<dyn Identity>,
     timings: RedeemerTimings,
     remotes: Arc<RwLock<Vec<StoredRemote>>>,
@@ -214,17 +215,17 @@ pub struct Redeemer {
 
 impl Redeemer {
     /// The redeemer whose Remotes' records are under `data_dir`, speaking the
-    /// Pairing protocol `protocol_version`, proving itself as `identity`.
+    /// Pairing protocol `protocol`, proving itself as `identity`.
     pub fn new(
         data_dir: &Path,
-        protocol_version: u32,
+        protocol: PairingProtocol,
         identity: Arc<dyn Identity>,
         timings: RedeemerTimings,
     ) -> anyhow::Result<Self> {
         let remotes: Vec<StoredRemote> = read_records(&data_dir.join(REMOTES_FILE))?;
         Ok(Self {
             data_dir: data_dir.to_path_buf(),
-            protocol_version,
+            protocol,
             identity,
             timings,
             remotes: Arc::new(RwLock::new(remotes)),
@@ -280,9 +281,9 @@ impl Redeemer {
         &self.data_dir
     }
 
-    /// The Pairing protocol version the redeemer speaks.
-    pub fn protocol_version(&self) -> u32 {
-        self.protocol_version
+    /// The Pairing protocol the redeemer speaks.
+    pub fn protocol(&self) -> PairingProtocol {
+        self.protocol
     }
 
     /// What the hooks attached, if any, do; nothing where none are.
@@ -351,7 +352,7 @@ impl Redeemer {
         let identity = self.identity.material().await?;
         let prepare = EnrollmentRequest {
             token: URL_SAFE_NO_PAD.encode(invite.token),
-            protocol_version: self.protocol_version,
+            protocol_version: self.protocol.version,
             phase: EnrollmentPhase::Prepare,
             hostname: None,
             offer: None,
@@ -364,11 +365,8 @@ impl Redeemer {
             &prepare,
         )
         .await?;
-        if enrolled.protocol_version != self.protocol_version {
-            return Err(protocol_mismatch(
-                self.protocol_version,
-                enrolled.protocol_version,
-            ));
+        if !self.protocol.speaks_with(enrolled.protocol_version) {
+            return Err(Behind::Server.pairing_refused());
         }
         let name = request.name.unwrap_or(enrolled.hostname).trim().to_owned();
         validate_remote_name(&name)?;
@@ -390,7 +388,7 @@ impl Redeemer {
 
         let commit = EnrollmentRequest {
             token: URL_SAFE_NO_PAD.encode(invite.token),
-            protocol_version: self.protocol_version,
+            protocol_version: self.protocol.version,
             phase: EnrollmentPhase::Commit,
             hostname: Some(redemption.peer_name.unwrap_or_else(machine_hostname)),
             offer: offer_id,
@@ -578,7 +576,7 @@ impl Redeemer {
         headers.remove(AUTHOR_HEADER);
         headers.remove(FORWARDED_AUTHOR_PROOF_HEADER);
         remove_hop_by_hop_headers(headers);
-        let mut added = remote_forward_headers(self.protocol_version);
+        let mut added = self.protocol.stated();
         if let Some(author) = author {
             added.insert(AUTHOR_HEADER, author_header(author));
         }
@@ -667,10 +665,15 @@ impl Redeemer {
         let Ok(client) = self.pairing_client(remote).await else {
             return false;
         };
+        // A withdrawal is answered whatever either side speaks, so ending a
+        // Pairing never waits on an update.
+        let protocol = self.protocol;
         let asking = || {
-            Request::post(PAIRING_WITHDRAWAL_PATH)
+            let mut request = Request::post(PAIRING_WITHDRAWAL_PATH)
                 .body(RequestBody::default())
-                .expect("a withdrawal is well formed")
+                .expect("a withdrawal is well formed");
+            request.headers_mut().extend(protocol.stated());
+            request
         };
         let withdrawal = first_remote_answer(remote, &client, asking, |answer| async move {
             match answer {
@@ -995,7 +998,7 @@ impl Redeemer {
         held: &Weak<PairingHttpClient>,
         interest: &mut watch::Receiver<()>,
     ) -> Followed {
-        let protocol_version = self.protocol_version;
+        let protocol = self.protocol;
         // `client`, and with it the interest in the Remote that keeps its
         // connections, is held no longer than this: a probe that lets the
         // Remote go at once leaves it in view for the handshake timeout at
@@ -1006,9 +1009,7 @@ impl Redeemer {
                 let mut request = Request::get(OFFERED_RELAYS_PATH)
                     .body(RequestBody::default())
                     .expect("asking which Relays are offered is well formed");
-                request
-                    .headers_mut()
-                    .extend(remote_forward_headers(protocol_version));
+                request.headers_mut().extend(protocol.stated());
                 request
             };
             let answer = first_remote_answer(remote, &client, asking, |answer| async move {
@@ -1024,7 +1025,9 @@ impl Redeemer {
             if response.status() == StatusCode::UNAUTHORIZED {
                 self.refused_by(remote);
             }
-            if !response.status().is_success() {
+            // Nothing is taken up of a Remote too old to be spoken with, nor
+            // of one that refuses this side as too old for it.
+            if !response.status().is_success() || !protocol.speaks_with_stated(response.headers()) {
                 return Err(Followed::Refused);
             }
             let mut told = Telling::new(response.into_body());
@@ -1221,20 +1224,47 @@ impl Redeemer {
         remote: &StoredRemote,
     ) -> std::result::Result<RemoteHealth, PairingFailure> {
         let client = self.pairing_client(remote).await?;
+        let protocol = self.protocol;
         let asking = || {
-            Request::get("/health")
+            let mut request = Request::get("/health")
                 .body(RequestBody::default())
-                .expect("a health check is well formed")
+                .expect("a health check is well formed");
+            request.headers_mut().extend(protocol.stated());
+            request
         };
-        let (way, pairing_health) = first_remote_answer(remote, &client, asking, |answer| async {
+        let (way, health) = first_remote_answer(remote, &client, asking, |answer| async {
             match answer {
                 Ok(response) if response.status().is_success() => {
                     match small_answer::<PairingHealth>(response).await {
-                        Some(health) => WayAttempt::Answered(health),
+                        // Judged against this side's floor, as the Remote
+                        // judged this side against its own in answering.
+                        Some(health) => WayAttempt::Answered(RemoteHealth {
+                            protocol_version: Some(health.protocol_version),
+                            status: if protocol.speaks_with(health.protocol_version) {
+                                RemoteStatus::Available
+                            } else {
+                                RemoteStatus::Behind
+                            },
+                            unreachable: None,
+                        }),
                         None => WayAttempt::Rejected(PairingFailure::new(
                             SessionErrorCode::PairingConnectionFailed,
                             "Remote returned an invalid health response",
                         )),
+                    }
+                }
+                Ok(response) if response.status() == StatusCode::CONFLICT => {
+                    let stated = stated_version(response.headers());
+                    let status = small_answer::<SessionError>(response)
+                        .await
+                        .and_then(|error| behind_status(error.code));
+                    match status {
+                        Some(status) => WayAttempt::Answered(RemoteHealth {
+                            protocol_version: stated,
+                            status,
+                            unreachable: None,
+                        }),
+                        None => WayAttempt::TryNext,
                     }
                 }
                 Ok(response) if response.status() == StatusCode::UNAUTHORIZED => {
@@ -1248,15 +1278,6 @@ impl Redeemer {
             }
         })
         .await?;
-        let health = RemoteHealth {
-            protocol_version: Some(pairing_health.protocol_version),
-            status: if pairing_health.protocol_version == self.protocol_version {
-                RemoteStatus::Available
-            } else {
-                RemoteStatus::ProtocolMismatch
-            },
-            unreachable: None,
-        };
         self.answered(remote, &client, way, health.status);
         Ok(health)
     }
@@ -1326,6 +1347,14 @@ impl Redeemer {
                 "Remote refused this Server's key",
             ));
         }
+        // Nothing a Remote too old to be spoken with answers is passed on,
+        // and the Pairing stands, for its update to heal. One that knows the
+        // floor this side states has refused already, doing nothing; this
+        // is for one that does not.
+        if !self.protocol.speaks_with_stated(response.headers()) {
+            self.answered(remote, client, way, RemoteStatus::Behind);
+            return Err(Behind::Server.refusal());
+        }
         if response.status() != StatusCode::CONFLICT {
             self.answered(remote, client, way, RemoteStatus::Available);
             return Ok(response);
@@ -1341,13 +1370,10 @@ impl Redeemer {
                 )
             })?
             .to_bytes();
-        let protocol_mismatch = serde_json::from_slice::<SessionError>(&body)
-            .is_ok_and(|error| error.code == SessionErrorCode::PairingProtocolMismatch);
-        let status = if protocol_mismatch {
-            RemoteStatus::ProtocolMismatch
-        } else {
-            RemoteStatus::Available
-        };
+        let status = serde_json::from_slice::<SessionError>(&body)
+            .ok()
+            .and_then(|error| behind_status(error.code))
+            .unwrap_or(RemoteStatus::Available);
         self.answered(remote, client, way, status);
         Ok(http::Response::from_parts(parts, RemoteBody::whole(body)))
     }
@@ -1760,6 +1786,19 @@ pub fn same_pairing(stored: &StoredRemote, other: &StoredRemote) -> bool {
 
 /// Asks `remote` as [`first_answer`] does, by those of its ways this Server
 /// dials ([`WayDialer::dials`]), in the order each kind is dialled in.
+/// What a Remote that refused what was asked under `code` stands as, where
+/// it refused it for one side being too far behind the other:
+/// [`RemoteStatus::Ahead`] where it refused this side as behind, and
+/// [`RemoteStatus::Behind`] where it found itself below the floor this side
+/// states.
+fn behind_status(code: SessionErrorCode) -> Option<RemoteStatus> {
+    match code {
+        SessionErrorCode::PairingPeerBehind => Some(RemoteStatus::Ahead),
+        SessionErrorCode::PairingServerBehind => Some(RemoteStatus::Behind),
+        _ => None,
+    }
+}
+
 pub async fn first_remote_answer<T, F, Fut>(
     remote: &StoredRemote,
     client: &PairingHttpClient,
@@ -1950,7 +1989,7 @@ mod tests {
     use futures_util::stream;
 
     use super::{
-        super::{GivenIdentity, IdentityMaterial},
+        super::{GivenIdentity, IdentityMaterial, PAIRING_PROTOCOL_HEADER},
         *,
     };
 
@@ -2286,7 +2325,7 @@ mod tests {
     fn redeemer(data: &tempfile::TempDir) -> Redeemer {
         Redeemer::new(
             data.path(),
-            crate::protocol::PROTOCOL_VERSION,
+            PairingProtocol::CURRENT,
             Arc::new(GivenIdentity(IdentityMaterial::fresh())),
             RedeemerTimings::default(),
         )
@@ -2424,12 +2463,16 @@ mod tests {
         let conflict = |body: Vec<u8>| {
             http::Response::builder()
                 .status(StatusCode::CONFLICT)
+                .header(
+                    PAIRING_PROTOCOL_HEADER,
+                    PairingProtocol::CURRENT.header_value(),
+                )
                 .body(RemoteBody::whole(Bytes::from(body)))
                 .expect("a conflict")
         };
         let mismatch = serde_json::to_vec(&SessionError {
-            code: SessionErrorCode::PairingProtocolMismatch,
-            message: "Pairing protocol mismatch".to_owned(),
+            code: SessionErrorCode::PairingPeerBehind,
+            message: "Update Shaman here".to_owned(),
             unreachable: None,
         })
         .expect("encode a refusal");
@@ -2504,7 +2547,7 @@ mod tests {
         });
         let redeemer = Redeemer::new(
             data.path(),
-            crate::protocol::PROTOCOL_VERSION,
+            PairingProtocol::CURRENT,
             Arc::new(GivenIdentity(IdentityMaterial::fresh())),
             RedeemerTimings {
                 handshake_timeout: tokio::time::Duration::from_secs(60),

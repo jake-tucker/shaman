@@ -35,7 +35,8 @@ use tokio::{
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{
-    RelaySocket, TestRelay, TestServer, error_code, greet, heard, relay_timings, scripted_relay,
+    NEWER, RelaySocket, TestRelay, TestServer, error_code, greet, heard, relay_timings,
+    scripted_relay,
     serving::{Multiplexed, nothing_listens_at, paired_tls},
     tell,
 };
@@ -1329,17 +1330,13 @@ async fn an_attachment_whose_reader_pauses_past_the_heartbeat_is_fetched_whole()
 }
 
 #[tokio::test]
-async fn a_pairing_protocol_mismatch_through_a_relay_is_reported_as_it_is_directly() {
-    let mut paired = PairedThrough::start("relay-pairing-mismatch").await;
-    let newer = PROTOCOL_VERSION + 1;
-    paired.workstation.timings.pairing_protocol_version = newer;
+async fn a_peer_too_old_for_its_remote_through_a_relay_is_refused_as_it_is_directly() {
+    let mut paired = PairedThrough::start("relay-pairing-too-old").await;
+    paired.workstation.timings.pairing_protocol = NEWER;
     paired.workstation.restart().await;
 
-    let health = paired
-        .laptop
-        .wait_for_remote(RemoteStatus::ProtocolMismatch)
-        .await;
-    assert_eq!(health.protocol_version, Some(newer));
+    let health = paired.laptop.wait_for_remote(RemoteStatus::Ahead).await;
+    assert_eq!(health.protocol_version, Some(NEWER.version));
 
     let through_relay = paired
         .workstation
@@ -1349,7 +1346,7 @@ async fn a_pairing_protocol_mismatch_through_a_relay_is_reported_as_it_is_direct
         .laptop
         .redeem_as(through_relay, "workstation-again")
         .await
-        .expect_err("a Serving Server of another Pairing protocol");
+        .expect_err("a Serving Server that no longer pairs with one as old");
     let direct = paired
         .workstation
         .invite(vec![Way::Direct(paired.workstation.serving_address())])
@@ -1358,18 +1355,16 @@ async fn a_pairing_protocol_mismatch_through_a_relay_is_reported_as_it_is_direct
         .laptop
         .redeem_as(direct, "workstation-again")
         .await
-        .expect_err("a Serving Server of another Pairing protocol");
+        .expect_err("a Serving Server that no longer pairs with one as old");
     for refused in [&refused, &refused_directly] {
-        assert_eq!(
-            error_code(refused),
-            SessionErrorCode::PairingProtocolMismatch
-        );
+        assert_eq!(error_code(refused), SessionErrorCode::PairingPeerBehind);
     }
-    // The Serving Server refuses the enrollment in its own words, saying
-    // its version first.
+    // The Serving Server refuses the enrollment in its own words, naming
+    // the side to update.
     assert_eq!(
         error_message(&refused),
-        format!("Pairing protocol mismatch: local v{newer}, remote v{PROTOCOL_VERSION}")
+        "That Server no longer pairs with a Shaman as old as this one: update Shaman here, then \
+         pair again"
     );
     assert_eq!(error_message(&refused), error_message(&refused_directly));
 

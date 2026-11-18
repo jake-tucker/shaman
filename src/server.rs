@@ -91,7 +91,7 @@ use operations::{
 };
 
 pub use crate::clock::{ManualClock, ServerClock};
-pub use crate::pairing::DirectProxies;
+pub use crate::pairing::{DirectProxies, PairingProtocol};
 pub use cutoff::{CUT_OFF_EXIT_STATUS, CUTOFF_MARGIN, ProcessCutoff};
 pub(crate) use election::{StopWithNoServer, stop_with_no_server};
 pub use signals::ShutdownSignals;
@@ -334,8 +334,10 @@ pub struct ServerTimings {
     /// another machine. It never does, but for tests whose Servers are all on
     /// one machine.
     pub pair_back_offers_loopback: bool,
-    /// Server-to-Server protocol version, injectable for compatibility tests.
-    pub pairing_protocol_version: u32,
+    /// The protocol the Server speaks across its Pairings, as a Peer and as
+    /// a Serving Server: its version and its floor, injectable so a test can
+    /// stand a Server at any release.
+    pub pairing_protocol: PairingProtocol,
     /// Which proxy, if any, each direct way of a Remote is dialled through:
     /// those the environment names, unless a test gives its own.
     pub direct_proxies: DirectProxies,
@@ -468,7 +470,7 @@ impl Default for ServerTimings {
             pair_back_invite_ttl: Duration::from_secs(2 * 60),
             pair_back_retry_interval: Duration::from_secs(60),
             pair_back_offers_loopback: false,
-            pairing_protocol_version: PROTOCOL_VERSION,
+            pairing_protocol: PairingProtocol::CURRENT,
             direct_proxies: DirectProxies::from_environment(),
             identity_store_timeout: crate::serving::IDENTITY_STORE_TIMEOUT,
             relay_answer_timeout: Duration::from_secs(10),
@@ -1746,7 +1748,7 @@ async fn start(
         |identity| {
             Ok(crate::pairing::Redeemer::new(
                 config.data_dir(),
-                timings.pairing_protocol_version,
+                timings.pairing_protocol,
                 identity,
                 crate::pairing::RedeemerTimings {
                     handshake_timeout: timings.serving_handshake_timeout,

@@ -184,7 +184,12 @@ struct PickerNote {
 enum RemoteProbeStatus {
     Checking,
     Available,
-    ProtocolMismatch(Option<u32>),
+    /// Older than this Server still speaks with: Shaman there needs
+    /// updating.
+    Behind,
+    /// No longer speaking with a Server as old as this one: Shaman here
+    /// needs updating.
+    Ahead,
     Unavailable(String),
     /// Unavailable for a reason its user can do something about.
     Unreachable(UnreachableReason),
@@ -197,13 +202,13 @@ impl RemoteProbeStatus {
             RemoteStatus::Available => Self::Available,
             RemoteStatus::Unavailable => Self::Unavailable("could not reach remote".to_owned()),
             RemoteStatus::Revoked => Self::Revoked,
-            RemoteStatus::ProtocolMismatch => Self::ProtocolMismatch(None),
+            RemoteStatus::Behind => Self::Behind,
+            RemoteStatus::Ahead => Self::Ahead,
         }
     }
 
     fn probed(health: RemoteHealth) -> Self {
         match (health.status, health.unreachable) {
-            (RemoteStatus::ProtocolMismatch, _) => Self::ProtocolMismatch(health.protocol_version),
             (RemoteStatus::Unavailable, Some(reason)) => Self::Unreachable(reason),
             (status, _) => Self::remembered(status),
         }
@@ -1691,10 +1696,10 @@ impl ConnectOverlay {
         match self.remote_statuses.get(name) {
             Some(RemoteProbeStatus::Checking) | None => "Checking…".to_owned(),
             Some(RemoteProbeStatus::Available) => "Available".to_owned(),
-            Some(RemoteProbeStatus::ProtocolMismatch(Some(version))) => {
-                format!("Protocol v{version} mismatch")
+            Some(RemoteProbeStatus::Behind) => "Too old · update Shaman there".to_owned(),
+            Some(RemoteProbeStatus::Ahead) => {
+                "Too new for this Shaman · update Shaman here".to_owned()
             }
-            Some(RemoteProbeStatus::ProtocolMismatch(None)) => "Protocol mismatch".to_owned(),
             Some(RemoteProbeStatus::Unavailable(error)) => format!("Unavailable · {error}"),
             Some(RemoteProbeStatus::Unreachable(reason)) => {
                 format!("Unavailable · {}", unreachable_reason::brief(reason))

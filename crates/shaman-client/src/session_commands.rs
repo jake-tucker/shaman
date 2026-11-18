@@ -844,17 +844,21 @@ pub async fn decode_empty_api_response(response: TransportResponse, operation: &
 }
 
 /// The Server's refusal of `operation`, as the `SessionError` it sent where
-/// it sent one.
+/// it sent one, and as that Server being too old for it where it answered a
+/// not-found saying nothing.
 pub async fn decode_api_error(response: TransportResponse, operation: &str) -> anyhow::Error {
     let status = response.status();
-    read_body(response)
+    let error = read_body(response)
         .await
         .ok()
-        .and_then(|body| serde_json::from_slice::<SessionError>(&body).ok())
-        .map_or_else(
-            || anyhow!("{operation} failed with HTTP {status}"),
-            |error| anyhow!(error),
-        )
+        .and_then(|body| serde_json::from_slice::<SessionError>(&body).ok());
+    match error {
+        Some(error) => anyhow!(error),
+        None if status == http::StatusCode::NOT_FOUND => {
+            anyhow!(crate::remote_connection::too_old_for_this())
+        }
+        None => anyhow!("{operation} failed with HTTP {status}"),
+    }
 }
 
 #[cfg(test)]
@@ -1132,6 +1136,37 @@ mod tests {
                 "{id}: {error:#}"
             );
         }
+    }
+
+    /// A command a Server answers with a bare not-found, as one older than
+    /// the command answers a route it does not have, is refused as that
+    /// Server being too old for it, naming the side to update.
+    #[tokio::test]
+    async fn a_command_an_older_server_does_not_know_reads_as_that_server_being_too_old() {
+        let commands = SessionCommands::new(
+            Answering::new(|_| async {
+                let mut response = http::Response::new(full_body(Bytes::new()));
+                *response.status_mut() = http::StatusCode::NOT_FOUND;
+                Ok(response)
+            }),
+            timings(),
+        );
+
+        let error = commands
+            .read_session(SessionId::new())
+            .await
+            .expect_err("the Server does not know the route");
+
+        assert_eq!(
+            error.to_string(),
+            "That Server is too old for this; update Shaman there"
+        );
+        assert_eq!(
+            error
+                .downcast_ref::<SessionError>()
+                .map(|refusal| refusal.code),
+            Some(SessionErrorCode::ServerTooOld)
+        );
     }
 
     /// What a Server answers every request with under a code a newer Server

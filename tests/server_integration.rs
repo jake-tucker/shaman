@@ -367,7 +367,13 @@ where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     stream
-        .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n")
+        .write_all(
+            format!(
+                "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\
+                 x-shaman-protocol-version: {PROTOCOL_VERSION}\r\n\r\n"
+            )
+            .as_bytes(),
+        )
         .await
         .unwrap();
     let mut response = vec![0_u8; 4096];
@@ -3255,7 +3261,8 @@ async fn remote_proxy_does_not_carry_the_broker_to_peers() {
 }
 
 #[tokio::test]
-async fn a_paired_server_protocol_mismatch_is_status_and_refuses_remote_api_use() {
+async fn a_serving_server_that_no_longer_speaks_with_its_peer_is_status_and_refuses_remote_api_use()
+{
     let serving_state = tempfile::tempdir().expect("create Serving state directory");
     let serving_data = tempfile::tempdir().expect("create Serving data directory");
     let serving_config_root = tempfile::tempdir().expect("create Serving config directory");
@@ -3337,15 +3344,19 @@ async fn a_paired_server_protocol_mismatch_is_status_and_refuses_remote_api_use(
         .shutdown()
         .await
         .expect("stop original Serving Server");
+    let newer = server::PairingProtocol {
+        version: PROTOCOL_VERSION + 1,
+        floor: PROTOCOL_VERSION + 1,
+    };
     let incompatible = server::spawn_with_timings(
         serving_config,
         ServerTimings {
-            pairing_protocol_version: PROTOCOL_VERSION + 1,
+            pairing_protocol: newer,
             ..timings
         },
     )
     .await
-    .expect("restart Serving Server with a newer Pairing protocol");
+    .expect("restart Serving Server past what speaks with this one");
 
     let descriptor = connecting.descriptor();
     let http = crate::support::loopback_client();
@@ -3357,40 +3368,42 @@ async fn a_paired_server_protocol_mismatch_is_status_and_refuses_remote_api_use(
         .bearer_auth(&descriptor.token)
         .send()
         .await
-        .expect("attempt to use mismatched Remote API");
+        .expect("attempt to use the Remote API");
     assert_eq!(refused.status(), reqwest::StatusCode::CONFLICT);
-    assert_eq!(
-        refused
-            .json::<SessionError>()
-            .await
-            .expect("decode mismatch refusal")
-            .code,
-        SessionErrorCode::PairingProtocolMismatch
+    let refusal = refused
+        .json::<SessionError>()
+        .await
+        .expect("decode the refusal");
+    assert_eq!(refusal.code, SessionErrorCode::PairingPeerBehind);
+    assert!(
+        refusal.message.contains("update Shaman here"),
+        "{}",
+        refusal.message
     );
     assert_eq!(
         connecting_client.list_remotes().await.unwrap()[0].status,
-        RemoteStatus::ProtocolMismatch,
+        RemoteStatus::Ahead,
         "the refused API response marks the durable Remote status"
     );
 
     let status = connecting_client
         .probe_remote("workstation")
         .await
-        .expect("the Remotes picker can still probe a mismatched Remote");
-    assert_eq!(status.protocol_version, Some(PROTOCOL_VERSION + 1));
-    assert_eq!(status.status, RemoteStatus::ProtocolMismatch);
+        .expect("the Remotes picker can still probe a Remote that refuses it");
+    assert_eq!(status.protocol_version, Some(newer.version));
+    assert_eq!(status.status, RemoteStatus::Ahead);
 
     let mut catalog = connecting_client
         .outlook(Outlook::Remote("workstation".to_owned()))
         .subscribe_catalog();
     let terminal = timeout(PROGRESS_DEADLINE, next_session_catalog_event(&mut catalog))
         .await
-        .expect("protocol mismatch answers without retrying")
+        .expect("a refusal as behind answers without retrying")
         .expect("Remote catalog reports its terminal status");
     assert!(matches!(
         terminal,
         ManagedEvent::RemoteFailed {
-            status: RemoteStatus::ProtocolMismatch,
+            status: RemoteStatus::Ahead,
             ..
         }
     ));
@@ -3402,7 +3415,7 @@ async fn a_paired_server_protocol_mismatch_is_status_and_refuses_remote_api_use(
         .await
         .expect("terminal Remote catalog closes promptly")
         .is_none(),
-        "a terminal protocol mismatch schedules no retry event"
+        "a terminal refusal as behind schedules no retry event"
     );
 
     drop(connecting_client);
@@ -3625,7 +3638,10 @@ async fn malformed_foreign_superseded_spent_and_expired_invites_have_precise_err
         ServerConfig::new(incompatible_state.path(), "invite-errors-incompatible").unwrap(),
         ServerTimings {
             shutdown_grace: Duration::from_millis(5),
-            pairing_protocol_version: PROTOCOL_VERSION + 1,
+            pairing_protocol: server::PairingProtocol {
+                version: PROTOCOL_VERSION + 1,
+                floor: PROTOCOL_VERSION + 1,
+            },
             ..ServerTimings::default()
         },
     )
@@ -3645,10 +3661,10 @@ async fn malformed_foreign_superseded_spent_and_expired_invites_have_precise_err
             pair_back: false,
         })
         .await
-        .expect_err("a protocol mismatch refuses the Pairing");
+        .expect_err("a Server whose floor this one is below refuses the Pairing");
     assert_eq!(
         pairing_error_code(&error),
-        SessionErrorCode::PairingProtocolMismatch
+        SessionErrorCode::PairingServerBehind
     );
     assert!(incompatible_client.list_remotes().await.unwrap().is_empty());
     drop(incompatible_client);

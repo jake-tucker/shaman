@@ -14,10 +14,11 @@ use futures_util::{SinkExt, StreamExt};
 use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig, ManagedEvent},
     protocol::{
-        Relay, RelayAccount, RelayListing, RelayLogin, RelayLoginOutcome, RelayLoginRefusal,
-        RelaySide, RelayState, SessionError, SessionErrorCode, SettingMutation,
+        PROTOCOL_FLOOR, PROTOCOL_VERSION, Relay, RelayAccount, RelayListing, RelayLogin,
+        RelayLoginOutcome, RelayLoginRefusal, RelaySide, RelayState, SessionError,
+        SessionErrorCode, SettingMutation,
     },
-    server::{self, ServerConfig, ServerTimings},
+    server::{self, PairingProtocol, ServerConfig, ServerTimings},
 };
 use shaman_relay::{
     Admission, AdmissionRule, Clock, Identity, RelayConfig, RunningRelay,
@@ -33,6 +34,8 @@ use crate::support::{
 
 #[path = "relays/command_line.rs"]
 mod command_line;
+#[path = "relays/compatibility.rs"]
+mod compatibility;
 #[path = "relays/dialling.rs"]
 mod dialling;
 #[path = "relays/finding.rs"]
@@ -57,6 +60,24 @@ mod pinning;
 mod serving;
 #[path = "relays/short_invite.rs"]
 mod short_invite;
+
+/// A side of a Pairing too old for this build to speak with.
+const OLDER: PairingProtocol = PairingProtocol {
+    version: PROTOCOL_FLOOR - 1,
+    floor: PROTOCOL_FLOOR - 1,
+};
+
+/// A side of a Pairing that no longer speaks with this build.
+const NEWER: PairingProtocol = PairingProtocol {
+    version: PROTOCOL_VERSION + 1,
+    floor: PROTOCOL_VERSION + 1,
+};
+
+/// A side of a Pairing newer than this build that still speaks with it.
+const NEWER_SPEAKING: PairingProtocol = PairingProtocol {
+    version: PROTOCOL_VERSION + 1,
+    floor: PROTOCOL_FLOOR,
+};
 
 /// How often a test's Relay checks its Accounts against its admission rules
 /// again.

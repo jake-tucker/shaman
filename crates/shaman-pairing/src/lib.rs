@@ -57,6 +57,7 @@ mod peer_name;
 mod redeemer;
 pub mod relay;
 pub mod signer;
+mod speaking;
 
 pub use client::DirectProxies;
 #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
@@ -69,6 +70,7 @@ pub use redeemer::{
     AWAITED_AT_ONCE, Carried, REMOTES_FILE, Redeemer, RedeemerHooks, RedeemerTimings, Redemption,
     StoredMadeOffer, StoredRemote, WayStanding,
 };
+pub use speaking::{Behind, PairingProtocol, stated_version};
 
 /// Any error a body or a connector gives, as `http` and `hyper` box one.
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -143,7 +145,14 @@ impl Identity for GivenIdentity {
     }
 }
 
+/// What each side of a Pairing states the protocol version it speaks under:
+/// a Peer on every request, a Serving Server on every answer (ADR-0078).
 pub const PAIRING_PROTOCOL_HEADER: &str = "x-shaman-protocol-version";
+
+/// What a Peer states the oldest protocol version it speaks with under, on
+/// every request, so a Serving Server older than that refuses it before doing
+/// anything it asks.
+pub const PAIRING_FLOOR_HEADER: &str = "x-shaman-protocol-floor";
 
 /// The longest key an Invite, or a Relay's list, is believed to name.
 pub const MAX_INVITE_KEY: usize = 4096;
@@ -390,9 +399,9 @@ pub struct EnrollmentResponse {
     pub protocol_version: u32,
 }
 
-/// The compatibility handshake deliberately retains the v28 wire shape so a
-/// newly upgraded Server can still identify an older paired Server as a
-/// protocol mismatch rather than a transport failure.
+/// What a Serving Server answers a Peer asking whether it answers: the
+/// version it speaks, so the Peer judges it against its own floor, where it
+/// has not refused the Peer as behind.
 #[derive(Deserialize, Serialize)]
 pub struct PairingHealth {
     pub protocol_version: u32,
@@ -812,14 +821,15 @@ impl Preface {
 }
 
 /// `request` made safe to carry on: rid of every hop-by-hop header, and of
-/// the host, credentials and Pairing protocol version it came with, and with
-/// `added` set after all it carries.
+/// the host, credentials and Pairing protocol version and floor it came
+/// with, and with `added` set after all it carries.
 pub fn passed_on<B>(request: Request<B>, added: HeaderMap) -> Request<B> {
     let (mut parts, body) = request.into_parts();
     remove_hop_by_hop_headers(&mut parts.headers);
     parts.headers.remove(header::HOST);
     parts.headers.remove(header::AUTHORIZATION);
     parts.headers.remove(PAIRING_PROTOCOL_HEADER);
+    parts.headers.remove(PAIRING_FLOOR_HEADER);
     parts.headers.extend(added);
     Request::from_parts(parts, body)
 }
@@ -839,16 +849,6 @@ pub fn undelivered_or_lost(never_connected: bool) -> PairingFailure {
             "Remote API request was delivered, and its answer was lost",
         )
     }
-}
-
-pub fn remote_forward_headers(protocol_version: u32) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        PAIRING_PROTOCOL_HEADER,
-        header::HeaderValue::from_str(&protocol_version.to_string())
-            .expect("protocol versions are valid header values"),
-    );
-    headers
 }
 
 pub fn remove_hop_by_hop_headers(headers: &mut HeaderMap) {
@@ -896,7 +896,7 @@ pub fn parse_invite(invite: &str) -> std::result::Result<ParsedInvite, PairingFa
     if version != "v1" {
         return Err(PairingFailure::new(
             SessionErrorCode::UnsupportedInviteVersion,
-            format!("Invite version `{version}` is not supported"),
+            "That Invite is from a newer Shaman; update Shaman here",
         ));
     }
     let payload = URL_SAFE_NO_PAD
@@ -1005,13 +1005,6 @@ pub fn validate_remote_name(name: &str) -> std::result::Result<(), PairingFailur
         ));
     }
     Ok(())
-}
-
-pub fn protocol_mismatch(expected: u32, actual: u32) -> PairingFailure {
-    PairingFailure::new(
-        SessionErrorCode::PairingProtocolMismatch,
-        format!("Pairing protocol mismatch: local v{expected}, remote v{actual}"),
-    )
 }
 
 pub fn internal_pairing_failure(_error: anyhow::Error) -> PairingFailure {

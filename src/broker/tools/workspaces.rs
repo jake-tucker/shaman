@@ -529,20 +529,18 @@ fn unresolved_on(name: &str, named: &str, refusal: RemoteActRefusal) -> ToolRefu
 
 /// What a Clone carried to a Remote is refused with: in the Remote's own
 /// words where it refused it; saying it does not understand a Clone where it
-/// speaks another protocol than this server's, as one without the Clone
-/// does; and where the Remote took it and its answer never came back, that
-/// it may have landed all the same and how to find out — otherwise as any
-/// act on a Remote is refused. Nothing is kept to Clone there later.
+/// is too old for one, too old to be spoken with or answering that it knows
+/// no such thing; and where the Remote took it and its answer never came
+/// back, that it may have landed all the same and how to find out —
+/// otherwise as any act on a Remote is refused. Nothing is kept to Clone
+/// there later.
 fn remote_clone_refusal(refusal: RemoteActRefusal) -> ToolRefusal {
     match refusal {
-        RemoteActRefusal::Origin(OriginRefusal::Silent(silent))
-            if silent.speaks_another_protocol() =>
-        {
+        RemoteActRefusal::Origin(OriginRefusal::Silent(silent)) if silent.is_too_old() => {
             ToolRefusal::new(format!(
-                "The Remote `{}` does not understand a Clone: it runs a version of Shaman that \
-                 speaks another protocol than this server's, so nothing can be asked of it until \
-                 one of them is updated. Nothing was cloned there, and nothing is kept to do once \
-                 it answers.",
+                "The Remote `{}` does not understand a Clone: it runs a Shaman too old for one, so \
+                 it understands one once Shaman there is updated. Nothing was cloned there, and \
+                 nothing is kept to do once it answers.",
                 silent.name
             ))
         }

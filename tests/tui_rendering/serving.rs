@@ -78,6 +78,7 @@ fn serving_shows_a_fresh_copyable_invite_and_removes_enrolled_peers() {
                 id: "peer-laptop".to_owned(),
                 fingerprint: "laptop-fingerprint".to_owned(),
                 name: "laptop".to_owned(),
+                behind: false,
             }],
         })
         .expect("show fresh invite and peers");
@@ -283,6 +284,7 @@ fn serve_lists_scroll_to_keep_the_focused_candidate_and_peer_fully_visible() {
             id: format!("peer-{index}"),
             fingerprint: format!("{index:02}{}", "f".repeat(62)),
             name: format!("machine-{index}"),
+            behind: false,
         })
         .collect::<Vec<_>>();
     let long_invite = format!("shaman-v1-{}", "a".repeat(150));
@@ -542,6 +544,7 @@ fn n_with_a_removal_armed_cancels_the_removal_and_keeps_the_code() {
             id: "peer-laptop".to_owned(),
             fingerprint: "laptop-fingerprint".to_owned(),
             name: "laptop".to_owned(),
+            behind: false,
         }],
     );
     press(&mut application, KeyCode::Char('x'));
@@ -914,4 +917,42 @@ fn a_server_replaced_under_a_code_shown_takes_the_code_away_saying_why() {
     let text = rendered_application_rows(&application).join("\n");
     assert!(!text.contains("K7QF-2MXP"), "{text}");
     assert!(text.contains("restarted"), "{text}");
+}
+
+/// A Peer this Server refused as too old stays enrolled, and is listed as
+/// the side to update, in words that say nothing of versions.
+#[test]
+fn a_peer_refused_as_too_old_is_listed_as_the_side_to_update() {
+    let peer = |name: &str, behind| Peer {
+        id: format!("peer-{name}"),
+        fingerprint: format!("{name}-fingerprint"),
+        name: name.to_owned(),
+        behind,
+    };
+    let application = showing_a_code_beside(
+        "K7QF-2MXP",
+        1,
+        vec![peer("laptop", true), peer("phone", false)],
+    );
+
+    let rows = rendered_application_rows_at(&application, 100, 40);
+    let laptop = rows
+        .iter()
+        .position(|row| row.contains("laptop-fingerprint"))
+        .expect("the laptop is listed");
+    assert!(
+        rows[laptop + 1].contains("Too old · update Shaman there"),
+        "{}",
+        rows.join("\n")
+    );
+    let phone = rows
+        .iter()
+        .position(|row| row.contains("phone-fingerprint"))
+        .expect("the phone is listed");
+    assert!(
+        !rows[phone + 1].contains("update Shaman"),
+        "{}",
+        rows.join("\n")
+    );
+    assert!(!rows.join("\n").to_lowercase().contains("version"));
 }

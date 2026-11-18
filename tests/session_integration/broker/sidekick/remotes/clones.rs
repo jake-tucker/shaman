@@ -517,16 +517,15 @@ async fn a_clone_on_a_remote_that_does_not_answer_or_understand_it_is_refused_an
         "nothing refused was kept to Clone once the Remote answers"
     );
 
-    pair.remote = pair.remote.restart_speaking(PROTOCOL_VERSION - 1).await;
+    pair.remote = pair.remote.restart_speaking(OLDER).await;
     assert_eq!(
         refused(&mut sidekick, "clone_workspace", clone).await,
         format!(
-            "The Remote `{REMOTE}` does not understand a Clone: it runs a version of Shaman that \
-             speaks another protocol than this server's, so nothing can be asked of it until one \
-             of them is updated. Nothing was cloned there, and nothing is kept to do once it \
-             answers."
+            "The Remote `{REMOTE}` does not understand a Clone: it runs a Shaman too old for one, \
+             so it understands one once Shaman there is updated. Nothing was cloned there, and \
+             nothing is kept to do once it answers."
         ),
-        "a Remote on a version of the protocol without the Clone says it does not understand one"
+        "a Remote too old for the Clone says it does not understand one"
     );
     assert!(contents(&there).is_empty(), "nothing was cloned there");
 

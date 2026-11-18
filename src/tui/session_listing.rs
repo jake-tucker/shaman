@@ -373,7 +373,7 @@ pub(super) fn everywhere_origins(remotes: Vec<Remote>) -> Vec<Outlook> {
     origins.extend(remotes.into_iter().filter_map(|remote| {
         (!matches!(
             remote.status,
-            RemoteStatus::Revoked | RemoteStatus::ProtocolMismatch
+            RemoteStatus::Revoked | RemoteStatus::Behind | RemoteStatus::Ahead
         ))
         .then_some(Outlook::Remote(remote.name))
     }));

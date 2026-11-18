@@ -822,6 +822,7 @@ fn paired_remote_picker_shows_each_pairing_status() {
         .handle_event(ApplicationEvent::RemotesListed(vec![
             remote("studio"),
             remote("old"),
+            remote("newer"),
             remote("revoked"),
             remote("offline"),
         ]))
@@ -847,7 +848,17 @@ fn paired_remote_picker_shows_each_pairing_status() {
             name: "old".to_owned(),
             result: Ok(RemoteHealth {
                 protocol_version: Some(27),
-                status: RemoteStatus::ProtocolMismatch,
+                status: RemoteStatus::Behind,
+                unreachable: None,
+            }),
+        })
+        .unwrap();
+    application
+        .handle_event(ApplicationEvent::RemoteProbed {
+            name: "newer".to_owned(),
+            result: Ok(RemoteHealth {
+                protocol_version: Some(900),
+                status: RemoteStatus::Ahead,
                 unreachable: None,
             }),
         })
@@ -871,7 +882,17 @@ fn paired_remote_picker_shows_each_pairing_status() {
 
     let picker = rendered_application_rows(&application).join("\n");
     assert!(picker.contains("studio  Available"));
-    assert!(picker.contains("old  Protocol v27 mismatch"));
+    // Each side too far from the other names the side to update, in words
+    // that say nothing of versions.
+    assert!(
+        picker.contains("old  Too old · update Shaman there"),
+        "{picker}"
+    );
+    assert!(
+        picker.contains("newer  Too new for this Shaman · update Shaman here"),
+        "{picker}"
+    );
+    assert!(!picker.contains("Protocol") && !picker.to_lowercase().contains("version"));
     assert!(picker.contains("revoked  Revoked"));
     assert!(picker.contains("offline  Unavailable · could not reach remote"));
 }
@@ -1317,7 +1338,10 @@ fn every_invite_refusal_is_precise_and_visible_on_the_step_that_failed() {
             "not-an-invite",
             "Invite must start with `shaman-`; was all of it copied?",
         ),
-        ("shaman-v2-e30", "Invite version `v2` is not supported"),
+        (
+            "shaman-v2-e30",
+            "That Invite is from a newer Shaman; update Shaman here",
+        ),
     ] {
         let mut application = invite_entry();
         application

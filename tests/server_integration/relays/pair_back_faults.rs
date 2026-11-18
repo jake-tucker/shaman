@@ -228,8 +228,18 @@ fn invite_offering(key: &KeyPair, ways: serde_json::Value) -> String {
 }
 
 /// Runs `app` over the Pairing's TLS holding `identity`, speaking HTTP/2 as a
-/// direct way's connection does, and answers where it is reached.
+/// direct way's connection does and stating on every answer the version this
+/// build speaks, as a Serving Server does, and answers where it is reached.
 async fn standing_in(identity: &KeyPair, app: Router) -> SocketAddr {
+    let app = app.layer(axum::middleware::map_response(
+        |mut response: axum::response::Response| async move {
+            response.headers_mut().insert(
+                "x-shaman-protocol-version",
+                axum::http::HeaderValue::from(PROTOCOL_VERSION),
+            );
+            response
+        },
+    ));
     let certificate = rcgen::CertificateParams::new(vec!["shaman-server".to_owned()])
         .unwrap()
         .self_signed(identity)

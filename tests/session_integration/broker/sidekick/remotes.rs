@@ -25,11 +25,12 @@ use reqwest::header::{ACCEPT, AUTHORIZATION, HOST};
 use shaman::{
     protocol::{
         CheckoutAssociation, CheckoutBranchOutcome, CheckoutRecovery, CheckoutRemovalInspection,
-        CheckoutRemovalTarget, CheckoutSummary, IssueInviteRequest, IssuedInvite, PROTOCOL_VERSION,
-        PreparationId, PreparedCheckout, RedeemInviteRequest, Remote, Repository,
+        CheckoutRemovalTarget, CheckoutSummary, IssueInviteRequest, IssuedInvite, PROTOCOL_FLOOR,
+        PROTOCOL_VERSION, PreparationId, PreparedCheckout, RedeemInviteRequest, Remote, Repository,
         ResolvedWorkspace, Way,
     },
     provider::{ProviderActivityId, ProviderCommandStatus},
+    server::PairingProtocol,
     source_control::{GitSourceControl, PreparationCheckpoint, SourceControl},
 };
 use tokio::sync::oneshot;
@@ -50,6 +51,18 @@ mod unconfirmed;
 
 /// The name the Sidekick's own Server knows its Remote by.
 const REMOTE: &str = "workstation";
+
+/// A Remote too old for this build to speak with.
+const OLDER: PairingProtocol = PairingProtocol {
+    version: PROTOCOL_FLOOR - 1,
+    floor: PROTOCOL_FLOOR - 1,
+};
+
+/// A Remote that no longer speaks with this build.
+const NEWER: PairingProtocol = PairingProtocol {
+    version: PROTOCOL_VERSION + 1,
+    floor: PROTOCOL_VERSION + 1,
+};
 
 /// A Server Serving on this machine's loopback and hosting the Claude double:
 /// a Remote to be, dialed by way of a route a test can take offline or have
@@ -129,7 +142,7 @@ impl Serving {
         );
         let git = Arc::new(HeldGit::default());
         let (server, provider) =
-            Self::spawn(&config, PROTOCOL_VERSION, keep_alive, &hosted, &git).await;
+            Self::spawn(&config, PairingProtocol::CURRENT, keep_alive, &hosted, &git).await;
         for mutation in [
             SettingMutation::ServingPort { value: Some(0) },
             SettingMutation::ServingBindAddress {
@@ -154,7 +167,7 @@ impl Serving {
 
     async fn spawn(
         config: &ServerConfig,
-        protocol_version: u32,
+        protocol: PairingProtocol,
         keep_alive: Duration,
         (provider, models): &(ProviderId, Vec<ModelDescriptor>),
         git: &Arc<HeldGit>,
@@ -166,7 +179,7 @@ impl Serving {
             vec![runtime],
             ServerTimings {
                 shutdown_grace: Duration::from_millis(5),
-                pairing_protocol_version: protocol_version,
+                pairing_protocol: protocol,
                 sse_keepalive_interval: keep_alive,
                 ..ServerTimings::default()
             },
@@ -181,16 +194,16 @@ impl Serving {
         self.server.descriptor().clone()
     }
 
-    /// The same Server stopped and started again speaking `protocol_version`
-    /// to its Peers, reached by way of the route it was.
-    async fn restart_speaking(self, protocol_version: u32) -> Self {
-        self.restart(protocol_version, |_| {}).await
+    /// The same Server stopped and started again speaking `protocol` to its
+    /// Peers, reached by way of the route it was.
+    async fn restart_speaking(self, protocol: PairingProtocol) -> Self {
+        self.restart(protocol, |_| {}).await
     }
 
     /// The same Server stopped, its database `meanwhile` handed while it is
-    /// stopped, and started again speaking `protocol_version` to its Peers,
-    /// reached by way of the route it was.
-    async fn restart(self, protocol_version: u32, meanwhile: impl FnOnce(&Path)) -> Self {
+    /// stopped, and started again speaking `protocol` to its Peers, reached
+    /// by way of the route it was.
+    async fn restart(self, protocol: PairingProtocol, meanwhile: impl FnOnce(&Path)) -> Self {
         let Self {
             server,
             hosted,
@@ -203,8 +216,7 @@ impl Serving {
         } = self;
         server.shutdown().await.expect("stop the Remote");
         meanwhile(&config.data_dir().join("shaman.db"));
-        let (server, provider) =
-            Self::spawn(&config, protocol_version, keep_alive, &hosted, &git).await;
+        let (server, provider) = Self::spawn(&config, protocol, keep_alive, &hosted, &git).await;
         route.retarget(
             server
                 .serving_address()
@@ -1856,7 +1868,7 @@ async fn a_session_its_remote_cannot_read_is_refused_saying_so() {
     let broken = working_session(&pair.remote.descriptor(), there.path(), "Bind the ledger").await;
     pair.remote = pair
         .remote
-        .restart(PROTOCOL_VERSION, |database| {
+        .restart(PairingProtocol::CURRENT, |database| {
             use diesel::{Connection, RunQueryDsl, SqliteConnection};
             let mut database = SqliteConnection::establish(database.to_str().unwrap())
                 .expect("open the Remote's database");

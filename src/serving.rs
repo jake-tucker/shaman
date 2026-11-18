@@ -20,7 +20,7 @@
 //! which attaches to the redeemer by its hooks.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     net::SocketAddr,
     path::PathBuf,
     pin::Pin,
@@ -67,14 +67,14 @@ use tokio_rustls::{TlsAcceptor, server::TlsStream};
 
 use crate::{
     pairing::{
-        ByteStream, CONNECTION_WINDOW, Carried, EnrollmentPhase, EnrollmentRequest,
+        Behind, ByteStream, CONNECTION_WINDOW, Carried, EnrollmentPhase, EnrollmentRequest,
         EnrollmentResponse, FORWARDED_AUTHOR_PROOF_HEADER, GivenRelays, IdentityMaterial,
         InvitePayload, Keepalive, Liveness, MAX_INVITE_KEY, MAX_PEER_NAME_CHARS, MULTIPLEXED,
         OFFERED_RELAYS_PATH, OfferedRelays, PAIRING_ANSWER_BUDGET, PAIRING_PROTOCOL_HEADER,
-        PAIRING_WITHDRAWAL_PATH, PEER_API_PREFIX, PairingFailure, PairingHealth, ParsedInvite,
-        Preface, Redeemer, RelayWays, STREAM_WINDOW, STREAMS_IN_ALL, Wanted, author_header,
-        crypto_provider, decode_token, fingerprint, internal_pairing_failure, machine_hostname,
-        new_token, parse_invite, passed_on, protocol_mismatch, public_key_from_certificate,
+        PAIRING_WITHDRAWAL_PATH, PEER_API_PREFIX, PairingFailure, PairingHealth, PairingProtocol,
+        ParsedInvite, Preface, Redeemer, RelayWays, STREAM_WINDOW, STREAMS_IN_ALL, Wanted,
+        author_header, crypto_provider, decode_token, fingerprint, internal_pairing_failure,
+        machine_hostname, new_token, parse_invite, passed_on, public_key_from_certificate,
         read_records, relay_refusal, remove_hop_by_hop_headers, shown_peer_name,
         undelivered_or_lost, ways_are_unique_and_nonempty, write_private_json,
     },
@@ -165,7 +165,7 @@ pub(crate) struct ServingController {
     invites: Arc<StdMutex<InviteLedger>>,
     /// The short codes of those Invites, and the exchange that delivers them.
     short_codes: ShortCodes,
-    protocol_version: u32,
+    protocol: PairingProtocol,
     identity: IdentityKey,
     peers: PeerRecords,
     /// The redeeming side, beside which this Serves: the Remotes this Server
@@ -197,6 +197,10 @@ pub(crate) struct ServingController {
 struct PeerRecords {
     file: PathBuf,
     records: Arc<RwLock<Vec<StoredPeer>>>,
+    /// The Peers, by id, that last asked as older than this Server still
+    /// speaks with and were refused for it: known only while the Server
+    /// runs, and told again by the Peer's next request after it starts.
+    behind: Arc<StdMutex<HashSet<String>>>,
 }
 
 impl PeerRecords {
@@ -220,6 +224,29 @@ impl PeerRecords {
         self.records
             .write()
             .expect("Peer record lock is not poisoned")
+    }
+
+    /// Notes whether the Peer `id` last asked as older than this Server
+    /// still speaks with.
+    fn note_behind(&self, id: &str, behind: bool) {
+        let mut noted = self
+            .behind
+            .lock()
+            .expect("behind Peer lock is not poisoned");
+        if behind {
+            noted.insert(id.to_owned());
+        } else {
+            noted.remove(id);
+        }
+    }
+
+    /// Whether the Peer `id` last asked as older than this Server still
+    /// speaks with.
+    fn is_behind(&self, id: &str) -> bool {
+        self.behind
+            .lock()
+            .expect("behind Peer lock is not poisoned")
+            .contains(id)
     }
 
     /// Changes the records as `change` says: put back as they were where it
@@ -537,7 +564,7 @@ fn peer_name<'a>(
 struct ServingState {
     controller: ServingController,
     hostname: String,
-    protocol_version: u32,
+    protocol: PairingProtocol,
 }
 
 #[derive(Clone, Debug)]
@@ -581,6 +608,7 @@ impl ServingController {
         let peers = PeerRecords {
             file: data_dir.join(PEERS_FILE),
             records: Arc::new(RwLock::new(peers)),
+            behind: Arc::default(),
         };
         let relays = redeemer.relays();
         let offering = pair_back::Offering {
@@ -592,7 +620,7 @@ impl ServingController {
             offered_relays: offered_relays.clone(),
             relays: relays.clone(),
             loopback: false,
-            protocol_version: redeemer.protocol_version(),
+            protocol: redeemer.protocol(),
         };
         let pair_back = PairBack::new(
             defaults.pair_back_invite_ttl,
@@ -621,7 +649,7 @@ impl ServingController {
                 defaults.short_invite_timeout,
             ),
             invites,
-            protocol_version: redeemer.protocol_version(),
+            protocol: redeemer.protocol(),
             identity,
             peers,
             relays,
@@ -652,7 +680,7 @@ impl ServingController {
             |identity| {
                 Redeemer::new(
                     data_dir,
-                    crate::protocol::PROTOCOL_VERSION,
+                    PairingProtocol::CURRENT,
                     identity,
                     crate::pairing::RedeemerTimings::default(),
                 )
@@ -702,7 +730,7 @@ impl ServingController {
             offered_relays: self.offered_relays.clone(),
             relays: self.relays.clone(),
             loopback: self.offers_loopback,
-            protocol_version: self.protocol_version,
+            protocol: self.protocol,
         }
     }
 
@@ -999,6 +1027,7 @@ impl ServingController {
                 id: peer.id.clone(),
                 fingerprint: peer.id.clone(),
                 name: peer.name(),
+                behind: self.peers.is_behind(&peer.id),
             })
             .collect()
     }
@@ -1374,6 +1403,23 @@ impl ServingController {
         self.peers.enrolled(public_key)
     }
 
+    /// Refuses what the Peer `id` asks, carrying `headers`, before doing any
+    /// of it, where the two are too far apart to speak: the Peer stating a
+    /// version older than this Server still speaks with, or none, which notes
+    /// it behind as the Peers are listed until it next asks as one this
+    /// Server speaks with; or this Server older than the floor the Peer
+    /// states. Its Pairing stands either way, so updating the side behind
+    /// heals the Pairing.
+    fn peer_speaks(
+        &self,
+        id: &str,
+        headers: &HeaderMap,
+    ) -> std::result::Result<(), PairingFailure> {
+        let judged = self.protocol.judge_peer(headers);
+        self.peers.note_behind(id, judged == Err(Behind::Peer));
+        judged.map_err(Behind::refusal)
+    }
+
     /// Who performs the act a request to this Server's own Session API asks
     /// for, where it names anyone: a Sidekick on a Peer, as the Serving
     /// listener named it on carrying the Peer's request here. A request
@@ -1416,11 +1462,8 @@ impl ServingController {
         request: EnrollmentRequest,
         public_key: Vec<u8>,
     ) -> std::result::Result<(), PairingFailure> {
-        if request.protocol_version != self.protocol_version {
-            return Err(protocol_mismatch(
-                self.protocol_version,
-                request.protocol_version,
-            ));
+        if !self.protocol.speaks_with(request.protocol_version) {
+            return Err(Behind::Peer.pairing_refused());
         }
         let token = decode_token(&request.token)?;
         // A Remote of this very key already reaches back, so no offer is held.
@@ -1615,9 +1658,9 @@ fn code_refused(refused: RefusedAtOnce) -> PairingFailure {
              offers: issue one that does, or log in here at one it does",
         ),
         RefusedAtOnce::Version | RefusedAtOnce::Malformed => PairingFailure::new(
-            SessionErrorCode::PairingProtocolMismatch,
-            "That machine runs another version of Shaman that does not take this code, which is \
-             not used. Pair by pasting an Invite instead",
+            SessionErrorCode::UnsupportedInviteVersion,
+            "That machine's Shaman does not take this code, which is not used. Pair by pasting an \
+             Invite instead",
         ),
     }
 }
@@ -1736,13 +1779,13 @@ async fn serve(
         awaiting_revocation: controller.awaiting_revocation.clone(),
         connections,
     };
-    let protocol_version = controller.protocol_version;
+    let protocol = controller.protocol;
     let keepalive = controller.keepalive;
     let startup = controller.handshake_timeout;
     let state = ServingState {
         controller,
         hostname: machine_hostname(),
-        protocol_version,
+        protocol,
     };
     let app = Router::new()
         .route("/health", get(serving_health))
@@ -1755,6 +1798,16 @@ async fn serve(
                 .layer(axum::extract::DefaultBodyLimit::max(PAIRING_ANSWER_BUDGET)),
         )
         .route("/v1/pairing/proxy/{*path}", any(forward_peer_api))
+        // Every answer states the version this Server speaks, so a Peer
+        // judges it against its own floor whatever it asked.
+        .layer(axum::middleware::map_response(
+            move |mut response: Response| async move {
+                response
+                    .headers_mut()
+                    .insert(PAIRING_PROTOCOL_HEADER, protocol.header_value());
+                response
+            },
+        ))
         .with_state(state);
     loop {
         let (stream, connection) = acceptor.accept().await;
@@ -1838,7 +1891,10 @@ async fn forward_peer_api(
     else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    if let Err(refusal) = peer_speaks(request.headers(), state.protocol_version) {
+    if let Err(refusal) = state
+        .controller
+        .peer_speaks(&fingerprint, request.headers())
+    {
         return failure_response(refusal);
     }
     let Some(path_and_query) = request
@@ -2106,7 +2162,8 @@ pub(crate) fn failure_status(failure: &PairingFailure) -> StatusCode {
         SessionErrorCode::PairingConnectionFailed
         | SessionErrorCode::PairingAuthenticationFailed
         | SessionErrorCode::PairingOutcomeUnknown => StatusCode::BAD_GATEWAY,
-        SessionErrorCode::PairingProtocolMismatch
+        SessionErrorCode::PairingPeerBehind
+        | SessionErrorCode::PairingServerBehind
         | SessionErrorCode::RelayLoginNeeded
         | SessionErrorCode::RelayDifferentAccounts => StatusCode::CONFLICT,
         // A place comes free once a connection joined for the Account
@@ -2190,19 +2247,26 @@ fn local_forward_headers(token: &str) -> HeaderMap {
     headers
 }
 
+/// A Peer asking whether this Server answers, and as what: refused as
+/// behind, as anything it asks would be, where it is older than this Server
+/// still speaks with, so its probe finds what its requests would.
 async fn serving_health(
     State(state): State<ServingState>,
     ConnectInfo(connection): ConnectInfo<ServingConnectionInfo>,
+    headers: HeaderMap,
 ) -> Response {
-    let authenticated = connection
+    let Some((id, _)) = connection
         .peer_key
         .as_deref()
-        .is_some_and(|key| state.controller.is_enrolled_peer(key));
-    if !authenticated {
+        .and_then(|key| state.controller.enrolled_peer(key))
+    else {
         return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if let Err(refusal) = state.controller.peer_speaks(&id, &headers) {
+        return failure_response(refusal);
     }
     Json(PairingHealth {
-        protocol_version: state.protocol_version,
+        protocol_version: state.protocol.version,
     })
     .into_response()
 }
@@ -2221,7 +2285,7 @@ async fn enroll_peer(
     match state.controller.enroll(request, public_key) {
         Ok(()) => Json(EnrollmentResponse {
             hostname: state.hostname,
-            protocol_version: state.protocol_version,
+            protocol_version: state.protocol.version,
         })
         .into_response(),
         Err(error) => failure_response(error),
@@ -2247,28 +2311,6 @@ async fn withdraw_peer(
     }
 }
 
-/// Refuses what a Peer asks, carrying `headers`, unless it states the
-/// Pairing protocol version this Server speaks, `protocol_version`.
-fn peer_speaks(
-    headers: &HeaderMap,
-    protocol_version: u32,
-) -> std::result::Result<(), PairingFailure> {
-    let Some(peer_protocol_version) = headers
-        .get(PAIRING_PROTOCOL_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u32>().ok())
-    else {
-        return Err(PairingFailure::new(
-            SessionErrorCode::PairingProtocolMismatch,
-            "Peer did not state a valid Pairing protocol version",
-        ));
-    };
-    if peer_protocol_version != protocol_version {
-        return Err(protocol_mismatch(protocol_version, peer_protocol_version));
-    }
-    Ok(())
-}
-
 /// A Peer asking which Relays this Server Serves through: told at once, and
 /// again each time that changes, a line of the answer each time, for as long
 /// as the Peer holds the answer open and stays enrolled. Only Relays are
@@ -2280,13 +2322,13 @@ async fn tell_offered_relays(
     ConnectInfo(connection): ConnectInfo<ServingConnectionInfo>,
     headers: HeaderMap,
 ) -> Response {
-    let Some(peer_key) = connection
-        .peer_key
-        .filter(|key| state.controller.is_enrolled_peer(key))
-    else {
+    let Some((peer_key, id)) = connection.peer_key.and_then(|key| {
+        let (id, _) = state.controller.enrolled_peer(&key)?;
+        Some((key, id))
+    }) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    if let Err(refusal) = peer_speaks(&headers, state.protocol_version) {
+    if let Err(refusal) = state.controller.peer_speaks(&id, &headers) {
         return failure_response(refusal);
     }
     let offered = state.controller.offered_relays.subscribe();
@@ -3649,7 +3691,7 @@ mod tests {
         let state = ServingState {
             controller: controller.clone(),
             hostname: "workstation".to_owned(),
-            protocol_version: crate::protocol::PROTOCOL_VERSION,
+            protocol: PairingProtocol::CURRENT,
         };
         let claimed = author_header(&Author::Sidekick {
             session_id: crate::protocol::SessionId::new(),
@@ -4072,7 +4114,7 @@ mod tests {
             .invite;
         let redeemer = Redeemer::new(
             redeeming_data.path(),
-            crate::protocol::PROTOCOL_VERSION,
+            crate::pairing::PairingProtocol::CURRENT,
             Arc::new(GivenIdentity(IdentityMaterial::fresh())),
             RedeemerTimings::default(),
         )

@@ -15,11 +15,11 @@ fn revoked() -> String {
     )
 }
 
-/// What a Remote speaking another protocol is said to do.
+/// What a Remote that no longer speaks with this server is said to do.
 fn incompatible() -> String {
     format!(
-        "The Remote `{REMOTE}` runs a version of Shaman that speaks another protocol than this \
-         server's, so nothing can be asked of it until one of them is updated."
+        "The Remote `{REMOTE}` no longer works with a Shaman as old as this server's, so it \
+         refused what was asked; it works again once Shaman here is updated."
     )
 }
 
@@ -103,7 +103,7 @@ async fn a_remote_speaking_another_protocol_is_named_as_such_and_nothing_of_it_i
         ["Bind the ledger"]
     );
 
-    pair.remote = pair.remote.restart_speaking(PROTOCOL_VERSION + 1).await;
+    pair.remote = pair.remote.restart_speaking(NEWER).await;
 
     not_answering(&mut sidekick, bound, &incompatible()).await;
 

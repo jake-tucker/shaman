@@ -126,15 +126,15 @@ fn unreached(failure: PairingFailure) -> SessionError {
 mod tests {
     use std::time::Duration;
 
-    use shaman_pairing::{GivenIdentity, IdentityMaterial, RedeemerTimings};
+    use shaman_pairing::{GivenIdentity, IdentityMaterial, PairingProtocol, RedeemerTimings};
 
     use super::*;
-    use crate::protocol::{PROTOCOL_VERSION, UnreachableReason};
+    use crate::protocol::UnreachableReason;
 
     fn redeemer(directory: &std::path::Path) -> Redeemer {
         Redeemer::new(
             directory,
-            PROTOCOL_VERSION,
+            PairingProtocol::CURRENT,
             Arc::new(GivenIdentity(IdentityMaterial::fresh())),
             RedeemerTimings::default(),
         )

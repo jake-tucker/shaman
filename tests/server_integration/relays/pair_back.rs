@@ -16,12 +16,12 @@ use shaman::{
         Outlook, PROTOCOL_VERSION, PairBackOffers, RedeemInviteRequest, Remote, RemoteStatus,
         SessionErrorCode, Way,
     },
-    server::ServerTimings,
+    server::{PairingProtocol, ServerTimings},
 };
 use tokio::time::timeout;
 
 use super::{
-    TestRelay, TestServer, error_code,
+    OLDER, TestRelay, TestServer, error_code,
     pairing::{REMOTE, next_catalog_event},
     relay_timings,
     serving::{Multiplexed, paired_tls},
@@ -990,24 +990,23 @@ async fn a_client_is_told_of_offers_as_it_connects_and_as_they_change() {
 }
 
 #[tokio::test]
-async fn an_offer_waits_through_a_version_mismatch_and_strands_no_pairing() {
-    let (workstation, mut laptop) = offered_directly("mismatch").await;
+async fn an_offer_waits_while_its_maker_is_too_old_for_the_remote_and_strands_no_pairing() {
+    let (workstation, mut laptop) = offered_directly("too-old").await;
     workstation.accept_offer().await;
 
-    // The laptop comes to speak another version of the Pairing than the
-    // workstation. Everything over the Pairing is refused, as ever, the offer
-    // among it: it is neither asked of nor ended by that.
-    let speaking = laptop.timings.pairing_protocol_version;
-    laptop.timings.pairing_protocol_version = speaking - 1;
+    // The laptop comes to be older than the workstation still speaks with.
+    // Everything over the Pairing is refused, the offer among it: it is
+    // neither asked of nor ended by that.
+    laptop.timings.pairing_protocol = OLDER;
     laptop.restart().await;
-    laptop.wait_for_remote(RemoteStatus::ProtocolMismatch).await;
+    laptop.wait_for_remote(RemoteStatus::Ahead).await;
     assert_eq!(laptop.made_offer().await.held_up, None);
     assert_eq!(laptop.peer_count().await, 0, "nothing was issued");
     assert!(workstation.remote_named(LAPTOP).await.is_none());
     assert!(workstation.held_offer().await.answer.is_some());
 
-    // Speaking one version again, it goes on as if nothing had happened.
-    laptop.timings.pairing_protocol_version = speaking;
+    // Updated, it goes on as if nothing had happened.
+    laptop.timings.pairing_protocol = PairingProtocol::CURRENT;
     laptop.restart().await;
     laptop.wait_for_remote(RemoteStatus::Available).await;
     workstation.remote_comes_to_be(LAPTOP).await;
@@ -1018,30 +1017,23 @@ async fn an_offer_waits_through_a_version_mismatch_and_strands_no_pairing() {
 }
 
 #[tokio::test]
-async fn a_server_of_another_version_is_refused_the_pairing_with_no_offer_asked_of_it() {
+async fn a_server_too_old_to_pair_with_is_refused_the_pairing_with_no_offer_asked_of_it() {
     let (older, laptop) = serving_directly_by(
         "older",
         ServerTimings {
-            pairing_protocol_version: PROTOCOL_VERSION - 1,
+            pairing_protocol: OLDER,
             ..timings()
         },
     )
     .await;
-    let laptop_timings = ServerTimings {
-        pairing_protocol_version: PROTOCOL_VERSION,
-        ..timings()
-    };
-    let current = TestServer::with_timings("older-current", laptop_timings).await;
+    let current = TestServer::with_timings("older-current", timings()).await;
     current.serve().await;
 
     let refused = current
         .redeem_offering(older.invite(vec![older.way()]).await)
         .await
-        .expect_err("another version");
-    assert_eq!(
-        error_code(&refused),
-        SessionErrorCode::PairingProtocolMismatch
-    );
+        .expect_err("a Server too old to pair with");
+    assert_eq!(error_code(&refused), SessionErrorCode::PairingServerBehind);
     assert_eq!(older.offers().await, PairBackOffers::default());
     assert_eq!(current.offers().await, PairBackOffers::default());
 

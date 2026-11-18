@@ -2336,12 +2336,26 @@ fn serve_peer_lines(
             style.add_modifier(Modifier::BOLD),
         )
     });
+    // A Peer refused as too old keeps its Pairing, which its update heals.
+    let behind = peer.behind.then(|| {
+        Line::styled(
+            format!(
+                "  {}",
+                truncate_to_width(
+                    "Too old · update Shaman there",
+                    usize::from(width.saturating_sub(2))
+                )
+            ),
+            theme.feedback.warning,
+        )
+    });
     name.into_iter()
         .chain(
             TextLayout::new(&peer.fingerprint, width.saturating_sub(2))
                 .rows()
                 .map(|row| Line::styled(format!("{prefix}{}", row.text), style)),
         )
+        .chain(behind)
         .collect()
 }
 

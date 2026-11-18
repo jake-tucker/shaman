@@ -34,7 +34,18 @@ pub mod session_projection;
 mod workspace_paths;
 pub use workspace_paths::{MANAGED_WORKTREE_DIRECTORY, PathStyle, WorkspacePaths};
 
-pub const PROTOCOL_VERSION: u32 = 116;
+/// The protocol version this build speaks: stated on every request a Peer
+/// makes of a Serving Server and on every answer that Server gives, and
+/// moved with every change to the wire (ADR-0078).
+pub const PROTOCOL_VERSION: u32 = 117;
+
+/// The oldest protocol version this build still speaks with across a
+/// Pairing: a Peer or a Serving Server stating one at or above it is
+/// accepted, and one stating less is refused as behind (ADR-0078). Raising
+/// it is a deliberate, recorded act, made only where a change to the wire
+/// cannot be made by addition. The loopback wire is not held to it: a
+/// machine's own Client and Server match [`PROTOCOL_VERSION`] exactly.
+pub const PROTOCOL_FLOOR: u32 = 117;
 mod attachment;
 mod divided_usage;
 mod pair_back;
@@ -2602,6 +2613,11 @@ pub struct Peer {
     pub id: String,
     pub fingerprint: String,
     pub name: String,
+    /// Whether the Peer last asked as older than this Server still speaks
+    /// with, and was refused for it: Shaman there needs updating, and the
+    /// Pairing stands meanwhile, so updating it heals the Pairing.
+    #[serde(default)]
+    pub behind: bool,
 }
 
 /// Whether a Remote can serve this Server's protocol. Kept on the successful
@@ -2613,7 +2629,14 @@ pub enum RemoteStatus {
     Available,
     Unavailable,
     Revoked,
-    ProtocolMismatch,
+    /// The Remote is older than this side still speaks with, so this side
+    /// asks it nothing: Shaman there needs updating. The Pairing stands, and
+    /// updating it heals the Pairing.
+    Behind,
+    /// The Remote no longer speaks with a side as old as this one, and
+    /// refuses what it asks: Shaman here needs updating. The Pairing stands,
+    /// and updating this side heals the Pairing.
+    Ahead,
 }
 
 /// The outcome of removing a Remote. Removal always ends the Pairing on this
@@ -7304,7 +7327,15 @@ pub enum SessionErrorCode {
     PeerNotFound,
     PairingConnectionFailed,
     PairingAuthenticationFailed,
-    PairingProtocolMismatch,
+    /// The Serving Server refused the Peer as older than it still speaks
+    /// with: Shaman on the Peer needs updating. The Pairing stands, and
+    /// updating the Peer heals it (ADR-0078).
+    PairingPeerBehind,
+    /// The redeeming side refused what the Serving Server answered, as older
+    /// than the redeeming side still speaks with: Shaman on the Serving
+    /// Server needs updating. The Pairing stands, and updating that Server
+    /// heals it (ADR-0078). No Serving Server sends it.
+    PairingServerBehind,
     /// As many requests await the Remote's answer as this Server asks of it
     /// at once, so this one was not asked; asked again shortly, once some
     /// are answered, it may be.
@@ -7369,6 +7400,11 @@ pub enum SessionErrorCode {
     /// the stream ends rather than carry on against a Server it did not
     /// open on. No Server sends it; a Client's transport answers it.
     ServerReplaced,
+    /// The Server answered that it knows no such thing as what was asked of
+    /// it, with no Session error saying what was not found: it is older than
+    /// what was asked, and updating Shaman there lets it be asked
+    /// (ADR-0078). No Server sends it; a Client reads such a not-found so.
+    ServerTooOld,
     /// A code this reader does not know, from a Server newer than it: what
     /// went wrong is whatever the message beside it says (ADR-0078). No
     /// Server sends it; a reader reads every code it was built without as

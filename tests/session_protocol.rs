@@ -1356,10 +1356,11 @@ fn a_sidekick_on_a_peer_is_named_by_the_peer_alone() {
         id: "ab12".to_owned(),
         fingerprint: "ab12".to_owned(),
         name: "laptop".to_owned(),
+        behind: true,
     };
     assert_eq!(
         serde_json::to_value(&peer).expect("encode a Peer"),
-        json!({ "id": "ab12", "fingerprint": "ab12", "name": "laptop" })
+        json!({ "id": "ab12", "fingerprint": "ab12", "name": "laptop", "behind": true })
     );
 }
 

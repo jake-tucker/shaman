@@ -43,12 +43,12 @@ use super::{
     GivenRelays, IdentityKey, InviteLedger, IssuedToken, MAX_PEER_NAME_CHARS, PEERS_FILE,
     PairingFailure, PeerRecords, ServingConnectionInfo, ServingController, ServingState,
     ServingStretch, StoredPeer, TokenState, Way, failure_response, invite_text, new_token,
-    parse_invite, peer_speaks,
+    parse_invite,
 };
 use crate::{
     pairing::{
-        PairingHttpClient, Redeemer, RedeemerHooks, StoredMadeOffer, StoredRemote, StrongClient,
-        ToldOffer, WayAttempt, remote_forward_headers, small_answer, validate_remote_name,
+        PairingHttpClient, PairingProtocol, Redeemer, RedeemerHooks, StoredMadeOffer, StoredRemote,
+        StrongClient, ToldOffer, WayAttempt, small_answer, validate_remote_name,
         write_private_json,
     },
     protocol::{
@@ -224,7 +224,7 @@ pub(super) struct Offering {
     /// Whether a listener bound to a loopback address counts as a way to
     /// offer.
     pub(super) loopback: bool,
-    pub(super) protocol_version: u32,
+    pub(super) protocol: PairingProtocol,
 }
 
 /// What settles one key's offers, as it stands.
@@ -922,15 +922,13 @@ impl PairBack {
         let body = Bytes::from(
             serde_json::to_vec(word).expect("what a Peer says of its offer always encodes"),
         );
-        let protocol_version = self.offering.protocol_version;
+        let protocol = self.offering.protocol;
         let asking = || {
             let mut request = http::Request::post(OFFER_PATH)
                 .header(http::header::CONTENT_TYPE, "application/json")
                 .body(Full::new(body.clone()))
                 .expect("what a Peer says of its offer is well formed");
-            request
-                .headers_mut()
-                .extend(remote_forward_headers(protocol_version));
+            request.headers_mut().extend(protocol.stated());
             request
         };
         let answer = redeemer
@@ -941,6 +939,11 @@ impl PairBack {
                         Ok(response) if response.status() == StatusCode::UNAUTHORIZED => {
                             self.refused(redeemer, &remote.public_key);
                             WayAttempt::Answered(Spoken::Refused)
+                        }
+                        // A Remote too old to be spoken with is heard in
+                        // nothing it says.
+                        Ok(response) if !protocol.speaks_with_stated(response.headers()) => {
+                            WayAttempt::Answered(Spoken::Unheard)
                         }
                         Ok(response) if response.status().is_success() => {
                             match small_answer::<OfferAnswer>(response).await {
@@ -1387,13 +1390,13 @@ pub(super) async fn take_offer_word(
     headers: HeaderMap,
     Json(word): Json<OfferWord>,
 ) -> Response {
-    let Some(key) = connection
-        .peer_key
-        .filter(|key| state.controller.is_enrolled_peer(key))
-    else {
+    let Some((key, id)) = connection.peer_key.and_then(|key| {
+        let (id, _) = state.controller.enrolled_peer(&key)?;
+        Some((key, id))
+    }) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    if let Err(refusal) = peer_speaks(&headers, state.protocol_version) {
+    if let Err(refusal) = state.controller.peer_speaks(&id, &headers) {
         return failure_response(refusal);
     }
     Json(
@@ -1522,7 +1525,7 @@ mod tests {
             |identity| {
                 Redeemer::new(
                     data.path(),
-                    crate::protocol::PROTOCOL_VERSION,
+                    crate::pairing::PairingProtocol::CURRENT,
                     identity,
                     crate::pairing::RedeemerTimings {
                         handshake_timeout: tokio::time::Duration::from_millis(500),

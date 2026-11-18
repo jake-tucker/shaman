@@ -214,7 +214,7 @@ async fn a_prompt_sent_to_a_remote_stands_there_as_a_sidekicks_on_this_peer_by_i
          to be this server — as this server, not by the Remote's name for it: {transcript}"
     );
 
-    pair.remote = pair.remote.restart_speaking(PROTOCOL_VERSION).await;
+    pair.remote = pair.remote.restart_speaking(PairingProtocol::CURRENT).await;
     let restored = read_session(&pair.remote.descriptor(), target).await;
     assert_eq!(
         senders_of(&restored, ASKED),
@@ -1113,14 +1113,14 @@ async fn an_act_on_a_remote_that_does_not_answer_is_refused_and_nothing_is_kept_
     );
 
     pair.remote.route.set_online(true).await;
-    pair.remote = pair.remote.restart_speaking(PROTOCOL_VERSION + 1).await;
+    pair.remote = pair.remote.restart_speaking(NEWER).await;
     assert_eq!(
         refused(&mut sidekick, "send_prompt", send).await,
         nothing_done(&format!(
-            "The Remote `{REMOTE}` runs a version of Shaman that speaks another protocol than this \
-             server's, so nothing can be asked of it until one of them is updated."
+            "The Remote `{REMOTE}` no longer works with a Shaman as old as this server's, so it \
+             refused what was asked; it works again once Shaman here is updated."
         )),
-        "a Remote speaking another protocol is answered as not answering"
+        "a Remote that no longer speaks with this server is answered as not answering"
     );
 
     pair.shutdown().await;
@@ -1415,7 +1415,7 @@ async fn an_answer_named_as_a_remotes_reading_names_it_stands_there_as_the_peers
 
     drop(watched);
     drop(asking_provider);
-    pair.remote = pair.remote.restart_speaking(PROTOCOL_VERSION).await;
+    pair.remote = pair.remote.restart_speaking(PairingProtocol::CURRENT).await;
     let snapshot = read_session(&pair.remote.descriptor(), asking).await;
     assert_eq!(
         stood(&snapshot, questionnaire.id)

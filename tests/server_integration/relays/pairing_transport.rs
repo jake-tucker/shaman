@@ -19,10 +19,11 @@ use shaman::protocol::{
 use shaman::provider::ProviderEvent;
 use shaman_client::{
     PairingTransport, SessionCatalogEvent, SessionCatalogSubscription, SessionCommandTimings,
-    SessionCommands, SessionEvent, SessionSubscription,
+    SessionCommands, SessionEvent, SessionSubscription, Transport as _,
 };
 use shaman_pairing::{
-    GivenIdentity, Identity, IdentityMaterial, Keepalive, Redeemer, RedeemerTimings,
+    GivenIdentity, Identity, IdentityMaterial, Keepalive, PairingProtocol, Redeemer,
+    RedeemerTimings,
     relay::{LoginStanding, RelayClient, RelayClientTimings, Unattached},
     signer::{IdentitySigner, SoftwareSigner},
 };
@@ -76,6 +77,11 @@ struct NoServer {
 
 impl NoServer {
     fn new() -> Self {
+        Self::speaking(PairingProtocol::CURRENT)
+    }
+
+    /// A Client speaking `protocol` across its Pairings.
+    fn speaking(protocol: PairingProtocol) -> Self {
         let directory = tempfile::tempdir().expect("create the Client's directory");
         let key = rcgen::KeyPair::generate().expect("make the identity key");
         let signer = SoftwareSigner::from_pkcs8(&key.serialize_der()).expect("take up the key");
@@ -92,13 +98,8 @@ impl NoServer {
             Unattached,
         )
         .expect("open the Relay entries");
-        let redeemer = Redeemer::new(
-            directory.path(),
-            PROTOCOL_VERSION,
-            identity,
-            client_timings(),
-        )
-        .expect("open the Remotes' records");
+        let redeemer = Redeemer::new(directory.path(), protocol, identity, client_timings())
+            .expect("open the Remotes' records");
         redeemer.reach_relays_through(Arc::new(relays.joiner()));
         Self {
             directory,
@@ -807,4 +808,142 @@ async fn the_readers_behave_alike_over_loopback_and_over_a_pairing() {
     .await;
 
     paired.shutdown().await;
+}
+
+/// A Client with no Server of its own and a Serving Server on releases too
+/// far apart to speak are each told which side to update, and the Pairing
+/// stands through it, so updating heals it (ADR-0078).
+#[tokio::test]
+async fn a_client_with_no_server_is_told_which_side_to_update_and_keeps_its_pairing() {
+    let mut paired = PairedDirectly::start("thin-pairing-releases").await;
+    let commands = commands_over(paired.transport.clone(), QUICK);
+    let speaking = |protocol: PairingProtocol| {
+        let mut timings = relay_timings();
+        timings.pairing_protocol = protocol;
+        timings
+    };
+
+    // The Serving Server's floor has risen past this Client.
+    paired.workstation.timings = speaking(super::NEWER);
+    paired.workstation.restart().await;
+    paired.route.retarget(paired.workstation.serving_address());
+    let refused = commands
+        .list_sessions(None)
+        .await
+        .expect_err("the Serving Server no longer speaks with this Client");
+    assert_eq!(refusal_code(&refused), SessionErrorCode::PairingPeerBehind);
+    let health = paired
+        .client
+        .redeemer
+        .probe_remote(REMOTE)
+        .await
+        .unwrap_or_else(|failure| panic!("probe the Remote: {}", failure.message));
+    assert_eq!(health.status, RemoteStatus::Ahead);
+    let peers = paired.workstation.client.list_peers().await.unwrap();
+    assert_eq!(peers.len(), 1, "the Pairing stands on the Serving side");
+    assert_eq!(peers[0].fingerprint, paired.client.fingerprint());
+    assert!(peers[0].behind, "the Client is listed as behind");
+
+    // The Serving Server is below this Client's floor.
+    paired.workstation.timings = speaking(super::OLDER);
+    paired.workstation.restart().await;
+    paired.route.retarget(paired.workstation.serving_address());
+    let refused = commands
+        .list_sessions(None)
+        .await
+        .expect_err("this Client no longer speaks with the Serving Server");
+    assert_eq!(
+        refusal_code(&refused),
+        SessionErrorCode::PairingServerBehind
+    );
+    let health = paired
+        .client
+        .redeemer
+        .probe_remote(REMOTE)
+        .await
+        .unwrap_or_else(|failure| panic!("probe the Remote: {}", failure.message));
+    assert_eq!(health.status, RemoteStatus::Behind);
+    assert_eq!(health.protocol_version, Some(super::OLDER.version));
+
+    // Updated, it answers as ever, with no second ceremony.
+    paired.workstation.timings = speaking(PairingProtocol::CURRENT);
+    paired.workstation.restart().await;
+    paired.route.retarget(paired.workstation.serving_address());
+    commands
+        .list_sessions(None)
+        .await
+        .expect("the Pairing works again");
+    assert!(!paired.workstation.client.list_peers().await.unwrap()[0].behind);
+
+    paired.shutdown().await;
+}
+
+/// A route the Serving Server does not have, as one older than what is
+/// asked has not, is answered with a bare not-found, which reads as that
+/// Server being too old for it.
+#[tokio::test]
+async fn what_a_serving_server_does_not_know_reads_as_it_being_too_old_for_this() {
+    let paired = PairedDirectly::start("thin-pairing-unknown-route").await;
+
+    let answered = paired
+        .transport
+        .send(
+            http::Request::get("/v1/a-route-added-since-this-build")
+                .body(bytes::Bytes::new())
+                .expect("a request"),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("the Remote answers: {error}"));
+    assert_eq!(answered.status(), http::StatusCode::NOT_FOUND);
+    let refused = shaman_client::decode_api_error(answered, "Asking").await;
+    assert_eq!(refusal_code(&refused), SessionErrorCode::ServerTooOld);
+    assert_eq!(
+        refused.to_string(),
+        "That Server is too old for this; update Shaman there"
+    );
+
+    paired.shutdown().await;
+}
+
+/// The ceremony is refused naming the side behind, whichever it is, and a
+/// Client with no Server of its own pairs across releases each speaks with.
+#[tokio::test]
+async fn a_client_with_no_server_pairs_across_releases_and_is_refused_naming_the_side_behind() {
+    let workstation = TestServer::start("thin-pairing-ceremony").await;
+    workstation.serve().await;
+    let invite = || async { workstation.invite(vec![workstation.way()]).await };
+
+    for (client, code) in [
+        (super::OLDER, SessionErrorCode::PairingPeerBehind),
+        (super::NEWER, SessionErrorCode::PairingServerBehind),
+    ] {
+        let client = NoServer::speaking(client);
+        let refused = client
+            .redeemer
+            .redeem_invite(RedeemInviteRequest {
+                invite: invite().await.into(),
+                name: Some(REMOTE.to_owned()),
+                ways: Vec::new(),
+                pair_back: false,
+            })
+            .await
+            .expect_err("the ceremony is refused");
+        assert_eq!(refused.code, code, "{}", refused.message);
+        assert!(client.redeemer.list_remotes().is_empty());
+        client.shutdown().await;
+    }
+    assert!(workstation.client.list_peers().await.unwrap().is_empty());
+
+    let client = NoServer::speaking(super::NEWER_SPEAKING);
+    client.redeem(invite().await).await;
+    let health = client
+        .redeemer
+        .probe_remote(REMOTE)
+        .await
+        .unwrap_or_else(|failure| panic!("probe the Remote: {}", failure.message));
+    assert_eq!(health.status, RemoteStatus::Available);
+    assert_eq!(health.protocol_version, Some(PROTOCOL_VERSION));
+
+    client.shutdown().await;
+    workstation.shutdown().await;
 }

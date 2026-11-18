@@ -5983,7 +5983,8 @@ fn everywhere_asks_each_non_terminal_origin_and_merges_both_shelves_by_reported_
             remote("studio", RemoteStatus::Available),
             remote("sleeping", RemoteStatus::Unavailable),
             remote("revoked", RemoteStatus::Revoked),
-            remote("old-version", RemoteStatus::ProtocolMismatch),
+            remote("older", RemoteStatus::Behind),
+            remote("newer", RemoteStatus::Ahead),
         ],
     );
     let origins = requests

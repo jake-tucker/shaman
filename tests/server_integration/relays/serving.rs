@@ -361,6 +361,7 @@ impl Multiplexed {
     /// status it answers.
     pub(super) async fn health(&mut self) -> std::io::Result<StatusCode> {
         let health = hyper::Request::get("https://localhost/health")
+            .header("x-shaman-protocol-version", PROTOCOL_VERSION)
             .body(Full::default())
             .unwrap();
         Ok(self.ask(health).await?.0)
@@ -399,7 +400,13 @@ impl Multiplexed {
 /// answered, or why it answered nothing.
 async fn health<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> std::io::Result<String> {
     stream
-        .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n")
+        .write_all(
+            format!(
+                "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\
+                 x-shaman-protocol-version: {PROTOCOL_VERSION}\r\n\r\n"
+            )
+            .as_bytes(),
+        )
         .await?;
     let mut response = vec![0_u8; 4096];
     let read = timeout(PROGRESS_DEADLINE, stream.read(&mut response))
