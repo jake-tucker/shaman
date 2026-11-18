@@ -10,6 +10,7 @@ on:
       - "ios/**"
       - "crates/shaman-thin-client/**"
       - "scripts/build-ios-core.sh"
+      - "scripts/ios-simulator.sh"
       - ".github/workflows/ios.yml"
       - "rust-toolchain.toml"
   workflow_dispatch:
@@ -23,9 +24,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # The one simulator the tests are pinned to, on the Mac and here.
-  SIMULATOR_DEVICE: iPhone 18 Pro
-  SIMULATOR_OS: "27.2"
 
 jobs:
   app:
@@ -75,16 +73,7 @@ jobs:
       - name: Make the simulator
         id: simulator
         run: |
-          set -euo pipefail
-          runtime=$(xcrun simctl list runtimes -j | jq -r --arg os "$SIMULATOR_OS" --arg device "$SIMULATOR_DEVICE" '
-            [.runtimes[] | select(.platform == "iOS" and .version == $os and .isAvailable)
-              | select(any(.supportedDeviceTypes[]; .name == $device))][0].identifier // empty')
-          if [ -z "$runtime" ]; then
-            echo "::error::No iOS $SIMULATOR_OS simulator runtime for $SIMULATOR_DEVICE is installed."
-            xcrun simctl list runtimes
-            exit 1
-          fi
-          udid=$(xcrun simctl create "Shaman" "$SIMULATOR_DEVICE" "$runtime")
+          udid=$(scripts/ios-simulator.sh Shaman)
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
 
       - name: Test ShamanUI

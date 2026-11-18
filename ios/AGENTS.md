@@ -34,17 +34,17 @@ scripts/build-ios-core.sh sim release   # any slice with a cargo profile of your
 
 ## The loop
 
-Run everything from `ios/`. Tests are pinned to one simulator, an iPhone 18 Pro on iOS 27.2. Other agents may be
-using a simulator at the same time, so name yours by its UDID rather than `booted`:
+Run everything from `ios/`. Tests are pinned to one simulator, an iPhone 18 Pro on iOS 27.2. Agents in other
+checkouts share the machine, so use a simulator of this checkout's own, by its UDID, and never `booted`:
 
 ```sh
-UDID=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name == "iPhone 18 Pro")][0].udid')
-xcrun simctl boot "$UDID" 2> /dev/null || true   # "already booted" is fine
-xcrun simctl bootstatus "$UDID" -b
+UDID=$(../scripts/ios-simulator.sh)
 ```
 
-If every simulator reads unavailable, `xcrun simctl runtime scan-and-mount`. Xcode 27 has no Simulator.app; a booted
-simulator shows in Device Hub, and needs no window to run tests.
+The script makes "Shaman <checkout directory>" on the iOS 27.2 runtime the first time, finds it after, and boots it.
+Delete it with `xcrun simctl delete "$UDID"` when the checkout goes. If every simulator reads unavailable,
+`xcrun simctl runtime scan-and-mount`. Xcode 27 has no Simulator.app; a booted simulator shows in Device Hub, and
+needs no window to run tests.
 
 **Build and run.**
 
@@ -71,7 +71,9 @@ Over the live core a debug build keeps its records in Application Support's `Cor
 SIMCTL_CHILD_SHAMAN_CORE_DIRECTORY=scratch-$RANDOM xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman
 ```
 
-To read what the core kept, `xcrun simctl get_app_container "$UDID" com.jaketucker.shaman data`.
+Launched with `--remove-core-directory` as well, a debug build removes that directory and opens nothing, which is
+how a UI test leaves nothing behind. To read what the core kept, `xcrun simctl get_app_container "$UDID"
+com.jaketucker.shaman data`.
 
 **Test.** `ShamanUI`'s unit tests run under its own scheme, the UI tests under the app's. A result bundle's path must
 not exist yet.
