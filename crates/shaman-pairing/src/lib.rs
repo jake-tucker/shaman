@@ -53,6 +53,7 @@ use crate::{
 };
 
 mod client;
+mod peer_name;
 mod redeemer;
 pub mod relay;
 pub mod signer;
@@ -63,6 +64,7 @@ pub use client::SOCKET_USER_TIMEOUT;
 pub use client::{
     PairingHttpClient, SOCKET_KEEPALIVE, SOCKET_KEEPALIVE_PROBES, StrongClient, WayAttempt,
 };
+pub use peer_name::{MAX_PEER_NAME_CHARS, PeerNameRefusal, shown_peer_name};
 pub use redeemer::{
     AWAITED_AT_ONCE, Carried, Redeemer, RedeemerHooks, RedeemerTimings, StoredMadeOffer,
     StoredRemote,

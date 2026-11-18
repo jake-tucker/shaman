@@ -69,14 +69,14 @@ use crate::{
     pairing::{
         ByteStream, CONNECTION_WINDOW, Carried, EnrollmentPhase, EnrollmentRequest,
         EnrollmentResponse, FORWARDED_AUTHOR_PROOF_HEADER, GivenRelays, IdentityMaterial,
-        InvitePayload, Keepalive, Liveness, MAX_INVITE_KEY, MULTIPLEXED, OFFERED_RELAYS_PATH,
-        OfferedRelays, PAIRING_ANSWER_BUDGET, PAIRING_PROTOCOL_HEADER, PAIRING_WITHDRAWAL_PATH,
-        PEER_API_PREFIX, PairingFailure, PairingHealth, ParsedInvite, Preface, Redeemer, RelayWays,
-        STREAM_WINDOW, STREAMS_IN_ALL, Wanted, author_header, crypto_provider, decode_token,
-        fingerprint, internal_pairing_failure, machine_hostname, new_token, parse_invite,
-        passed_on, protocol_mismatch, public_key_from_certificate, read_records, relay_refusal,
-        remove_hop_by_hop_headers, undelivered_or_lost, ways_are_unique_and_nonempty,
-        write_private_json,
+        InvitePayload, Keepalive, Liveness, MAX_INVITE_KEY, MAX_PEER_NAME_CHARS, MULTIPLEXED,
+        OFFERED_RELAYS_PATH, OfferedRelays, PAIRING_ANSWER_BUDGET, PAIRING_PROTOCOL_HEADER,
+        PAIRING_WITHDRAWAL_PATH, PEER_API_PREFIX, PairingFailure, PairingHealth, ParsedInvite,
+        Preface, Redeemer, RelayWays, STREAM_WINDOW, STREAMS_IN_ALL, Wanted, author_header,
+        crypto_provider, decode_token, fingerprint, internal_pairing_failure, machine_hostname,
+        new_token, parse_invite, passed_on, protocol_mismatch, public_key_from_certificate,
+        read_records, relay_refusal, remove_hop_by_hop_headers, shown_peer_name,
+        undelivered_or_lost, ways_are_unique_and_nonempty, write_private_json,
     },
     protocol::{
         ACT_HEADER, AUTHOR_HEADER, ActId, Author, DeliveredInvite, FetchShortInviteRequest,
@@ -94,7 +94,7 @@ mod short_invite;
 use pair_back::{OFFER_PATH, PairBack, StoredHeldOffer, take_offer_word};
 use short_invite::{Attempt, Dead, Opening, Parties, RefusedAtOnce, ShortCodes};
 
-use crate::shown_text::{composed, fingerprint_prefixes, folded, short_fingerprint, shown, unseen};
+use crate::shown_text::{fingerprint_prefixes, folded, short_fingerprint, shown};
 pub(crate) use identity::{
     IDENTITY_STORE_TIMEOUT, IdentityKeeping, IdentityKey, IdentityKeyUnavailable,
 };
@@ -499,37 +499,23 @@ impl StoredPeer {
     }
 }
 
-/// The most characters a Peer's name runs to.
-const MAX_PEER_NAME_CHARS: usize = 64;
-
 /// The name the Peer whose key fingerprint is `id` is known by here, from the
-/// `hostname` it gave itself redeeming its Invite. It is kept as given, outer
-/// whitespace aside and composed canonically (NFC), where a reader can be
-/// shown it as a name: something but whitespace, no longer than
-/// [`MAX_PEER_NAME_CHARS`], holding no control, formatting or otherwise
-/// default-ignorable character — nothing a reader could not see — and not
-/// `everywhere`; otherwise the Peer is named by its fingerprint. Where one of
-/// `others`, the names the other enrolled Peers go by, is already that name
-/// as a reader tells names apart — by Unicode case folding — its fingerprint
-/// is added to tell the two apart, more of it where that is not yet enough,
-/// the name giving way for it so it never runs past the longest name. So no
-/// two Peers are known by one name, and what a Sidekick on each sends is
-/// attributed to it alone.
+/// `hostname` it gave itself redeeming its Invite: that name as a Peer goes by
+/// it ([`shown_peer_name`]), where a reader can be shown it as one; otherwise
+/// the Peer is named by its fingerprint. Where one of `others`, the names the
+/// other enrolled Peers go by, is already that name as a reader tells names
+/// apart — by Unicode case folding — its fingerprint is added to tell the two
+/// apart, more of it where that is not yet enough, the name giving way for it
+/// so it never runs past the longest name. So no two Peers are known by one
+/// name, and what a Sidekick on each sends is attributed to it alone.
 fn peer_name<'a>(
     hostname: Option<&str>,
     id: &str,
     others: impl Iterator<Item = &'a str>,
 ) -> String {
     let others = others.map(folded).collect::<Vec<_>>();
-    let shown = |name: &str| {
-        !name.is_empty()
-            && name.chars().count() <= MAX_PEER_NAME_CHARS
-            && !name.chars().any(unseen)
-            && !crate::protocol::names_everywhere(name)
-    };
     let name = hostname
-        .map(|hostname| composed(hostname.trim()))
-        .filter(|name| shown(name))
+        .and_then(|hostname| shown_peer_name(hostname).ok())
         .unwrap_or_else(|| format!("peer {}", short_fingerprint(id)));
     if !others.contains(&folded(&name)) {
         return name;
