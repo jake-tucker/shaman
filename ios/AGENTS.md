@@ -86,10 +86,11 @@ confirmation screen. Over the fake, `FakeCore.invite` reads as the workstation's
 fails as a dead Invite or one no way answered does.
 
 **A real Server.** `../scripts/ios-pair-scratch-server.sh` builds Shaman, starts a scratch Server of this checkout's
-own Serving on the Mac's addresses, makes an Invite and launches the built app with it, in a core directory and under
-a key of its own, for a person to press Pair; with `--test` it runs `LivePairingTests` instead, which pairs, checks
-where the app lands and that the Pairing survives a relaunch, and stops the Server. `--stop` stops it otherwise. Run
-it before merging a change to pairing or transport; never in CI, where `LivePairingTests` skips.
+own from an empty database, Serving on the Mac's addresses, makes an Invite and launches the built app with it, in a
+core directory and under a key of its own, for a person to press Pair; with `--test` it runs `LivePairingTests`
+instead, which pairs, checks where the app lands and what it lists and that the Pairing survives a relaunch, and stops
+the Server. `--stop` stops it otherwise. Run it before merging a change to pairing or transport; never in CI, where
+`LivePairingTests` skips.
 
 **Test.** `ShamanUI`'s unit tests run under its own scheme; `ShamanTests` and the UI tests under the app's. A result
 bundle's path must not exist yet. The package's tests run without the Keychain, which answers a test bundle with no

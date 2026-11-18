@@ -6,11 +6,11 @@ import SwiftUI
 struct ListingScreen: View {
   let core: any Core
   let appVersion: String
-  let beginsIn: String
+  let beginsIn: BeginsIn
   @State private var model: ListingModel
   @State private var sheet: ListingSheet?
 
-  init(core: any Core, appVersion: String, beginsIn: String, invite: String?) {
+  init(core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?) {
     self.core = core
     self.appVersion = appVersion
     self.beginsIn = beginsIn
@@ -36,8 +36,6 @@ struct ListingScreen: View {
               Image(systemName: "square.and.pencil")
             }
           }
-        } else if model.listing == nil {
-          ProgressView()
         }
       }
       .navigationTitle(model.listing?.title ?? "")
@@ -45,6 +43,9 @@ struct ListingScreen: View {
       .safeAreaInset(edge: .top) {
         if let failure = model.failure {
           Banner(text: failure)
+            .onTapGesture { model.dismissFailure() }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint("Dismisses this")
         }
       }
       .toolbar { bottomBar }
@@ -78,6 +79,17 @@ struct ListingScreen: View {
                 .tint(.indigo)
             }
           }
+      }
+      if let waiting = listing.waiting {
+        HStack(spacing: 8) {
+          ProgressView()
+            .controlSize(.mini)
+          Text(verbatim: waiting)
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("listing.waiting")
       }
     }
     if !listing.settled.isEmpty {
@@ -113,12 +125,18 @@ struct ListingScreen: View {
       .accessibilityIdentifier("home.servers")
     }
     ToolbarItem(placement: .status) {
-      Text(verbatim: beginsIn)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
-        .lineLimit(2)
-        .accessibilityIdentifier("home.beginsIn")
+      VStack(spacing: 1) {
+        Text(verbatim: beginsIn.lead)
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+        Text(verbatim: beginsIn.place)
+          .font(.caption.weight(.medium))
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(Text(verbatim: beginsIn.said))
+      .accessibilityIdentifier("home.beginsIn")
     }
     ToolbarItem(placement: .bottomBar) {
       // Beginning a Session from the phone comes with the new-session screen.
@@ -146,11 +164,23 @@ private enum ListingSheet: Hashable, Identifiable {
 final class ListingModel {
   private let core: any Core
   private(set) var listing: Listing?
-  /// Why the last act failed, shown in a banner over the listing.
+  /// Why the last act failed, shown in a banner over the listing until it is tapped away or has stood a while.
   private(set) var failure: String?
+  /// How long a failure's banner stands before it goes by itself.
+  private let failureStands: Duration
+  /// What takes the banner away once it has stood its while.
+  private var clearing: Task<Void, Never>?
 
-  init(core: any Core) {
+  init(core: any Core, failureStands: Duration = .seconds(6)) {
     self.core = core
+    self.failureStands = failureStands
+  }
+
+  /// Takes the banner away.
+  func dismissFailure() {
+    clearing?.cancel()
+    clearing = nil
+    failure = nil
   }
 
   /// Follows what the core lists until the screen goes.
@@ -175,9 +205,20 @@ final class ListingModel {
   private func act(_ act: () async throws(ActError) -> Void) async {
     do {
       try await act()
-      failure = nil
+      dismissFailure()
     } catch {
-      failure = error.message
+      show(error.message)
+    }
+  }
+
+  private func show(_ message: String) {
+    clearing?.cancel()
+    failure = message
+    let stands = failureStands
+    clearing = Task { [weak self] in
+      try? await Task.sleep(for: stands)
+      guard !Task.isCancelled else { return }
+      self?.failure = nil
     }
   }
 }
@@ -297,11 +338,17 @@ extension Standing {
 #if DEBUG
   #Preview("One server") {
     ListingScreen(
-      core: FakeCore(.paired), appVersion: "0.1.0 (1)", beginsIn: "New sessions begin in workstation", invite: nil)
+      core: FakeCore(.paired), appVersion: "0.1.0 (1)",
+      beginsIn: BeginsIn(
+        lead: "New sessions begin in", place: "workstation", said: "New sessions begin in workstation"),
+      invite: nil)
   }
 
   #Preview("Several servers") {
     ListingScreen(
-      core: FakeCore(.several), appVersion: "0.1.0 (1)", beginsIn: "New sessions begin in workstation", invite: nil)
+      core: FakeCore(.several), appVersion: "0.1.0 (1)",
+      beginsIn: BeginsIn(
+        lead: "New sessions begin in", place: "workstation", said: "New sessions begin in workstation"),
+      invite: nil)
   }
 #endif

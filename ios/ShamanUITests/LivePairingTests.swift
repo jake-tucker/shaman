@@ -52,7 +52,7 @@ final class LivePairingTests: XCTestCase {
     }
     pair.tap()
 
-    let beginsIn = app.staticTexts["home.beginsIn"]
+    let beginsIn = app.descendants(matching: .any)["home.beginsIn"]
     XCTAssertTrue(beginsIn.waitForExistence(timeout: 30), "paired, and the Outlook turned toward the Server")
     let shown = beginsIn.label
     let empty = app.descendants(matching: .any)["listing.empty"]
@@ -70,7 +70,8 @@ final class LivePairingTests: XCTestCase {
 
     app.terminate()
     app = launched(run)
-    XCTAssertTrue(app.staticTexts["home.beginsIn"].waitForExistence(timeout: 10), "the Pairing survives a relaunch")
-    XCTAssertEqual(app.staticTexts["home.beginsIn"].label, shown)
+    XCTAssertTrue(
+      app.descendants(matching: .any)["home.beginsIn"].waitForExistence(timeout: 10), "the Pairing survives a relaunch")
+    XCTAssertEqual(app.descendants(matching: .any)["home.beginsIn"].label, shown)
   }
 }

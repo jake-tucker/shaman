@@ -60,7 +60,7 @@ final class ListingTests: XCTestCase {
 
     XCTAssertTrue(app.buttons["home.servers"].exists)
     XCTAssertTrue(app.buttons["home.compose"].exists)
-    XCTAssertEqual(app.staticTexts["home.beginsIn"].label, "New sessions begin in workstation · shaman")
+    XCTAssertEqual(app.descendants(matching: .any)["home.beginsIn"].label, "New sessions begin in workstation")
     attach(app, "Several servers' sessions in one listing")
   }
 
@@ -75,7 +75,7 @@ final class ListingTests: XCTestCase {
       XCTAssertFalse(label.contains("workstation"), label)
     }
     XCTAssertTrue(row("active", titled: "shaman", in: app).exists)
-    XCTAssertEqual(app.staticTexts["home.beginsIn"].label, "New sessions begin in workstation")
+    XCTAssertEqual(app.descendants(matching: .any)["home.beginsIn"].label, "New sessions begin in workstation")
     attach(app, "One server's sessions, naming no origin")
   }
 
@@ -115,5 +115,16 @@ final class ListingTests: XCTestCase {
     showMore.tap()
     XCTAssertTrue(hidden.waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["listing.showMore"].exists, "the shelf is whole")
+  }
+
+  @MainActor
+  func testARemoteYetToAnswerIsSaidToBeReachedAtTheFootOfTheActiveRows() {
+    let app = launched("reaching")
+    let waiting = app.descendants(matching: .any)["listing.waiting"]
+    XCTAssertTrue(scrolled(to: waiting, in: app).exists)
+    XCTAssertTrue(waiting.label.contains("Reaching homelab…"), waiting.label)
+    XCTAssertFalse(row("active", titled: "homelab ·", in: app).exists, "nothing of it is listed yet")
+    XCTAssertFalse(app.descendants(matching: .any)["listing.empty"].exists)
+    attach(app, "A remote yet to answer")
   }
 }

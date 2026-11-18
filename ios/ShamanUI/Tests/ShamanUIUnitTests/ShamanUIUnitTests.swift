@@ -354,3 +354,28 @@ private final class RefusingSigner: KeySigner {
     #expect(IconFont.name != nil)
   }
 }
+
+@Suite @MainActor struct ListingModelTests {
+  @Test func anActsFailureStandsInTheBannerUntilTappedAway() async {
+    let model = ListingModel(core: FakeCore(.paired), failureStands: .seconds(3600))
+    await model.settle("a session no longer listed")
+    #expect(model.failure == "That session is no longer listed")
+    model.dismissFailure()
+    #expect(model.failure == nil)
+  }
+
+  @Test func anActsFailureGoesByItselfOnceItHasStoodAWhile() async throws {
+    let model = ListingModel(core: FakeCore(.paired), failureStands: .milliseconds(50))
+    await model.settle("a session no longer listed")
+    #expect(model.failure != nil)
+    try await Task.sleep(for: .milliseconds(400))
+    #expect(model.failure == nil)
+  }
+
+  @Test func anActThatSucceedsClearsAFailureStanding() async {
+    let model = ListingModel(core: FakeCore(.paired), failureStands: .seconds(3600))
+    await model.settle("a session no longer listed")
+    await model.settle("workstation-key/1")
+    #expect(model.failure == nil)
+  }
+}

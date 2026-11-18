@@ -23,9 +23,12 @@
     static let shelfOpening = 10
     static let shelfBatch = 25
 
-    /// The listing `sessions` make on the Remotes `remotes`, with as many as `onShow` of the shelf's rows on show.
-    static func listing(of sessions: [FakeSession], on remotes: [String], showing onShow: Int, now: Date) -> Listing {
-      let held = sessions.filter { remotes.contains($0.remote) }
+    /// The listing `sessions` make on the Remotes `remotes`, of which those `unanswered` have yet to answer, with as
+    /// many as `onShow` of the shelf's rows on show.
+    static func listing(
+      of sessions: [FakeSession], on remotes: [String], unanswered: [String], showing onShow: Int, now: Date
+    ) -> Listing {
+      let held = sessions.filter { remotes.contains($0.remote) && !unanswered.contains($0.remote) }
       let originNamed = remotes.count > 1
       let active = held.filter { !$0.settled }
       let settled = held.filter(\.settled).sorted { $0.moved < $1.moved }
@@ -33,6 +36,7 @@
       return Listing(
         title: originNamed ? "Everywhere" : "All workspaces",
         active: active.map { $0.active(originNamed: originNamed, now: now) },
+        waiting: reaching(unanswered, originNamed: originNamed),
         settledHeader: "Settled",
         settled: settled.prefix(onShow).map { session in
           SettledRow(
@@ -40,7 +44,15 @@
             ended: now.addingTimeInterval(-session.moved), unsettle: "Unsettle")
         },
         showMore: hidden > 0 ? "Show \(min(hidden, shelfBatch)) more" : nil,
-        empty: held.isEmpty ? "No sessions yet" : nil)
+        empty: held.isEmpty && unanswered.isEmpty ? "No sessions yet" : nil)
+    }
+
+    /// What the core says while the Remotes `unanswered` have yet to answer.
+    private static func reaching(_ unanswered: [String], originNamed: Bool) -> String? {
+      guard let last = unanswered.last else { return nil }
+      guard originNamed else { return "Reaching the server…" }
+      let named = unanswered.count == 1 ? last : "\(unanswered.dropLast().joined(separator: ", ")) and \(last)"
+      return "Reaching \(named)…"
     }
 
     private func active(originNamed: Bool, now: Date) -> ActiveRow {

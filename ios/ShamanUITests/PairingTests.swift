@@ -86,7 +86,7 @@ final class PairingTests: XCTestCase {
     replace(app.textFields["confirm.deviceName"], with: "Pocket")
     shown("confirm.pair", in: app).tap()
 
-    let beginsIn = app.staticTexts["home.beginsIn"]
+    let beginsIn = app.descendants(matching: .any)["home.beginsIn"]
     XCTAssertTrue(beginsIn.waitForExistence(timeout: 10), "the Outlook turned toward the new Remote")
     XCTAssertEqual(beginsIn.label, "New sessions begin in desk")
     attach(app, "Landed on the new Remote")
@@ -161,7 +161,7 @@ final class PairingTests: XCTestCase {
 
     replace(app.textFields["confirm.remoteName"], with: "studio")
     shown("confirm.pair", in: app).tap()
-    let beginsIn = app.staticTexts["home.beginsIn"]
+    let beginsIn = app.descendants(matching: .any)["home.beginsIn"]
     XCTAssertTrue(beginsIn.waitForExistence(timeout: 10))
     XCTAssertEqual(beginsIn.label, "New sessions begin in studio")
     app.buttons["home.servers"].tap()

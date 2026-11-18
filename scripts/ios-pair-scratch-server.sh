@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Pairs the app in this checkout's simulator with a scratch Server: a Shaman of this checkout's own build, on a channel
 # and in directories of its own under a scratch root, Serving on the Mac's own addresses, which the simulator dials as
-# a phone on the same network would (an Invite offers no loopback address). It
-# starts that Server, has it make an Invite, and launches the debug app with the Invite in its launch environment and
+# a phone on the same network would (an Invite offers no loopback address). It starts that Server afresh, its
+# database emptied first, has it make an Invite, and launches the debug app with the Invite in its launch environment and
 # a core directory and identity key of its own, so the app opens on the confirmation screen and nothing of another run
 # is touched. Run it before merging a change to pairing or transport; never in CI.
 #
@@ -42,8 +42,10 @@ esac
 echo "Building Shaman" >&2
 cargo build --locked --bin shaman --manifest-path "$root/Cargo.toml"
 
-# The listener's address is read as the Server starts, so one left from an earlier run is stopped first.
+# The listener's address is read as the Server starts, so one left from an earlier run is stopped first. Each run
+# starts from an empty database, so what one left behind — its Sessions, its Peers — is never what the next finds.
 scratch_shaman server stop > /dev/null 2>&1 || true
+rm -rf "$scratch/state" "$scratch/data"
 mkdir -p "$scratch/state" "$scratch/data" "$scratch/config"
 cat > "$scratch/config/shaman.jsonc" <<EOF
 {

@@ -18,6 +18,8 @@
       case paired
       /// A named phone paired with the workstation, a laptop and a home lab, whose Sessions stand together.
       case several
+      /// The `several` phone while the home lab has yet to answer with its Sessions.
+      case reaching
     }
 
     /// The Invite the fake reads as the workstation's. One holding "dead" reads as the workstation's too, and fails to
@@ -34,6 +36,8 @@
     private let sessions = Mutex(FakeSession.canned)
     /// How many of the shelf's rows are on show.
     private let onShow = Mutex(FakeSession.shelfOpening)
+    /// The Remotes held that have yet to answer with their Sessions, which they never do.
+    private let unanswered: [String]
 
     public init(_ scenario: Scenario) {
       device = Mutex(Self.device(in: scenario))
@@ -41,10 +45,11 @@
         switch scenario {
         case .fresh, .named, .pairAgain: []
         case .paired: [Self.workstation(named: "workstation")]
-        case .several: [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
+        case .several, .reaching: [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
         }
       held = Mutex(remotes)
-      if scenario == .several {
+      unanswered = scenario == .reaching ? ["homelab"] : []
+      if scenario == .several || scenario == .reaching {
         turned.withLock { $0 = "workstation" }
       }
     }
@@ -86,7 +91,7 @@
     private func currentListing() -> Listing {
       let remotes = held.withLock { $0.map(\.name) }
       return FakeSession.listing(
-        of: sessions.withLock { $0 }, on: remotes, showing: onShow.withLock { $0 }, now: Date())
+        of: sessions.withLock { $0 }, on: remotes, unanswered: unanswered, showing: onShow.withLock { $0 }, now: Date())
     }
 
     public func thisDevice() -> AsyncStream<ThisDevice> {
@@ -178,9 +183,9 @@
       guard let name = turned.withLock({ $0 }).flatMap({ names.contains($0) ? $0 : nil }) ?? names.first else {
         return .nowhere
       }
-      // With several Remotes the fake remembers a Workspace for the workstation, as the core will once one is chosen.
-      let place = names.count > 1 && name == "workstation" ? "\(name) · shaman" : name
-      return .remote(name: name, beginsIn: "New sessions begin in \(place)")
+      return .remote(
+        name: name,
+        beginsIn: BeginsIn(lead: "New sessions begin in", place: name, said: "New sessions begin in \(name)"))
     }
 
     private func change(_ change: (inout ThisDevice) -> Void) {
