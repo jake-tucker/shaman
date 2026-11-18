@@ -1,0 +1,8 @@
+# Written by scripts/build-ios-core.sh.
+/ShamanCore/
+# Where the build, run and test loop in AGENTS.md puts what xcodebuild makes.
+/build/
+.build/
+.swiftpm/
+xcuserdata/
+DerivedData/
