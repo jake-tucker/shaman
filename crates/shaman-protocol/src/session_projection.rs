@@ -701,7 +701,7 @@ pub fn close_revision(snapshot: &mut SessionSnapshot, revision: SessionRevision)
                 && snapshot
                     .turns
                     .iter()
-                    .any(|turn| turn.id == *turn_id && turn.status == TurnStatus::Active) =>
+                    .any(|turn| turn.id == *turn_id && turn.status.is_open()) =>
             {
                 Some(approval.id)
             }
@@ -791,7 +791,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update referenced an unknown Prompt");
                 };
-                if prompt.status != PromptStatus::Pending {
+                if !prompt.status.is_open() {
                     bail!("Session update bound the Skills of a Prompt no longer waiting");
                 }
                 Some(index)
@@ -804,7 +804,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update referenced an unknown Prompt");
                 };
-                if prompt.status != PromptStatus::Pending
+                if !prompt.status.is_open()
                     || prompt.delivery != PromptDelivery::Queue
                     || *delivery != PromptDelivery::Steer
                 {
@@ -818,10 +818,13 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update referenced an unknown Prompt");
                 };
-                if prompt.status != PromptStatus::Pending
+                if !prompt.status.is_open()
                     || !matches!(
                         status,
-                        PromptStatus::Delivered | PromptStatus::Failed | PromptStatus::Cancelled
+                        PromptStatus::Delivered
+                            | PromptStatus::Failed
+                            | PromptStatus::Cancelled
+                            | PromptStatus::Unknown
                     )
                 {
                     bail!("Session update contained an invalid Prompt status transition");
@@ -834,7 +837,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update referenced an unknown Prompt");
                 };
-                if prompt.status != PromptStatus::Pending {
+                if !prompt.status.is_open() {
                     bail!("Session update withdrew a Prompt that was not Pending");
                 }
                 prompt.status = PromptStatus::Cancelled;
@@ -878,7 +881,7 @@ impl<'a> Validation<'a> {
                 let Some((index, turn)) = self.turns.find(|turn| turn.id == *turn_id) else {
                     bail!("Session update referenced an unknown Turn");
                 };
-                if turn.status != TurnStatus::Active {
+                if !turn.status.is_open() {
                     bail!("Session update changed the Agent on a terminal Turn");
                 }
                 let Some(current) = turn.agent else {
@@ -920,7 +923,7 @@ impl<'a> Validation<'a> {
                 let Some((index, turn)) = self.turns.find(|turn| turn.id == *turn_id) else {
                     bail!("Session update referenced an unknown Turn");
                 };
-                if turn.status != TurnStatus::Active {
+                if !turn.status.is_open() {
                     bail!("Session update recorded Usage on a terminal Turn");
                 }
                 if cost.is_some() != cost_basis.is_some()
@@ -944,7 +947,7 @@ impl<'a> Validation<'a> {
                 let Some((index, turn)) = self.turns.find(|turn| turn.id == *turn_id) else {
                     bail!("Session update referenced an unknown Turn");
                 };
-                if turn.status != TurnStatus::Active {
+                if !turn.status.is_open() {
                     bail!("A current Model requires an active Turn");
                 }
                 if let Some(model) = model {
@@ -1188,7 +1191,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update appended command output to a different Activity kind");
                 };
-                if *status != ActivityStatus::Active {
+                if !status.is_open() {
                     bail!("Session update appended output to a terminal command Activity");
                 }
                 if *output_truncated {
@@ -1205,7 +1208,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update truncated the output of a different Activity kind");
                 };
-                if *status != ActivityStatus::Active {
+                if !status.is_open() {
                     bail!("Session update truncated the output of a terminal command Activity");
                 }
                 *output_truncated = true;
@@ -1224,7 +1227,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update completed a different Activity kind");
                 };
-                if *current_status != ActivityStatus::Active || *status == ActivityStatus::Active {
+                if !current_status.may_become(*status) {
                     bail!("Session update contained an invalid command Activity status transition");
                 }
                 *current_status = *status;
@@ -1235,7 +1238,7 @@ impl<'a> Validation<'a> {
                 let ActivityStanding::FileChange { status } = standing else {
                     bail!("Session update changed paths on a different Activity kind");
                 };
-                if *status != ActivityStatus::Active {
+                if !status.is_open() {
                     bail!("Session update changed paths on a terminal file-change Activity");
                 }
                 Some(index)
@@ -1251,7 +1254,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update completed a different Activity kind");
                 };
-                if *current_status != ActivityStatus::Active || *status == ActivityStatus::Active {
+                if !current_status.may_become(*status) {
                     bail!(
                         "Session update contained an invalid file-change Activity status transition"
                     );
@@ -1264,7 +1267,7 @@ impl<'a> Validation<'a> {
                 let ActivityStanding::ToolCall { status, .. } = standing else {
                     bail!("Session update gave input to a different Activity kind");
                 };
-                if *status != ActivityStatus::Active {
+                if !status.is_open() {
                     bail!("Session update gave input to a terminal Tool Call Activity");
                 }
                 Some(index)
@@ -1278,7 +1281,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update appended Tool Call output to a different Activity kind");
                 };
-                if *status != ActivityStatus::Active {
+                if !status.is_open() {
                     bail!("Session update appended output to a terminal Tool Call Activity");
                 }
                 if *output_truncated {
@@ -1295,7 +1298,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update truncated the output of a different Activity kind");
                 };
-                if *status != ActivityStatus::Active {
+                if !status.is_open() {
                     bail!("Session update truncated the output of a terminal Tool Call Activity");
                 }
                 *output_truncated = true;
@@ -1314,7 +1317,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update completed a different Activity kind");
                 };
-                if *current_status != ActivityStatus::Active || *status == ActivityStatus::Active {
+                if !current_status.may_become(*status) {
                     bail!(
                         "Session update contained an invalid Tool Call Activity status transition"
                     );
@@ -1327,7 +1330,7 @@ impl<'a> Validation<'a> {
                 let ActivityStanding::Reasoning { status, .. } = standing else {
                     bail!("Session update titled a different Activity kind");
                 };
-                if *status != ActivityStatus::Active {
+                if !status.is_open() {
                     bail!("Session update titled a terminal Reasoning Activity");
                 }
                 Some(index)
@@ -1341,7 +1344,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update appended Reasoning to a different Activity kind");
                 };
-                if *status != ActivityStatus::Active {
+                if !status.is_open() {
                     bail!("Session update appended content to a terminal Reasoning Activity");
                 }
                 if *content_truncated {
@@ -1358,7 +1361,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update truncated the content of a different Activity kind");
                 };
-                if *status != ActivityStatus::Active {
+                if !status.is_open() {
                     bail!("Session update truncated the content of a terminal Reasoning Activity");
                 }
                 *content_truncated = true;
@@ -1377,7 +1380,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update completed a different Activity kind");
                 };
-                if *current_status != ActivityStatus::Active || *status == ActivityStatus::Active {
+                if !current_status.may_become(*status) {
                     bail!(
                         "Session update contained an invalid Reasoning Activity status transition"
                     );
@@ -1390,7 +1393,7 @@ impl<'a> Validation<'a> {
                 let ActivityStanding::Subagent { status } = standing else {
                     bail!("Session update described a different Activity kind");
                 };
-                if *status != ActivityStatus::Active {
+                if !status.is_open() {
                     bail!("Session update described a terminal Subagent Activity");
                 }
                 Some(index)
@@ -1414,14 +1417,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update completed a different Activity kind");
                 };
-                if *current_status != ActivityStatus::Active
-                    || !matches!(
-                        status,
-                        ActivityStatus::Completed
-                            | ActivityStatus::Failed
-                            | ActivityStatus::Interrupted
-                    )
-                {
+                if !current_status.may_become(*status) {
                     bail!(
                         "Session update contained an invalid Subagent Activity status transition"
                     );
@@ -1446,7 +1442,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update settled a different Activity kind as a Compaction");
                 };
-                if *current_status != ActivityStatus::Active || *status == ActivityStatus::Active {
+                if !current_status.may_become(*status) {
                     bail!("Session update contained an invalid Compaction status transition");
                 }
                 if *status == ActivityStatus::Interrupted
@@ -1473,7 +1469,7 @@ impl<'a> Validation<'a> {
                 else {
                     bail!("Session update settled a different Activity kind as a Move");
                 };
-                if *current_status != ActivityStatus::Active || *status == ActivityStatus::Active {
+                if !current_status.may_become(*status) {
                     bail!("Session update contained an invalid Move status transition");
                 }
                 *current_status = *status;
@@ -1510,7 +1506,7 @@ impl<'a> Validation<'a> {
                 let Some((index, turn)) = self.turns.find(|turn| turn.id == *turn_id) else {
                     bail!("Session update referenced an unknown Turn");
                 };
-                if turn.status.is_terminal() || !status.is_terminal() {
+                if !turn.status.may_become(*status) {
                     bail!("Session update contained an invalid Turn status transition");
                 }
                 turn.status = *status;
@@ -1590,7 +1586,7 @@ impl<'a> Validation<'a> {
                 output_truncated,
                 exit_status,
                 ..
-            } if *status != ActivityStatus::Active
+            } if !status.is_open()
                 || !output.is_empty()
                 || *output_truncated
                 || exit_status.is_some()
@@ -1600,7 +1596,7 @@ impl<'a> Validation<'a> {
         if matches!(
             activity,
             Activity::FileChange { status, .. }
-                if *status != ActivityStatus::Active
+                if !status.is_open()
         ) {
             bail!("Session update added a file-change Activity outside its initial state");
         }
@@ -1612,7 +1608,7 @@ impl<'a> Validation<'a> {
                 output_truncated,
                 omitted_parts,
                 ..
-            } if *status != ActivityStatus::Active
+            } if !status.is_open()
                 || !output.is_empty()
                 || *output_truncated
                 || *omitted_parts != 0
@@ -1628,7 +1624,7 @@ impl<'a> Validation<'a> {
                 content_truncated,
                 duration_ms,
                 ..
-            } if *status != ActivityStatus::Active
+            } if !status.is_open()
                 || title.is_some()
                 || !content.is_empty()
                 || *content_truncated
@@ -1642,7 +1638,7 @@ impl<'a> Validation<'a> {
                 status,
                 duration_ms,
                 ..
-            } if *status != ActivityStatus::Active || duration_ms.is_some()
+            } if !status.is_open() || duration_ms.is_some()
         ) {
             bail!("Session update added a Subagent Activity outside its initial state");
         }
@@ -1748,7 +1744,7 @@ impl<'a> Ledger<'a, Turn, TurnStanding<'a>> {
     /// Whether the Turn `turn_id` is at work, as the batch so far has left it.
     fn is_active(&mut self, turn_id: TurnId) -> bool {
         self.find(|turn| turn.id == turn_id)
-            .is_some_and(|(_, turn)| turn.status == TurnStatus::Active)
+            .is_some_and(|(_, turn)| turn.status.is_open())
     }
 }
 
@@ -2583,6 +2579,117 @@ mod tests {
             snapshot.turns[0].settled_at,
             Some(SessionTimestamp(1_755_000_004_200))
         );
+    }
+
+    /// `update` as a newer side sends it, `edit` changing its JSON, read back
+    /// as this build reads one.
+    fn as_sent(update: SessionUpdate, edit: impl FnOnce(&mut serde_json::Value)) -> SessionUpdate {
+        let mut sent = serde_json::to_value(update).expect("an update encodes");
+        edit(&mut sent);
+        serde_json::from_value(sent).expect("this build reads the update")
+    }
+
+    fn pending_prompt(prompt_id: PromptId) -> Prompt {
+        Prompt {
+            id: prompt_id,
+            text: "Work on this".to_owned(),
+            skill_invocations: Vec::new(),
+            attachments: Vec::new(),
+            delivery: PromptDelivery::Queue,
+            admission_order: PromptOrder::INITIAL,
+            status: PromptStatus::Pending,
+            withdrawal: None,
+            author: None,
+            taken: None,
+        }
+    }
+
+    /// A Prompt a newer side says stands in a status this build does not
+    /// know holds its place in it, and still takes what that side says of it
+    /// next.
+    #[test]
+    fn a_prompt_status_this_build_does_not_know_holds_its_place() {
+        let session_id = SessionId::new();
+        let prompt_id = PromptId::new();
+        let mut snapshot = empty_snapshot(session_id);
+        snapshot.prompts.push(pending_prompt(prompt_id));
+        let expired = as_sent(
+            SessionUpdate {
+                session_id,
+                revision: SessionRevision(2),
+                changes: vec![SessionChange::PromptStatusChanged {
+                    prompt_id,
+                    status: PromptStatus::Cancelled,
+                }],
+            },
+            |sent| sent["changes"][0]["status"] = serde_json::json!("expired"),
+        );
+        apply_update(&mut snapshot, &expired).expect("the unknown status is taken");
+        assert_eq!(snapshot.prompts[0].status, PromptStatus::Unknown);
+
+        apply_update(
+            &mut snapshot,
+            &SessionUpdate {
+                session_id,
+                revision: SessionRevision(3),
+                changes: vec![SessionChange::PromptStatusChanged {
+                    prompt_id,
+                    status: PromptStatus::Cancelled,
+                }],
+            },
+        )
+        .expect("a Prompt in an unknown status settles as its sender says");
+        assert_eq!(snapshot.prompts[0].status, PromptStatus::Cancelled);
+    }
+
+    /// A Turn a newer side adds in a status this build does not know is not
+    /// taken for settled: it takes what that side says of it next, its
+    /// settling among it.
+    #[test]
+    fn a_turn_status_this_build_does_not_know_holds_its_place_until_it_settles() {
+        let session_id = SessionId::new();
+        let turn_id = TurnId::new();
+        let mut snapshot = empty_snapshot(session_id);
+        let paused = as_sent(
+            SessionUpdate {
+                session_id,
+                revision: SessionRevision(2),
+                changes: vec![SessionChange::TurnAdded {
+                    turn: active_continuation(turn_id),
+                }],
+            },
+            |sent| sent["changes"][0]["turn"]["status"] = serde_json::json!("paused"),
+        );
+        apply_update(&mut snapshot, &paused).expect("a Turn in an unknown status joins");
+        assert_eq!(snapshot.turns[0].status, TurnStatus::Unknown);
+        assert!(!snapshot.turns[0].status.is_terminal());
+
+        apply_update(
+            &mut snapshot,
+            &SessionUpdate {
+                session_id,
+                revision: SessionRevision(3),
+                changes: vec![SessionChange::TurnStatusChanged {
+                    turn_id,
+                    status: TurnStatus::Completed,
+                    settled_at: Some(SessionTimestamp(1_755_000_004_200)),
+                }],
+            },
+        )
+        .expect("the Turn settles from its unknown status");
+        assert_eq!(snapshot.turns[0].status, TurnStatus::Completed);
+    }
+
+    /// A Subagent Activity a newer side moves to a status this build does
+    /// not know may still settle, and nothing settled moves again.
+    #[test]
+    fn an_activity_status_this_build_does_not_know_may_still_settle() {
+        assert!(ActivityStatus::Active.may_become(ActivityStatus::Unknown));
+        assert!(ActivityStatus::Unknown.may_become(ActivityStatus::Completed));
+        assert!(ActivityStatus::Unknown.may_become(ActivityStatus::Active));
+        assert!(!ActivityStatus::Active.may_become(ActivityStatus::Active));
+        assert!(!ActivityStatus::Completed.may_become(ActivityStatus::Unknown));
+        assert!(!TurnStatus::Failed.may_become(TurnStatus::Unknown));
     }
 
     fn compaction(id: ActivityId, turn_id: TurnId) -> Activity {

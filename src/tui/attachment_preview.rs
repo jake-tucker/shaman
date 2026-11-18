@@ -443,9 +443,11 @@ impl AttachmentPreviews {
             .zip(lines)
             .map(|((_, attachment), line)| {
                 let attachment_id = attachment.attachment_id().clone();
-                let pixels = describe(&attachment_id).map(|descriptor| match descriptor.kind {
-                    AttachmentKind::Image { width, height } => (width, height),
-                });
+                let pixels =
+                    describe(&attachment_id).and_then(|descriptor| match descriptor.kind {
+                        AttachmentKind::Image { width, height } => Some((width, height)),
+                        AttachmentKind::Unknown => None,
+                    });
                 StripSlot {
                     attachment_id,
                     line,

@@ -2,12 +2,18 @@
 //! what a Server answers can be held, route by route, to what a Peer may ask
 //! and to the Pairing wire's schema (ADR-0078).
 
+use std::convert::Infallible;
+
 use axum::{
     Router,
+    extract::Request,
     handler::Handler,
     http::Method,
-    routing::{MethodFilter, MethodRouter},
+    response::IntoResponse,
+    routing::{MethodFilter, MethodRouter, Route},
 };
+use tower_layer::Layer;
+use tower_service::Service;
 
 /// One route served: its method, `ANY` for one that answers every method,
 /// and its path as the router spells it.
@@ -18,6 +24,35 @@ pub(crate) struct Served {
 }
 
 impl Served {
+    /// Whether this route answers `method` at `path`, a path as a request
+    /// spells it: each `{name}` of the route's taking one segment, a closing
+    /// `{*name}` the rest, and a `GET` route a `HEAD` too, as axum answers
+    /// one.
+    pub(crate) fn answers(&self, method: &Method, path: &str) -> bool {
+        let method_matches = self.method == "ANY"
+            || self.method == method.as_str()
+            || (self.method == "GET" && *method == Method::HEAD);
+        if !method_matches {
+            return false;
+        }
+        let mut asked = path.trim_start_matches('/').split('/');
+        for segment in self.path.trim_start_matches('/').split('/') {
+            if segment.starts_with("{*") {
+                return asked.next().is_some_and(|rest| !rest.is_empty());
+            }
+            match asked.next() {
+                Some(given) if segment.starts_with('{') => {
+                    if given.is_empty() {
+                        return false;
+                    }
+                }
+                Some(given) if given == segment => {}
+                _ => return false,
+            }
+        }
+        asked.next().is_none()
+    }
+
     /// The route as the Pairing wire's schema names it: `METHOD /path`.
     #[cfg(test)]
     pub(crate) fn named(&self) -> String {
@@ -119,10 +154,16 @@ impl<S: Clone + Send + Sync + 'static> Routes<S> {
         self
     }
 
-    /// These routes with their router passed through `layered`, such as to
-    /// add a layer to every route so far.
-    pub(crate) fn map_router(mut self, layered: impl FnOnce(Router<S>) -> Router<S>) -> Self {
-        self.router = layered(self.router);
+    /// These routes, each behind `layer`, which can add none of its own.
+    pub(crate) fn route_layer<L>(mut self, layer: L) -> Self
+    where
+        L: Layer<Route> + Clone + Send + Sync + 'static,
+        L::Service: Service<Request> + Clone + Send + Sync + 'static,
+        <L::Service as Service<Request>>::Response: IntoResponse + 'static,
+        <L::Service as Service<Request>>::Error: Into<Infallible> + 'static,
+        <L::Service as Service<Request>>::Future: Send + 'static,
+    {
+        self.router = self.router.route_layer(layer);
         self
     }
 
@@ -133,5 +174,33 @@ impl<S: Clone + Send + Sync + 'static> Routes<S> {
     #[cfg(test)]
     pub(crate) fn served(self) -> Vec<Served> {
         self.served
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn served(method: &str, path: &'static str) -> Served {
+        Served {
+            method: method.to_owned(),
+            path,
+        }
+    }
+
+    #[test]
+    fn a_route_answers_the_paths_its_template_spells() {
+        let session = served("GET", "/v1/sessions/{session_id}/events");
+        assert!(session.answers(&Method::GET, "/v1/sessions/abc/events"));
+        assert!(session.answers(&Method::HEAD, "/v1/sessions/abc/events"));
+        assert!(!session.answers(&Method::POST, "/v1/sessions/abc/events"));
+        assert!(!session.answers(&Method::GET, "/v1/sessions//events"));
+        assert!(!session.answers(&Method::GET, "/v1/sessions/abc/events/more"));
+        assert!(!session.answers(&Method::GET, "/v1/sessions/abc"));
+
+        let remote = served("ANY", "/v1/remotes/{name}/{*path}");
+        assert!(remote.answers(&Method::DELETE, "/v1/remotes/laptop/v1/sessions"));
+        assert!(!remote.answers(&Method::GET, "/v1/remotes/laptop"));
+        assert!(!remote.answers(&Method::GET, "/v1/remotes/laptop/"));
     }
 }

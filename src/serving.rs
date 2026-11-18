@@ -1925,6 +1925,16 @@ async fn forward_peer_api(
         PeerRouteClass::Administration => return StatusCode::FORBIDDEN.into_response(),
         PeerRouteClass::LoopbackOnly => return StatusCode::NOT_FOUND.into_response(),
     }
+    // Only a route this Server's own API serves through its route table is
+    // carried on: one served past it was never held to the Pairing wire's
+    // schema, so it is no Peer's to ask, and reads as a route this Server
+    // lacks, as a route an older Server lacks does.
+    if !crate::server::served_api_routes()
+        .iter()
+        .any(|route| route.answers(request.method(), &canonical_path))
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     // A Sidekick on the Peer performs the act: whatever the Peer said of the
     // Sidekick's own Session is nothing this Server can follow back to, so it
     // is believed of nothing but that a Sidekick sent it, and named by the
@@ -3915,6 +3925,65 @@ mod tests {
                 "the act stands as the authenticated Peer's Sidekick's, proven: {connection}"
             );
         }
+    }
+
+    /// A route a Peer may ask is carried on only where this Server's route
+    /// table serves it: one served past the table, never held to the Pairing
+    /// wire's schema, reads to a Peer as a route this Server lacks, and the
+    /// Session API never hears of it.
+    #[tokio::test]
+    async fn a_route_served_past_the_route_table_is_no_peers_to_ask() {
+        let data = tempfile::tempdir().expect("create a data directory");
+        let (base_url, mut arrived) = recording_local_api().await;
+        let controller =
+            ServingController::for_tests(data.path(), IdentityKey::new(data.path()), base_url);
+        let public_key = b"the peer's public key".to_vec();
+        controller.peers.write().push(StoredPeer {
+            id: "ab12cd34ef567890".to_owned(),
+            public_key: public_key.clone(),
+            name: "laptop".to_owned(),
+            offer: None,
+        });
+        let state = ServingState {
+            controller,
+            hostname: "workstation".to_owned(),
+            protocol: PairingProtocol::CURRENT,
+        };
+        let ask = |method: Method, path: &str| {
+            let request = Request::builder()
+                .method(method)
+                .uri(format!("{PEER_API_PREFIX}{path}"))
+                .header(PAIRING_PROTOCOL_HEADER, crate::protocol::PROTOCOL_VERSION)
+                .body(Body::empty())
+                .expect("a Peer's request");
+            forward_peer_api(
+                State(state.clone()),
+                ConnectInfo(ServingConnectionInfo {
+                    peer_key: Some(public_key.clone()),
+                }),
+                AxumPath(path.to_owned()),
+                request,
+            )
+        };
+        for (method, path) in [
+            (Method::GET, "/v1/sessions/0198b27e/secrets"),
+            (Method::POST, "/v1/workspaces/plant"),
+            (Method::DELETE, "/v1/workspaces"),
+        ] {
+            let response = ask(method.clone(), path).await;
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{method} {path}");
+        }
+        assert!(
+            arrived.try_recv().is_err(),
+            "nothing reached the Session API"
+        );
+
+        let response = ask(Method::GET, "/v1/sessions/0198b27e/context").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        arrived
+            .recv()
+            .await
+            .expect("a route the table serves reaches the Session API");
     }
 
     /// Serving its Settings ask for that cannot start for want of its

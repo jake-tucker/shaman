@@ -3519,7 +3519,45 @@ pub enum TurnStatus {
 impl TurnStatus {
     /// Whether the Turn has Settled, and so accepts no further Provider output.
     pub const fn is_terminal(self) -> bool {
-        !matches!(self, Self::Active)
+        !self.is_open()
+    }
+
+    /// Whether the Turn may still change: working, or standing in a status a
+    /// newer side sent that this build does not know. Such a status holds the
+    /// Turn's place rather than settling it, so what that side says of the Turn
+    /// next, its settling among it, is taken.
+    pub const fn is_open(self) -> bool {
+        matches!(self, Self::Active | Self::Unknown)
+    }
+
+    /// Whether a Turn standing so may change to `next`: only an open one
+    /// changes, and a working one only to something other than working.
+    pub fn may_become(self, next: Self) -> bool {
+        self.is_open() && !(self == Self::Active && next == Self::Active)
+    }
+}
+
+impl ActivityStatus {
+    /// Whether the Activity may still change: running, or standing in a
+    /// status a newer side sent that this build does not know, which holds its
+    /// place, as [`TurnStatus::is_open`] says of a Turn.
+    pub const fn is_open(self) -> bool {
+        matches!(self, Self::Active | Self::Unknown)
+    }
+
+    /// Whether an Activity standing so may change to `next`, as
+    /// [`TurnStatus::may_become`] says of a Turn.
+    pub fn may_become(self, next: Self) -> bool {
+        self.is_open() && !(self == Self::Active && next == Self::Active)
+    }
+}
+
+impl PromptStatus {
+    /// Whether the Prompt may still change: waiting, or standing in a status
+    /// a newer side sent that this build does not know, which holds its place,
+    /// as [`TurnStatus::is_open`] says of a Turn.
+    pub const fn is_open(self) -> bool {
+        matches!(self, Self::Pending | Self::Unknown)
     }
 }
 
@@ -3657,6 +3695,10 @@ pub enum PromptAdmission {
     Steer,
     /// It waits behind the Turn the Session is working in, to begin the next.
     Queued,
+    /// A way of taking it in that this build does not know, from a side newer
+    /// than it, which tells it nothing.
+    #[serde(other)]
+    Unknown,
 }
 
 impl PromptAdmission {
@@ -3669,6 +3711,7 @@ impl PromptAdmission {
             Self::NewTurn => "new_turn",
             Self::Steer => "steer",
             Self::Queued => "queued",
+            Self::Unknown => "unknown",
         }
     }
 
@@ -5450,11 +5493,11 @@ pub struct SessionSummary {
     pub updated_at: SessionTimestamp,
 }
 
-/// One Session as a Server's listing gives it. Its reader passes over an item
-/// of a readability it does not know, through [`SessionListing`].
+/// One Session as a Server's listing gives it. It takes no fallback of its
+/// own: the one list that carries it, [`SessionListing`], passes over an item
+/// of a readability its reader does not know.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "readability", content = "summary", rename_all = "snake_case")]
 pub enum SessionListItem {
     /// Boxed because a readable summary carries everything a Session states
@@ -5471,6 +5514,7 @@ pub enum SessionListItem {
 /// its own shape asks.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "passed-over")))]
 #[serde(transparent)]
 pub struct SessionListing(pub Vec<SessionListItem>);
 
@@ -6246,6 +6290,7 @@ pub struct PromptTaking {
 /// the Session meanwhile, that the text is owed back to its composer.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case", tag = "reason")]
 pub enum PromptWithdrawal {
     /// The Prompt was held behind `turn_id`, the Turn a Compaction request
@@ -6256,6 +6301,9 @@ pub enum PromptWithdrawal {
     /// before the Compaction completed does, or Shaman stopping with nothing
     /// left to deliver it (ADR 0073).
     CompactionUnfinished { turn_id: TurnId },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// What one interrupt actually did. A Session that is Working only because it

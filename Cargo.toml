@@ -114,6 +114,9 @@ termina = "0.4.0"
 time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
 tokio = { version = "1.47.1", features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring", "tls12"] }
+# What a layer over the routes in `route_table` is bound by, as axum's own `Router::route_layer` names it.
+tower-layer = "0.3.3"
+tower-service = "0.3.3"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

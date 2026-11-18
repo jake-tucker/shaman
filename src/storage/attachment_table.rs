@@ -64,7 +64,13 @@ impl StorageRepository {
         let path = self.database_path.clone();
         let now = millis(self.clock.now());
         on_blocking_task("store Attachment", move || {
-            let AttachmentKind::Image { width, height } = descriptor.kind;
+            // A Server stores only what it sniffed itself, which is of a kind
+            // it knows.
+            let AttachmentKind::Image { width, height } = descriptor.kind else {
+                return Err(StorageError::WriteAttachment(
+                    "an Attachment of a kind this build does not know is never stored".to_owned(),
+                ));
+            };
             let row = AttachmentRow {
                 id: descriptor.id.as_str().to_owned(),
                 mime_type: descriptor.mime_type,

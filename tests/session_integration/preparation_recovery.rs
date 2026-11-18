@@ -140,7 +140,9 @@ async fn restart_reconciles_each_git_preparation_window_and_duplicate_edited_ret
             ],
         );
         if point == Point::BranchCreated {
-            let CheckoutPreparationPlan::Git { branch, .. } = &captured.plan;
+            let CheckoutPreparationPlan::Git { branch, .. } = &captured.plan else {
+                panic!("a plan of a kind this build does not know")
+            };
             git(&main, &["branch", "-D", branch]); // Missing own branch is recreated from its atomic claim.
         }
         if point == Point::CheckoutCreated {
@@ -165,7 +167,9 @@ async fn restart_reconciles_each_git_preparation_window_and_duplicate_edited_ret
         assert_eq!(two.preparation.destination, captured.destination);
         assert_eq!(one.preparation.plan, captured.plan);
         assert_eq!(one.preparation.intended_session, captured.intended_session);
-        let CheckoutPreparationPlan::Git { source_commit, .. } = &captured.plan;
+        let CheckoutPreparationPlan::Git { source_commit, .. } = &captured.plan else {
+            panic!("a plan of a kind this build does not know")
+        };
         assert_eq!(
             &read_git(&captured.destination.path, &["rev-parse", "HEAD"]),
             source_commit
@@ -528,7 +532,9 @@ async fn ambiguous_checkout_proof_external_locks_and_deleted_ready_branches_are_
         std::fs::read_to_string(destination.join("keep")).unwrap(),
         "user file"
     );
-    let CheckoutPreparationPlan::Git { branch, .. } = &ready.preparation.plan;
+    let CheckoutPreparationPlan::Git { branch, .. } = &ready.preparation.plan else {
+        panic!("a plan of a kind this build does not know")
+    };
     git(
         &main,
         &["update-ref", "-d", &format!("refs/heads/{branch}")],
@@ -562,7 +568,10 @@ async fn matching_branch_commit_and_destination_do_not_prove_external_checkout_o
         branch,
         source_commit,
         ..
-    } = &ready.preparation.plan;
+    } = &ready.preparation.plan
+    else {
+        panic!("a plan of a kind this build does not know")
+    };
     git(
         &main,
         &["worktree", "remove", destination.to_str().unwrap()],

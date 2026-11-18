@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use axum::{
-    Json, Router,
+    Json,
     body::to_bytes,
     extract::{
         DefaultBodyLimit, Path as AxumPath, Query, Request, State, rejection::QueryRejection,
@@ -2153,13 +2153,7 @@ async fn start(
         cache_rates: crate::provider::HostedCacheRates::new(runtimes.clone()),
     };
     let outlines_served = state.outlines_served.clone();
-    let (app, _) = served_routes(|routes| {
-        routes.route_layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            hydrate_session_request,
-        ))
-    })
-    .into_parts();
+    let (app, _) = served_routes(Some(&state)).into_parts();
     let app = app
         .layer(DefaultBodyLimit::max(COMMAND_BODY_LIMIT))
         .with_state(state)
@@ -3229,17 +3223,34 @@ fn session_catalog_event_stream(
         .chain(updates)
 }
 
+impl Routes<AppState> {
+    /// These routes, each bringing the Session a request names into memory
+    /// before it is answered, where there is a `state` to bring it into.
+    fn with_hydration(self, state: Option<&AppState>) -> Self {
+        match state {
+            Some(state) => self.route_layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                hydrate_session_request,
+            )),
+            None => self,
+        }
+    }
+}
+
 /// Every route this Server's own API serves, the Broker's aside, as
 /// [`served_routes`] lists them.
-#[cfg(test)]
-pub(crate) fn served_api_routes() -> Vec<crate::route_table::Served> {
-    served_routes(|routes| routes).served()
+pub(crate) fn served_api_routes() -> &'static [crate::route_table::Served] {
+    static SERVED: std::sync::LazyLock<Vec<crate::route_table::Served>> =
+        std::sync::LazyLock::new(|| served_routes(None).into_parts().1);
+    &SERVED
 }
 
 /// Every route this Server's own API serves, its administration among them,
-/// short of the Broker's: the Session routes each passed through `hydrated`,
-/// which brings the Session a request names into memory first.
-fn served_routes(hydrated: impl FnOnce(Router<AppState>) -> Router<AppState>) -> Routes<AppState> {
+/// short of the Broker's, and no other: this table is the one way a route is
+/// added to it, so the routes a Peer may ask are exactly those it lists.
+/// Under `state` each Session route brings the Session a request names into
+/// memory first; without it, the routes are only listed.
+fn served_routes(state: Option<&AppState>) -> Routes<AppState> {
     Routes::new()
         .get("/health", health)
         .get("/v1/events", events)
@@ -3353,7 +3364,7 @@ fn served_routes(hydrated: impl FnOnce(Router<AppState>) -> Router<AppState>) ->
                     "/v1/sessions/{session_id}/subagent-tree",
                     subagent_tree_events,
                 )
-                .map_router(hydrated),
+                .with_hydration(state),
         )
         .post("/v1/server/stop", stop_server)
         .merge(relays::routes())

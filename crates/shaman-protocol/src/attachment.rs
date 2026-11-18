@@ -57,10 +57,14 @@ impl fmt::Display for AttachmentId {
 /// only kind today; another kind is another variant.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AttachmentKind {
     /// A PNG, JPEG, GIF, or WebP image, measured in pixels from its header.
     Image { width: u32, height: u32 },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Everything a client learns of a stored Attachment short of its bytes.

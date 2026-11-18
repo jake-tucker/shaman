@@ -465,7 +465,9 @@ impl GitSourceControl {
         {
             return Err("The prepared destination is occupied by unrelated contents; it was not overwritten".to_owned());
         }
-        let CheckoutPreparationPlan::Git { branch: name, .. } = &plan.plan;
+        let CheckoutPreparationPlan::Git { branch: name, .. } = &plan.plan else {
+            return Err("The preparation's plan is of a kind this Server does not know".to_owned());
+        };
         if self
             .text(&plan.destination.path, &["symbolic-ref", "--short", "HEAD"])
             .await?
@@ -474,7 +476,9 @@ impl GitSourceControl {
         {
             return Err("The prepared checkout no longer uses its intended branch".to_owned());
         }
-        let CheckoutPreparationPlan::Git { source_commit, .. } = &plan.plan;
+        let CheckoutPreparationPlan::Git { source_commit, .. } = &plan.plan else {
+            return Err("The preparation's plan is of a kind this Server does not know".to_owned());
+        };
         let commit = self
             .text(
                 &plan.destination.path,
@@ -815,7 +819,10 @@ impl SourceControl for GitSourceControl {
             branch,
             source_commit,
             ..
-        } = &plan.plan;
+        } = &plan.plan
+        else {
+            return Err("The preparation's plan is of a kind this Server does not know".to_owned());
+        };
         let reference = format!("refs/shaman/preparations/{}", plan.id.0.simple());
         let repository = &plan.repository.metadata_directory;
         let status = self

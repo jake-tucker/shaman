@@ -145,13 +145,20 @@ pub(in crate::tui) fn attachment_name(label: &str) -> &str {
 /// stands in: its name, the format, the dimensions, and the size, as in
 /// `Image 1 · PNG · 1280×720 · 312 KiB`.
 fn attachment_line(label: &str, descriptor: &AttachmentDescriptor) -> String {
-    let crate::protocol::AttachmentKind::Image { width, height } = descriptor.kind;
-    format!(
-        "{} · {} · {width}×{height} · {}",
-        attachment_name(label),
-        format_name(&descriptor.mime_type),
-        byte_size(descriptor.byte_length)
-    )
+    match descriptor.kind {
+        crate::protocol::AttachmentKind::Image { width, height } => format!(
+            "{} · {} · {width}×{height} · {}",
+            attachment_name(label),
+            format_name(&descriptor.mime_type),
+            byte_size(descriptor.byte_length)
+        ),
+        crate::protocol::AttachmentKind::Unknown => format!(
+            "{} · {} · {}",
+            attachment_name(label),
+            format_name(&descriptor.mime_type),
+            byte_size(descriptor.byte_length)
+        ),
+    }
 }
 
 /// The name a reader knows an Attachment's format by, from its type.

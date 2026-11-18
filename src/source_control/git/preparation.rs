@@ -71,7 +71,10 @@ impl GitSourceControl {
             branch,
             source_commit,
             source_branch,
-        } = &plan.plan;
+        } = &plan.plan
+        else {
+            return Err("The preparation's plan is of a kind this Server does not know".to_owned());
+        };
         let base_key = format!("branch.{branch}.shaman-base");
         self.mutate(
             &plan.repository.metadata_directory,
@@ -117,7 +120,10 @@ impl GitSourceControl {
             branch,
             source_commit,
             ..
-        } = &plan.plan;
+        } = &plan.plan
+        else {
+            return Err("The preparation's plan is of a kind this Server does not know".to_owned());
+        };
         let root = &plan.repository.metadata_directory;
         let claim = format!("refs/shaman/preparations/{}", plan.id.0.simple());
         let branch_ref = format!("refs/heads/{branch}");
@@ -264,7 +270,9 @@ impl GitSourceControl {
             .ok_or("Git destination is not Unicode")?;
         let root = &plan.repository.metadata_directory;
         let expected = token(plan);
-        let CheckoutPreparationPlan::Git { branch, .. } = &plan.plan;
+        let CheckoutPreparationPlan::Git { branch, .. } = &plan.plan else {
+            return Err("The preparation's plan is of a kind this Server does not know".to_owned());
+        };
         let registered = self.owned_registration(plan)?;
         let exists = match std::fs::symlink_metadata(destination) {
             Ok(metadata) => {

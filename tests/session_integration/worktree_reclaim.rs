@@ -1778,7 +1778,9 @@ async fn startup_discovers_and_reclaims_a_prepared_worktree_after_its_last_sessi
         .await
         .unwrap();
     assert_eq!(prepared.error, None);
-    let CheckoutPreparationPlan::Git { branch, .. } = &prepared.preparation.plan;
+    let CheckoutPreparationPlan::Git { branch, .. } = &prepared.preparation.plan else {
+        panic!("a plan of a kind this build does not know")
+    };
     let branch = format!("refs/heads/{branch}");
     let managed = prepared.preparation.destination.path.clone();
     let session = support::create_session(
@@ -2436,7 +2438,9 @@ async fn an_unmerged_recorded_branch_is_retained() {
         .await
         .unwrap();
     assert_eq!(result.error, None);
-    let CheckoutPreparationPlan::Git { branch, .. } = &result.preparation.plan;
+    let CheckoutPreparationPlan::Git { branch, .. } = &result.preparation.plan else {
+        panic!("a plan of a kind this build does not know")
+    };
     assert_eq!(branch, "feature/unmerged-2");
     assert_eq!(
         result.preparation.destination.path,
@@ -2893,7 +2897,9 @@ async fn restart_reclaims_an_old_failed_preparation_without_a_catalogued_reposit
         .unwrap();
     assert!(prepared.error.is_some());
     let destination = prepared.preparation.destination.path.clone();
-    let CheckoutPreparationPlan::Git { branch, .. } = &prepared.preparation.plan;
+    let CheckoutPreparationPlan::Git { branch, .. } = &prepared.preparation.plan else {
+        panic!("a plan of a kind this build does not know")
+    };
     let branch = format!("refs/heads/{branch}");
     let ownership = format!(
         "refs/shaman/preparations/{}",
@@ -2947,7 +2953,9 @@ async fn restart_reclaims_an_old_branch_only_preparation_and_its_merged_branch()
     .unwrap();
     let preparation = fail_preparation(&server, &layout.main, "branch-only failure").await;
     let intent = age_preparation(&config, &preparation);
-    let CheckoutPreparationPlan::Git { branch, .. } = &preparation.plan;
+    let CheckoutPreparationPlan::Git { branch, .. } = &preparation.plan else {
+        panic!("a plan of a kind this build does not know")
+    };
     let branch = format!("refs/heads/{branch}");
     let ownership = format!("refs/shaman/preparations/{}", preparation.id.0.simple());
     assert!(!preparation.destination.path.exists());
@@ -2988,7 +2996,9 @@ async fn branch_only_reclaim_retires_metadata_but_preserves_unmerged_commits() {
     .unwrap();
     let preparation = fail_preparation(&server, &layout.main, "unmerged branch-only failure").await;
     let intent = age_preparation(&config, &preparation);
-    let CheckoutPreparationPlan::Git { branch, .. } = &preparation.plan;
+    let CheckoutPreparationPlan::Git { branch, .. } = &preparation.plan else {
+        panic!("a plan of a kind this build does not know")
+    };
     let branch_ref = format!("refs/heads/{branch}");
     let ownership = format!("refs/shaman/preparations/{}", preparation.id.0.simple());
     let authoring = layout.root.join("author-unmerged");
@@ -3148,7 +3158,9 @@ async fn off_preserves_an_old_failed_preparation() {
     .unwrap();
     let preparation = fail_preparation(&server, &layout.main, "off keeps this intent").await;
     let intent = age_preparation(&config, &preparation);
-    let CheckoutPreparationPlan::Git { branch, .. } = &preparation.plan;
+    let CheckoutPreparationPlan::Git { branch, .. } = &preparation.plan else {
+        panic!("a plan of a kind this build does not know")
+    };
     let ownership = format!("refs/shaman/preparations/{}", preparation.id.0.simple());
 
     tokio::time::sleep(STARTUP_DELAY + RECLAIM_INTERVAL * 3).await;

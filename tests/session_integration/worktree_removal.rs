@@ -158,7 +158,9 @@ async fn merged_managed_branch_is_previewed_deleted_and_recovers_its_session_det
         .await
         .unwrap();
     assert_eq!(prepared.error, None);
-    let CheckoutPreparationPlan::Git { branch, .. } = &prepared.preparation.plan;
+    let CheckoutPreparationPlan::Git { branch, .. } = &prepared.preparation.plan else {
+        panic!("a plan of a kind this build does not know")
+    };
     let snapshot = support::create_session(
         server.descriptor(),
         &CreateSessionRequest {
@@ -642,7 +644,9 @@ async fn removal_of_failed_preparation_needs_no_session_and_force_refuses_replac
         !intent.exists(),
         "explicit removal deletes the preparation that named the Worktree"
     );
-    let CheckoutPreparationPlan::Git { branch, .. } = &prepared.preparation.plan;
+    let CheckoutPreparationPlan::Git { branch, .. } = &prepared.preparation.plan else {
+        panic!("a plan of a kind this build does not know")
+    };
     assert!(
         !std::process::Command::new("git")
             .arg("-C")

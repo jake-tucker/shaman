@@ -335,6 +335,7 @@ pub struct PrepareCheckoutResult {
 /// Concrete adapter plans can evolve independently of shared preparation state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "system", rename_all = "snake_case")]
 pub enum CheckoutPreparationPlan {
     Git {
@@ -348,6 +349,9 @@ pub enum CheckoutPreparationPlan {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source_branch: Option<String>,
     },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl CheckoutPreparationPlan {
@@ -356,6 +360,7 @@ impl CheckoutPreparationPlan {
     pub fn branch(&self) -> Option<&str> {
         match self {
             Self::Git { branch, .. } => Some(branch),
+            Self::Unknown => None,
         }
     }
 }

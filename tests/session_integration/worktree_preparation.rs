@@ -92,7 +92,9 @@ fn bound(name: &str, start: u32, end: u32) -> SkillInvocation {
     }
 }
 fn branch(preparation: &PreparedCheckout) -> &str {
-    let CheckoutPreparationPlan::Git { branch, .. } = &preparation.plan;
+    let CheckoutPreparationPlan::Git { branch, .. } = &preparation.plan else {
+        panic!("a plan of a kind this build does not know")
+    };
     branch
 }
 /// The branch and location a preparation planned, which must be one valid
@@ -1081,7 +1083,9 @@ impl shaman::source_control::SourceControl for CollisionAdapter {
         reserved: &[std::path::PathBuf],
     ) -> Result<PreparedCheckout, String> {
         let plan = self.git.plan_checkout(id, source, name, reserved).await?;
-        let CheckoutPreparationPlan::Git { branch, .. } = &plan.plan;
+        let CheckoutPreparationPlan::Git { branch, .. } = &plan.plan else {
+            panic!("a plan of a kind this build does not know")
+        };
         // Another Git actor wins this name after planning, before Shaman mutation.
         git(&plan.source.path, &["branch", branch]);
         Ok(plan)
@@ -1116,7 +1120,10 @@ async fn branch_collision_does_not_reset_or_duplicate_intention_and_unknown_main
         branch,
         source_commit,
         ..
-    } = &failed.preparation.plan;
+    } = &failed.preparation.plan
+    else {
+        panic!("a plan of a kind this build does not know")
+    };
     assert_eq!(read_git(&main, &["rev-parse", branch]), *source_commit);
     assert!(provider.try_next_start().is_none());
     git(&main, &["branch", "-D", branch]); // Explicit external resolution permits the exact original intention to retry.

@@ -174,7 +174,10 @@ async fn managed_branch_records_the_planned_source_commit_and_branch_when_claime
         branch,
         source_commit,
         source_branch,
-    } = &plan.plan;
+    } = &plan.plan
+    else {
+        panic!("a plan of a kind this build does not know")
+    };
     assert_eq!(source_branch.as_deref(), Some("main"));
 
     // Claim uses the source identity captured by planning even if that checkout
@@ -264,7 +267,9 @@ async fn same_named_tag_cannot_hide_an_unmerged_local_source_branch() {
         .plan_checkout(Default::default(), &source, "ambiguous-short-ref", &[])
         .await
         .unwrap();
-    let CheckoutPreparationPlan::Git { source_branch, .. } = &plan.plan;
+    let CheckoutPreparationPlan::Git { source_branch, .. } = &plan.plan else {
+        panic!("a plan of a kind this build does not know")
+    };
     assert_eq!(source_branch.as_deref(), Some("main"));
     let prepared = adapter.prepare_checkout(&plan).await.unwrap();
     let checkout = prepared.checkout.unwrap();
