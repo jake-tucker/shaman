@@ -64,6 +64,16 @@ private func scratch() throws -> URL {
     #expect(values.isExcludedFromBackup == true)
     #expect(try CoreDirectory.prepare(named: "Core", in: base) == directory, "made once, found after")
   }
+
+  @Test func aRemovedDirectoryIsGoneWithWhatItHeldAndRemovingNoneIsFine() throws {
+    let base = try scratch()
+    defer { try? FileManager.default.removeItem(at: base) }
+    let directory = try CoreDirectory.prepare(named: "Scratch", in: base)
+    try Data("{}".utf8).write(to: directory.appending(path: "thin-client.json"))
+    try CoreDirectory.remove(named: "Scratch", in: base)
+    #expect(!FileManager.default.fileExists(atPath: directory.path(percentEncoded: false)))
+    try CoreDirectory.remove(named: "Scratch", in: base)
+  }
 }
 
 @Suite struct LiveCoreTests {

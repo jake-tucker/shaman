@@ -17,4 +17,12 @@ public enum CoreDirectory {
     try directory.setResourceValues(values)
     return directory
   }
+
+  /// Removes the directory `name` under `base` and all it holds, where there is one, so a run that kept records under
+  /// a name of its own leaves nothing behind.
+  public static func remove(named name: String, in base: URL = .applicationSupportDirectory) throws {
+    let directory = base.appending(path: name, directoryHint: .isDirectory)
+    guard FileManager.default.fileExists(atPath: directory.path(percentEncoded: false)) else { return }
+    try FileManager.default.removeItem(at: directory)
+  }
 }

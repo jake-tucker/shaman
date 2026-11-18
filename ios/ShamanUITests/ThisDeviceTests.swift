@@ -15,6 +15,17 @@ final class ThisDeviceTests: XCTestCase {
     return app
   }
 
+  /// Removes the directory a test's run of the app kept its records in, which only the app can reach.
+  @MainActor
+  private func remove(_ directory: String) {
+    let app = XCUIApplication()
+    app.launchEnvironment["SHAMAN_CORE_DIRECTORY"] = directory
+    app.launchArguments = ["--remove-core-directory"]
+    app.launch()
+    XCTAssertTrue(app.staticTexts["core.removed"].waitForExistence(timeout: 10))
+    app.terminate()
+  }
+
   @MainActor
   private func rename(_ app: XCUIApplication, to name: String) {
     let field = app.textFields["device.name"]
@@ -28,6 +39,7 @@ final class ThisDeviceTests: XCTestCase {
   @MainActor
   func testTheNameIsFirstOfferedAsIPhoneRefusedInTheCoresWordsAndKeptAcrossARelaunch() {
     let directory = "ui-test-\(UUID().uuidString)"
+    addTeardownBlock { @MainActor in self.remove(directory) }
     var app = launched(in: directory)
     XCTAssertTrue(app.navigationBars["Servers & device"].waitForExistence(timeout: 10))
     let field = app.textFields["device.name"]

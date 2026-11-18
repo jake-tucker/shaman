@@ -11,6 +11,10 @@ struct ShamanApp: App {
       switch opened {
       case .core(let core): DeviceScreen(core: core, appVersion: Self.version)
       case .failed(let message): CoreFailedScreen(message: message)
+      #if DEBUG
+        case .removed(let name):
+          Text("Removed the core's directory \"\(name)\".").accessibilityIdentifier("core.removed")
+      #endif
       }
     }
   }
@@ -28,9 +32,14 @@ struct ShamanApp: App {
 private enum Opened {
   case core(any Core)
   case failed(String)
+  #if DEBUG
+    /// The directory a run kept its records in was removed, as `--remove-core-directory` asks.
+    case removed(String)
+  #endif
 
   /// The live core, kept in its directory. In debug builds `--fake <scenario>` chooses the fake instead, and the
-  /// environment's `SHAMAN_CORE_DIRECTORY` names a directory of its own for the live core, so a UI test starts afresh.
+  /// environment's `SHAMAN_CORE_DIRECTORY` names a directory of its own for the live core, so a UI test starts afresh;
+  /// `--remove-core-directory` removes that directory and opens nothing, so the test leaves nothing behind.
   static func choose() -> Self {
     #if DEBUG
       let arguments = ProcessInfo.processInfo.arguments
@@ -43,6 +52,14 @@ private enum Opened {
         return .core(FakeCore(scenario))
       }
       let name = ProcessInfo.processInfo.environment["SHAMAN_CORE_DIRECTORY"] ?? CoreDirectory.defaultName
+      if arguments.contains("--remove-core-directory") {
+        do {
+          try CoreDirectory.remove(named: name)
+        } catch {
+          return .failed("The core's directory \"\(name)\" could not be removed: \(error.localizedDescription)")
+        }
+        return .removed(name)
+      }
     #else
       let name = CoreDirectory.defaultName
     #endif
