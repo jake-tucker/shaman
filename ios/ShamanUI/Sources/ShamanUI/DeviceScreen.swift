@@ -16,6 +16,9 @@ public struct DeviceScreen: View {
     NavigationStack {
       Form {
         if let device = model.device {
+          if let pairAgain = device.pairAgain {
+            self.pairAgain(pairAgain)
+          }
           thisDevice(device)
         } else {
           ProgressView()
@@ -29,6 +32,19 @@ public struct DeviceScreen: View {
       }
     }
     .task { await model.follow() }
+  }
+
+  /// Said once where this phone has a new key: until it is dismissed.
+  private func pairAgain(_ words: String) -> some View {
+    Section {
+      Label {
+        Text(words).accessibilityIdentifier("pairAgain")
+      } icon: {
+        Image(systemName: "key.horizontal")
+      }
+      Button("OK") { Task { await model.dismissPairAgain() } }
+        .accessibilityIdentifier("pairAgain.dismiss")
+    }
   }
 
   private func thisDevice(_ device: ThisDevice) -> some View {
@@ -53,6 +69,17 @@ public struct DeviceScreen: View {
         Text(device.nameNote)
           .font(.footnote)
           .foregroundStyle(.secondary)
+      }
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Fingerprint")
+        Fingerprint(device.fingerprint)
+      }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("Fingerprint")
+      .accessibilityValue(device.fingerprint)
+      .accessibilityIdentifier("device.fingerprint")
+      .contextMenu {
+        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = device.fingerprint }
       }
       LabeledContent("Version", value: appVersion)
         .accessibilityIdentifier("device.version")
@@ -87,6 +114,15 @@ final class DeviceModel {
     }
   }
 
+  func dismissPairAgain() async {
+    do {
+      try await core.dismissPairAgain()
+      failure = nil
+    } catch {
+      failure = error.message
+    }
+  }
+
   func rename() async {
     renaming = true
     defer { renaming = false }
@@ -104,6 +140,29 @@ final class DeviceModel {
   }
 }
 
+/// A key's fingerprint, whole and as a Serving Server shows it, in two halves of a line each, since a wrapped line
+/// would be hyphenated with a character the fingerprint does not have.
+struct Fingerprint: View {
+  private let halves: [Substring]
+
+  init(_ fingerprint: String) {
+    let middle = fingerprint.index(fingerprint.startIndex, offsetBy: fingerprint.count / 2)
+    halves = [fingerprint[..<middle], fingerprint[middle...]]
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      ForEach(halves.indices, id: \.self) { half in
+        Text(verbatim: String(halves[half]))
+          .lineLimit(1)
+          .minimumScaleFactor(0.5)
+      }
+    }
+    .font(.footnote.monospaced())
+    .foregroundStyle(.secondary)
+  }
+}
+
 /// An act's failure, over the screen that asked.
 struct Banner: View {
   let text: String
@@ -116,6 +175,31 @@ struct Banner: View {
       .background(.red.opacity(0.15), in: .rect(cornerRadius: 12))
       .padding(.horizontal)
       .accessibilityIdentifier("banner")
+  }
+}
+
+/// What the app shows where the Keychain gave up a blob the chip will not take: why, and the offer to start again
+/// under a new key, which is the user's to take.
+public struct KeyRefusedScreen: View {
+  private let message: String
+  private let startAgain: () -> Void
+
+  public init(message: String, startAgain: @escaping () -> Void) {
+    self.message = message
+    self.startAgain = startAgain
+  }
+
+  public var body: some View {
+    ContentUnavailableView {
+      Label("This phone's key cannot be used", systemImage: "key.slash")
+    } description: {
+      Text(message)
+      Text("Under a new key, every server this phone was paired with must be paired with again.")
+    } actions: {
+      Button("Start again under a new key", action: startAgain)
+        .buttonStyle(.borderedProminent)
+        .accessibilityIdentifier("key.startAgain")
+    }
   }
 }
 
@@ -143,5 +227,13 @@ public struct CoreFailedScreen: View {
 
   #Preview("A named phone") {
     DeviceScreen(core: FakeCore(.named), appVersion: "0.1.0 (1)")
+  }
+
+  #Preview("A phone that must pair again") {
+    DeviceScreen(core: FakeCore(.pairAgain), appVersion: "0.1.0 (1)")
+  }
+
+  #Preview("A key the chip refuses") {
+    KeyRefusedScreen(message: "The Secure Enclave will not take this phone's identity key: the data is corrupted.") {}
   }
 #endif

@@ -23,10 +23,12 @@
       "children": [
         { "path": "<PRODUCTS>/Shaman.app", "id": "23B7CBC730AD550A0048783A", "type": "wrapper.application", "index": false },
         { "path": "<PRODUCTS>/ShamanUITests.xctest", "id": "2328A11B30AD551000605EF1", "type": "wrapper.cfbundle", "index": false },
+        { "path": "<PRODUCTS>/ShamanTests.xctest", "id": "237024F930AD64BA008CF7C7", "type": "wrapper.cfbundle", "index": false },
       ],
     },
     { "kind": "folder", "path": "Shaman", "target-membership": [ "Shaman" ] },
     { "kind": "folder", "path": "ShamanUITests", "target-membership": [ "ShamanUITests" ] },
+    { "kind": "folder", "path": "ShamanTests", "target-membership": [ "ShamanTests" ] },
   ],
   "targets": [
     {
@@ -76,6 +78,26 @@
         "PRODUCT_BUNDLE_IDENTIFIER": "com.jaketucker.shaman.uitests",
         "PRODUCT_NAME": "$(TARGET_NAME)",
         "TEST_TARGET_NAME": "Shaman",
+      },
+    }, {
+      "name": "ShamanTests",
+      "id": "237024F830AD64BA008CF7C7",
+      "product": "Products/ShamanTests.xctest",
+      "product-type": "bundle.unit-test",
+      "dependencies": [
+        "Shaman",
+      ],
+      "build-phases": [
+        "compile-sources",
+        "frameworks",
+        "resources",
+      ],
+      "build-settings": {
+        "BUNDLE_LOADER": "$(TEST_HOST)",
+        "GENERATE_INFOPLIST_FILE": "YES",
+        "PRODUCT_BUNDLE_IDENTIFIER": "com.jaketucker.shaman.tests",
+        "PRODUCT_NAME": "$(TARGET_NAME)",
+        "TEST_HOST": "$(BUILT_PRODUCTS_DIR)/Shaman.app/Shaman",
       },
     },
   ],

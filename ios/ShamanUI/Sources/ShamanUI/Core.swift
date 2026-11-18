@@ -11,6 +11,9 @@ public protocol Core: AnyObject, Sendable {
 
   /// Renames this device, or fails with why, in the core's words.
   func renameDevice(_ name: String) async throws(ActError)
+
+  /// Says no more that this phone must pair again.
+  func dismissPairAgain() async throws(ActError)
 }
 
 extension ActError {

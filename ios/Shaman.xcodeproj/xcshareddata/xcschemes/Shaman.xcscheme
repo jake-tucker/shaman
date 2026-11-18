@@ -32,6 +32,16 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "237024F830AD64BA008CF7C7"
+               BuildableName = "ShamanTests.xctest"
+               BlueprintName = "ShamanTests"
+               ReferencedContainer = "container:Shaman.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "2328A11A30AD551000605EF1"
                BuildableName = "ShamanUITests.xctest"
                BlueprintName = "ShamanUITests"

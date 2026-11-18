@@ -11,6 +11,7 @@ app's shape. Everything here is built from a terminal on a Mac with Xcode 27.2; 
 | `Shaman.xcodeproj` | The project, in Xcode 27's JSON format (`project.xcproj`) with folders synced to disk, and the shared `Shaman` scheme |
 | `Shaman/` | The `Shaman` app target: `@main`, the choice of live core or fake, the Info settings |
 | `ShamanUI/` | A local package: the views, the `Core` protocol the app reaches the core through, `LiveCore`, `FakeCore`, and the adapters around the core. Its unit tests are `ShamanUIUnitTests` |
+| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements: the Keychain item the identity key's blob is kept in |
 | `ShamanUITests/` | The XCUITest target |
 | `ShamanCore/` | The core and its generated Swift, written by `scripts/build-ios-core.sh`; ignored by git |
 | `build/` | Where the commands below put what `xcodebuild` makes; ignored by git |
@@ -71,12 +72,17 @@ Over the live core a debug build keeps its records in Application Support's `Cor
 SIMCTL_CHILD_SHAMAN_CORE_DIRECTORY=scratch-$RANDOM xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman
 ```
 
-Launched with `--remove-core-directory` as well, a debug build removes that directory and opens nothing, which is
-how a UI test leaves nothing behind. To read what the core kept, `xcrun simctl get_app_container "$UDID"
-com.jaketucker.shaman data`.
+The identity key's blob is kept in a Keychain item, which outlives the directory and the app; a debug build keeps it
+in the item `SHAMAN_KEY_ITEM` names instead, where one is named, so a run can begin under a key of its own, or keep
+its records and change key. Launched with `--remove-core-directory` as well, a debug build removes that directory, and
+the named item, and opens nothing, which is how a UI test leaves nothing behind. `--spoil-key` puts a blob the chip
+will not take in the named item before the app looks for its key. To read what the core kept,
+`xcrun simctl get_app_container "$UDID" com.jaketucker.shaman data`.
 
-**Test.** `ShamanUI`'s unit tests run under its own scheme, the UI tests under the app's. A result bundle's path must
-not exist yet.
+**Test.** `ShamanUI`'s unit tests run under its own scheme; `ShamanTests` and the UI tests under the app's. A result
+bundle's path must not exist yet. The package's tests run without the Keychain, which answers a test bundle with no
+host app `errSecMissingEntitlement` (-34018), so whatever reaches the Keychain is tested in `ShamanTests`, hosted in
+the app. The Secure Enclave needs no entitlement, so the signer is tested in the package.
 
 ```sh
 (cd ShamanUI && xcodebuild test -scheme ShamanUI -destination "platform=iOS Simulator,id=$UDID" \
@@ -92,16 +98,17 @@ build log; `xcrun xcresulttool export attachments` pulls out screenshots a UI te
 **Lint.** CI fails on any finding; `.swift-format` holds the configuration.
 
 ```sh
-swift format lint --strict --recursive Shaman ShamanUI/Package.swift ShamanUI/Sources ShamanUI/Tests ShamanUITests
-swift format format --in-place --recursive Shaman ShamanUI/Package.swift ShamanUI/Sources ShamanUI/Tests ShamanUITests
+swift format lint --strict --recursive Shaman ShamanUI/Package.swift ShamanUI/Sources ShamanUI/Tests ShamanTests ShamanUITests
+swift format format --in-place --recursive Shaman ShamanUI/Package.swift ShamanUI/Sources ShamanUI/Tests ShamanTests ShamanUITests
 ```
 
 **The core's own tests** run with the rest of the workspace: `cargo nextest run -p shaman-thin-client`. They run on
 every platform, so keep anything iOS-only out of the crate.
 
-**CI** (`.github/workflows/ios.yml`) runs the script, builds and tests in the simulator unsigned
-(`CODE_SIGNING_ALLOWED=NO`), lints, and checks nothing reached `UserDefaults`, on the `xcode-27` runner. Run the same
-commands to reproduce a failure.
+**CI** (`.github/workflows/ios.yml`) runs the script, tests the package unsigned (`CODE_SIGNING_ALLOWED=NO`), builds
+and tests the app signed ad hoc under no team (`CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=`), since
+an unsigned app cannot reach the Keychain, lints, and checks nothing reached `UserDefaults`, on the `xcode-27`
+runner. Run the same commands to reproduce a failure.
 
 ## On the phone
 

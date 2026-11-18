@@ -4,13 +4,17 @@ import SwiftUI
 
 @main
 struct ShamanApp: App {
-  private let opened = Opened.choose()
+  @State private var opened = Opened.choose()
 
   var body: some Scene {
     WindowGroup {
       switch opened {
       case .core(let core): DeviceScreen(core: core, appVersion: Self.version)
       case .failed(let message): CoreFailedScreen(message: message)
+      case .keyRefused(let message, let directory, let item):
+        KeyRefusedScreen(message: message) {
+          opened = Opened.open(directory, IdentityKey.startAgain(in: item), item)
+        }
       #if DEBUG
         case .removed(let name):
           Text("Removed the core's directory \"\(name)\".").accessibilityIdentifier("core.removed")
@@ -32,14 +36,19 @@ struct ShamanApp: App {
 private enum Opened {
   case core(any Core)
   case failed(String)
+  /// The Keychain gave up a blob the chip will not take: the core in `directory` opens once the user chooses to start
+  /// again under a new key, kept in `item`.
+  case keyRefused(String, directory: URL, item: KeyItem)
   #if DEBUG
     /// The directory a run kept its records in was removed, as `--remove-core-directory` asks.
     case removed(String)
   #endif
 
-  /// The live core, kept in its directory. In debug builds `--fake <scenario>` chooses the fake instead, and the
-  /// environment's `SHAMAN_CORE_DIRECTORY` names a directory of its own for the live core, so a UI test starts afresh;
-  /// `--remove-core-directory` removes that directory and opens nothing, so the test leaves nothing behind.
+  /// The live core, kept in its directory and proving this phone by the identity key in the Keychain. In debug builds
+  /// `--fake <scenario>` chooses the fake instead, and the environment's `SHAMAN_CORE_DIRECTORY` names a directory of
+  /// its own for the live core and `SHAMAN_KEY_ITEM` a Keychain item of its own for its key, so a UI test starts
+  /// afresh; `--remove-core-directory` removes that directory, and that item where one is named, and opens nothing, so
+  /// the test leaves nothing behind. `--spoil-key` puts a blob the chip will not take in the named item first.
   static func choose() -> Self {
     #if DEBUG
       let arguments = ProcessInfo.processInfo.arguments
@@ -51,17 +60,26 @@ private enum Opened {
         }
         return .core(FakeCore(scenario))
       }
-      let name = ProcessInfo.processInfo.environment["SHAMAN_CORE_DIRECTORY"] ?? CoreDirectory.defaultName
+      let environment = ProcessInfo.processInfo.environment
+      let name = environment["SHAMAN_CORE_DIRECTORY"] ?? CoreDirectory.defaultName
+      let ownItem = environment["SHAMAN_KEY_ITEM"].map(KeyItem.init(account:))
       if arguments.contains("--remove-core-directory") {
         do {
           try CoreDirectory.remove(named: name)
+          try ownItem?.remove()
         } catch {
           return .failed("The core's directory \"\(name)\" could not be removed: \(error.localizedDescription)")
         }
         return .removed(name)
       }
+      if arguments.contains("--spoil-key"), let ownItem {
+        try? ownItem.remove()
+        try? ownItem.add(Data("not a key".utf8))
+      }
+      let item = ownItem ?? .identity
     #else
       let name = CoreDirectory.defaultName
+      let item = KeyItem.identity
     #endif
     let directory: URL
     do {
@@ -69,10 +87,20 @@ private enum Opened {
     } catch {
       return .failed("This phone's records could not be kept: \(error.localizedDescription)")
     }
-    do {
-      return .core(try LiveCore(directory: directory))
-    } catch {
-      return .failed(error.message)
+    return open(directory, IdentityKey.find(in: item), item)
+  }
+
+  /// The live core in `directory`, over the key `found`, kept in `item`.
+  static func open(_ directory: URL, _ found: IdentityKey.Found, _ item: KeyItem) -> Self {
+    switch found {
+    case .ready(let signer):
+      do {
+        return .core(try LiveCore(directory: directory, signer: signer))
+      } catch {
+        return .failed(error.message)
+      }
+    case .failed(let message): return .failed(message)
+    case .refused(let message): return .keyRefused(message, directory: directory, item: item)
     }
   }
 }

@@ -11,6 +11,8 @@
       case fresh
       /// A phone that has been given a name of its own.
       case named
+      /// A named phone whose records were of a key it no longer has, so it must pair again.
+      case pairAgain
     }
 
     private let device: Mutex<ThisDevice>
@@ -33,22 +35,33 @@
     }
 
     public func renameDevice(_ name: String) async throws(ActError) {
-      let renamed = device.withLock { device in
-        device.name = name
+      change { $0.name = name }
+    }
+
+    public func dismissPairAgain() async throws(ActError) {
+      change { $0.pairAgain = nil }
+    }
+
+    private func change(_ change: (inout ThisDevice) -> Void) {
+      let changed = device.withLock { device in
+        change(&device)
         return device
       }
       for listener in listeners.withLock({ Array($0.values) }) {
-        listener.yield(renamed)
+        listener.yield(changed)
       }
     }
 
     private static func device(in scenario: Scenario) -> ThisDevice {
       let note =
         "Servers paired from now on know this phone by this name. Those already paired keep the name they were given."
-      return switch scenario {
-      case .fresh: ThisDevice(name: "iPhone", nameNote: note, protocolVersion: 116)
-      case .named: ThisDevice(name: "Pocket", nameNote: note, protocolVersion: 116)
-      }
+      let fingerprint = "3f9a1c07d24e8b56a0c3e19f7d5b2a48c6e0f1d39b7a25c84e6d0f2a1b3c5d7e"
+      let pairAgain =
+        "This phone has a new identity key, so no server it was paired with knows it any more. Pair with each of them again."
+      let name = scenario == .fresh ? "iPhone" : "Pocket"
+      return ThisDevice(
+        name: name, nameNote: note, fingerprint: fingerprint, pairAgain: scenario == .pairAgain ? pairAgain : nil,
+        protocolVersion: 116)
     }
   }
 #endif

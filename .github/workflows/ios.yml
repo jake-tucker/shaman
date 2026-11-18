@@ -1,6 +1,6 @@
 name: iOS
 
-# Builds the iOS app over its core and tests both in the simulator, unsigned, and lints the Swift. It runs only where
+# Builds the iOS app over its core and tests both in the simulator, the app signed ad hoc, and lints the Swift. It runs only where
 # the app or its core can have changed; a change to a crate the core shares with the Server is checked for iOS by
 # build.yml, and shows here on the next change to the app. ios/AGENTS.md holds the same loop for a Mac.
 
@@ -57,7 +57,7 @@ jobs:
         # The hand-written Swift alone; ios/ShamanCore is generated.
         run: |
           swift format lint --strict --recursive \
-            ios/Shaman ios/ShamanUI/Package.swift ios/ShamanUI/Sources ios/ShamanUI/Tests ios/ShamanUITests
+            ios/Shaman ios/ShamanUI/Package.swift ios/ShamanUI/Sources ios/ShamanUI/Tests ios/ShamanTests ios/ShamanUITests
 
       - name: Keep everything out of UserDefaults
         run: |
@@ -90,9 +90,11 @@ jobs:
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
         run: |
+          # Signed ad hoc, under no team, as no Apple account is needed for: the Keychain answers an unsigned app with
+          # errSecMissingEntitlement, and the app keeps its identity key's blob there.
           xcodebuild test -project Shaman.xcodeproj -scheme Shaman -destination "platform=iOS Simulator,id=$UDID" \
             -derivedDataPath build/xcode -resultBundlePath build/results/app.xcresult \
-            CODE_SIGNING_ALLOWED=NO -quiet
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= -quiet
 
       - name: Check nothing was written to UserDefaults
         env:

@@ -1,29 +1,54 @@
 import XCTest
 
-/// "This device", over the live core in a directory of each test's own, and over the fake.
+/// "This device", over the live core in a directory and with a Keychain item of each test's own, and over the fake.
 final class ThisDeviceTests: XCTestCase {
   override func setUp() {
     continueAfterFailure = false
   }
 
-  /// The app over the live core kept in `directory`.
+  /// The app over the live core kept in `directory`, with its key in the Keychain item `key`, named as the directory
+  /// is unless named otherwise.
   @MainActor
-  private func launched(in directory: String) -> XCUIApplication {
+  private func launched(in directory: String, key: String? = nil, arguments: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchEnvironment["SHAMAN_CORE_DIRECTORY"] = directory
+    app.launchEnvironment["SHAMAN_KEY_ITEM"] = key ?? directory
+    app.launchArguments = arguments
     app.launch()
     return app
   }
 
-  /// Removes the directory a test's run of the app kept its records in, which only the app can reach.
+  /// A directory and a Keychain item named for it, removed when the test ends.
   @MainActor
-  private func remove(_ directory: String) {
-    let app = XCUIApplication()
-    app.launchEnvironment["SHAMAN_CORE_DIRECTORY"] = directory
-    app.launchArguments = ["--remove-core-directory"]
-    app.launch()
+  private func ownDirectory() -> String {
+    let directory = "ui-test-\(UUID().uuidString)"
+    addTeardownBlock { @MainActor in self.remove(directory) }
+    return directory
+  }
+
+  /// Removes the directory a test's run of the app kept its records in, and the Keychain item named as it is, which
+  /// only the app can reach.
+  @MainActor
+  private func remove(_ directory: String, key: String? = nil) {
+    let app = launched(in: directory, key: key, arguments: ["--remove-core-directory"])
     XCTAssertTrue(app.staticTexts["core.removed"].waitForExistence(timeout: 10))
     app.terminate()
+  }
+
+  /// The fingerprint "This device" shows.
+  @MainActor
+  private func fingerprint(_ app: XCUIApplication) -> String {
+    let shown = app.descendants(matching: .any)["device.fingerprint"]
+    XCTAssertTrue(shown.waitForExistence(timeout: 10))
+    return shown.value as? String ?? ""
+  }
+
+  @MainActor
+  private func attach(_ app: XCUIApplication, _ name: String) {
+    let screenshot = XCTAttachment(screenshot: app.screenshot())
+    screenshot.name = name
+    screenshot.lifetime = .keepAlways
+    add(screenshot)
   }
 
   @MainActor
@@ -38,8 +63,7 @@ final class ThisDeviceTests: XCTestCase {
 
   @MainActor
   func testTheNameIsFirstOfferedAsIPhoneRefusedInTheCoresWordsAndKeptAcrossARelaunch() {
-    let directory = "ui-test-\(UUID().uuidString)"
-    addTeardownBlock { @MainActor in self.remove(directory) }
+    let directory = ownDirectory()
     var app = launched(in: directory)
     XCTAssertTrue(app.navigationBars["Servers & device"].waitForExistence(timeout: 10))
     let field = app.textFields["device.name"]
@@ -50,10 +74,7 @@ final class ThisDeviceTests: XCTestCase {
     let refusal = app.staticTexts["device.name.refusal"]
     XCTAssertTrue(refusal.waitForExistence(timeout: 10))
     XCTAssertEqual(refusal.label, "\"everywhere\" names every server at once, so nothing may be named so")
-    let refused = XCTAttachment(screenshot: app.screenshot())
-    refused.name = "A refused name"
-    refused.lifetime = .keepAlways
-    add(refused)
+    attach(app, "A refused name")
 
     rename(app, to: "Pocket")
     XCTAssertTrue(refusal.waitForNonExistence(timeout: 10))
@@ -76,5 +97,65 @@ final class ThisDeviceTests: XCTestCase {
     XCTAssertEqual(field.value as? String, "Pocket")
     XCTAssertEqual(app.staticTexts["device.version"].label, "Version, 0.1.0 (1)")
     XCTAssertEqual(app.staticTexts["device.protocol"].label, "Protocol, 116")
+  }
+
+  @MainActor
+  func testTheKeysFingerprintIsShownAndStaysAcrossARelaunch() {
+    let directory = ownDirectory()
+    var app = launched(in: directory)
+    let shown = fingerprint(app)
+    XCTAssertEqual(shown.count, 64, shown)
+    XCTAssertTrue(shown.allSatisfy(\.isHexDigit), shown)
+    attach(app, "This device with its fingerprint")
+
+    app.terminate()
+    app = launched(in: directory)
+    XCTAssertEqual(fingerprint(app), shown, "the one key, reused")
+  }
+
+  @MainActor
+  func testUnderANewKeyTheNameStaysAndTheFingerprintIsTheNewKeys() {
+    let directory = ownDirectory()
+    var app = launched(in: directory)
+    let lost = fingerprint(app)
+    rename(app, to: "Pocket")
+    XCTAssertEqual(app.textFields["device.name"].value as? String, "Pocket")
+    app.terminate()
+
+    // The Keychain no longer holds the key the records were kept under.
+    let newKey = "\(directory)-new"
+    addTeardownBlock { @MainActor in self.remove("\(directory)-gone", key: newKey) }
+    app = launched(in: directory, key: newKey)
+    let new = fingerprint(app)
+    XCTAssertNotEqual(new, lost)
+    XCTAssertEqual(app.textFields["device.name"].value as? String, "Pocket", "the name stays")
+  }
+
+  @MainActor
+  func testABlobTheChipRefusesOffersToStartAgainUnderANewKey() {
+    let directory = ownDirectory()
+    let app = launched(in: directory, arguments: ["--spoil-key"])
+    let startAgain = app.buttons["key.startAgain"]
+    XCTAssertTrue(startAgain.waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["This phone's key cannot be used"].exists)
+    attach(app, "A key the chip refuses")
+
+    startAgain.tap()
+    XCTAssertEqual(fingerprint(app).count, 64)
+    XCTAssertEqual(app.textFields["device.name"].value as? String, "iPhone")
+  }
+
+  @MainActor
+  func testThatThisPhoneMustPairAgainIsSaidUntilDismissed() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--fake", "pairAgain"]
+    app.launch()
+    let said = app.staticTexts["pairAgain"]
+    XCTAssertTrue(said.waitForExistence(timeout: 10))
+    XCTAssertTrue(said.label.hasSuffix("Pair with each of them again."), said.label)
+    attach(app, "This phone must pair again")
+
+    app.buttons["pairAgain.dismiss"].tap()
+    XCTAssertTrue(said.waitForNonExistence(timeout: 10))
   }
 }
