@@ -53,6 +53,10 @@
       change { $0.pairAgain = nil }
     }
 
+    public func pairingPrompt() -> String {
+      "On the server, run /serve in Shaman or `shaman serve invite`, copy the invite, and paste it here."
+    }
+
     public func readInvite(_ invite: String) -> InviteReading {
       let invite = invite.trimmingCharacters(in: .whitespacesAndNewlines)
       guard invite.hasPrefix("shaman-") else {
@@ -95,7 +99,7 @@
       let remoteName = remoteName.trimmingCharacters(in: .whitespaces)
       if remoteName.isEmpty {
         return .remoteNameRefused(
-          message: "Remote name must contain non-whitespace characters without outer whitespace")
+          message: "A remote's name must contain non-whitespace characters without outer whitespace")
       }
       let remotes = held.withLock { held in
         held.removeAll { $0.fingerprint == Self.fingerprint }

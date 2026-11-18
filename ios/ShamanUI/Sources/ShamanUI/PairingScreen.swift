@@ -35,6 +35,12 @@ struct PairingStart: View {
   @State private var device: ThisDevice?
   @State private var failure: String?
 
+  /// What the core says to do, its commands drawn as code.
+  private var prompt: AttributedString {
+    let words = core.pairingPrompt()
+    return (try? AttributedString(markdown: words)) ?? AttributedString(words)
+  }
+
   var body: some View {
     Form {
       if let pairAgain = device?.pairAgain {
@@ -55,7 +61,7 @@ struct PairingStart: View {
             .foregroundStyle(.tint)
           Text("Pair with a server")
             .font(.title2.bold())
-          Text("On the server, run /serve in Shaman or `shaman serve invite`, copy the invite, and paste it here.")
+          Text(prompt)
             .foregroundStyle(.secondary)
         }
         .padding(.vertical, 8)

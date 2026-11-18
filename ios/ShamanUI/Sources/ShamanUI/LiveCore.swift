@@ -49,6 +49,10 @@ public final class LiveCore: Core {
     listened { send in client.watchServers(listener: Forwarder(send)) }
   }
 
+  public func pairingPrompt() -> String {
+    client.pairingPrompt()
+  }
+
   public func readInvite(_ invite: String) -> InviteReading {
     client.readInvite(invite: invite)
   }

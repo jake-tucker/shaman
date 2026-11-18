@@ -21,6 +21,9 @@ public protocol Core: AnyObject, Sendable {
   /// The Servers section of the sheet of Servers, Relays and This device, now and on every change.
   func servers() -> AsyncStream<Servers>
 
+  /// What the screen where pairing begins says to do.
+  func pairingPrompt() -> String
+
   /// Reads `invite` for the confirmation screen, dialling nothing.
   func readInvite(_ invite: String) -> InviteReading
 

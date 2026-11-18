@@ -51,6 +51,11 @@ cat > "$scratch/config/shaman.jsonc" <<EOF
 }
 EOF
 
+# A test stops the Server it started however it ends, its xcodebuild failing among the ways.
+if [ "$mode" = --test ]; then
+  trap 'scratch_shaman server stop >&2 || true' EXIT
+fi
+
 echo "Making an invite on the scratch Server in $scratch" >&2
 invite=$(scratch_shaman serve invite)
 echo "Invite: $invite" >&2
@@ -68,7 +73,6 @@ if [ "$mode" = --test ]; then
     -only-testing:ShamanUITests/LivePairingTests
   summary=$(xcrun xcresulttool get test-results summary --path "$result")
   echo "$summary"
-  scratch_shaman server stop >&2
   [ "$(jq -r .result <<< "$summary")" = Passed ]
   exit
 fi
