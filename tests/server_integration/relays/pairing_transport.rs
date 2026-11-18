@@ -14,7 +14,7 @@ use shaman::protocol::{
     ApprovalSubject, CreateSessionRequest, Decision, ExecutionDirectory, InitialPrompt, ModelId,
     Outlook, PROTOCOL_VERSION, Prompt, PromptDelivery, PromptId, ProviderId, RedeemInviteRequest,
     RelayLoginOutcome, Remote, RemoteStatus, SessionChange, SessionCreated, SessionDeleted,
-    SessionError, SessionErrorCode, SessionId, SessionSnapshot, Way,
+    SessionError, SessionErrorCode, SessionId, SessionSnapshot, UPLOAD_BODY_LIMIT, Way,
 };
 use shaman::provider::ProviderEvent;
 use shaman_client::{
@@ -22,7 +22,7 @@ use shaman_client::{
     SessionCommands, SessionEvent, SessionSubscription,
 };
 use shaman_pairing::{
-    GivenIdentity, Identity, IdentityMaterial, Redeemer, RedeemerTimings,
+    GivenIdentity, Identity, IdentityMaterial, Keepalive, Redeemer, RedeemerTimings,
     relay::{LoginStanding, RelayClient, RelayClientTimings, Unattached},
     signer::{IdentitySigner, SoftwareSigner},
 };
@@ -44,6 +44,24 @@ const QUICK: Duration = Duration::from_millis(5);
 
 /// A reader's backoff where the test must show it is never waited out.
 const HOUR: Duration = Duration::from_secs(3600);
+
+/// How long the Client's redeemer gives each part of reaching the Serving
+/// Server, at a test's pace: a dial made as the Serving Server restarts may
+/// finish its TLS handshake and then hear nothing, and is let go within a
+/// fraction of a second rather than the ten a phone would wait.
+fn client_timings() -> RedeemerTimings {
+    RedeemerTimings {
+        handshake_timeout: Duration::from_millis(300),
+        direct_head_start: Duration::from_millis(25),
+        direct_retry_interval: Duration::from_millis(100),
+        keepalive: Keepalive {
+            interval: Duration::from_millis(250),
+            timeout: Duration::from_secs(1),
+        },
+        withdrawal_timeout: Duration::from_millis(500),
+        told_relays_store_interval: Duration::from_millis(25),
+    }
+}
 
 /// The Client side: nothing but a redeemer and the Relay entries it reaches
 /// Relay ways through, both kept in one directory as a thin Client keeps
@@ -68,7 +86,9 @@ impl NoServer {
         let relays = RelayClient::new(
             directory.path(),
             identity.clone(),
-            RelayClientTimings::default(),
+            RelayClientTimings {
+                answer_timeout: Duration::from_secs(1),
+            },
             Unattached,
         )
         .expect("open the Relay entries");
@@ -76,7 +96,7 @@ impl NoServer {
             directory.path(),
             PROTOCOL_VERSION,
             identity,
-            RedeemerTimings::default(),
+            client_timings(),
         )
         .expect("open the Remotes' records");
         redeemer.reach_relays_through(Arc::new(relays.joiner()));
@@ -613,6 +633,43 @@ async fn a_stream_over_a_pairing_ends_as_revoked_once_its_peer_is_removed() {
     paired.shutdown().await;
 }
 
+/// A Remote the Client forgets — removed, or about to be paired again under
+/// its name — is never reached again by trying: a stream of it ends, as one
+/// through a local Server's proxy does, rather than trying it forever.
+#[tokio::test]
+async fn a_stream_over_a_pairing_ends_once_its_remote_is_forgotten_here() {
+    let paired = PairedDirectly::start("thin-pairing-forgotten").await;
+    let workspace = tempfile::tempdir().expect("create a Workspace on the Serving Server");
+    let commands = commands_over(paired.transport.clone(), QUICK);
+    let session_id = paired.begin_session(&commands, workspace.path()).await;
+    let mut stream = commands
+        .attach_session(session_id)
+        .await
+        .expect("read the Session live");
+    snapshot_until(&mut stream).await;
+
+    paired
+        .client
+        .redeemer
+        .delete_remote(REMOTE)
+        .unwrap_or_else(|failure| panic!("forget the Remote: {}", failure.message));
+    // What was open goes, as a phone's connections do on the way to the
+    // background, so the stream must ask the Remote afresh.
+    paired.route.cut_opened_after(0);
+
+    let ended = stream_ending(&mut stream).await;
+    assert!(!ended.is_recoverable(), "{ended}");
+    assert_eq!(ended.remote_status(), None);
+    assert_eq!(ended.deleted_session(), None, "the Session itself stands");
+    let refused = commands
+        .list_sessions(None)
+        .await
+        .expect_err("the Remote is no longer held");
+    assert_eq!(refusal_code(&refused), SessionErrorCode::RemoteNotFound);
+
+    paired.shutdown().await;
+}
+
 #[tokio::test]
 async fn a_cut_way_reads_unreachable_until_it_answers_and_try_now_skips_the_backoff() {
     let mut paired = PairedDirectly::start("thin-pairing-cut").await;
@@ -667,8 +724,9 @@ async fn a_cut_way_reads_unreachable_until_it_answers_and_try_now_skips_the_back
 
 /// What every reader does whatever carries its requests: the catalog's
 /// first snapshot holds what stood before it opened and later Sessions are
-/// announced, and a Session's stream opens with its snapshot and, the
-/// Session deleted, ends saying so.
+/// announced, a Session's stream opens with its snapshot and, the Session
+/// deleted, ends saying so, and an image past what the upload route reads is
+/// refused for its size.
 async fn reader_behaviours(commands: &SessionCommands, workspace: &Path) {
     let first = commands
         .create_session(new_session(workspace, "The first"))
@@ -713,6 +771,19 @@ async fn reader_behaviours(commands: &SessionCommands, workspace: &Path) {
     .await;
     let ended = stream_ending(&mut stream).await;
     assert_eq!(ended.deleted_session(), Some(second), "{ended}");
+
+    let refused = commands
+        .upload_attachment(vec![0; UPLOAD_BODY_LIMIT + 1])
+        .await
+        .expect_err("no route reads a body that large");
+    let refusal = refused
+        .downcast_ref::<SessionError>()
+        .unwrap_or_else(|| panic!("a typed Session error, not {refused:#}"));
+    assert_eq!(refusal.code, SessionErrorCode::AttachmentTooLarge);
+    assert_eq!(
+        refusal.message, "An image may be at most 5 MiB",
+        "an image past what the upload route reads is refused for its size"
+    );
 }
 
 #[tokio::test]
