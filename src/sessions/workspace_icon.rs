@@ -42,7 +42,6 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    icon_catalog,
     protocol::{RepositoryLocation, SessionCatalogChange, Workspace, WorkspaceId},
     storage::WorkspaceProvenance,
 };
@@ -103,7 +102,7 @@ pub(super) fn reply_schema() -> Value {
             "icon": {
                 "type": "string",
                 "description": "the Icon Catalog name standing for the Workspace",
-                "enum": icon_catalog::names(),
+                "enum": shaman_icons::names(),
             },
             "description": {
                 "type": "string",
@@ -125,7 +124,7 @@ pub(super) fn derived_reply(answer: &Value) -> DerivedWorkspace {
         .icon
         .as_ref()
         .and_then(Value::as_str)
-        .filter(|icon| icon_catalog::glyph(icon).is_some())
+        .filter(|icon| shaman_icons::glyph(icon).is_some())
         .map(str::to_owned);
     let description = reply
         .description
@@ -259,7 +258,7 @@ impl SessionStore {
         workspace_id: &WorkspaceId,
         icon: &str,
     ) -> Result<(), SetWorkspaceIconError> {
-        if icon_catalog::glyph(icon).is_none() {
+        if shaman_icons::glyph(icon).is_none() {
             return Err(SetWorkspaceIconError::UnknownIcon);
         }
         let known = self
@@ -584,7 +583,7 @@ mod tests {
         assert_eq!(schema["required"], json!(["icon", "description"]));
         assert_eq!(
             schema["properties"]["icon"]["enum"],
-            json!(icon_catalog::names())
+            json!(shaman_icons::names())
         );
         assert_eq!(schema["properties"]["description"]["type"], json!("string"));
     }

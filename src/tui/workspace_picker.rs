@@ -772,10 +772,7 @@ impl WorkspacePicker {
                 kind: WorkspacePickerRowKind::Workspace(WorkspaceRow {
                     name: self.paths().workspace_name(&workspace),
                     current: workspace.id == current.id,
-                    icon: workspace
-                        .icon
-                        .as_deref()
-                        .and_then(crate::icon_catalog::glyph),
+                    icon: workspace.icon.as_deref().and_then(shaman_icons::glyph),
                     path: workspace.path,
                     workspace_id: workspace.id,
                     origin: origin.clone(),

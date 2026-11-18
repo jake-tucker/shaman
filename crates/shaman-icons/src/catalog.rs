@@ -39,9 +39,9 @@ pub struct IconEntry {
     /// stored Icon that no longer resolves draws as absent rather than as
     /// something else, so renaming an entry is a retirement, not an edit.
     pub name: &'static str,
-    /// The Nerd Font codepoint this name resolves to, pinned by
-    /// [`tests::every_codepoint_is_pinned_to_the_nerd_fonts_fixture`] against
-    /// the fixture in `tests/fixtures/glyphnames.json`.
+    /// The Nerd Font codepoint this name resolves to, pinned by the test
+    /// `every_codepoint_is_pinned_to_the_nerd_fonts_fixture` against the
+    /// fixture in `tests/fixtures/glyphnames.json`.
     pub glyph: char,
     /// Which half of the Catalog this entry belongs to. The Icon Picker's
     /// grid groups by it.

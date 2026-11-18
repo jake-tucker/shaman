@@ -12,22 +12,21 @@
 //! now".
 //!
 //! The picker owns no listing of its own the way the Sidebar's Session
-//! listing does: [`crate::icon_catalog`] is a fixed, in-memory table, so
-//! `offered` reads straight from [`crate::icon_catalog::search`] every time.
+//! listing does: the Icon Catalog ([`shaman_icons::entries`]) is a fixed,
+//! in-memory table, so
+//! `offered` reads straight from [`shaman_icons::search`] every time.
 
 use std::{cell::Cell, cell::RefCell, ops::Range};
 
 use ratatui::layout::Position;
+use shaman_icons::IconEntry;
 
-use crate::{
-    icon_catalog::{self, IconEntry},
-    protocol::{Outlook, SessionReference, WorkspaceId},
-};
+use crate::protocol::{Outlook, SessionReference, WorkspaceId};
 
 use super::list_window::ListWindow;
 
 /// Splits `offered` into rows up to `columns` cells wide, starting a fresh row
-/// wherever the [`crate::icon_catalog::IconGroup`] changes even if the row
+/// wherever the [`shaman_icons::IconGroup`] changes even if the row
 /// before it ran short — the grid's own account of what a group means, so a
 /// glyph standing for what the work is about never shares a row with one
 /// standing for what it is written in.
@@ -262,9 +261,9 @@ impl IconPicker {
 
     /// The Catalog entries the current query offers, in listing order — every
     /// Subject before every Technology. An empty query is the whole Catalog:
-    /// [`icon_catalog::search`] already answers that without a separate path.
+    /// [`shaman_icons::search`] already answers that without a separate path.
     fn offered(&self) -> Vec<&'static IconEntry> {
-        icon_catalog::search(&self.query)
+        shaman_icons::search(&self.query)
     }
 
     fn selected_index(&self, offered: &[&'static IconEntry]) -> Option<usize> {
@@ -302,7 +301,7 @@ impl IconPicker {
     /// it shorter than `columns`, so the column is clamped into whatever that
     /// row actually offers rather than assumed uniform.
     ///
-    /// [`IconGroup`]: crate::icon_catalog::IconGroup
+    /// [`IconGroup`]: shaman_icons::IconGroup
     fn move_vertical(&mut self, direction: isize) {
         let offered = self.offered();
         if offered.is_empty() {
@@ -351,7 +350,7 @@ mod tests {
         assert!(picker.is_open());
         assert_eq!(
             picker.focused_entry().map(|entry| entry.name),
-            icon_catalog::entries().first().map(|entry| entry.name)
+            shaman_icons::entries().first().map(|entry| entry.name)
         );
     }
 
@@ -397,15 +396,15 @@ mod tests {
         picker.move_left();
         assert_eq!(
             picker.focused_entry().map(|entry| entry.name),
-            icon_catalog::entries().first().map(|entry| entry.name),
+            shaman_icons::entries().first().map(|entry| entry.name),
             "moving left from the first cell stays on it"
         );
-        for _ in 0..icon_catalog::entries().len() + 5 {
+        for _ in 0..shaman_icons::entries().len() + 5 {
             picker.move_right();
         }
         assert_eq!(
             picker.focused_entry().map(|entry| entry.name),
-            icon_catalog::entries().last().map(|entry| entry.name),
+            shaman_icons::entries().last().map(|entry| entry.name),
             "moving right past the last cell clamps to it"
         );
     }
@@ -420,12 +419,12 @@ mod tests {
         picker.move_down();
         assert_eq!(
             picker.focused_entry().map(|entry| entry.name),
-            icon_catalog::entries().get(3).map(|entry| entry.name)
+            shaman_icons::entries().get(3).map(|entry| entry.name)
         );
         picker.move_up();
         assert_eq!(
             picker.focused_entry().map(|entry| entry.name),
-            icon_catalog::entries().first().map(|entry| entry.name)
+            shaman_icons::entries().first().map(|entry| entry.name)
         );
     }
 
@@ -437,7 +436,7 @@ mod tests {
         picker.move_up();
         assert_eq!(
             picker.focused_entry().map(|entry| entry.name),
-            icon_catalog::entries().first().map(|entry| entry.name)
+            shaman_icons::entries().first().map(|entry| entry.name)
         );
     }
 

@@ -1,6 +1,6 @@
 //! How a client names a Provider where it has room for a glyph: the Nerd Font
-//! icon the Provider's runtime declares, ahead of its name where the reader
-//! has icons on. Every surface presenting a Provider — the frame's own rows,
+//! glyph `shaman_icons` resolves for that Provider, as it does for every
+//! Client, ahead of its name where the reader has icons on. Every surface presenting a Provider — the frame's own rows,
 //! the Aside, the settings panel — names it the same way from here.
 
 use crate::{protocol::ProviderId, provider::built_in_providers};

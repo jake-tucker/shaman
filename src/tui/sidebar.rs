@@ -2345,8 +2345,8 @@ impl Sidebar {
                                 workspace
                                     .icon
                                     .as_deref()
-                                    .and_then(crate::icon_catalog::glyph)
-                                    .unwrap_or(crate::icon_catalog::FOLDER),
+                                    .and_then(shaman_icons::glyph)
+                                    .unwrap_or(shaman_icons::FOLDER),
                             ),
                             SidebarListingScope::Everywhere
                             | SidebarListingScope::AllWorkspaces => None,
@@ -2380,7 +2380,7 @@ impl Sidebar {
                                 .then(|| session.workspace())
                                 .flatten()
                                 .and_then(|workspace| workspace.icon.as_deref())
-                                .and_then(crate::icon_catalog::glyph),
+                                .and_then(shaman_icons::glyph),
                             updated_at: session.updated_at(),
                             working_since: earliest(
                                 row.speaking().map(|session| session.working_since()),
@@ -2561,7 +2561,7 @@ impl Sidebar {
                 .show_icons
                 .then(|| session.icon())
                 .flatten()
-                .and_then(crate::icon_catalog::glyph),
+                .and_then(shaman_icons::glyph),
             title: session.title(),
             remote: if self.scope == SidebarListingScope::Everywhere {
                 session.reference().origin.remote_name()

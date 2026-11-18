@@ -36,7 +36,4 @@ pub use serving::IdentityStoreChoice;
 use shaman_pairing::{self as pairing, signer};
 pub use shaman_protocol as protocol;
 pub use shaman_protocol::{approval, questionnaire};
-// The Icon Catalog, the plain glyphs standing where an Icon is absent and the Providers' glyphs, which a thin Client's
-// core resolves alike.
-use shaman_icons as icon_catalog;
 use shaman_text::{ansi, shown_text};

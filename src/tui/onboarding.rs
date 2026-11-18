@@ -31,7 +31,6 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    icon_catalog,
     protocol::{
         AgentSelection, DerivationErrand, EffectiveSettings, ModelDescriptor, ModelId, Outlook,
         ProviderCatalogStatus, ProviderId, ProviderUnavailability, SettingMutation,
@@ -1603,13 +1602,13 @@ impl IconsStep {
     fn sample() -> String {
         let glyphs = Self::SAMPLE_ICONS
             .iter()
-            .filter_map(|name| icon_catalog::glyph(name))
+            .filter_map(|name| shaman_icons::glyph(name))
             .chain(
                 built_in_providers()
                     .iter()
                     .filter_map(|provider| provider.nerd_font_icon),
             )
-            .chain([icon_catalog::FOLDER, NF_COD_GIT_BRANCH])
+            .chain([shaman_icons::FOLDER, NF_COD_GIT_BRANCH])
             .map(String::from)
             .collect::<Vec<_>>();
         // Stood in past the answers' focus marker, in line with their text.

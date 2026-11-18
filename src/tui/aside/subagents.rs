@@ -523,13 +523,13 @@ impl<'a> SessionParts<'a> {
         };
         let icon = (context.show_icons && !workspace.is_empty()).then(|| {
             self.workspace_icon
-                .and_then(crate::icon_catalog::glyph)
-                .unwrap_or(crate::icon_catalog::FOLDER)
+                .and_then(shaman_icons::glyph)
+                .unwrap_or(shaman_icons::FOLDER)
         });
         LocationParts {
             guides,
             remote: self.origin,
-            remote_icon: context.show_icons.then_some(crate::icon_catalog::MONITOR),
+            remote_icon: context.show_icons.then_some(shaman_icons::MONITOR),
             icon,
             workspace,
         }

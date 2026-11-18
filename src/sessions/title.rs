@@ -78,7 +78,6 @@ use tokio::{sync::watch, time::Duration};
 
 use crate::{
     errands::{ErrandPurpose, ErrandRunner},
-    icon_catalog,
     model_catalog::ModelCatalogService,
     protocol::{
         AgentSelection, AttachmentBinding, DerivationErrand, MAX_TITLE_CHARS, PreparationPrompt,
@@ -777,7 +776,7 @@ impl SessionStore {
         session_id: SessionId,
         icon: &str,
     ) -> Result<SessionSummary, SetIconError> {
-        if icon_catalog::glyph(icon).is_none() {
+        if shaman_icons::glyph(icon).is_none() {
             return Err(SetIconError::UnknownIcon);
         }
         let icon = icon.to_owned();
@@ -1103,7 +1102,7 @@ fn reply_schema() -> Value {
             "icon": {
                 "type": "string",
                 "description": "the Icon Catalog name standing for the work",
-                "enum": icon_catalog::names(),
+                "enum": shaman_icons::names(),
             },
         },
         "required": ["title", "icon"],
@@ -1121,7 +1120,7 @@ fn derived_title(answer: &Value) -> Option<DerivedTitle> {
         title: sanitized_title(&reply.title)?,
         icon: reply
             .icon
-            .filter(|name| icon_catalog::glyph(name).is_some()),
+            .filter(|name| shaman_icons::glyph(name).is_some()),
     })
 }
 
@@ -1343,7 +1342,7 @@ mod tests {
         let schema = reply_schema();
         assert_eq!(
             schema["properties"]["icon"]["enum"],
-            json!(icon_catalog::names()),
+            json!(shaman_icons::names()),
             "a Model can only choose an Icon Shaman's Catalog can resolve"
         );
         assert_eq!(schema["required"], json!(["title", "icon"]));

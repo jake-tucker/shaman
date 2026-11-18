@@ -329,7 +329,7 @@ pub fn built_in_providers() -> &'static [BuiltInProvider] {
             .map(|runtime| BuiltInProvider {
                 id: runtime.provider_id(),
                 display_name: runtime.display_name().to_owned(),
-                nerd_font_icon: crate::icon_catalog::provider_glyph(runtime.provider_id().as_str()),
+                nerd_font_icon: shaman_icons::provider_glyph(runtime.provider_id().as_str()),
                 supports_subagent_stop: runtime.supports_subagent_stop(),
                 manual_compaction: runtime.manual_compaction(),
             })

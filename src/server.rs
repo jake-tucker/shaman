@@ -3041,7 +3041,7 @@ async fn set_remote_icon(
         Ok(request) => request,
         Err(response) => return response,
     };
-    if crate::icon_catalog::glyph(&request.icon).is_none() {
+    if shaman_icons::glyph(&request.icon).is_none() {
         return pairing_error_response(crate::pairing::PairingFailure::new(
             SessionErrorCode::InvalidIcon,
             format!("`{}` is not an Icon Catalog name", request.icon),

@@ -3114,10 +3114,10 @@ fn directory_browser_row_text(
     let separator = if compact { " " } else { " · " };
     let icon = workspace
         .and_then(|workspace| workspace.icon.as_deref())
-        .and_then(crate::icon_catalog::glyph);
+        .and_then(shaman_icons::glyph);
     let (glyph, word) = match (icon, source_control) {
         (Some(icon), _) => (icon, Some("[workspace]")),
-        (None, None | Some(DirectorySourceControl::Plain)) => (crate::icon_catalog::FOLDER, None),
+        (None, None | Some(DirectorySourceControl::Plain)) => (shaman_icons::FOLDER, None),
         (None, Some(_)) => (NF_COD_REPO, Some("[repository]")),
     };
     let mut text = format!("{lead}{}", icon_label(known.show_icons, glyph, name));
@@ -3502,7 +3502,7 @@ fn render_rename_dialog(
     let name = match dialog
         .icon
         .filter(|_| state.settings().appearance.show_icons)
-        .and_then(crate::icon_catalog::glyph)
+        .and_then(shaman_icons::glyph)
     {
         Some(icon) => format!(" {icon} Rename "),
         None => " Rename ".to_owned(),
@@ -3560,7 +3560,7 @@ fn workspace_picker_row_line(
         .sum::<usize>();
     let name = icon_label(
         show_icons,
-        row.icon.unwrap_or(crate::icon_catalog::FOLDER),
+        row.icon.unwrap_or(shaman_icons::FOLDER),
         &row.name,
     );
     let name = truncate_to_width(
@@ -4996,7 +4996,7 @@ fn session_picker_row_text(
     let icon = row
         .icon
         .filter(|_| state.settings().appearance.show_icons)
-        .and_then(crate::icon_catalog::glyph)
+        .and_then(shaman_icons::glyph)
         .map(|icon| format!("{icon} "))
         .unwrap_or_default();
     let marker_width = marker.width();
@@ -6034,9 +6034,7 @@ fn sidebar_entry_lines(
                         .reference
                         .origin
                         .remote_name()
-                        .map_or(crate::icon_catalog::MONITOR, |remote| {
-                            remote_glyph(state, remote)
-                        }),
+                        .map_or(shaman_icons::MONITOR, |remote| remote_glyph(state, remote)),
                 },
                 sidebar_active_slot(
                     row.standing,
@@ -6240,7 +6238,7 @@ fn sidebar_active_row_lines(
     } else {
         icon_label(
             show_icons,
-            workspace_icon.unwrap_or(crate::icon_catalog::FOLDER),
+            workspace_icon.unwrap_or(shaman_icons::FOLDER),
             &workspace,
         )
     };
@@ -8160,7 +8158,7 @@ fn render_session_header(
         .then_some(snapshot.icon.as_deref())
         .flatten()
         .filter(|_| show_icons)
-        .and_then(crate::icon_catalog::glyph)
+        .and_then(shaman_icons::glyph)
         .map(|icon| format!("{icon} "));
     let icon_width = icon_prefix.as_deref().map(str::width).unwrap_or(0);
     // Each side may always hold a third of the header, and whatever more a
@@ -8270,8 +8268,8 @@ fn header_orientation_readings(
             let workspace_icon = workspace
                 .icon
                 .as_deref()
-                .and_then(crate::icon_catalog::glyph)
-                .unwrap_or(crate::icon_catalog::FOLDER);
+                .and_then(shaman_icons::glyph)
+                .unwrap_or(shaman_icons::FOLDER);
             let icon = format!("{workspace_icon} ");
             readings.push(match state.session_reference.as_ref() {
                 Some(reference) => ExecutionReading::pressable(
@@ -8967,9 +8965,7 @@ fn connection_status_text(state: &TuiState, detail: ResponsiveDetail) -> String 
 /// The glyph the Remote `name` is drawn beside: the Icon chosen for it, or
 /// the plain monitor where none was.
 fn remote_glyph(state: &TuiState, name: &str) -> char {
-    state
-        .remote_icon(name)
-        .unwrap_or(crate::icon_catalog::MONITOR)
+    state.remote_icon(name).unwrap_or(shaman_icons::MONITOR)
 }
 
 /// The Workspace an execution context names: its Remote, when it has one, and
@@ -8992,8 +8988,8 @@ fn workspace_readings(
     let workspace_icon = workspace
         .icon
         .as_deref()
-        .and_then(crate::icon_catalog::glyph)
-        .unwrap_or(crate::icon_catalog::FOLDER);
+        .and_then(shaman_icons::glyph)
+        .unwrap_or(shaman_icons::FOLDER);
     let path_budget = width
         .saturating_sub(remote.width() + separator.width())
         .saturating_sub(icon_label(show_icons, workspace_icon, "").width())

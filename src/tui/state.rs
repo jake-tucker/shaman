@@ -2213,7 +2213,7 @@ impl TuiState {
     pub(super) fn remote_icon(&self, name: &str) -> Option<char> {
         self.remote_icons
             .get(name)
-            .and_then(|icon| crate::icon_catalog::glyph(icon))
+            .and_then(|icon| shaman_icons::glyph(icon))
     }
 
     /// Takes the Icons a listing of the Remotes says they carry as the ones
