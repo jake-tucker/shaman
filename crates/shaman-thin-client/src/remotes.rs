@@ -100,6 +100,9 @@ pub(crate) struct Remotes {
     outlook: watch::Sender<Outlook>,
     /// How each Remote's ways stood when last asked, by the Remote's name.
     standings: Arc<Mutex<HashMap<String, Standings>>>,
+    /// The Remotes, by name, in the order last turned toward, as last shown:
+    /// whatever shows the Remotes again shows the Outlook by it.
+    turned: Arc<Mutex<Vec<String>>>,
 }
 
 impl Remotes {
@@ -113,6 +116,7 @@ impl Remotes {
             }),
             outlook: watch::Sender::new(Outlook::Nowhere),
             standings: Arc::default(),
+            turned: Arc::default(),
         };
         remotes.show(turned);
         remotes
@@ -136,8 +140,32 @@ impl Remotes {
     }
 
     /// Shows the Remotes as they are held now, the Outlook at the first of
-    /// `turned` held, or at the first Remote paired where none of them is.
+    /// `turned` held, or at the first Remote paired where none of them is;
+    /// whatever shows them again shows the Outlook by `turned` until it is
+    /// shown by another.
     pub fn show(&self, turned: &[String]) {
+        let mut shown = self
+            .turned
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        turned.clone_into(&mut shown);
+        self.render(&shown);
+    }
+
+    /// Shows the Remotes as they are held now, the Outlook by the order they
+    /// were last shown turned toward in.
+    fn refresh(&self) {
+        let shown = self
+            .turned
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        self.render(&shown);
+    }
+
+    /// Shows the Remotes as they are held now, the Outlook by `turned`: done
+    /// holding the order shown, so no showing by an older order lands after
+    /// one by a newer.
+    fn render(&self, turned: &[String]) {
         let held = self.redeemer.list_remotes();
         let outlook = turned
             .iter()
@@ -171,10 +199,10 @@ impl Remotes {
     }
 
     /// Asks each way of the Remote `name` alone whether it answers, showing
-    /// how each stands once all have said, as `turned` orders the Outlook.
-    pub async fn ask_ways(&self, name: &str, turned: &[String]) {
+    /// how each stands once all have said.
+    pub async fn ask_ways(&self, name: &str) {
         self.forget_ways(name);
-        self.show(turned);
+        self.refresh();
         let Ok(standings) = self.redeemer.probe_ways(name).await else {
             // Gone meanwhile: nothing of it is shown.
             return;
@@ -183,7 +211,7 @@ impl Remotes {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner())
             .insert(name.to_owned(), standings);
-        self.show(turned);
+        self.refresh();
     }
 
     /// Forgets how the ways of the Remote `name` stood, so they read as

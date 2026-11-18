@@ -148,6 +148,11 @@ impl ThinClient {
         .await?
     }
 
+    /// What the screen where pairing begins says to do.
+    pub fn pairing_prompt(&self) -> String {
+        pairing::PROMPT.to_owned()
+    }
+
     /// Reads `invite` for the confirmation screen, dialling nothing.
     pub fn read_invite(&self, invite: String) -> InviteReading {
         pairing::read(&self.inner, &invite)
@@ -201,6 +206,10 @@ impl ThinClient {
             timings.redeemer,
         )
         .map_err(OpenError::from)?;
+        // A pairing the app was ended in the middle of keeps nothing.
+        redeemer
+            .drop_uncommitted()
+            .map_err(|failure| OpenError::from(anyhow::anyhow!(failure.message)))?;
         let remotes = Remotes::new(redeemer.clone(), &record.turned);
         let (device, _) = watch::channel(ThisDevice::of(&record));
         let inner = Arc::new(Inner {
@@ -215,10 +224,7 @@ impl ThinClient {
         });
         for name in inner.remotes.names() {
             let inner = inner.clone();
-            runtime.spawn(async move {
-                let turned = inner.record.lock().await.turned.clone();
-                inner.remotes.ask_ways(&name, &turned).await;
-            });
+            runtime.spawn(async move { inner.remotes.ask_ways(&name).await });
         }
         Ok(Arc::new(Self {
             runtime: Some(runtime),
@@ -279,24 +285,46 @@ impl Drop for ThinClient {
 
 impl Inner {
     /// Changes the thin Client's own file by `change`, keeping it before
-    /// "This device" and the Outlook are told.
+    /// "This device" and the Outlook are told: where it cannot be kept,
+    /// nothing changes.
     async fn change_record(
         &self,
         change: impl FnOnce(&mut DeviceRecord) + Send + 'static,
+    ) -> Result<(), ActError> {
+        self.changing_record(change, false).await
+    }
+
+    /// Changes the thin Client's own file by `change`, telling "This device"
+    /// and the Outlook whether or not it could be kept, as what the change
+    /// records has been done already: where it could not, it is held, and
+    /// kept by the next change, which writes the file whole.
+    async fn change_record_shown(
+        &self,
+        change: impl FnOnce(&mut DeviceRecord) + Send + 'static,
+    ) -> Result<(), ActError> {
+        self.changing_record(change, true).await
+    }
+
+    async fn changing_record(
+        &self,
+        change: impl FnOnce(&mut DeviceRecord) + Send + 'static,
+        shown_unkept: bool,
     ) -> Result<(), ActError> {
         let mut held = self.record.lock().await;
         let mut changed = held.clone();
         change(&mut changed);
         let written = changed.clone();
         let records = self.records.clone();
-        tokio::task::spawn_blocking(move || records.write(&written))
+        let kept = tokio::task::spawn_blocking(move || records.write(&written))
             .await
-            .map_err(|error| ActError::failed(anyhow::Error::from(error)))?
-            .map_err(ActError::failed)?;
-        self.device.send_replace(ThisDevice::of(&changed));
-        self.remotes.show(&changed.turned);
-        *held = changed;
-        Ok(())
+            .map_err(|error| ActError::failed(anyhow::Error::from(error)))
+            .and_then(|kept| kept.map_err(ActError::failed));
+        if kept.is_ok() || shown_unkept {
+            self.device.send_replace(ThisDevice::of(&changed));
+            self.remotes.show(&changed.turned);
+            *held = changed;
+        }
+        kept
     }
 }
 

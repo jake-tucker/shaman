@@ -261,19 +261,31 @@ impl KeySigner for TestKey {
 pub struct Phone {
     directory: tempfile::TempDir,
     key: Arc<TestKey>,
+    timings: CoreTimings,
     pub core: Arc<ThinClient>,
 }
 
 impl Phone {
     pub fn new() -> Self {
+        Self::with(timings())
+    }
+
+    /// A phone whose core waits as `timings` say.
+    pub fn with(timings: CoreTimings) -> Self {
         let directory = tempfile::tempdir().expect("create the phone's directory");
         let key = TestKey::new();
-        let core = open(&directory, &key);
+        let core = open(&directory, &key, timings);
         Self {
             directory,
             key,
+            timings,
             core,
         }
+    }
+
+    /// The directory the core keeps everything in.
+    pub fn directory(&self) -> &std::path::Path {
+        self.directory.path()
     }
 
     /// The phone after the app was ended and launched again.
@@ -281,13 +293,15 @@ impl Phone {
         let Self {
             directory,
             key,
+            timings,
             core,
         } = self;
         drop(core);
-        let core = open(&directory, &key);
+        let core = open(&directory, &key, timings);
         Self {
             directory,
             key,
+            timings,
             core,
         }
     }
@@ -337,11 +351,15 @@ impl Phone {
     }
 }
 
-fn open(directory: &tempfile::TempDir, key: &Arc<TestKey>) -> Arc<ThinClient> {
+fn open(
+    directory: &tempfile::TempDir,
+    key: &Arc<TestKey>,
+    timings: CoreTimings,
+) -> Arc<ThinClient> {
     ThinClient::open_with(
         directory.path().to_string_lossy().into_owned(),
         key.clone(),
-        timings(),
+        timings,
     )
     .expect("open the core")
 }

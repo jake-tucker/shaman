@@ -197,8 +197,11 @@ async fn a_pairing_no_way_answers_fails_offering_to_try_again_and_keeps_nothing(
         message.starts_with("No way this invite offers answered"),
         "{message}"
     );
+    // It dials again only where the next dial would begin in time, so it
+    // gives up no more than one wait between dials early.
+    let timings = support::timings();
     assert!(
-        began.elapsed() >= support::timings().pairing_keeps_dialling,
+        began.elapsed() >= timings.pairing_keeps_dialling - timings.pairing_redial,
         "kept dialling first"
     );
     assert!(phone.servers().await.remotes.is_empty(), "nothing is kept");
@@ -506,6 +509,142 @@ async fn a_way_that_does_not_answer_reads_as_not_answering() {
             (WayState::NotAnswering, "not answering")
         ]
     );
+    phone.shutdown();
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_slow_way_answering_late_leaves_the_outlook_at_the_remote_paired_since() {
+    let first = ServingServer::start("thin-outlook-first").await;
+    let second = ServingServer::start("thin-outlook-second").await;
+    // Asking the way that holds its connection takes this phone a second.
+    let mut timings = support::timings();
+    timings.redeemer.handshake_timeout = Duration::from_secs(1);
+    let phone = Phone::with(timings);
+    let slow = Gate::held(first.serving_address()).await;
+    let invite = first
+        .invite(vec![
+            Way::Direct(first.serving_address()),
+            Way::Direct(slow.address()),
+        ])
+        .await;
+    assert!(matches!(
+        phone
+            .core
+            .confirm_pairing(invite, "first".to_owned(), "iPhone".to_owned())
+            .await,
+        PairingOutcome::Paired { .. }
+    ));
+    let invite = second
+        .invite(vec![Way::Direct(second.serving_address())])
+        .await;
+    assert!(matches!(
+        phone
+            .core
+            .confirm_pairing(invite, "second".to_owned(), "iPhone".to_owned())
+            .await,
+        PairingOutcome::Paired { .. }
+    ));
+
+    // The first Remote's slow way is heard from after the second is paired.
+    phone
+        .servers_until(|servers| {
+            servers.remotes.iter().any(|remote| {
+                remote.name == "first" && remote.ways[1].state == WayState::NotAnswering
+            })
+        })
+        .await;
+    assert_eq!(
+        phone.outlook().await,
+        Outlook::Remote {
+            name: "second".to_owned(),
+            begins_in: "New sessions begin in second".to_owned(),
+        },
+        "the Outlook stays where it was last turned"
+    );
+    let phone = phone.relaunched();
+    assert!(matches!(phone.outlook().await, Outlook::Remote { name, .. } if name == "second"));
+    phone.shutdown();
+    first.shutdown().await;
+    second.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pairing_made_whose_record_cannot_be_kept_is_shown_paired_and_kept_by_the_next_change() {
+    let server = ServingServer::start("thin-unkept").await;
+    let invite = server
+        .invite(vec![Way::Direct(server.serving_address())])
+        .await;
+    let phone = Phone::new();
+    // The thin Client's own file cannot be replaced: a directory stands in
+    // its place.
+    let record = phone.directory().join("thin-client.json");
+    std::fs::remove_file(&record).unwrap();
+    std::fs::create_dir(&record).unwrap();
+    std::fs::write(record.join("in the way"), b"").unwrap();
+
+    let paired = phone
+        .core
+        .confirm_pairing(invite, DESK.to_owned(), "Pocket".to_owned())
+        .await;
+    assert_eq!(
+        paired,
+        PairingOutcome::Paired {
+            name: DESK.to_owned()
+        },
+        "a Pairing made is never shown as failed"
+    );
+    assert_eq!(
+        phone.outlook().await,
+        Outlook::Remote {
+            name: DESK.to_owned(),
+            begins_in: format!("New sessions begin in {DESK}"),
+        }
+    );
+    assert_eq!(phone.device().await.name, "Pocket");
+    assert_eq!(phone.servers().await.remotes[0].name, DESK);
+    assert_eq!(server.peers().await.len(), 1);
+
+    std::fs::remove_dir_all(&record).unwrap();
+    phone
+        .core
+        .dismiss_pair_again()
+        .await
+        .expect("the next change is kept");
+    let phone = phone.relaunched();
+    assert!(matches!(phone.outlook().await, Outlook::Remote { name, .. } if name == DESK));
+    assert_eq!(phone.device().await.name, "Pocket");
+    phone.shutdown();
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_remote_whose_commit_never_landed_is_dropped_as_the_core_opens() {
+    let server = ServingServer::start("thin-uncommitted").await;
+    let invite = server
+        .invite(vec![Way::Direct(server.serving_address())])
+        .await;
+    let phone = Phone::new();
+    assert!(matches!(
+        phone
+            .core
+            .confirm_pairing(invite, DESK.to_owned(), "iPhone".to_owned())
+            .await,
+        PairingOutcome::Paired { .. }
+    ));
+    let core = phone.core.clone();
+    drop(core);
+
+    // As the app ended mid-commit leaves it: the Remote marked uncommitted.
+    let path = phone.directory().join("remotes.json");
+    let mut remotes: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    remotes[0]["uncommitted"] = true.into();
+    std::fs::write(&path, serde_json::to_vec(&remotes).unwrap()).unwrap();
+
+    let phone = phone.relaunched();
+    assert!(phone.servers().await.remotes.is_empty());
+    assert_eq!(phone.outlook().await, Outlook::Nowhere);
     phone.shutdown();
     server.shutdown().await;
 }

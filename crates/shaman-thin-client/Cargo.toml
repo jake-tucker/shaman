@@ -27,6 +27,7 @@ base64 = "0.22.1"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
 tokio = { version = "1.47.1", features = ["rt-multi-thread", "sync"] }
+tracing = "0.1"
 # By proc-macros alone, pinned exactly: what the generated Swift and the library it calls say to each other is fixed by
 # the version that wrote both. Its `tokio` feature is not used, since the core runs every async export on its own
 # runtime.

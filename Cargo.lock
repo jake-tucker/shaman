@@ -3872,6 +3872,7 @@ dependencies = [
  "shaman-protocol",
  "tempfile",
  "tokio",
+ "tracing",
  "uniffi",
 ]
 

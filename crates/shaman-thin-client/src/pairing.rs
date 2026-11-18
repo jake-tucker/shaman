@@ -83,6 +83,9 @@ pub enum TryInstead {
     TryAgain,
 }
 
+/// What the screen where pairing begins says to do.
+pub(crate) const PROMPT: &str = "On the server, run /serve in Shaman or `shaman serve invite`, copy the invite, and paste it here.";
+
 /// Reads `text` as an Invite for the confirmation screen, dialling nothing.
 pub(crate) fn read(inner: &Inner, text: &str) -> InviteReading {
     let invite = match shaman_pairing::parse_invite(text.trim()) {
@@ -180,8 +183,10 @@ pub(crate) async fn confirm(
     };
     let name = remote.name.clone();
     let turned = name.clone();
-    let kept = inner
-        .change_record(move |record| {
+    // The Pairing is made, so it is shown as made, kept or not: a record
+    // that could not be written now is written whole by the next change.
+    let shown = inner
+        .change_record_shown(move |record| {
             record.name = device_name;
             record
                 .turned
@@ -189,18 +194,12 @@ pub(crate) async fn confirm(
             record.turned.insert(0, turned);
         })
         .await;
-    if let Err(error) = kept {
-        return PairingOutcome::Failed {
-            message: error.to_string(),
-            again: TryInstead::TryAgain,
-        };
+    if let Err(error) = shown {
+        tracing::warn!("a pairing was made but this phone's records were not kept: {error}");
     }
     let asked = inner.clone();
     let asked_name = name.clone();
-    tokio::spawn(async move {
-        let turned = asked.record.lock().await.turned.clone();
-        asked.remotes.ask_ways(&asked_name, &turned).await;
-    });
+    tokio::spawn(async move { asked.remotes.ask_ways(&asked_name).await });
     PairingOutcome::Paired { name }
 }
 
