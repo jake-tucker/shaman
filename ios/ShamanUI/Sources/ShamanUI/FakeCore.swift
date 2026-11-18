@@ -101,7 +101,7 @@
 
     public func narrowListing(_ reference: String) async throws(ActError) {
       let remotes = held.withLock { $0.map(\.name) }
-      let chosen = FakeScope(reference).within(remotes)
+      let chosen = FakeScope(reference).within(remotes, sessions: sessions.withLock { $0 })
       scope.withLock { $0 = chosen }
       if let remote = chosen.remote {
         turned.withLock { $0 = remote }

@@ -31,7 +31,7 @@
       of sessions: [FakeSession], on remotes: [String], unanswered: [String], showing onShow: Int,
       scope: FakeScope = .everywhere, query: String = "", now: Date
     ) -> Listing {
-      let scope = scope.within(remotes)
+      let scope = scope.within(remotes, sessions: sessions)
       let originNamed = remotes.count > 1
       let held = sessions.filter { remotes.contains($0.remote) && !unanswered.contains($0.remote) }
       let inScope = held.filter { scope.holds($0) }
@@ -45,7 +45,8 @@
       let waiting = unanswered.filter { scope.reaches($0) }
       let nothing = found.map(\.isEmpty) ?? (active.isEmpty && settled.isEmpty)
       let empty: String?
-      if !waiting.isEmpty || !nothing {
+      // A search says it found nothing while it goes on saying who is being reached.
+      if !nothing || (!waiting.isEmpty && found == nil) {
         empty = nil
       } else {
         empty =
@@ -263,12 +264,15 @@
       }
     }
 
-    /// The scope as it stands among the Remotes `remotes`: Everywhere where it names one not held, or the one held.
-    func within(_ remotes: [String]) -> FakeScope {
+    /// The scope as it stands among the Remotes `remotes`: Everywhere where it names one not held, or the one held,
+    /// and the whole of its Remote where it names a Workspace that Remote does not offer.
+    func within(_ remotes: [String], sessions: [FakeSession]) -> FakeScope {
+      guard let remote, remotes.contains(remote) else { return .everywhere }
+      let whole: FakeScope = remotes.count == 1 ? .everywhere : .remote(remote)
       switch self {
-      case .everywhere: .everywhere
-      case .remote where remotes.count == 1: .everywhere
-      case .remote(let remote), .workspace(let remote, _): remotes.contains(remote) ? self : .everywhere
+      case .everywhere, .remote: return whole
+      case .workspace(_, let workspace):
+        return FakeSession.workspaces(on: remote, sessions: sessions).contains(workspace) ? self : whole
       }
     }
 

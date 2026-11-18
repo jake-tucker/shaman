@@ -157,6 +157,10 @@ final class ListingTests: XCTestCase {
       XCTAssertTrue(app.buttons[words].firstMatch.waitForExistence(timeout: 10), "offers \(words)")
     }
     XCTAssertFalse(app.buttons["Sidekick"].exists, "the Sidekick Workspace is never offered")
+    for header in ["workstation", "laptop", "homelab"] {
+      let headed = app.staticTexts.matching(NSPredicate(format: "label == %@", header)).firstMatch
+      XCTAssertTrue(headed.exists, "a section is headed \(header)")
+    }
     attach(app, "The title's menu with several servers")
   }
 
@@ -238,5 +242,21 @@ final class ListingTests: XCTestCase {
     XCTAssertTrue(empty.waitForExistence(timeout: 10))
     XCTAssertEqual(empty.label, "No sessions match")
     attach(app, "A search that finds nothing")
+  }
+
+  @MainActor
+  func testASearchSaysItFoundNothingWhileItGoesOnReachingARemote() {
+    let app = launched("reaching")
+    XCTAssertTrue(rows("active", in: app).firstMatch.waitForExistence(timeout: 10))
+    let field = app.searchFields.firstMatch
+    field.tap()
+    field.typeText("nothing like it")
+    let empty = app.staticTexts["listing.empty"]
+    XCTAssertTrue(empty.waitForExistence(timeout: 10))
+    XCTAssertEqual(empty.label, "No sessions match")
+    let waiting = app.descendants(matching: .any)["listing.waiting"]
+    XCTAssertTrue(waiting.exists, "the Remote yet to answer is still said to be reached")
+    XCTAssertTrue(waiting.label.contains("Reaching homelab…"), waiting.label)
+    attach(app, "A search while a remote is reached")
   }
 }

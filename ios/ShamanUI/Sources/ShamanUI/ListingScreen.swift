@@ -98,6 +98,9 @@ struct ListingScreen: View {
         case .settled(let row): settled(row)
         }
       }
+      if let waiting = listing.waiting {
+        waitingRow(waiting)
+      }
     } else {
       shelves(listing)
     }
@@ -108,15 +111,7 @@ struct ListingScreen: View {
     Section {
       ForEach(listing.active, id: \.session) { row in active(row) }
       if let waiting = listing.waiting {
-        HStack(spacing: 8) {
-          ProgressView()
-            .controlSize(.mini)
-          Text(verbatim: waiting)
-        }
-        .font(.footnote)
-        .foregroundStyle(.secondary)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("listing.waiting")
+        waitingRow(waiting)
       }
     }
     if !listing.settled.isEmpty {
@@ -132,6 +127,19 @@ struct ListingScreen: View {
           .accessibilityIdentifier("listing.settledHeader")
       }
     }
+  }
+
+  /// What stands at the foot of the rows while a Remote in scope has yet to answer.
+  private func waitingRow(_ waiting: String) -> some View {
+    HStack(spacing: 8) {
+      ProgressView()
+        .controlSize(.mini)
+      Text(verbatim: waiting)
+    }
+    .font(.footnote)
+    .foregroundStyle(.secondary)
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("listing.waiting")
   }
 
   private func active(_ row: ActiveRow) -> some View {
@@ -286,24 +294,11 @@ struct ScopeMenu: View {
   var body: some View {
     Menu {
       ForEach(Array(listing.scopes.enumerated()), id: \.offset) { _, section in
-        Section {
-          Picker(selection: chosen) {
-            ForEach(section.choices, id: \.scope) { choice in
-              Label {
-                Text(verbatim: choice.words)
-              } icon: {
-                choice.glyph.flatMap(Glyph.image) ?? Image(systemName: choice.kind.symbol)
-              }
-              .tag(choice.scope)
-            }
-          } label: {
-            EmptyView()
-          }
-          .pickerStyle(.inline)
-        } header: {
-          if let header = section.header {
-            Text(verbatim: header)
-          }
+        // A Remote's section is headed by its name, so same-named Workspaces on two Remotes are told apart.
+        if let header = section.header {
+          Section(header) { choices(section) }
+        } else {
+          Section { choices(section) }
         }
       }
     } label: {
@@ -322,12 +317,22 @@ struct ScopeMenu: View {
     .accessibilityLabel(Text(verbatim: listing.title))
   }
 
-  /// The scope chosen now, and choosing another narrows the listing to it.
-  private var chosen: Binding<String> {
-    Binding {
-      listing.scopes.flatMap(\.choices).first(where: \.chosen)?.scope ?? ""
-    } set: { scope in
-      narrow(scope)
+  /// A section's choices, the one chosen ticked, and choosing another narrows the listing to it.
+  private func choices(_ section: ScopeSection) -> some View {
+    ForEach(section.choices, id: \.scope) { choice in
+      Toggle(
+        isOn: Binding {
+          choice.chosen
+        } set: { _ in
+          narrow(choice.scope)
+        }
+      ) {
+        Label {
+          Text(verbatim: choice.words)
+        } icon: {
+          choice.glyph.flatMap(Glyph.image) ?? Image(systemName: choice.kind.symbol)
+        }
+      }
     }
   }
 }
