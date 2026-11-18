@@ -100,29 +100,34 @@
   /// A Session the fake holds open: framed at once, its conversation landing a moment later, a working Turn's answer
   /// streaming in by change, and its acts answered as the core would answer them. A Prompt holding "fail" is refused,
   /// one holding "gone" finds the Session gone, and one holding "unanswered" is never answered and may have been sent,
-  /// so a screen can be seen failing each way. The Approvals its Turn waits on present themselves once it lands,
-  /// oldest first, and wait behind "Review" once dismissed, as the core's do.
+  /// so a screen can be seen failing each way. The Interventions its Turn waits on present themselves once it lands,
+  /// oldest first, and wait behind "Review" once dismissed, as the core's do. Answers holding "fail" are refused.
   final class FakeOpenedSession: OpenedSession {
     private struct State {
-      /// The frame of the Session's work, before its Approvals are shown in it.
+      /// The frame of the Session's work, before its Interventions are shown in it.
       var frame: SessionFrame
       var items: [ConversationItem]
       var sent = 0
-      /// The Approvals the Session waits on, oldest first.
-      var pending: [PendingApproval] = []
+      /// The Interventions the Session waits on, oldest first.
+      var pending: [Intervention] = []
       /// Those this screen dismissed.
       var dismissed: Set<String> = []
 
-      /// The frame as the core shows it: the oldest Approval not dismissed presented while the Origin answers, and
-      /// otherwise the orange bar, with "Review" where there is anything to bring back.
+      /// The frame as the core shows it: the oldest Intervention not dismissed presented while the Origin answers,
+      /// and otherwise the orange bar naming the oldest, with "Review" where there is anything to bring back.
       func shown(unreachable: Bool) -> SessionFrame {
         var shown = frame
-        guard !pending.isEmpty else { return shown }
+        guard let oldest = pending.first else { return shown }
         let presenting = unreachable ? nil : pending.first { !dismissed.contains($0.reference) }
-        shown.intervention = presenting.map { .approval(approval: $0) }
+        shown.intervention = presenting
         if presenting == nil {
+          let words =
+            switch oldest {
+            case .approval: "Approval waiting"
+            case .questionnaire: "Questionnaire waiting"
+            }
           shown.bar = Bar(
-            kind: .waiting, words: "Approval waiting", since: nil, watching: nil, stop: "Stop",
+            kind: .waiting, words: words, since: nil, watching: nil, stop: "Stop",
             review: unreachable ? nil : "Review")
         }
         return shown
@@ -173,7 +178,7 @@
       let task = Task { [weak self] in
         try? await Task.sleep(for: .milliseconds(600))
         self?.change { $0 = tree?.items(of: session) ?? FakeConversation.items(scenario) }
-        self?.changeState { $0.pending = FakeConversation.approvals(scenario) }
+        self?.changeState { $0.pending = FakeConversation.interventions(scenario) }
         guard scenario == .working else { return }
         for text in FakeConversation.streamed.dropFirst() {
           try? await Task.sleep(for: .milliseconds(700))
@@ -365,17 +370,48 @@
           }
           return
         }
-        let answeredAll = state.withLock { state in
-          state.pending.removeAll { $0.reference == approval }
-          return state.pending.isEmpty
+        answered(approval)
+      }
+    }
+
+    func answer(_ questionnaire: String, _ answers: [GivenAnswer]) async throws(ActError) {
+      try await acts.during { () async throws(ActError) in
+        try await submitted(questionnaire)
+        if answers.contains(where: { $0.text.lowercased().contains("fail") }) {
+          throw .Refused(message: "The server refused the answers: the agent stopped listening for them")
         }
-        changeState { _ in }
-        if answeredAll {
-          change { items in
-            items = items.map { item in
-              guard case .turn(let card) = item.kind, card.outcome == .waiting else { return item }
-              return FakeConversation.card(item.id, .working, "Working", card.count)
-            }
+        answered(questionnaire)
+      }
+    }
+
+    func decline(_ questionnaire: String) async throws(ActError) {
+      try await acts.during { () async throws(ActError) in
+        try await submitted(questionnaire)
+        answered(questionnaire)
+      }
+    }
+
+    /// Waits as a submission to the Questionnaire `questionnaire` does, refused where it no longer waits.
+    private func submitted(_ questionnaire: String) async throws(ActError) {
+      try reachable()
+      try? await Task.sleep(for: .milliseconds(1_500))
+      guard state.withLock({ $0.pending.contains { $0.reference == questionnaire } }) else {
+        throw .Refused(message: "That questionnaire is no longer waiting")
+      }
+    }
+
+    /// Takes the Intervention `reference` names away, answered: the Turn works again once nothing else waits.
+    private func answered(_ reference: String) {
+      let answeredAll = state.withLock { state in
+        state.pending.removeAll { $0.reference == reference }
+        return state.pending.isEmpty
+      }
+      changeState { _ in }
+      if answeredAll {
+        change { items in
+          items = items.map { item in
+            guard case .turn(let card) = item.kind, card.outcome == .waiting else { return item }
+            return FakeConversation.card(item.id, .working, "Working", card.count)
           }
         }
       }

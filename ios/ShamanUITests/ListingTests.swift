@@ -34,11 +34,13 @@ final class ListingTests: XCTestCase {
     rows(shelf, in: app).matching(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
   }
 
-  /// Scrolls the listing until `element` can be tapped.
+  /// Scrolls the listing until `element` can be tapped, clear of the bottom bar standing over the listing's foot.
   @MainActor
   private func scrolled(to element: XCUIElement, in app: XCUIApplication) -> XCUIElement {
+    let bar = app.buttons["home.servers"]
+    let clear = { element.exists && element.isHittable && (!bar.exists || element.frame.maxY <= bar.frame.minY) }
     var swipes = 0
-    while !(element.exists && element.isHittable) && swipes < 12 {
+    while !clear() && swipes < 12 {
       app.swipeUp()
       swipes += 1
     }

@@ -822,3 +822,197 @@ private final class HeldTime: BackgroundTasks {
     #expect(!model.trying)
   }
 }
+
+@Suite struct QuestionnaireDraftTests {
+  private func question(
+    _ choices: [String] = [], multiple: Bool = false, field: AnswerField? = nil, required: Bool = true,
+    secret: Bool = false
+  ) -> PendingQuestion {
+    PendingQuestion(
+      position: "Question", heading: nil, text: "Which?", hint: nil,
+      choices: choices.map { ChoiceCard(choice: $0, label: $0, description: nil, badge: nil) }, multiple: multiple,
+      field: field, skip: required ? nil : "Skip", secret: secret ? "Answered (secret)" : nil)
+  }
+
+  private func questionnaire(_ questions: PendingQuestion...) -> PendingQuestionnaire {
+    PendingQuestionnaire(
+      reference: "questionnaire", questions: questions, note: nil, decline: "Decline", next: "Next",
+      send: "Send answers", back: "Back")
+  }
+
+  private func field(combines: Bool, secure: Bool = false) -> AnswerField {
+    AnswerField(label: combines ? "Additional text" : "Answer", combines: combines, secure: secure)
+  }
+
+  @Test func oneChoiceReplacesAnotherAndSeveralMayBeTakenWhereTheQuestionTakesSeveral() {
+    let one = question(["staging", "local"])
+    let several = question(["unit", "soak"], multiple: true)
+    var draft = QuestionnaireDraft(questionnaire(one, several))
+    draft.choose("staging", of: one)
+    draft.choose("local", of: one)
+    #expect(draft.taken("local") && !draft.taken("staging"))
+    draft.choose("local", of: one)
+    #expect(!draft.taken("local"), "taken again, it is let go")
+    draft.choose("staging", of: one)
+    #expect(draft.next(questionnaire(one, several)) == false)
+    draft.choose("unit", of: several)
+    draft.choose("soak", of: several)
+    #expect(draft.taken("unit") && draft.taken("soak"))
+    #expect(draft.answers.map(\.choices) == [["staging"], ["unit", "soak"]])
+  }
+
+  @Test func writingBesideAChoiceKeepsBothAndOtherwiseEachClearsTheOther() {
+    let beside = question(["staging"], field: field(combines: true))
+    var draft = QuestionnaireDraft(questionnaire(beside))
+    draft.choose("staging", of: beside)
+    draft.write("after lunch", of: beside)
+    #expect(draft.taken("staging") && draft.written == "after lunch", "both stand")
+
+    let instead = question(["staging"], field: field(combines: false))
+    var other = QuestionnaireDraft(questionnaire(instead))
+    other.choose("staging", of: instead)
+    other.write("the old box", of: instead)
+    #expect(!other.taken("staging"), "writing clears the choice")
+    other.choose("staging", of: instead)
+    #expect(other.written.isEmpty, "choosing clears the text")
+    #expect(other.taken("staging"))
+  }
+
+  @Test func aRequiredQuestionHoldsNextUntilAnsweredAndOneNotRequiredIsSkipped() {
+    let required = question(field: field(combines: false))
+    let optional = question(["unit"], required: false)
+    let asked = questionnaire(required, optional)
+    var draft = QuestionnaireDraft(asked)
+    #expect(!draft.goesOn(asked))
+    #expect(draft.next(asked) == false)
+    #expect(draft.page == 0, "Next is held")
+    draft.write("   ", of: required)
+    #expect(!draft.goesOn(asked), "blanks answer nothing")
+    draft.write("staging", of: required)
+    #expect(draft.goesOn(asked))
+    #expect(draft.next(asked) == false)
+    #expect(draft.page == 1)
+    #expect(draft.onLast(asked))
+    #expect(draft.goesOn(asked), "one not required goes on unanswered")
+    draft.choose("unit", of: optional)
+    #expect(draft.skip(asked) == true, "skipping the last sends")
+    #expect(draft.answers == [GivenAnswer(choices: [], text: "staging"), GivenAnswer(choices: [], text: "")])
+  }
+
+  @Test func aSecretLeftBehindReadsAnsweredAndShowsNothingOfItUntilReplaced() {
+    let secret = question(["prod"], field: field(combines: true, secure: true), required: false, secret: true)
+    let after = question(["unit"])
+    let asked = questionnaire(secret, after)
+    var draft = QuestionnaireDraft(asked)
+    draft.choose("prod", of: secret)
+    draft.write("hunter2", of: secret)
+    #expect(!draft.sealed, "while it is written it is the reader's own")
+    _ = draft.next(asked)
+    draft.back(asked)
+    #expect(draft.sealed)
+    #expect(draft.written.isEmpty && !draft.taken("prod"), "nothing of it is shown again")
+    #expect(draft.answers[0] == GivenAnswer(choices: ["prod"], text: "hunter2"), "it is still given")
+    draft.write("", of: secret)
+    #expect(draft.sealed, "an empty field changes nothing")
+    draft.write("s", of: secret)
+    #expect(!draft.sealed)
+    #expect(draft.answers[0] == GivenAnswer(choices: [], text: "s"), "replaced whole")
+  }
+
+  @Test func backReturnsToThePageBeforeKeepingWhatWasGiven() {
+    let first = question(["staging"])
+    let second = question(["unit"])
+    let asked = questionnaire(first, second)
+    var draft = QuestionnaireDraft(asked)
+    draft.back(asked)
+    #expect(draft.page == 0)
+    draft.choose("staging", of: first)
+    _ = draft.next(asked)
+    draft.choose("unit", of: second)
+    draft.back(asked)
+    #expect(draft.page == 0 && draft.taken("staging"))
+    _ = draft.next(asked)
+    #expect(draft.taken("unit"))
+  }
+}
+
+@Suite @MainActor struct QuestionnaireModelTests {
+  private let waiting = "workstation-key/13"
+
+  private func until(_ model: SessionModel, _ shown: @MainActor (SessionModel) -> Bool) async throws {
+    for _ in 0..<300 where !shown(model) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(shown(model))
+  }
+
+  private func presented(_ model: SessionModel) throws -> PendingQuestionnaire {
+    guard case .questionnaire(let questionnaire) = try #require(model.presented).intervention else {
+      throw CancellationError()
+    }
+    return questionnaire
+  }
+
+  @Test func halfGivenAnswersAreKeptWhileItWaitsBehindReview() async throws {
+    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.presented != nil }
+    let questionnaire = try presented(model)
+    #expect(model.presented?.id == "questionnaire:\(questionnaire.reference)")
+    let machine = questionnaire.questions[0]
+    model.changeDraft(of: questionnaire) { $0.choose("local", of: machine) }
+    model.changeDraft(of: questionnaire) { $0.write("after lunch", of: machine) }
+    #expect(model.changeDraft(of: questionnaire) { $0.next(questionnaire) } == false)
+
+    model.dismissInterventions()
+    try await until(model) { $0.presented == nil }
+    #expect(model.frame?.bar?.words == "Questionnaire waiting")
+    #expect(model.frame?.bar?.review == "Review")
+    model.review()
+    try await until(model) { $0.presented != nil }
+    let kept = model.draft(of: try presented(model))
+    #expect(kept.page == 1, "on the page it was left on")
+    #expect(kept.answers[0] == GivenAnswer(choices: ["local"], text: "after lunch"))
+  }
+
+  @Test func answersSentDimTheSheetUntilTheServerAnswersAndGoWithIt() async throws {
+    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.presented != nil }
+    let questionnaire = try presented(model)
+    model.changeDraft(of: questionnaire) { $0.choose("staging", of: questionnaire.questions[0]) }
+    let sending = Task { await model.sendAnswers(questionnaire) }
+    try await until(model) { $0.answering == [questionnaire.reference] }
+    await sending.value
+    #expect(model.answering.isEmpty)
+    #expect(model.banner == nil)
+    #expect(model.questionnaireDrafts.isEmpty, "what was given goes once it is answered")
+    try await until(model) { $0.presented == nil }
+    #expect(model.frame?.bar?.kind == .working)
+  }
+
+  @Test func answersRefusedStandInTheBannerAndWhatWasGivenIsKept() async throws {
+    let model = SessionModel(core: FakeCore(.paired), session: waiting, failureStands: .seconds(3600))
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.presented != nil }
+    let questionnaire = try presented(model)
+    model.changeDraft(of: questionnaire) { $0.write("fail, please", of: questionnaire.questions[0]) }
+    await model.sendAnswers(questionnaire)
+    #expect(model.banner == "The server refused the answers: the agent stopped listening for them")
+    #expect(model.draft(of: questionnaire).answers[0].text == "fail, please")
+    #expect(model.presented != nil, "it still asks")
+  }
+
+  @Test func declinedItGoesWhole() async throws {
+    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.presented != nil }
+    await model.decline(try presented(model))
+    #expect(model.banner == nil)
+    try await until(model) { $0.presented == nil }
+  }
+}

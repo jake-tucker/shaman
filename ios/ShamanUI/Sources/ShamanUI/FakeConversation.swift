@@ -28,6 +28,9 @@
       case approvals
       /// The Agent delegated to Subagents and only waits on them: the Session heads the tree `FakeTree` holds.
       case delegating
+      /// The Turn waits on a Questionnaire of three Questions: one choice with a note beside it, required; several
+      /// choices or a written answer instead, which may be skipped; and a secret, which may be skipped.
+      case questionnaire
     }
 
     /// How the conversation stands of the Session whose last Turn stands as `scenario`.
@@ -73,7 +76,53 @@
         return [
           user("open", "Implement ADR-0078: each side states one version and accepts the other at or above its floor.")
         ] + [card("work", .waiting, "Waiting on you", "3 tools · 1 command · 2 edits")]
+      case .questionnaire:
+        return [user("open", "Run the relay's tests before the release, wherever suits")]
+          + [card("work", .waiting, "Waiting on you", "2 tools · 1 command")]
       }
+    }
+
+    /// The Interventions the Session whose last Turn stands as `scenario` waits on, oldest first, as the core
+    /// presents them.
+    static func interventions(_ scenario: Scenario) -> [Intervention] {
+      if scenario == .questionnaire {
+        return [.questionnaire(questionnaire: questionnaire)]
+      }
+      return approvals(scenario).map { .approval(approval: $0) }
+    }
+
+    /// The Questionnaire of the `questionnaire` scenario, as the core presents it.
+    static let questionnaire = PendingQuestionnaire(
+      reference: "questionnaire-tests",
+      questions: [
+        PendingQuestion(
+          position: "Question 1 of 3", heading: "Machine", text: "Where should the relay's tests run?", hint: nil,
+          choices: [
+            choice("staging", "Staging", "The shared box, with the relay's real certificates.", recommended: true),
+            choice("local", "Local", "This laptop; nothing reaches the network."),
+            choice("ci", "CI", "A fresh runner: slower, but clean."),
+          ], multiple: false, field: AnswerField(label: "Additional text", combines: true, secure: false), skip: nil,
+          secret: nil),
+        PendingQuestion(
+          position: "Question 2 of 3", heading: "Suites", text: "Which suites should run?", hint: "Choose any",
+          choices: [
+            choice("unit", "Unit", "Fast, and nothing reaches the network."),
+            choice("integration", "Integration", "Against an in-process relay."),
+            choice("soak", "Soak", "An hour of reconnects."),
+          ], multiple: true, field: AnswerField(label: "Or write your own", combines: false, secure: false),
+          skip: "Skip", secret: nil),
+        PendingQuestion(
+          position: "Question 3 of 3", heading: "Token", text: "The staging deploy token, if the tests need one?",
+          hint: nil, choices: [], multiple: false,
+          field: AnswerField(label: "Answer", combines: false, secure: true), skip: "Skip",
+          secret: "Answered (secret)"),
+      ], note: nil, decline: "Decline", next: "Next", send: "Send answers", back: "Back")
+
+    private static func choice(
+      _ choice: String, _ label: String, _ description: String, recommended: Bool = false
+    ) -> ChoiceCard {
+      ChoiceCard(
+        choice: choice, label: label, description: description, badge: recommended ? "Recommended" : nil)
     }
 
     /// The Approvals the Session whose last Turn stands as `scenario` waits on, oldest first, as the core presents
@@ -108,7 +157,7 @@
                 style: .monospace)
             ]),
         ]
-      case .working, .settled, .stopped, .failed, .undelivered, .monitoring, .delegating:
+      case .working, .settled, .stopped, .failed, .undelivered, .monitoring, .delegating, .questionnaire:
         return []
       }
     }

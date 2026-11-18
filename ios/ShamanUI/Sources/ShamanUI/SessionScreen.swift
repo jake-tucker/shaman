@@ -7,10 +7,11 @@ import Textual
 /// It appears at once with what the listing knows, a quiet loading mark standing where the conversation will be. At
 /// its foot the bar says what the work is doing, with Stop, above the composer, whose send steers a working Turn and
 /// whose held send queues; a Prompt queued waits as a dashed bubble at the foot of the conversation. The Session's own
-/// Approval presents itself as a half-height sheet; swiped away, it waits behind the orange bar's "Review". An act's
-/// failure is a banner over the screen, or over the sheet that asked, but a Session gone, which pops it. A Subagent's
-/// Session is named by the Subagent and has no composer. Where the tree the Session belongs to has Subagents, a button
-/// in the navigation bar opens it as a sheet, and choosing an entry there has `stack` show that Session.
+/// Approval presents itself as a half-height sheet, and its Questionnaire as a full-height one; swiped away, either
+/// waits behind the orange bar's "Review". An act's failure is a banner over the screen, or over the sheet that asked,
+/// but a Session gone, which pops it. A Subagent's Session is named by the Subagent and has no composer. Where the tree
+/// the Session belongs to has Subagents, a button in the navigation bar opens it as a sheet, and choosing an entry there
+/// has `stack` show that Session.
 struct SessionScreen: View {
   let model: SessionModel
   /// The navigation stack the Session is pushed on, which an entry chosen in its tree is shown on.
@@ -95,6 +96,8 @@ struct SessionScreen: View {
       switch presented.intervention {
       case .approval(let approval):
         ApprovalSheet(approval: approval, model: model)
+      case .questionnaire(let questionnaire):
+        QuestionnaireSheet(questionnaire: questionnaire, model: model)
       }
     }
     .sheet(
@@ -305,6 +308,17 @@ struct Presented: Identifiable, Equatable {
   var id: String {
     switch intervention {
     case .approval(let approval): "approval:\(approval.reference)"
+    case .questionnaire(let questionnaire): "questionnaire:\(questionnaire.reference)"
+    }
+  }
+}
+
+extension Intervention {
+  /// The reference the core hands it under, and is handed it back by.
+  var reference: String {
+    switch self {
+    case .approval(let approval): approval.reference
+    case .questionnaire(let questionnaire): questionnaire.reference
     }
   }
 }
@@ -866,6 +880,11 @@ final class SessionModel {
   private(set) var acting: Set<String> = []
   /// The Approvals a Decision is under way on, each of whose sheets is dimmed until the Server answers.
   private(set) var deciding: Set<String> = []
+  /// The Questionnaires whose answers, or whose Decline, are on their way, each of whose sheets is dimmed until the
+  /// Server answers.
+  private(set) var answering: Set<String> = []
+  /// What the reader has half given each Questionnaire, by its reference, kept while this screen stays open.
+  private(set) var questionnaireDrafts: [String: QuestionnaireDraft] = [:]
   /// How long a failure's banner stands before it goes by itself.
   @ObservationIgnored private let failureStands: Duration
   @ObservationIgnored private var clearing: Task<Void, Never>?
@@ -957,6 +976,50 @@ final class SessionModel {
     defer { deciding.remove(approval) }
     do {
       try await opened.decide(approval, decision)
+    } catch {
+      failed(error)
+    }
+  }
+
+  /// What the reader has half given `questionnaire`: nothing, until they give something.
+  func draft(of questionnaire: PendingQuestionnaire) -> QuestionnaireDraft {
+    questionnaireDrafts[questionnaire.reference] ?? QuestionnaireDraft(questionnaire)
+  }
+
+  /// Changes what the reader has half given `questionnaire` as `change` does, answering what it answers.
+  @discardableResult
+  func changeDraft<Answered>(
+    of questionnaire: PendingQuestionnaire, _ change: (inout QuestionnaireDraft) -> Answered
+  ) -> Answered {
+    var draft = draft(of: questionnaire)
+    let answered = change(&draft)
+    questionnaireDrafts[questionnaire.reference] = draft
+    return answered
+  }
+
+  /// Sends what the reader gave `questionnaire`, dimming its sheet until the Server has answered. Where it fails, what
+  /// they gave is kept.
+  func sendAnswers(_ questionnaire: PendingQuestionnaire) async {
+    let answers = draft(of: questionnaire).answers
+    await submitting(questionnaire) { () async throws(ActError) in
+      try await opened.answer(questionnaire.reference, answers)
+    }
+  }
+
+  /// Declines `questionnaire` whole, dimming its sheet until the Server has answered.
+  func decline(_ questionnaire: PendingQuestionnaire) async {
+    await submitting(questionnaire) { () async throws(ActError) in
+      try await opened.decline(questionnaire.reference)
+    }
+  }
+
+  private func submitting(_ questionnaire: PendingQuestionnaire, _ act: () async throws(ActError) -> Void) async {
+    let reference = questionnaire.reference
+    answering.insert(reference)
+    defer { answering.remove(reference) }
+    do {
+      try await act()
+      questionnaireDrafts[reference] = nil
     } catch {
       failed(error)
     }
@@ -1142,6 +1205,12 @@ enum Pushed: Hashable {
   #Preview("A session waiting on an approval") {
     NavigationStack {
       SessionScreen(model: SessionModel(core: FakeCore(.paired), session: "workstation-key/3"))
+    }
+  }
+
+  #Preview("A session waiting on a questionnaire") {
+    NavigationStack {
+      SessionScreen(model: SessionModel(core: FakeCore(.paired), session: "workstation-key/13"))
     }
   }
 

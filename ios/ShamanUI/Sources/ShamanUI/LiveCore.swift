@@ -170,6 +170,14 @@ final class LiveOpenedSession: OpenedSession {
     try await acted { try await session.decide(approval: approval, decision: decision) }
   }
 
+  func answer(_ questionnaire: String, _ answers: [GivenAnswer]) async throws(ActError) {
+    try await acted { try await session.answer(questionnaire: questionnaire, answers: answers) }
+  }
+
+  func decline(_ questionnaire: String) async throws(ActError) {
+    try await acted { try await session.decline(questionnaire: questionnaire) }
+  }
+
   func dismiss() {
     session.dismiss()
   }

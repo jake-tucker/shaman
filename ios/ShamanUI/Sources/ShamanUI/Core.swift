@@ -132,6 +132,14 @@ public protocol OpenedSession: AnyObject, Sendable {
   /// sent again: it waits behind "Review", as one dismissed does, until the Session shows it answered.
   func decide(_ approval: String, _ decision: DecisionKind) async throws(ActError)
 
+  /// Answers the Questionnaire `questionnaire` names with `answers`, one for each of its Questions in their order,
+  /// once its Server has. Answers whose delivery was lost are never sent again: the Questionnaire waits behind
+  /// "Review", as one dismissed does, until the Session shows it answered.
+  func answer(_ questionnaire: String, _ answers: [GivenAnswer]) async throws(ActError)
+
+  /// Declines the Questionnaire `questionnaire` names whole, once its Server has.
+  func decline(_ questionnaire: String) async throws(ActError)
+
   /// Dismisses every one of the Session's own Interventions pending now, as swiping its sheet away does, for as long
   /// as this screen stays open: the bar offers them again, and one asked after presents itself.
   func dismiss()

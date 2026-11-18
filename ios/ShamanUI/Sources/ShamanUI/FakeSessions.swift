@@ -262,6 +262,9 @@
           12, "workstation", "shaman", FakeTree.title, "\u{f0349}", .working,
           checkout: on("fix/session-lock", linked: true),
           running: 190, moved: 20, reads: .delegating),
+        session(
+          13, "workstation", "shaman", "Run the relay's tests before the release", "\u{f0668}", .needsIntervention,
+          checkout: on("release/relay", linked: true), moved: 90, reads: .questionnaire),
       ] + settledHistory
 
     /// A long history of settled work, so the shelf has more than it opens on.
