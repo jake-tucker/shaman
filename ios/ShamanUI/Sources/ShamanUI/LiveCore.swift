@@ -29,17 +29,6 @@ public final class LiveCore: Core {
     try await acted { try await client.dismissPairAgain() }
   }
 
-  /// Runs `act`, which fails as an `ActError` alone, so that is what it is said to throw.
-  private func acted(_ act: () async throws -> Void) async throws(ActError) {
-    do {
-      try await act()
-    } catch let error as ActError {
-      throw error
-    } catch {
-      throw .Refused(message: "This phone could not do that: \(error)")
-    }
-  }
-
   public func outlook() -> AsyncStream<Outlook> {
     listened { send in client.watchOutlook(listener: Forwarder(send)) }
   }
@@ -76,6 +65,18 @@ public final class LiveCore: Core {
     client.searchListing(text: text)
   }
 
+  public func draft(for session: String) -> String {
+    client.draft(session: session)
+  }
+
+  public func setDraft(_ text: String, for session: String) {
+    client.setDraft(session: session, text: text)
+  }
+
+  public func actsUnderWay() -> AsyncStream<Bool> {
+    listened { send in client.watchActs(listener: Forwarder(send)) }
+  }
+
   public func pairingPrompt() -> String {
     client.pairingPrompt()
   }
@@ -107,6 +108,37 @@ final class LiveOpenedSession: OpenedSession {
 
   func close() {
     session.close()
+  }
+
+  func send(_ text: String) async throws(ActError) {
+    try await acted { try await session.send(text: text) }
+  }
+
+  func queue(_ text: String) async throws(ActError) {
+    try await acted { try await session.queue(text: text) }
+  }
+
+  func steerNow(_ prompt: String) async throws(ActError) {
+    try await acted { try await session.steerNow(prompt: prompt) }
+  }
+
+  func cancelQueued(_ prompt: String) async throws(ActError) {
+    try await acted { try await session.cancelQueued(prompt: prompt) }
+  }
+
+  func stop() async throws(ActError) {
+    try await acted { try await session.stop() }
+  }
+}
+
+/// Runs `act`, which fails as an `ActError` alone, so that is what it is said to throw.
+private func acted(_ act: () async throws -> Void) async throws(ActError) {
+  do {
+    try await act()
+  } catch let error as ActError {
+    throw error
+  } catch {
+    throw .Refused(message: "This phone could not do that: \(error)")
   }
 }
 

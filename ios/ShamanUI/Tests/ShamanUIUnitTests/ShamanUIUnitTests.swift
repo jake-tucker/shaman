@@ -321,8 +321,15 @@ private final class RefusingSigner: KeySigner {
     #expect(RunningTime.compact(since: now.addingTimeInterval(-9 * 86_400), now: now) == "9d")
   }
 
+  @Test func theBarsTimeReadsSecondsThenPaddedMinutesThenHours() {
+    #expect(RunningTime.working(since: now.addingTimeInterval(-42), now: now) == "42s")
+    #expect(RunningTime.working(since: now.addingTimeInterval(-74), now: now) == "1m 14s")
+    #expect(RunningTime.working(since: now.addingTimeInterval(-(3_600 + 2 * 60 + 3)), now: now) == "1h 02m 03s")
+  }
+
   @Test func aStartInTheFutureReadsAsNoTimeAtAll() {
     let later = now.addingTimeInterval(90)
+    #expect(RunningTime.working(since: later, now: now) == "0s")
     #expect(RunningTime.duration(since: later, now: now) == "0s")
     #expect(RunningTime.compact(since: later, now: now) == "now")
   }
@@ -476,5 +483,116 @@ private final class RefusingSigner: KeySigner {
 
   @Test func theSameSessionPushedTwiceIsTwoScreens() {
     #expect(SessionRoute(session: "a") != SessionRoute(session: "a"))
+  }
+}
+
+@Suite @MainActor struct SessionModelTests {
+  private let working = "workstation-key/1"
+
+  @Test func theComposerOpensOnItsDraftAndHandsTheCoreEachChange() {
+    let core = FakeCore(.paired)
+    core.setDraft("half a thought", for: working)
+    let model = SessionModel(core: core, session: working)
+    #expect(model.text == "half a thought")
+    model.text = "half a thought, finished"
+    #expect(core.draft(for: working) == "half a thought, finished")
+  }
+
+  @Test func aSendEmptiesTheFieldAtOnce() async {
+    let core = FakeCore(.paired)
+    let model = SessionModel(core: core, session: working)
+    model.text = "Give it a quiet zone"
+    let sending = Task { await model.send() }
+    await Task.yield()
+    #expect(model.text == "")
+    #expect(core.draft(for: working) == "")
+    await sending.value
+    #expect(model.banner == nil)
+    #expect(model.text == "")
+  }
+
+  @Test func aRefusedSendStandsInTheBannerAndItsTextIsBackInTheField() async {
+    let core = FakeCore(.paired)
+    let model = SessionModel(core: core, session: working, failureStands: .seconds(3600))
+    model.text = "Please fail"
+    await model.send()
+    #expect(model.banner == "The server refused the prompt: its agent is not signed in")
+    #expect(model.text == "Please fail")
+    #expect(!model.popped)
+    model.dismissBanner()
+    #expect(model.banner == nil)
+  }
+
+  @Test func aSessionGonePopsTheScreenAndShowsNoBanner() async {
+    let model = SessionModel(core: FakeCore(.paired), session: working)
+    model.text = "Is it gone?"
+    await model.send()
+    #expect(model.popped)
+    #expect(model.banner == nil)
+  }
+
+  @Test func aQueuedPromptNoLongerThereSaysSoAndLeavesTheScreenUp() async {
+    let model = SessionModel(core: FakeCore(.paired), session: working, failureStands: .seconds(3600))
+    await model.steerNow("no such prompt")
+    #expect(model.banner == "That prompt is no longer queued")
+    #expect(!model.popped)
+    #expect(model.acting.isEmpty)
+  }
+
+  @Test func onAnUnreachableOriginASendFailsInTheBannerAndKeepsItsText() async {
+    let model = SessionModel(core: FakeCore(.unreachable), session: "homelab-key/2", failureStands: .seconds(3600))
+    model.text = "Upgrade it"
+    await model.send()
+    #expect(model.banner == "The server did not answer in time")
+    #expect(model.invalid == nil)
+  }
+
+  @Test func aStopThatWithdrawsAPromptPutsItBackInTheFieldAheadOfWhatIsWritten() async {
+    let model = SessionModel(core: FakeCore(.paired), session: "workstation-key/11")
+    model.text = "and the changelog"
+    await model.stop()
+    #expect(model.text == "Note the floor in the pairing docs\nand the changelog")
+    #expect(!model.stopping)
+  }
+}
+
+/// Background time as a test holds it: each task begun and ended, in order.
+@MainActor
+private final class HeldTime: BackgroundTasks {
+  private(set) var held: [String] = []
+  private var next = 1
+
+  func begin(expired: @escaping @MainActor @Sendable () -> Void) -> UIBackgroundTaskIdentifier {
+    defer { next += 1 }
+    held.append("begin \(next)")
+    return UIBackgroundTaskIdentifier(rawValue: next)
+  }
+
+  func end(_ task: UIBackgroundTaskIdentifier) {
+    held.append("end \(task.rawValue)")
+  }
+}
+
+@Suite @MainActor struct BackgroundTimeTests {
+  @Test func timeIsHeldOnlyWhileAnActIsUnderWayAndNeverTwice() async {
+    let tasks = HeldTime()
+    let (underWay, telling) = AsyncStream<Bool>.makeStream()
+    for busy in [false, true, true, false, true] {
+      telling.yield(busy)
+    }
+    telling.finish()
+    await BackgroundTime(tasks: tasks).follow(underWay)
+    #expect(tasks.held == ["begin 1", "end 1", "begin 2", "end 2"], "and let go as the stream ends")
+  }
+
+  @Test func theFakeSaysAnActIsUnderWayWhileOneRuns() async {
+    let core = FakeCore(.paired)
+    var heard = core.actsUnderWay().makeAsyncIterator()
+    #expect(await heard.next() == false)
+    let opened = core.openSession("workstation-key/1")
+    let sending = Task { try? await opened.send("Steer it") }
+    #expect(await heard.next() == true)
+    #expect(await heard.next() == false)
+    await sending.value
   }
 }

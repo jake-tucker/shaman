@@ -17,6 +17,11 @@
       case stopped
       /// The Turn failed, its Error outside its card.
       case failed
+      /// The Session is Working only for a Prompt not yet delivered, which stands at the foot as the Message it will
+      /// be.
+      case undelivered
+      /// The Turn settled, and the Agent's Watch is still running.
+      case monitoring
     }
 
     /// How the conversation stands of the Session whose last Turn stands as `scenario`.
@@ -47,8 +52,18 @@
           ConversationItem(
             id: "error", kind: .error(text: "The provider stopped answering: connection reset by peer")),
         ]
+      case .undelivered:
+        return [user("open", undeliveredPrompt)]
+      case .monitoring:
+        return opening + [
+          card("work", .worked, "Worked for 2m 05s", "2 commands"),
+          agent("answer", "Watching the nightly backup; I'll say when it lands."),
+        ]
       }
     }
+
+    /// What the Session Working only for a Prompt not yet delivered was asked.
+    static let undeliveredPrompt = "Note the floor in the pairing docs"
 
     /// The streamed answer of the working Turn, as it grows.
     static let streamed = [
@@ -83,8 +98,8 @@
       ```
       """
 
-    private static func user(_ id: String, _ text: String) -> ConversationItem {
-      ConversationItem(id: id, kind: .userMessage(text: text, note: nil))
+    static func user(_ id: String, _ text: String, sending: Bool = false) -> ConversationItem {
+      ConversationItem(id: id, kind: .userMessage(text: text, note: nil, sending: sending))
     }
 
     private static func agent(_ id: String, _ markdown: String, model: String? = nil, streaming: Bool = false)
@@ -93,61 +108,10 @@
       ConversationItem(id: id, kind: .agentMessage(markdown: markdown, model: model, streaming: streaming))
     }
 
-    private static func card(_ id: String, _ outcome: TurnOutcome, _ line: String, _ count: String?)
+    static func card(_ id: String, _ outcome: TurnOutcome, _ line: String, _ count: String?)
       -> ConversationItem
     {
       ConversationItem(id: id, kind: .turn(card: TurnCard(outcome: outcome, line: line, count: count)))
-    }
-  }
-
-  /// A Session the fake holds open: framed at once, its conversation landing a moment later, and a working Turn's
-  /// answer streaming in by change.
-  final class FakeOpenedSession: OpenedSession {
-    private let initialFrame: SessionFrame
-    private let scenario: FakeConversation.Scenario?
-    private let closed = Atomic<Bool>(false)
-
-    init(frame: SessionFrame, scenario: FakeConversation.Scenario?) {
-      initialFrame = frame
-      self.scenario = scenario
-    }
-
-    var isClosed: Bool { closed.load(ordering: .relaxed) }
-
-    func frame() -> AsyncStream<SessionFrame> {
-      AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
-        continuation.yield(initialFrame)
-      }
-    }
-
-    func conversation() -> AsyncStream<ConversationChange> {
-      let scenario = scenario
-      return AsyncStream(bufferingPolicy: .unbounded) { continuation in
-        continuation.yield(
-          .whole(items: [ConversationItem(id: "loading", kind: .loading(words: "Loading the conversation"))]))
-        guard let scenario else { return }
-        let task = Task {
-          try? await Task.sleep(for: .milliseconds(600))
-          let items = FakeConversation.items(scenario)
-          continuation.yield(.changed(items: items, order: items.map(\.id)))
-          guard scenario == .working else { return }
-          for text in FakeConversation.streamed.dropFirst() {
-            try? await Task.sleep(for: .milliseconds(700))
-            guard !Task.isCancelled else { return }
-            continuation.yield(
-              .changed(
-                items: [
-                  ConversationItem(
-                    id: "answer", kind: .agentMessage(markdown: text, model: nil, streaming: true))
-                ], order: items.map(\.id)))
-          }
-        }
-        continuation.onTermination = { _ in task.cancel() }
-      }
-    }
-
-    func close() {
-      closed.store(true, ordering: .relaxed)
     }
   }
 #endif

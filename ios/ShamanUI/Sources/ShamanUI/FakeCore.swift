@@ -20,6 +20,8 @@
       case several
       /// The `several` phone while the home lab has yet to answer with its Sessions.
       case reaching
+      /// The `several` phone while the home lab is Unreachable: its Sessions open, and take nothing sent.
+      case unreachable
     }
 
     /// The Invite the fake reads as the workstation's. One holding "dead" reads as the workstation's too, and fails to
@@ -42,17 +44,24 @@
     private let scope = Mutex(FakeScope.everywhere)
     private let query = Mutex("")
 
+    /// The Remotes held that no longer answer.
+    private let unreachable: [String]
+    /// Each composer's draft, and whether an act is under way.
+    private let acts = FakeActs()
+
     public init(_ scenario: Scenario) {
       device = Mutex(Self.device(in: scenario))
       let remotes: [ServerRow] =
         switch scenario {
         case .fresh, .named, .pairAgain: []
         case .paired: [Self.workstation(named: "workstation")]
-        case .several, .reaching: [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
+        case .several, .reaching, .unreachable:
+          [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
         }
       held = Mutex(remotes)
       unanswered = scenario == .reaching ? ["homelab"] : []
-      if scenario == .several || scenario == .reaching {
+      unreachable = scenario == .unreachable ? ["homelab"] : []
+      if [.several, .reaching, .unreachable].contains(scenario) {
         turned.withLock { $0 = "workstation" }
       }
     }
@@ -80,9 +89,11 @@
     public func openSession(_ session: String) -> any OpenedSession {
       let remotes = held.withLock { $0.map(\.name) }
       let found = sessions.withLock { $0.first { $0.id == session && remotes.contains($0.remote) } }
+      let cut = found.map { unreachable.contains($0.remote) } ?? false
       let frame =
-        found?.frame(originNamed: remotes.count > 1)
-        ?? SessionFrame(title: "", place: "", gone: "This session no longer exists")
+        found?.frame(originNamed: remotes.count > 1, unreachable: cut, now: Date())
+        ?? SessionFrame(
+          title: "", place: "", gone: "This session no longer exists", bar: nil, composer: nil, queued: [])
       if let found {
         turned.withLock { $0 = found.remote }
         // The Workspace remembered for the Remote stays; only where none is does the Session's own become it.
@@ -91,9 +102,21 @@
       }
       // A Session on a Remote yet to answer is never read: its loading mark stands.
       let read = found.flatMap { unanswered.contains($0.remote) ? nil : $0.reads }
-      let opened = FakeOpenedSession(frame: frame, scenario: read)
+      let opened = FakeOpenedSession(session: session, frame: frame, scenario: read, unreachable: cut, acts: acts)
       self.opened.withLock { $0.append(opened) }
       return opened
+    }
+
+    public func draft(for session: String) -> String {
+      acts.draft(for: session)
+    }
+
+    public func setDraft(_ text: String, for session: String) {
+      acts.setDraft(text, for: session)
+    }
+
+    public func actsUnderWay() -> AsyncStream<Bool> {
+      acts.stream()
     }
 
     /// The Workspace last turned toward on each Remote.
@@ -278,7 +301,7 @@
   }
 
   /// The streams a fake model is followed by, each told the model whole on every change.
-  private final class Listeners<Model: Sendable>: Sendable {
+  final class Listeners<Model: Sendable>: Sendable {
     private let continuations = Mutex<[Int: AsyncStream<Model>.Continuation]>([:])
     private let next = Atomic<Int>(0)
 

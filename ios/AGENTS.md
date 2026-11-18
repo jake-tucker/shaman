@@ -94,14 +94,14 @@ In a debug build an Invite can arrive by the launch environment's `SHAMAN_INVITE
 confirmation screen. Over the fake, `FakeCore.invite` reads as the workstation's; one holding "dead" or "unanswered"
 fails as a dead Invite or one no way answered does.
 
-**A real Server.** `../scripts/ios-pair-scratch-server.sh` builds Shaman, starts a scratch Server of this checkout's
-own from an empty database, Serving on the Mac's addresses, makes an Invite and launches the built app with it, in a
-core directory and under a key of its own, for a person to press Pair; with `--test` it runs `LivePairingTests`
-instead, which pairs, checks where the app lands and what it lists, opens a Session the script began there and reads it
-live, reads its title's menu and its search, checks that the Pairing survives a relaunch, and stops the Server. That
-Session runs on whichever Agent the scratch Server would give it, asked for one word; where that Agent is not signed in
-its Turn fails, which reads as well. `--stop` stops it otherwise. Run it before merging a change to pairing or
-transport; never in CI, where `LivePairingTests` skips.
+**A real Server.** `../scripts/ios-pair-scratch-server.sh` builds Shaman, starts a scratch Server of this checkout's own
+from an empty database, Serving on the Mac's addresses, makes an Invite and launches the built app with it, in a core
+directory and under a key of its own, for a person to press Pair; with `--test` it runs `LivePairingTests` instead,
+which pairs, checks where the app lands and what it lists, opens a Session the script began there and reads it live,
+sends a Prompt to it, reads its title's menu and its search, checks that the Pairing survives a relaunch, and stops the
+Server. That Session runs on whichever Agent the scratch Server would give it, asked for one word; where that Agent is
+not signed in its Turn fails, which reads as well. `--stop` stops it otherwise. Run it before merging a change to
+pairing or transport; never in CI, where `LivePairingTests` skips.
 
 **Test.** `ShamanUI`'s unit tests run under its own scheme; `ShamanTests` and the UI tests under the app's. A result
 bundle's path must not exist yet. The package's tests run without the Keychain, which answers a test bundle with no

@@ -29,7 +29,7 @@ final class LivePairingTests: XCTestCase {
   }
 
   @MainActor
-  func testAnInviteFromAScratchServerPairsAndThePairingSurvivesARelaunch() throws {
+  func testAnInviteFromAScratchServerPairsReadsAndSendsAndThePairingSurvivesARelaunch() throws {
     let environment = ProcessInfo.processInfo.environment
     guard let invite = environment["SHAMAN_LIVE_INVITE"], let run = environment["SHAMAN_LIVE_RUN"],
       let prompt = environment["SHAMAN_LIVE_PROMPT"]
@@ -75,6 +75,19 @@ final class LivePairingTests: XCTestCase {
     ).firstMatch
     XCTAssertTrue(answered.waitForExistence(timeout: 90), "its Turn was read as it went")
     attach(app, "A session on the scratch Server, read live")
+
+    // A Prompt sent from the composer goes over the Pairing, and stands as the Server holds it.
+    let again = "Reply with the single word again, and nothing else. Use no tools."
+    let composer = app.descendants(matching: .any)["session.composer"]
+    XCTAssertTrue(composer.waitForExistence(timeout: 10))
+    composer.tap()
+    composer.typeText(again)
+    app.descendants(matching: .any)["session.send"].tap()
+    let sent = app.descendants(matching: .any).matching(identifier: "session.userMessage")
+      .matching(NSPredicate(format: "label == %@", again)).firstMatch
+    XCTAssertTrue(sent.waitForExistence(timeout: 30), "sent, it stands as the Server holds it")
+    XCTAssertFalse(app.descendants(matching: .any)["banner"].exists, "and nothing failed")
+    attach(app, "A prompt sent to the scratch Server")
     app.navigationBars.buttons.firstMatch.tap()
     XCTAssertTrue(beginsIn.waitForExistence(timeout: 10))
     XCTAssertEqual(beginsIn.label, "\(paired) · workspace", "opening it turned the Outlook toward its Workspace")

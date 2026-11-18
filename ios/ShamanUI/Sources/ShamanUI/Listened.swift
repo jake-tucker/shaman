@@ -60,3 +60,9 @@ extension Forwarder: ConversationListener where Model == ConversationChange {
     send(change)
   }
 }
+
+extension Forwarder: ActsListener where Model == Bool {
+  func changed(underWay: Bool) {
+    send(underWay)
+  }
+}

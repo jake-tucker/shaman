@@ -156,7 +156,8 @@
     ) -> FakeSession {
       let byStanding: FakeConversation.Scenario =
         switch standing {
-        case .working, .monitoring, .needsIntervention: .working
+        case .working, .needsIntervention: .working
+        case .monitoring: .monitoring
         case .failed: .failed
         case .done, nil: .settled
         }
@@ -166,11 +167,27 @@
         checkout: checkout, standing: standing, running: running, moved: moved, settled: settled, reads: read)
     }
 
-    /// What frames this Session's open screen at once, as the core frames it from what the listing knows.
-    func frame(originNamed: Bool) -> SessionFrame {
+    /// What frames this Session's open screen at once, as the core frames it once it has been read, as of `now`:
+    /// taking nothing sent where its Origin is `unreachable`.
+    func frame(originNamed: Bool, unreachable: Bool, now: Date) -> SessionFrame {
       let place = ((originNamed ? [remote] : []) + [workspace] + [checkout?.words].compactMap { $0 })
         .joined(separator: " · ")
-      return SessionFrame(title: title, place: place, gone: nil)
+      let since = now.addingTimeInterval(-running)
+      let bar: Bar? =
+        switch standing {
+        case .working, .needsIntervention:
+          Bar(kind: .working, words: "Working", since: since, watching: nil, stop: "Stop")
+        case .monitoring:
+          Bar(kind: .monitoring, words: "Monitoring", since: since, watching: "the nightly backup", stop: "Stop")
+        case .failed, .done, nil: nil
+        }
+      let line =
+        "\(originNamed ? "\(remote) is unreachable" : "The server is unreachable"). Nothing sent goes anywhere until it "
+        + "answers."
+      return SessionFrame(
+        title: title, place: place, gone: nil, bar: bar,
+        composer: FakeOpenedSession.composer(working: bar?.kind == .working, unreachable: unreachable ? line : nil),
+        queued: [])
     }
 
     static let canned: [FakeSession] =
@@ -204,6 +221,9 @@
         session(
           10, "laptop", "shaman", "Sketch the thin client glossary entry", "\u{f0219}", checkout: on("main"),
           moved: 26 * 3_600),
+        session(
+          11, "workstation", "shaman", FakeConversation.undeliveredPrompt, nil, .working, checkout: on("main"),
+          running: 8, moved: 30 * 3_600, reads: .undelivered),
       ] + settledHistory
 
     /// A long history of settled work, so the shelf has more than it opens on.

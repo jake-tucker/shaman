@@ -1,5 +1,6 @@
 import ShamanCore
 import SwiftUI
+import UIKit
 
 /// What the app shows over its core: pairing alone while the phone holds no Remote, and otherwise the listing of
 /// every Remote's Sessions.
@@ -32,6 +33,10 @@ public struct RootScreen: View {
       case .remote(_, let beginsIn):
         ListingScreen(core: core, appVersion: appVersion, beginsIn: beginsIn, invite: invite, opening: opening)
       }
+    }
+    .task {
+      // Held while an act is under way, whatever screen asked it.
+      await BackgroundTime(tasks: UIApplication.shared).follow(core.actsUnderWay())
     }
     .task {
       for await outlook in core.outlook() {

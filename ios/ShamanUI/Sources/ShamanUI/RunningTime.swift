@@ -18,6 +18,21 @@ enum RunningTime {
     return "\(minutes / 60)h \(minutes % 60)m"
   }
 
+  /// How long the work the bar above the composer stands for has run since `since`, as the Working Indicator says it:
+  /// seconds, then minutes and zero-padded seconds, then hours, minutes and seconds, so it is seen moving every second.
+  static func working(since: Date, now: Date) -> String {
+    let seconds = elapsed(since: since, now: now)
+    if seconds < 60 {
+      return "\(seconds)s"
+    }
+    let minutes = seconds / 60
+    let padded = { (value: Int) in value < 10 ? "0\(value)" : "\(value)" }
+    if minutes < 60 {
+      return "\(minutes)m \(padded(seconds % 60))s"
+    }
+    return "\(minutes / 60)h \(padded(minutes % 60))m \(padded(seconds % 60))s"
+  }
+
   /// The compact time since `at`: "now" within a minute, then whole minutes, hours or days.
   static func compact(since at: Date, now: Date) -> String {
     let seconds = elapsed(since: at, now: now)

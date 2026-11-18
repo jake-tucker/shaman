@@ -1,0 +1,266 @@
+#if DEBUG
+  import Foundation
+  import ShamanCore
+  import Synchronization
+
+  /// What the fake's acts share with the fake core: each composer's draft, and whether any act is under way.
+  final class FakeActs: Sendable {
+    private let drafts = Mutex<[String: String]>([:])
+    private let underWay = Mutex(0)
+    private let listeners = Listeners<Bool>()
+
+    func stream() -> AsyncStream<Bool> {
+      listeners.stream(now: underWay.withLock { $0 > 0 })
+    }
+
+    func draft(for session: String) -> String {
+      drafts.withLock { $0[session] ?? "" }
+    }
+
+    func setDraft(_ text: String, for session: String) {
+      drafts.withLock { $0[session] = text.isEmpty ? nil : text }
+    }
+
+    /// Gives `text` back to the composer of `session`, ahead of anything written there, as the core does.
+    func giveBack(_ text: String, to session: String) {
+      drafts.withLock { drafts in
+        let written = drafts[session] ?? ""
+        drafts[session] = written.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? text : "\(text)\n\(written)"
+      }
+    }
+
+    /// Runs `act`, marked under way while it runs.
+    func during(_ act: () async throws(ActError) -> Void) async throws(ActError) {
+      count(by: 1)
+      defer { count(by: -1) }
+      try await act()
+    }
+
+    private func count(by change: Int) {
+      let busy = underWay.withLock { underWay in
+        underWay += change
+        return underWay > 0
+      }
+      listeners.tell(busy)
+    }
+  }
+
+  /// A Session the fake holds open: framed at once, its conversation landing a moment later, a working Turn's answer
+  /// streaming in by change, and its acts answered as the core would answer them. A Prompt holding "fail" is refused
+  /// and one holding "gone" finds the Session gone, so a screen can be seen failing.
+  final class FakeOpenedSession: OpenedSession {
+    private struct State {
+      var frame: SessionFrame
+      var items: [ConversationItem]
+      var sent = 0
+    }
+
+    private let session: String
+    private let scenario: FakeConversation.Scenario?
+    private let unreachable: Bool
+    private let acts: FakeActs
+    private let state: Mutex<State>
+    private let frames = Listeners<SessionFrame>()
+    private let changes = Mutex<[Int: AsyncStream<ConversationChange>.Continuation]>([:])
+    private let nextListener = Atomic<Int>(0)
+    private let closed = Atomic<Bool>(false)
+    private let landing = Mutex<Task<Void, Never>?>(nil)
+
+    init(
+      session: String, frame: SessionFrame, scenario: FakeConversation.Scenario?, unreachable: Bool = false,
+      acts: FakeActs
+    ) {
+      self.session = session
+      self.scenario = scenario
+      self.unreachable = unreachable
+      self.acts = acts
+      state = Mutex(
+        State(frame: frame, items: [ConversationItem(id: "loading", kind: .loading(words: "Loading the conversation"))])
+      )
+      guard let scenario else { return }
+      let task = Task { [weak self] in
+        try? await Task.sleep(for: .milliseconds(600))
+        self?.change { $0 = FakeConversation.items(scenario) }
+        guard scenario == .working else { return }
+        for text in FakeConversation.streamed.dropFirst() {
+          try? await Task.sleep(for: .milliseconds(700))
+          guard !Task.isCancelled else { return }
+          self?.change { items in
+            items = items.map {
+              $0.id == "answer"
+                ? ConversationItem(id: "answer", kind: .agentMessage(markdown: text, model: nil, streaming: true)) : $0
+            }
+          }
+        }
+      }
+      landing.withLock { $0 = task }
+    }
+
+    var isClosed: Bool { closed.load(ordering: .relaxed) }
+
+    func frame() -> AsyncStream<SessionFrame> {
+      frames.stream(now: state.withLock { $0.frame })
+    }
+
+    func conversation() -> AsyncStream<ConversationChange> {
+      let id = nextListener.add(1, ordering: .relaxed).oldValue
+      return AsyncStream(bufferingPolicy: .unbounded) { continuation in
+        continuation.yield(.whole(items: state.withLock { $0.items }))
+        changes.withLock { $0[id] = continuation }
+        continuation.onTermination = { [weak self] _ in
+          _ = self?.changes.withLock { $0.removeValue(forKey: id) }
+        }
+      }
+    }
+
+    func close() {
+      closed.store(true, ordering: .relaxed)
+      landing.withLock { $0?.cancel() }
+    }
+
+    func send(_ text: String) async throws(ActError) {
+      try await acts.during { () async throws(ActError) in
+        let text = try prompt(text)
+        let id = state.withLock { state in
+          state.sent += 1
+          return "sent-\(state.sent)"
+        }
+        change { $0.append(FakeConversation.user(id, text, sending: true)) }
+        try? await Task.sleep(for: .milliseconds(2_500))
+        let lowered = text.lowercased()
+        if lowered.contains("fail") || lowered.contains("gone") {
+          change { $0.removeAll { $0.id == id } }
+          acts.giveBack(text, to: session)
+          throw lowered.contains("gone")
+            ? .Gone(message: "This session no longer exists")
+            : .Refused(message: "The server refused the prompt: its agent is not signed in")
+        }
+        change { items in
+          items = items.map { $0.id == id ? FakeConversation.user(id, text) : $0 }
+        }
+        // A Prompt to a Session at rest begins a Turn.
+        if state.withLock({ $0.frame.bar == nil }) {
+          change { $0.append(FakeConversation.card("turn-\(id)", .working, "Working", nil)) }
+          changeFrame { frame in
+            frame.bar = Bar(kind: .working, words: "Working", since: Date(), watching: nil, stop: "Stop")
+            frame.composer = Self.composer(working: true, unreachable: nil)
+          }
+        }
+      }
+    }
+
+    func queue(_ text: String) async throws(ActError) {
+      try await acts.during { () async throws(ActError) in
+        let text = try prompt(text)
+        let id = state.withLock { state in
+          state.sent += 1
+          return "queued-\(state.sent)"
+        }
+        changeFrame {
+          $0.queued.append(
+            QueuedPrompt(prompt: id, text: text, note: nil, label: "Sending", steerNow: nil, cancel: nil))
+        }
+        try? await Task.sleep(for: .milliseconds(500))
+        changeFrame { frame in
+          frame.queued = frame.queued.map {
+            $0.prompt == id
+              ? QueuedPrompt(
+                prompt: id, text: text, note: nil, label: "Queued", steerNow: "Steer now", cancel: "Cancel")
+              : $0
+          }
+        }
+      }
+    }
+
+    func steerNow(_ prompt: String) async throws(ActError) {
+      try await acts.during { () async throws(ActError) in
+        try? await Task.sleep(for: .milliseconds(300))
+        let queued = try withdraw(prompt)
+        change { $0.append(FakeConversation.user(queued.prompt, queued.text)) }
+      }
+    }
+
+    func cancelQueued(_ prompt: String) async throws(ActError) {
+      try await acts.during { () async throws(ActError) in
+        try? await Task.sleep(for: .milliseconds(300))
+        _ = try withdraw(prompt)
+      }
+    }
+
+    func stop() async throws(ActError) {
+      try await acts.during { () async throws(ActError) in
+        try reachable()
+        try? await Task.sleep(for: .milliseconds(400))
+        landing.withLock { $0?.cancel() }
+        if scenario == .undelivered {
+          // Nothing works but the Prompt not yet delivered, which is withdrawn and given back.
+          change { $0.removeAll { $0.id == "open" } }
+          acts.giveBack(FakeConversation.undeliveredPrompt, to: session)
+        } else {
+          change { items in
+            items = items.map { item in
+              guard case .turn(let card) = item.kind, card.outcome == .working || card.outcome == .waiting else {
+                return item
+              }
+              return FakeConversation.card(item.id, .stopped, "Stopped after 4m 12s", card.count)
+            }
+          }
+        }
+        changeFrame { frame in
+          frame.bar = nil
+          frame.composer = Self.composer(working: false, unreachable: nil)
+        }
+      }
+    }
+
+    /// The composer of a Session over the fake, steering where a Turn works and taking nothing where its Origin is
+    /// Unreachable, which `unreachable` says.
+    static func composer(working: Bool, unreachable: String?) -> Composer {
+      Composer(
+        placeholder: working ? "Steer, or hold send to queue" : "Message",
+        queue: working ? "Queue for after this turn" : nil, unreachable: unreachable, note: nil)
+    }
+
+    /// `text` as a Prompt is sent, or why it is not.
+    private func prompt(_ text: String) throws(ActError) -> String {
+      let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !text.isEmpty else { throw .Invalid(message: "Write something to send") }
+      try reachable()
+      return text
+    }
+
+    private func reachable() throws(ActError) {
+      if unreachable {
+        throw .Unreachable(message: "The server did not answer in time")
+      }
+    }
+
+    /// Takes the queued Prompt `prompt` from the foot.
+    private func withdraw(_ prompt: String) throws(ActError) -> QueuedPrompt {
+      let queued = state.withLock { $0.frame.queued.first { $0.prompt == prompt } }
+      guard let queued else { throw .Refused(message: "That prompt is no longer queued") }
+      changeFrame { $0.queued.removeAll { $0.prompt == prompt } }
+      return queued
+    }
+
+    /// Changes the conversation by `body`, telling each listener the items that changed and the order.
+    private func change(_ body: (inout [ConversationItem]) -> Void) {
+      let (changed, order) = state.withLock { state in
+        let before = Dictionary(state.items.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        body(&state.items)
+        return (state.items.filter { before[$0.id] != $0 }, state.items.map(\.id))
+      }
+      for continuation in changes.withLock({ Array($0.values) }) {
+        continuation.yield(.changed(items: changed, order: order))
+      }
+    }
+
+    private func changeFrame(_ body: (inout SessionFrame) -> Void) {
+      let frame = state.withLock { state in
+        body(&state.frame)
+        return state.frame
+      }
+      frames.tell(frame)
+    }
+  }
+#endif

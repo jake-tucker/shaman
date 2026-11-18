@@ -44,6 +44,16 @@ public protocol Core: AnyObject, Sendable {
   /// Searches the listing by Title; an empty text searches for nothing.
   func searchListing(_ text: String)
 
+  /// The unsent text of the composer of the Session `session` names: asked for when its screen appears, and after a
+  /// send fails or a stop gives a Prompt back.
+  func draft(for session: String) -> String
+
+  /// Hands the core the composer's text for the Session `session` names, on each change.
+  func setDraft(_ text: String, for session: String)
+
+  /// Whether any act is under way, now and each time that changes: iOS background time is held only while one is.
+  func actsUnderWay() -> AsyncStream<Bool>
+
   /// What the screen where pairing begins says to do.
   func pairingPrompt() -> String
 
@@ -66,6 +76,23 @@ public protocol OpenedSession: AnyObject, Sendable {
 
   /// Ends the Session's reading in the core; it cancels nothing on the Server.
   func close()
+
+  /// Sends `text` as a Prompt, steering the working Turn or beginning one. It stands at once as a bubble marked as
+  /// sending; where the send fails the bubble goes and the core gives the text back to the composer's draft.
+  func send(_ text: String) async throws(ActError)
+
+  /// Queues `text` as a Prompt for after the working Turn, failing as a send does.
+  func queue(_ text: String) async throws(ActError)
+
+  /// Delivers the queued Prompt `prompt` names now, steering the working Turn.
+  func steerNow(_ prompt: String) async throws(ActError)
+
+  /// Withdraws the queued Prompt `prompt` names.
+  func cancelQueued(_ prompt: String) async throws(ActError)
+
+  /// Stops the Session's work. A Session Working only for a Prompt not yet delivered has that Prompt withdrawn, and
+  /// the core gives its text back to the composer's draft, ahead of what is written there.
+  func stop() async throws(ActError)
 }
 
 extension ActError {
