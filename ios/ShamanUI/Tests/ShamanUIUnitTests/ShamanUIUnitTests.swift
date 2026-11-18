@@ -560,6 +560,17 @@ private final class RefusingSigner: KeySigner {
 @Suite @MainActor struct SessionModelTests {
   private let working = "workstation-key/1"
 
+  @Test func aStopTheServerRefusesStandsInTheBannerInItsWordsAndStopsNothing() async {
+    let core = FakeCore(.paired)
+    let model = SessionModel(core: core, session: "workstation-key/12")
+    // A settled Subagent: its Server has nothing to stop.
+    await model.stopSubagent("workstation-key/12.2")
+    #expect(model.banner == "That subagent is not working")
+    #expect(!model.popped)
+    var tree = model.tree().makeAsyncIterator()
+    #expect(await tree.next()?.loading == "Loading", "the tree is read a while after its first session opens")
+  }
+
   @Test func theComposerOpensOnItsDraftAndHandsTheCoreEachChange() {
     let core = FakeCore(.paired)
     core.setDraft("half a thought", version: 0, for: working)

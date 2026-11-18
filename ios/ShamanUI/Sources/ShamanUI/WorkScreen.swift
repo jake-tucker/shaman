@@ -22,11 +22,7 @@ struct TurnWorkScreen: View {
             }
             .accessibilityIdentifier("work.row")
           case .session(let opened):
-            // A Subagent's own Session, pushed over this list, which back returns to.
-            NavigationLink(value: Pushed.session(SessionRoute(session: opened))) {
-              WorkRowView(row: row)
-            }
-            .accessibilityIdentifier("work.row")
+            SessionRowLink(row: row, session: opened)
           case .nothing:
             WorkRowView(row: row)
               .accessibilityIdentifier("work.row")
@@ -63,6 +59,25 @@ struct TurnWorkScreen: View {
         self.work = work
       }
     }
+  }
+}
+
+/// A row that opens a Session: a Subagent's own, pushed over the list it stands in, which back returns to. The screen
+/// it pushes is made once for the row, so the link's value holds still however often the list is drawn.
+private struct SessionRowLink: View {
+  let row: WorkRow
+  @State private var route: SessionRoute
+
+  init(row: WorkRow, session: String) {
+    self.row = row
+    _route = State(initialValue: SessionRoute(session: session))
+  }
+
+  var body: some View {
+    NavigationLink(value: Pushed.session(route)) {
+      WorkRowView(row: row)
+    }
+    .accessibilityIdentifier("work.row")
   }
 }
 

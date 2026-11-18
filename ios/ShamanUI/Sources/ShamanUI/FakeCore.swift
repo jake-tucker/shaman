@@ -25,6 +25,10 @@
       case unreachable
       /// The `paired` phone with no network at all, so its one Remote reads Unreachable until a path is back.
       case offline
+      /// The `paired` phone whose Session trees are never read, so a tree's sheet stands at "Loading".
+      case unreadTree
+      /// The `paired` phone whose Session trees cannot be read, so a tree's sheet says why.
+      case unreadableTree
     }
 
     /// The Invite the fake reads as the workstation's. One holding "dead" reads as the workstation's too, and fails to
@@ -54,14 +58,16 @@
     /// Each composer's draft, and whether an act is under way.
     private let acts = FakeActs()
     /// The tree of the Session whose Agent delegates, which every Session of it reads.
-    private let tree = FakeTree()
+    private let tree: FakeTree
 
     public init(_ scenario: Scenario) {
       device = Mutex(Self.device(in: scenario))
+      tree = FakeTree(
+        reading: scenario == .unreadTree ? .never : scenario == .unreadableTree ? .fails : .lands)
       let remotes: [ServerRow] =
         switch scenario {
         case .fresh, .named, .pairAgain: []
-        case .paired, .offline: [Self.workstation(named: "workstation")]
+        case .paired, .offline, .unreadTree, .unreadableTree: [Self.workstation(named: "workstation")]
         case .several, .reaching, .unreachable: [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
         }
       held = Mutex(remotes)
@@ -119,6 +125,9 @@
       }
       // A Session on a Remote yet to answer is never read: its loading mark stands.
       let read = found.flatMap { unanswered.contains($0.remote) ? nil : $0.reads } ?? (delegated ? .delegating : nil)
+      if FakeTree.holds(session) && read != nil {
+        tree.opening()
+      }
       let opened = FakeOpenedSession(
         session: session, frame: frame, scenario: read, unreachable: cut, acts: acts,
         tree: FakeTree.holds(session) && read != nil ? tree : nil)

@@ -93,17 +93,25 @@ struct TreeSheet: View {
       .navigationTitle(Text(verbatim: tree?.title ?? ""))
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        if let count = tree?.count {
-          ToolbarItem(placement: .topBarTrailing) {
-            Text(verbatim: count)
-              .font(.footnote.monospacedDigit())
-              .foregroundStyle(.secondary)
-              .accessibilityIdentifier("tree.count")
+        // The count stands beneath the title, as words rather than a control.
+        ToolbarItem(placement: .principal) {
+          VStack(spacing: 1) {
+            Text(verbatim: tree?.title ?? "")
+              .font(.headline)
+            if let count = tree?.count {
+              Text(verbatim: count)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("tree.count")
+            }
           }
+          .accessibilityElement(children: .contain)
         }
       }
     }
     .presentationDetents([.medium, .large])
+    // Opaque, so nothing of the conversation beneath reads as part of an entry.
+    .presentationBackground(Color(.systemBackground))
     .accessibilityIdentifier("tree.sheet")
     .task {
       for await tree in model.tree() {

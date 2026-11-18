@@ -71,18 +71,19 @@ is a working Turn, `/7` a settled one, `/8` a stopped one, `/9` a failed one and
 Prompt not yet delivered, which Stop withdraws and gives back to the composer, `/3` waits on an Approval of a command,
 its sheet presenting itself, and `/12` is a Session whose Agent only waits on its Subagents, whose rows among its Turn's
 work push their own Sessions (`/12.1` and the others `FakeTree` holds, one spawning `/12.4`, which cannot be stopped
-alone) and whose tree its navigation bar opens as a sheet, after a moment of "Loading"; in `several`, `homelab-key/6`
-is Monitoring, its bar naming its Watch, and `laptop-key/4` waits on two Approvals, presented one by one; in
-`reaching`, `homelab-key/2` is never read, so its loading mark stands; and in `unreachable`, the home lab no longer
-answers, so `homelab-key/2` opens with its composer taking nothing and saying why. In `unreachable` the home lab, every
-way to which is on the local network, stands as a slim row at the foot of the listing and answers once tried again; in
-`offline` the phone has no network, so its one Remote reads Unreachable however often it is tried.
-A card pushes its Turn's work from `FakeWork`, and a row its Activity's whole: in `/7` the work holds a settled
-Approval, File Changes and the placeholder for a kind a newer Server sent, and in `/1` the running command's output
-grows a line at a time while its screen is up.
-Every act a fake Session is asked is answered as the core would answer it, after a moment: a Prompt holding "fail" is
-refused, one holding "gone" finds the Session gone, which pops its screen, and one holding "unanswered" is never
-answered, so its text stays in the composer with the line saying it may have been sent.
+alone) and whose tree its navigation bar opens as a sheet, read a moment after the first of its Sessions opens; in
+`several`, `homelab-key/6` is Monitoring, its bar naming its Watch, and `laptop-key/4` waits on two Approvals, presented
+one by one; in `reaching`, `homelab-key/2` is never read, so its loading mark stands; and in `unreachable`, the home lab
+no longer answers, so `homelab-key/2` opens with its composer taking nothing and saying why. In `unreachable` the home
+lab, every way to which is on the local network, stands as a slim row at the foot of the listing and answers once tried
+again; in `offline` the phone has no network, so its one Remote reads Unreachable however often it is tried; and in
+`unreadTree` and `unreadableTree` the `paired` phone's trees are never read, or cannot be, so `/12`'s sheet stands at
+"Loading" or says why. A card pushes its Turn's work from `FakeWork`, and a row its Activity's whole: in `/7` the work
+holds a settled Approval, File Changes and the placeholder for a kind a newer Server sent, and in `/1` the running
+command's output grows a line at a time while its screen is up. Every act a fake Session is asked is answered as the
+core would answer it, after a moment: a Prompt holding "fail" is refused, one holding "gone" finds the Session gone,
+which pops its screen, and one holding "unanswered" is never answered, so its text stays in the composer with the line
+saying it may have been sent.
 
 ```sh
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake paired --open workstation-key/1

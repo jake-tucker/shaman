@@ -71,14 +71,37 @@
       var topStopped = false
       var listeners: [Int: (open: String, continuation: AsyncStream<SubagentTree>.Continuation)] = [:]
       var next = 0
+      /// Whether the tree has been read, which it is once, a while after the first Session of it opens.
+      var landed = false
+      var landing: Task<Void, Never>?
+    }
+
+    /// How the tree's stream goes.
+    enum Reading: Sendable {
+      /// It is read a while after the first Session of it opens.
+      case lands
+      /// It is never read.
+      case never
+      /// It cannot be read.
+      case fails
     }
 
     private let opened: Date
+    private let reading: Reading
     private let state = Mutex(State())
     private let changes = Listeners<Void>()
 
-    init(opened: Date = Date()) {
+    init(opened: Date = Date(), reading: Reading = .lands) {
       self.opened = opened
+      self.reading = reading
+    }
+
+    /// The sheet while the tree is not in hand: "Loading", or why it cannot be read.
+    private var unread: SubagentTree {
+      SubagentTree(
+        title: "Subagents", count: nil, loading: reading == .fails ? nil : "Loading",
+        failed: reading == .fails ? "Could not load subagents: This session's tree is not on this server" : nil,
+        rows: [])
     }
 
     /// Whether `session` is a Session of the tree.
@@ -95,25 +118,41 @@
       changes.stream(now: ())
     }
 
-    /// The tree as the sheet over `open` shows it, now and on every change: "Loading" for a couple of seconds first, as
-    /// a tree not yet in hand reads, long enough to be seen.
+    /// How long the tree takes to be read once the first Session of it opens, as a Server's stream takes a moment.
+    private static let readTakes = Duration.seconds(2)
+
+    /// Notes that a Session of the tree opened: the tree is read once, as the core reads it for as long as any of its
+    /// Sessions is open, and every Session of it opened after joins what was read.
+    func opening() {
+      guard reading == .lands else { return }
+      state.withLock { held in
+        guard held.landing == nil else { return }
+        held.landing = Task { [weak self] in
+          try? await Task.sleep(for: Self.readTakes)
+          guard let self else { return }
+          let listeners = state.withLock { state in
+            state.landed = true
+            return Array(state.listeners.values)
+          }
+          for (open, continuation) in listeners {
+            continuation.yield(sheet(for: open))
+          }
+          changes.tell(())
+        }
+      }
+    }
+
+    /// The tree as the sheet over `open` shows it, now and on every change: "Loading" until it has been read.
     func stream(for open: String) -> AsyncStream<SubagentTree> {
       AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
-        continuation.yield(
-          SubagentTree(title: "Subagents", count: nil, loading: "Loading", failed: nil, rows: []))
-        let id = state.withLock { state in
+        let landed = state.withLock { state in
           state.next += 1
-          return state.next
+          state.listeners[state.next] = (open, continuation)
+          return (state.next, state.landed)
         }
-        let landing = Task { [weak self] in
-          try? await Task.sleep(for: .milliseconds(2_500))
-          guard let self, !Task.isCancelled else { return }
-          state.withLock { $0.listeners[id] = (open, continuation) }
-          continuation.yield(sheet(for: open))
-        }
+        continuation.yield(landed.1 ? sheet(for: open) : unread)
         continuation.onTermination = { [weak self] _ in
-          landing.cancel()
-          _ = self?.state.withLock { $0.listeners.removeValue(forKey: id) }
+          _ = self?.state.withLock { $0.listeners.removeValue(forKey: landed.0) }
         }
       }
     }
@@ -162,6 +201,8 @@
 
     /// The button the tree is opened by.
     var button: TreeButton {
+      // Before the tree is read the Session shows it has Subagents, but not how many work.
+      guard state.withLock({ $0.landed }) else { return TreeButton(working: nil, label: "Subagents") }
       let working = workingCount
       return TreeButton(
         working: working > 0 ? "\(working)" : nil,

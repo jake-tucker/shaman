@@ -12,9 +12,9 @@ final class SubagentTests: XCTestCase {
   }
 
   @MainActor
-  private func launched(opening session: String) -> XCUIApplication {
+  private func launched(_ scenario: String = "paired", opening session: String) -> XCUIApplication {
     let app = XCUIApplication()
-    app.launchArguments = ["--fake", "paired", "--open", session]
+    app.launchArguments = ["--fake", scenario, "--open", session]
     app.launch()
     return app
   }
@@ -122,14 +122,12 @@ final class SubagentTests: XCTestCase {
   func testTheTreesSheetSwitchesBetweenItsSessionsPushingPoppingOrStayingPut() {
     let app = launched(opening: delegating)
     titled("Find what holds the session lock", in: app)
-    landed(app)
     let button = app.buttons["session.tree"]
     XCTAssertTrue(button.waitForExistence(timeout: 10))
-    XCTAssertTrue(button.label.contains("3 working"), button.label)
     button.tap()
-    XCTAssertTrue(elements("tree.loading", in: app).firstMatch.waitForExistence(timeout: 5), "a tree not in hand")
     let top = element("tree.row", holding: "Find what holds the session lock", in: app)
     XCTAssertTrue(top.waitForExistence(timeout: 10))
+    XCTAssertTrue(button.label.contains("3 working"), "counted once read: \(button.label)")
     XCTAssertTrue(top.isSelected, "the open session is highlighted")
     let rows = elements("tree.row", in: app)
     XCTAssertEqual(rows.count, 7)
@@ -183,5 +181,25 @@ final class SubagentTests: XCTestCase {
     openTree(in: app)
     XCTAssertTrue(element("tree.row", holding: "Grep the logs for the lock", in: app).label.contains("Stopped"))
     XCTAssertFalse(app.staticTexts["tree.count"].label.contains("working"))
+  }
+
+  @MainActor
+  func testATreeNotInHandIsOfferedSayingLoadingAndOneThatCannotBeReadSaysWhy() {
+    for (scenario, said, shown) in [
+      ("unreadTree", "tree.loading", "A tree not yet in hand"),
+      ("unreadableTree", "tree.failed", "A tree that cannot be read"),
+    ] {
+      let app = launched(scenario, opening: delegating)
+      landed(app)
+      // Offered as the session shows it has subagents, though they cannot be counted.
+      let button = app.buttons["session.tree"]
+      XCTAssertTrue(button.waitForExistence(timeout: 10))
+      XCTAssertEqual(button.label, "Subagents")
+      button.tap()
+      XCTAssertTrue(elements(said, in: app).firstMatch.waitForExistence(timeout: 10), scenario)
+      XCTAssertFalse(elements("tree.row", in: app).firstMatch.exists)
+      attach(app, shown)
+      app.terminate()
+    }
   }
 }
