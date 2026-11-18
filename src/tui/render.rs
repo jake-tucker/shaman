@@ -110,12 +110,6 @@ const LANDING_LOGO: [&str; 7] = [
 const NF_COD_REPO: char = '\u{ea62}';
 /// Nerd Fonts `nf-fa-folder_tree` (Font Awesome folder tree).
 const NF_FA_FOLDER_TREE: char = '\u{ef81}';
-/// Nerd Fonts `nf-cod-git_branch` (Codicons git-branch).
-pub(super) const NF_COD_GIT_BRANCH: char = '\u{ec6f}';
-/// Nerd Fonts `nf-cod-worktree` (Codicons worktree).
-const NF_COD_WORKTREE: char = '\u{ec7e}';
-/// Nerd Fonts `nf-cod-git_commit` (Codicons git-commit).
-const NF_COD_GIT_COMMIT: char = '\u{eafc}';
 const SESSION_HEADER_MINIMUM_HEIGHT: u16 = 8;
 /// Rows of air the layout keeps below the Transcript, so its last entry never
 /// abuts whatever is docked underneath.
@@ -6383,10 +6377,10 @@ impl<'a> CheckoutStateReading<'a> {
         use crate::protocol::{CheckoutKind, CheckoutRevision};
         match self.revision? {
             CheckoutRevision::Branch { .. } => Some(match self.kind {
-                CheckoutKind::Main => NF_COD_GIT_BRANCH,
-                CheckoutKind::Linked => NF_COD_WORKTREE,
+                CheckoutKind::Main => shaman_icons::GIT_BRANCH,
+                CheckoutKind::Linked => shaman_icons::WORKTREE,
             }),
-            CheckoutRevision::Detached { .. } => Some(NF_COD_GIT_COMMIT),
+            CheckoutRevision::Detached { .. } => Some(shaman_icons::GIT_COMMIT),
         }
     }
 }
@@ -6786,7 +6780,7 @@ fn execution_readings(state: &TuiState, show_icons: bool, width: usize) -> Vec<E
     }
     let worktree_intent = || {
         ExecutionReading::pressable(
-            icon_label(show_icons, NF_COD_WORKTREE, "New worktree on submit"),
+            icon_label(show_icons, shaman_icons::WORKTREE, "New worktree on submit"),
             SemanticCommandId::WorktreeList,
         )
     };

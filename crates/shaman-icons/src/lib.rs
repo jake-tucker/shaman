@@ -1,8 +1,9 @@
 //! What turns an Icon into the glyph it is drawn with, for every Client: the
 //! Icon Catalog ([`glyph`], [`entries`], [`names`], [`search`]), the plain
 //! glyphs that stand where an Icon is absent ([`FOLDER`], [`MONITOR`]), the
-//! Icon the Sidekick Workspace stands beside ([`SIDEKICK_ICON`]), and a
-//! Provider's glyph ([`provider_glyph`]).
+//! glyphs a Checkout State is led by ([`GIT_BRANCH`], [`WORKTREE`],
+//! [`GIT_COMMIT`]), the Icon the Sidekick Workspace stands beside
+//! ([`SIDEKICK_ICON`]), and a Provider's glyph ([`provider_glyph`]).
 //!
 //! It holds no I/O and no Shaman type, so the Server, the TUI and a thin
 //! Client's core link it alike. Every glyph it resolves is a Nerd Fonts 3.5.1
@@ -20,6 +21,18 @@ pub const FOLDER: char = '\u{ea83}';
 /// Nerd Fonts `nf-md-monitor` (Material Design monitor): the plain glyph a
 /// Remote without an Icon is named beside.
 pub const MONITOR: char = '\u{f0379}';
+
+/// Nerd Fonts `nf-cod-git_branch` (Codicons git-branch): the glyph a Checkout
+/// State on a branch of the main Worktree is led by.
+pub const GIT_BRANCH: char = '\u{ec6f}';
+
+/// Nerd Fonts `nf-cod-worktree` (Codicons worktree): the glyph a Checkout
+/// State on a branch of a linked Worktree is led by.
+pub const WORKTREE: char = '\u{ec7e}';
+
+/// Nerd Fonts `nf-cod-git_commit` (Codicons git-commit): the glyph a Checkout
+/// State on a detached head is led by.
+pub const GIT_COMMIT: char = '\u{eafc}';
 
 /// The Catalog name of the Icon the Sidekick Workspace is named beside
 /// wherever it has none of its own: a standing default rather than a stored
@@ -138,13 +151,19 @@ mod tests {
 
     /// Every fixed glyph, with the Nerd Fonts name it is pinned to.
     fn fixed_glyphs() -> impl Iterator<Item = (&'static str, char)> {
-        [("cod-folder", FOLDER), ("md-monitor", MONITOR)]
-            .into_iter()
-            .chain(
-                PROVIDER_GLYPHS
-                    .iter()
-                    .map(|known| (known.nerd_font_name, known.glyph)),
-            )
+        [
+            ("cod-folder", FOLDER),
+            ("md-monitor", MONITOR),
+            ("cod-git_branch", GIT_BRANCH),
+            ("cod-worktree", WORKTREE),
+            ("cod-git_commit", GIT_COMMIT),
+        ]
+        .into_iter()
+        .chain(
+            PROVIDER_GLYPHS
+                .iter()
+                .map(|known| (known.nerd_font_name, known.glyph)),
+        )
     }
 
     #[test]

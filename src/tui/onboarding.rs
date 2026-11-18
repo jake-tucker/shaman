@@ -49,7 +49,6 @@ use super::{
     list_editor::ListEditor,
     list_window::{ListWindow, WindowEntry},
     model_picker::{CatalogStatuses, ModelPicker, ModelPickerPurpose},
-    render::NF_COD_GIT_BRANCH,
     selection::WrappedLine,
     slots::truncate_to_width,
     state::{CommandId, SettingRequest},
@@ -1608,7 +1607,7 @@ impl IconsStep {
                     .iter()
                     .filter_map(|provider| provider.nerd_font_icon),
             )
-            .chain([shaman_icons::FOLDER, NF_COD_GIT_BRANCH])
+            .chain([shaman_icons::FOLDER, shaman_icons::GIT_BRANCH])
             .map(String::from)
             .collect::<Vec<_>>();
         // Stood in past the answers' focus marker, in line with their text.
