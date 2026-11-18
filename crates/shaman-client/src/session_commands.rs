@@ -1,12 +1,12 @@
 //! The commands a Peer may ask of a Server's work, and the readers of its
-//! Sessions, catalog and Subagent trees, all sent over a transport: the
-//! machine's own Server on loopback, turned toward an Outlook, or a Remote
-//! reached over a Pairing. Nothing here learns which.
+//! Sessions, catalog and Subagent trees, all sent over a transport: today the
+//! root crate's loopback one, and once a Pairing transport is added, a Remote
+//! reached over its Pairing. Nothing here learns which.
 //!
 //! These are exactly the commands whose routes the Serving side lets a Peer
 //! ask. What only a Client's own Server answers — its Settings, its
-//! Onboarding, its Pairings and Relays — is its administration, sent on the
-//! local Server's descriptor instead.
+//! Onboarding, its Pairings and Relays — is its administration, which stays
+//! in the root crate and is sent to that Server alone.
 
 use std::{fmt::Display, future::Future, path::Path, sync::Arc, time::Duration};
 

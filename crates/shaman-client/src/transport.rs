@@ -1,6 +1,7 @@
 //! The transport the Client's readers run over: whatever carries a request
 //! to one Server's work and its answer back, whether that Server is the
-//! machine's own on loopback or a Remote reached over a Pairing.
+//! machine's own on loopback, which the root crate holds, or, once a Pairing
+//! transport is added, a Remote reached directly over its Pairing.
 //!
 //! A reader asks with a path relative to the Session API (`/v1/sessions/…`)
 //! and is answered with a streaming body. It keeps JSON, SSE parsing, error

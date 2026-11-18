@@ -77,7 +77,7 @@ fn failure_of(error: SessionError, server_error: bool) -> RemoteConnectionFailur
 mod tests {
     use super::*;
 
-    /// What a Remote proxy answers with `status` and `body`.
+    /// What a Server answers with `status` and `body`.
     fn answered(status: u16, body: serde_json::Value) -> Result<TransportResponse, SessionError> {
         let mut response = http::Response::new(transport::full_body(body.to_string()));
         *response.status_mut() = http::StatusCode::from_u16(status).expect("a status");

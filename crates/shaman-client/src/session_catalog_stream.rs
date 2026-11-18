@@ -89,7 +89,7 @@ async fn open_over(
 
 /// A reconnecting catalog stream for the Server one transport reaches.
 /// Its lifetime is the interest: dropping it aborts the task and releases the
-/// Remote proxy connection.
+/// connection its transport holds for it.
 pub struct SessionCatalogSubscription {
     events: mpsc::Receiver<SessionCatalogEvent>,
     task: JoinHandle<()>,
@@ -190,9 +190,9 @@ async fn run_attached(
     backoff: RecoveryBackoff,
 ) {
     let mut try_now = transport.try_now();
-    // An attached Outlook has no separately hydrated local catalog. Treat its
-    // first snapshot as reconciliation so the TUI refreshes any listing that
-    // raced with opening the stream.
+    // Nothing hydrated the reader's catalog before this stream opened. Its
+    // first snapshot is treated as a reconciliation all the same, so a reader
+    // refreshes any listing it took while the stream was opening.
     let mut known_session_ids = Some(HashSet::new());
     let mut recovery = RemoteRecovery::new(backoff);
     loop {
@@ -860,5 +860,130 @@ mod tests {
             "the catalog is read again at once rather than an hour on"
         );
         assert_eq!(next().await, Some(SessionCatalogEvent::RemoteRecovered));
+    }
+
+    /// A catalog's snapshot listing `session_ids` at `revision`.
+    fn catalog_snapshot(revision: u64, session_ids: Vec<SessionId>) -> SessionCatalogSnapshot {
+        SessionCatalogSnapshot {
+            workspace_paths: Default::default(),
+            revision: SessionCatalogRevision(revision),
+            session_ids,
+            checkout_states: Vec::new(),
+        }
+    }
+
+    /// The stream of `snapshot` and then `updates`, left open after them as a
+    /// live stream stays open.
+    fn catalog_stream(
+        snapshot: &SessionCatalogSnapshot,
+        updates: &[SessionCatalogUpdate],
+    ) -> std::result::Result<TransportResponse, crate::protocol::SessionError> {
+        let mut events = vec![(
+            SESSION_CATALOG_SNAPSHOT_EVENT,
+            Some(snapshot.revision.0),
+            serde_json::to_string(snapshot).expect("encode the snapshot"),
+        )];
+        events.extend(updates.iter().map(|update| {
+            (
+                SESSION_CATALOG_UPDATED_EVENT,
+                Some(update.revision.0),
+                serde_json::to_string(update).expect("encode the update"),
+            )
+        }));
+        Ok(open_stream_of(&events))
+    }
+
+    #[tokio::test]
+    async fn a_gap_in_the_catalog_is_recovered_by_a_fresh_snapshot_that_reports_what_went_missing()
+    {
+        let kept = SessionId::new();
+        let gone = SessionId::new();
+        let before = catalog_snapshot(2, vec![kept, gone]);
+        // A change after a missing one: revision 3 never arrived.
+        let skipped = SessionCatalogUpdate {
+            revision: SessionCatalogRevision(4),
+            change: SessionCatalogChange::Created {
+                session_id: SessionId::new(),
+            },
+        };
+        // Meanwhile `gone` was deleted, and the fresh connection counts its
+        // revisions afresh.
+        let after = catalog_snapshot(1, vec![kept]);
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            catalog_stream(&before, &[skipped]),
+            catalog_stream(&after, &[]),
+        ]));
+        let backoff = Duration::from_millis(1);
+        let mut subscription =
+            SessionCatalogSubscription::open_attached(transport.clone(), backoff, backoff);
+        let deadline = Duration::from_secs(10);
+        let mut next = async || {
+            tokio::time::timeout(deadline, subscription.next())
+                .await
+                .expect("the subscription answers in time")
+        };
+
+        assert_eq!(
+            next().await,
+            Some(SessionCatalogEvent::SessionCatalogReconciled(before)),
+            "the first snapshot reconciles whatever was listed as the stream opened"
+        );
+        assert!(
+            matches!(
+                next().await,
+                Some(SessionCatalogEvent::Recovering(RecoveryStatus {
+                    attempt: 1,
+                    ..
+                }))
+            ),
+            "a change after a missing one is not passed on: the reading recovers"
+        );
+        assert_eq!(
+            next().await,
+            Some(SessionCatalogEvent::SessionDeleted(SessionDeleted {
+                session_id: gone
+            })),
+            "the Session deleted while the reader was away is announced"
+        );
+        assert_eq!(
+            next().await,
+            Some(SessionCatalogEvent::SessionCatalogReconciled(after))
+        );
+        assert_eq!(next().await, Some(SessionCatalogEvent::RemoteRecovered));
+        assert_eq!(transport.asked(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_catalog_whose_pairing_is_refused_fails_without_trying_again() {
+        let transport = Arc::new(ScriptedTransport::new(vec![Err(
+            crate::protocol::SessionError {
+                code: crate::protocol::SessionErrorCode::PairingAuthenticationFailed,
+                message: "refused".to_owned(),
+                unreachable: None,
+            },
+        )]));
+        let backoff = Duration::from_millis(1);
+        let mut subscription =
+            SessionCatalogSubscription::open_attached(transport.clone(), backoff, backoff);
+        let deadline = Duration::from_secs(10);
+        let mut next = async || {
+            tokio::time::timeout(deadline, subscription.next())
+                .await
+                .expect("the subscription answers in time")
+        };
+
+        assert!(matches!(
+            next().await,
+            Some(SessionCatalogEvent::RemoteFailed {
+                status: RemoteStatus::Revoked,
+                ..
+            })
+        ));
+        assert_eq!(next().await, None, "the reading has ended");
+        assert_eq!(
+            transport.asked(),
+            1,
+            "nothing tries a revoked Pairing again"
+        );
     }
 }

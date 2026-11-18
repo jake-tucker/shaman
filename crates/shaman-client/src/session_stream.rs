@@ -576,4 +576,81 @@ mod tests {
             "the stream ends, for its reader to attach afresh, rather than fail"
         );
     }
+
+    #[tokio::test]
+    async fn a_gap_in_a_sessions_changes_fails_the_stream_rather_than_passing_it_on() {
+        let session_id = SessionId::new();
+        let skipped = SessionUpdate {
+            session_id,
+            // Revision 4 never arrived.
+            revision: SessionRevision(5),
+            changes: Vec::new(),
+        };
+        let transport = Arc::new(ScriptedTransport::new(vec![Ok(stream_of(&[
+            (
+                SESSION_SNAPSHOT_EVENT,
+                Some(3),
+                serde_json::to_string(&snapshot(session_id, 3)).expect("encode the snapshot"),
+            ),
+            (
+                SESSION_UPDATED_EVENT,
+                Some(5),
+                serde_json::to_string(&skipped).expect("encode the update"),
+            ),
+        ]))]));
+        let backoff = Duration::from_millis(1);
+        let mut subscription =
+            SessionSubscription::open_attached(transport.clone(), session_id, backoff, backoff)
+                .await
+                .expect("the stream opens");
+
+        assert!(matches!(
+            next_event(&mut subscription).await,
+            Some(Ok(SessionEvent::Snapshot(_)))
+        ));
+        let Some(Err(error)) = next_event(&mut subscription).await else {
+            panic!("a change after a missing one is no change to apply");
+        };
+        assert!(!error.is_recoverable(), "{error}");
+        assert_eq!(error.deleted_session(), None);
+        assert_eq!(
+            next_event(&mut subscription).await,
+            None,
+            "the stream ends, for its reader to attach afresh"
+        );
+        assert_eq!(transport.asked(), 1, "nothing reopens a broken stream");
+    }
+
+    #[tokio::test]
+    async fn a_session_not_found_on_reopening_reads_as_deleted() {
+        let session_id = SessionId::new();
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            Ok(snapshot_stream(session_id, 3)),
+            Ok(crate::testing::refusal(
+                http::StatusCode::NOT_FOUND,
+                &SessionError {
+                    code: SessionErrorCode::SessionNotFound,
+                    message: "Session does not exist on this server instance".to_owned(),
+                    unreachable: None,
+                },
+            )),
+        ]));
+        let backoff = Duration::from_millis(1);
+        let mut subscription =
+            SessionSubscription::open_attached(transport.clone(), session_id, backoff, backoff)
+                .await
+                .expect("the stream opens");
+
+        assert!(matches!(
+            next_event(&mut subscription).await,
+            Some(Ok(SessionEvent::Snapshot(_)))
+        ));
+        let Some(Err(error)) = next_event(&mut subscription).await else {
+            panic!("a Session once heard and then not found was deleted");
+        };
+        assert_eq!(error.deleted_session(), Some(session_id));
+        assert!(!error.is_recoverable());
+        assert_eq!(next_event(&mut subscription).await, None);
+        assert_eq!(transport.asked(), 2);
+    }
 }

@@ -401,8 +401,14 @@ mod tests {
             .attach_session(session_id)
             .await
             .expect("the stream opens");
+        let deadline = std::time::Duration::from_secs(10);
+        let mut next = async || {
+            tokio::time::timeout(deadline, subscription.next())
+                .await
+                .expect("the subscription answers in time")
+        };
         assert!(matches!(
-            subscription.next().await,
+            next().await,
             Some(Ok(crate::managed_client::SessionEvent::Snapshot(_)))
         ));
 
@@ -411,7 +417,7 @@ mod tests {
         found.send_replace(descriptor(base_url.clone()));
 
         assert_eq!(
-            subscription.next().await,
+            next().await,
             None,
             "the stream ends at once, for its reader to attach to the new Server"
         );
