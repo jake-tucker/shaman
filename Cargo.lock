@@ -3396,6 +3396,7 @@ dependencies = [
  "schemars_derive",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -3683,6 +3684,7 @@ dependencies = [
  "shaman-client",
  "shaman-icons",
  "shaman-pairing",
+ "shaman-pairing-wire",
  "shaman-private-files",
  "shaman-protocol",
  "shaman-relay",
@@ -3772,6 +3774,7 @@ dependencies = [
  "ring",
  "rustls",
  "rustls-platform-verifier",
+ "schemars",
  "serde",
  "serde_json",
  "shaman-private-files",
@@ -3792,6 +3795,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "shaman-pairing-wire"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "shaman-pairing",
+ "shaman-protocol",
+]
+
+[[package]]
 name = "shaman-private-files"
 version = "0.1.0"
 dependencies = [
@@ -3806,6 +3820,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "blake3",
+ "schemars",
  "serde",
  "serde_json",
  "uuid",

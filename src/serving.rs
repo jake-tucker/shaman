@@ -3630,6 +3630,39 @@ mod tests {
         }
     }
 
+    /// The schema the Pairing wire is held to names only routes of the Session
+    /// API a Peer may ask, so none of what it holds is administration, or
+    /// what only loopback may ask.
+    #[test]
+    fn every_route_the_pairing_wire_schema_holds_is_one_a_peer_may_ask() {
+        let wire = shaman_pairing_wire::pairing_wire();
+        let routes = wire["api"]
+            .as_object()
+            .expect("the schema holds its routes");
+        assert!(!routes.is_empty());
+        for route in routes.keys() {
+            let (method, path) = route.split_once(' ').expect("a route names its method");
+            let method = match method {
+                "ANY" => Method::GET,
+                method => Method::from_bytes(method.as_bytes()).expect("a method"),
+            };
+            // Each segment a route names a value by is given one.
+            let path = path
+                .split('/')
+                .map(|segment| match segment {
+                    "{*path}" => "v1/sessions",
+                    segment if segment.starts_with('{') => "0198b27e",
+                    segment => segment,
+                })
+                .collect::<Vec<_>>()
+                .join("/");
+            assert!(
+                peer_route_class(&method, &path) == PeerRouteClass::Api,
+                "{route}, as {method} {path}"
+            );
+        }
+    }
+
     /// However deep a path is encoded, deciding what it means takes a few passes:
     /// one still encoded past them is refused, whatever it would come to mean, so
     /// a route a Peer may ask spelled so is refused rather than decoded at length.

@@ -1,0 +1,18 @@
+[package]
+name = "shaman-pairing-wire"
+# Never published; what the wire speaks is numbered by `shaman-protocol`'s `PROTOCOL_VERSION`.
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# The schema of the Pairing wire, built from the types that cross it and written down in `pairing-wire.json`, and the
+# check CI runs against the schema a change started from (ADR-0078). Nothing ships it: it is the Pairing's guard.
+
+[dependencies]
+shaman-pairing = { path = "../shaman-pairing" }
+shaman-protocol = { path = "../shaman-protocol" }
+schemars = { version = "1.2.2", default-features = false, features = ["derive", "std"] }
+serde_json = { version = "1.0.143", features = ["preserve_order"] }
+
+[dev-dependencies]
+serde = { version = "1.0.219", features = ["derive"] }
