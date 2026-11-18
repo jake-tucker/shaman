@@ -610,6 +610,9 @@ pub struct Carrier {
     /// Whether the connection stood already, from an earlier request, as
     /// this one came to be asked over it.
     pub standing: bool,
+    /// What watches the connection's transport, by which it is given up
+    /// where it is found no longer to answer; none where nothing does.
+    pub liveness: Option<Arc<Liveness<PairedConnection>>>,
 }
 
 impl Carrier {
@@ -622,6 +625,7 @@ impl Carrier {
             mut sender,
             places,
             standing,
+            ..
         } = self;
         let path_and_query = request
             .uri()
@@ -710,6 +714,23 @@ pub struct CurrentConnection {
     pub waiting: Weak<watch::Sender<()>>,
     /// Whether anything has been asked over it.
     pub carried: bool,
+    /// What abandons its making, where it is being made by a task of its
+    /// own.
+    pub making: Option<tokio::task::AbortHandle>,
+}
+
+/// What checking one way's connection found.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedConnection {
+    /// It answered, or came to stand within the check, and is kept.
+    Answered,
+    /// It stood and did not answer, and was given up.
+    GivenUp,
+    /// It was still being made, and did not come to stand within the
+    /// check: its making was abandoned, failing whatever waited on it.
+    Abandoned,
+    /// None stands, nor is any being made.
+    NoneStanding,
 }
 
 impl SharedConnection {
@@ -729,6 +750,65 @@ impl SharedConnection {
             standing: true,
             ..carrier
         })
+    }
+
+    /// Asks the connection standing, where one does, whether the Serving
+    /// Server still answers over it, by asking it `request` within
+    /// `deadline`: one that answers anything is kept, and one that does not
+    /// is given up, so what rode it ends and what is asked next makes a
+    /// connection afresh. One still being made is given as long to stand,
+    /// and abandoned where it does not, so what waits on it is asked again
+    /// over one made afresh rather than waiting on a dial begun over a
+    /// network that may have gone.
+    pub async fn check(
+        &self,
+        request: Request<RequestBody>,
+        deadline: tokio::time::Duration,
+    ) -> CheckedConnection {
+        let (number, connection, making) = {
+            let current = self
+                .current
+                .lock()
+                .expect("shared connection lock is not poisoned");
+            let Some(made) = current.as_ref() else {
+                return CheckedConnection::NoneStanding;
+            };
+            (made.number, made.connection.clone(), made.making.clone())
+        };
+        let checked = match connection.peek().cloned() {
+            Some(Ok(carrier)) if !carrier.sender.is_closed() => {
+                let liveness = carrier.liveness.clone();
+                if matches!(
+                    tokio::time::timeout(deadline, carrier.send(request)).await,
+                    Ok(Ok(_))
+                ) {
+                    return CheckedConnection::Answered;
+                }
+                if let Some(liveness) = liveness {
+                    liveness.give_up();
+                }
+                CheckedConnection::GivenUp
+            }
+            Some(_) => return CheckedConnection::NoneStanding,
+            None => match tokio::time::timeout(deadline, connection).await {
+                Ok(Ok(_)) => return CheckedConnection::Answered,
+                Ok(Err(_)) => return CheckedConnection::NoneStanding,
+                Err(_) => {
+                    if let Some(making) = making {
+                        making.abort();
+                    }
+                    CheckedConnection::Abandoned
+                }
+            },
+        };
+        let mut current = self
+            .current
+            .lock()
+            .expect("shared connection lock is not poisoned");
+        if current.as_ref().is_some_and(|made| made.number == number) {
+            *current = None;
+        }
+        checked
     }
 
     /// What carries a request over this way, once its connection stands: the
@@ -775,6 +855,7 @@ impl SharedConnection {
             ..self.connector.clone()
         };
         let making = tokio::spawn(make_connection(connector));
+        let abandon = making.abort_handle();
         let connection = async move {
             making
                 .await
@@ -788,6 +869,7 @@ impl SharedConnection {
             connection: connection.clone(),
             waiting: Arc::downgrade(&waiting),
             carried: false,
+            making: Some(abandon),
         });
         (number, connection, Some(waiting))
     }
@@ -892,11 +974,13 @@ pub async fn make_connection(
         // from then on is let go once the Serving Server is judged gone.
         liveness.begun_within(startup).await?;
         unless_standing.keep();
-        tokio::spawn(async move { liveness.lost(startup, keepalive).await });
+        let watched = liveness.clone();
+        tokio::spawn(async move { watched.lost(startup, keepalive).await });
         Ok(Carrier {
             sender,
             places,
             standing: false,
+            liveness: Some(liveness),
         })
     };
     tokio::select! {
@@ -1131,18 +1215,82 @@ pub fn paired_http_client(
     enrollment_token: Option<&str>,
     dialer: WayDialer,
 ) -> Result<PairingHttpClient> {
-    let server_key_rejections = Arc::new(AtomicU64::new(0));
     let certificate = match enrollment_token {
         Some(token) => enrollment_certificate(identity, token)?,
         None => identity.certificate.clone(),
     };
+    Ok(PairingHttpClient::asking_over(
+        PinnedTls::new(server_key, identity, certificate)?,
+        dialer,
+    ))
+}
+
+/// The pinned-key TLS a Serving Server is asked through, presenting one
+/// certificate: one config, so a connection made afresh over it resumes the
+/// TLS session an earlier one began, where the Serving Server still holds
+/// it, and its handshake signs nothing.
+#[derive(Clone)]
+pub struct PinnedTls {
+    pub tls: TlsConnector,
+    /// How many times a Serving Server dialled over it presented a key other
+    /// than the one pinned.
+    pub server_key_rejections: Arc<AtomicU64>,
+    /// The certificate it presents.
+    pub certificate: Vec<u8>,
+}
+
+impl PinnedTls {
+    /// The TLS pinning `server_key`, proving `identity` by `certificate`.
+    pub fn new(
+        server_key: &[u8],
+        identity: &IdentityMaterial,
+        certificate: Vec<u8>,
+    ) -> Result<Self> {
+        let server_key_rejections = Arc::new(AtomicU64::new(0));
+        let tls = pinned_tls_config(
+            server_key,
+            identity,
+            certificate.clone(),
+            server_key_rejections.clone(),
+        )?;
+        Ok(Self {
+            tls: TlsConnector::from(Arc::new(tls)),
+            server_key_rejections,
+            certificate,
+        })
+    }
+}
+
+impl PairingHttpClient {
+    /// The client asking over `tls`, dialling as `dialer` does.
+    pub fn asking_over(tls: PinnedTls, dialer: WayDialer) -> Self {
+        Self {
+            tls: tls.tls,
+            dialer,
+            over_ways: StdMutex::default(),
+            server_key_rejections: tls.server_key_rejections,
+            interest: watch::Sender::new(()),
+            direct_retry: Arc::default(),
+            keeping_up: AtomicBool::default(),
+            answers: AtomicU64::default(),
+            generation: 0,
+        }
+    }
+}
+
+fn pinned_tls_config(
+    server_key: &[u8],
+    identity: &IdentityMaterial,
+    certificate: Vec<u8>,
+    server_key_rejections: Arc<AtomicU64>,
+) -> Result<ClientConfig> {
     let mut tls = ClientConfig::builder_with_provider(crypto_provider())
         .with_protocol_versions(&[&rustls::version::TLS13])
         .context("choose Pairing TLS protocol versions")?
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(PinnedServerKey {
             expected: server_key.to_vec(),
-            rejected: server_key_rejections.clone(),
+            rejected: server_key_rejections,
         }))
         .with_client_cert_resolver(
             identity
@@ -1154,17 +1302,7 @@ pub fn paired_http_client(
     // is said in the clear to whatever carries the connection.
     tls.enable_sni = false;
     tls.alpn_protocols = vec![MULTIPLEXED.to_vec()];
-    Ok(PairingHttpClient {
-        tls: TlsConnector::from(Arc::new(tls)),
-        dialer,
-        over_ways: StdMutex::default(),
-        server_key_rejections,
-        interest: watch::Sender::new(()),
-        direct_retry: Arc::default(),
-        keeping_up: AtomicBool::default(),
-        answers: AtomicU64::default(),
-        generation: 0,
-    })
+    Ok(tls)
 }
 
 pub fn enrollment_certificate(identity: &IdentityMaterial, token: &str) -> Result<Vec<u8>> {
@@ -1567,6 +1705,112 @@ mod tests {
         );
     }
 
+    /// Relays that join this Server, each time, to a stand-in Serving Server
+    /// that answers whatever is asked, behind a valve the test shuts, counting
+    /// the joins made.
+    struct ValvedAnswering {
+        tls: TlsAcceptor,
+        shut: Arc<AtomicBool>,
+        joined: AtomicU64,
+    }
+
+    impl RelayWays for ValvedAnswering {
+        fn served_through(&self, _relay: &str) -> Option<String> {
+            None
+        }
+
+        fn chosen(&self, _relay: &str) -> bool {
+            true
+        }
+
+        fn join(&self, _relay: String, _server: Vec<u8>, _wanted: Wanted) -> RelayJoin {
+            self.joined.fetch_add(1, Ordering::AcqRel);
+            let (near, far) = tokio::io::duplex(64 * 1024);
+            let (tls, far) = (
+                self.tls.clone(),
+                Valve {
+                    inner: far,
+                    shut: self.shut.clone(),
+                },
+            );
+            tokio::spawn(async move {
+                let Ok(accepted) = tls.accept(far).await else {
+                    return;
+                };
+                let answering = hyper::service::service_fn(|_: Request<Incoming>| async {
+                    Ok::<_, std::convert::Infallible>(hyper::Response::new(RequestBody::from("ok")))
+                });
+                let _ = hyper::server::conn::http2::Builder::new(TokioExecutor::new())
+                    .serve_connection(TokioIo::new(accepted), answering)
+                    .await;
+            });
+            Box::pin(async move { Ok(Box::new(near) as Box<dyn ByteStream>) })
+        }
+    }
+
+    /// A check of a connection standing keeps one that answers, and gives up
+    /// one that has gone silent though it looks alive, within the check's
+    /// deadline rather than its keepalive's, so the next request is carried
+    /// over a connection made afresh.
+    #[tokio::test]
+    async fn a_check_keeps_a_connection_that_answers_and_gives_up_one_gone_silent() {
+        let identity = IdentityMaterial::fresh();
+        let shut = Arc::new(AtomicBool::new(false));
+        let relays = Arc::new(ValvedAnswering {
+            tls: standing_in(&identity),
+            shut: shut.clone(),
+            joined: AtomicU64::new(0),
+        });
+        let mut dialer = dialling(
+            &identity,
+            relays.clone(),
+            tokio::time::Duration::from_secs(5),
+        );
+        // Long enough that only the check can find the silence in time.
+        dialer.keepalive = Keepalive {
+            interval: tokio::time::Duration::from_secs(60),
+            timeout: tokio::time::Duration::from_secs(60),
+        };
+        let client = paired_http_client(identity.public_key(), &identity, None, dialer).unwrap();
+        let way = Way::Relay("http://relay.invalid".to_owned());
+        let health = || {
+            Request::get("/health")
+                .body(RequestBody::default())
+                .unwrap()
+        };
+        let deadline = tokio::time::Duration::from_millis(100);
+
+        assert_eq!(
+            client.over(&way).check(health(), deadline).await,
+            CheckedConnection::NoneStanding,
+            "nothing stands to be checked before anything is asked"
+        );
+        client.over(&way).carrier().await.expect("the join stands");
+        assert_eq!(
+            client.over(&way).check(health(), deadline).await,
+            CheckedConnection::Answered
+        );
+        assert!(client.over(&way).standing().is_some(), "and it is kept");
+
+        shut.store(true, Ordering::Release);
+        let checked = tokio::time::timeout(
+            tokio::time::Duration::from_secs(5),
+            client.over(&way).check(health(), deadline),
+        )
+        .await
+        .expect("the check ends by its deadline");
+        assert_eq!(checked, CheckedConnection::GivenUp);
+        assert!(client.over(&way).standing().is_none(), "and it is given up");
+
+        shut.store(false, Ordering::Release);
+        client
+            .over(&way)
+            .carrier()
+            .await
+            .expect("a join made afresh stands");
+        assert_eq!(relays.joined.load(Ordering::Acquire), 2);
+    }
+
     /// How a stand-in Serving Server at a direct way treats the requests it
     /// takes in.
     #[derive(Clone, Copy)]
@@ -1704,6 +1948,7 @@ mod tests {
             sender,
             places: Arc::new(tokio::sync::Semaphore::new(STREAMS_AT_ONCE as usize)),
             standing: false,
+            liveness: None,
         };
         let connection = async move { Ok(standing) }.boxed().shared();
         connection.clone().await.unwrap();
@@ -1712,6 +1957,7 @@ mod tests {
             connection,
             waiting: Weak::new(),
             carried: true,
+            making: None,
         });
 
         let asking = || {

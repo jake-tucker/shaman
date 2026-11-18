@@ -67,8 +67,8 @@ pub use client::{
 };
 pub use peer_name::{MAX_PEER_NAME_CHARS, PeerNameRefusal, shown_peer_name};
 pub use redeemer::{
-    AWAITED_AT_ONCE, Carried, REMOTES_FILE, Redeemer, RedeemerHooks, RedeemerTimings, Redemption,
-    StoredMadeOffer, StoredRemote, WayStanding,
+    AWAITED_AT_ONCE, Carried, ConnectionsChecked, REMOTES_FILE, Redeemer, RedeemerHooks,
+    RedeemerTimings, Redemption, StoredMadeOffer, StoredRemote, WayStanding,
 };
 pub use speaking::{Behind, PairingProtocol, stated_version};
 

@@ -33,13 +33,14 @@ use uuid::Uuid;
 
 use super::{
     Behind, BoxError, EnrollmentPhase, EnrollmentRequest, FORWARDED_AUTHOR_PROOF_HEADER,
-    GivenRelays, Identity, Keepalive, MAX_TOLD_RELAY_LEN, MAX_TOLD_RELAYS, OFFERED_RELAYS_PATH,
-    OfferedRelays, PAIRING_ANSWER_BUDGET, PAIRING_WITHDRAWAL_PATH, PEER_API_PREFIX, PairingFailure,
-    PairingHealth, PairingProtocol, ParsedInvite, RelayWays, STREAMS_AT_ONCE, ToldOffer,
-    author_header, canonical_relay,
+    GivenRelays, Identity, IdentityMaterial, Keepalive, MAX_TOLD_RELAY_LEN, MAX_TOLD_RELAYS,
+    OFFERED_RELAYS_PATH, OfferedRelays, PAIRING_ANSWER_BUDGET, PAIRING_WITHDRAWAL_PATH,
+    PEER_API_PREFIX, PairingFailure, PairingHealth, PairingProtocol, ParsedInvite, RelayWays,
+    STREAMS_AT_ONCE, ToldOffer, author_header, canonical_relay,
     client::{
-        Answer, AnswerBody, DirectProxies, NoAnswer, PairingHttpClient, RequestBody, StrongClient,
-        Unanswered, WayAttempt, WayDialer, dial_enrollment, first_answer, paired_http_client,
+        Answer, AnswerBody, CheckedConnection, DirectProxies, NoAnswer, PairingHttpClient,
+        PinnedTls, RequestBody, StrongClient, Unanswered, WayAttempt, WayDialer, dial_enrollment,
+        first_answer,
     },
     fingerprint, internal_pairing_failure, machine_hostname, parse_invite, passed_on, read_records,
     remove_hop_by_hop_headers, small_answer, stated_version, undelivered_or_lost,
@@ -164,6 +165,24 @@ pub trait RedeemerHooks: Send + Sync {
     fn changed(&self, redeemer: &Redeemer);
 }
 
+/// What checking the connections a Remote is asked over found: how many
+/// answered and are kept, how many stood silent and were given up, and how
+/// many were still being made and were abandoned, each failing whatever
+/// waited on it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ConnectionsChecked {
+    pub answered: usize,
+    pub given_up: usize,
+    pub abandoned: usize,
+}
+
+/// The pinned-key TLS kept for one Remote, and the Pairing it was made for.
+struct KeptTls {
+    public_key: Vec<u8>,
+    generation: u64,
+    tls: PinnedTls,
+}
+
 /// An offer to pair back as the Server that made it records it on the Remote
 /// it was made to: plain data a redeemer stores and does not read, which the
 /// offer to pair back reads and writes (ADR-0066).
@@ -195,6 +214,10 @@ pub struct Redeemer {
     /// made's generation.
     pairings_made: Arc<AtomicU64>,
     remote_clients: Arc<StdMutex<HashMap<String, Weak<PairingHttpClient>>>>,
+    /// The pinned-key TLS each Remote is asked through, by the Remote's
+    /// name, kept from one client to the next so a connection made afresh
+    /// resumes the TLS session an earlier one began and signs nothing.
+    remote_tls: Arc<StdMutex<HashMap<String, KeptTls>>>,
     /// What awaits each Remote's answer, by the Remote's name, for as long as
     /// anything does.
     awaiting: Arc<StdMutex<HashMap<String, Weak<Awaiting>>>>,
@@ -232,6 +255,7 @@ impl Redeemer {
             pairing_changes: Arc::new(watch::channel(0).0),
             pairings_made: Arc::default(),
             remote_clients: Arc::default(),
+            remote_tls: Arc::default(),
             awaiting: Arc::default(),
             awaited_at_once: AWAITED_AT_ONCE,
             awaited_body_bytes: AWAITED_BODY_BYTES,
@@ -748,6 +772,10 @@ impl Redeemer {
         self.remote_clients
             .lock()
             .expect("Remote client lock is not poisoned")
+            .remove(name);
+        self.remote_tls
+            .lock()
+            .expect("Remote TLS lock is not poisoned")
             .remove(name);
     }
 
@@ -1332,18 +1360,84 @@ impl Redeemer {
         {
             return Ok(client);
         }
+        let tls = self
+            .pinned_tls(remote, &identity)
+            .map_err(internal_pairing_failure)?;
         let client = Arc::new(PairingHttpClient {
             generation: remote.generation,
-            ..paired_http_client(
-                &remote.public_key,
-                &identity,
-                None,
-                self.way_dialer(&remote.public_key),
-            )
-            .map_err(internal_pairing_failure)?
+            ..PairingHttpClient::asking_over(tls, self.way_dialer(&remote.public_key))
         });
         clients.insert(remote.remote.name.clone(), Arc::downgrade(&client));
         Ok(client)
+    }
+
+    /// The pinned-key TLS the Remote `remote` is asked through, proving
+    /// `identity`: the one kept for that very Pairing and certificate, and
+    /// otherwise one made afresh and kept in its place.
+    fn pinned_tls(
+        &self,
+        remote: &StoredRemote,
+        identity: &IdentityMaterial,
+    ) -> anyhow::Result<PinnedTls> {
+        let mut kept = self
+            .remote_tls
+            .lock()
+            .expect("Remote TLS lock is not poisoned");
+        if let Some(held) = kept.get(&remote.remote.name).filter(|held| {
+            held.public_key == remote.public_key
+                && held.generation == remote.generation
+                && held.tls.certificate == identity.certificate
+        }) {
+            return Ok(held.tls.clone());
+        }
+        let tls = PinnedTls::new(&remote.public_key, identity, identity.certificate.clone())?;
+        kept.insert(
+            remote.remote.name.clone(),
+            KeptTls {
+                public_key: remote.public_key.clone(),
+                generation: remote.generation,
+                tls: tls.clone(),
+            },
+        );
+        Ok(tls)
+    }
+
+    /// Asks each connection the Remote `name` is asked over just now whether
+    /// its Serving Server still answers over it, within `deadline` — the one
+    /// way of telling a connection that looks alive and is not, as one whose
+    /// network was swapped while its holder slept — keeping each that
+    /// answers and giving up the rest, so whatever rode them is asked again
+    /// over a connection made afresh.
+    pub async fn check_connections(
+        &self,
+        name: &str,
+        deadline: tokio::time::Duration,
+    ) -> ConnectionsChecked {
+        let Some(client) = self.client_of(name) else {
+            return ConnectionsChecked::default();
+        };
+        let connections = client
+            .over_ways
+            .lock()
+            .expect("Pairing client lock is not poisoned")
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        let protocol = self.protocol;
+        let checks = connections.iter().map(|connection| {
+            let mut request = Request::get("/health")
+                .body(RequestBody::default())
+                .expect("a health check is well formed");
+            request.headers_mut().extend(protocol.stated());
+            connection.check(request, deadline)
+        });
+        let checked = futures_util::future::join_all(checks).await;
+        let count = |kind| checked.iter().filter(|checked| **checked == kind).count();
+        ConnectionsChecked {
+            answered: count(CheckedConnection::Answered),
+            given_up: count(CheckedConnection::GivenUp),
+            abandoned: count(CheckedConnection::Abandoned),
+        }
     }
 
     async fn classify_remote_response(
@@ -2003,7 +2097,7 @@ mod tests {
     use futures_util::stream;
 
     use super::{
-        super::{GivenIdentity, IdentityMaterial, PAIRING_PROTOCOL_HEADER},
+        super::{GivenIdentity, PAIRING_PROTOCOL_HEADER, client::paired_http_client},
         *,
     };
 
