@@ -33,6 +33,7 @@ mod device;
 mod drafts;
 mod frame;
 mod identity;
+mod intervention;
 mod listing;
 mod pairing;
 mod reach;
@@ -46,6 +47,7 @@ use device::{DeviceRecord, Records};
 pub use drafts::Draft;
 pub use frame::{Bar, BarKind, Composer, QueuedPrompt, SessionFrame};
 pub use identity::{KeySigner, SignError};
+pub use intervention::{DecisionKind, DecisionOffer, Intervention, PendingApproval};
 use listing::Listings;
 pub use listing::{
     ActiveRow, CheckoutLine, FoundRow, Listing, ScopeChoice, ScopeKind, ScopeSection, SettledRow,

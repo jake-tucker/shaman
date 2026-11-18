@@ -1,10 +1,11 @@
 //! The frame for each state an open Session's foot draws: the bar Working
 //! and Monitoring, the composer steering, queuing and Unreachable, and the
-//! Prompts queued and being sent. A real Serving Server is read in
-//! `tests/session.rs`.
+//! Prompts queued and being sent, and the Intervention presented or waiting
+//! behind "Review". A real Serving Server is read in `tests/session.rs`.
 
 use shaman_protocol::{
-    Prompt, PromptOrder, SessionId, SessionStatus, SkillId, SkillInvocation, TextSpan,
+    Activity, ActivityId, Approval, ApprovalOutcome, ApprovalSubject, Prompt, PromptOrder,
+    SessionId, SessionStatus, SkillId, SkillInvocation, TextSpan, TranscriptItem, Turn, TurnStatus,
     WorkspacePaths,
 };
 
@@ -65,9 +66,10 @@ fn a_working_session_has_a_bar_saying_so_since_it_began_with_stop_and_a_composer
         Some(Bar {
             kind: BarKind::Working,
             words: "Working".to_owned(),
-            since: UNIX_EPOCH + Duration::from_secs(90),
+            since: Some(UNIX_EPOCH + Duration::from_secs(90)),
             watching: None,
             stop: "Stop".to_owned(),
+            review: None,
         })
     );
     assert_eq!(
@@ -94,7 +96,7 @@ fn a_monitoring_session_names_its_watch_or_counts_them() {
         .expect("a bar");
     assert_eq!(bar.kind, BarKind::Monitoring);
     assert_eq!(bar.words, "Monitoring");
-    assert_eq!(bar.since, UNIX_EPOCH + Duration::from_secs(30));
+    assert_eq!(bar.since, Some(UNIX_EPOCH + Duration::from_secs(30)));
     assert_eq!(bar.watching.as_deref(), Some("the nightly backup"));
     assert_eq!(bar.stop, "Stop");
 
@@ -288,4 +290,95 @@ fn a_send_that_went_unanswered_leaves_a_note_beneath_the_composer() {
             .as_deref(),
         Some(MAY_HAVE_BEEN_SENT)
     );
+}
+
+/// A working Session whose Turn waits on the Approval `id` names.
+fn approving(id: ApprovalId) -> SessionSnapshot {
+    let mut snapshot = working();
+    let mut turn = Turn::unprompted(None);
+    turn.status = TurnStatus::Active;
+    let turn_id = turn.id;
+    snapshot.turns.push(turn);
+    let activity_id = ActivityId::new();
+    snapshot.activities.push(Activity::Approval {
+        id: activity_id,
+        turn_id,
+        approval: Approval {
+            id,
+            subject: ApprovalSubject::Command {
+                command: "cargo build".to_owned(),
+                cwd: None,
+                actions: Vec::new(),
+            },
+            reason: None,
+        },
+        tool_activity_id: None,
+        detail_truncated: false,
+        outcome: ApprovalOutcome::Pending,
+        decision: None,
+        follow_up_error: None,
+        asked_at: None,
+    });
+    snapshot
+        .transcript
+        .push(TranscriptItem::Activity { activity_id });
+    snapshot
+}
+
+#[test]
+fn a_pending_approval_presents_itself_over_the_working_bar() {
+    let id = ApprovalId::new();
+    let frame = framed(&approving(id), &Local::default(), false);
+    let Some(Intervention::Approval { approval }) = frame.intervention else {
+        panic!("an Approval presented");
+    };
+    assert_eq!(approval.reference, id.to_string());
+    assert_eq!(frame.bar.map(|bar| bar.kind), Some(BarKind::Working));
+}
+
+#[test]
+fn an_approval_dismissed_waits_behind_an_orange_bar_whose_review_brings_it_back() {
+    let id = ApprovalId::new();
+    let snapshot = approving(id);
+    let mut local = Local::default();
+    local.reconcile(&snapshot);
+    local.dismiss();
+    let frame = framed(&snapshot, &local, false);
+    assert_eq!(frame.intervention, None);
+    assert_eq!(
+        frame.bar,
+        Some(Bar {
+            kind: BarKind::Waiting,
+            words: "Approval waiting".to_owned(),
+            since: None,
+            watching: None,
+            stop: "Stop".to_owned(),
+            review: Some("Review".to_owned()),
+        })
+    );
+
+    local.dismissed.clear();
+    assert!(
+        framed(&snapshot, &local, false).intervention.is_some(),
+        "reviewed, it presents itself again"
+    );
+}
+
+#[test]
+fn a_dismissal_takes_in_only_what_was_pending_as_the_session_last_read() {
+    let first = ApprovalId::new();
+    let mut local = Local::default();
+    local.reconcile(&approving(first));
+    local.dismiss();
+    assert_eq!(local.dismissed, HashSet::from([first]));
+}
+
+#[test]
+fn on_an_unreachable_origin_an_approval_waits_out_of_sight_with_nothing_to_review() {
+    let frame = framed(&approving(ApprovalId::new()), &Local::default(), true);
+    assert_eq!(frame.intervention, None);
+    let bar = frame.bar.expect("a bar");
+    assert_eq!(bar.kind, BarKind::Waiting);
+    assert_eq!(bar.words, "Approval waiting");
+    assert_eq!(bar.review, None);
 }

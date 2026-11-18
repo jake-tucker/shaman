@@ -1,17 +1,23 @@
 //! What frames an open Session's screen, whole on each change: the header,
-//! the bar above the composer, the composer's state and the Prompts queued
-//! behind the working Turn; and the Prompts this screen has sent and its
+//! the bar above the composer, the composer's state, the Intervention to
+//! present and the Prompts queued behind the working Turn; and the
+//! Interventions this screen dismissed, and the Prompts it has sent and its
 //! Server has yet to be seen holding, which stand in the conversation and
 //! among the queued as they are being sent.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashSet,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use shaman_protocol::{
-    PromptDelivery, PromptId, PromptStatus, SessionSnapshot, SessionTimestamp, WatchSummary,
+    ApprovalId, PromptDelivery, PromptId, PromptStatus, SessionSnapshot, SessionTimestamp,
+    WatchSummary,
 };
 
 use crate::{
     conversation::{ConversationItem, ItemKind},
+    intervention::{self, Intervention, Standing},
     listing::Listed,
 };
 
@@ -26,7 +32,7 @@ pub struct SessionFrame {
     /// Said where the Session, or the Remote it is on, is gone.
     pub gone: Option<String>,
     /// The bar above the composer, while the Session is Working or
-    /// Monitoring.
+    /// Monitoring, or one of its own Interventions waits out of sight.
     pub bar: Option<Bar>,
     /// The composer, where the Session takes Prompts from this phone: none
     /// where it is gone, or is a Subagent's.
@@ -34,22 +40,29 @@ pub struct SessionFrame {
     /// The Prompts queued for after the working Turn, oldest first, which
     /// stand at the foot of the conversation.
     pub queued: Vec<QueuedPrompt>,
+    /// The Session's own Intervention to present as a sheet: the oldest
+    /// pending that this screen has not dismissed, while its Origin answers.
+    pub intervention: Option<Intervention>,
 }
 
 /// The bar above the composer: what the Session's work is doing, since when,
-/// and the one tap that stops it.
+/// and the one tap that stops it; or that an Intervention waits on the reader,
+/// and the tap that brings it back.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct Bar {
     pub kind: BarKind,
-    /// "Working" or "Monitoring".
+    /// "Working", "Monitoring" or "Approval waiting".
     pub words: String,
     /// When the work began, as its Server gave it, which Swift counts the
-    /// elapsed time from.
-    pub since: SystemTime,
+    /// elapsed time from: none while an Intervention waits.
+    pub since: Option<SystemTime>,
     /// What a Monitoring Session waits on: its one Watch, or how many.
     pub watching: Option<String>,
     /// The tap that stops it.
     pub stop: String,
+    /// The tap that presents the Interventions dismissed again: "Review",
+    /// where there is anything to present.
+    pub review: Option<String>,
 }
 
 /// What the bar stands for, by which Swift picks its colour and symbol.
@@ -57,6 +70,8 @@ pub struct Bar {
 pub enum BarKind {
     Working,
     Monitoring,
+    /// One of the Session's own Interventions waits out of sight.
+    Waiting,
 }
 
 /// The composer at the foot of an open Session.
@@ -104,6 +119,12 @@ pub(crate) struct Local {
     /// The Prompts a stop whose answer was lost may have withdrawn, whose
     /// text is owed back to the composer once the Server shows one withdrawn.
     pub owed: Vec<(PromptId, String)>,
+    /// The Session's own Interventions pending as it last read, which a
+    /// dismissal takes in.
+    pub pending: Vec<ApprovalId>,
+    /// The Interventions swiped away on this screen, which wait behind
+    /// "Review" for as long as it stays open.
+    pub dismissed: HashSet<ApprovalId>,
 }
 
 /// A Prompt this screen sent, until its Server is seen holding it.
@@ -130,6 +151,7 @@ impl Local {
     /// takes out each owed Prompt it shows settled: answering the text of
     /// those it shows withdrawn, which are owed back to the composer.
     pub fn reconcile(&mut self, snapshot: &SessionSnapshot) -> Vec<String> {
+        self.pending = intervention::pending_ids(snapshot);
         self.withdrawable = snapshot
             .prompts
             .iter()
@@ -159,6 +181,12 @@ impl Local {
             }
         });
         withdrawn
+    }
+
+    /// Dismisses every Intervention pending now, until the reader asks for
+    /// them again.
+    pub fn dismiss(&mut self) {
+        self.dismissed.extend(self.pending.iter().copied());
     }
 }
 
@@ -196,6 +224,7 @@ pub(crate) fn frame_of(
             bar: None,
             composer: None,
             queued: Vec::new(),
+            intervention: None,
         };
     };
     let title = snapshot
@@ -226,6 +255,7 @@ pub(crate) fn frame_of(
             bar: None,
             composer: None,
             queued: Vec::new(),
+            intervention: None,
         };
     }
     let working = snapshot.is_some_and(|snapshot| snapshot.working_since().is_some());
@@ -242,13 +272,35 @@ pub(crate) fn frame_of(
         unreachable: unreachable.then(|| unreachable_line(listed)),
         note: local.note.clone(),
     });
+    let standing = snapshot.map_or(Standing::None, |snapshot| {
+        intervention::standing(snapshot, &local.dismissed, unreachable)
+    });
+    let (bar, intervention) = match standing {
+        Standing::None => (snapshot.and_then(bar), None),
+        Standing::Presented(intervention) => (snapshot.and_then(bar), Some(*intervention)),
+        Standing::Waiting { review } => (Some(waiting(review)), None),
+    };
     SessionFrame {
         title,
         place,
         gone,
-        bar: snapshot.and_then(bar),
+        bar,
         composer,
         queued: queued(snapshot, local),
+        intervention,
+    }
+}
+
+/// The bar while the Session's own Interventions wait out of sight: orange,
+/// with "Review" where it may bring them back.
+fn waiting(review: bool) -> Bar {
+    Bar {
+        kind: BarKind::Waiting,
+        words: intervention::APPROVAL_WAITING.to_owned(),
+        since: None,
+        watching: None,
+        stop: "Stop".to_owned(),
+        review: review.then(|| intervention::REVIEW.to_owned()),
     }
 }
 
@@ -282,9 +334,10 @@ fn bar(snapshot: &SessionSnapshot) -> Option<Bar> {
     Some(Bar {
         kind,
         words: words.to_owned(),
-        since: instant(since),
+        since: Some(instant(since)),
         watching,
         stop: "Stop".to_owned(),
+        review: None,
     })
 }
 

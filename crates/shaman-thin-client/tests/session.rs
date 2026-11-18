@@ -1,14 +1,19 @@
 //! An open Session over a real Serving Server in process: framed at once by
 //! what the listing knows, its conversation landing in one piece once the
 //! Session has been read and changing by item after, the Outlook turned
-//! toward it, and nothing on the Server cancelled when it closes.
+//! toward it, and nothing on the Server cancelled when it closes; and its
+//! own Approvals presented, dismissed, reviewed and answered.
 
 mod support;
 
-use shaman::protocol::{PromptDelivery, SessionId, SessionStatus, TurnStatus, Way};
+use shaman::protocol::{
+    Activity, Approval, ApprovalId, ApprovalOutcome, ApprovalSubject, Decision, PromptDelivery,
+    SessionId, SessionStatus, TurnStatus, Way,
+};
 use shaman_thin_client::{
-    ActError, ActiveRow, BarKind, BodyStyle, ConversationChange, ConversationItem, ItemKind,
-    Outlook, PairingOutcome, Tap, Tone, TurnOutcome, WorkKind,
+    ActError, ActiveRow, BarKind, BodyStyle, ConversationChange, ConversationItem, DecisionKind,
+    Intervention, ItemKind, Outlook, PairingOutcome, PendingApproval, SessionFrame, Tap, Tone,
+    TurnOutcome, WorkKind,
 };
 
 use shaman::provider::{ProviderActivityId, ProviderCommandStatus, ProviderEvent};
@@ -1145,6 +1150,346 @@ async fn a_send_delivered_whose_answer_is_lost_is_not_sent_again_and_says_it_may
         1,
         "it was delivered, once, and never sent again"
     );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+/// Has the scripted Session's Provider ask the Approval `approval`.
+fn ask(script: &Script, approval: &Approval) {
+    say(
+        script,
+        [ProviderEvent::ApprovalRequested {
+            approval: approval.clone(),
+            tool_activity_id: None,
+        }],
+    );
+}
+
+fn command_approval(command: &str, reason: Option<&str>) -> Approval {
+    Approval {
+        id: ApprovalId::new(),
+        subject: ApprovalSubject::Command {
+            command: command.to_owned(),
+            cwd: None,
+            actions: Vec::new(),
+        },
+        reason: reason.map(str::to_owned),
+    }
+}
+
+/// The Approval the frame presents, where it presents one.
+fn presented(frame: &SessionFrame) -> Option<&PendingApproval> {
+    match &frame.intervention {
+        Some(Intervention::Approval { approval }) => Some(approval),
+        None => None,
+    }
+}
+
+/// Whether the frame presents the Approval `approval`.
+fn presents(frame: &SessionFrame, approval: &Approval) -> bool {
+    presented(frame).is_some_and(|presented| presented.reference == approval.id.to_string())
+}
+
+/// Whether the frame's bar is the orange one, an Intervention waiting out of
+/// sight, with "Review" or without.
+fn waiting(frame: &SessionFrame, review: bool) -> bool {
+    frame.intervention.is_none()
+        && frame.bar.as_ref().is_some_and(|bar| {
+            bar.kind == BarKind::Waiting
+                && bar.words == "Approval waiting"
+                && bar.review.is_some() == review
+        })
+}
+
+/// How the Server holds the Approval `approval` now.
+async fn outcome(
+    server: &ServingServer,
+    session: SessionId,
+    approval: &Approval,
+) -> ApprovalOutcome {
+    server
+        .read(session)
+        .await
+        .activities
+        .into_iter()
+        .find_map(|activity| match activity {
+            Activity::Approval {
+                approval: asked,
+                outcome,
+                ..
+            } if asked.id == approval.id => Some(outcome),
+            _ => None,
+        })
+        .expect("the Server holds the Approval")
+}
+
+/// A phone paired with `desk` through `gate`, reading a scripted Session
+/// open on it, and what its Provider sends.
+async fn scripted_through(
+    desk: &ServingServer,
+    gate: &Gate,
+    holder: &tempfile::TempDir,
+    title: &str,
+) -> (Phone, SessionId, ActiveRow, support::Reading, Script) {
+    let phone = Phone::new();
+    let invite = desk.invite(vec![Way::Direct(gate.address())]).await;
+    assert!(matches!(
+        phone
+            .core
+            .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
+            .await,
+        PairingOutcome::Paired { .. }
+    ));
+    let session = desk.begin(&workspace(holder, SCRIPTED), title).await;
+    let script = desk.script().await;
+    let row = row(&phone, title).await;
+    let reading = phone.open(&row.session);
+    reading.conversation_until(loaded).await;
+    (phone, session, row, reading, script)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_approval_presents_itself_is_dismissed_reviewed_and_answered_against_a_serving_server() {
+    let desk = ServingServer::start("thin-approval").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let (phone, session, row, reading, script) =
+        scripted_through(&desk, &gate, &holder, "Draw the invite as a QR code").await;
+    let asked = command_approval(
+        "cargo nextest run -p shaman-relay",
+        Some("Needs network access outside the sandbox."),
+    );
+    ask(&script, &asked);
+
+    let frame = reading.frame_until(|frame| presents(frame, &asked)).await;
+    let sheet = presented(&frame).expect("presented");
+    assert_eq!(sheet.title, "Run this command?");
+    assert_eq!(
+        sheet
+            .facts
+            .iter()
+            .map(|fact| (fact.label.as_str(), fact.value.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("Command", "cargo nextest run -p shaman-relay"),
+            ("Reason", "Needs network access outside the sandbox."),
+        ]
+    );
+    assert_eq!(
+        frame.bar.as_ref().map(|bar| bar.kind),
+        Some(BarKind::Working),
+        "the bar beneath the sheet stays as it was"
+    );
+    let conversation = reading
+        .conversation_until(|items| {
+            cards(items)
+                .iter()
+                .any(|card| card.outcome == TurnOutcome::Waiting)
+        })
+        .await;
+    assert_eq!(
+        cards(&conversation.items)[0].line,
+        "Waiting on you",
+        "the live Turn's card says it waits on the reader"
+    );
+
+    // Swiped away, it waits behind the orange bar, and Review brings it back.
+    reading.session.dismiss();
+    reading.frame_until(|frame| waiting(frame, true)).await;
+    reading.session.review();
+    reading.frame_until(|frame| presents(frame, &asked)).await;
+
+    // Opened again on another screen, it presents itself however it was
+    // dismissed on this one.
+    reading.session.dismiss();
+    reading.frame_until(|frame| waiting(frame, true)).await;
+    let again = phone.open(&row.session);
+    again.frame_until(|frame| presents(frame, &asked)).await;
+    drop(again);
+
+    reading.session.review();
+    let reference = reading
+        .frame_until(|frame| presents(frame, &asked))
+        .await
+        .intervention
+        .map(|Intervention::Approval { approval }| approval.reference)
+        .expect("presented");
+    reading
+        .session
+        .decide(reference, DecisionKind::AcceptOnce)
+        .await
+        .expect("answered once the Server has");
+    assert_eq!(desk.decisions(), [(asked.id, Decision::Accept)]);
+    assert_eq!(
+        outcome(&desk, session, &asked).await,
+        ApprovalOutcome::Decided
+    );
+    let answered = reading
+        .frame_until(|frame| frame.intervention.is_none())
+        .await;
+    assert_eq!(
+        answered.bar.map(|bar| bar.kind),
+        Some(BarKind::Working),
+        "nothing waits on the reader any more"
+    );
+    phone.acts_until(false).await;
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn several_pending_present_oldest_first_one_by_one_and_one_asked_after_a_dismissal_presents_itself()
+ {
+    let desk = ServingServer::start("thin-approvals").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let (phone, _session, _row, reading, script) =
+        scripted_through(&desk, &gate, &holder, "Tidy the build").await;
+    let first = command_approval("cargo build", None);
+    let second = command_approval("cargo test", None);
+    ask(&script, &first);
+    ask(&script, &second);
+    // Both are asked before the first is answered.
+    reading
+        .conversation_until(|items| {
+            cards(items)
+                .iter()
+                .any(|card| card.outcome == TurnOutcome::Waiting)
+        })
+        .await;
+    reading.frame_until(|frame| presents(frame, &first)).await;
+
+    reading
+        .session
+        .decide(first.id.to_string(), DecisionKind::Decline)
+        .await
+        .expect("declined");
+    reading.frame_until(|frame| presents(frame, &second)).await;
+
+    reading.session.dismiss();
+    reading.frame_until(|frame| waiting(frame, true)).await;
+    let third = command_approval("cargo clippy", None);
+    ask(&script, &third);
+    reading.frame_until(|frame| presents(frame, &third)).await;
+    reading
+        .session
+        .decide(third.id.to_string(), DecisionKind::AcceptForSession)
+        .await
+        .expect("accepted for the session");
+    reading.frame_until(|frame| waiting(frame, true)).await;
+    reading.session.review();
+    reading.frame_until(|frame| presents(frame, &second)).await;
+    reading
+        .session
+        .decide(second.id.to_string(), DecisionKind::DeclineAndInterrupt)
+        .await
+        .expect("declined and interrupted");
+    assert_eq!(
+        desk.decisions_until(3).await,
+        [
+            (first.id, Decision::Decline),
+            (third.id, Decision::AcceptForSession),
+            (second.id, Decision::DeclineAndInterrupt),
+        ]
+    );
+    reading
+        .frame_until(|frame| frame.intervention.is_none() && !waiting(frame, true))
+        .await;
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_approval_on_an_unreachable_origin_waits_out_of_sight_and_presents_itself_when_it_answers()
+ {
+    let desk = ServingServer::start("thin-approval-away").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let (phone, _session, _row, reading, script) =
+        scripted_through(&desk, &gate, &holder, "Tidy the build").await;
+    let asked = command_approval("cargo build", None);
+    ask(&script, &asked);
+    reading.frame_until(|frame| presents(frame, &asked)).await;
+
+    gate.shut_now();
+    reading.frame_until(|frame| waiting(frame, false)).await;
+
+    gate.open_now();
+    reading.frame_until(|frame| presents(frame, &asked)).await;
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_decision_delivered_whose_answer_is_lost_is_not_sent_again_nor_offered_again() {
+    let desk = ServingServer::start("thin-approval-lost").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let (phone, session, _row, reading, script) =
+        scripted_through(&desk, &gate, &holder, "Tidy the build").await;
+    let asked = command_approval("cargo build", None);
+    ask(&script, &asked);
+    reading.frame_until(|frame| presents(frame, &asked)).await;
+
+    // What the phone says reaches the Server; nothing it says comes back.
+    gate.mute_now();
+    let failed = reading
+        .session
+        .decide(asked.id.to_string(), DecisionKind::AcceptOnce)
+        .await;
+    assert_eq!(
+        failed,
+        Err(ActError::Unreachable {
+            message: "The server did not answer, so the decision may have been sent".to_owned()
+        })
+    );
+    assert_eq!(
+        desk.decisions(),
+        [(asked.id, Decision::Accept)],
+        "it was delivered, once, and never sent again"
+    );
+    assert_eq!(
+        outcome(&desk, session, &asked).await,
+        ApprovalOutcome::Decided
+    );
+    assert!(
+        reading.frame().await.intervention.is_none(),
+        "it does not spring back to be answered twice"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_decision_on_an_approval_no_longer_waiting_is_refused_in_the_servers_words() {
+    let desk = ServingServer::start("thin-approval-gone").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let (phone, _session, _row, reading, _script) =
+        scripted_through(&desk, &gate, &holder, "Tidy the build").await;
+    let refused = reading
+        .session
+        .decide(ApprovalId::new().to_string(), DecisionKind::AcceptOnce)
+        .await;
+    assert!(
+        matches!(refused, Err(ActError::Refused { .. })),
+        "{refused:?}"
+    );
+    assert_eq!(
+        reading
+            .session
+            .decide("not an approval".to_owned(), DecisionKind::AcceptOnce)
+            .await,
+        Err(ActError::Refused {
+            message: "That approval is no longer waiting".to_owned()
+        })
+    );
+    assert!(desk.decisions().is_empty());
 
     phone.shutdown();
     desk.shutdown().await;

@@ -15,15 +15,15 @@ use std::{
 use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
-        AgentId, AgentIdentity, AgentSelection, ApprovalPosture, CreateSessionRequest,
-        ExecutionDirectory, InitialPrompt, IssueInviteRequest, ModelId, Peer, PromptId, ProviderId,
-        SessionId, SettingMutation, SkillCatalog, Way,
+        AgentId, AgentIdentity, AgentSelection, ApprovalId, ApprovalPosture, CreateSessionRequest,
+        Decision, ExecutionDirectory, InitialPrompt, IssueInviteRequest, ModelId, Peer, PromptId,
+        ProviderId, SessionId, SettingMutation, SkillCatalog, Way,
     },
     provider::{
-        AttributedProviderEvent, ErrandFuture, ProviderErrand, ProviderError, ProviderEvent,
-        ProviderEventStream, ProviderFuture, ProviderInterruption, ProviderModelDiscovery,
-        ProviderPostureApplication, ProviderRuntime, ProviderSession, ProviderSessionConnection,
-        ProviderSessionRequest, ProviderSteerInput, ProviderTurnInput,
+        AttributedProviderEvent, ErrandFuture, ProviderDecisionDelivery, ProviderErrand,
+        ProviderError, ProviderEvent, ProviderEventStream, ProviderFuture, ProviderInterruption,
+        ProviderModelDiscovery, ProviderPostureApplication, ProviderRuntime, ProviderSession,
+        ProviderSessionConnection, ProviderSessionRequest, ProviderSteerInput, ProviderTurnInput,
     },
     server::{self, ServerConfig, ServerTimings},
 };
@@ -93,6 +93,7 @@ pub struct ServingServer {
     server: server::RunningServer,
     client: ManagedClient,
     scripts: Arc<Mutex<Vec<Script>>>,
+    decisions: Decisions,
 }
 
 impl ServingServer {
@@ -108,6 +109,7 @@ impl ServingServer {
         };
         let provider = Arc::new(TestProvider::default());
         let scripts = provider.scripts.clone();
+        let decisions = provider.decisions.clone();
         let server = server::spawn_with_provider_and_timings(config.clone(), provider, timings)
             .await
             .expect("spawn the Server");
@@ -135,7 +137,29 @@ impl ServingServer {
             server,
             client,
             scripts,
+            decisions,
         }
+    }
+
+    /// Every Decision a scripted Session's Provider has been delivered, in
+    /// the order delivered.
+    pub fn decisions(&self) -> Vec<(ApprovalId, Decision)> {
+        self.decisions.lock().unwrap().clone()
+    }
+
+    /// The Decisions delivered, once there are `count` of them.
+    pub async fn decisions_until(&self, count: usize) -> Vec<(ApprovalId, Decision)> {
+        timeout(PROGRESS_DEADLINE, async {
+            loop {
+                let decisions = self.decisions();
+                if decisions.len() >= count {
+                    return decisions;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the Decisions were delivered")
     }
 
     /// What the scripted Session this Server started last hears from its
@@ -917,12 +941,16 @@ pub const SCRIPTED: &str = "scripted";
 /// What a scripted Session's Provider sends, where the test scripts it.
 pub type Script = mpsc::UnboundedSender<Result<AttributedProviderEvent, ProviderError>>;
 
+/// The Decisions every scripted Session's Provider was delivered.
+type Decisions = Arc<Mutex<Vec<(ApprovalId, Decision)>>>;
+
 /// A Provider whose Sessions, but a scripted one, never start: one begun in
 /// a directory named [`WORKING`] waits on it for ever, and any other fails.
 #[derive(Default)]
 struct TestProvider {
     /// What each scripted Session's Provider sends, the latest started last.
     scripts: Arc<Mutex<Vec<Script>>>,
+    decisions: Decisions,
 }
 
 impl ProviderRuntime for TestProvider {
@@ -954,6 +982,7 @@ impl ProviderRuntime for TestProvider {
         };
         let (working, scripted) = (named(WORKING), named(SCRIPTED));
         let scripts = self.scripts.clone();
+        let decisions = self.decisions.clone();
         Box::pin(async move {
             if scripted {
                 let (script, events) = mpsc::unbounded_channel();
@@ -972,7 +1001,7 @@ impl ProviderRuntime for TestProvider {
                         },
                     },
                     None,
-                    Arc::new(ScriptedSession(script)),
+                    Arc::new(ScriptedSession { script, decisions }),
                     events,
                 ));
             }
@@ -996,9 +1025,12 @@ impl ProviderRuntime for TestProvider {
     }
 }
 
-/// A scripted Session's Provider side: it takes every Turn and steer, and
-/// stops a Turn by saying so.
-struct ScriptedSession(Script);
+/// A scripted Session's Provider side: it takes every Turn, steer and
+/// Decision, and stops a Turn by saying so.
+struct ScriptedSession {
+    script: Script,
+    decisions: Decisions,
+}
 
 impl ProviderSession for ScriptedSession {
     fn update_approval_posture(
@@ -1007,6 +1039,15 @@ impl ProviderSession for ScriptedSession {
         _has_active_work: bool,
     ) -> ProviderFuture<'_, ProviderPostureApplication> {
         Box::pin(async { Ok(ProviderPostureApplication::NextTurn) })
+    }
+
+    fn submit_decision(
+        &self,
+        id: ApprovalId,
+        decision: Decision,
+    ) -> ProviderFuture<'_, ProviderDecisionDelivery> {
+        self.decisions.lock().unwrap().push((id, decision));
+        Box::pin(async { Ok(ProviderDecisionDelivery::complete()) })
     }
 
     fn start_turn(&self, _input: ProviderTurnInput) -> ProviderFuture<'_, ()> {
@@ -1018,7 +1059,7 @@ impl ProviderSession for ScriptedSession {
     }
 
     fn interrupt_turn(&self) -> ProviderFuture<'_, ProviderInterruption> {
-        let _ = self.0.send(Ok(ProviderEvent::TurnInterrupted.into()));
+        let _ = self.script.send(Ok(ProviderEvent::TurnInterrupted.into()));
         Box::pin(async { Ok(ProviderInterruption::Stopped) })
     }
 

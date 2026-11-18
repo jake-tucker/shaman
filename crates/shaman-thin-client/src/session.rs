@@ -10,9 +10,11 @@
 //! conversation lands in one piece.
 //!
 //! Its acts are a Prompt sent, to steer the working Turn or begin one, or
-//! queued for after it; a queued Prompt steered now or withdrawn; and a stop.
-//! A Prompt sent stands at once as a bubble marked as sending; where it fails
-//! it goes, and its text is given back to the composer's draft.
+//! queued for after it; a queued Prompt steered now or withdrawn; a stop; and
+//! a Decision on an Approval. A Prompt sent stands at once as a bubble marked
+//! as sending; where it fails it goes, and its text is given back to the
+//! composer's draft. Its own Interventions are dismissed and reviewed on the
+//! screen alone, asking nothing of the Server.
 //!
 //! While a screen pushed from it is up, a Turn's work or an Activity's
 //! detail is attached to it, filled again from the Session as it changes and
@@ -44,6 +46,7 @@ use crate::{
     conversation::{self, ConversationItem},
     drafts::Drafts,
     frame::{self, GONE_REMOTE, Local, Outgoing, SessionFrame, frame_of},
+    intervention::{self, DecisionKind},
     listing::{Listed, Listings},
     watching,
     work::{self, ActivityDetail, TurnWork},
@@ -203,6 +206,29 @@ impl OpenSession {
     pub async fn stop(&self) -> Result<(), ActError> {
         let acting = self.acting.clone();
         self.act(async move { acting.stop().await }).await
+    }
+
+    /// Answers the Approval `approval` names with `decision`, once its Server
+    /// has. One whose answer was lost is never sent again: it waits behind
+    /// "Review", as one dismissed does, until the Session shows it answered.
+    pub async fn decide(&self, approval: String, decision: DecisionKind) -> Result<(), ActError> {
+        let acting = self.acting.clone();
+        self.act(async move { acting.decide(&approval, decision).await })
+            .await
+    }
+
+    /// Dismisses every one of the Session's own Interventions pending now,
+    /// as swiping its sheet away does, for as long as this screen stays
+    /// open: the bar offers them again, and one asked after presents itself.
+    pub fn dismiss(&self) {
+        self.acting.local.send_modify(Local::dismiss);
+    }
+
+    /// Presents the Interventions dismissed again, oldest first.
+    pub fn review(&self) {
+        self.acting
+            .local
+            .send_modify(|local| local.dismissed.clear());
     }
 }
 
@@ -549,6 +575,9 @@ const GONE_PROMPT: &str = "That prompt is no longer queued";
 /// Said where a Prompt with nothing in it is sent.
 const EMPTY_PROMPT: &str = "Write something to send";
 
+/// Said where an Approval a Decision names no longer waits on one.
+const GONE_APPROVAL: &str = "That approval is no longer waiting";
+
 impl Acting {
     /// What the Session's acts are asked over now: its Remote as the
     /// listing holds it, which may have been paired again since it opened.
@@ -699,6 +728,37 @@ impl Acting {
             self.drafts.give_back(&self.reference, &prompt.text);
         }
         Ok(())
+    }
+}
+
+impl Acting {
+    async fn decide(&self, reference: &str, decision: DecisionKind) -> Result<(), ActError> {
+        // The Session stands; only the Approval is no longer there to answer.
+        let approval =
+            intervention::approval_referenced(reference).ok_or_else(|| ActError::Refused {
+                message: GONE_APPROVAL.to_owned(),
+            })?;
+        let mut opening = self.opening()?;
+        let decided = self
+            .deliver(&mut opening, |commands, session_id| async move {
+                commands
+                    .submit_decision(session_id, approval, decision.into())
+                    .await
+            })
+            .await;
+        if decided == Err(Unanswered::MaybeDone) {
+            // It may have been delivered: it waits out of sight, and is not
+            // offered again until the reader asks.
+            self.local.send_modify(|local| {
+                local.dismissed.insert(approval);
+            });
+        }
+        decided.map_err(|unanswered| {
+            said(
+                unanswered,
+                "The server did not answer, so the decision may have been sent",
+            )
+        })
     }
 }
 
