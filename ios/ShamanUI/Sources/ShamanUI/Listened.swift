@@ -14,15 +14,29 @@ func listened<Value: Sendable>(
   }
 }
 
-/// Hands what the core says of "This device" to `send`.
-final class DeviceForwarder: DeviceListener {
-  private let send: @Sendable (ThisDevice) -> Void
+/// Hands each model the core tells a listener of to `send`.
+final class Forwarder<Model: Sendable>: Sendable {
+  private let send: @Sendable (Model) -> Void
 
-  init(_ send: @escaping @Sendable (ThisDevice) -> Void) {
+  init(_ send: @escaping @Sendable (Model) -> Void) {
     self.send = send
   }
+}
 
+extension Forwarder: DeviceListener where Model == ThisDevice {
   func changed(device: ThisDevice) {
     send(device)
+  }
+}
+
+extension Forwarder: ServersListener where Model == Servers {
+  func changed(servers: Servers) {
+    send(servers)
+  }
+}
+
+extension Forwarder: OutlookListener where Model == Outlook {
+  func changed(outlook: Outlook) {
+    send(outlook)
   }
 }

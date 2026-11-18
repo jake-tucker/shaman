@@ -14,6 +14,20 @@ public protocol Core: AnyObject, Sendable {
 
   /// Says no more that this phone must pair again.
   func dismissPairAgain() async throws(ActError)
+
+  /// Where the Outlook stands, now and on every change: nowhere while the phone holds no Remote.
+  func outlook() -> AsyncStream<Outlook>
+
+  /// The Servers section of the sheet of Servers, Relays and This device, now and on every change.
+  func servers() -> AsyncStream<Servers>
+
+  /// Reads `invite` for the confirmation screen, dialling nothing.
+  func readInvite(_ invite: String) -> InviteReading
+
+  /// Pairs with the Server `invite` is from, naming it `remoteName` and this phone `deviceName`, replacing any Pairing
+  /// with that Server, and turns the Outlook toward it. It keeps dialling for a few seconds while no way answers, and
+  /// keeps nothing where it fails.
+  func confirmPairing(invite: String, remoteName: String, deviceName: String) async -> PairingOutcome
 }
 
 extension ActError {

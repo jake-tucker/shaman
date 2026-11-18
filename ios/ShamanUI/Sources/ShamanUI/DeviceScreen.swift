@@ -1,27 +1,45 @@
 import ShamanCore
 import SwiftUI
 
-/// The sheet of Servers, Relays and This device. It holds "This device" alone until there are Servers to list.
+/// The sheet of Servers, Relays and This device: each Remote with its ways and how they stand, the offer to pair
+/// another server, and this device.
 public struct DeviceScreen: View {
   @State private var model: DeviceModel
+  @State private var path: [DeviceRoute] = []
+  @Environment(\.dismiss) private var dismiss
+  private let core: any Core
   private let appVersion: String
 
   /// The screen over `core`, showing `appVersion` as the app's own version.
   public init(core: any Core, appVersion: String) {
     _model = State(initialValue: DeviceModel(core: core))
+    self.core = core
     self.appVersion = appVersion
   }
 
   public var body: some View {
-    NavigationStack {
+    NavigationStack(path: $path) {
       Form {
         if let device = model.device {
           if let pairAgain = device.pairAgain {
             self.pairAgain(pairAgain)
           }
+          servers(model.servers?.remotes ?? [])
           thisDevice(device)
         } else {
           ProgressView()
+        }
+      }
+      .navigationDestination(for: DeviceRoute.self) { route in
+        switch route {
+        case .pairAnother:
+          PairingStart(core: core) { path.append(.confirm($0)) }
+        case .confirm(let invite):
+          ConfirmationScreen(core: core, invite: invite) {
+            path.removeAll { $0 != .pairAnother }
+          } paired: {
+            dismiss()
+          }
         }
       }
       .navigationTitle("Servers & device")
@@ -32,6 +50,41 @@ public struct DeviceScreen: View {
       }
     }
     .task { await model.follow() }
+    .task { await model.followServers() }
+  }
+
+  /// Each Remote with its ways, and the offer to pair another server.
+  private func servers(_ remotes: [ServerRow]) -> some View {
+    Section("Servers") {
+      ForEach(remotes, id: \.name) { remote in
+        VStack(alignment: .leading, spacing: 6) {
+          Text(remote.name)
+            .font(.headline)
+            .accessibilityIdentifier("server.\(remote.name)")
+          ForEach(Array(remote.ways.enumerated()), id: \.offset) { index, way in
+            HStack {
+              Text(verbatim: way.address)
+                .font(.footnote.monospaced())
+              Spacer()
+              if way.state == .checking {
+                ProgressView()
+                  .controlSize(.mini)
+              } else {
+                Text(way.words)
+                  .font(.footnote)
+                  .foregroundStyle(way.state == .answering ? .green : .secondary)
+              }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("server.\(remote.name).way.\(index)")
+          }
+        }
+      }
+      NavigationLink(value: DeviceRoute.pairAnother) {
+        Label("Pair another server", systemImage: "plus")
+      }
+      .accessibilityIdentifier("servers.pairAnother")
+    }
   }
 
   /// Said once where this phone has a new key: until it is dismissed.
@@ -89,11 +142,20 @@ public struct DeviceScreen: View {
   }
 }
 
-/// What "This device" holds while its screen is up.
+/// Where the sheet of Servers, Relays and This device leads.
+private enum DeviceRoute: Hashable {
+  /// Pairing with another server, by pasting its Invite.
+  case pairAnother
+  /// Confirming the Invite pasted.
+  case confirm(String)
+}
+
+/// What the sheet of Servers, Relays and This device holds while it is up.
 @MainActor @Observable
 final class DeviceModel {
   private let core: any Core
   private(set) var device: ThisDevice?
+  private(set) var servers: Servers?
   /// The name as it is being written, until it is kept.
   var name = ""
   /// Why the core refused the name, shown beside it.
@@ -111,6 +173,13 @@ final class DeviceModel {
     for await device in core.thisDevice() {
       self.device = device
       name = device.name
+    }
+  }
+
+  /// Follows what the core says of the Remotes until the screen goes.
+  func followServers() async {
+    for await servers in core.servers() {
+      self.servers = servers
     }
   }
 
@@ -227,6 +296,10 @@ public struct CoreFailedScreen: View {
 
   #Preview("A named phone") {
     DeviceScreen(core: FakeCore(.named), appVersion: "0.1.0 (1)")
+  }
+
+  #Preview("A paired phone") {
+    DeviceScreen(core: FakeCore(.paired), appVersion: "0.1.0 (1)")
   }
 
   #Preview("A phone that must pair again") {

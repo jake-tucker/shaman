@@ -9,7 +9,16 @@ struct ShamanApp: App {
   var body: some Scene {
     WindowGroup {
       switch opened {
-      case .core(let core): DeviceScreen(core: core, appVersion: Self.version)
+      case .core(let core):
+        #if DEBUG
+          if Launch.serversAndDevice {
+            DeviceScreen(core: core, appVersion: Self.version)
+          } else {
+            RootScreen(core: core, appVersion: Self.version, invite: Launch.invite)
+          }
+        #else
+          RootScreen(core: core, appVersion: Self.version)
+        #endif
       case .failed(let message): CoreFailedScreen(message: message)
       case .keyRefused(let message, let directory, let item):
         KeyRefusedScreen(message: message) {
@@ -31,6 +40,22 @@ struct ShamanApp: App {
     return "\(version) (\(build))"
   }
 }
+
+#if DEBUG
+  /// What a debug build is asked at launch beyond which core to run over.
+  private enum Launch {
+    /// An Invite arriving by the launch environment's `SHAMAN_INVITE`, confirmed at once, as a pasted one is.
+    static var invite: String? {
+      ProcessInfo.processInfo.environment["SHAMAN_INVITE"].flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// Whether `--servers-and-device` asks for the sheet of Servers, Relays and This device alone, which a phone
+    /// holding no Remote offers no way to, so a UI test can reach "This device" before pairing.
+    static var serversAndDevice: Bool {
+      ProcessInfo.processInfo.arguments.contains("--servers-and-device")
+    }
+  }
+#endif
 
 /// The core the app runs over, or why there is none.
 private enum Opened {

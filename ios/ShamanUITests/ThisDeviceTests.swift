@@ -1,6 +1,8 @@
 import XCTest
 
 /// "This device", over the live core in a directory and with a Keychain item of each test's own, and over the fake.
+/// A phone holding no Remote offers pairing alone, so each is launched with `--servers-and-device`, which shows the
+/// sheet of Servers, Relays and This device by itself.
 final class ThisDeviceTests: XCTestCase {
   override func setUp() {
     continueAfterFailure = false
@@ -13,7 +15,7 @@ final class ThisDeviceTests: XCTestCase {
     let app = XCUIApplication()
     app.launchEnvironment["SHAMAN_CORE_DIRECTORY"] = directory
     app.launchEnvironment["SHAMAN_KEY_ITEM"] = key ?? directory
-    app.launchArguments = arguments
+    app.launchArguments = arguments + ["--servers-and-device"]
     app.launch()
     return app
   }
@@ -90,7 +92,7 @@ final class ThisDeviceTests: XCTestCase {
   @MainActor
   func testTheFakeShowsItsScenarioWithTheVersions() {
     let app = XCUIApplication()
-    app.launchArguments = ["--fake", "named"]
+    app.launchArguments = ["--fake", "named", "--servers-and-device"]
     app.launch()
     let field = app.textFields["device.name"]
     XCTAssertTrue(field.waitForExistence(timeout: 10))
@@ -145,6 +147,7 @@ final class ThisDeviceTests: XCTestCase {
     XCTAssertEqual(app.textFields["device.name"].value as? String, "iPhone")
   }
 
+  /// Where pairing is all a phone with a new key is offered.
   @MainActor
   func testThatThisPhoneMustPairAgainIsSaidUntilDismissed() {
     let app = XCUIApplication()

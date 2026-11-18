@@ -1,0 +1,177 @@
+import XCTest
+
+/// Pairing by pasting an Invite, over the fake.
+final class PairingTests: XCTestCase {
+  /// The Invite the fake reads as the workstation's.
+  private let invite = "shaman-v1-fake-workstation"
+
+  override func setUp() {
+    continueAfterFailure = false
+  }
+
+  @MainActor
+  private func launched(_ scenario: String, invite: String? = nil) -> XCUIApplication {
+    let app = XCUIApplication()
+    app.launchArguments = ["--fake", scenario]
+    if let invite {
+      app.launchEnvironment["SHAMAN_INVITE"] = invite
+    }
+    app.launch()
+    return app
+  }
+
+  @MainActor
+  private func attach(_ app: XCUIApplication, _ name: String) {
+    let screenshot = XCTAttachment(screenshot: app.screenshot())
+    screenshot.name = name
+    screenshot.lifetime = .keepAlways
+    add(screenshot)
+  }
+
+  /// Pastes `text` as the user would, through the paste button.
+  @MainActor
+  private func paste(_ text: String, in app: XCUIApplication) {
+    UIPasteboard.general.string = text
+    let paste = app.buttons["pairing.paste"]
+    XCTAssertTrue(paste.waitForExistence(timeout: 10))
+    paste.tap()
+  }
+
+  @MainActor
+  private func replace(_ field: XCUIElement, with text: String) {
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+    let written = field.value as? String ?? ""
+    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: written.count) + text + "\n")
+  }
+
+  /// The hostname the confirmation screen shows.
+  @MainActor
+  private func hostname(in app: XCUIApplication) -> String? {
+    let hostname = app.descendants(matching: .any)["confirm.hostname"]
+    XCTAssertTrue(hostname.waitForExistence(timeout: 10))
+    return hostname.value as? String
+  }
+
+  /// The element the confirmation screen's Form shows under `identifier`, scrolled to.
+  @MainActor
+  private func shown(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+    let element = app.descendants(matching: .any)[identifier]
+    XCTAssertTrue(element.waitForExistence(timeout: 10), identifier)
+    var swipes = 0
+    while !element.isHittable && swipes < 5 {
+      app.swipeUp()
+      swipes += 1
+    }
+    return element
+  }
+
+  @MainActor
+  func testAPastedInviteIsConfirmedAndPairedAndTheRemoteIsListedWithItsWays() {
+    let app = launched("fresh")
+    XCTAssertTrue(app.staticTexts["Pair with a server"].waitForExistence(timeout: 10), "pairing alone is offered")
+    paste(invite, in: app)
+
+    XCTAssertEqual(hostname(in: app), "workstation")
+    let fingerprint = app.descendants(matching: .any)["confirm.fingerprint"]
+    XCTAssertEqual((fingerprint.value as? String)?.count, 64)
+    XCTAssertTrue(app.descendants(matching: .any)["confirm.way.0"].label.contains("192.168.1.20:7791"))
+    XCTAssertTrue(app.descendants(matching: .any)["confirm.way.2"].label.contains("not dialled from a phone"))
+    XCTAssertFalse(app.descendants(matching: .any)["confirm.held"].exists)
+    XCTAssertEqual(app.textFields["confirm.remoteName"].value as? String, "workstation", "offered from the hostname")
+    XCTAssertEqual(app.textFields["confirm.deviceName"].value as? String, "iPhone")
+    attach(app, "Confirming a pasted invite")
+
+    replace(app.textFields["confirm.remoteName"], with: "desk")
+    replace(app.textFields["confirm.deviceName"], with: "Pocket")
+    shown("confirm.pair", in: app).tap()
+
+    let beginsIn = app.staticTexts["home.beginsIn"]
+    XCTAssertTrue(beginsIn.waitForExistence(timeout: 10), "the Outlook turned toward the new Remote")
+    XCTAssertEqual(beginsIn.label, "New sessions begin in desk")
+    attach(app, "Landed on the new Remote")
+
+    app.buttons["home.servers"].tap()
+    XCTAssertTrue(app.navigationBars["Servers & device"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.navigationBars["Settings"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["server.desk"].waitForExistence(timeout: 10))
+    let answering = app.descendants(matching: .any)["server.desk.way.0"]
+    XCTAssertTrue(answering.label.contains("192.168.1.20:7791"), answering.label)
+    XCTAssertTrue(answering.label.hasSuffix("answering"), answering.label)
+    let notAnswering = app.descendants(matching: .any)["server.desk.way.1"]
+    XCTAssertTrue(notAnswering.label.hasSuffix("not answering"), notAnswering.label)
+    XCTAssertEqual(app.textFields["device.name"].value as? String, "Pocket", "the name chosen is kept")
+    attach(app, "The Remote with its ways")
+  }
+
+  @MainActor
+  func testAMalformedInviteShowsItsParseErrorOnTheConfirmationScreen() {
+    let app = launched("fresh")
+    paste("not an invite", in: app)
+    let unreadable = app.staticTexts["confirm.unreadable"]
+    XCTAssertTrue(unreadable.waitForExistence(timeout: 10))
+    XCTAssertEqual(unreadable.label, "Invite must start with `shaman-`; was all of it copied?")
+    XCTAssertFalse(app.buttons["confirm.pair"].exists)
+    attach(app, "A malformed invite")
+
+    app.buttons["confirm.scanAgain"].tap()
+    XCTAssertTrue(app.buttons["pairing.paste"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
+  func testAPairingNoWayAnsweredStaysWithTryAgain() {
+    let app = launched("fresh")
+    paste("shaman-v1-unanswered", in: app)
+    shown("confirm.pair", in: app).tap()
+    let failure = app.staticTexts["confirm.failure"]
+    XCTAssertTrue(failure.waitForExistence(timeout: 10))
+    XCTAssertTrue(failure.label.hasPrefix("No way this invite offers answered"), failure.label)
+    XCTAssertTrue(shown("confirm.tryAgain", in: app).exists)
+    XCTAssertEqual(hostname(in: app), "workstation", "still on the confirmation screen")
+    attach(app, "No way answered")
+  }
+
+  @MainActor
+  func testADeadInviteStaysWithTheServersWordsAndScanAgain() {
+    let app = launched("fresh")
+    paste("shaman-v1-dead", in: app)
+    shown("confirm.pair", in: app).tap()
+    let failure = app.staticTexts["confirm.failure"]
+    XCTAssertTrue(failure.waitForExistence(timeout: 10))
+    XCTAssertEqual(failure.label, "Invite has expired")
+    shown("confirm.scanAgain", in: app).tap()
+    XCTAssertTrue(app.buttons["pairing.paste"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
+  func testAnInviteFromAServerAlreadyHeldSaysUnderWhichNameAndReplacesIt() {
+    let app = launched("paired")
+    XCTAssertTrue(app.buttons["home.servers"].waitForExistence(timeout: 10))
+    app.buttons["home.servers"].tap()
+    let pairAnother = app.buttons["servers.pairAnother"]
+    XCTAssertTrue(pairAnother.waitForExistence(timeout: 10))
+    pairAnother.tap()
+    paste(invite, in: app)
+
+    let held = app.descendants(matching: .any)["confirm.held"]
+    XCTAssertTrue(held.waitForExistence(timeout: 10))
+    XCTAssertTrue(held.label.contains("already paired with this server as workstation"), held.label)
+    XCTAssertEqual(app.textFields["confirm.remoteName"].value as? String, "workstation", "pre-filled")
+    attach(app, "An invite from a server already held")
+
+    replace(app.textFields["confirm.remoteName"], with: "studio")
+    shown("confirm.pair", in: app).tap()
+    let beginsIn = app.staticTexts["home.beginsIn"]
+    XCTAssertTrue(beginsIn.waitForExistence(timeout: 10))
+    XCTAssertEqual(beginsIn.label, "New sessions begin in studio")
+    app.buttons["home.servers"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["server.studio"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.descendants(matching: .any)["server.workstation"].exists, "one Remote for each Server")
+  }
+
+  @MainActor
+  func testAnInviteByTheLaunchEnvironmentIsConfirmedAtOnce() {
+    let app = launched("fresh", invite: invite)
+    XCTAssertEqual(hostname(in: app), "workstation")
+  }
+}

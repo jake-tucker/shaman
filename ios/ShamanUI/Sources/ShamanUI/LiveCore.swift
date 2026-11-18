@@ -18,7 +18,7 @@ public final class LiveCore: Core {
   }
 
   public func thisDevice() -> AsyncStream<ThisDevice> {
-    listened { send in client.watchDevice(listener: DeviceForwarder(send)) }
+    listened { send in client.watchDevice(listener: Forwarder(send)) }
   }
 
   public func renameDevice(_ name: String) async throws(ActError) {
@@ -39,6 +39,22 @@ public final class LiveCore: Core {
     } catch {
       throw .Refused(message: "This phone could not do that: \(error)")
     }
+  }
+
+  public func outlook() -> AsyncStream<Outlook> {
+    listened { send in client.watchOutlook(listener: Forwarder(send)) }
+  }
+
+  public func servers() -> AsyncStream<Servers> {
+    listened { send in client.watchServers(listener: Forwarder(send)) }
+  }
+
+  public func readInvite(_ invite: String) -> InviteReading {
+    client.readInvite(invite: invite)
+  }
+
+  public func confirmPairing(invite: String, remoteName: String, deviceName: String) async -> PairingOutcome {
+    await client.confirmPairing(invite: invite, remoteName: remoteName, deviceName: deviceName)
   }
 }
 
