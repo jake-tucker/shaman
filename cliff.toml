@@ -21,6 +21,9 @@ filter_unconventional = true
 protect_breaking_commits = true
 # Groups sort by name; the comment prefixes fix their order and are stripped when rendered.
 commit_parsers = [
+    # The iOS app and its core are versioned apart from Shaman and never released with it, so their commits, scoped
+    # `ios` and `thin-client`, are left out. Neither is ever marked breaking: the app and its core are built together.
+    { message = "^[a-z]+\\((ios|thin-client)\\)!?:", skip = true },
     { message = "^[a-z]+(\\(.*\\))?!:", group = "<!-- 0 -->Breaking Changes" },
     { body = "BREAKING[ -]CHANGE:", group = "<!-- 0 -->Breaking Changes" },
     { message = "^feat", group = "<!-- 1 -->Features" },
