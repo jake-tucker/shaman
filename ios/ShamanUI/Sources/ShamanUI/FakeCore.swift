@@ -38,6 +38,9 @@
       /// The `subagentWaits` phone, but that `/12` waits on nothing of its own and Explorer goes by a name far longer
       /// than any bar has room for.
       case longSubagentName
+      /// The `paired` phone whose Outlook remembers the workstation's `shaman` Workspace, so the Landing offers send
+      /// there. A Prompt holding "refuse" is refused the first time it is asked.
+      case composing
     }
 
     /// The Invite the fake reads as the workstation's. One holding "dead" reads as the workstation's too, and fails to
@@ -83,7 +86,8 @@
       let remotes: [ServerRow] =
         switch scenario {
         case .fresh, .named, .pairAgain: []
-        case .paired, .offline, .unreadTree, .unreadableTree, .subagentWaits, .subagentsWait, .longSubagentName:
+        case .paired, .offline, .unreadTree, .unreadableTree, .subagentWaits, .subagentsWait, .longSubagentName,
+          .composing:
           [Self.workstation(named: "workstation")]
         case .several, .reaching, .unreachable: [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
         }
@@ -98,6 +102,9 @@
       self.unreachable = Mutex(unreachable)
       if scenario == .several || scenario == .reaching || scenario == .unreachable {
         turned.withLock { $0 = "workstation" }
+      }
+      if scenario == .composing {
+        turnedWorkspace.withLock { $0["workstation"] = "shaman" }
       }
     }
 
@@ -121,7 +128,92 @@
     /// Every Session the fake has opened, the latest last, for a test to see each closed as its screen goes.
     let opened = Mutex<[FakeOpenedSession]>([])
 
+    /// The Prompt each Session begun from the Landing was begun with, by the Session.
+    private let begun = Mutex<[String: String]>([:])
+    /// How many Sessions have been begun from the Landing.
+    private let begunCount = Atomic<Int>(0)
+    private let landingListeners = Listeners<Landing>()
+
+    public func landing() -> AsyncStream<Landing> {
+      landingListeners.stream(now: currentLanding())
+    }
+
+    public func beginSession(_ text: String) throws(ActError) -> any OpenedSession {
+      let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !text.isEmpty else { throw .Invalid(message: "Write something to send") }
+      let landing = currentLanding()
+      guard let remote = currentRemote(), let workspace = landing.workspace else {
+        throw .Invalid(message: landing.asks ?? "Pair with a server to begin a session there")
+      }
+      let number = begunCount.add(1, ordering: .relaxed).newValue
+      let session = "\(remote)-key/begun-\(number)"
+      let place = ((held.withLock { $0.count > 1 } ? [remote] : []) + [workspace.name]).joined(separator: " · ")
+      let opened = FakeOpenedSession(beginning: session, text: text, place: place, acts: acts) { [weak self] text in
+        self?.list(session, begunWith: text, on: remote, in: workspace.name)
+      }
+      self.opened.withLock { $0.append(opened) }
+      return opened
+    }
+
+    /// Lists the Session `session` the fake's Server made from the Prompt `text`, on `remote` in `workspace`, first.
+    private func list(_ session: String, begunWith text: String, on remote: String, in workspace: String) {
+      begun.withLock { $0[session] = text }
+      sessions.withLock {
+        $0.insert(
+          FakeSession(
+            id: session, remote: remote, workspace: workspace, title: text, glyph: nil, checkout: nil,
+            standing: .working, running: 0, moved: 0, settled: false, reads: .working), at: 0)
+      }
+      listingListeners.tell(currentListing())
+    }
+
+    /// The Landing where the Outlook stands, as the core would show it.
+    private func currentLanding() -> Landing {
+      guard let remote = currentRemote() else {
+        return Landing(
+          title: "New session", place: "", workspace: nil, asks: "Pair with a server to begin a session there",
+          unreachable: nil, placeholder: "Message", canSend: false, draft: FakeOpenedSession.landingDraft)
+      }
+      let workspace = turnedWorkspace.withLock { $0[remote] }
+      let cut = unreachable.withLock { $0[remote] != nil }
+      return Landing(
+        title: "New session", place: workspace.map { "\(remote) · \($0)" } ?? remote,
+        workspace: workspace.map {
+          LandingWorkspace(
+            glyph: Self.workspaceGlyphs[$0], name: $0, origin: remote, description: Self.descriptions[$0])
+        },
+        asks: workspace == nil
+          ? "Choose a workspace on \(remote) to begin in: narrow the listing to one, or open a session there." : nil,
+        unreachable: cut ? "\(remote) is unreachable. Nothing begins there until it answers." : nil,
+        placeholder: "Message", canSend: workspace != nil && !cut, draft: FakeOpenedSession.landingDraft)
+    }
+
+    /// The Icons of the fake's Workspaces, as the core resolves them from the Catalog.
+    private static let workspaceGlyphs = [
+      "shaman": "\u{f0238}", "dotfiles": "\u{f018d}", "home-assistant": "\u{f07d0}", "billing-api": "\u{f0070}",
+    ]
+
+    /// The Descriptions of the fake's Workspaces.
+    private static let descriptions = [
+      "shaman": "A terminal client for coding agents across Codex, Copilot and Claude.",
+      "dotfiles": "Shell, editor and terminal configuration.",
+      "home-assistant": "The house's automations and dashboards.",
+    ]
+
+    /// Tells the Outlook's and the Landing's listeners where the Outlook stands now.
+    private func turnedOutlook() {
+      outlookListeners.tell(currentOutlook())
+      landingListeners.tell(currentLanding())
+    }
+
     public func openSession(_ session: String) -> any OpenedSession {
+      if let text = begun.withLock({ $0[session] }), let found = sessions.withLock({ $0.first { $0.id == session } }) {
+        let place = ((held.withLock { $0.count > 1 } ? [found.remote] : []) + [found.workspace])
+          .joined(separator: " · ")
+        let opened = FakeOpenedSession(begun: session, text: text, place: place, acts: acts)
+        self.opened.withLock { $0.append(opened) }
+        return opened
+      }
       let remotes = held.withLock { $0.map(\.name) }
       let found = sessions.withLock { $0.first { $0.id == session && remotes.contains($0.remote) } }
       let cut = found.map { found in unreachable.withLock { $0[found.remote] != nil } } ?? false
@@ -138,7 +230,7 @@
         turned.withLock { $0 = found.remote }
         // The Workspace remembered for the Remote stays; only where none is does the Session's own become it.
         turnedWorkspace.withLock { $0[found.remote] = $0[found.remote] ?? found.workspace }
-        outlookListeners.tell(currentOutlook())
+        turnedOutlook()
       }
       // A Session on a Remote yet to answer is never read: its loading mark stands.
       let read = found.flatMap { unanswered.contains($0.remote) ? nil : $0.reads } ?? (delegated ? .delegating : nil)
@@ -186,7 +278,7 @@
         if case .workspace(_, let workspace) = chosen {
           turnedWorkspace.withLock { $0[remote] = workspace }
         }
-        outlookListeners.tell(currentOutlook())
+        turnedOutlook()
       }
       listingListeners.tell(currentListing())
     }
@@ -212,6 +304,7 @@
         throw .Unreachable(message: "This phone has no network connection")
       }
       listingListeners.tell(currentListing())
+      landingListeners.tell(currentLanding())
     }
 
     public func cameToFront() {}
@@ -322,7 +415,7 @@
       turned.withLock { $0 = remoteName }
       change { $0.name = deviceName }
       serversListeners.tell(Servers(remotes: remotes))
-      outlookListeners.tell(currentOutlook())
+      turnedOutlook()
       listingListeners.tell(currentListing())
       return .paired(name: remoteName)
     }
@@ -330,9 +423,14 @@
     /// The Remote last turned toward, which the Outlook stands at.
     private let turned = Mutex<String?>(nil)
 
-    private func currentOutlook() -> Outlook {
+    /// The Remote the Outlook stands at, where the phone holds any.
+    private func currentRemote() -> String? {
       let names = held.withLock { $0.map(\.name) }
-      guard let name = turned.withLock({ $0 }).flatMap({ names.contains($0) ? $0 : nil }) ?? names.first else {
+      return turned.withLock({ $0 }).flatMap({ names.contains($0) ? $0 : nil }) ?? names.first
+    }
+
+    private func currentOutlook() -> Outlook {
+      guard let name = currentRemote() else {
         return .nowhere
       }
       let place = turnedWorkspace.withLock { $0[name] }.map { "\(name) · \($0)" } ?? name

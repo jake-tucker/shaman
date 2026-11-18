@@ -27,7 +27,7 @@ struct SessionScreen: View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 12) {
         ForEach(model.conversation.shown, id: \.id) { item in
-          ItemView(item: item, route: model.route)
+          ItemView(item: item, route: model.route, model: model)
         }
         ForEach(model.frame?.queued ?? [], id: \.prompt) { queued in
           QueuedBubble(queued: queued, model: model)
@@ -356,10 +356,11 @@ private struct SessionHeader: View {
 }
 
 /// One item of the conversation, drawn as what it is: a Turn's card and a Compaction with more behind it push what
-/// they hold over the Session `route` pushed.
+/// they hold over the Session `route` pushed, and a refused beginning offers to ask again through `model`.
 private struct ItemView: View {
   let item: ConversationItem
   let route: SessionRoute
+  let model: SessionModel
 
   var body: some View {
     switch item.kind {
@@ -397,6 +398,8 @@ private struct ItemView: View {
       .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
       .accessibilityElement(children: .combine)
       .accessibilityIdentifier("session.error")
+    case .refused(let words, let tryAgain):
+      RefusedRow(words: words, tryAgain: tryAgain, model: model)
     case .compaction(let words, let tone, let detail):
       let compaction = Label {
         Text(verbatim: words)
@@ -424,6 +427,41 @@ private struct ItemView: View {
           .accessibilityIdentifier("session.compaction")
       }
     }
+  }
+}
+
+/// Where the work of a Session being begun would be, once its Server refused it: why, and "Try again", which asks
+/// again with the same Prompt.
+private struct RefusedRow: View {
+  let words: String
+  let tryAgain: String
+  let model: SessionModel
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Label {
+        Text(verbatim: words)
+          .accessibilityIdentifier("session.refusedWords")
+      } icon: {
+        Image(systemName: "exclamationmark.triangle.fill")
+      }
+      .foregroundStyle(.red)
+      Button {
+        Task { await model.tryAgain() }
+      } label: {
+        Text(verbatim: tryAgain)
+      }
+      .buttonStyle(.bordered)
+      .controlSize(.small)
+      .disabled(model.retrying)
+      .accessibilityIdentifier("session.tryAgain")
+    }
+    .font(.footnote)
+    .padding(10)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("session.refused")
   }
 }
 
@@ -687,7 +725,7 @@ private struct ComposerView: View {
           } primaryAction: {
             Task { await model.send() }
           }
-          .disabled(empty)
+          .disabled(empty || !composer.canSend)
           .accessibilityLabel(Text("Send"))
           .accessibilityIdentifier("session.send")
         } else {
@@ -696,7 +734,7 @@ private struct ComposerView: View {
           } label: {
             SendSymbol()
           }
-          .disabled(empty)
+          .disabled(empty || !composer.canSend)
           .accessibilityLabel(Text("Send"))
           .accessibilityIdentifier("session.send")
         }
@@ -868,8 +906,9 @@ struct Conversation: Equatable {
 final class SessionModel {
   /// The screen it was pushed as, which what it pushes is pushed over.
   let route: SessionRoute
-  /// The reference the row it was opened from handed over.
-  var session: String { route.session }
+  /// The Session, as the core hands it back: the reference the row it was opened from handed over, or the one the
+  /// core chose for a Session begun from the Landing.
+  let session: String
   private let core: any Core
   private let opened: any OpenedSession
   private(set) var frame: SessionFrame?
@@ -893,6 +932,8 @@ final class SessionModel {
   private(set) var popped = false
   /// Whether a stop is under way, which dims Stop until it returns.
   private(set) var stopping = false
+  /// Whether a refused beginning is being asked again, which dims its "Try again" until it returns.
+  private(set) var retrying = false
   /// The queued Prompts an act is under way on.
   private(set) var acting: Set<String> = []
   /// The Approvals a Decision is under way on, each of whose sheets is dimmed until the Server answers.
@@ -910,12 +951,18 @@ final class SessionModel {
     self.init(core: core, route: SessionRoute(session: session), failureStands: failureStands)
   }
 
-  init(core: any Core, route: SessionRoute, failureStands: Duration = .seconds(6)) {
+  convenience init(core: any Core, route: SessionRoute, failureStands: Duration = .seconds(6)) {
+    self.init(core: core, route: route, opened: core.openSession(route.session), failureStands: failureStands)
+  }
+
+  /// The model of the Session `opened`, pushed as `route`: one the core opened, or one it began from the Landing.
+  init(core: any Core, route: SessionRoute, opened: any OpenedSession, failureStands: Duration = .seconds(6)) {
     self.route = route
-    let session = route.session
+    let session = opened.reference
+    self.session = session
     self.core = core
     self.failureStands = failureStands
-    opened = core.openSession(session)
+    self.opened = opened
     let draft = core.draft(for: session)
     text = draft.text
     draftVersion = draft.version
@@ -959,6 +1006,17 @@ final class SessionModel {
     do {
       try await opened.stop()
       take(core.draft(for: session))
+    } catch {
+      failed(error)
+    }
+  }
+
+  /// Asks again to begin the Session being begun, whose Server refused it, with the same Prompt.
+  func tryAgain() async {
+    retrying = true
+    defer { retrying = false }
+    do {
+      try await opened.tryAgain()
     } catch {
       failed(error)
     }
@@ -1160,10 +1218,23 @@ final class SessionStack {
   }
   @ObservationIgnored private let core: any Core
   @ObservationIgnored private var models: [SessionRoute: SessionModel] = [:]
+  @ObservationIgnored private var landings: [LandingRoute: NewSessionModel] = [:]
 
   init(core: any Core, path: [Pushed] = []) {
     self.core = core
     self.path = path
+  }
+
+  /// The model of the new-session screen `route` pushed, made the first time it is asked for. The Session begun from
+  /// it is held as any pushed Session is, for as long as the screen is on the path.
+  func landing(for route: LandingRoute) -> NewSessionModel {
+    if let model = landings[route] {
+      return model
+    }
+    let model = NewSessionModel(core: core)
+    model.adopted = { [weak self] begun in self?.models[begun.route] = begun }
+    landings[route] = model
+    return model
   }
 
   /// The model of the screen `route` pushed, opened the first time it is asked for.
@@ -1206,12 +1277,17 @@ final class SessionStack {
     }
   }
 
-  /// Closes every Session no screen of which is on the path.
+  /// Closes every Session no screen of which is on the path, a Session begun from a new-session screen standing for
+  /// as long as its screen does.
   private func closeUnpushed() {
-    let pushed = Set(path.map(\.route))
+    let landed = Set(path.compactMap { if case .landing(let route) = $0 { route } else { nil } })
+    let pushed = Set(path.compactMap(\.route) + landed.compactMap { landings[$0]?.begun?.route })
     for (route, model) in models where !pushed.contains(route) {
       model.close()
       models[route] = nil
+    }
+    for route in landings.keys where !landed.contains(route) {
+      landings[route] = nil
     }
   }
 }
@@ -1222,17 +1298,24 @@ struct SessionRoute: Hashable {
   let push = UUID()
 }
 
+/// The new-session screen pushed over the listing: each push its own.
+struct LandingRoute: Hashable {
+  let push = UUID()
+}
+
 /// A screen pushed over the listing: a Session's, or a Turn's work or an Activity's whole pushed from one, which
-/// read through the Session `route` names for as long as they are up.
+/// read through the Session `route` names for as long as they are up; or the new-session screen.
 enum Pushed: Hashable {
   case session(SessionRoute)
   case work(SessionRoute, turn: String)
   case detail(SessionRoute, activity: String)
+  case landing(LandingRoute)
 
-  /// The Session's screen it is, or was pushed from.
-  var route: SessionRoute {
+  /// The Session's screen it is, or was pushed from; none for the new-session screen, whose Session its model holds.
+  var route: SessionRoute? {
     switch self {
     case .session(let route), .work(let route, _), .detail(let route, _): route
+    case .landing: nil
     }
   }
 }

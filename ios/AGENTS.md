@@ -103,6 +103,17 @@ to a Questionnaire holding "fail" are refused.
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake paired --open workstation-key/1
 ```
 
+`--compose` pushes the new-session screen over the listing at launch, as its compose button does. It begins wherever
+the Outlook stands: in `composing`, the `paired` phone whose Outlook remembers the workstation's `shaman` Workspace, it
+offers send, and a first Prompt turns it into the Provisional Session, reading "Starting", and a moment later into the
+Session the fake began, which the listing then carries; a Prompt holding "refuse" is refused the first time it is asked,
+and begins when tried again. In `paired` no Workspace is remembered, so the screen asks for one and send is disabled;
+in `unreachable`, opening `homelab-key/2` turns the Outlook toward the home lab, where nothing begins until it answers.
+
+```sh
+xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake composing --compose
+```
+
 An Intervention presented takes no tap for a moment; `--arming-moment <seconds>` makes that moment as long as a UI test
 needs to see a tap refused before one is taken.
 
@@ -130,7 +141,8 @@ fails as a dead Invite or one no way answered does.
 from an empty database, Serving on the Mac's addresses, makes an Invite and launches the built app with it, in a core
 directory and under a key of its own, for a person to press Pair; with `--test` it runs `LivePairingTests` instead,
 which pairs, checks where the app lands and what it lists, opens a Session the script began there and reads it live,
-sends a Prompt to it, reads its title's menu and its search, checks that the Pairing survives a relaunch, has the script
+sends a Prompt to it, reads its title's menu and its search, begins a Session of its own where the Outlook stands and
+finds it listed, checks that the Pairing survives a relaunch, has the script
 stop the Server and sees it read Unreachable, has it started again and sees it answer, and stops the Server. That Session runs on whichever Agent the scratch Server would give it, asked for one word; where that Agent is
 not signed in its Turn fails, which reads as well. `--stop` stops it otherwise. Run it before merging a change to
 pairing or transport; never in CI, where `LivePairingTests` skips. By hand, `--stop` while the app runs has the Remote

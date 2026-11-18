@@ -37,6 +37,16 @@ public protocol Core: AnyObject, Sendable {
   /// and turns the Outlook toward its Origin and Workspace. Closing it cancels nothing on the Server.
   func openSession(_ session: String) -> any OpenedSession
 
+  /// What the Landing shows, where the Outlook stands, now and on every change: the screen a Session is begun from.
+  func landing() -> AsyncStream<Landing>
+
+  /// Begins a Session with the Prompt `text` where the Outlook stands, on its Workspace's main Worktree, under an
+  /// identity the core chooses, and opens it at once as the Provisional Session the Landing's screen turns into: its
+  /// Server's answer, the Session made or why it was refused, arrives by the frame and the conversation. The beginning
+  /// goes on whatever becomes of the screen. Refused at once, in the core's words, where nothing is written or there
+  /// is nowhere to begin.
+  func beginSession(_ text: String) throws(ActError) -> any OpenedSession
+
   /// Narrows the listing to the scope a choice of its title's menu carries. A Remote or a Workspace chosen turns the
   /// Outlook toward it; Everywhere turns nothing.
   func narrowListing(_ scope: String) async throws(ActError)
@@ -87,6 +97,13 @@ public protocol Core: AnyObject, Sendable {
 
 /// One Session open on a pushed screen, read live until it is closed.
 public protocol OpenedSession: AnyObject, Sendable {
+  /// The Session, as the core is handed it back: for one being begun, under the identity the core chose.
+  var reference: String { get }
+
+  /// Asks again to begin the Session being begun, whose Server refused it, with the same Prompt, once its Server has
+  /// answered: the refusal, or the Session made, arrives by the frame and the conversation.
+  func tryAgain() async throws(ActError)
+
   /// What frames the screen, now and whole on every change.
   func frame() -> AsyncStream<SessionFrame>
 
@@ -112,7 +129,8 @@ public protocol OpenedSession: AnyObject, Sendable {
   func close()
 
   /// Sends `text` as a Prompt, steering the working Turn or beginning one. It stands at once as a bubble marked as
-  /// sending; where the send fails the bubble goes and the core gives the text back to the composer's draft.
+  /// sending; where the send fails the bubble goes and the core gives the text back to the composer's draft. On a
+  /// Session being begun whose Server refused it, it replaces the refused Prompt and asks again.
   func send(_ text: String) async throws(ActError)
 
   /// Queues `text` as a Prompt for after the working Turn, failing as a send does.

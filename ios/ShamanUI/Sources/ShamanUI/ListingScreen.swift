@@ -15,14 +15,20 @@ struct ListingScreen: View {
   /// What the search field holds, which the core is handed as it changes and keeps no longer than the core runs.
   @State private var query = ""
 
-  init(core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?, opening: String? = nil) {
+  /// The listing over `core`, confirming `invite` where one is given, with the Session `opening` names pushed over it,
+  /// or the new-session screen where it is `composing`.
+  init(
+    core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?, opening: String? = nil,
+    composing: Bool = false
+  ) {
     self.core = core
     self.appVersion = appVersion
     self.beginsIn = beginsIn
     _model = State(initialValue: ListingModel(core: core))
     _sheet = State(initialValue: invite.map(ListingSheet.pairing))
-    _stack = State(
-      initialValue: SessionStack(core: core, path: opening.map { [.session(SessionRoute(session: $0))] } ?? []))
+    let path: [Pushed] =
+      composing ? [.landing(LandingRoute())] : opening.map { [.session(SessionRoute(session: $0))] } ?? []
+    _stack = State(initialValue: SessionStack(core: core, path: path))
   }
 
   var body: some View {
@@ -76,6 +82,8 @@ struct ListingScreen: View {
           TurnWorkScreen(session: stack.model(for: route), turn: turn)
         case .detail(let route, let activity):
           ActivityDetailScreen(session: stack.model(for: route), activity: activity)
+        case .landing(let route):
+          NewSessionScreen(model: stack.landing(for: route), stack: stack)
         }
       }
     }
@@ -237,12 +245,12 @@ struct ListingScreen: View {
       .accessibilityIdentifier("home.beginsIn")
     }
     ToolbarItem(placement: .bottomBar) {
-      // Beginning a Session from the phone comes with the new-session screen.
+      // The new-session screen, where the Outlook stands.
       Button {
+        stack.path.append(.landing(LandingRoute()))
       } label: {
         Label("New session", systemImage: "square.and.pencil")
       }
-      .disabled(true)
       .accessibilityIdentifier("home.compose")
     }
   }

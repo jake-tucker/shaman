@@ -1105,3 +1105,97 @@ private final class HeldTime: BackgroundTasks {
     try await until(model) { $0.presented == nil }
   }
 }
+
+@Suite @MainActor struct NewSessionModelTests {
+  /// Follows `model` until `shown` holds of it, for as long as a moment.
+  private func until(_ model: NewSessionModel, _ shown: @MainActor (NewSessionModel) -> Bool) async throws {
+    for _ in 0..<200 where !shown(model) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(shown(model))
+  }
+
+  @Test func theScreenOpensOnTheLandingsOwnDraftAndHandsTheCoreEachChange() async throws {
+    let core = FakeCore(.composing)
+    core.setDraft("half a thought", version: 0, for: FakeOpenedSession.landingDraft)
+    let model = NewSessionModel(core: core)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.landing != nil }
+    #expect(model.landing?.place == "workstation · shaman")
+    #expect(model.text == "half a thought")
+    model.text = "half a thought, finished"
+    #expect(core.draft(for: FakeOpenedSession.landingDraft).text == "half a thought, finished")
+    #expect(core.draft(for: "workstation-key/1").text == "", "a draft of its own")
+  }
+
+  @Test func sendingTurnsTheScreenIntoTheSessionBegunAndEmptiesTheDraft() async throws {
+    let core = FakeCore(.composing)
+    let model = NewSessionModel(core: core)
+    var adopted: SessionModel?
+    model.adopted = { adopted = $0 }
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.landing != nil }
+    model.text = "Tidy the build"
+    model.send()
+    let begun = try #require(model.begun)
+    #expect(adopted === begun, "the navigation stack holds it")
+    #expect(begun.session.hasPrefix("workstation-key/"), "under the identity the core chose")
+    #expect(model.text == "")
+    #expect(core.draft(for: FakeOpenedSession.landingDraft).text == "")
+  }
+
+  @Test func whereNothingCanBeginSendDoesNothing() async throws {
+    let model = NewSessionModel(core: FakeCore(.paired))
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.landing != nil }
+    #expect(model.landing?.canSend == false)
+    model.text = "Tidy the build"
+    model.send()
+    #expect(model.begun == nil)
+    #expect(model.text == "Tidy the build", "kept as the draft")
+  }
+
+  @Test func theStackHoldsTheSessionBegunForAsLongAsItsScreenIsPushed() async throws {
+    let core = FakeCore(.composing)
+    let stack = SessionStack(core: core)
+    let route = LandingRoute()
+    stack.path = [.landing(route)]
+    let model = stack.landing(for: route)
+    #expect(stack.landing(for: route) === model, "made once for its screen")
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.landing != nil }
+    model.text = "Tidy the build"
+    model.send()
+    let begun = try #require(model.begun)
+    #expect(stack.model(for: begun.route) === begun, "what it pushes reads through it")
+    stack.path.append(.work(begun.route, turn: "turn-begun"))
+    stack.path.removeLast()
+    let session = try #require(core.opened.withLock { $0.last })
+    #expect(!session.isClosed, "its screen is still pushed")
+    stack.path = []
+    #expect(session.isClosed, "popped to the listing, so closed")
+  }
+
+  @Test func aRefusedBeginningLeftIsTheLandingsDraftAgain() async throws {
+    let core = FakeCore(.composing)
+    let model = NewSessionModel(core: core)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.landing != nil }
+    model.text = "Refuse this one"
+    model.send()
+    let begun = try #require(model.begun)
+    let frames = Task { await begun.follow() }
+    defer { frames.cancel() }
+    for _ in 0..<400 where begun.frame?.composer?.canSend != true {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(begun.frame?.bar == nil, "refused")
+    begun.close()
+    #expect(core.draft(for: FakeOpenedSession.landingDraft).text == "Refuse this one")
+  }
+}

@@ -11,16 +11,21 @@ public struct RootScreen: View {
   @State private var invite: String?
   /// The Session the listing opens on, pushed over it at once.
   private let opening: String?
+  /// Whether the listing opens on the new-session screen, pushed over it at once.
+  private let composing: Bool
   @State private var outlook: Outlook?
   @Environment(\.scenePhase) private var scenePhase
 
   /// The app over `core`, showing `appVersion` as its own version, already confirming `invite` where one is given, as
   /// one arriving by the launch environment in a debug build is, and with the Session `opening` names pushed over the
-  /// listing where one is named.
-  public init(core: any Core, appVersion: String, invite: String? = nil, opening: String? = nil) {
+  /// listing where one is named, or the new-session screen where it is `composing`.
+  public init(
+    core: any Core, appVersion: String, invite: String? = nil, opening: String? = nil, composing: Bool = false
+  ) {
     self.core = core
     self.appVersion = appVersion
     self.opening = opening
+    self.composing = composing
     _invite = State(initialValue: invite)
   }
 
@@ -32,7 +37,9 @@ public struct RootScreen: View {
       case .nowhere:
         PairingScreen(core: core, invite: invite)
       case .remote(_, let beginsIn):
-        ListingScreen(core: core, appVersion: appVersion, beginsIn: beginsIn, invite: invite, opening: opening)
+        ListingScreen(
+          core: core, appVersion: appVersion, beginsIn: beginsIn, invite: invite, opening: opening,
+          composing: composing)
       }
     }
     .task {

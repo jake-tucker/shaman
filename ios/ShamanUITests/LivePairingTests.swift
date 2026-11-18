@@ -114,6 +114,7 @@ final class LivePairingTests: XCTestCase {
     app.buttons["Close"].firstMatch.tap()
     XCTAssertEqual(beginsIn.label, "\(paired) · workspace")
     let shown = beginsIn.label
+    beginASession(app)
     app.buttons["home.servers"].tap()
     let way = app.descendants(matching: .any).matching(NSPredicate(format: "identifier ENDSWITH '.way.0'")).firstMatch
     XCTAssertTrue(way.waitForExistence(timeout: 10))
@@ -129,6 +130,39 @@ final class LivePairingTests: XCTestCase {
     XCTAssertEqual(app.descendants(matching: .any)["home.beginsIn"].label, shown)
 
     try unreachableAndBack(app, signals: environment["SHAMAN_LIVE_SIGNALS"])
+  }
+
+  /// The compose button pushes the new-session screen where the Outlook stands, the Workspace of the Session opened
+  /// before; a first Prompt begins a Session there through the live core, the screen turning into it, and back leaves
+  /// one more Session listed in that Workspace.
+  @MainActor
+  private func beginASession(_ app: XCUIApplication) {
+    let rows = app.descendants(matching: .any).matching(identifier: "listing.active")
+    XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10))
+    let listed = rows.count
+    app.buttons["home.compose"].tap()
+    let workspace = app.descendants(matching: .any)["landing.workspace"]
+    XCTAssertTrue(workspace.waitForExistence(timeout: 10), "the Landing names where it begins")
+    XCTAssertEqual(workspace.label, "workspace")
+    XCTAssertTrue(app.descendants(matching: .any)["landing.place"].label.hasSuffix(" · workspace"))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the keyboard is up on arrival")
+    attach(app, "The new-session screen on the scratch Server")
+    let prompt = "Reply with the single word begun, and nothing else. Use no tools."
+    app.descendants(matching: .any)["landing.composer"].typeText(prompt)
+    app.buttons["landing.send"].tap()
+
+    XCTAssertTrue(app.descendants(matching: .any)["session.title"].waitForExistence(timeout: 10), "the screen turned")
+    let begun = app.descendants(matching: .any).matching(identifier: "session.userMessage")
+      .matching(NSPredicate(format: "label == %@", prompt)).firstMatch
+    XCTAssertTrue(begun.waitForExistence(timeout: 30), "the scratch Server began it, and it stands in its place")
+    XCTAssertFalse(app.descendants(matching: .any)["session.refused"].exists, "and it was not refused")
+    attach(app, "A session begun on the scratch Server")
+
+    app.navigationBars.buttons.firstMatch.tap()
+    XCTAssertTrue(app.buttons["home.compose"].waitForExistence(timeout: 10))
+    let more = NSPredicate(format: "count == %d", listed + 1)
+    expectation(for: more, evaluatedWith: rows)
+    waitForExpectations(timeout: 30)
   }
 
   /// Where the Session's Agent did some work, its card pushes that work as the live core fills it, and a row pushes

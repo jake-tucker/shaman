@@ -14,8 +14,11 @@ struct ShamanApp: App {
           if Launch.serversAndDevice {
             DeviceScreen(core: core, appVersion: Self.version)
           } else {
-            RootScreen(core: core, appVersion: Self.version, invite: Launch.invite, opening: Launch.opening)
-              .environment(\.interventionArming, Launch.arming ?? EnvironmentValues().interventionArming)
+            RootScreen(
+              core: core, appVersion: Self.version, invite: Launch.invite, opening: Launch.opening,
+              composing: Launch.composing
+            )
+            .environment(\.interventionArming, Launch.arming ?? EnvironmentValues().interventionArming)
           }
         #else
           RootScreen(core: core, appVersion: Self.version)
@@ -68,6 +71,12 @@ struct ShamanApp: App {
         let seconds = Double(arguments[flag + 1]), (0...3_600).contains(seconds)
       else { return nil }
       return .milliseconds(Int(seconds * 1_000))
+    }
+
+    /// Whether `--compose` asks for the new-session screen to be pushed over the listing at launch, as its compose
+    /// button pushes it.
+    static var composing: Bool {
+      ProcessInfo.processInfo.arguments.contains("--compose")
     }
 
     /// Whether `--servers-and-device` asks for the sheet of Servers, Relays and This device alone, which a phone

@@ -57,6 +57,20 @@ public final class LiveCore: Core {
     LiveOpenedSession(client.openSession(session: session))
   }
 
+  public func landing() -> AsyncStream<Landing> {
+    listened { send in client.watchLanding(listener: Forwarder(send)) }
+  }
+
+  public func beginSession(_ text: String) throws(ActError) -> any OpenedSession {
+    do {
+      return LiveOpenedSession(try client.beginSession(text: text))
+    } catch let error as ActError {
+      throw error
+    } catch {
+      throw .Refused(message: "This phone could not do that: \(error)")
+    }
+  }
+
   public func narrowListing(_ scope: String) async throws(ActError) {
     try await acted { try await client.narrowListing(scope: scope) }
   }
@@ -116,6 +130,12 @@ final class LiveOpenedSession: OpenedSession {
 
   init(_ session: OpenSession) {
     self.session = session
+  }
+
+  var reference: String { session.reference() }
+
+  func tryAgain() async throws(ActError) {
+    try await acted { try await session.tryAgain() }
   }
 
   func frame() -> AsyncStream<SessionFrame> {

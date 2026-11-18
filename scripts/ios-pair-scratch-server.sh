@@ -9,7 +9,8 @@
 #   scripts/ios-pair-scratch-server.sh            # launch the app with the Invite; press Pair in it
 #   scripts/ios-pair-scratch-server.sh --test     # run the UI test that presses Pair, checks where it lands,
 #                                                  # opens a Session begun there and reads it live, its Turn's
-#                                                  # work where its Agent did some, and stops the
+#                                                  # work where its Agent did some, begins a Session
+#                                                  # of its own where the Outlook stands, and stops the
 #                                                  # Server mid-run to see it read Unreachable and answer again
 #   scripts/ios-pair-scratch-server.sh --stop     # stop the scratch Server
 #   scripts/ios-pair-scratch-server.sh --resume   # start the stopped scratch Server again, its records kept, so the
