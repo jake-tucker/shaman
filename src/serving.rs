@@ -115,9 +115,9 @@ const CARRIED_ARRIVALS_QUEUED: usize = 16;
 /// acceptor to take them: as few as may be, so that past it the listener
 /// takes no more and the rest wait in its backlog.
 const DIALLED_ARRIVALS_QUEUED: usize = 1;
-/// Where the Session API takes an Attachment's upload, whose body it reads
-/// further than any other route's.
-const ATTACHMENTS_PATH: &str = "/v1/attachments";
+// Where the Session API takes an Attachment's upload, whose body it reads
+// further than any other route's.
+use crate::protocol::ATTACHMENTS_PATH;
 
 /// Where the connections Relays carry go during one stretch of Serving: into
 /// that stretch's acceptor.

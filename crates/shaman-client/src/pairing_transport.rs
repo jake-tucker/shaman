@@ -21,7 +21,7 @@ use shaman_pairing::{Carried, PairingFailure, Redeemer};
 use tokio::sync::watch;
 
 use crate::{
-    protocol::SessionError,
+    protocol::{MAX_ATTACHMENT_BYTES, SessionError, SessionErrorCode, UPLOAD_BODY_LIMIT},
     transport::{self, Transport, TransportResponse, TryNow},
 };
 
@@ -59,21 +59,20 @@ impl PairingTransport {
 #[async_trait::async_trait]
 impl Transport for PairingTransport {
     async fn send(&self, request: http::Request<Bytes>) -> Result<TransportResponse, SessionError> {
-        // The body is in hand whole, so it is never larger than what is
-        // carried; the Remote's own Session API refuses one it will not read.
-        let body_limit = request.body().len();
+        let upload = request.method() == http::Method::POST
+            && request.uri().path() == crate::protocol::ATTACHMENTS_PATH;
         let request = request.map(Full::new);
+        // No route of the Session API reads more than an Attachment upload
+        // does, so a body past that is refused here, without waiting on room
+        // among what awaits the Remote's answer; the Remote's own routes
+        // refuse anything smaller they will not read.
         match self
             .redeemer
-            .ask_remote(&self.remote, request, None, body_limit)
+            .ask_remote(&self.remote, request, None, UPLOAD_BODY_LIMIT)
             .await
         {
             Ok(Carried::Answered(answer)) => Ok(answer.map(BodyExt::boxed_unsync)),
-            Ok(Carried::TooLarge) => {
-                let mut refused = http::Response::new(transport::full_body(Bytes::new()));
-                *refused.status_mut() = http::StatusCode::PAYLOAD_TOO_LARGE;
-                Ok(refused)
-            }
+            Ok(Carried::TooLarge) => Ok(too_large(upload)),
             Err(failure) => Err(unreached(failure)),
         }
     }
@@ -88,6 +87,28 @@ impl Transport for PairingTransport {
     fn attached(self: Arc<Self>) -> Arc<dyn Transport> {
         self
     }
+}
+
+/// The refusal of a body past [`UPLOAD_BODY_LIMIT`], as the local Server's
+/// proxy answers one: an Attachment upload's in the upload route's own words,
+/// and any other's with the status alone.
+fn too_large(upload: bool) -> TransportResponse {
+    let body = if upload {
+        let refusal = SessionError {
+            code: SessionErrorCode::AttachmentTooLarge,
+            message: format!(
+                "An image may be at most {} MiB",
+                MAX_ATTACHMENT_BYTES / (1024 * 1024)
+            ),
+            unreachable: None,
+        };
+        transport::full_body(serde_json::to_vec(&refusal).expect("a Session error encodes"))
+    } else {
+        transport::full_body(Bytes::new())
+    };
+    let mut refused = http::Response::new(body);
+    *refused.status_mut() = http::StatusCode::PAYLOAD_TOO_LARGE;
+    refused
 }
 
 /// `failure` in the wire's own terms, as the local Server's proxy answers a
@@ -108,7 +129,7 @@ mod tests {
     use shaman_pairing::{GivenIdentity, IdentityMaterial, RedeemerTimings};
 
     use super::*;
-    use crate::protocol::{PROTOCOL_VERSION, SessionErrorCode, UnreachableReason};
+    use crate::protocol::{PROTOCOL_VERSION, UnreachableReason};
 
     fn redeemer(directory: &std::path::Path) -> Redeemer {
         Redeemer::new(

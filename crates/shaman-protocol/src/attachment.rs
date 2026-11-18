@@ -11,6 +11,14 @@ use std::fmt;
 /// Attachment past it.
 pub const MAX_ATTACHMENT_BYTES: usize = 5 * 1024 * 1024;
 
+/// The route an Attachment is uploaded to, relative to the Session API.
+pub const ATTACHMENTS_PATH: &str = "/v1/attachments";
+
+/// The most bytes a Server's upload route reads: the per-image cap with
+/// headroom, so an image a little over it is refused for its size, measured,
+/// rather than cut off mid-read. No route of the Session API reads more.
+pub const UPLOAD_BODY_LIMIT: usize = MAX_ATTACHMENT_BYTES + 64 * 1024;
+
 /// An Attachment's identity: the lowercase hex blake3 hash of its bytes, so
 /// the same bytes uploaded twice are the same Attachment.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]

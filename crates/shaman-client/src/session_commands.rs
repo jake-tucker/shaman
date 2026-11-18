@@ -239,7 +239,7 @@ impl SessionCommands {
     /// stands.
     pub async fn upload_attachment(&self, png: Vec<u8>) -> Result<AttachmentDescriptor> {
         self.within_attachment_deadline("Attachment upload", async {
-            let request = http::Request::post("/v1/attachments")
+            let request = http::Request::post(crate::protocol::ATTACHMENTS_PATH)
                 .header(CONTENT_TYPE, "image/png")
                 .body(Bytes::from(png))
                 .context("build Attachment upload")?;
