@@ -407,7 +407,9 @@ impl Redeemer {
             self.rollback_remote(generation);
             return Err(error);
         }
-        let replaced = self.committed(generation, replaced)?;
+        // The Pairing is made: whatever its records say from here on, it
+        // stands, and is answered as made.
+        let replaced = self.committed(generation, replaced);
         self.keep_only_offer(&invite.server_key, offer_id);
         for replaced in &replaced {
             self.forget_client(&replaced.remote.name);
@@ -419,17 +421,16 @@ impl Redeemer {
     /// Drops every Remote whose redemption was caught before its commit
     /// landed, as one that ends a redemption only by being ended, such as a
     /// thin Client, does as it opens: what that redemption replaced still
-    /// stands. Answers whether any was dropped.
-    pub fn drop_uncommitted(&self) -> std::result::Result<bool, PairingFailure> {
-        let dropped = self.change_remotes(|remotes| {
-            let before = remotes.len();
+    /// stands. They are dropped whether or not that can be stored, as
+    /// [`Self::change_remotes_done`] says. Answers whether any was dropped.
+    pub fn drop_uncommitted(&self) -> bool {
+        let dropped = self.change_remotes_done(|remotes| {
             remotes.retain(|stored| !stored.uncommitted);
-            Ok(remotes.len() != before)
-        })?;
+        });
         if dropped {
             self.note_pairing_change();
         }
-        Ok(dropped)
+        dropped
     }
 
     pub fn list_remotes(&self) -> Vec<Remote> {
@@ -765,6 +766,31 @@ impl Redeemer {
         drop(held);
         self.hooked(|hooks| hooks.changed(self));
         Ok(answer)
+    }
+
+    /// Changes the Remotes' records as `change` says, as what they record has
+    /// been done already: held whether or not they can be stored, a failure
+    /// to store them is logged, and the next change stores them whole.
+    /// Answers whether they changed.
+    fn change_remotes_done(&self, change: impl FnOnce(&mut Vec<StoredRemote>)) -> bool {
+        let mut held = self
+            .remotes
+            .write()
+            .expect("Remote record lock is not poisoned");
+        let before = held.clone();
+        change(&mut held);
+        if *held == before {
+            return false;
+        }
+        if let Err(error) = write_private_json(&self.data_dir.join(REMOTES_FILE), &*held) {
+            tracing::warn!(
+                "the Remotes' records changed but could not be stored; the next change stores \
+                 them: {error:#}"
+            );
+        }
+        drop(held);
+        self.hooked(|hooks| hooks.changed(self));
+        true
     }
 
     /// Tells whatever follows a Remote that the Remotes paired have changed.
@@ -1360,13 +1386,9 @@ impl Redeemer {
     /// Marks the Remote stored under `generation` committed, and drops every
     /// other Remote of the key `replaced`, where it is given: what was
     /// dropped.
-    fn committed(
-        &self,
-        generation: u64,
-        replaced: Option<&[u8]>,
-    ) -> std::result::Result<Vec<StoredRemote>, PairingFailure> {
-        let dropped = self.change_remotes(|remotes| {
-            let mut dropped = Vec::new();
+    fn committed(&self, generation: u64, replaced: Option<&[u8]>) -> Vec<StoredRemote> {
+        let mut dropped = Vec::new();
+        self.change_remotes_done(|remotes| {
             remotes.retain(|known| {
                 let kept =
                     known.generation == generation || Some(known.public_key.as_slice()) != replaced;
@@ -1381,12 +1403,11 @@ impl Redeemer {
             {
                 made.uncommitted = false;
             }
-            Ok(dropped)
-        })?;
+        });
         if !dropped.is_empty() {
             self.note_pairing_change();
         }
-        Ok(dropped)
+        dropped
     }
 
     /// Takes back the Remote stored under `generation` by a redemption that
@@ -1934,12 +1955,14 @@ mod tests {
     };
 
     /// How a stand-in Serving Server answers a commit.
-    #[derive(Clone, Copy)]
+    #[derive(Clone)]
     enum Commit {
         /// Refuses it, as one whose Invite died meanwhile does.
         Refused,
         /// Never answers, as one whose redeemer is ended mid-commit sees.
         Unanswered,
+        /// Makes the Pairing, once what it holds has been done.
+        Made(Arc<dyn Fn() + Send + Sync>),
     }
 
     /// A stand-in Serving Server holding `identity`, at a direct way of its
@@ -1964,41 +1987,56 @@ mod tests {
         tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
                 let tls = tls.clone();
+                let commit = commit.clone();
                 tokio::spawn(async move {
                     let Ok(accepted) = tls.accept(stream).await else {
                         return;
                     };
                     let answering = hyper::service::service_fn(
-                        move |request: http::Request<hyper::body::Incoming>| async move {
-                            let body = request.into_body().collect().await.unwrap().to_bytes();
-                            let asked: serde_json::Value = serde_json::from_slice(&body).unwrap();
-                            let (status, answer) = if asked["phase"] == "prepare" {
-                                (
-                                    StatusCode::OK,
-                                    serde_json::json!({
-                                        "hostname": "workstation",
-                                        "protocol_version": crate::protocol::PROTOCOL_VERSION,
-                                    }),
-                                )
-                            } else {
-                                match commit {
-                                    Commit::Refused => (
-                                        StatusCode::GONE,
+                        move |request: http::Request<hyper::body::Incoming>| {
+                            let commit = commit.clone();
+                            async move {
+                                let body = request.into_body().collect().await.unwrap().to_bytes();
+                                let asked: serde_json::Value =
+                                    serde_json::from_slice(&body).unwrap();
+                                let (status, answer) = if asked["phase"] == "prepare" {
+                                    (
+                                        StatusCode::OK,
                                         serde_json::json!({
-                                            "code": "invite_spent",
-                                            "message": "Invite has already been spent",
+                                            "hostname": "workstation",
+                                            "protocol_version": crate::protocol::PROTOCOL_VERSION,
                                         }),
-                                    ),
-                                    Commit::Unanswered => std::future::pending().await,
-                                }
-                            };
-                            Ok::<_, std::convert::Infallible>(
-                                http::Response::builder()
-                                    .status(status)
-                                    .header(http::header::CONTENT_TYPE, "application/json")
-                                    .body(Full::new(Bytes::from(answer.to_string())))
-                                    .unwrap(),
-                            )
+                                    )
+                                } else {
+                                    match commit {
+                                        Commit::Refused => (
+                                            StatusCode::GONE,
+                                            serde_json::json!({
+                                                "code": "invite_spent",
+                                                "message": "Invite has already been spent",
+                                            }),
+                                        ),
+                                        Commit::Unanswered => std::future::pending().await,
+                                        Commit::Made(first) => {
+                                            first();
+                                            (
+                                                StatusCode::OK,
+                                                serde_json::json!({
+                                                    "hostname": "workstation",
+                                                    "protocol_version": crate::protocol::PROTOCOL_VERSION,
+                                                }),
+                                            )
+                                        }
+                                    }
+                                };
+                                Ok::<_, std::convert::Infallible>(
+                                    http::Response::builder()
+                                        .status(status)
+                                        .header(http::header::CONTENT_TYPE, "application/json")
+                                        .body(Full::new(Bytes::from(answer.to_string())))
+                                        .unwrap(),
+                                )
+                            }
                         },
                     );
                     let _ = hyper::server::conn::http2::Builder::new(
@@ -2100,6 +2138,100 @@ mod tests {
         }
     }
 
+    /// Hooks that note which Remotes the redeemer forgets and redeems.
+    #[derive(Default)]
+    struct Noted(StdMutex<Vec<String>>);
+
+    impl RedeemerHooks for Noted {
+        fn offer(
+            &self,
+            _redeemer: &Redeemer,
+            _server_key: &[u8],
+        ) -> std::result::Result<StoredMadeOffer, PairingFailure> {
+            unreachable!("no offer is asked to be made")
+        }
+
+        fn redeemed(&self, _redeemer: &Redeemer, remote: &Remote) {
+            self.0
+                .lock()
+                .unwrap()
+                .push(format!("redeemed {}", remote.name));
+        }
+
+        fn told(
+            &self,
+            _redeemer: &Redeemer,
+            _remote: &StoredRemote,
+            _client: &StrongClient,
+            _offer: Option<ToldOffer>,
+        ) {
+        }
+
+        fn refused(&self, _redeemer: &Redeemer, _key: &[u8]) {}
+
+        fn withdrawn(&self, _redeemer: &Redeemer, _key: &[u8]) {}
+
+        fn forgotten(&self, _redeemer: &Redeemer, remote: &StoredRemote) {
+            self.0
+                .lock()
+                .unwrap()
+                .push(format!("forgot {}", remote.remote.name));
+        }
+
+        fn changed(&self, _redeemer: &Redeemer) {}
+    }
+
+    #[tokio::test]
+    async fn a_pairing_made_whose_records_cannot_be_stored_stands_and_the_next_change_stores_it() {
+        let data = tempfile::tempdir().unwrap();
+        let serving = IdentityMaterial::fresh();
+        kept_around(&data, &serving);
+        let path = data.path().join(REMOTES_FILE);
+        // As the commit lands, nothing can replace the records any more: a
+        // directory stands in their place.
+        let blocked = path.clone();
+        let way = standing_in(
+            &serving,
+            Commit::Made(Arc::new(move || {
+                std::fs::remove_file(&blocked).unwrap();
+                std::fs::create_dir(&blocked).unwrap();
+                std::fs::write(blocked.join("in the way"), b"").unwrap();
+            })),
+        )
+        .await;
+        let redeemer = redeemer(&data);
+        let noted = Arc::new(Noted::default());
+        redeemer.attach(noted.clone());
+
+        let (request, redemption) = replacing_as("office");
+        let made = redeemer
+            .redeem_as(invited(&serving, way), request, redemption)
+            .await
+            .unwrap_or_else(|failure| panic!("refused a Pairing made: {}", failure.message));
+        assert_eq!(made.name, "office");
+        let held = redeemer.records();
+        assert_eq!(
+            held.iter()
+                .map(|stored| (stored.remote.name.as_str(), stored.uncommitted))
+                .collect::<Vec<_>>(),
+            [("laptop", false), ("studio", false), ("office", false)],
+            "committed, and what it replaced gone"
+        );
+        assert_eq!(*noted.0.lock().unwrap(), ["forgot desk"]);
+
+        // The next change stores the records whole.
+        std::fs::remove_dir_all(&path).unwrap();
+        assert!(redeemer.set_remote_icon("laptop", "laptop").is_ok());
+        let stored: Vec<StoredRemote> = read_records(&path).unwrap();
+        assert_eq!(
+            stored
+                .iter()
+                .map(|stored| (stored.remote.name.as_str(), stored.uncommitted))
+                .collect::<Vec<_>>(),
+            [("laptop", false), ("studio", false), ("office", false)]
+        );
+    }
+
     #[tokio::test]
     async fn a_redemption_ended_mid_commit_is_dropped_as_its_redeemer_opens_again() {
         let data = tempfile::tempdir().unwrap();
@@ -2144,12 +2276,9 @@ mod tests {
         drop(redeemer);
 
         let reopened = self::redeemer(&data);
-        assert!(matches!(reopened.drop_uncommitted(), Ok(true)), "dropped");
+        assert!(reopened.drop_uncommitted(), "dropped");
         assert_eq!(std::fs::read(&path).unwrap(), before);
-        assert!(
-            matches!(reopened.drop_uncommitted(), Ok(false)),
-            "nothing more"
-        );
+        assert!(!reopened.drop_uncommitted(), "nothing more");
     }
 
     /// A redeemer under `data`, proving itself as a key made for the test,
