@@ -120,6 +120,17 @@ public protocol OpenedSession: AnyObject, Sendable {
   /// Stops the Session's work. A Session Working only for a Prompt not yet delivered has that Prompt withdrawn, and
   /// the core gives its text back to the composer's draft, ahead of what is written there.
   func stop() async throws(ActError)
+
+  /// Answers the Approval `approval` names with `decision`, once its Server has. One whose answer was lost is never
+  /// sent again: it waits behind "Review", as one dismissed does, until the Session shows it answered.
+  func decide(_ approval: String, _ decision: DecisionKind) async throws(ActError)
+
+  /// Dismisses every one of the Session's own Interventions pending now, as swiping its sheet away does, for as long
+  /// as this screen stays open: the bar offers them again, and one asked after presents itself.
+  func dismiss()
+
+  /// Presents the Interventions dismissed again, oldest first.
+  func review()
 }
 
 extension ActError {

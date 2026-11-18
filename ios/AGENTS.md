@@ -68,12 +68,13 @@ xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --
 `--open <session>` pushes the Session a listing row names over the listing at launch, so a screenshot reaches it without
 a tap. Over the fake each Session reads as one of `FakeConversation.Scenario`'s cases: in `paired`, `workstation-key/1`
 is a working Turn, `/7` a settled one, `/8` a stopped one, `/9` a failed one and `/11` a Session Working only for a
-Prompt not yet delivered, which Stop withdraws and gives back to the composer; in `several`, `homelab-key/6` is
-Monitoring, its bar naming its Watch; in `reaching`, `homelab-key/2` is never read, so its loading mark stands; and in
-`unreachable`, the home lab no longer answers, so `homelab-key/2` opens with its composer taking nothing and saying why.
-In `unreachable` the home lab, every way to which is on the local network, stands as a slim row at the foot of the
-listing and answers once tried again; in `offline` the phone has no network, so its one Remote reads Unreachable however
-often it is tried.
+Prompt not yet delivered, which Stop withdraws and gives back to the composer, and `/3` waits on an Approval of a
+command, its sheet presenting itself; in `several`, `homelab-key/6` is Monitoring, its bar naming its Watch, and
+`laptop-key/4` waits on two Approvals, presented one by one; in `reaching`, `homelab-key/2` is never read, so its
+loading mark stands; and in `unreachable`, the home lab no longer answers, so `homelab-key/2` opens with its composer
+taking nothing and saying why. In `unreachable` the home lab, every way to which is on the local network, stands as a
+slim row at the foot of the listing and answers once tried again; in `offline` the phone has no network, so its one
+Remote reads Unreachable however often it is tried.
 A card pushes its Turn's work from `FakeWork`, and a row its Activity's whole: in `/7` the work holds a settled
 Approval, File Changes and the placeholder for a kind a newer Server sent, and in `/1` the running command's output
 grows a line at a time while its screen is up.
@@ -84,6 +85,9 @@ answered, so its text stays in the composer with the line saying it may have bee
 ```sh
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake paired --open workstation-key/1
 ```
+
+An Intervention presented takes no tap for a moment; `--arming-moment <seconds>` makes that moment as long as a UI test
+needs to see a tap refused before one is taken.
 
 Over the live core a debug build keeps its records in Application Support's `Core`, or in the directory
 `SHAMAN_CORE_DIRECTORY` names, for a run that starts afresh. `simctl` passes `SIMCTL_CHILD_`-prefixed variables on:

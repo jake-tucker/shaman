@@ -186,7 +186,8 @@
     ) -> FakeSession {
       let byStanding: FakeConversation.Scenario =
         switch standing {
-        case .working, .needsIntervention: .working
+        case .working: .working
+        case .needsIntervention: .approval
         case .monitoring: .monitoring
         case .failed: .failed
         case .done, nil: .settled
@@ -206,9 +207,11 @@
       let bar: Bar? =
         switch standing {
         case .working, .needsIntervention:
-          Bar(kind: .working, words: "Working", since: since, watching: nil, stop: "Stop")
+          Bar(kind: .working, words: "Working", since: since, watching: nil, stop: "Stop", review: nil)
         case .monitoring:
-          Bar(kind: .monitoring, words: "Monitoring", since: since, watching: "the nightly backup", stop: "Stop")
+          Bar(
+            kind: .monitoring, words: "Monitoring", since: since, watching: "the nightly backup", stop: "Stop",
+            review: nil)
         case .failed, .done, nil: nil
         }
       let line =
@@ -217,7 +220,7 @@
       return SessionFrame(
         title: title, place: place, gone: nil, bar: bar,
         composer: FakeOpenedSession.composer(working: bar?.kind == .working, unreachable: unreachable ? line : nil),
-        queued: [])
+        queued: [], intervention: nil)
     }
 
     static let canned: [FakeSession] =
@@ -233,7 +236,7 @@
           checkout: on("feature/peer-version-floor", linked: true), moved: 40),
         session(
           4, "laptop", "design-system", "Token colours for the button palette", "\u{f03d8}", .needsIntervention,
-          checkout: on("tokens/buttons", linked: true), moved: 610),
+          checkout: on("tokens/buttons", linked: true), moved: 610, reads: .approvals),
         session(
           5, "laptop", "billing-api", "Port the invoice rounding fix to v2", "\u{f00e4}", .failed,
           checkout: on("fix/rounding-v2", linked: true), moved: 1_320),

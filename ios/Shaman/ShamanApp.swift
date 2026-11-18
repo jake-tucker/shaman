@@ -15,6 +15,7 @@ struct ShamanApp: App {
             DeviceScreen(core: core, appVersion: Self.version)
           } else {
             RootScreen(core: core, appVersion: Self.version, invite: Launch.invite, opening: Launch.opening)
+              .environment(\.interventionArming, Launch.arming ?? EnvironmentValues().interventionArming)
           }
         #else
           RootScreen(core: core, appVersion: Self.version)
@@ -56,6 +57,16 @@ struct ShamanApp: App {
       let arguments = ProcessInfo.processInfo.arguments
       guard let flag = arguments.firstIndex(of: "--open"), arguments.indices.contains(flag + 1) else { return nil }
       return arguments[flag + 1]
+    }
+
+    /// How long `--arming-moment <seconds>` asks an Intervention presented to take no tap for, so a UI test can see
+    /// it refuse one before it takes one.
+    static var arming: Duration? {
+      let arguments = ProcessInfo.processInfo.arguments
+      guard let flag = arguments.firstIndex(of: "--arming-moment"), arguments.indices.contains(flag + 1),
+        let seconds = Double(arguments[flag + 1])
+      else { return nil }
+      return .milliseconds(Int(seconds * 1_000))
     }
 
     /// Whether `--servers-and-device` asks for the sheet of Servers, Relays and This device alone, which a phone

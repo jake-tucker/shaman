@@ -22,6 +22,10 @@
       case undelivered
       /// The Turn settled, and the Agent's Watch is still running.
       case monitoring
+      /// The Turn waits on an Approval of a command.
+      case approval
+      /// The Turn waits on two Approvals, a File Change asked before another Tool.
+      case approvals
     }
 
     /// How the conversation stands of the Session whose last Turn stands as `scenario`.
@@ -60,7 +64,67 @@
           card("work", .worked, "Worked for 2m 05s", "2 commands"),
           agent("answer", "Watching the nightly backup; I'll say when it lands."),
         ]
+      case .approval, .approvals:
+        return [
+          user("open", "Implement ADR-0078: each side states one version and accepts the other at or above its floor.")
+        ] + [card("work", .waiting, "Waiting on you", "3 tools · 1 command · 2 edits")]
       }
+    }
+
+    /// The Approvals the Session whose last Turn stands as `scenario` waits on, oldest first, as the core presents
+    /// them.
+    static func approvals(_ scenario: Scenario) -> [PendingApproval] {
+      switch scenario {
+      case .approval:
+        return [
+          approval(
+            "approval-command", "Run this command?",
+            facts: [
+              mono("Command", "cargo nextest run -p shaman-relay"),
+              mono("Directory", "~/Projects/shaman/.worktrees/peer-version-floor"),
+              Fact(label: "Reason", value: "Needs network access outside the sandbox.", style: .prose),
+            ])
+        ]
+      case .approvals:
+        return [
+          approval(
+            "approval-file-change", "Make this file change?",
+            facts: [
+              mono("File change", "tokens/buttons.json"),
+              mono("Path", "tokens/focus-ring.json"),
+              Fact(label: "Reason", value: "Regenerate the palette from the new tokens.", style: .prose),
+            ]),
+          approval(
+            "approval-tool", "Use this tool?",
+            facts: [mono("Other tool", "figma/export_variables")],
+            sections: [
+              DetailSection(
+                heading: "Input", body: "{\n  \"collection\": \"Buttons\",\n  \"mode\": \"dark\"\n}",
+                style: .monospace)
+            ]),
+        ]
+      case .working, .settled, .stopped, .failed, .undelivered, .monitoring:
+        return []
+      }
+    }
+
+    private static func approval(
+      _ reference: String, _ title: String, facts: [Fact], sections: [DetailSection] = []
+    ) -> PendingApproval {
+      PendingApproval(
+        reference: reference, title: title, facts: facts, sections: sections, note: nil,
+        large: [
+          DecisionOffer(decision: .decline, label: "Decline"),
+          DecisionOffer(decision: .acceptOnce, label: "Accept once"),
+        ],
+        beneath: [
+          DecisionOffer(decision: .declineAndInterrupt, label: "Decline and interrupt"),
+          DecisionOffer(decision: .acceptForSession, label: "Accept for session"),
+        ])
+    }
+
+    private static func mono(_ label: String, _ value: String) -> Fact {
+      Fact(label: label, value: value, style: .monospace)
     }
 
     /// What the Session Working only for a Prompt not yet delivered was asked.

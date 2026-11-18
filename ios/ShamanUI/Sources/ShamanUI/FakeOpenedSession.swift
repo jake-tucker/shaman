@@ -100,12 +100,33 @@
   /// A Session the fake holds open: framed at once, its conversation landing a moment later, a working Turn's answer
   /// streaming in by change, and its acts answered as the core would answer them. A Prompt holding "fail" is refused,
   /// one holding "gone" finds the Session gone, and one holding "unanswered" is never answered and may have been sent,
-  /// so a screen can be seen failing each way.
+  /// so a screen can be seen failing each way. The Approvals its Turn waits on present themselves once it lands,
+  /// oldest first, and wait behind "Review" once dismissed, as the core's do.
   final class FakeOpenedSession: OpenedSession {
     private struct State {
+      /// The frame of the Session's work, before its Approvals are shown in it.
       var frame: SessionFrame
       var items: [ConversationItem]
       var sent = 0
+      /// The Approvals the Session waits on, oldest first.
+      var pending: [PendingApproval] = []
+      /// Those this screen dismissed.
+      var dismissed: Set<String> = []
+
+      /// The frame as the core shows it: the oldest Approval not dismissed presented while the Origin answers, and
+      /// otherwise the orange bar, with "Review" where there is anything to bring back.
+      func shown(unreachable: Bool) -> SessionFrame {
+        var shown = frame
+        guard !pending.isEmpty else { return shown }
+        let presenting = unreachable ? nil : pending.first { !dismissed.contains($0.reference) }
+        shown.intervention = presenting.map { .approval(approval: $0) }
+        if presenting == nil {
+          shown.bar = Bar(
+            kind: .waiting, words: "Approval waiting", since: nil, watching: nil, stop: "Stop",
+            review: unreachable ? nil : "Review")
+        }
+        return shown
+      }
     }
 
     private let session: String
@@ -134,6 +155,7 @@
       let task = Task { [weak self] in
         try? await Task.sleep(for: .milliseconds(600))
         self?.change { $0 = FakeConversation.items(scenario) }
+        self?.changeState { $0.pending = FakeConversation.approvals(scenario) }
         guard scenario == .working else { return }
         for text in FakeConversation.streamed.dropFirst() {
           try? await Task.sleep(for: .milliseconds(700))
@@ -152,7 +174,7 @@
     var isClosed: Bool { closed.load(ordering: .relaxed) }
 
     func frame() -> AsyncStream<SessionFrame> {
-      frames.stream(now: state.withLock { $0.frame })
+      frames.stream(now: state.withLock { $0.shown(unreachable: unreachable) })
     }
 
     func conversation() -> AsyncStream<ConversationChange> {
@@ -211,7 +233,7 @@
         if state.withLock({ $0.frame.bar == nil }) {
           change { $0.append(FakeConversation.card("turn-\(id)", .working, "Working", nil)) }
           changeFrame { frame in
-            frame.bar = Bar(kind: .working, words: "Working", since: Date(), watching: nil, stop: "Stop")
+            frame.bar = Bar(kind: .working, words: "Working", since: Date(), watching: nil, stop: "Stop", review: nil)
             frame.composer = Self.composer(working: true, unreachable: nil)
           }
         }
@@ -266,18 +288,67 @@
           change { $0.removeAll { $0.id == "open" } }
           acts.giveBack(FakeConversation.undeliveredPrompt, to: session)
         } else {
+          settleCard(.stopped, "Stopped after 4m 12s")
+        }
+        changeState { state in
+          state.pending = []
+          state.frame.bar = nil
+          state.frame.composer = Self.composer(working: false, unreachable: nil)
+        }
+      }
+    }
+
+    func decide(_ approval: String, _ decision: DecisionKind) async throws(ActError) {
+      try await acts.during { () async throws(ActError) in
+        try reachable()
+        try? await Task.sleep(for: .milliseconds(2_500))
+        guard state.withLock({ $0.pending.contains { $0.reference == approval } }) else {
+          throw .Refused(message: "That approval is no longer waiting")
+        }
+        if decision == .declineAndInterrupt {
+          // Declined, and the Turn interrupted with it: nothing else it asked waits any more.
+          settleCard(.stopped, "Stopped after 6m 03s")
+          changeState { state in
+            state.pending = []
+            state.frame.bar = nil
+            state.frame.composer = Self.composer(working: false, unreachable: nil)
+          }
+          return
+        }
+        let answeredAll = state.withLock { state in
+          state.pending.removeAll { $0.reference == approval }
+          return state.pending.isEmpty
+        }
+        changeState { _ in }
+        if answeredAll {
           change { items in
             items = items.map { item in
-              guard case .turn(let card) = item.kind, card.outcome == .working || card.outcome == .waiting else {
-                return item
-              }
-              return FakeConversation.card(item.id, .stopped, "Stopped after 4m 12s", card.count)
+              guard case .turn(let card) = item.kind, card.outcome == .waiting else { return item }
+              return FakeConversation.card(item.id, .working, "Working", card.count)
             }
           }
         }
-        changeFrame { frame in
-          frame.bar = nil
-          frame.composer = Self.composer(working: false, unreachable: nil)
+      }
+    }
+
+    func dismiss() {
+      changeState { state in
+        state.dismissed.formUnion(state.pending.map(\.reference))
+      }
+    }
+
+    func review() {
+      changeState { $0.dismissed = [] }
+    }
+
+    /// Settles the card of the Turn that works, or waits on the reader, as `outcome` with `line`.
+    private func settleCard(_ outcome: TurnOutcome, _ line: String) {
+      change { items in
+        items = items.map { item in
+          guard case .turn(let card) = item.kind, card.outcome == .working || card.outcome == .waiting else {
+            return item
+          }
+          return FakeConversation.card(item.id, outcome, line, card.count)
         }
       }
     }
@@ -325,9 +396,15 @@
     }
 
     private func changeFrame(_ body: (inout SessionFrame) -> Void) {
+      changeState { body(&$0.frame) }
+    }
+
+    /// Changes what the fake holds by `body`, telling each listener the frame as the core would show it.
+    private func changeState(_ body: (inout State) -> Void) {
+      let unreachable = unreachable
       let frame = state.withLock { state in
-        body(&state.frame)
-        return state.frame
+        body(&state)
+        return state.shown(unreachable: unreachable)
       }
       frames.tell(frame)
     }

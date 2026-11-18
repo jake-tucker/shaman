@@ -632,6 +632,61 @@ private final class RefusingSigner: KeySigner {
   }
 }
 
+@Suite @MainActor struct ApprovalModelTests {
+  private let waiting = "workstation-key/3"
+
+  /// Follows `model` until `shown` holds of it.
+  private func until(_ model: SessionModel, _ shown: @MainActor (SessionModel) -> Bool) async throws {
+    for _ in 0..<300 where !shown(model) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(shown(model))
+  }
+
+  @Test func theApprovalTheFramePresentsIsTheSheetsItemAndADecisionDimsItUntilTheServerAnswers() async throws {
+    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.presented != nil }
+    guard case .approval(let approval) = try #require(model.presented).intervention else {
+      Issue.record("an Approval presented")
+      return
+    }
+    #expect(model.presented?.id == "approval:\(approval.reference)")
+
+    let deciding = Task { await model.decide(approval.reference, .acceptOnce) }
+    try await until(model) { $0.deciding == approval.reference }
+    await deciding.value
+    #expect(model.deciding == nil)
+    #expect(model.banner == nil)
+    try await until(model) { $0.presented == nil }
+    #expect(model.frame?.bar?.kind == .working)
+  }
+
+  @Test func swipingTheSheetAwayLeavesTheOrangeBarAndReviewBringsItBack() async throws {
+    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.presented != nil }
+    model.dismissInterventions()
+    try await until(model) { $0.presented == nil }
+    #expect(model.frame?.bar?.kind == .waiting)
+    #expect(model.frame?.bar?.words == "Approval waiting")
+    #expect(model.frame?.bar?.review == "Review")
+    #expect(model.frame?.bar?.since == nil)
+    model.review()
+    try await until(model) { $0.presented != nil }
+  }
+
+  @Test func aDecisionOnAnApprovalNoLongerWaitingStandsInTheBanner() async {
+    let model = SessionModel(core: FakeCore(.paired), session: waiting, failureStands: .seconds(3600))
+    await model.decide("no such approval", .decline)
+    #expect(model.banner == "That approval is no longer waiting")
+    #expect(model.deciding == nil)
+    #expect(!model.popped)
+  }
+}
+
 /// Background time as a test holds it: each task begun and ended, in order.
 @MainActor
 private final class HeldTime: BackgroundTasks {

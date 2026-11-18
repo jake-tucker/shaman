@@ -103,7 +103,8 @@
       let frame =
         found?.frame(originNamed: remotes.count > 1, unreachable: cut, now: Date())
         ?? SessionFrame(
-          title: "", place: "", gone: "This session no longer exists", bar: nil, composer: nil, queued: [])
+          title: "", place: "", gone: "This session no longer exists", bar: nil, composer: nil, queued: [],
+          intervention: nil)
       if let found {
         turned.withLock { $0 = found.remote }
         // The Workspace remembered for the Remote stays; only where none is does the Session's own become it.

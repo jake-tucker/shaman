@@ -157,6 +157,18 @@ final class LiveOpenedSession: OpenedSession {
   func stop() async throws(ActError) {
     try await acted { try await session.stop() }
   }
+
+  func decide(_ approval: String, _ decision: DecisionKind) async throws(ActError) {
+    try await acted { try await session.decide(approval: approval, decision: decision) }
+  }
+
+  func dismiss() {
+    session.dismiss()
+  }
+
+  func review() {
+    session.review()
+  }
 }
 
 /// Runs `act`, which fails as an `ActError` alone, so that is what it is said to throw.

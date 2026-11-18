@@ -6,8 +6,9 @@ import Textual
 /// Messages as bubbles at the right, the Agent's as Markdown across the width, and each Turn's work behind one card.
 /// It appears at once with what the listing knows, a quiet loading mark standing where the conversation will be. At
 /// its foot the bar says what the work is doing, with Stop, above the composer, whose send steers a working Turn and
-/// whose held send queues; a Prompt queued waits as a dashed bubble at the foot of the conversation. An act's failure
-/// is a banner over the screen, but a Session gone, which pops it.
+/// whose held send queues; a Prompt queued waits as a dashed bubble at the foot of the conversation. The Session's own
+/// Approval presents itself as a half-height sheet; swiped away, it waits behind the orange bar's "Review". An act's
+/// failure is a banner over the screen, or over the sheet that asked, but a Session gone, which pops it.
 struct SessionScreen: View {
   let model: SessionModel
   @Environment(\.dismiss) private var dismiss
@@ -33,7 +34,8 @@ struct SessionScreen: View {
       SessionFoot(model: model)
     }
     .safeAreaInset(edge: .top) {
-      if let banner = model.banner {
+      // While a sheet stands, its own banner says it.
+      if let banner = model.banner, model.presented == nil {
         // On a ground of its own, so the conversation scrolling beneath does not show through.
         Banner(text: banner)
           .padding(.vertical, 4)
@@ -67,7 +69,216 @@ struct SessionScreen: View {
         SessionHeader(frame: model.frame)
       }
     }
+    // Presented by the frame alone: SwiftUI clears the item only when the reader swipes the sheet away, which
+    // dismisses what was pending; the core taking it away, once it is answered, clears nothing.
+    .sheet(
+      item: Binding(
+        get: { model.presented },
+        set: { presented in
+          if presented == nil, model.presented != nil {
+            model.dismissInterventions()
+          }
+        })
+    ) { presented in
+      switch presented.intervention {
+      case .approval(let approval):
+        ApprovalSheet(approval: approval, model: model)
+      }
+    }
     .task { await model.follow() }
+  }
+}
+
+/// An Approval the open Session presents: what it asks, as the TUI's panel names it, over the four Decisions,
+/// "Decline" and "Accept once" large and the other two beneath. Half height, on an opaque ground. Its Decisions take
+/// no tap for a moment after it appears, so a reader mid-tap cannot decide by accident, and a Decision tapped dims it
+/// until the Server answers.
+private struct ApprovalSheet: View {
+  let approval: PendingApproval
+  let model: SessionModel
+  @Environment(\.interventionArming) private var arming
+  @State private var armed = false
+
+  var body: some View {
+    let deciding = model.deciding == approval.reference
+    VStack(spacing: 12) {
+      Text(verbatim: approval.title)
+        .font(.headline)
+        .padding(.top, 20)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityIdentifier("approval.title")
+      if let banner = model.banner {
+        Banner(text: banner)
+          .onTapGesture { model.dismissBanner() }
+          .accessibilityAddTraits(.isButton)
+          .accessibilityHint("Dismisses this")
+      }
+      ScrollView {
+        VStack(alignment: .leading, spacing: 10) {
+          ForEach(Array(approval.facts.enumerated()), id: \.offset) { _, fact in
+            FactView(fact: fact)
+          }
+          ForEach(Array(approval.sections.enumerated()), id: \.offset) { _, section in
+            SectionView(section: section)
+          }
+          if let note = approval.note {
+            Label {
+              Text(verbatim: note)
+            } icon: {
+              Image(systemName: "exclamationmark.triangle")
+            }
+            .font(.footnote)
+            .foregroundStyle(.orange)
+            .accessibilityIdentifier("approval.note")
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+      }
+      VStack(spacing: 10) {
+        HStack(spacing: 10) {
+          ForEach(approval.large, id: \.decision) { offer in
+            DecisionButton(offer: offer, large: true) { decide(offer) }
+          }
+        }
+        .controlSize(.large)
+        HStack {
+          ForEach(Array(approval.beneath.enumerated()), id: \.element.decision) { index, offer in
+            if index > 0 {
+              Spacer()
+            }
+            DecisionButton(offer: offer, large: false) { decide(offer) }
+          }
+        }
+        .font(.subheadline)
+      }
+      .padding(.horizontal, 20)
+      .padding(.bottom, 12)
+      .disabled(!armed || deciding)
+    }
+    .opacity(deciding ? 0.5 : 1)
+    .overlay {
+      if deciding {
+        ProgressView()
+          .accessibilityIdentifier("approval.deciding")
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("approval.sheet")
+    .presentationDetents([.medium, .large])
+    .presentationDragIndicator(.visible)
+    .presentationBackground(Color(.systemBackground))
+    .interactiveDismissDisabled(deciding)
+    .task(id: approval.reference) {
+      armed = false
+      try? await Task.sleep(for: arming)
+      armed = !Task.isCancelled
+    }
+  }
+
+  private func decide(_ offer: DecisionOffer) {
+    Task { await model.decide(approval.reference, offer.decision) }
+  }
+}
+
+/// One Decision a sheet offers: large and filled for "Accept once", large for "Decline", and plain beneath them for
+/// the other two, "Decline and interrupt" in red.
+private struct DecisionButton: View {
+  let offer: DecisionOffer
+  let large: Bool
+  let action: () -> Void
+
+  var body: some View {
+    Group {
+      if large && offer.decision == .acceptOnce {
+        Button(action: action) { label }.buttonStyle(.borderedProminent)
+      } else if large {
+        Button(action: action) { label }.buttonStyle(.bordered)
+      } else {
+        Button(role: offer.decision == .declineAndInterrupt ? .destructive : nil, action: action) { label }
+      }
+    }
+    .accessibilityIdentifier("approval.\(Self.name(offer.decision))")
+  }
+
+  private var label: some View {
+    Text(verbatim: offer.label)
+      .frame(maxWidth: large ? .infinity : nil)
+  }
+
+  private static func name(_ decision: DecisionKind) -> String {
+    switch decision {
+    case .acceptOnce: "acceptOnce"
+    case .acceptForSession: "acceptForSession"
+    case .decline: "decline"
+    case .declineAndInterrupt: "declineAndInterrupt"
+    }
+  }
+}
+
+/// One labelled fact of what an Approval asks: monospace where it is a command, a path or a name, and wrapping.
+private struct FactView: View {
+  let fact: Fact
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(verbatim: fact.label)
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+      Text(verbatim: fact.value)
+        .font(fact.style == .monospace ? .callout.monospaced() : .callout)
+        .textSelection(.enabled)
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("approval.fact")
+  }
+}
+
+/// A body too long to be a fact: monospace keeps its lines and scrolls sideways; prose wraps.
+private struct SectionView: View {
+  let section: DetailSection
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      if let heading = section.heading {
+        Text(verbatim: heading)
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
+      switch section.style {
+      case .monospace:
+        ScrollView(.horizontal) {
+          Text(verbatim: section.body)
+            .font(.footnote.monospaced())
+            .fixedSize()
+            .textSelection(.enabled)
+            .padding(8)
+        }
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+      case .prose:
+        Text(verbatim: section.body)
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("approval.section")
+  }
+}
+
+extension EnvironmentValues {
+  /// How long an Intervention presented takes no tap for, so a reader mid-tap cannot decide by accident.
+  @Entry public var interventionArming: Duration = .milliseconds(600)
+}
+
+/// The Intervention the frame presents, as a sheet's item: the same one for as long as it is the same.
+struct Presented: Identifiable, Equatable {
+  let intervention: Intervention
+
+  var id: String {
+    switch intervention {
+    case .approval(let approval): "approval:\(approval.reference)"
+    }
   }
 }
 
@@ -283,6 +494,8 @@ private struct SessionFoot: View {
         if let bar = frame.bar {
           BarView(bar: bar, stopping: model.stopping) {
             Task { await model.stop() }
+          } review: {
+            model.review()
           }
         }
         if let composer = frame.composer {
@@ -297,29 +510,43 @@ private struct SessionFoot: View {
 }
 
 /// The bar above the composer: what the work is doing and for how long, what a Monitoring Session waits on, and Stop,
-/// which takes one tap.
+/// which takes one tap; or, orange, that an Intervention waits out of sight, with "Review" to bring it back.
 private struct BarView: View {
   let bar: Bar
   let stopping: Bool
   let stop: () -> Void
+  let review: () -> Void
 
   var body: some View {
-    let tint: Color = bar.kind == .monitoring ? .teal : .blue
+    let tint: Color =
+      switch bar.kind {
+      case .working: .blue
+      case .monitoring: .teal
+      case .waiting: .orange
+      }
     HStack(spacing: 8) {
-      ProgressView()
-        .controlSize(.mini)
-        .accessibilityHidden(true)
+      if bar.kind == .waiting {
+        Image(systemName: "hand.raised.fill")
+          .foregroundStyle(.orange)
+          .accessibilityHidden(true)
+      } else {
+        ProgressView()
+          .controlSize(.mini)
+          .accessibilityHidden(true)
+      }
       Text(verbatim: bar.words)
         .fontWeight(.medium)
         .fixedSize()
         .accessibilityIdentifier("session.barWords")
-      TimelineView(.periodic(from: .now, by: 1)) { context in
-        Text(verbatim: RunningTime.working(since: bar.since, now: context.date))
-          .monospacedDigit()
-          .foregroundStyle(.secondary)
-          .fixedSize()
+      if let since = bar.since {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+          Text(verbatim: RunningTime.working(since: since, now: context.date))
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .fixedSize()
+        }
+        .fixedSize()
       }
-      .fixedSize()
       // What a Monitoring Session waits on takes whatever width is left.
       Group {
         if let watching = bar.watching {
@@ -332,6 +559,15 @@ private struct BarView: View {
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
+      if let words = bar.review {
+        Button(action: review) {
+          Text(verbatim: words)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.orange)
+        .fixedSize()
+        .accessibilityIdentifier("session.review")
+      }
       Button(action: stop) {
         Label {
           Text(verbatim: bar.stop)
@@ -598,6 +834,8 @@ final class SessionModel {
   private(set) var stopping = false
   /// The queued Prompts an act is under way on.
   private(set) var acting: Set<String> = []
+  /// The Approval a Decision is under way on, whose sheet is dimmed until the Server answers.
+  private(set) var deciding: String?
   /// How long a failure's banner stands before it goes by itself.
   @ObservationIgnored private let failureStands: Duration
   @ObservationIgnored private var clearing: Task<Void, Never>?
@@ -676,6 +914,32 @@ final class SessionModel {
     } catch {
       failed(error)
     }
+  }
+
+  /// The Session's own Intervention the frame presents as a sheet.
+  var presented: Presented? {
+    frame?.intervention.map(Presented.init)
+  }
+
+  /// Answers the Approval `approval` names with `decision`, dimming its sheet until the Server has answered.
+  func decide(_ approval: String, _ decision: DecisionKind) async {
+    deciding = approval
+    defer { deciding = nil }
+    do {
+      try await opened.decide(approval, decision)
+    } catch {
+      failed(error)
+    }
+  }
+
+  /// The sheet swiped away: every Intervention pending now waits behind the bar's "Review" while the screen is open.
+  func dismissInterventions() {
+    opened.dismiss()
+  }
+
+  /// Presents the Interventions dismissed again, oldest first.
+  func review() {
+    opened.review()
   }
 
   /// Takes the banner away.
@@ -814,6 +1078,12 @@ enum Pushed: Hashable {
   #Preview("A session on an unreachable server") {
     NavigationStack {
       SessionScreen(model: SessionModel(core: FakeCore(.unreachable), session: "homelab-key/2"))
+    }
+  }
+
+  #Preview("A session waiting on an approval") {
+    NavigationStack {
+      SessionScreen(model: SessionModel(core: FakeCore(.paired), session: "workstation-key/3"))
     }
   }
 
