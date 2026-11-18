@@ -22,9 +22,11 @@ members = [
     "crates/shaman-relay",
     "crates/shaman-relay-protocol",
     "crates/shaman-text",
+    "crates/shaman-thin-client",
 ]
 # The Relay, the protocol it shares with the Server, the protocol every Client shares with the Server, the redeeming side
-# of a Pairing, and the text and private-file helpers they share are linted and tested beside Shaman itself.
+# of a Pairing, the text and private-file helpers they share, and the thin Client's core are linted and tested beside
+# Shaman itself.
 default-members = [
     ".",
     "crates/shaman-pairing",
@@ -33,6 +35,7 @@ default-members = [
     "crates/shaman-relay",
     "crates/shaman-relay-protocol",
     "crates/shaman-text",
+    "crates/shaman-thin-client",
 ]
 
 [dependencies]
@@ -180,6 +183,14 @@ windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Secur
 [profile.dist]
 inherits = "release"
 strip = true
+lto = "fat"
+codegen-units = 1
+
+# The thin Client's core as the device's static library, size-optimised as shipping iOS libraries are; built by
+# `scripts/build-ios-core.sh` alone. The Relay is never built with it, so `scripts/relay-changed.sh` leaves it out.
+[profile.size]
+inherits = "release"
+opt-level = "s"
 lto = "fat"
 codegen-units = 1
 

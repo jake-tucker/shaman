@@ -227,7 +227,7 @@ jobs:
         run: |
           rustup target add aarch64-apple-ios aarch64-apple-ios-sim
           cargo check --locked -p shaman-protocol -p shaman-pairing -p shaman-text -p shaman-private-files \
-            --target aarch64-apple-ios --target aarch64-apple-ios-sim
+            -p shaman-thin-client --target aarch64-apple-ios --target aarch64-apple-ios-sim
 
       - name: Test
         if: env.RELEASE_TAG == ''

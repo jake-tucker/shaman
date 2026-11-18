@@ -1,0 +1,34 @@
+[package]
+name = "shaman-thin-client"
+# Never published. The app under `ios/` carries a version of its own; what the wire speaks is numbered by
+# `shaman-protocol`'s `PROTOCOL_VERSION`.
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# The thin Client minus its screen (ADR-0080): the core the iOS app is drawn over, and the one crate that knows of
+# UniFFI. `scripts/build-ios-core.sh` builds it as a static library for the phone and the simulator and generates the
+# Swift the app reaches it through; everywhere else it builds and is tested as an ordinary library.
+
+[[bin]]
+# Writes the Swift for the library the core script hands it; built only by that script.
+name = "uniffi-bindgen-swift"
+path = "src/bin/uniffi-bindgen-swift.rs"
+required-features = ["bindgen"]
+
+[features]
+bindgen = ["uniffi/cli", "uniffi/cargo-metadata"]
+
+[dependencies]
+shaman-pairing = { path = "../shaman-pairing" }
+shaman-protocol = { path = "../shaman-protocol" }
+anyhow = "1.0.99"
+serde = { version = "1.0.219", features = ["derive"] }
+tokio = { version = "1.47.1", features = ["rt-multi-thread", "sync"] }
+# By proc-macros alone, pinned exactly: what the generated Swift and the library it calls say to each other is fixed by
+# the version that wrote both. Its `tokio` feature is not used, since the core runs every async export on its own
+# runtime.
+uniffi = { version = "=0.32.2", default-features = false }
+
+[dev-dependencies]
+tempfile = "3.21.0"

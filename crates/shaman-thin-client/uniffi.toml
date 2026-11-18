@@ -1,0 +1,6 @@
+# Read by `uniffi-bindgen-swift`: the module the app imports, and the C module beneath it.
+[bindings.swift]
+module_name = "ShamanCore"
+ffi_module_name = "ShamanCoreFFI"
+ffi_module_filename = "ShamanCoreFFI"
+generate_module_map = false

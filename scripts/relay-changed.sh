@@ -5,7 +5,7 @@
 #   - the Relay's two crates, their tests aside, its container image among them;
 #   - the packages and features a build of the Relay resolves to, as `cargo tree` reads each commit's Cargo.lock,
 #     so a release of Shaman, or a dependency only Shaman uses, changes nothing;
-#   - the workspace's build profiles, its toolchain and its Cargo configuration;
+#   - the workspace's build profiles the Relay is built with, its toolchain and its Cargo configuration;
 #   - the Relay's build and release workflows.
 #
 #   scripts/relay-changed.sh <previous> [<current>]
@@ -35,9 +35,12 @@ if ! git diff --quiet "$previous" "$current" -- .github/workflows/relay-build.ym
   changed+=("the Relay's workflows")
 fi
 
-# The [profile.*] tables of the workspace's manifest, which every build of the Relay takes.
+# The [profile.*] tables of the workspace's manifest, which every build of the Relay takes, but for `size`, which
+# builds the thin Client's core alone; their comments and blank lines aside, which build nothing.
 profiles() {
-  git show "$1:Cargo.toml" | awk '/^\[/ { keep = ($0 ~ /^\[profile[].]/) } keep'
+  git show "$1:Cargo.toml" \
+    | awk '/^\[/ { keep = ($0 ~ /^\[profile[].]/ && $0 !~ /^\[profile\.size[].]/) } keep' \
+    | grep -Ev '^[[:space:]]*(#|$)'
 }
 if [ "$(profiles "$previous")" != "$(profiles "$current")" ]; then
   changed+=("the workspace's build profiles")

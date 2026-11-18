@@ -116,7 +116,9 @@ jobs:
           if [ -z "$previous" ]; then
             echo "Initial release" > notes.md
           else
-            git cliff --strip all "$previous..$TAG" > notes.md
+            # The iOS app and its core are versioned apart from Shaman, and never released with it.
+            git cliff --strip all --exclude-path 'ios/**' --exclude-path 'crates/shaman-thin-client/**' \
+              "$previous..$TAG" > notes.md
             [ -s notes.md ] || echo "No user-facing changes." > notes.md
           fi
           gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes-file notes.md
