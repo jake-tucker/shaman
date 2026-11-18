@@ -1,9 +1,12 @@
+import CoreText
 import CryptoKit
 import Foundation
 import Security
 import ShamanCore
+import SwiftUI
 import Synchronization
 import Testing
+import UIKit
 
 @testable import ShamanUI
 
@@ -299,5 +302,55 @@ private final class RefusingSigner: KeySigner {
       !FileManager.default.fileExists(atPath: directory.appending(path: "remotes.json").path(percentEncoded: false)))
     try await core.dismissPairAgain()
     #expect(await device.next()?.pairAgain == nil)
+  }
+}
+
+@Suite struct RunningTimeTests {
+  private let now = Date(timeIntervalSince1970: 1_000_000)
+
+  @Test func aDurationReadsSecondsThenMinutesThenHoursAndTheMinutesPastThem() {
+    #expect(RunningTime.duration(since: now.addingTimeInterval(-42), now: now) == "42s")
+    #expect(RunningTime.duration(since: now.addingTimeInterval(-252), now: now) == "4m")
+    #expect(RunningTime.duration(since: now.addingTimeInterval(-(2 * 3_600 + 5 * 60)), now: now) == "2h 5m")
+  }
+
+  @Test func theCompactTimeReadsNowThenMinutesHoursOrDays() {
+    #expect(RunningTime.compact(since: now.addingTimeInterval(-59), now: now) == "now")
+    #expect(RunningTime.compact(since: now.addingTimeInterval(-60), now: now) == "1m")
+    #expect(RunningTime.compact(since: now.addingTimeInterval(-3 * 3_600), now: now) == "3h")
+    #expect(RunningTime.compact(since: now.addingTimeInterval(-9 * 86_400), now: now) == "9d")
+  }
+
+  @Test func aStartInTheFutureReadsAsNoTimeAtAll() {
+    let later = now.addingTimeInterval(90)
+    #expect(RunningTime.duration(since: later, now: now) == "0s")
+    #expect(RunningTime.compact(since: later, now: now) == "now")
+  }
+}
+
+@Suite struct IconFontTests {
+  @Test @MainActor func drawingAGlyphRegistersTheBundledFontWhichDrawsTheCoresGlyphs() throws {
+    let renderer = ImageRenderer(content: Glyph(glyph: "\u{f06a9}"))
+    #expect(renderer.uiImage != nil, "a glyph is drawn")
+    let name = try #require(IconFont.name, "the bundled font registered as the glyph was drawn")
+    // CoreText answers registering it again with its being registered already.
+    let file = try #require(IconFont.file)
+    var error: Unmanaged<CFError>?
+    #expect(!CTFontManagerRegisterFontsForURL(file as CFURL, .process, &error))
+    #expect(
+      error.map { CFErrorGetCode($0.takeRetainedValue()) } == CTFontManagerError.alreadyRegistered.rawValue,
+      "registered with CoreText for this process")
+    let font = try #require(UIFont(name: name, size: 17))
+    // The Sidekick Icon, the plain folder, and a Checkout State's branch.
+    for glyph in ["\u{f06a9}", "\u{ea83}", "\u{ec6f}"] {
+      let units = Array(glyph.utf16)
+      var glyphs = [CGGlyph](repeating: 0, count: units.count)
+      #expect(CTFontGetGlyphsForCharacters(font as CTFont, units, &glyphs, units.count), "draws \(glyph)")
+    }
+  }
+
+  @Test func theFontIsRegisteredOnceHoweverOftenItIsAskedFor() {
+    #expect(IconFont.name == IconFont.name)
+    #expect(IconFont.name != nil)
   }
 }

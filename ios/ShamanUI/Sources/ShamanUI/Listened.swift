@@ -40,3 +40,9 @@ extension Forwarder: OutlookListener where Model == Outlook {
     send(outlook)
   }
 }
+
+extension Forwarder: ListingListener where Model == Listing {
+  func changed(listing: Listing) {
+    send(listing)
+  }
+}

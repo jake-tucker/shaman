@@ -21,6 +21,18 @@ public protocol Core: AnyObject, Sendable {
   /// The Servers section of the sheet of Servers, Relays and This device, now and on every change.
   func servers() -> AsyncStream<Servers>
 
+  /// Every Remote's Sessions in one listing, active above the settled, now and on every change.
+  func listing() -> AsyncStream<Listing>
+
+  /// Sets the Session a row names aside as done for now, once its Server has answered.
+  func settle(_ session: String) async throws(ActError)
+
+  /// Brings the Session a settled row names back among the active, once its Server has answered.
+  func unsettle(_ session: String) async throws(ActError)
+
+  /// Brings up the next of the settled shelf's rows.
+  func showMoreSettled()
+
   /// What the screen where pairing begins says to do.
   func pairingPrompt() -> String
 

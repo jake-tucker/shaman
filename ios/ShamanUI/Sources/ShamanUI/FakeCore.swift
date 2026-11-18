@@ -14,8 +14,10 @@
       case named
       /// A named phone whose records were of a key it no longer has, so it must pair again.
       case pairAgain
-      /// A named phone paired with the workstation.
+      /// A named phone paired with the workstation alone, which has Sessions in every Standing and a long shelf.
       case paired
+      /// A named phone paired with the workstation, a laptop and a home lab, whose Sessions stand together.
+      case several
     }
 
     /// The Invite the fake reads as the workstation's. One holding "dead" reads as the workstation's too, and fails to
@@ -27,10 +29,64 @@
     private let deviceListeners = Listeners<ThisDevice>()
     private let outlookListeners = Listeners<Outlook>()
     private let serversListeners = Listeners<Servers>()
+    private let listingListeners = Listeners<Listing>()
+    /// Every Session the fake's Remotes hold, the most recently begun first.
+    private let sessions = Mutex(FakeSession.canned)
+    /// How many of the shelf's rows are on show.
+    private let onShow = Mutex(FakeSession.shelfOpening)
 
     public init(_ scenario: Scenario) {
       device = Mutex(Self.device(in: scenario))
-      held = Mutex(scenario == .paired ? [Self.workstation(named: "workstation")] : [])
+      let remotes: [ServerRow] =
+        switch scenario {
+        case .fresh, .named, .pairAgain: []
+        case .paired: [Self.workstation(named: "workstation")]
+        case .several: [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
+        }
+      held = Mutex(remotes)
+      if scenario == .several {
+        turned.withLock { $0 = "workstation" }
+      }
+    }
+
+    public func listing() -> AsyncStream<Listing> {
+      listingListeners.stream(now: currentListing())
+    }
+
+    public func settle(_ session: String) async throws(ActError) {
+      try await settling(session, to: true)
+    }
+
+    public func unsettle(_ session: String) async throws(ActError) {
+      try await settling(session, to: false)
+    }
+
+    public func showMoreSettled() {
+      onShow.withLock { $0 += FakeSession.shelfBatch }
+      listingListeners.tell(currentListing())
+    }
+
+    private func settling(_ session: String, to settled: Bool) async throws(ActError) {
+      try? await Task.sleep(for: .milliseconds(150))
+      let found = sessions.withLock { sessions in
+        guard let index = sessions.firstIndex(where: { $0.id == session }) else { return false }
+        sessions[index].settled = settled
+        if !settled {
+          sessions[index].moved = 0
+        }
+        return true
+      }
+      guard found else {
+        throw .Gone(message: "That session is no longer listed")
+      }
+      listingListeners.tell(currentListing())
+    }
+
+    /// The listing of every held Remote's Sessions, as the core would make it.
+    private func currentListing() -> Listing {
+      let remotes = held.withLock { $0.map(\.name) }
+      return FakeSession.listing(
+        of: sessions.withLock { $0 }, on: remotes, showing: onShow.withLock { $0 }, now: Date())
     }
 
     public func thisDevice() -> AsyncStream<ThisDevice> {
@@ -110,6 +166,7 @@
       change { $0.name = deviceName }
       serversListeners.tell(Servers(remotes: remotes))
       outlookListeners.tell(currentOutlook())
+      listingListeners.tell(currentListing())
       return .paired(name: remoteName)
     }
 
@@ -121,7 +178,9 @@
       guard let name = turned.withLock({ $0 }).flatMap({ names.contains($0) ? $0 : nil }) ?? names.first else {
         return .nowhere
       }
-      return .remote(name: name, beginsIn: "New sessions begin in \(name)")
+      // With several Remotes the fake remembers a Workspace for the workstation, as the core will once one is chosen.
+      let place = names.count > 1 && name == "workstation" ? "\(name) · shaman" : name
+      return .remote(name: name, beginsIn: "New sessions begin in \(place)")
     }
 
     private func change(_ change: (inout ThisDevice) -> Void) {
@@ -142,6 +201,14 @@
           WayRow(address: "100.64.0.7:7791", state: .notAnswering, words: "not answering"),
         ])
     }
+
+    private static let laptop = ServerRow(
+      name: "laptop", fingerprint: "5d1e8f0a2c4b6d8e0f1a3c5e7b9d2f4a6c8e0b1d3f5a7c9e2b4d6f8a0c1e3b5d",
+      ways: [WayRow(address: "100.84.12.7:7791", state: .answering, words: "answering")])
+
+    private static let homelab = ServerRow(
+      name: "homelab", fingerprint: "e2b4d6f8a0c1e3b55d1e8f0a2c4b6d8e0f1a3c5e7b9d2f4a6c8e0b1d3f5a7c9a",
+      ways: [WayRow(address: "192.168.1.40:7791", state: .answering, words: "answering")])
 
     private static func device(in scenario: Scenario) -> ThisDevice {
       let note =

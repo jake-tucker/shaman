@@ -22,18 +22,17 @@ public final class LiveCore: Core {
   }
 
   public func renameDevice(_ name: String) async throws(ActError) {
-    do {
-      try await client.renameDevice(name: name)
-    } catch let error as ActError {
-      throw error
-    } catch {
-      throw .Refused(message: "This phone could not do that: \(error)")
-    }
+    try await acted { try await client.renameDevice(name: name) }
   }
 
   public func dismissPairAgain() async throws(ActError) {
+    try await acted { try await client.dismissPairAgain() }
+  }
+
+  /// Runs `act`, which fails as an `ActError` alone, so that is what it is said to throw.
+  private func acted(_ act: () async throws -> Void) async throws(ActError) {
     do {
-      try await client.dismissPairAgain()
+      try await act()
     } catch let error as ActError {
       throw error
     } catch {
@@ -47,6 +46,22 @@ public final class LiveCore: Core {
 
   public func servers() -> AsyncStream<Servers> {
     listened { send in client.watchServers(listener: Forwarder(send)) }
+  }
+
+  public func listing() -> AsyncStream<Listing> {
+    listened { send in client.watchListing(listener: Forwarder(send)) }
+  }
+
+  public func settle(_ session: String) async throws(ActError) {
+    try await acted { try await client.settle(session: session) }
+  }
+
+  public func unsettle(_ session: String) async throws(ActError) {
+    try await acted { try await client.unsettle(session: session) }
+  }
+
+  public func showMoreSettled() {
+    client.showMoreSettled()
   }
 
   public func pairingPrompt() -> String {

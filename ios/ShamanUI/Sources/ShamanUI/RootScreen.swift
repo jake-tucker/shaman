@@ -1,8 +1,8 @@
 import ShamanCore
 import SwiftUI
 
-/// What the app shows over its core: pairing alone while the phone holds no Remote, and otherwise the Remote the
-/// Outlook stands at.
+/// What the app shows over its core: pairing alone while the phone holds no Remote, and otherwise the listing of
+/// every Remote's Sessions.
 public struct RootScreen: View {
   private let core: any Core
   private let appVersion: String
@@ -25,8 +25,8 @@ public struct RootScreen: View {
         ProgressView()
       case .nowhere:
         PairingScreen(core: core, invite: invite)
-      case .remote(let name, let beginsIn):
-        HomeScreen(core: core, appVersion: appVersion, remote: name, beginsIn: beginsIn, invite: invite)
+      case .remote(_, let beginsIn):
+        ListingScreen(core: core, appVersion: appVersion, beginsIn: beginsIn, invite: invite)
       }
     }
     .task {
@@ -38,70 +38,6 @@ public struct RootScreen: View {
       }
     }
   }
-}
-
-/// Where the app lands on the Remote the Outlook stands at, until the listing stands here: the bottom bar, with the
-/// sheet of Servers, Relays and This device behind its button.
-struct HomeScreen: View {
-  let core: any Core
-  let appVersion: String
-  let remote: String
-  let beginsIn: String
-  @State private var sheet: HomeSheet?
-
-  init(core: any Core, appVersion: String, remote: String, beginsIn: String, invite: String?) {
-    self.core = core
-    self.appVersion = appVersion
-    self.remote = remote
-    self.beginsIn = beginsIn
-    _sheet = State(initialValue: invite.map(HomeSheet.pairing))
-  }
-
-  var body: some View {
-    NavigationStack {
-      Color.clear
-        .navigationTitle(remote)
-        .toolbar {
-          ToolbarItem(placement: .bottomBar) {
-            Button {
-              sheet = .servers
-            } label: {
-              Label("Servers & device", systemImage: "server.rack")
-            }
-            .accessibilityIdentifier("home.servers")
-          }
-          ToolbarItem(placement: .status) {
-            Text(beginsIn)
-              .font(.footnote)
-              .foregroundStyle(.secondary)
-              .accessibilityIdentifier("home.beginsIn")
-          }
-        }
-    }
-    .sheet(item: $sheet) { sheet in
-      switch sheet {
-      case .servers:
-        DeviceScreen(core: core, appVersion: appVersion)
-      case .pairing(let invite):
-        NavigationStack {
-          ConfirmationScreen(core: core, invite: invite) {
-            self.sheet = .servers
-          } paired: {
-            self.sheet = nil
-          }
-        }
-      }
-    }
-  }
-}
-
-/// A sheet over where the app lands.
-private enum HomeSheet: Hashable, Identifiable {
-  case servers
-  /// Confirming an Invite that arrived by the launch environment.
-  case pairing(String)
-
-  var id: Self { self }
 }
 
 #if DEBUG
