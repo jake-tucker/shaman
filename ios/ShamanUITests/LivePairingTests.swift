@@ -145,15 +145,19 @@ final class LivePairingTests: XCTestCase {
       app.descendants(matching: .any).matching(identifier: "listing.active").firstMatch.exists, "its rows stay")
     attach(app, "The scratch Server stopped, read Unreachable")
 
+    // Tried again while it is still stopped, it says why in the banner and the sheet stays up.
+    slim.tap()
+    let tryAgain = app.buttons["unreachable.tryAgain"]
+    XCTAssertTrue(tryAgain.waitForExistence(timeout: 10))
+    tryAgain.tap()
+    let banner = app.descendants(matching: .any)["banner"]
+    XCTAssertTrue(banner.waitForExistence(timeout: 15), "a try that reached nothing says so")
+    XCTAssertTrue(banner.label.contains("No way to the server answered"), banner.label)
+    attach(app, "The scratch Server tried again while stopped")
+
+    // Started again, it answers by itself, and its row takes the sheet with it.
     try signal("resume", in: signals, awaiting: "resumed")
-    if slim.exists {
-      slim.tap()
-      let tryAgain = app.buttons["unreachable.tryAgain"]
-      if tryAgain.waitForExistence(timeout: 5) {
-        attach(app, "The scratch Server's offer to try again")
-        tryAgain.tap()
-      }
-    }
+    XCTAssertTrue(tryAgain.waitForNonExistence(timeout: 30), "the sheet goes with the row")
     XCTAssertTrue(slim.waitForNonExistence(timeout: 30), "the Server started again answers")
     attach(app, "The scratch Server answering again")
 
