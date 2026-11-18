@@ -901,7 +901,10 @@ struct Slot {
 
 /// What the entry of the Session `session_id` says it waits on, where it
 /// waits on the reader: what the Session read of its own, where it is open,
-/// or else what a Session open above it read of those beneath it.
+/// or else what a Session open above it read of those beneath it. The tree
+/// itself says only that an entry waits, never on what, and a Session open
+/// beside or beneath it reads nothing of it, so where no Session of these is
+/// open the entry says the reader is needed, and no more.
 fn waits_on(state: &TreeState, session_id: SessionId) -> String {
     let owed = |known: &Known| {
         known
