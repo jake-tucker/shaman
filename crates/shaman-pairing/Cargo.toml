@@ -40,6 +40,9 @@ rustls = { version = "0.23.43", default-features = false, features = ["ring", "s
 # An HTTPS Relay is verified against the operating system's trust store, so a company's TLS-inspecting proxy trusted
 # there is trusted for it too.
 rustls-platform-verifier = "0.7.1"
+# Describes each wire type a Peer may be sent or answered, so the Pairing wire's schema is built from the types
+# themselves (`shaman-pairing-wire`).
+schemars = { version = "1.2.2", default-features = false, features = ["derive", "std", "uuid1"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.143", features = ["preserve_order"] }
 socket2 = "0.6.5"

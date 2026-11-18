@@ -1,14 +1,15 @@
 //! Provider-neutral structured user input. Transport callbacks never enter this model.
 use crate::QuestionnaireId;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct Questionnaire {
     pub id: QuestionnaireId,
     pub questions: Vec<Question>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct Question {
     pub id: String,
     pub title: Option<String>,
@@ -22,7 +23,7 @@ pub struct Question {
     pub required: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct QuestionChoice {
     pub id: String,
     pub label: String,
@@ -30,7 +31,7 @@ pub struct QuestionChoice {
     pub recommended: bool,
 }
 
-#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum QuestionAnswer {
     Selected {
@@ -55,19 +56,19 @@ impl std::fmt::Debug for QuestionAnswer {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct Answer {
     pub questions: Vec<QuestionAnswer>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum QuestionnaireSubmission {
     Answer { answer: Answer },
     Decline,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QuestionnaireOutcome {
     Pending,

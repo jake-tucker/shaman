@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// The directory a Server puts the Worktrees it manages under. What it lays
@@ -11,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// both answer for the same directory, so both name it from here.
 pub const MANAGED_WORKTREE_DIRECTORY: &str = ".worktrees";
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PathStyle {
     Unix,
@@ -52,7 +53,7 @@ const SIDEKICK_WORKSPACE_NAME: &str = "Sidekick";
 
 /// The owning Server's resolved home and path syntax. Paths stay strings here:
 /// a Client's native `Path` parser cannot interpret another platform's roots.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct WorkspacePaths {
     pub home: Option<String>,
     pub style: PathStyle,

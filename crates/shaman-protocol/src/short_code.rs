@@ -8,6 +8,7 @@
 //! `Display`, its `Debug` says nothing of it, and every copy is wiped as it is
 //! dropped.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use zeroize::Zeroizing;
 
@@ -103,6 +104,8 @@ impl<'de> Deserialize<'de> for ShortCode {
     }
 }
 
+travels_as!(ShortCode, String);
+
 /// Why what was typed is no code. Each says so without repeating any of it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShortCodeProblem {
@@ -125,7 +128,7 @@ impl std::fmt::Display for ShortCodeProblem {
 impl std::error::Error for ShortCodeProblem {}
 
 /// An Invite's short code as it is issued, and which code of this Server it is.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct IssuedShortCode {
     pub code: ShortCode,
     /// Told apart from every other code this Server has issued since it
@@ -134,7 +137,7 @@ pub struct IssuedShortCode {
 }
 
 /// How this Server's latest short code stands, which is never the code itself.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct ShortCodeStanding {
     /// The code this says of; `0` before any was issued.
     pub serial: u64,
@@ -143,7 +146,7 @@ pub struct ShortCodeStanding {
 
 /// Where a short code has got to. A code is tried once, so of these only
 /// `Live` can be tried.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShortCodeState {
     Live,
@@ -178,7 +181,7 @@ impl ShortCodeState {
 
 /// A code typed for a machine chosen from those a Relay listed: ask for that
 /// machine's Invite over one of the Relays said to carry it.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct FetchShortInviteRequest {
     /// The identity key listed for the machine, unpadded URL-safe base64. It
     /// is the Relay's word, which the exchange holds to account.
@@ -191,7 +194,7 @@ pub struct FetchShortInviteRequest {
 
 /// The ordinary Invite a short code delivered, and its preview. Nothing is
 /// trusted yet: it is redeemed as any other is.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct DeliveredInvite {
     pub invite: InviteText,
     pub preview: InvitePreview,

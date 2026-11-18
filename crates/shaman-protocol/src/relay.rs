@@ -4,6 +4,7 @@
 //! logged in there under the same Account (ADR-0064). This is server
 //! administration, refused to Peers and offered to no Sidekick.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -20,7 +21,7 @@ pub const RELAYS_EVENT: &str = "relays";
 /// newer, however each reached the client. Revisions are counted afresh
 /// each time the Server starts, so listings from two instances are never
 /// compared by revision: a client goes by the instance it is attached to.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct RelayListing {
     pub instance: Uuid,
     pub revision: u64,
@@ -28,7 +29,7 @@ pub struct RelayListing {
 }
 
 /// A Relay the Server holds an entry for, known by its address.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct Relay {
     pub address: String,
     pub state: RelayState,
@@ -76,7 +77,7 @@ pub fn relay_pinned_message(address: &str, document: &str) -> String {
 /// `lapse`, made as the Client run `claimant`: one id for the whole of that
 /// run, so the Client claiming again, not having heard it was given the
 /// Notice, is told it was.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct RelayLoginNeededNotice {
     pub lapse: Uuid,
     pub claimant: Uuid,
@@ -87,13 +88,13 @@ pub struct RelayLoginNeededNotice {
 /// Server asks a Notice of that lapse is — and is told so each time it
 /// claims it again while the lapse lasts — and no other, however late it
 /// claims it, nor any once the lapse has ended.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct RelayLoginNeededNoticeClaim {
     pub claimed: bool,
 }
 
 /// How a Relay stands for the Server.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RelayState {
     /// The Server holds a Login there that stands.
@@ -109,7 +110,7 @@ pub enum RelayState {
 }
 
 /// Why a Relay reads Unreachable.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct RelayUnreachable {
     /// Where the Server and the Relay share no version of the protocol
     /// between them, the side to upgrade.
@@ -119,7 +120,7 @@ pub struct RelayUnreachable {
 }
 
 /// One of the two sides of a Server's connection to a Relay.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RelaySide {
     Server,
@@ -128,7 +129,7 @@ pub enum RelaySide {
 
 /// The Account a Login stands under, by its identity provider and the
 /// username it has there.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct RelayAccount {
     pub provider: String,
     pub username: String,
@@ -136,7 +137,7 @@ pub struct RelayAccount {
 
 /// A login the Server carries out at a Relay: its user visits
 /// `verification_uri` on any device and enters `user_code` there.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct RelayLogin {
     pub verification_uri: String,
     pub user_code: String,
@@ -144,7 +145,7 @@ pub struct RelayLogin {
 }
 
 /// Where a login stands.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RelayLoginOutcome {
     /// The user has yet to log in.
@@ -166,7 +167,7 @@ impl RelayLoginOutcome {
 }
 
 /// Why a login formed no Login.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RelayLoginRefusal {
     /// The user refused it at the identity provider.
@@ -194,14 +195,14 @@ pub enum RelayLoginRefusal {
 /// under the Account this Server's Login stands under. It is a hint to find a
 /// machine by and is believed of nothing: it opens nothing, and nothing in it
 /// changes what this Server holds of any key (ADR-0064).
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct RelayMachines {
     pub address: String,
     pub answer: RelayMachinesAnswer,
 }
 
 /// How a Relay answered being asked for the machines logged in there.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RelayMachinesAnswer {
     /// The machines it listed. `cut_short` says it holds more than it listed.
@@ -222,7 +223,7 @@ pub enum RelayMachinesAnswer {
 /// A machine a Relay listed. Nothing here has been checked but that the key
 /// could be one: a hostname is whatever that machine said, and a key the
 /// Relay's word.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct RelayMachine {
     /// The identity key the Relay ties its Login to, as unpadded URL-safe
     /// base64: what a join there would name it by.
@@ -244,14 +245,14 @@ pub struct RelayMachine {
 /// to go on and answered, so no Client's asking ever ends another's. `afresh`
 /// asks for one where a Login stands, as a reader does who would stand under
 /// another Account; otherwise a Login that stands is answered and none begun.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct RelayLoginRequest {
     pub afresh: bool,
 }
 
 /// Where logging in at a Relay got to, as [`RelayLoginRequest`] asked: the Server
 /// decides, with the entry held, so two Clients asking at once share one login.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct RelayLoginLead {
     /// The Relay's address, written the one way a Relay's is.
     pub address: String,
@@ -259,7 +260,7 @@ pub struct RelayLoginLead {
 }
 
 /// See [`RelayLoginLead`].
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RelayLoginStanding {
     /// The Server's Login there stands: nothing was begun. It may read
@@ -272,13 +273,13 @@ pub enum RelayLoginStanding {
 }
 
 /// A Relay to add, by the address it is reached at.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct AddRelayRequest {
     pub address: String,
 }
 
 /// Whether the Server is to Serve through a Relay.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct RelayServeThroughRequest {
     pub serve_through: bool,
 }
@@ -287,7 +288,7 @@ pub struct RelayServeThroughRequest {
 /// `acknowledged` says that nothing is left at the Relay for it: it answered in
 /// time and forgot the Server's Login, or `held_login` says there was none to
 /// forget and it was not asked.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct RelayRemoval {
     pub address: String,
     pub acknowledged: bool,

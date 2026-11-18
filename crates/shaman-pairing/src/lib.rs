@@ -36,6 +36,7 @@ use http::{HeaderMap, Request, header};
 use http_body_util::{BodyExt, Limited};
 use rcgen::CertificateParams;
 use rustls::{Error as TlsError, pki_types::CertificateDer};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
@@ -48,7 +49,7 @@ use shaman_protocol as protocol;
 use shaman_text::shown_text;
 
 use crate::{
-    protocol::{SessionErrorCode, UnreachableReason, Way},
+    protocol::{InviteText, OfferHeldUp, SessionErrorCode, UnreachableReason, Way},
     signer::IdentitySigner,
 };
 
@@ -347,7 +348,7 @@ pub fn relay_refusal<'error>(
     error.source().and_then(relay_refusal)
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, JsonSchema, Serialize)]
 pub struct InvitePayload {
     #[serde(rename = "w")]
     pub ways: Vec<Way>,
@@ -367,7 +368,7 @@ pub struct ParsedInvite {
     pub hostname: String,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, JsonSchema, Serialize)]
 pub struct EnrollmentRequest {
     pub token: String,
     pub protocol_version: u32,
@@ -386,14 +387,14 @@ pub struct EnrollmentRequest {
     pub offer: Option<Uuid>,
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EnrollmentPhase {
     Prepare,
     Commit,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, JsonSchema, Serialize)]
 pub struct EnrollmentResponse {
     pub hostname: String,
     pub protocol_version: u32,
@@ -402,14 +403,14 @@ pub struct EnrollmentResponse {
 /// What a Serving Server answers a Peer asking whether it answers: the
 /// version it speaks, so the Peer judges it against its own floor, where it
 /// has not refused the Peer as behind.
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, JsonSchema, Serialize)]
 pub struct PairingHealth {
     pub protocol_version: u32,
 }
 
 /// What a Serving Server tells a Peer of the Relays it Serves through, a
 /// line of the answer each time it tells it: the whole of them each time.
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, JsonSchema, Serialize)]
 pub struct OfferedRelays {
     pub relays: Vec<String>,
     /// How the offer to pair back this very Peer made stands, where it made
@@ -420,10 +421,65 @@ pub struct OfferedRelays {
 
 /// How a Peer's own offer to pair back stands, as the Server it made it to
 /// tells it: plain data to a redeemer, which the offer to pair back reads.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct ToldOffer {
     pub id: Uuid,
     pub accepted: bool,
+}
+
+/// What a Peer says of its own offer. Nothing here can make one, or name
+/// another's: a word about an id that is not the caller's finds no offer.
+#[derive(Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OfferWord {
+    /// Its user withdrew it, or it knows nothing of it.
+    Withdrawn { id: Uuid },
+    /// It was accepted and cannot be met, for a reason from a closed set, so
+    /// nothing a Peer chose reaches a reader here.
+    CannotOffer { id: Uuid, why: CannotOffer },
+    /// The Invite it was accepted for.
+    Invite { id: Uuid, invite: InviteText },
+}
+
+/// Why the machine that made an offer cannot meet it.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CannotOffer {
+    ServingOff,
+    NoWay,
+}
+
+impl From<CannotOffer> for OfferHeldUp {
+    fn from(why: CannotOffer) -> Self {
+        match why {
+            CannotOffer::ServingOff => Self::ServingOff,
+            CannotOffer::NoWay => Self::NoWay,
+        }
+    }
+}
+
+/// How a Server answers a [`OfferWord`].
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OfferAnswer {
+    /// Taken.
+    Noted,
+    /// It holds no such offer of the caller's, so whatever it was has ended.
+    Gone,
+    /// The Invite was not asked for: the offer has not been accepted.
+    NotAccepted,
+    /// The Invite names another key than the caller's, so it was refused.
+    WrongKey,
+    /// The last try came to nothing too lately to try again yet.
+    TooSoon,
+    /// A redemption of it is under way here now.
+    Busy,
+    /// It could not be taken just now, and may be said again.
+    Failed,
+    /// The Pairing has formed, and the offer has ended on this side.
+    Formed,
+    /// The Invite was redeemed to no Pairing, which this side says why of.
+    NotFormed,
 }
 
 /// The header the Serving listener proves, to this Server's own Session API,

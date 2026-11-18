@@ -10,6 +10,7 @@
 
 use std::{fmt, str::FromStr};
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{Author, Questionnaire, SessionId, SessionSummary};
@@ -25,7 +26,7 @@ pub const DEFAULT_TURNS: usize = 1;
 pub const DEFAULT_MAX_CHARS: usize = 2_000;
 
 /// How much a reading shows of each Turn it holds.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Detail {
     /// The user Messages and Delegations that asked for each Turn's work, and
@@ -157,6 +158,8 @@ macro_rules! spelled_on_the_wire {
 
 spelled_on_the_wire!(EntryNumber, "an entry's number");
 spelled_on_the_wire!(Position, "a point in a Transcript");
+travels_as!(EntryNumber, String);
+travels_as!(Position, String);
 
 /// What a read asks for.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -188,7 +191,7 @@ impl Default for Window {
 }
 
 /// Why a read names nothing the Session holds.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReadRefusal {
     /// A Turn the Session has not reached; it has `turns`.
@@ -201,7 +204,7 @@ pub enum ReadRefusal {
 /// reading holds, its words already chosen, but for the other Servers it
 /// names, which stand as [`ServerReference`]s for the reader to name as it
 /// reaches them.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct SessionExcerpt {
     /// Every Questionnaire waiting on an Answer, in Transcript order.
     pub questionnaires: Vec<ExcerptQuestionnaire>,
@@ -223,7 +226,7 @@ pub struct SessionExcerpt {
 }
 
 /// A Questionnaire waiting on an Answer, and its entry's number.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct ExcerptQuestionnaire {
     pub entry: EntryNumber,
     pub questionnaire: Questionnaire,
@@ -231,7 +234,7 @@ pub struct ExcerptQuestionnaire {
 
 /// A stretch of an excerpt's transcript: words as they stand, or another
 /// Server's naming, left to the reader.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReadingSpan {
     Text(String),
@@ -241,7 +244,7 @@ pub enum ReadingSpan {
 /// What a reading names that only its reader can say: who acted on the
 /// user's behalf, or where a Session on another Server lives — each named by
 /// the Server holding the Session read, as its own Pairings know it.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServerReference {
     /// Who sent a Message, answered a Questionnaire, or began the Session.
@@ -262,7 +265,7 @@ pub enum ServerReference {
 /// What a Server's `GET /v1/sessions/{session_id}/reading` answers that names
 /// what its Session holds: the Session's summary, taken in the same moment as
 /// the excerpt, so how it stands and what it says agree.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct SessionReadingAnswer {
     pub summary: SessionSummary,
     pub reading: Result<SessionExcerpt, ReadRefusal>,
@@ -272,7 +275,7 @@ pub struct SessionReadingAnswer {
 /// `turns`, `max_chars`, `before` and `detail`, each left out for its
 /// default — or one `item` whole, and `within`, the most bytes its asker
 /// reads of the answer.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct SessionReadingQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turns: Option<usize>,

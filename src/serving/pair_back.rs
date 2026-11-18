@@ -47,9 +47,9 @@ use super::{
 };
 use crate::{
     pairing::{
-        PairingHttpClient, PairingProtocol, Redeemer, RedeemerHooks, StoredMadeOffer, StoredRemote,
-        StrongClient, ToldOffer, WayAttempt, small_answer, validate_remote_name,
-        write_private_json,
+        CannotOffer, OfferAnswer, OfferWord, PairingHttpClient, PairingProtocol, Redeemer,
+        RedeemerHooks, StoredMadeOffer, StoredRemote, StrongClient, ToldOffer, WayAttempt,
+        small_answer, validate_remote_name, write_private_json,
     },
     protocol::{
         AnswerOfferRequest, HeldOffer, InviteText, ListenerState, MadeOffer, OfferAcceptance,
@@ -129,61 +129,6 @@ impl StoredHeldOffer {
             accepted: !matches!(self.standing, Standing::Waiting),
         }
     }
-}
-
-/// What a Peer says of its own offer. Nothing here can make one, or name
-/// another's: a word about an id that is not the caller's finds no offer.
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum OfferWord {
-    /// Its user withdrew it, or it knows nothing of it.
-    Withdrawn { id: Uuid },
-    /// It was accepted and cannot be met, for a reason from a closed set, so
-    /// nothing a Peer chose reaches a reader here.
-    CannotOffer { id: Uuid, why: CannotOffer },
-    /// The Invite it was accepted for.
-    Invite { id: Uuid, invite: InviteText },
-}
-
-/// Why the machine that made an offer cannot meet it.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum CannotOffer {
-    ServingOff,
-    NoWay,
-}
-
-impl From<CannotOffer> for OfferHeldUp {
-    fn from(why: CannotOffer) -> Self {
-        match why {
-            CannotOffer::ServingOff => Self::ServingOff,
-            CannotOffer::NoWay => Self::NoWay,
-        }
-    }
-}
-
-/// How a Server answers a [`OfferWord`].
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum OfferAnswer {
-    /// Taken.
-    Noted,
-    /// It holds no such offer of the caller's, so whatever it was has ended.
-    Gone,
-    /// The Invite was not asked for: the offer has not been accepted.
-    NotAccepted,
-    /// The Invite names another key than the caller's, so it was refused.
-    WrongKey,
-    /// The last try came to nothing too lately to try again yet.
-    TooSoon,
-    /// A redemption of it is under way here now.
-    Busy,
-    /// It could not be taken just now, and may be said again.
-    Failed,
-    /// The Pairing has formed, and the offer has ended on this side.
-    Formed,
-    /// The Invite was redeemed to no Pairing, which this side says why of.
-    NotFormed,
 }
 
 /// What is under way of a Server's offers, beside their records: all of it is

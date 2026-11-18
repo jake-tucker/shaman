@@ -20,7 +20,7 @@ use axum::{
     routing::{get, post, put},
 };
 use futures_util::{StreamExt, stream};
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::de::DeserializeOwned;
 use tokio::{
     net::TcpListener,
     sync::{broadcast, oneshot, watch},
@@ -3179,15 +3179,9 @@ fn settings_snapshot_event(snapshot: &SettingsSnapshot) -> Event {
         .expect("settings snapshots always serialize")
 }
 
-#[derive(Default, Deserialize)]
-struct SessionCatalogQuery {
-    #[serde(default)]
-    warm_models: bool,
-}
-
 async fn session_catalog_events(
     State(state): State<AppState>,
-    Query(query): Query<SessionCatalogQuery>,
+    Query(query): Query<crate::protocol::SessionCatalogQuery>,
     headers: HeaderMap,
 ) -> Response {
     if !is_authenticated(&headers, &state.descriptor.token) {
@@ -4493,15 +4487,9 @@ async fn resolve_sidekick_workspace(State(state): State<AppState>, headers: Head
     Json(resolved).into_response()
 }
 
-#[derive(Deserialize)]
-struct ListSessionsQuery {
-    workspace_id: Option<String>,
-    workspace: Option<PathBuf>,
-}
-
 async fn list_sessions(
     State(state): State<AppState>,
-    Query(query): Query<ListSessionsQuery>,
+    Query(query): Query<crate::protocol::ListSessionsQuery>,
     headers: HeaderMap,
 ) -> Response {
     if !is_authenticated(&headers, &state.descriptor.token) {

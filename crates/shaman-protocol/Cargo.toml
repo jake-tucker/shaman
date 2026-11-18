@@ -15,6 +15,9 @@ test-support = []
 [dependencies]
 anyhow = "1.0.99"
 blake3 = "1.8.2"
+# Describes each wire type a Peer may be sent or answered, so the Pairing wire's schema is built from the types
+# themselves (`shaman-pairing-wire`).
+schemars = { version = "1.2.2", default-features = false, features = ["derive", "std", "uuid1"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.143", features = ["preserve_order"] }
 uuid = { version = "1.18.1", features = ["serde", "v4"] }
