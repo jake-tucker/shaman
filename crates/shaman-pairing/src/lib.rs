@@ -991,14 +991,14 @@ pub fn validate_remote_name(name: &str) -> std::result::Result<(), PairingFailur
     if name.trim().is_empty() || name != name.trim() {
         return Err(PairingFailure::new(
             SessionErrorCode::InvalidRemoteName,
-            "Remote name must contain non-whitespace characters without outer whitespace",
+            "A remote's name must contain non-whitespace characters without outer whitespace",
         ));
     }
     if crate::protocol::names_everywhere(name) {
         return Err(PairingFailure::new(
             SessionErrorCode::InvalidRemoteName,
             format!(
-                "`{}` names every Server at once, so no Remote may be named so; choose another \
+                "`{}` names every server at once, so no remote may be named so; choose another \
                  name",
                 crate::protocol::EVERYWHERE
             ),
@@ -1170,7 +1170,7 @@ mod tests {
             assert_eq!(refusal.code, SessionErrorCode::InvalidRemoteName);
             assert_eq!(
                 refusal.message,
-                "`everywhere` names every Server at once, so no Remote may be named so; choose \
+                "`everywhere` names every server at once, so no remote may be named so; choose \
                  another name"
             );
         }

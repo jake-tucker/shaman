@@ -1572,6 +1572,7 @@ mod tests {
                 made_at: SessionTimestamp(0),
                 withdrawn: false,
             }),
+            uncommitted: false,
         };
         server
             .redeemer()

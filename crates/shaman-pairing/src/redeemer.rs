@@ -381,9 +381,12 @@ impl Redeemer {
             icon: None,
         };
         // Stored ahead of the commit that makes it, so a crash can leave this
-        // Server an offer the other does not hold, and never the reverse.
+        // Server an offer the other does not hold, and never the reverse. It
+        // is marked uncommitted until the commit lands, and whatever it
+        // replaces stands until then, so a holder that drops what is
+        // uncommitted as it opens is left as it was before.
         let offer_id = offer.as_ref().map(|offer| offer.id);
-        let set_aside = self.persist_remote(&remote, &invite.server_key, offer, replaced)?;
+        let generation = self.persist_remote(&remote, &invite.server_key, offer, replaced)?;
 
         let commit = EnrollmentRequest {
             token: URL_SAFE_NO_PAD.encode(invite.token),
@@ -401,15 +404,32 @@ impl Redeemer {
         )
         .await
         {
-            self.rollback_remote(&remote, set_aside);
+            self.rollback_remote(generation);
             return Err(error);
         }
+        let replaced = self.committed(generation, replaced)?;
         self.keep_only_offer(&invite.server_key, offer_id);
-        for (_, replaced) in &set_aside {
+        for replaced in &replaced {
             self.forget_client(&replaced.remote.name);
             self.hooked(|hooks| hooks.forgotten(self, replaced));
         }
         Ok(remote)
+    }
+
+    /// Drops every Remote whose redemption was caught before its commit
+    /// landed, as one that ends a redemption only by being ended, such as a
+    /// thin Client, does as it opens: what that redemption replaced still
+    /// stands. Answers whether any was dropped.
+    pub fn drop_uncommitted(&self) -> std::result::Result<bool, PairingFailure> {
+        let dropped = self.change_remotes(|remotes| {
+            let before = remotes.len();
+            remotes.retain(|stored| !stored.uncommitted);
+            Ok(remotes.len() != before)
+        })?;
+        if dropped {
+            self.note_pairing_change();
+        }
+        Ok(dropped)
     }
 
     pub fn list_remotes(&self) -> Vec<Remote> {
@@ -1306,55 +1326,74 @@ impl Redeemer {
         Ok(http::Response::from_parts(parts, RemoteBody::whole(body)))
     }
 
-    /// Stores `remote`, paired under `public_key`, setting aside each Remote
-    /// of the key `replaced`, where it is given, as it stood: what is set
-    /// aside, by where each stood, which a rollback puts back.
+    /// Stores `remote`, paired under `public_key`, as uncommitted, beside
+    /// any Remote of the key `replaced`, which may hold its name until the
+    /// commit lands: the generation it is stored under.
     fn persist_remote(
         &self,
         remote: &Remote,
         public_key: &[u8],
         offer: Option<StoredMadeOffer>,
         replaced: Option<&[u8]>,
-    ) -> std::result::Result<Vec<(usize, StoredRemote)>, PairingFailure> {
-        let set_aside = self.change_remotes(|remotes| {
-            let mut set_aside = Vec::new();
-            if let Some(replaced) = replaced {
-                let mut index = 0;
-                remotes.retain(|known| {
-                    let kept = known.public_key != replaced;
-                    if !kept {
-                        set_aside.push((index, known.clone()));
-                    }
-                    index += 1;
-                    kept
-                });
-            }
-            if remotes.iter().any(|known| known.remote.name == remote.name) {
+    ) -> std::result::Result<u64, PairingFailure> {
+        let generation = self.change_remotes(|remotes| {
+            if remotes.iter().any(|known| {
+                known.remote.name == remote.name && Some(known.public_key.as_slice()) != replaced
+            }) {
                 return Err(remote_name_conflict(&remote.name));
             }
+            let generation = self.pairings_made.fetch_add(1, Ordering::AcqRel) + 1;
             remotes.push(StoredRemote {
                 remote: remote.clone(),
                 public_key: public_key.to_vec(),
                 answered: Vec::new(),
-                generation: self.pairings_made.fetch_add(1, Ordering::AcqRel) + 1,
+                generation,
                 offer,
+                uncommitted: true,
             });
-            Ok(set_aside)
+            Ok(generation)
         })?;
         self.note_pairing_change();
-        Ok(set_aside)
+        Ok(generation)
     }
 
-    /// Takes back `remote`, stored by a redemption that failed, and puts back
-    /// what it set aside, each where it stood.
-    fn rollback_remote(&self, remote: &Remote, set_aside: Vec<(usize, StoredRemote)>) {
-        let rolled_back = self.change_remotes(|remotes| {
+    /// Marks the Remote stored under `generation` committed, and drops every
+    /// other Remote of the key `replaced`, where it is given: what was
+    /// dropped.
+    fn committed(
+        &self,
+        generation: u64,
+        replaced: Option<&[u8]>,
+    ) -> std::result::Result<Vec<StoredRemote>, PairingFailure> {
+        let dropped = self.change_remotes(|remotes| {
+            let mut dropped = Vec::new();
             remotes.retain(|known| {
-                known.remote.name != remote.name || known.remote.fingerprint != remote.fingerprint
+                let kept =
+                    known.generation == generation || Some(known.public_key.as_slice()) != replaced;
+                if !kept {
+                    dropped.push(known.clone());
+                }
+                kept
             });
-            for (index, stored) in set_aside {
-                remotes.insert(index.min(remotes.len()), stored);
+            if let Some(made) = remotes
+                .iter_mut()
+                .find(|known| known.generation == generation)
+            {
+                made.uncommitted = false;
             }
+            Ok(dropped)
+        })?;
+        if !dropped.is_empty() {
+            self.note_pairing_change();
+        }
+        Ok(dropped)
+    }
+
+    /// Takes back the Remote stored under `generation` by a redemption that
+    /// failed, leaving every other as it stood.
+    fn rollback_remote(&self, generation: u64) {
+        let rolled_back = self.change_remotes(|remotes| {
+            remotes.retain(|known| known.generation != generation);
             Ok(())
         });
         if let Err(failure) = rolled_back {
@@ -1532,6 +1571,10 @@ pub struct StoredRemote {
     /// answered, withdrawn, or the Pairing ends with this record.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offer: Option<StoredMadeOffer>,
+    /// Whether the redemption that stored it has yet to see its commit land:
+    /// a Remote the Serving Server may never have made.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub uncommitted: bool,
 }
 
 impl StoredRemote {
@@ -1890,6 +1933,225 @@ mod tests {
         *,
     };
 
+    /// How a stand-in Serving Server answers a commit.
+    #[derive(Clone, Copy)]
+    enum Commit {
+        /// Refuses it, as one whose Invite died meanwhile does.
+        Refused,
+        /// Never answers, as one whose redeemer is ended mid-commit sees.
+        Unanswered,
+    }
+
+    /// A stand-in Serving Server holding `identity`, at a direct way of its
+    /// own, that answers every preparation and each commit as `commit` says.
+    async fn standing_in(identity: &IdentityMaterial, commit: Commit) -> Way {
+        let mut tls = rustls::ServerConfig::builder_with_provider(super::super::crypto_provider())
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .unwrap()
+            .with_no_client_auth()
+            .with_cert_resolver(Arc::new(rustls::sign::SingleCertAndKey::from(
+                identity
+                    .signer
+                    .tls_identity(identity.certificate.clone())
+                    .unwrap(),
+            )));
+        tls.alpn_protocols = vec![super::super::MULTIPLEXED.to_vec()];
+        let tls = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let tls = tls.clone();
+                tokio::spawn(async move {
+                    let Ok(accepted) = tls.accept(stream).await else {
+                        return;
+                    };
+                    let answering = hyper::service::service_fn(
+                        move |request: http::Request<hyper::body::Incoming>| async move {
+                            let body = request.into_body().collect().await.unwrap().to_bytes();
+                            let asked: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                            let (status, answer) = if asked["phase"] == "prepare" {
+                                (
+                                    StatusCode::OK,
+                                    serde_json::json!({
+                                        "hostname": "workstation",
+                                        "protocol_version": crate::protocol::PROTOCOL_VERSION,
+                                    }),
+                                )
+                            } else {
+                                match commit {
+                                    Commit::Refused => (
+                                        StatusCode::GONE,
+                                        serde_json::json!({
+                                            "code": "invite_spent",
+                                            "message": "Invite has already been spent",
+                                        }),
+                                    ),
+                                    Commit::Unanswered => std::future::pending().await,
+                                }
+                            };
+                            Ok::<_, std::convert::Infallible>(
+                                http::Response::builder()
+                                    .status(status)
+                                    .header(http::header::CONTENT_TYPE, "application/json")
+                                    .body(Full::new(Bytes::from(answer.to_string())))
+                                    .unwrap(),
+                            )
+                        },
+                    );
+                    let _ = hyper::server::conn::http2::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(hyper_util::rt::TokioIo::new(accepted), answering)
+                    .await;
+                });
+            }
+        });
+        Way::Direct(address)
+    }
+
+    /// A Remote of the key `key`, named `name`, as a redeemer keeps one.
+    fn stored(name: &str, key: &[u8]) -> StoredRemote {
+        StoredRemote {
+            remote: Remote {
+                name: name.to_owned(),
+                fingerprint: fingerprint(key),
+                ways: vec![Way::Direct(SocketAddr::from(([192, 0, 2, 1], 7000)))],
+                status: RemoteStatus::Available,
+                icon: None,
+            },
+            public_key: key.to_vec(),
+            answered: Vec::new(),
+            generation: 0,
+            offer: None,
+            uncommitted: false,
+        }
+    }
+
+    /// The Remotes a redeemer keeps in `data` before a redemption: the one of
+    /// `serving`'s key between two others, its bytes as kept.
+    fn kept_around(data: &tempfile::TempDir, serving: &IdentityMaterial) -> Vec<u8> {
+        let remotes = vec![
+            stored("laptop", IdentityMaterial::fresh().public_key()),
+            stored("desk", serving.public_key()),
+            stored("studio", IdentityMaterial::fresh().public_key()),
+        ];
+        let path = data.path().join(REMOTES_FILE);
+        write_private_json(&path, &remotes).unwrap();
+        std::fs::read(path).unwrap()
+    }
+
+    /// The Invite of `serving`, offering `way`.
+    fn invited(serving: &IdentityMaterial, way: Way) -> ParsedInvite {
+        ParsedInvite {
+            ways: vec![way],
+            server_key: serving.public_key().to_vec(),
+            token: [7; 32],
+            hostname: "workstation".to_owned(),
+        }
+    }
+
+    fn replacing_as(name: &str) -> (RedeemInviteRequest, Redemption) {
+        (
+            RedeemInviteRequest {
+                invite: String::new().into(),
+                name: Some(name.to_owned()),
+                ways: Vec::new(),
+                pair_back: false,
+            },
+            Redemption {
+                peer_name: Some("Pocket".to_owned()),
+                replacing: true,
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn a_replacing_redemption_whose_commit_fails_leaves_the_remotes_as_they_were_kept() {
+        let data = tempfile::tempdir().unwrap();
+        let serving = IdentityMaterial::fresh();
+        let before = kept_around(&data, &serving);
+        let way = standing_in(&serving, Commit::Refused).await;
+        let redeemer = redeemer(&data);
+
+        // Under the name the replaced Remote holds, and under another.
+        for name in ["desk", "office"] {
+            let (request, redemption) = replacing_as(name);
+            let failed = redeemer
+                .redeem_as(invited(&serving, way.clone()), request, redemption)
+                .await
+                .expect_err("the commit was refused");
+            assert_eq!(failed.code, SessionErrorCode::InviteSpent);
+            assert_eq!(
+                std::fs::read(data.path().join(REMOTES_FILE)).unwrap(),
+                before,
+                "kept as they were, in their order"
+            );
+            assert_eq!(
+                redeemer
+                    .list_remotes()
+                    .iter()
+                    .map(|remote| remote.name.as_str())
+                    .collect::<Vec<_>>(),
+                ["laptop", "desk", "studio"]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_redemption_ended_mid_commit_is_dropped_as_its_redeemer_opens_again() {
+        let data = tempfile::tempdir().unwrap();
+        let serving = IdentityMaterial::fresh();
+        let before = kept_around(&data, &serving);
+        let way = standing_in(&serving, Commit::Unanswered).await;
+        let redeemer = redeemer(&data);
+
+        let (request, redemption) = replacing_as("office");
+        let redeeming = tokio::spawn({
+            let redeemer = redeemer.clone();
+            async move {
+                redeemer
+                    .redeem_as(invited(&serving, way), request, redemption)
+                    .await
+            }
+        });
+        let path = data.path().join(REMOTES_FILE);
+        tokio::time::timeout(tokio::time::Duration::from_secs(20), async {
+            while std::fs::read(&path).unwrap() == before {
+                tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the Remote is stored ahead of its commit");
+        let stored: Vec<StoredRemote> = read_records(&path).unwrap();
+        assert_eq!(
+            stored
+                .iter()
+                .map(|stored| (stored.remote.name.as_str(), stored.uncommitted))
+                .collect::<Vec<_>>(),
+            [
+                ("laptop", false),
+                ("desk", false),
+                ("studio", false),
+                ("office", true)
+            ],
+            "the Remote it replaces stands until the commit lands"
+        );
+        // The app is ended mid-commit, and opened again.
+        redeeming.abort();
+        drop(redeemer);
+
+        let reopened = self::redeemer(&data);
+        assert!(matches!(reopened.drop_uncommitted(), Ok(true)), "dropped");
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert!(
+            matches!(reopened.drop_uncommitted(), Ok(false)),
+            "nothing more"
+        );
+    }
+
     /// A redeemer under `data`, proving itself as a key made for the test,
     /// with the default timings.
     fn redeemer(data: &tempfile::TempDir) -> Redeemer {
@@ -2054,6 +2316,7 @@ mod tests {
             answered: Vec::new(),
             generation: 0,
             offer: None,
+            uncommitted: false,
         };
         let client = Arc::new(
             paired_http_client(
@@ -2137,6 +2400,7 @@ mod tests {
                     answered: Vec::new(),
                     generation: 0,
                     offer: None,
+                    uncommitted: false,
                 });
                 Ok(())
             })

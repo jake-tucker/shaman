@@ -209,7 +209,7 @@ async fn no_remote_may_be_named_everywhere_which_names_every_server() {
         assert_eq!(error.code, SessionErrorCode::InvalidRemoteName, "{name}");
         assert_eq!(
             error.message,
-            "`everywhere` names every Server at once, so no Remote may be named so; choose \
+            "`everywhere` names every server at once, so no remote may be named so; choose \
              another name"
         );
     }
