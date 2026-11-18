@@ -330,6 +330,20 @@ async fn narrowing_turns_the_outlook_which_is_kept_and_the_scope_is_not() {
     );
     phone.core.search_listing(String::new());
 
+    // Another Workspace of the same Remote takes the place of the one
+    // remembered for it.
+    let shaman = choice(&listing, "shaman").expect("offered");
+    phone
+        .core
+        .narrow_listing(shaman.scope)
+        .await
+        .expect("narrowed");
+    let narrowed = phone
+        .listing_until(|listing| listing.title == "desk · shaman" && listing.found.is_none())
+        .await;
+    assert_eq!(titles(&narrowed), ["Map the workspace"]);
+    assert_eq!(phone.outlook().await, outlook("desk", Some("shaman")));
+
     // A Remote chosen turns the Outlook toward it, its Workspace as it was.
     let lab_whole = choice(&listing, "All of lab").expect("offered");
     phone
@@ -363,7 +377,7 @@ async fn narrowing_turns_the_outlook_which_is_kept_and_the_scope_is_not() {
         .expect("narrowed");
     phone.listing_until(|listing| listing.title == "desk").await;
     let phone = phone.relaunched();
-    assert_eq!(phone.outlook().await, outlook("desk", Some("dotfiles")));
+    assert_eq!(phone.outlook().await, outlook("desk", Some("shaman")));
     let listing = phone
         .listing_until(|listing| listing.active.len() == 3)
         .await;
@@ -372,4 +386,35 @@ async fn narrowing_turns_the_outlook_which_is_kept_and_the_scope_is_not() {
     phone.shutdown();
     desk.shutdown().await;
     lab.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_remote_paired_again_under_a_new_name_keeps_the_workspace_remembered_for_it() {
+    let desk = ServingServer::start("thin-list-renamed").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+    let listing = phone
+        .listing_until(|listing| choice(listing, "shaman").is_some())
+        .await;
+    phone
+        .core
+        .narrow_listing(choice(&listing, "shaman").expect("offered").scope)
+        .await
+        .expect("narrowed");
+    assert_eq!(phone.outlook().await, outlook("desk", Some("shaman")));
+
+    pair(&phone, &desk, "studio").await;
+    assert_eq!(phone.outlook().await, outlook("studio", Some("shaman")));
+    let phone = phone.relaunched();
+    assert_eq!(
+        phone.outlook().await,
+        outlook("studio", Some("shaman")),
+        "kept under its new name"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
 }

@@ -193,15 +193,35 @@ impl Scope {
     }
 
     /// The scope as it stands among `remotes`: Everywhere where it names a
-    /// Remote not held, or the one Remote held whole, which is everywhere.
+    /// Remote not held, or the one Remote held whole, which is everywhere;
+    /// and the whole of its Remote where it names a Workspace that Remote
+    /// does not offer.
     fn within(&self, remotes: &[Answered]) -> Self {
+        let Some(remote) = self.remote(remotes) else {
+            return Self::Everywhere;
+        };
+        let whole = || {
+            if remotes.len() == 1 {
+                Self::Everywhere
+            } else {
+                Self::Remote {
+                    fingerprint: remote.fingerprint.clone(),
+                }
+            }
+        };
         match self {
-            Self::Everywhere => Self::Everywhere,
-            Self::Remote { .. } if remotes.len() == 1 => Self::Everywhere,
-            Self::Remote { .. } | Self::Workspace { .. } => match self.remote(remotes) {
-                Some(_) => self.clone(),
-                None => Self::Everywhere,
-            },
+            Self::Everywhere | Self::Remote { .. } => whole(),
+            Self::Workspace { workspace, .. } => {
+                if remote
+                    .offered_workspaces()
+                    .iter()
+                    .any(|offered| offered.id == *workspace)
+                {
+                    self.clone()
+                } else {
+                    whole()
+                }
+            }
         }
     }
 
@@ -447,7 +467,10 @@ pub(crate) fn present(
         Some(found) => found.is_empty(),
         None => active.is_empty() && settled.is_empty(),
     };
-    let empty = (answered && nothing).then(|| match (&found, &scope) {
+    // A search says it found nothing among the Remotes that have answered,
+    // while it goes on saying who is still being reached; anything else
+    // says nothing is there only once every Remote in scope has answered.
+    let empty = (nothing && (answered || found.is_some())).then(|| match (&found, &scope) {
         (Some(_), _) => "No sessions match".to_owned(),
         (None, Scope::Everywhere) => "No sessions yet".to_owned(),
         (None, Scope::Workspace { .. }) => "No sessions in this workspace".to_owned(),
@@ -503,16 +526,17 @@ fn scope_title(remotes: &[Answered], scope: &Scope, origin_named: bool) -> Strin
     let Scope::Workspace { workspace, .. } = scope else {
         return remote.name.clone();
     };
-    let named = remote
+    // A scope stands at a Workspace only where its Remote offers it.
+    let name = remote
         .offered_workspaces()
         .into_iter()
         .find(|offered| offered.id == *workspace)
-        .map(|offered| remote.paths.workspace_name(offered));
-    match (named, origin_named) {
-        (Some(name), true) => format!("{} · {name}", remote.name),
-        (Some(name), false) => name,
-        // Not yet listed by its Server: named by its Remote until it is.
-        (None, _) => remote.name.clone(),
+        .map(|offered| remote.paths.workspace_name(offered))
+        .unwrap_or_default();
+    if origin_named {
+        format!("{} · {name}", remote.name)
+    } else {
+        name
     }
 }
 

@@ -1227,3 +1227,66 @@ fn narrowing_says_what_the_outlook_turns_toward_and_everywhere_turns_nothing() {
     listings.search("");
     assert_eq!(listings.listing().borrow().found, None);
 }
+
+#[test]
+fn a_search_says_it_found_nothing_while_it_goes_on_saying_who_is_being_reached() {
+    let mut remotes = desk_and_lab();
+    remotes[1].sessions = None;
+    let listing = narrowed(&remotes, &searched("nothing like it"));
+    assert_eq!(listing.found, Some(Vec::new()));
+    assert_eq!(listing.empty.as_deref(), Some("No sessions match"));
+    assert_eq!(listing.waiting.as_deref(), Some("Reaching lab…"));
+
+    let listing = narrowed(&remotes, &searched("zsh"));
+    assert_eq!(listing.found.map(|found| found.len()), Some(1));
+    assert_eq!(listing.empty, None);
+    assert_eq!(listing.waiting.as_deref(), Some("Reaching lab…"));
+
+    assert_eq!(
+        narrowed(&remotes, &Narrowing::default()).empty,
+        None,
+        "without a search, nothing is said to be empty while a Remote is reached"
+    );
+}
+
+#[test]
+fn a_workspace_no_longer_offered_widens_the_scope_to_its_remote() {
+    let gone = Scope::Workspace {
+        fingerprint: "desk-key".to_owned(),
+        workspace: workspace_id("gone"),
+    };
+    let remotes = desk_and_lab();
+    let listing = narrowed(&remotes, &scoped(gone.clone()));
+    assert_eq!(listing.title, "desk");
+    assert_eq!(titles(&listing.active), ["Tidy zsh", "Map the workspace"]);
+    assert_eq!(menu(&listing)[1].1[0], "[All of desk]");
+
+    let [desk, _] = desk_and_lab();
+    let alone = narrowed(&[desk], &scoped(gone));
+    assert_eq!(
+        alone.title, "All workspaces",
+        "with one Remote it widens to everywhere, naming no Origin"
+    );
+    assert_eq!(menu(&alone)[0].1, ["[All workspaces]"]);
+}
+
+#[test]
+fn narrowing_to_a_workspace_no_longer_offered_turns_the_outlook_toward_its_remote_alone() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let (listings, _directory) = listings(&runtime);
+    for remote in desk_and_lab() {
+        listings.hold(remote);
+    }
+    let gone = Scope::Workspace {
+        fingerprint: "desk-key".to_owned(),
+        workspace: workspace_id("gone"),
+    };
+    assert_eq!(
+        listings.narrow(&gone.reference()),
+        Some(Turn {
+            remote: "desk".to_owned(),
+            workspace: None,
+        })
+    );
+    assert_eq!(listings.listing().borrow().title, "desk");
+}

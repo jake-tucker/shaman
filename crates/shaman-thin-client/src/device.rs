@@ -172,3 +172,33 @@ impl Records {
         shaman_pairing::write_private_json(&self.file(), record)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn remembered(name: &str) -> RememberedWorkspace {
+        RememberedWorkspace {
+            path: PathBuf::from(name),
+            name: name.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_workspace_turned_toward_replaces_the_one_remembered_and_none_keeps_it() {
+        let mut record = DeviceRecord::default();
+        record.turn("desk", Some(remembered("dotfiles")));
+        record.turn("lab", None);
+        record.turn("desk", Some(remembered("shaman")));
+        assert_eq!(record.turned, ["desk", "lab"]);
+        assert_eq!(record.workspaces.get("desk"), Some(&remembered("shaman")));
+
+        record.turn("desk", None);
+        assert_eq!(
+            record.workspaces.get("desk"),
+            Some(&remembered("shaman")),
+            "turning toward the Remote alone keeps its Workspace"
+        );
+        assert_eq!(record.workspaces.get("lab"), None);
+    }
+}
