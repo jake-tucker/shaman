@@ -113,6 +113,7 @@ fn claude_fix(reason: ProviderUnavailability) -> &'static str {
         }
         ProviderUnavailability::NotSignedIn => "run `claude auth login`",
         ProviderUnavailability::IncompatibleVersion => "update the Claude Code CLI",
+        ProviderUnavailability::Unknown => "see the Claude Code CLI's own documentation",
     }
 }
 

@@ -328,6 +328,7 @@ fn rows(remotes: &[Answered]) -> Vec<(&Answered, Row<'_>)> {
                         })
                         .map(|sidekick| (peer, sidekick.id()))
                 }),
+            Author::Unknown => None,
         }
     };
     let mut carried: HashMap<(usize, SessionId), Vec<&SessionListItem>> = HashMap::new();
@@ -454,6 +455,7 @@ fn checkout_state(reading: &CheckoutSummary) -> Option<CheckoutLine> {
         SourceControlAvailability::NotDetected => return None,
         SourceControlAvailability::Unavailable { .. } => None,
         SourceControlAvailability::Available => reading.revision.as_ref(),
+        SourceControlAvailability::Unknown => None,
     };
     Some(match revision {
         Some(CheckoutRevision::Branch { name, .. }) => CheckoutLine {
@@ -461,6 +463,7 @@ fn checkout_state(reading: &CheckoutSummary) -> Option<CheckoutLine> {
                 match reading.association.kind {
                     CheckoutKind::Main => shaman_icons::GIT_BRANCH,
                     CheckoutKind::Linked => shaman_icons::WORKTREE,
+                    CheckoutKind::Unknown => shaman_icons::GIT_BRANCH,
                 }
                 .to_string(),
             ),
@@ -473,6 +476,10 @@ fn checkout_state(reading: &CheckoutSummary) -> Option<CheckoutLine> {
         None => CheckoutLine {
             glyph: None,
             words: "Checkout state unavailable".to_owned(),
+        },
+        Some(CheckoutRevision::Unknown) => CheckoutLine {
+            glyph: None,
+            words: "Checkout state unknown".to_owned(),
         },
     })
 }

@@ -1140,6 +1140,7 @@ mod tests {
         match revision {
             CheckoutRevision::Branch { commit, .. } => commit.as_deref().unwrap(),
             CheckoutRevision::Detached { commit } => commit,
+            CheckoutRevision::Unknown => panic!("a revision of a kind this build does not know"),
         }
     }
 

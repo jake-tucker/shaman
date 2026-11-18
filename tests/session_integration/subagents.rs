@@ -2468,6 +2468,7 @@ fn delegations(snapshot: &SessionSnapshot) -> Vec<(TurnId, Delegator, &str)> {
                 .iter()
                 .find(|message| message.id == *message_id),
             TranscriptItem::Activity { .. } => None,
+            TranscriptItem::Unknown => None,
         })
         .filter_map(|message| {
             message
@@ -2598,6 +2599,7 @@ async fn each_turn_a_delegation_begins_opens_with_it_as_a_message_from_the_deleg
                     .iter()
                     .find(|message| message.id == *message_id && message.turn_id == turn_id),
                 TranscriptItem::Activity { .. } => None,
+                TranscriptItem::Unknown => None,
             })
             .expect("the Turn has a Message")
     };
@@ -2964,6 +2966,7 @@ async fn a_delegation_reported_after_its_resume_stands_behind_the_watch_outcome_
                     Activity::WatchOutcome { .. } => "Watch Outcome",
                     _ => "Activity",
                 }),
+            TranscriptItem::Unknown => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(

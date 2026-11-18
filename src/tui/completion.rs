@@ -127,6 +127,11 @@ impl CompletionMode {
                 Vec::new(),
                 Some(format!("Skills unavailable · {message}")),
             ),
+            Some(SkillCatalogStatus::Unknown) => (
+                Vec::new(),
+                Vec::new(),
+                Some("Skills stand in a way this Shaman does not know".to_owned()),
+            ),
         };
         let mut disabled = Vec::new();
         if let Some(limit) = catalog.and_then(|catalog| {

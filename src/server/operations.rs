@@ -59,10 +59,10 @@ use crate::model_catalog::ModelCatalogService;
 use crate::protocol::{
     Activity, AdmitPromptRequest, AgentSelection, AttachmentDescriptor, Author,
     CreateSessionRequest, InitialPrompt, InterruptOutcome, PrepareCheckoutRequest,
-    PrepareCheckoutResult, Prompt, PromptId, ProviderId, Questionnaire, QuestionnaireId,
-    QuestionnaireOutcome, QuestionnaireSubmission, SessionId, SessionSnapshot, SessionSummary,
-    SettingsSnapshot, SkillCatalogRequest, SkillCatalogStatus, SkillPromptDelivery, TurnStatus,
-    Workspace,
+    PrepareCheckoutResult, Prompt, PromptAdmission, PromptId, ProviderId, Questionnaire,
+    QuestionnaireId, QuestionnaireOutcome, QuestionnaireSubmission, SessionId, SessionSnapshot,
+    SessionSummary, SettingsSnapshot, SkillCatalogRequest, SkillCatalogStatus, SkillPromptDelivery,
+    TurnStatus, Workspace,
 };
 use crate::provider::ProviderOrchestrator;
 use crate::questionnaire::AnswerMismatch;
@@ -363,6 +363,7 @@ impl std::fmt::Display for AnswerRefusal {
                 QuestionnaireOutcome::Pending | QuestionnaireOutcome::SubmissionRejected => {
                     "The Questionnaire takes no Answer now."
                 }
+                QuestionnaireOutcome::Unknown => "The Questionnaire takes no Answer now.",
             }),
             Self::Mismatch(mismatch) => write!(formatter, "{mismatch}"),
             Self::NotDelivered => formatter.write_str(
@@ -382,41 +383,7 @@ impl std::fmt::Display for AnswerRefusal {
 #[derive(Debug)]
 pub(crate) struct AdmittedPrompt {
     pub(crate) prompt: Prompt,
-    pub(crate) delivery: Option<AdmittedDelivery>,
-}
-
-/// How a Prompt was admitted, which the Session's own state decided as much as
-/// the delivery it was sent with.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum AdmittedDelivery {
-    /// The Session was running no Turn it could take it into, so it begins a
-    /// Turn of its own.
-    NewTurn,
-    /// It steers the Turn the Session is working in.
-    Steer,
-    /// It waits behind the Turn the Session is working in, to begin the next.
-    Queued,
-}
-
-impl AdmittedDelivery {
-    const ALL: [Self; 3] = [Self::NewTurn, Self::Steer, Self::Queued];
-
-    /// The name it is said by, to a Sidekick and in the
-    /// [`PROMPT_ADMISSION_HEADER`](crate::protocol::PROMPT_ADMISSION_HEADER).
-    pub(crate) const fn name(self) -> &'static str {
-        match self {
-            Self::NewTurn => "new_turn",
-            Self::Steer => "steer",
-            Self::Queued => "queued",
-        }
-    }
-
-    /// The admission `name` names, where it names one.
-    fn named(name: &str) -> Option<Self> {
-        Self::ALL
-            .into_iter()
-            .find(|admitted| admitted.name() == name)
-    }
+    pub(crate) delivery: Option<PromptAdmission>,
 }
 
 /// The Server-side services the acts on Sessions are performed with.
@@ -1119,6 +1086,8 @@ impl SessionOperations {
             let delivery = match crate::sessions::effective_delivery(&snapshot, request.delivery) {
                 crate::protocol::PromptDelivery::Queue => SkillPromptDelivery::Queue,
                 crate::protocol::PromptDelivery::Steer => SkillPromptDelivery::Steer,
+                // Refused as the Prompt is admitted; steered were it ever not.
+                crate::protocol::PromptDelivery::Unknown => SkillPromptDelivery::Steer,
             };
             self.validate_new_prompt_skills(
                 provider,
@@ -1156,9 +1125,9 @@ impl SessionOperations {
             Ok(StoreOutcome::Created(admission)) => {
                 let admitted = AdmittedPrompt {
                     delivery: Some(match admission.disposition {
-                        PromptAdmissionDisposition::StartImmediately => AdmittedDelivery::NewTurn,
-                        PromptAdmissionDisposition::SteerActive => AdmittedDelivery::Steer,
-                        PromptAdmissionDisposition::RemainPending => AdmittedDelivery::Queued,
+                        PromptAdmissionDisposition::StartImmediately => PromptAdmission::NewTurn,
+                        PromptAdmissionDisposition::SteerActive => PromptAdmission::Steer,
+                        PromptAdmissionDisposition::RemainPending => PromptAdmission::Queued,
                     }),
                     prompt: admission.prompt,
                 };
@@ -1535,6 +1504,8 @@ impl SessionOperations {
                 .sessions
                 .session(session_id)
                 .is_some_and(|session| self.sidekick_workspace.holds(&session.workspace)),
+            // An author of a kind this Server does not know is held to a Sidekick's bounds.
+            Some(Author::Unknown) => true,
         }
     }
 
@@ -1548,6 +1519,7 @@ impl SessionOperations {
             Some(Author::Sidekick { .. } | Author::PeerSidekick { .. }) => {
                 self.sidekick_workspace.holds(workspace)
             }
+            Some(Author::Unknown) => true,
         }
     }
 

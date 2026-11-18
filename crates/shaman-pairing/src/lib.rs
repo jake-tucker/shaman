@@ -36,7 +36,6 @@ use http::{HeaderMap, Request, header};
 use http_body_util::{BodyExt, Limited};
 use rcgen::CertificateParams;
 use rustls::{Error as TlsError, pki_types::CertificateDer};
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
@@ -348,7 +347,8 @@ pub fn relay_refusal<'error>(
     error.source().and_then(relay_refusal)
 }
 
-#[derive(Deserialize, JsonSchema, Serialize)]
+#[derive(Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct InvitePayload {
     #[serde(rename = "w")]
     pub ways: Vec<Way>,
@@ -368,7 +368,8 @@ pub struct ParsedInvite {
     pub hostname: String,
 }
 
-#[derive(Deserialize, JsonSchema, Serialize)]
+#[derive(Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct EnrollmentRequest {
     pub token: String,
     pub protocol_version: u32,
@@ -387,14 +388,16 @@ pub struct EnrollmentRequest {
     pub offer: Option<Uuid>,
 }
 
-#[derive(Clone, Copy, Deserialize, JsonSchema, Serialize)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum EnrollmentPhase {
     Prepare,
     Commit,
 }
 
-#[derive(Deserialize, JsonSchema, Serialize)]
+#[derive(Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct EnrollmentResponse {
     pub hostname: String,
     pub protocol_version: u32,
@@ -403,14 +406,16 @@ pub struct EnrollmentResponse {
 /// What a Serving Server answers a Peer asking whether it answers: the
 /// version it speaks, so the Peer judges it against its own floor, where it
 /// has not refused the Peer as behind.
-#[derive(Deserialize, JsonSchema, Serialize)]
+#[derive(Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PairingHealth {
     pub protocol_version: u32,
 }
 
 /// What a Serving Server tells a Peer of the Relays it Serves through, a
 /// line of the answer each time it tells it: the whole of them each time.
-#[derive(Deserialize, JsonSchema, Serialize)]
+#[derive(Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OfferedRelays {
     pub relays: Vec<String>,
     /// How the offer to pair back this very Peer made stands, where it made
@@ -421,7 +426,8 @@ pub struct OfferedRelays {
 
 /// How a Peer's own offer to pair back stands, as the Server it made it to
 /// tells it: plain data to a redeemer, which the offer to pair back reads.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ToldOffer {
     pub id: Uuid,
     pub accepted: bool,
@@ -429,7 +435,8 @@ pub struct ToldOffer {
 
 /// What a Peer says of its own offer. Nothing here can make one, or name
 /// another's: a word about an id that is not the caller's finds no offer.
-#[derive(Debug, Deserialize, JsonSchema, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum OfferWord {
     /// Its user withdrew it, or it knows nothing of it.
@@ -442,7 +449,8 @@ pub enum OfferWord {
 }
 
 /// Why the machine that made an offer cannot meet it.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CannotOffer {
     ServingOff,
@@ -459,7 +467,9 @@ impl From<CannotOffer> for OfferHeldUp {
 }
 
 /// How a Server answers a [`OfferWord`].
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum OfferAnswer {
     /// Taken.
@@ -480,6 +490,9 @@ pub enum OfferAnswer {
     Formed,
     /// The Invite was redeemed to no Pairing, which this side says why of.
     NotFormed,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The header the Serving listener proves, to this Server's own Session API,
@@ -955,7 +968,7 @@ pub fn parse_invite(invite: &str) -> std::result::Result<ParsedInvite, PairingFa
             "That invite is from a newer Shaman; update Shaman here",
         ));
     }
-    let payload = URL_SAFE_NO_PAD
+    let mut payload = URL_SAFE_NO_PAD
         .decode(encoded)
         .ok()
         .and_then(|bytes| serde_json::from_slice::<InvitePayload>(&bytes).ok())
@@ -965,6 +978,16 @@ pub fn parse_invite(invite: &str) -> std::result::Result<ParsedInvite, PairingFa
                 "Invite payload is malformed",
             )
         })?;
+    // A way of a kind this build does not know is one it cannot dial, and is
+    // passed over; an Invite that offers no other is one from a newer Shaman.
+    let offered = payload.ways.len();
+    payload.ways.retain(|way| !matches!(way, Way::Unknown));
+    if offered > 0 && payload.ways.is_empty() {
+        return Err(PairingFailure::new(
+            SessionErrorCode::UnsupportedInviteVersion,
+            "That invite offers only ways a newer Shaman knows; update Shaman here",
+        ));
+    }
     if !ways_are_unique_and_nonempty(&payload.ways) || !payload.ways.iter().all(well_formed) {
         return Err(PairingFailure::new(
             SessionErrorCode::InvalidInvite,
@@ -1008,6 +1031,7 @@ pub fn well_formed(way: &Way) -> bool {
     match way {
         Way::Direct(_) => true,
         Way::Relay(relay) => canonical_relay(relay),
+        Way::Unknown => false,
     }
 }
 
@@ -1210,6 +1234,39 @@ mod tests {
                 "{written:?}"
             );
         }
+    }
+
+    /// A way of a kind this build does not know, from a newer Server's
+    /// Invite, is passed over, and the Invite is redeemed by the ways it
+    /// knows; one that offers no other is from a Shaman to update to.
+    #[test]
+    fn an_invite_passes_over_a_way_of_a_kind_this_build_does_not_know() {
+        let invite = |ways: serde_json::Value| {
+            let payload = serde_json::json!({
+                "w": ways,
+                "k": URL_SAFE_NO_PAD.encode([7_u8; 91]),
+                "t": URL_SAFE_NO_PAD.encode([1_u8; 32]),
+                "h": "workstation",
+            });
+            format!(
+                "shaman-v1-{}",
+                URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap())
+            )
+        };
+        let parsed = parse_invite(&invite(serde_json::json!([
+            { "quic": { "address": "192.0.2.7:7443" } },
+            { "relay": "https://relay.example.com" },
+        ])))
+        .ok()
+        .expect("an Invite with a way this build knows");
+        assert_eq!(
+            parsed.ways,
+            vec![Way::Relay("https://relay.example.com".to_owned())]
+        );
+        let refused = parse_invite(&invite(serde_json::json!([{ "quic": "192.0.2.7:7443" }])))
+            .err()
+            .map(|refused| refused.code);
+        assert_eq!(refused, Some(SessionErrorCode::UnsupportedInviteVersion));
     }
 
     #[test]

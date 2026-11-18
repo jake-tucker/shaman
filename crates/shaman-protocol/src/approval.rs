@@ -1,19 +1,21 @@
 //! Provider-neutral consent requests and the Decisions that settle them.
 use std::path::PathBuf;
 
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ApprovalId;
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Approval {
     pub id: ApprovalId,
     pub subject: ApprovalSubject,
     pub reason: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ApprovalSubject {
     Command {
@@ -38,10 +40,15 @@ pub enum ApprovalSubject {
         name: String,
         input: serde_json::Value,
     },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// One best-effort semantic action parsed from a command line by its Provider.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CommandAction {
     Read {
@@ -61,18 +68,28 @@ pub enum CommandAction {
     Unknown {
         command: String,
     },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unrecognized,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum Decision {
     Accept,
     AcceptForSession,
     Decline,
     DeclineAndInterrupt,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalOutcome {
     Pending,
@@ -85,6 +102,9 @@ pub enum ApprovalOutcome {
     TurnEnded,
     Unavailable,
     DeliveryUncertain,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl ApprovalOutcome {
@@ -236,6 +256,7 @@ impl ApprovalSubject {
                 budget.retain_string(name);
                 budget.retain_json(input);
             }
+            Self::Unknown => {}
         }
     }
 }
@@ -272,6 +293,7 @@ impl CommandAction {
                 }
             }
             Self::Unknown { command } => budget.retain_string(command),
+            Self::Unrecognized => {}
         }
     }
 }

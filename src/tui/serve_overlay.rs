@@ -304,6 +304,7 @@ impl Choice {
                         Some(Way::Direct(address))
                     }
                     Way::Relay(_) => None,
+                    Way::Unknown => None,
                 })
             })
             .map(|way| CandidateWay {

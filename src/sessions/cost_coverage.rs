@@ -713,6 +713,7 @@ fn reporting_lifetime(record: &CostRecord) -> Option<&str> {
     match &record.coverage {
         CostCoverage::Turn => None,
         CostCoverage::SessionSubtree { reporting_lifetime } => Some(reporting_lifetime),
+        CostCoverage::Unknown => None,
     }
 }
 

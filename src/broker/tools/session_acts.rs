@@ -294,6 +294,7 @@ impl BrokerTools {
                 "outcome": "withdrew_prompt",
                 "prompt": prompt.text,
             }),
+            InterruptOutcome::Unknown => json!({ "session_id": session_id, "outcome": "unknown" }),
         };
         Ok(at_origin(answer, origin))
     }

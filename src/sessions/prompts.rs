@@ -746,6 +746,8 @@ impl SessionStore {
                 None => (PromptAdmissionDisposition::StartImmediately, None),
             },
             (Some(_), PromptDelivery::Queue) => (PromptAdmissionDisposition::RemainPending, None),
+            // Refused as the Prompt is admitted; queued were it ever not.
+            (Some(_), PromptDelivery::Unknown) => (PromptAdmissionDisposition::RemainPending, None),
         };
         let prompt = Prompt {
             id: request.prompt.id,

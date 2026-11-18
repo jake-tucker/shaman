@@ -159,6 +159,9 @@ pub(super) async fn ensure_server(
                         "registered Shaman server reported failed startup",
                     ));
                 }
+                LifecycleState::Unknown => {
+                    anyhow!("registered Shaman server stands in a state this build does not know")
+                }
             },
             Err(error) => {
                 if spawned.is_none() && !awaiting_election {

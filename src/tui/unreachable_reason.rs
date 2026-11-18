@@ -20,6 +20,7 @@ pub(super) fn offer(reason: Option<&UnreachableReason>) -> &'static str {
             | UnreachableReason::RelayDifferentAccounts { .. },
         )
         | None => "Try again",
+        Some(UnreachableReason::Unknown) => "Try again",
     }
 }
 
@@ -38,6 +39,7 @@ pub(super) fn brief(reason: &UnreachableReason) -> String {
             format!("Accounts differ at {relay}")
         }
         UnreachableReason::RelayLoginNeeded { relay } => format!("login needed at {relay}"),
+        UnreachableReason::Unknown => "Unreachable".to_owned(),
     }
 }
 
@@ -67,5 +69,8 @@ pub(super) fn in_full(reason: &UnreachableReason) -> String {
             "Login needed at the relay at {relay}: it joins this server to nothing until this \
              server logs in there, so log in to try again"
         ),
+        UnreachableReason::Unknown => {
+            "This Remote can't be reached, for a reason this Shaman does not know.".to_owned()
+        }
     }
 }

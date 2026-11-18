@@ -576,6 +576,7 @@ impl ShortCodes {
             .filter_map(|way| match way {
                 Way::Relay(relay) => Some(relay.clone()),
                 Way::Direct(_) => None,
+                Way::Unknown => None,
             })
             .collect::<Vec<_>>();
         if relays.is_empty() || invite.len() > MAX_INVITE {

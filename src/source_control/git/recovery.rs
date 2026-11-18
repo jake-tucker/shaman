@@ -129,6 +129,11 @@ impl GitSourceControl {
                             .to_owned(),
                     );
                 }
+                Some(CheckoutRevision::Unknown) => {
+                    return Err(
+                        "The retained revision is of a kind this build does not know".to_owned(),
+                    );
+                }
             };
             if registration.is_some() {
                 // Even an unfinished own lock is removed only through Git,
@@ -194,6 +199,7 @@ impl GitSourceControl {
                         == Some(commit)
             }
             None => false,
+            Some(CheckoutRevision::Unknown) => false,
         };
         if !expected {
             return Err("Interrupted recovery no longer has its retained revision; unrelated work was not changed".to_owned());
@@ -227,6 +233,9 @@ impl GitSourceControl {
                 return Err(format!("Recovered Worktree remains unavailable: {reason}"));
             }
             SourceControlAvailability::NotDetected => {
+                return Err("Recovered Worktree remains unavailable".to_owned());
+            }
+            SourceControlAvailability::Unknown => {
                 return Err("Recovered Worktree remains unavailable".to_owned());
             }
         }

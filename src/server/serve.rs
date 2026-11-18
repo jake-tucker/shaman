@@ -5,11 +5,10 @@
 //! Tool offers them (ADR-0043).
 
 use axum::{
-    Json, Router,
+    Json,
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
 };
 
 use super::{
@@ -27,13 +26,11 @@ use crate::{
     relays::failure_status,
 };
 
-pub(super) fn routes() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/v1/pairing/serving",
-            get(serving_standing).post(prepare_serving),
-        )
-        .route("/v1/pairing/invites/offered", post(offer_invite))
+pub(super) fn routes() -> crate::route_table::Routes<AppState> {
+    crate::route_table::Routes::new()
+        .get("/v1/pairing/serving", serving_standing)
+        .post("/v1/pairing/serving", prepare_serving)
+        .post("/v1/pairing/invites/offered", offer_invite)
 }
 
 async fn serving_standing(State(state): State<AppState>, headers: HeaderMap) -> Response {

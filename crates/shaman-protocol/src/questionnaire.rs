@@ -1,15 +1,16 @@
 //! Provider-neutral structured user input. Transport callbacks never enter this model.
 use crate::QuestionnaireId;
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Questionnaire {
     pub id: QuestionnaireId,
     pub questions: Vec<Question>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Question {
     pub id: String,
     pub title: Option<String>,
@@ -23,7 +24,8 @@ pub struct Question {
     pub required: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct QuestionChoice {
     pub id: String,
     pub label: String,
@@ -31,7 +33,9 @@ pub struct QuestionChoice {
     pub recommended: bool,
 }
 
-#[derive(Clone, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum QuestionAnswer {
     Selected {
@@ -47,6 +51,9 @@ pub enum QuestionAnswer {
     Omitted,
     /// Durable placeholder only; never a valid submission.
     SecretAnswered,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 // Submitted input must never appear in diagnostic formatting.
@@ -56,19 +63,23 @@ impl std::fmt::Debug for QuestionAnswer {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Answer {
     pub questions: Vec<QuestionAnswer>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum QuestionnaireSubmission {
     Answer { answer: Answer },
     Decline,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum QuestionnaireOutcome {
     Pending,
@@ -82,6 +93,9 @@ pub enum QuestionnaireOutcome {
     TurnEnded,
     Unavailable,
     DeliveryUncertain,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl QuestionnaireOutcome {
@@ -174,6 +188,8 @@ impl Question {
             }
             QuestionAnswer::Omitted => self.required.then_some(Unaccepted::Required),
             QuestionAnswer::SecretAnswered => Some(Unaccepted::Placeholder),
+            // An answer of a kind this build does not know answers nothing it asked.
+            QuestionAnswer::Unknown => Some(Unaccepted::Placeholder),
         }
     }
 

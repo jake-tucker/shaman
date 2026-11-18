@@ -1242,6 +1242,8 @@ impl From<TurnStatus> for SubagentStatus {
             TurnStatus::Completed => Self::Completed,
             TurnStatus::Failed => Self::Failed,
             TurnStatus::Interrupted => Self::Stopped,
+            // A status only a newer Server knows says nothing finished.
+            TurnStatus::Unknown => Self::Working,
         }
     }
 }
@@ -1643,6 +1645,9 @@ fn option_value(
         (ModelOptionKind::Toggle { .. }, _) => Err(ToolRefusal::new(format!(
             "Model Option `{id}` is a toggle and takes true or false."
         ))),
+        (ModelOptionKind::Unknown, _) => Err(ToolRefusal::new(format!(
+            "Model Option `{id}` is of a kind this Shaman does not know, so nothing given here sets it."
+        ))),
     }
 }
 
@@ -1710,6 +1715,7 @@ impl From<ProviderUnavailability> for UnavailableReason {
             ProviderUnavailability::NotInstalled => Self::NotInstalled,
             ProviderUnavailability::NotSignedIn => Self::NotSignedIn,
             ProviderUnavailability::IncompatibleVersion => Self::IncompatibleVersion,
+            ProviderUnavailability::Unknown => Self::CatalogFailed,
         }
     }
 }
@@ -1741,6 +1747,9 @@ enum ListedOptionKind {
     Toggle {
         default: bool,
     },
+    /// A kind of option only a newer Server knows, which no value given here
+    /// can set.
+    Unknown,
 }
 
 #[derive(Debug, Serialize)]
@@ -1809,6 +1818,11 @@ fn choosable(catalog: &ProviderModelCatalog) -> Choosable<'_> {
         | ProviderCatalogStatus::Refreshing => {
             Choosable::Models(Box::new(choosable_models(catalog)))
         }
+        ProviderCatalogStatus::Unknown => Choosable::Unavailable {
+            reason: UnavailableReason::CatalogFailed,
+            detail: "This Provider's Models stand in a way this Shaman does not know.".to_owned(),
+            fix: None,
+        },
     }
 }
 
@@ -1889,6 +1903,7 @@ fn listed_option(option: &ModelOptionDescriptor) -> ListedOption {
                 default: default.clone(),
             },
             ModelOptionKind::Toggle { default } => ListedOptionKind::Toggle { default: *default },
+            ModelOptionKind::Unknown => ListedOptionKind::Unknown,
         },
     }
 }

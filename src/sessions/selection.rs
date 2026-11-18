@@ -397,5 +397,6 @@ fn model_option_value_text(value: &ModelOptionValue) -> String {
     match value {
         ModelOptionValue::Select { choice } => choice.to_string(),
         ModelOptionValue::Toggle { enabled } => enabled.to_string(),
+        ModelOptionValue::Unknown => "unknown".to_owned(),
     }
 }

@@ -1128,6 +1128,7 @@ async fn a_compaction_request_begins_a_turn_of_its_own_that_settles_as_its_manua
                     .messages
                     .iter()
                     .any(|message| message.id == *message_id && message.turn_id == compaction_turn),
+                TranscriptItem::Unknown => false,
             })
             .collect::<Vec<_>>(),
         vec![&TranscriptItem::Activity {

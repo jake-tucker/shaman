@@ -99,6 +99,8 @@ impl CodexApprovals {
                         Decision::AcceptForSession => "acceptForSession",
                         Decision::Decline => "decline",
                         Decision::DeclineAndInterrupt => "cancel",
+                        // Refused before it reaches a Provider; declined were it ever to.
+                        Decision::Unknown => "decline",
                     }
                 }),
                 None,

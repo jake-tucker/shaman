@@ -812,6 +812,7 @@ const fn outcome_word(status: ActivityStatus) -> Option<&'static str> {
         ActivityStatus::Active | ActivityStatus::Completed => None,
         ActivityStatus::Failed => Some("Failed"),
         ActivityStatus::Interrupted => Some("Stopped"),
+        ActivityStatus::Unknown => None,
     }
 }
 

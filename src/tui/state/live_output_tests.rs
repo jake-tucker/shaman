@@ -162,6 +162,7 @@ fn command(turn_id: TurnId, name: &str, status: ActivityStatus) -> Activity {
         exit_status: match status {
             ActivityStatus::Active | ActivityStatus::Interrupted => None,
             ActivityStatus::Completed | ActivityStatus::Failed => Some(0),
+            ActivityStatus::Unknown => None,
         },
     }
 }

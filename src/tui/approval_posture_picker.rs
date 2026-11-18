@@ -181,6 +181,7 @@ fn rows(current: ApprovalPosture) -> Vec<ApprovalPostureChoice> {
                 },
             ),
         ],
+        ApprovalPosture::Unknown => Vec::new(),
     };
     rows.push(ApprovalPostureChoice::Reset);
     rows

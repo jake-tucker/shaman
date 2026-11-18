@@ -1738,6 +1738,7 @@ impl ConnectOverlay {
                     .filter_map(|way| match way {
                         Way::Relay(address) => Some(address.as_str()),
                         Way::Direct(_) => None,
+                        Way::Unknown => None,
                     })
                     .collect()
             })

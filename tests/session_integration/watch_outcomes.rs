@@ -96,6 +96,7 @@ fn head_of_turn(snapshot: &SessionSnapshot, turn_id: TurnId) -> Option<Transcrip
             .activities
             .iter()
             .any(|activity| activity.id() == *activity_id && activity.turn_id() == Some(turn_id)),
+        TranscriptItem::Unknown => false,
     })
 }
 
@@ -107,6 +108,7 @@ fn first_activity_of_turn(snapshot: &SessionSnapshot, turn_id: TurnId) -> Option
             .iter()
             .find(|activity| activity.id() == *activity_id && activity.turn_id() == Some(turn_id)),
         TranscriptItem::Message { .. } => None,
+        TranscriptItem::Unknown => None,
     })
 }
 

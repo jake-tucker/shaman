@@ -1801,6 +1801,7 @@ fn command_activity_session(
         exit_status: match status {
             ActivityStatus::Active | ActivityStatus::Interrupted => None,
             ActivityStatus::Completed | ActivityStatus::Failed => Some(0),
+            ActivityStatus::Unknown => None,
         },
     };
     (snapshot, activity_id)

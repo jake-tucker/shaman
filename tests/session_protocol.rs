@@ -179,13 +179,17 @@ fn a_prompt_cache_names_the_write_price_its_call_paid() {
             cache
         );
     }
-    assert!(
+    // A price a newer side names that this build has no rate for reads as
+    // one no rate is listed for.
+    assert_eq!(
         serde_json::from_value::<PromptCache>(json!({
             "lapses_at": 1_767_225_900_000_u64,
             "written_by": "gpt-5",
             "write_price": "half_hour",
         }))
-        .is_err()
+        .expect("decode it")
+        .write_price,
+        CacheWritePrice::Unlisted
     );
 }
 

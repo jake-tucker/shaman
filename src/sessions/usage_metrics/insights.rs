@@ -346,6 +346,7 @@ impl TurnTally {
             TurnStatus::Completed => &mut self.completed,
             TurnStatus::Failed => &mut self.failed,
             TurnStatus::Interrupted => &mut self.interrupted,
+            TurnStatus::Unknown => return,
         };
         *count += 1;
         // A Settle stamped before its start gives no duration, as the

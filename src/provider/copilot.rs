@@ -94,6 +94,7 @@ fn copilot_fix(reason: ProviderUnavailability) -> &'static str {
         }
         ProviderUnavailability::NotSignedIn => "run `copilot login`",
         ProviderUnavailability::IncompatibleVersion => "update the Copilot CLI",
+        ProviderUnavailability::Unknown => "see the Copilot CLI's own documentation",
     }
 }
 

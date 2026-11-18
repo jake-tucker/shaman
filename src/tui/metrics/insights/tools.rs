@@ -82,6 +82,7 @@ fn label(tool: &InsightsTool) -> Cow<'_, str> {
             name,
             server: Some(server),
         } => Cow::Owned(format!("{server} · {name}")),
+        InsightsTool::Unknown => Cow::Borrowed("Other"),
     }
 }
 

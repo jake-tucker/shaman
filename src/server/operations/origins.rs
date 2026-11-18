@@ -44,8 +44,9 @@ use crate::{
     pairing::{PairingFailure, Redeemer},
     protocol::{
         ACT_HEADER, ActId, Author, Outlook, ReadRequest, Remote, RemoteStatus, SessionError,
-        SessionErrorCode, SessionId, SessionListItem, SessionReadingAnswer, SessionReadingQuery,
-        SnapshotWithSummary, Workspace, WorkspaceId, WorkspaceListing, WorkspaceUnavailability,
+        SessionErrorCode, SessionId, SessionListItem, SessionListing, SessionReadingAnswer,
+        SessionReadingQuery, SnapshotWithSummary, Workspace, WorkspaceId, WorkspaceListing,
+        WorkspaceUnavailability,
     },
     session_projection::agent_reading::{self, KnownRemote, ReadAt},
     sessions::Pairing,
@@ -470,9 +471,10 @@ impl RemoteReach {
         name: &str,
     ) -> Result<Vec<SessionListItem>, OriginRefusal> {
         let remote = self.named(name)?;
-        let read = self.get(name, SESSIONS_PATH).await;
+        let read = self.get::<SessionListing>(name, SESSIONS_PATH).await;
         self.still_paired(&remote)?;
-        read.map_err(|failure| failure.of_listing(name))
+        read.map(|listing| listing.0)
+            .map_err(|failure| failure.of_listing(name))
     }
 
     /// What the Remote `name` answers a `GET` of `path` with, decoded as

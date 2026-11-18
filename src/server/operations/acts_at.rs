@@ -32,16 +32,15 @@ use std::path::PathBuf;
 use axum::http::Method;
 
 use super::{
-    AdmittedDelivery, AnswerRefusal, InterruptRefusal, MoveRefusal, PromptRefusal,
-    SessionOperations, SettleRefusal,
+    AnswerRefusal, InterruptRefusal, MoveRefusal, PromptRefusal, SessionOperations, SettleRefusal,
     origins::{RemoteActRefusal, SESSIONS_PATH, WORKSPACES_PATH},
 };
 use crate::protocol::{
     ActId, AdmitPromptRequest, AgentSelection, Author, Health, InterruptOutcome, ModelCatalog,
-    MoveDestination, MoveOutcome, MoveSessionRequest, Outlook, PROMPT_ADMISSION_HEADER, PromptId,
-    QuestionnaireId, QuestionnaireSubmission, ResolveWorkspaceRequest, ResolvedWorkspace,
-    SessionId, SessionSummary, SetWorkspaceDescriptionRequest, SettleSessionRequest,
-    WorkspaceListing,
+    MoveDestination, MoveOutcome, MoveSessionRequest, Outlook, PROMPT_ADMISSION_HEADER,
+    PromptAdmission, PromptId, QuestionnaireId, QuestionnaireSubmission, ResolveWorkspaceRequest,
+    ResolvedWorkspace, SessionId, SessionSummary, SetWorkspaceDescriptionRequest,
+    SettleSessionRequest, WorkspaceListing,
 };
 use crate::sessions::{
     ConfirmedBeginning, Pairing, RemoteAct, RemoteContribution, RemoteOwing, StoreOutcome,
@@ -146,7 +145,7 @@ impl SessionOperations {
         session_id: SessionId,
         request: AdmitPromptRequest,
         author: Author,
-    ) -> Result<Option<AdmittedDelivery>, ActRefusal<PromptRefusal>> {
+    ) -> Result<Option<PromptAdmission>, ActRefusal<PromptRefusal>> {
         let prompt_id = request.prompt.id;
         self.dispatch(
             origin,
@@ -180,7 +179,7 @@ impl SessionOperations {
                     .headers
                     .get(PROMPT_ADMISSION_HEADER)
                     .and_then(|admitted| admitted.to_str().ok())
-                    .and_then(AdmittedDelivery::named))
+                    .and_then(PromptAdmission::named))
             },
         )
         .await

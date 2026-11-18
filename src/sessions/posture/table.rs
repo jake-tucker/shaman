@@ -43,6 +43,7 @@ impl PostureLevel {
                 Claude::AcceptEdits | Claude::Auto => Self::RunsRoutineWork,
                 Claude::DontAsk => Self::RunsContained,
                 Claude::BypassPermissions => Self::RunsUnrestricted,
+                Claude::Unknown => Self::AsksForConsent,
             },
             ApprovalPosture::Codex {
                 approval_policy,
@@ -58,6 +59,8 @@ impl PostureLevel {
                 }
                 (Policy::Never, Sandbox::ReadOnly | Sandbox::WorkspaceWrite) => Self::RunsContained,
                 (Policy::Never, Sandbox::DangerFullAccess) => Self::RunsUnrestricted,
+                (Policy::Unknown, _) => Self::AsksForConsent,
+                (Policy::OnRequest | Policy::Never, Sandbox::Unknown) => Self::AsksForConsent,
             },
             ApprovalPosture::Copilot { permissions } => match permissions {
                 Copilot::Ask => Self::AsksForConsent,
@@ -65,7 +68,10 @@ impl PostureLevel {
                 // where it does not recommend approving.
                 Copilot::Auto => Self::RunsRoutineWork,
                 Copilot::AllowAll => Self::RunsUnrestricted,
+                Copilot::Unknown => Self::AsksForConsent,
             },
+            // A posture only a newer Server knows is read as the most careful.
+            ApprovalPosture::Unknown => Self::AsksForConsent,
         }
     }
 
@@ -162,6 +168,8 @@ mod tests {
             ApprovalPosture::Claude { .. }
             | ApprovalPosture::Codex { .. }
             | ApprovalPosture::Copilot { .. } => {}
+            // No posture: a newer Server's, which this one never sets.
+            ApprovalPosture::Unknown => {}
         };
         let _: fn(Claude) = |mode| match mode {
             Claude::Default
@@ -169,6 +177,7 @@ mod tests {
             | Claude::DontAsk
             | Claude::BypassPermissions
             | Claude::Auto => {}
+            Claude::Unknown => {}
         };
         let modes = [
             Claude::Default,
@@ -179,10 +188,12 @@ mod tests {
         ];
         let _: fn(Policy) = |policy| match policy {
             Policy::Untrusted | Policy::OnRequest | Policy::Never => {}
+            Policy::Unknown => {}
         };
         let policies = [Policy::Untrusted, Policy::OnRequest, Policy::Never];
         let _: fn(Sandbox) = |sandbox| match sandbox {
             Sandbox::ReadOnly | Sandbox::WorkspaceWrite | Sandbox::DangerFullAccess => {}
+            Sandbox::Unknown => {}
         };
         let sandboxes = [
             Sandbox::ReadOnly,
@@ -191,6 +202,7 @@ mod tests {
         ];
         let _: fn(Copilot) = |permissions| match permissions {
             Copilot::Ask | Copilot::Auto | Copilot::AllowAll => {}
+            Copilot::Unknown => {}
         };
         let permissions = [Copilot::Ask, Copilot::Auto, Copilot::AllowAll];
 

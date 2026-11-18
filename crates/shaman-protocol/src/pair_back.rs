@@ -3,7 +3,6 @@
 //! token, and none of it reaches a Peer: what a Peer hears of its own offer is
 //! said over the Pairing, and is the Serving side's alone to say.
 
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -16,7 +15,8 @@ pub const PAIR_BACK_EVENT: &str = "pair_back";
 
 /// Every offer to pair back a Server has to do with: those its Peers made it,
 /// for its user to answer, and those it made its Remotes.
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PairBackOffers {
     pub held: Vec<HeldOffer>,
     pub made: Vec<MadeOffer>,
@@ -24,7 +24,8 @@ pub struct PairBackOffers {
 
 /// An offer a Peer made this Server, at the end of the ceremony that formed
 /// their Pairing: to let it reach that Peer as well.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct HeldOffer {
     pub id: Uuid,
     /// The name the Peer is known by, which it chose and which can be shown.
@@ -44,7 +45,8 @@ pub struct HeldOffer {
 }
 
 /// An accepted offer, waiting on the machine that made it.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OfferAcceptance {
     /// The name the reader gave the Remote.
     pub name: String,
@@ -54,7 +56,8 @@ pub struct OfferAcceptance {
 
 /// An offer this Server made a Remote, which stands until the Remote's user
 /// answers it or this Server's withdraws it.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct MadeOffer {
     pub id: Uuid,
     /// The Remote it was made to, by this Server's name for it.
@@ -67,7 +70,8 @@ pub struct MadeOffer {
 }
 
 /// Why an accepted offer has not come to be a Pairing.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum OfferHeldUp {
     /// The machine that made it is not Serving, so it offers nothing.
@@ -83,7 +87,8 @@ pub enum OfferHeldUp {
 
 /// Why an Invite sent for an offer could not be redeemed, in terms the Server
 /// redeeming it judged for itself.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum RedemptionFailure {
     /// No way it offers answered.
@@ -109,7 +114,8 @@ pub enum RedemptionFailure {
 }
 
 /// A reader's answer to an offer their Server holds.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AnswerOfferRequest {
     /// Let the machine that made it be reached, as a Remote named `name`.
@@ -120,13 +126,15 @@ pub enum AnswerOfferRequest {
 }
 
 /// Claims of the Server the Notice of an offer, for the Client run `claimant`.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OfferNoticeClaim {
     pub claimant: Uuid,
 }
 
 /// Whether the claim gave that Client the Notice, to raise.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OfferNoticeClaimed {
     pub claimed: bool,
 }

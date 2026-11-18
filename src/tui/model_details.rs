@@ -33,6 +33,7 @@ fn price_category(category: ModelPriceCategory) -> (&'static str, &'static str) 
         ModelPriceCategory::Medium => ("$$", "Medium"),
         ModelPriceCategory::High => ("$$$", "High"),
         ModelPriceCategory::VeryHigh => ("$$$$", "Very high"),
+        ModelPriceCategory::Unknown => ("?", "Unknown"),
     }
 }
 
@@ -74,6 +75,7 @@ impl<'a> DetailsPane<'a> {
             let (marker, style) = match advisory.severity {
                 ModelAdvisorySeverity::Warning => ("! ", theme.feedback.warning),
                 ModelAdvisorySeverity::Info => ("", theme.text.subdued),
+                ModelAdvisorySeverity::Unknown => ("", theme.text.subdued),
             };
             match &advisory.title {
                 Some(title) => {
@@ -339,6 +341,7 @@ fn limits_and_options(model: &ModelDescriptor) -> Vec<(String, String)> {
                     .join(", "),
             },
             ModelOptionKind::Toggle { .. } => "On or off".to_owned(),
+            ModelOptionKind::Unknown => continue,
         };
         specifics.push((option.label.clone(), offered));
     }

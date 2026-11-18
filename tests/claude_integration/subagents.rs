@@ -959,6 +959,7 @@ fn transcript_messages(snapshot: &SessionSnapshot) -> Vec<(TurnId, &MessageRole,
                 .iter()
                 .find(|message| message.id == *message_id),
             TranscriptItem::Activity { .. } => None,
+            TranscriptItem::Unknown => None,
         })
         .map(|message| (message.turn_id, &message.role, message.content.as_str()))
         .collect()

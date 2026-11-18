@@ -286,6 +286,9 @@ impl LiveCompaction {
                 trailing_output,
                 message: NOTHING_COMPACTED.to_owned(),
             },
+            Some(ActivityStatus::Unknown) => {
+                ProviderTurnOutcome::CompactionFailed { trailing_output }
+            }
         }
     }
 

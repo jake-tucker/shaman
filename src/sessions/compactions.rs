@@ -285,6 +285,7 @@ impl SessionRecord {
                         .zip(holding.started_at)
                         .is_some_and(|(interrupted, started)| interrupted > started)
             }
+            CompactionRequest::Unknown => false,
         }
     }
 }

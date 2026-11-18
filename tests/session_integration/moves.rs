@@ -394,6 +394,7 @@ fn moves_recorded(snapshot: &SessionSnapshot) -> Vec<(ActivityStatus, MoveLocati
                 .iter()
                 .find(|activity| activity.id() == *activity_id),
             TranscriptItem::Message { .. } => None,
+            TranscriptItem::Unknown => None,
         })
         .filter_map(|activity| match activity {
             Activity::Move {

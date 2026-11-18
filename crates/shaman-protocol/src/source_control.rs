@@ -1,12 +1,10 @@
 //! Source control facts owned by a Server, independent of Agent Providers.
 use super::{ExecutionDirectory, Workspace};
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-#[derive(
-    Clone, Debug, Deserialize, Eq, Hash, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
-)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct WorkspaceId(pub String);
 
@@ -16,9 +14,8 @@ impl WorkspaceId {
     }
 }
 
-#[derive(
-    Clone, Debug, Deserialize, Eq, Hash, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
-)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct RepositoryId(pub String);
 
@@ -31,9 +28,8 @@ impl RepositoryId {
     }
 }
 
-#[derive(
-    Clone, Debug, Deserialize, Eq, Hash, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
-)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct CheckoutId(pub String);
 
@@ -51,22 +47,37 @@ fn identity(namespace: &str, path: &Path) -> String {
     format!("{namespace}:{}", hash.finalize().to_hex())
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum SourceControlAvailability {
     Available,
     NotDetected,
-    Unavailable { reason: String },
+    Unavailable {
+        reason: String,
+    },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum SourceControlCapability {
     Available,
-    Unsupported { reason: String },
+    Unsupported {
+        reason: String,
+    },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SourceControlCapabilities {
     pub list_checkouts: SourceControlCapability,
     pub create_checkout: SourceControlCapability,
@@ -93,15 +104,25 @@ impl SourceControlCapabilities {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RepositoryLocation {
-    Main { root: PathBuf },
-    Bare { root: PathBuf },
+    Main {
+        root: PathBuf,
+    },
+    Bare {
+        root: PathBuf,
+    },
     UnknownMain,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Repository {
     pub id: RepositoryId,
     pub system: String,
@@ -116,19 +137,26 @@ impl Repository {
         match &self.location {
             RepositoryLocation::Main { root } | RepositoryLocation::Bare { root } => root,
             RepositoryLocation::UnknownMain => &self.metadata_directory,
+            RepositoryLocation::Unknown => &self.metadata_directory,
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum CheckoutKind {
     Main,
     Linked,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Identity of one unattended Worktree removal attempt.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct ReclaimOperationId(pub uuid::Uuid);
 impl Default for ReclaimOperationId {
@@ -138,14 +166,20 @@ impl Default for ReclaimOperationId {
 }
 
 /// The durable boundary an observation must have begun after to clear Reclaim.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum CheckoutReclaimPhase {
     Removing,
     Removed,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CheckoutReclaim {
     pub operation_id: ReclaimOperationId,
     pub phase: CheckoutReclaimPhase,
@@ -153,7 +187,8 @@ pub struct CheckoutReclaim {
 }
 
 /// Durable association, not a Session-owned working copy or historical branch.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CheckoutAssociation {
     /// Latest successful reading for recovery; never a live display value.
     pub recovery_revision: Option<CheckoutRevision>,
@@ -166,7 +201,9 @@ pub struct CheckoutAssociation {
     pub kind: CheckoutKind,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CheckoutRevision {
     Branch {
@@ -176,24 +213,36 @@ pub enum CheckoutRevision {
     Detached {
         commit: String,
     },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CheckoutSummary {
     pub association: CheckoutAssociation,
     pub revision: Option<CheckoutRevision>,
     pub availability: SourceControlAvailability,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum ExecutionDirectoryStatus {
     Available,
-    Unavailable { reason: String },
+    Unavailable {
+        reason: String,
+    },
     RequiresWorkingCopy,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ResolvedWorkspace {
     pub execution_status: ExecutionDirectoryStatus,
     pub workspace: Workspace,
@@ -215,7 +264,8 @@ impl ResolvedWorkspace {
 }
 
 /// Stable working-copy preparation identity; independent of edited Prompt IDs.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct PreparationId(pub uuid::Uuid);
 impl Default for PreparationId {
@@ -228,7 +278,8 @@ impl Default for PreparationId {
 /// it. The owning Server names the Managed Worktree from this text, leaving out
 /// the markers of its bound Skill Invocations and the labels of its
 /// Attachments; an unbound `$token` or `[Image 1]` is text.
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PreparationPrompt {
     pub text: String,
     pub skill_invocations: Vec<super::SkillInvocation>,
@@ -236,7 +287,8 @@ pub struct PreparationPrompt {
     pub attachments: Vec<super::AttachmentBinding>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PrepareCheckoutRequest {
     pub id: PreparationId,
     pub source: ExecutionDirectory,
@@ -249,7 +301,8 @@ pub struct PrepareCheckoutRequest {
     pub intended_session: Option<super::SessionId>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PreparedCheckout {
     pub id: PreparationId,
     /// When this durable preparation intent was first persisted.
@@ -271,7 +324,8 @@ pub struct PreparedCheckout {
     pub for_move: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PrepareCheckoutResult {
     pub preparation: PreparedCheckout,
     pub location: Option<ResolvedWorkspace>,
@@ -279,7 +333,8 @@ pub struct PrepareCheckoutResult {
 }
 
 /// Concrete adapter plans can evolve independently of shared preparation state.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "system", rename_all = "snake_case")]
 pub enum CheckoutPreparationPlan {
     Git {
@@ -306,14 +361,16 @@ impl CheckoutPreparationPlan {
 }
 
 /// Owning-Server validation/recreation result for a retained working copy.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CheckoutRecovery {
     pub checkout: CheckoutAssociation,
     pub recreated: bool,
 }
 
 /// Read-only removal facts, revalidated by the owning Server on confirmation.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CheckoutRemovalInspection {
     pub checkout: CheckoutSummary,
     pub tracked: Vec<String>,
@@ -330,20 +387,27 @@ impl CheckoutRemovalInspection {
             || !self.initialized_submodules.is_empty()
     }
 }
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CheckoutRemovalTarget {
     pub repository: Repository,
     pub checkout: CheckoutAssociation,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum CheckoutBranchOutcome {
     Deleted,
     Retained,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CheckoutRemovalPreview {
     pub target: CheckoutRemovalTarget,
     pub inspection: CheckoutRemovalInspection,
@@ -356,12 +420,14 @@ pub struct CheckoutRemovalPreview {
     #[serde(default)]
     pub pending_moves: usize,
 }
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RemoveCheckoutRequest {
     pub preview: CheckoutRemovalPreview,
     pub force: bool,
 }
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RemoveCheckoutResult {
     pub preview: CheckoutRemovalPreview,
     pub removed: bool,

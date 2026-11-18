@@ -1457,6 +1457,8 @@ pub async fn server_status(config: &ManagedClientConfig) -> Result<ServerStatus>
         LifecycleState::Ready => ServerStatus::Ready(health),
         LifecycleState::Stopping => ServerStatus::Stopping(health),
         LifecycleState::Failed => ServerStatus::Failed(health),
+        // A lifecycle only a newer Server knows reads as one not yet ready.
+        LifecycleState::Unknown => ServerStatus::Starting(health),
     })
 }
 

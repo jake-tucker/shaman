@@ -24,14 +24,48 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use uuid::Uuid;
+
+/// Reads `$type`, an externally tagged enum whose variants carry data, taking any variant whose name it does not know for its
+/// `Unknown`, whatever that variant holds: each variant is the one key of an
+/// object, or a name alone.
+/// The enum derives its serde impls with `remote = "Self"`, and `Unknown` is
+/// its `#[serde(other)]` variant, which a name alone is read as where no other
+/// variant goes by it.
+macro_rules! reads_unknown_kinds {
+    ($type:ident) => {
+        impl Serialize for $type {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                $type::serialize(self, serializer)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $type {
+            fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let value = serde_json::Value::deserialize(deserializer)?;
+                // A name alone reads as `Unknown` only where no variant goes by it.
+                let named = value
+                    .as_object()
+                    .filter(|wrapped| wrapped.len() == 1)
+                    .and_then(|wrapped| wrapped.keys().next())
+                    .map(|name| serde_json::Value::String(name.clone()));
+                if let Some(name) = named
+                    && matches!($type::deserialize(name), Ok($type::Unknown))
+                {
+                    return Ok($type::Unknown);
+                }
+                $type::deserialize(value).map_err(serde::de::Error::custom)
+            }
+        }
+    };
+}
 
 /// Describes `$type`, whose serde impls are written by hand, to the schema of
 /// the Pairing wire as `$as`, the shape it travels in.
 macro_rules! travels_as {
     ($type:ty, $as:ty) => {
+        #[cfg(feature = "schema")]
         impl schemars::JsonSchema for $type {
             fn schema_name() -> std::borrow::Cow<'static, str> {
                 stringify!($type).into()
@@ -90,6 +124,11 @@ pub use usage_metrics::*;
 /// an answer that carries no body, such as one to a `HEAD`, still says why it
 /// was refused.
 pub const SESSION_ERROR_CODE_HEADER: &str = "x-shaman-error-code";
+
+/// What a reader is told of a Server older than what was asked of it: one
+/// that knows no such route, or no such kind of value as a request named
+/// (ADR-0078). It says which side to update.
+pub const TOO_OLD_FOR_THIS: &str = "That server is too old for this; update Shaman there";
 pub const SERVER_SHUTDOWN_EVENT: &str = "server_shutdown";
 pub const SETTINGS_SNAPSHOT_EVENT: &str = "settings_snapshot";
 pub const MODEL_CATALOG_EVENT: &str = "model_catalog";
@@ -114,7 +153,8 @@ pub const SUBAGENT_TREE_UPDATED_EVENT: &str = "subagent_tree_updated";
 
 macro_rules! session_identity {
     ($name:ident) => {
-        #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+        #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+        #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
         #[serde(transparent)]
         pub struct $name(Uuid);
 
@@ -160,7 +200,8 @@ session_identity!(ActId);
 
 macro_rules! named_identity {
     ($name:ident) => {
-        #[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+        #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+        #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
         #[serde(transparent)]
         pub struct $name(String);
 
@@ -198,14 +239,21 @@ impl ModelId {
 named_identity!(ModelOptionChoiceId);
 named_identity!(SkillId);
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum ModelAvailability {
     Available,
     Unavailable,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum ModelOptionRole {
     ReasoningEffort,
@@ -216,6 +264,9 @@ pub enum ModelOptionRole {
     /// reads a Selection can tell one with no catalog at hand.
     RoutingTier,
     Other,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl ModelOptionRole {
@@ -230,7 +281,8 @@ impl ModelOptionRole {
 /// The identity of the Model Option every Provider's Routing Tier goes by.
 pub const ROUTING_TIER_OPTION_ID: &str = "routing_tier";
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelOptionChoice {
     pub id: ModelOptionChoiceId,
     pub label: String,
@@ -238,7 +290,9 @@ pub struct ModelOptionChoice {
     pub availability: ModelAvailability,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ModelOptionKind {
     Select {
@@ -248,9 +302,13 @@ pub enum ModelOptionKind {
     Toggle {
         default: bool,
     },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelOptionDescriptor {
     pub id: ModelOptionId,
     pub label: String,
@@ -259,7 +317,8 @@ pub struct ModelOptionDescriptor {
     pub kind: ModelOptionKind,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelDescriptor {
     pub provider: ProviderId,
     pub id: ModelId,
@@ -276,7 +335,8 @@ pub struct ModelDescriptor {
 /// What a Provider publishes about a Model beyond its name and Model Options:
 /// its prices, how much it holds, and the Model Advisories the Provider asks a
 /// reader be shown.
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelDetails {
     /// Where the Model's price stands relative to the Provider's other Models.
     pub price_category: Option<ModelPriceCategory>,
@@ -307,18 +367,24 @@ impl ModelDetails {
 }
 
 /// A Model's price relative to the Provider's other Models.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum ModelPriceCategory {
     Low,
     Medium,
     High,
     VeryHigh,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A Model's token prices in the Provider's own unit, one tier per context
 /// tier the Model offers.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelPrices {
     /// What a price counts, as the Provider names it, e.g. `AI Credits`.
     pub unit: String,
@@ -329,7 +395,8 @@ pub struct ModelPrices {
 
 /// The prices of one context tier, named as the Model's Context option names
 /// it.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelPriceTier {
     pub label: String,
     /// The most prompt tokens the tier admits.
@@ -345,7 +412,8 @@ pub struct ModelPriceTier {
 
 /// One price in millionths of its unit, so the catalog keeps exact equality
 /// while carrying the fractional prices Providers publish.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct ModelPrice(u64);
 
@@ -369,7 +437,8 @@ impl ModelPrice {
 /// Something a Provider asks be shown beside a Model: a data-retention
 /// warning, an advisory of its own, a promotion, or why the Model cannot be
 /// chosen.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelAdvisory {
     pub severity: ModelAdvisorySeverity,
     pub title: Option<String>,
@@ -377,12 +446,17 @@ pub struct ModelAdvisory {
     pub text: String,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum ModelAdvisorySeverity {
     /// Shown before the reader chooses the Model, and marked in the list.
     Warning,
     Info,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -524,6 +598,7 @@ impl ModelOptionDescriptor {
                 ModelOptionKind::Toggle { default } => {
                     ModelOptionValue::Toggle { enabled: *default }
                 }
+                ModelOptionKind::Unknown => ModelOptionValue::Unknown,
             },
         }
     }
@@ -542,11 +617,20 @@ impl ModelOptionDescriptor {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ModelOptionValue {
-    Select { choice: ModelOptionChoiceId },
-    Toggle { enabled: bool },
+    Select {
+        choice: ModelOptionChoiceId,
+    },
+    Toggle {
+        enabled: bool,
+    },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Why a Provider cannot be used right now. Each reason names a condition the
@@ -554,12 +638,17 @@ pub enum ModelOptionValue {
 /// or moving to a version Shaman speaks — which the next catalog refresh
 /// re-evaluates. What the user does about it is the Provider's to say, so it
 /// travels beside the reason rather than being derived from it.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderUnavailability {
     NotInstalled,
     NotSignedIn,
     IncompatibleVersion,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl ProviderUnavailability {
@@ -569,11 +658,14 @@ impl ProviderUnavailability {
             Self::NotInstalled => "not installed",
             Self::NotSignedIn => "not signed in",
             Self::IncompatibleVersion => "incompatible version",
+            Self::Unknown => "unavailable",
         }
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum ProviderCatalogStatus {
     Fresh,
@@ -619,9 +711,13 @@ pub enum ProviderCatalogStatus {
     /// notionally in flight included — because nothing about a Provider Shaman
     /// never consulted may be offered.
     Disabled,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ProviderModelCatalog {
     pub provider: ProviderId,
     /// The Provider's name as the user reads it, declared by its runtime —
@@ -633,7 +729,8 @@ pub struct ProviderModelCatalog {
     pub status: ProviderCatalogStatus,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelCatalog {
     pub providers: Vec<ProviderModelCatalog>,
 }
@@ -683,9 +780,8 @@ pub fn actual_model_row<'a>(
         })
 }
 
-#[derive(
-    Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
-)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct SessionRevision(pub u64);
 
@@ -697,9 +793,8 @@ impl SessionRevision {
     }
 }
 
-#[derive(
-    Clone, Copy, Debug, Deserialize, Eq, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
-)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct SessionCatalogRevision(pub u64);
 
@@ -714,9 +809,8 @@ impl SessionCatalogRevision {
 /// Where one per-tree subscription stands in the changes it has carried. It
 /// counts within one subscription's life only: every connection begins with a
 /// snapshot, which is authoritative whatever revision it names.
-#[derive(
-    Clone, Copy, Debug, Deserialize, Eq, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
-)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct SubagentTreeRevision(pub u64);
 
@@ -728,9 +822,8 @@ impl SubagentTreeRevision {
     }
 }
 
-#[derive(
-    Clone, Copy, Debug, Deserialize, Eq, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
-)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct PromptOrder(pub u64);
 
@@ -739,9 +832,8 @@ impl PromptOrder {
 }
 
 /// Milliseconds since the Unix epoch.
-#[derive(
-    Clone, Copy, Debug, Deserialize, Eq, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
-)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct SessionTimestamp(pub u64);
 
@@ -761,7 +853,8 @@ impl SessionTimestamp {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Workspace {
     pub id: WorkspaceId,
     /// Presentation only: identity is unchanged when a main root becomes known.
@@ -791,7 +884,9 @@ pub struct Workspace {
 
 /// Why a Workspace its Server lists cannot be opened now: its directory, as
 /// the listing read it, could not be read.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum WorkspaceUnavailability {
     /// Its directory is gone, though a Session belongs to it, which keeps
@@ -804,6 +899,9 @@ pub enum WorkspaceUnavailability {
     HolderUnreadable,
     /// Reading its directory did not answer in time.
     Unanswered,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl WorkspaceUnavailability {
@@ -816,6 +914,7 @@ impl WorkspaceUnavailability {
             Self::Unreadable => "its directory cannot be read",
             Self::HolderUnreadable => "its parent cannot be read",
             Self::Unanswered => "its directory did not answer",
+            Self::Unknown => "it cannot be used here",
         }
     }
 }
@@ -933,7 +1032,8 @@ pub fn title_too_long(chars: usize) -> String {
 /// glossary entry), and whether the user or a Sidekick set it rather than an
 /// Errand deriving it. A set Description stands against every later
 /// derivation; a derived one only ever filled an absence.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceDescription {
     pub text: String,
     pub set: bool,
@@ -942,7 +1042,8 @@ pub struct WorkspaceDescription {
 /// The exact directory an Agent executes in, interpreted only by its owning Server.
 /// It is independent of Workspace grouping, set as the Session begins, and
 /// changed only by a Move.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ExecutionDirectory {
     pub path: PathBuf,
 }
@@ -950,7 +1051,8 @@ pub struct ExecutionDirectory {
 /// A path a Client asks its Outlook Server to interpret as a Workspace. A
 /// relative path is read from `base`, or from the Server process's current
 /// directory when no base is supplied.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ResolveWorkspaceRequest {
     #[serde(default)]
     pub checkout_id: Option<CheckoutId>,
@@ -966,7 +1068,8 @@ pub struct ResolveWorkspaceRequest {
 /// Browser. A relative path is read from `base`, or from the Server process's
 /// current directory when no base is supplied, and one beginning with `~` from
 /// the Server's home; on Windows the empty path is the [`DRIVE_LIST`].
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ListDirectoryRequest {
     pub path: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -976,7 +1079,8 @@ pub struct ListDirectoryRequest {
 /// What `GET /v1/sessions` narrows its listing to, read from its query: the
 /// Sessions of one Workspace, by its identity or by a directory of the
 /// Server's that resolves to it, or every Session where neither is given.
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ListSessionsQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
@@ -986,7 +1090,8 @@ pub struct ListSessionsQuery {
 
 /// What `GET /v1/session-events` reads from its query: whether to warm the
 /// Model Catalog once the stream has told what it remembers of it.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionCatalogQuery {
     #[serde(default)]
     pub warm_models: bool,
@@ -1013,7 +1118,8 @@ pub const DRIVE_LIST: &str = "";
 /// On Windows a [`DRIVE_LIST`] stands above every drive root: a drive root's
 /// parent is that path, and its listing has the path as its root, no parent,
 /// and a child for each drive, named and spelled as its root, such as `C:\`.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DirectoryListing {
     pub root: PathBuf,
     /// Absent where the root is the filesystem's own or a Windows Server's
@@ -1029,7 +1135,8 @@ pub struct DirectoryListing {
 
 /// A directory directly within a [`DirectoryListing`]'s root, whose name is
 /// Unicode.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChildDirectory {
     pub name: String,
     /// The root joined with `name` in the Server's own syntax, so a Client
@@ -1047,7 +1154,9 @@ pub struct ChildDirectory {
 /// What a listed directory is to source control, read by its Server from
 /// Git's metadata on disk rather than by running Git, so a listing costs one
 /// directory read and one HEAD read per Repository it names.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DirectorySourceControl {
     /// Neither a Worktree's root nor a bare Repository.
@@ -1065,13 +1174,17 @@ pub enum DirectorySourceControl {
     /// having no Worktree to stand on one; its HEAD, which names only the
     /// branch a clone of it would start on, is read only to recognize it.
     BareRepository,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Safe presentation metadata for one user-invocable Skill. The Provider keeps
 /// every native path, command name, and configuration detail behind its own
 /// runtime boundary; clients receive only this opaque identity and the words
 /// they need to choose and distinguish the Skill.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SkillDescriptor {
     pub id: SkillId,
     pub name: String,
@@ -1093,15 +1206,21 @@ impl SkillDescriptor {
 /// is distinct from Steer even though an initial Prompt currently enters the
 /// Session store with steer delivery: Providers such as Claude support one and
 /// not the other.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum SkillPromptDelivery {
     Initial,
     Queue,
     Steer,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SkillCatalogCapabilities {
     /// The maximum number of distinct Skills one Prompt may invoke. None means
     /// the Provider declares no Shaman-enforced limit.
@@ -1112,20 +1231,32 @@ pub struct SkillCatalogCapabilities {
 /// Whether the entries in a Skill Catalog are current invocation authority.
 /// Skill discovery is deliberately independent of Provider Availability: a
 /// failed or stale Skill Catalog never prevents an ordinary Prompt.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum SkillCatalogStatus {
     Loading,
-    Fresh { warning: Option<String> },
+    Fresh {
+        warning: Option<String>,
+    },
     Refreshing,
-    Stale { message: String },
-    Unavailable { message: String },
+    Stale {
+        message: String,
+    },
+    Unavailable {
+        message: String,
+    },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The effective user-invocable Skills offered by one Provider in exactly one
 /// Execution Directory. Including both identities makes crossing Provider
 /// or execution contexts visible at every caller boundary.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SkillCatalog {
     pub provider: ProviderId,
     pub execution_directory: ExecutionDirectory,
@@ -1137,7 +1268,8 @@ pub struct SkillCatalog {
 /// The client context whose current Skill Catalog it wants. The server
 /// canonicalizes the Execution Directory before consulting the Provider, so spelling
 /// variants of one directory cannot create separate authority domains.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SkillCatalogRequest {
     pub provider: ProviderId,
     pub execution_directory: ExecutionDirectory,
@@ -1146,7 +1278,8 @@ pub struct SkillCatalogRequest {
 /// The byte range of a Prompt's original UTF-8 text that stands for something
 /// bound beside that text, such as the `$skill-name` a Skill Invocation was
 /// written as. The end is exclusive, matching Rust string ranges.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TextSpan {
     pub start: u32,
     pub end: u32,
@@ -1294,7 +1427,8 @@ pub fn match_skills_by_name<'a>(
 /// remain separate records so historical presentation preserves every marker;
 /// Provider lowering may later deduplicate identities in first-appearance
 /// order.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SkillInvocation {
     pub skill_id: SkillId,
     pub name: String,
@@ -1303,13 +1437,15 @@ pub struct SkillInvocation {
     pub span: TextSpan,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelOptionSelection {
     pub id: ModelOptionId,
     pub value: ModelOptionValue,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentSelection {
     pub provider: ProviderId,
     pub model: ModelId,
@@ -1332,6 +1468,7 @@ impl AgentSelection {
             .and_then(|option| match &option.value {
                 ModelOptionValue::Select { choice } => Some(choice),
                 ModelOptionValue::Toggle { .. } => None,
+                ModelOptionValue::Unknown => None,
             })
     }
 
@@ -1343,7 +1480,8 @@ impl AgentSelection {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentIdentity {
     pub agent: AgentId,
     pub selection: AgentSelection,
@@ -1353,7 +1491,8 @@ pub struct AgentIdentity {
 /// a Server Setting governs server or Provider behavior. Dormant data until a
 /// machine-local overlay distinguishes the two, but declared from day one so
 /// that overlay never reshapes the schema.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SettingScope {
     Client,
@@ -1362,7 +1501,8 @@ pub enum SettingScope {
 
 /// Which lightness variant a Theme paints with. `System` follows the attached
 /// terminal when it can and otherwise takes the dark variant.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AppearanceMode {
     #[default]
@@ -1372,7 +1512,8 @@ pub enum AppearanceMode {
 }
 
 /// Whether the Landing includes the Japanese Shaman banner above its composer.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "PascalCase")]
 pub enum LandingPage {
     #[default]
@@ -1381,7 +1522,8 @@ pub enum LandingPage {
 }
 
 /// The default Fold posture a Session view opens with.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FoldPosture {
     #[default]
@@ -1397,7 +1539,8 @@ pub enum FoldPosture {
 /// therefore gets Reasoning with no summary at all: nothing streams and the
 /// completed block carries an empty summary. Shaman's default is `auto`, which
 /// lets the Model choose how much to say.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ReasoningSummaryDetail {
     #[default]
@@ -1418,7 +1561,8 @@ pub enum ReasoningSummaryDetail {
 /// reader who turns Reasoning on is shown every block that arrived while it
 /// was off. Distinct from the `provider.codex.reasoningSummary` Setting, which
 /// decides how much Reasoning a Turn asks for in the first place.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ReasoningVisibility {
     #[default]
@@ -1435,7 +1579,8 @@ pub enum ReasoningVisibility {
 /// Either way it is presentation and nothing more: Tool Calls keep arriving
 /// and keep being stored, so a reader who shows them again is shown every one
 /// that arrived while they were hidden.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ToolCallVisibility {
     #[default]
@@ -1450,7 +1595,8 @@ pub enum ToolCallVisibility {
 /// the way [`FoldPosture`] is for Folds: a default a view starts from, which
 /// the reader then flips one Group at a time or all at once. `Off` forms no
 /// Groups at all, so every Activity stands as its own row.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum GroupPosture {
     #[default]
@@ -1482,7 +1628,8 @@ impl CommandAutoExpand {
     }
 }
 
-#[derive(Deserialize, JsonSchema, Serialize)]
+#[derive(Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 enum CommandAutoExpandDocument {
     Enabled(bool),
@@ -1517,7 +1664,8 @@ impl<'de> Deserialize<'de> for CommandAutoExpand {
 
 travels_as!(CommandAutoExpand, CommandAutoExpandDocument);
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TranscriptSettings {
     pub default_fold_posture: FoldPosture,
     pub groups: GroupPosture,
@@ -1594,7 +1742,8 @@ impl DerivationErrand {
 /// it cannot. The Selection is written plainly rather than under a tag,
 /// because a Config Document is written by hand and an Agent Selection is
 /// already an object no word could be mistaken for.
-#[derive(Deserialize, JsonSchema, Serialize)]
+#[derive(Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 enum DerivationErrandDocument {
     Named(String),
@@ -1645,7 +1794,8 @@ impl Default for SessionContentWidth {
     }
 }
 
-#[derive(Deserialize, JsonSchema, Serialize)]
+#[derive(Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 enum SessionContentWidthDocument {
     Named(String),
@@ -1682,12 +1832,14 @@ impl<'de> Deserialize<'de> for SessionContentWidth {
 travels_as!(SessionContentWidth, SessionContentWidthDocument);
 
 /// How Shaman derives a Session's Title and a Workspace's Icon.
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DerivationSettings {
     pub errand: DerivationErrand,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionSettings {
     pub content_width: SessionContentWidth,
 }
@@ -1697,7 +1849,8 @@ pub struct SessionSettings {
 /// The Setting this spells governs only the first frame: a reader who toggles
 /// the Sidebar afterwards is changing their view, not their configuration, so
 /// nothing writes the choice back.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SidebarVisibility {
     #[default]
@@ -1710,7 +1863,8 @@ pub enum SidebarVisibility {
 /// Like [`SidebarVisibility`], the Setting this spells governs only how the
 /// client begins: a reader who shows or hides the Aside afterwards is changing
 /// their view, not their configuration, so nothing writes the choice back.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AsideVisibility {
     #[default]
@@ -1723,7 +1877,8 @@ pub enum AsideVisibility {
 /// The Setting this spells governs only the scope a Sidebar launches with: the
 /// selector above the list is the reader's to move afterwards, and — as with
 /// the Sidebar's own visibility — nothing writes that choice back.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SidebarScope {
     /// The reader's whole body of work, whichever Workspace it is rooted in.
@@ -1768,7 +1923,8 @@ impl Default for AutoReclaim {
     }
 }
 
-#[derive(Deserialize, JsonSchema, Serialize)]
+#[derive(Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 enum AutoReclaimDocument {
     Named(String),
@@ -1804,7 +1960,8 @@ impl<'de> Deserialize<'de> for AutoReclaim {
 
 travels_as!(AutoReclaim, AutoReclaimDocument);
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorktreeSettings {
     pub auto_reclaim: AutoReclaim,
     pub after_creation: AfterWorktreeCreation,
@@ -1812,7 +1969,8 @@ pub struct WorktreeSettings {
 
 /// Where the Landing stands once a Session has begun in a Worktree created
 /// for it on submit.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AfterWorktreeCreation {
     /// Back where it stood when the new Worktree was asked for, so only the
@@ -1823,7 +1981,8 @@ pub enum AfterWorktreeCreation {
     Stay,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceSettings {
     /// The Workspace Roots: the directories the user's work lives in, each
     /// spelled as they named it — an absolute path, or one beginning with `~`
@@ -1856,7 +2015,8 @@ impl Default for AutoSettle {
 /// that is not a duration, or the days themselves. The same scalar shape
 /// `session.contentWidth` takes, and for the same reason — the value's own
 /// shape says which of the two it is, so nothing has to be written down twice.
-#[derive(Deserialize, JsonSchema, Serialize)]
+#[derive(Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 enum AutoSettleDocument {
     Named(String),
@@ -1895,7 +2055,8 @@ impl<'de> Deserialize<'de> for AutoSettle {
 
 travels_as!(AutoSettle, AutoSettleDocument);
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SidebarSettings {
     pub initial_visibility: SidebarVisibility,
     pub initial_width: u64,
@@ -1916,7 +2077,8 @@ impl Default for SidebarSettings {
 
 /// How a TUI's Aside begins. Both are launch Settings: the Aside adopts them
 /// once, and the reader's own showing, hiding, and dragging rule after that.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AsideSettings {
     pub initial_visibility: AsideVisibility,
     pub initial_width: u64,
@@ -1932,7 +2094,8 @@ impl Default for AsideSettings {
 }
 
 /// How a Client presents the work a Sidekick does on the reader's behalf.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SidekickSettings {
     /// Whether Subsessions are left out wherever Sessions are listed — the
     /// Sidebar, its search, and the Session picker, on every Server listed —
@@ -1955,7 +2118,8 @@ impl Default for SidekickSettings {
 /// Client presentation selected independently of whichever Server the reader
 /// is looking into. Theme names stay open strings because built-ins are only
 /// the first source; later tickets add Themes discovered from disk.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AppearanceSettings {
     pub theme: String,
     pub mode: AppearanceMode,
@@ -1978,7 +2142,8 @@ impl Default for AppearanceSettings {
 /// carries one, and each spells its own built-in default by hand rather than
 /// deriving it, because a derived `bool` is `false` and a Provider is on unless
 /// the user says otherwise.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CodexSettings {
     pub enabled: bool,
     pub reasoning_summary: ReasoningSummaryDetail,
@@ -1997,25 +2162,36 @@ impl Default for CodexSettings {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "kebab-case")]
 pub enum CodexApprovalPolicy {
     Untrusted,
     #[default]
     OnRequest,
     Never,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "kebab-case")]
 pub enum CodexSandboxMode {
     ReadOnly,
     #[default]
     WorkspaceWrite,
     DangerFullAccess,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CopilotSettings {
     pub enabled: bool,
     pub permissions: CopilotPermissions,
@@ -2035,7 +2211,9 @@ impl Default for CopilotSettings {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "camelCase")]
 pub enum CopilotPermissions {
     Ask,
@@ -2045,9 +2223,13 @@ pub enum CopilotPermissions {
     #[default]
     Auto,
     AllowAll,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ClaudeSettings {
     pub enabled: bool,
     pub permission_mode: ClaudePermissionMode,
@@ -2062,7 +2244,9 @@ impl Default for ClaudeSettings {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "camelCase")]
 pub enum ClaudePermissionMode {
     Default,
@@ -2071,6 +2255,9 @@ pub enum ClaudePermissionMode {
     BypassPermissions,
     #[default]
     Auto,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl ClaudePermissionMode {
@@ -2081,11 +2268,15 @@ impl ClaudePermissionMode {
             Self::DontAsk => "dontAsk",
             Self::BypassPermissions => "bypassPermissions",
             Self::Auto => "auto",
+            // A mode only a newer Server knows is never launched here: Claude runs
+            // under its own default.
+            Self::Unknown => "default",
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ProviderSettings {
     pub codex: CodexSettings,
     pub copilot: CopilotSettings,
@@ -2096,7 +2287,8 @@ pub struct ProviderSettings {
 /// exposed while it is. Keeping the bind address typed means malformed
 /// addresses are rejected by Settings loading before anything reaches the
 /// network boundary.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ServingSettings {
     /// Whether the Server accepts paired Servers at all, by whichever ways
     /// it is reached.
@@ -2118,7 +2310,8 @@ pub struct ServingSettings {
 /// why it does not where it was asked to. A Client offers this machine's own
 /// addresses in an Invite only while it listens, and at the port it listens
 /// on.
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum ListenerState {
     /// Listening nowhere, as asked: the Server is not Serving, or the
@@ -2145,7 +2338,8 @@ impl ListenerState {
 }
 
 /// How Shaman compacts a Session's context of its own accord.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CompactionSettings {
     pub scheduled: ScheduledCompactionSettings,
 }
@@ -2155,7 +2349,8 @@ pub struct CompactionSettings {
 /// it on, since it spends on the user's behalf without being asked in the
 /// moment. Each value is read when a scheduled Compaction falls due, never
 /// when it was armed.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ScheduledCompactionSettings {
     pub enabled: bool,
     /// The least Lapse Penalty worth compacting a Session for: one forecast
@@ -2176,7 +2371,8 @@ impl Default for ScheduledCompactionSettings {
 }
 
 /// Which Sessions a scheduled Compaction reaches.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ScheduledCompactionSessions {
     /// Only those that are not Settled, by the user's say-so or on their own.
@@ -2268,7 +2464,8 @@ travels_as!(PenaltyThreshold, f64);
 ///
 /// The caps bound what the Broker spawns, each read at the moment of a spawn:
 /// a spawn past either is refused, naming the cap, and never queued.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct BrokerSettings {
     pub enabled: bool,
     /// How many Sessions deep a tree may stand through the Broker, its
@@ -2294,10 +2491,10 @@ impl Default for BrokerSettings {
 /// One way of reaching a Serving Server, as an Invite offers it and a Remote
 /// remembers it. A list of ways is carried whole wherever it travels; only
 /// what dials a way or shows one looks at which kind it is.
-#[derive(
-    Clone, Debug, Deserialize, Eq, Hash, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
-)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
+#[serde(remote = "Self", rename_all = "snake_case")]
 pub enum Way {
     /// At an address of the Serving Server's own listener, dialled directly.
     /// It is a concrete socket address because the Pairing transport has no
@@ -2309,7 +2506,12 @@ pub enum Way {
     /// Invite carries and the Pairing pins, where both are logged in under
     /// one Account (ADR-0045, ADR-0046).
     Relay(String),
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
+
+reads_unknown_kinds!(Way);
 
 impl std::fmt::Display for Way {
     /// How a way reads wherever one is shown: a direct way as its address,
@@ -2318,6 +2520,7 @@ impl std::fmt::Display for Way {
         match self {
             Self::Direct(address) => address.fmt(formatter),
             Self::Relay(address) => write!(formatter, "Relay {address}"),
+            Self::Unknown => formatter.write_str("a way this build does not know"),
         }
     }
 }
@@ -2336,7 +2539,8 @@ pub fn opens_as_an_invite(text: &str) -> bool {
 /// The whole string of an Invite. Its token redeems the Invite for whoever has
 /// it, so it says nothing of itself in `Debug`, whatever holds it comes to be
 /// printed by.
-#[derive(Clone, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct InviteText(pub String);
 
@@ -2374,14 +2578,16 @@ impl PartialEq<&str> for InviteText {
 
 /// The ways of reaching this Server its Serving user chose to offer in a
 /// freshly issued Invite.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct IssueInviteRequest {
     pub ways: Vec<Way>,
 }
 
 /// The pasteable Invite together with the ways it offers, returned by the
 /// Server's local interface so a Client need not decode credential data.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct IssuedInvite {
     pub invite: InviteText,
     /// Which Invite of this Server it is, for [`InviteStanding`] to be told of.
@@ -2402,7 +2608,8 @@ pub const INVITE_STANDING_EVENT: &str = "invite_standing";
 /// whichever surface it came to that. It says nothing of an Invite bound to one
 /// key, which is shown nowhere and stands outside superseding (ADR-0066), and
 /// holds no token and no code.
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct InviteStanding {
     /// The Invite this says of; `0` before any was issued. A later one than a
     /// Client is showing has replaced the one it shows.
@@ -2411,7 +2618,8 @@ pub struct InviteStanding {
 }
 
 /// Where the latest Invite has got to.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum InviteState {
     /// It can be redeemed.
@@ -2427,7 +2635,8 @@ pub enum InviteState {
 
 /// Whether a Server is Serving, and how its listener stands, as its user's own
 /// surfaces read that without changing anything.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ServingStanding {
     /// Whether Serving is on, in force: what a Config Document says is not this
     /// until it is put in force (ADR-0067).
@@ -2438,7 +2647,8 @@ pub struct ServingStanding {
 /// What came of making a Server ready to issue an Invite, as every surface that
 /// issues one does first: Serving turned on where it was off, or asked for again
 /// where it could not start.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ServingPreparation {
     /// What this did to Serving, where it did anything.
     pub change: Option<ServingChange>,
@@ -2453,7 +2663,8 @@ pub struct ServingPreparation {
 /// An Invite asked for by the kinds of way it is to offer, for the Server to say
 /// which ways those are: what its user would have ticked in `/serve`, unless
 /// told otherwise.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OfferInviteRequest {
     /// Whether it offers this machine's own addresses.
     pub addresses: bool,
@@ -2461,7 +2672,8 @@ pub struct OfferInviteRequest {
 }
 
 /// Which Relays an Invite asked for by kind is to offer.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum InviteRelays {
     /// Every Relay it can offer.
@@ -2474,7 +2686,8 @@ pub enum InviteRelays {
 }
 
 /// What making a Server ready to issue an Invite did to Serving.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ServingChange {
     /// It was off, and is on.
@@ -2488,7 +2701,8 @@ pub enum ServingChange {
 
 /// Why a way an Invite might have offered is not offered, for each Client to say
 /// in its own words what would put that right.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum WayLeftOut {
     /// The Server holds no Relay at `address`, as it holds those at `held`.
@@ -2513,7 +2727,8 @@ pub enum WayLeftOut {
 
 /// An Invite issued by the Server's say of which ways to offer, and what its
 /// reader should be told of how that went.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct OfferedInvite {
     pub issued: IssuedInvite,
     /// What issuing it did to Serving, where it did anything.
@@ -2527,7 +2742,8 @@ pub struct OfferedInvite {
 
 /// What came of asking for an Invite by the kinds of way it is to offer. Why none
 /// was issued is typed, where it can be, for each Client to word.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum InviteOfferAnswer {
     Issued(Box<OfferedInvite>),
@@ -2550,7 +2766,8 @@ pub enum InviteOfferAnswer {
 
 /// The non-secret facts a local Client may show before the reader decides to
 /// trust and dial the Serving Server named by a pasted Invite.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct InvitePreview {
     pub hostname: String,
     pub fingerprint: String,
@@ -2562,7 +2779,8 @@ pub struct InvitePreview {
 
 /// A pasted Invite to inspect locally. Inspection validates and decodes the
 /// Invite but never dials an offered way or changes Pairing state.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PreviewInviteRequest {
     pub invite: InviteText,
 }
@@ -2571,7 +2789,8 @@ pub struct PreviewInviteRequest {
 /// Invite's offered ways in the priority order to dial; an empty list keeps
 /// the offered order. `name` defaults to the Serving machine's hostname when
 /// omitted.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RedeemInviteRequest {
     pub invite: InviteText,
     pub name: Option<String>,
@@ -2582,7 +2801,8 @@ pub struct RedeemInviteRequest {
 }
 
 /// A durable paired Serving Server as the connecting Server knows it.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Remote {
     pub name: String,
     pub fingerprint: String,
@@ -2606,7 +2826,8 @@ pub struct Remote {
 /// The Icon a user chose for one of the Remotes this Server is paired with,
 /// named from the Icon Catalog. Refused where the Catalog carries no such
 /// Icon, or where this Server is paired with no Remote of that name.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SetRemoteIconRequest {
     pub icon: String,
 }
@@ -2657,7 +2878,8 @@ impl SessionReference {
 
 /// A Session on a Remote, by the name the Server naming it knows that Remote
 /// by and the Session's identity there.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RemoteSession {
     pub origin: String,
     pub session_id: SessionId,
@@ -2668,7 +2890,8 @@ pub struct RemoteSession {
 /// the stable fingerprint used to identify and remove the Peer, and the name
 /// the Peer gave itself when it redeemed its Invite — its machine's hostname —
 /// by which what a Sidekick on it sends here is attributed.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Peer {
     pub id: String,
     pub fingerprint: String,
@@ -2684,7 +2907,9 @@ pub struct Peer {
 /// status response so a Client can present incompatibility without treating
 /// the local Server request itself as failed, and stored with the Remote as
 /// what it last stood as, which the next probe refreshes.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum RemoteStatus {
     Available,
@@ -2708,7 +2933,8 @@ pub enum RemoteStatus {
 /// The outcome of removing a Remote. Removal always ends the Pairing on this
 /// side; `acknowledged` says whether the Remote answered in time and dropped
 /// its Peer record for this Server as well.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RemoteRemoval {
     pub name: String,
     pub acknowledged: bool,
@@ -2716,7 +2942,8 @@ pub struct RemoteRemoval {
 
 /// The result of probing a Remote. The protocol version is known only after an
 /// authenticated health response.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RemoteHealth {
     pub protocol_version: Option<u32>,
     pub status: RemoteStatus,
@@ -2730,7 +2957,9 @@ pub struct RemoteHealth {
 /// about it rather than wait: what is said of it beside the Remote reading
 /// Unreachable, until it answers again. Any other failure to reach it carries
 /// none, and says no more than that it is Unreachable.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "reason", rename_all = "snake_case")]
 pub enum UnreachableReason {
     /// The Relay at `relay`, through which the Remote was tried, joins at
@@ -2756,6 +2985,9 @@ pub enum UnreachableReason {
     /// what its user can do; trying again alone cannot help, though the
     /// Remote is tried again all the same, since another way may answer.
     RelayLoginNeeded { relay: String },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl Default for ServingSettings {
@@ -2774,7 +3006,8 @@ impl Default for ServingSettings {
 }
 
 /// When a reader copies a Text Selection.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TextSelectionCopy {
     #[cfg_attr(not(windows), default)]
@@ -2784,7 +3017,8 @@ pub enum TextSelectionCopy {
 }
 
 /// What a Text Selection of more than one block offers a text-only paste.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TextSelectionPlainText {
     /// The words as the reader sees them.
@@ -2794,14 +3028,16 @@ pub enum TextSelectionPlainText {
     Markdown,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TextSelectionSettings {
     pub copy: TextSelectionCopy,
     pub plain_text: TextSelectionPlainText,
 }
 
 /// How the composer takes what the reader puts into it.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ComposerSettings {
     /// Whether a large paste stands in the draft as a Collapsed Paste. On by
     /// default; off, every paste goes in as the text it is.
@@ -2818,7 +3054,8 @@ impl Default for ComposerSettings {
 
 /// The effective value of every defined Setting: what a Config Document
 /// pinned where it did, the built-in default everywhere else.
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct EffectiveSettings {
     pub text_selection: TextSelectionSettings,
     pub composer: ComposerSettings,
@@ -2842,7 +3079,9 @@ pub struct EffectiveSettings {
 
 /// The Provider-native controls that govern which tool uses require an
 /// Approval. Each variant retains the complete tuple its Provider accepts.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "provider", rename_all = "snake_case")]
 pub enum ApprovalPosture {
     Codex {
@@ -2855,6 +3094,9 @@ pub enum ApprovalPosture {
     Copilot {
         permissions: CopilotPermissions,
     },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl ApprovalPosture {
@@ -2874,11 +3116,29 @@ impl ApprovalPosture {
         }
     }
 
+    /// Whether this posture, and each value it sets, is one this build
+    /// knows, rather than a newer side's it reads as a fallback.
+    pub fn is_known(self) -> bool {
+        match self {
+            Self::Codex {
+                approval_policy,
+                sandbox_mode,
+            } => {
+                approval_policy != CodexApprovalPolicy::Unknown
+                    && sandbox_mode != CodexSandboxMode::Unknown
+            }
+            Self::Claude { permission_mode } => permission_mode != ClaudePermissionMode::Unknown,
+            Self::Copilot { permissions } => permissions != CopilotPermissions::Unknown,
+            Self::Unknown => false,
+        }
+    }
+
     pub fn provider(&self) -> ProviderId {
         ProviderId::new(match self {
             Self::Codex { .. } => "codex",
             Self::Claude { .. } => "claude",
             Self::Copilot { .. } => "copilot",
+            Self::Unknown => "unknown",
         })
     }
 
@@ -2892,6 +3152,7 @@ impl ApprovalPosture {
                     CodexApprovalPolicy::Untrusted => CodexApprovalPolicy::OnRequest,
                     CodexApprovalPolicy::OnRequest => CodexApprovalPolicy::Never,
                     CodexApprovalPolicy::Never => CodexApprovalPolicy::Untrusted,
+                    CodexApprovalPolicy::Unknown => CodexApprovalPolicy::Untrusted,
                 },
                 sandbox_mode,
             },
@@ -2902,6 +3163,7 @@ impl ApprovalPosture {
                     ClaudePermissionMode::DontAsk => ClaudePermissionMode::BypassPermissions,
                     ClaudePermissionMode::BypassPermissions => ClaudePermissionMode::Auto,
                     ClaudePermissionMode::Auto => ClaudePermissionMode::Default,
+                    ClaudePermissionMode::Unknown => ClaudePermissionMode::Default,
                 },
             },
             Self::Copilot { permissions } => Self::Copilot {
@@ -2909,8 +3171,10 @@ impl ApprovalPosture {
                     CopilotPermissions::Ask => CopilotPermissions::Auto,
                     CopilotPermissions::Auto => CopilotPermissions::AllowAll,
                     CopilotPermissions::AllowAll => CopilotPermissions::Ask,
+                    CopilotPermissions::Unknown => CopilotPermissions::Ask,
                 },
             },
+            Self::Unknown => Self::Unknown,
         }
     }
 
@@ -2925,11 +3189,13 @@ impl ApprovalPosture {
                     CodexApprovalPolicy::Untrusted => "untrusted",
                     CodexApprovalPolicy::OnRequest => "on-request",
                     CodexApprovalPolicy::Never => "never",
+                    CodexApprovalPolicy::Unknown => "unknown",
                 },
                 match sandbox_mode {
                     CodexSandboxMode::ReadOnly => "read-only",
                     CodexSandboxMode::WorkspaceWrite => "workspace-write",
                     CodexSandboxMode::DangerFullAccess => "danger-full-access",
+                    CodexSandboxMode::Unknown => "unknown",
                 }
             ),
             Self::Claude { permission_mode } => {
@@ -2941,8 +3207,10 @@ impl ApprovalPosture {
                     CopilotPermissions::Ask => "ask",
                     CopilotPermissions::Auto => "auto",
                     CopilotPermissions::AllowAll => "allowAll",
+                    CopilotPermissions::Unknown => "unknown",
                 }
             ),
+            Self::Unknown => "a posture this build does not know".to_owned(),
         }
     }
 }
@@ -2951,7 +3219,8 @@ impl ApprovalPosture {
 /// a Session override from a live reading of the Server Setting. A Subagent's
 /// `pinned` is its spawner's, since a Subagent's posture is never set on
 /// itself.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionApprovalPosture {
     pub value: ApprovalPosture,
     pub pinned: bool,
@@ -2961,7 +3230,9 @@ pub struct SessionApprovalPosture {
 /// How the effective posture has reached the Provider connection that owns
 /// this Session. A requested value remains authoritative when native delivery
 /// fails, while the status keeps clients from claiming it is already active.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalPostureApplication {
     #[default]
@@ -2969,6 +3240,9 @@ pub enum ApprovalPostureApplication {
     Applying,
     NextTurn,
     Failed,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl EffectiveSettings {
@@ -2997,7 +3271,8 @@ impl EffectiveSettings {
 /// path nor pin a value the Setting cannot hold. A `value` pins that value even
 /// when it equals the built-in default, so a deliberate choice survives a later
 /// change of that default; `null` removes the pin and lets the default resume.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "setting", rename_all = "snake_case")]
 pub enum SettingMutation {
     TextSelectionCopy {
@@ -3140,7 +3415,8 @@ pub enum SettingMutation {
     },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SettingsDiagnosticSeverity {
     /// One key was ignored; the rest of the Config Document applied.
@@ -3157,7 +3433,8 @@ pub enum SettingsDiagnosticSeverity {
 /// One thing found while loading Config Documents, carrying enough that the Log
 /// alone is sufficient to act on it: the file, the key path when it is scoped to
 /// one key, and why the value was ignored or is not in force.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SettingsDiagnostic {
     pub severity: SettingsDiagnosticSeverity,
     pub file: PathBuf,
@@ -3168,7 +3445,8 @@ pub struct SettingsDiagnostic {
 /// The effective-settings view the server pushes to every client on connect.
 /// Carries the startup diagnostics so a client can surface configuration
 /// problems without a side channel.
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SettingsSnapshot {
     pub settings: EffectiveSettings,
     /// Dotted schema key paths a Config Document pins, so a client can tell a
@@ -3186,36 +3464,56 @@ impl SettingsSnapshot {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum SessionStatus {
     Idle,
     Active,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum PromptStatus {
     Pending,
     Delivered,
     Failed,
     Cancelled,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum PromptDelivery {
     Steer,
     Queue,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum TurnStatus {
     Active,
     Completed,
     Failed,
     Interrupted,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl TurnStatus {
@@ -3227,8 +3525,10 @@ impl TurnStatus {
 
 /// Who a Message is from: the user, the Session's own Agent, or — for a
 /// Delegation — the Agent that delegated to this Subagent.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
+#[serde(remote = "Self", rename_all = "snake_case")]
 pub enum MessageRole {
     User,
     Agent,
@@ -3238,7 +3538,12 @@ pub enum MessageRole {
     /// a user Message opens the Turn a Prompt begins. It arrives whole, so it
     /// never streams.
     Delegation(Delegator),
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
+
+reads_unknown_kinds!(MessageRole);
 
 impl MessageRole {
     /// The Agent that sent a Delegation; `None` for every other Message.
@@ -3246,13 +3551,15 @@ impl MessageRole {
         match self {
             Self::Delegation(delegator) => Some(delegator),
             Self::User | Self::Agent => None,
+            Self::Unknown => None,
         }
     }
 }
 
 /// The Agent a Delegation is from, as the Delegation names it wherever it
 /// stands: the Subagent's parent, or a sibling Subagent that sent it more.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Delegator {
     /// The delegating Agent's own Session: the Subagent's parent, or another
     /// Subagent's Session when a sibling delegated. A client tells the two
@@ -3278,7 +3585,9 @@ pub struct Delegator {
 /// part of the Session API Servers speak to each other (ADR 0044); the Remote
 /// believes nothing of it but that a Sidekick sent it, and names that
 /// Sidekick by the Peer it came from.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum Author {
     /// A Sidekick of the Server holding the Session: the Agent of the Session
@@ -3307,6 +3616,9 @@ pub enum Author {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         act: Option<ActId>,
     },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The header an act's author travels between Servers in, as JSON of an
@@ -3329,7 +3641,48 @@ pub const ACT_HEADER: &str = "x-shaman-act";
 /// retried admission that finds its Prompt already admitted says nothing.
 pub const PROMPT_ADMISSION_HEADER: &str = "x-shaman-prompt-admission";
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+/// How a Session took in a Prompt newly admitted to it, which the Session's
+/// own state decided as much as the delivery it was sent with, as its answer
+/// names it in the [`PROMPT_ADMISSION_HEADER`]. A reader that meets a name it
+/// does not know reads nothing of it, as of a retry that admitted nothing.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
+#[serde(rename_all = "snake_case")]
+pub enum PromptAdmission {
+    /// The Session was running no Turn it could take it into, so it begins a
+    /// Turn of its own.
+    NewTurn,
+    /// It steers the Turn the Session is working in.
+    Steer,
+    /// It waits behind the Turn the Session is working in, to begin the next.
+    Queued,
+}
+
+impl PromptAdmission {
+    const ALL: [Self; 3] = [Self::NewTurn, Self::Steer, Self::Queued];
+
+    /// The name it is said by, to a Sidekick and in the
+    /// [`PROMPT_ADMISSION_HEADER`].
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::NewTurn => "new_turn",
+            Self::Steer => "steer",
+            Self::Queued => "queued",
+        }
+    }
+
+    /// The admission `name` names, where it names one this build knows.
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|admitted| admitted.name() == name)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum MessageStatus {
     Streaming,
@@ -3338,9 +3691,14 @@ pub enum MessageStatus {
     /// stays where it was written, marked as passed over, and is never its
     /// Turn's final Message.
     Superseded,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum ActivityStatus {
     Active,
@@ -3352,24 +3710,34 @@ pub enum ActivityStatus {
     /// running when its Turn is interrupted settles this way; one still
     /// running when its Turn settles any other way settles `Failed` (ADR 0039).
     Interrupted,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// How a Watch settled, as recorded by its Watch Outcome. A Watch lost with
 /// its Provider process wakes nothing and so records no outcome, which is why
 /// there is no lost status here.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum WatchOutcomeStatus {
     Completed,
     Failed,
     Stopped,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Whether a Compaction was the Provider's choice, the user's request, or
 /// Shaman's own ahead of a Prompt Cache lapse. Shaman alone knows which Turns it
 /// began for a request, so this is read from the Turn that holds the
 /// Compaction rather than from anything the Provider says (ADR 0041, 0073).
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum CompactionTrigger {
     /// The Provider compacted on its own, inside whatever Turn it fell in.
@@ -3379,15 +3747,23 @@ pub enum CompactionTrigger {
     /// Shaman began it of its own accord ahead of the Session's Prompt Cache
     /// lapsing, in a Turn of its own as a manual one is.
     Scheduled,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Who asked the Provider for the Compaction a Turn was begun for: the user,
 /// or Shaman ahead of a Prompt Cache lapse (ADR 0041, 0073).
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum CompactionRequest {
     Manual,
     Scheduled,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl CompactionRequest {
@@ -3396,11 +3772,14 @@ impl CompactionRequest {
         match self {
             Self::Manual => CompactionTrigger::Manual,
             Self::Scheduled => CompactionTrigger::Scheduled,
+            Self::Unknown => CompactionTrigger::Unknown,
         }
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FileChange {
     Add {
@@ -3413,6 +3792,9 @@ pub enum FileChange {
         path: PathBuf,
         moved_to: Option<PathBuf>,
     },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The name every harness knows the Broker by among its MCP servers. It is what
@@ -3436,7 +3818,9 @@ pub const WAIT_SUBAGENTS_TOOL: &str = "wait_subagents";
 /// Server stays whole. Every kind this build knows is read as strictly as its
 /// own shape asks; a known kind whose fields will not read is refused, never
 /// taken for an unknown one.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(remote = "Self", tag = "kind", rename_all = "snake_case")]
 pub enum Activity {
     Approval {
@@ -3756,7 +4140,8 @@ pub enum Activity {
 /// not among them reads as [`Activity::Unknown`]. It names each kind
 /// [`Activity`] does, and no other; [`Activity::known_kind`] holds the two in
 /// step, a kind of Activity left off this list failing to compile there.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 enum KnownActivityKind {
     Approval,
@@ -3781,7 +4166,8 @@ enum KnownActivityKind {
 
 /// What a placeholder keeps of an Activity of a kind this build does not
 /// know, and how it is written again.
-#[derive(Deserialize, JsonSchema, Serialize)]
+#[derive(Deserialize, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct UnknownActivity {
     kind: String,
     id: ActivityId,
@@ -3856,7 +4242,8 @@ impl<'de> Deserialize<'de> for Activity {
 /// One end of a Move: an Execution Directory, and the branch checked out in
 /// the Worktree it lies in, where it lies in one on a branch when the Move
 /// is recorded.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct MoveLocation {
     pub execution_directory: ExecutionDirectory,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3975,6 +4362,7 @@ impl Activity {
                 WatchOutcomeStatus::Completed => ActivityStatus::Completed,
                 WatchOutcomeStatus::Failed => ActivityStatus::Failed,
                 WatchOutcomeStatus::Stopped => ActivityStatus::Interrupted,
+                WatchOutcomeStatus::Unknown => ActivityStatus::Unknown,
             }),
         }
     }
@@ -3982,7 +4370,9 @@ impl Activity {
 
 /// One decision of a Route, in Provider-neutral terms: what a Transcript says
 /// of it wherever it reads one.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RouteDecision {
     /// The plan the Route set out on, in the order its Models act. A Route of
@@ -4009,16 +4399,22 @@ pub enum RouteDecision {
     /// The Route ended without a commit, by an interrupt or a crash: its
     /// Provider kept none of its conversation, though its file changes remain.
     Discarded { provider: ProviderId },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// One Model's part in a Route's plan.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RouteStep {
     pub model: ModelId,
     pub action: RouteAction,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum RouteAction {
     /// Does the work the Prompt asked for.
@@ -4027,20 +4423,29 @@ pub enum RouteAction {
     Reviews,
     /// Takes the work over if a review finds it wanting.
     Revises,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum RouteVerdict {
     Accepted,
     Rejected,
     /// The review ended with a verdict Shaman cannot read.
     Unread,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// What a Reroute says: which Provider switched the Turn from which Model to
 /// which, and why.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Reroute {
     /// The Provider whose Models `from` and `to` name.
     pub provider: ProviderId,
@@ -4090,6 +4495,7 @@ impl RouteDecision {
                         RouteAction::Works => format!("then {}", step.model),
                         RouteAction::Reviews => format!("reviewed by {}", step.model),
                         RouteAction::Revises => format!("revised by {} if needed", step.model),
+                        RouteAction::Unknown => format!("then {}", step.model),
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -4101,6 +4507,7 @@ impl RouteDecision {
                 RouteVerdict::Accepted => format!("{reviewer} accepted the work"),
                 RouteVerdict::Rejected => format!("{reviewer} rejected the work"),
                 RouteVerdict::Unread => format!("{reviewer} finished reviewing the work"),
+                RouteVerdict::Unknown => format!("{reviewer} finished reviewing the work"),
             },
             Self::Handoff { to } => format!("Handed off to {to}"),
             Self::Fallback {
@@ -4116,6 +4523,7 @@ impl RouteDecision {
                  won't remember this work",
                 provider_name(provider)
             ),
+            Self::Unknown => "Route: a decision this build does not know".to_owned(),
         }
     }
 
@@ -4125,12 +4533,14 @@ impl RouteDecision {
             Self::Verdict { detail, .. } => detail.as_deref(),
             Self::Fallback { reason, .. } => reason.as_deref(),
             Self::Chosen { .. } | Self::Handoff { .. } | Self::Discarded { .. } => None,
+            Self::Unknown => None,
         }
     }
 }
 
 /// A measured context occupancy, independent of cumulative Usage and Cost.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ContextFill {
     pub occupied_tokens: u64,
     /// The raw Model window; zero is treated as unknown by consumers.
@@ -4145,7 +4555,8 @@ pub struct ContextFill {
 /// A reader judges whether each moment has passed against its own wall clock,
 /// as it reads every other Session timestamp, so a client on another machine
 /// is out by however far the two clocks disagree.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PromptCache {
     pub lapses_at: SessionTimestamp,
     /// The Turn whose output last wrote the cache and set this moment, where
@@ -4190,7 +4601,9 @@ pub struct PromptCache {
 /// cache is kept, which there only says when it lapses. A Provider
 /// reports [`Self::Default`] unless it says the write paid another price,
 /// and [`Self::Unlisted`] only where it names a price Shaman has no rate for.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum CacheWritePrice {
     /// The price for the Provider's default lifetime, which is also what a
@@ -4201,7 +4614,10 @@ pub enum CacheWritePrice {
     Hour,
     /// A price the Provider names for the write that no rate is listed for,
     /// so the write is known and its cost is not; never a write of unknown
-    /// price, which is [`Self::Default`].
+    /// price, which is [`Self::Default`]. A price a newer side names that
+    /// this build does not know reads as one, since it has no rate for it
+    /// either.
+    #[serde(other)]
     Unlisted,
 }
 
@@ -4279,6 +4695,69 @@ mod newer_kind_tests {
     use serde_json::json;
 
     use super::*;
+
+    /// A newer side's kind reads as the fallback, whichever way the enum
+    /// tells its kinds apart, and a kind this build knows is read as strictly
+    /// as its shape asks.
+    #[test]
+    fn a_kind_this_build_does_not_know_reads_as_the_fallback_of_every_shape() {
+        // A kind named alone.
+        assert_eq!(
+            serde_json::from_value::<TurnStatus>(json!("paused")).unwrap(),
+            TurnStatus::Unknown
+        );
+        // A kind named by its tag, with fields beside it.
+        assert_eq!(
+            serde_json::from_value::<FileChange>(json!({ "kind": "chmod", "mode": 755 })).unwrap(),
+            FileChange::Unknown
+        );
+        // A kind wrapped as an object's one key, holding data.
+        assert_eq!(
+            serde_json::from_value::<Way>(json!({ "quic": { "address": "a:1" } })).unwrap(),
+            Way::Unknown
+        );
+        assert_eq!(
+            serde_json::from_value::<Way>(json!("quic")).unwrap(),
+            Way::Unknown
+        );
+        let relay = Way::Relay("relay.example".to_owned());
+        assert_eq!(
+            serde_json::from_value::<Way>(serde_json::to_value(&relay).unwrap()).unwrap(),
+            relay
+        );
+        assert!(
+            serde_json::from_value::<Way>(json!({ "direct": "not an address" })).is_err(),
+            "a kind this build knows is never taken for one it does not"
+        );
+    }
+
+    /// A listing passes over an item of a readability this build does not
+    /// know, and refuses one of a readability it knows that will not read.
+    #[test]
+    fn a_listing_passes_over_an_item_of_a_readability_this_build_does_not_know() {
+        let unreadable = json!({
+            "readability": "unreadable",
+            "summary": {
+                "id": SessionId::new(),
+                "title": "Kept",
+                "created_at": 1,
+                "updated_at": 2,
+            },
+        });
+        let read: SessionListing = serde_json::from_value(json!([
+            unreadable,
+            { "readability": "partly_readable", "summary": { "anything": true } },
+        ]))
+        .unwrap();
+        assert_eq!(read.0.len(), 1);
+        assert_eq!(read.0[0].title(), "Kept");
+        assert!(
+            serde_json::from_value::<SessionListing>(json!([
+                { "readability": "unreadable", "summary": { "title": 3 } },
+            ]))
+            .is_err()
+        );
+    }
 
     #[test]
     fn an_activity_of_a_kind_this_build_does_not_know_reads_as_a_placeholder() {
@@ -4645,7 +5124,8 @@ mod lapse_penalty_tests {
 /// asked: the Context Fill it measures, split by where the tokens came from.
 /// It is read on request and never stored, so it describes the context only
 /// at the moment it was asked for.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ContextBreakdown {
     pub fill: ContextFill,
     /// The part of the window the Provider holds back from the Agent, such
@@ -4657,7 +5137,8 @@ pub struct ContextBreakdown {
 
 /// One source's share of a [`ContextBreakdown`], with the items it is made
 /// of where the Provider names them.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ContextPart {
     pub source: ContextSource,
     pub tokens: u64,
@@ -4665,7 +5146,9 @@ pub struct ContextPart {
 }
 
 /// Where tokens occupying a context came from.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ContextSource {
     SystemPrompt,
@@ -4685,16 +5168,21 @@ pub enum ContextSource {
     Other {
         label: String,
     },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A named contributor to a [`ContextPart`].
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ContextItem {
     pub label: String,
     pub tokens: u64,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Session {
     /// The latest reported occupancy of this Session alone.
     #[serde(default)]
@@ -4763,6 +5251,7 @@ impl Author {
         match self {
             Self::Sidekick { session_id, .. } => Some(*session_id),
             Self::PeerSidekick { .. } => None,
+            Self::Unknown => None,
         }
     }
 }
@@ -4820,7 +5309,8 @@ impl Session {
 /// The latest Turn facts a Session listing needs to derive its Standing. The
 /// status and Settle moment travel together so a client never combines facts
 /// from different Turns.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct LatestTurnStatus {
     pub status: TurnStatus,
     pub settled_at: Option<SessionTimestamp>,
@@ -4829,7 +5319,8 @@ pub struct LatestTurnStatus {
 /// The server facts from which a listed Session's Standing is derived. Kept as
 /// one value so every catalog change replaces the reading whole and Viewed
 /// can be compared with the matching latest Turn.
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionStandingInputs {
     /// Live Questionnaires and Approvals owned by descendants at any depth.
     #[serde(default)]
@@ -4906,7 +5397,8 @@ impl SessionStandingInputs {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionSummary {
     /// Ephemeral owning-Server reading, absent until checkout observation.
     #[serde(default)]
@@ -4958,7 +5450,11 @@ pub struct SessionSummary {
     pub updated_at: SessionTimestamp,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+/// One Session as a Server's listing gives it. Its reader passes over an item
+/// of a readability it does not know, through [`SessionListing`].
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "readability", content = "summary", rename_all = "snake_case")]
 pub enum SessionListItem {
     /// Boxed because a readable summary carries everything a Session states
@@ -4967,6 +5463,35 @@ pub enum SessionListItem {
     /// not decode.
     Readable(Box<SessionSummary>),
     Unreadable(UnreadableSessionSummary),
+}
+
+/// A Server's listing of its Sessions, as `GET /v1/sessions` answers it. An
+/// item of a readability this build does not know is passed over, as of a
+/// Session it could not show, and every other item is read as strictly as
+/// its own shape asks.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(transparent)]
+pub struct SessionListing(pub Vec<SessionListItem>);
+
+impl SessionListItem {
+    /// The readabilities this build knows an item by.
+    const READABILITIES: [&str; 2] = ["readable", "unreadable"];
+}
+
+impl<'de> Deserialize<'de> for SessionListing {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Vec::<serde_json::Value>::deserialize(deserializer)?
+            .into_iter()
+            .filter(|item| {
+                item.get("readability")
+                    .and_then(serde_json::Value::as_str)
+                    .is_none_or(|readability| SessionListItem::READABILITIES.contains(&readability))
+            })
+            .map(|item| SessionListItem::deserialize(item).map_err(serde::de::Error::custom))
+            .collect::<Result<_, _>>()
+            .map(Self)
+    }
 }
 
 impl SessionListItem {
@@ -5055,7 +5580,8 @@ impl SessionListItem {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct UnreadableSessionSummary {
     pub id: SessionId,
     pub title: String,
@@ -5064,7 +5590,8 @@ pub struct UnreadableSessionSummary {
     pub workspace: Option<Workspace>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionCatalogSnapshot {
     pub workspace_paths: WorkspacePaths,
     pub revision: SessionCatalogRevision,
@@ -5074,7 +5601,9 @@ pub struct SessionCatalogSnapshot {
     pub checkout_states: Vec<CheckoutSummary>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SessionCatalogChange {
     /// Stored content proved unreadable; clients refresh the containing root.
@@ -5178,7 +5707,8 @@ pub enum SessionCatalogChange {
     Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionCatalogUpdate {
     pub revision: SessionCatalogRevision,
     pub change: SessionCatalogChange,
@@ -5198,7 +5728,8 @@ pub struct SessionCatalogUpdate {
 /// since several Sidekicks may have acted on it. A Session it has a hand in
 /// on a Remote stands with the Subagents beneath it there, as that Remote
 /// says of them, each named by that Remote as its `origin`.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SubagentTreeSnapshot {
     pub revision: SubagentTreeRevision,
     pub top_level: SubagentTreeTopLevel,
@@ -5215,7 +5746,8 @@ pub struct SubagentTreeSnapshot {
 }
 
 /// The top-level Session heading a tree.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SubagentTreeTopLevel {
     pub session_id: SessionId,
     pub title: String,
@@ -5284,7 +5816,8 @@ pub struct SubagentTreeTopLevel {
 /// while the Remote answers; one whose Remote does not answer now stands
 /// `unanswered`, keeping what last said which Session it is and nothing that
 /// would give its work as current.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SubagentTreeSession {
     pub session_id: SessionId,
     /// The Remote the Session lives on, by the name the Server heading the
@@ -5362,7 +5895,8 @@ pub struct SubagentTreeSession {
 /// Marker and time are read from the Subagent's own Session's Turns, never
 /// from any one row: a resumed Subagent is still one entry, and a resume or a
 /// Continuation of its Session sets it Working again (ADR 0031).
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SubagentTreeEntry {
     pub session_id: SessionId,
     /// The Remote the Subagent's Session lives on, by the name the Server
@@ -5425,7 +5959,9 @@ pub struct SubagentTreeEntry {
 
 /// One change to a tree after its snapshot. An entry never moves: a spawn
 /// joins its spawner's Subagents last, and nothing else reorders them.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SubagentTreeChange {
     /// A Subagent spawned. Its spawner is already in the tree, and the entry
@@ -5524,7 +6060,8 @@ pub enum SubagentTreeChange {
     Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SubagentTreeUpdate {
     pub revision: SubagentTreeRevision,
     pub change: SubagentTreeChange,
@@ -5665,7 +6202,8 @@ impl SubagentTreeSnapshot {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Prompt {
     pub id: PromptId,
     pub text: String,
@@ -5693,7 +6231,8 @@ pub struct Prompt {
 
 /// How a Prompt was taken: by the Turn begun for it, or by the working Turn
 /// its Agent took it into as a steer, at the moment the Server committed it.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PromptTaking {
     pub turn_id: TurnId,
     /// When the Turn took it, on the Server's own clock — every moment it
@@ -5705,7 +6244,8 @@ pub struct PromptTaking {
 /// Why the Session withdrew a Prompt no one asked it to give back, recorded
 /// on the Prompt so the client that wrote it can tell, whatever it saw of
 /// the Session meanwhile, that the text is owed back to its composer.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "reason")]
 pub enum PromptWithdrawal {
     /// The Prompt was held behind `turn_id`, the Turn a Compaction request
@@ -5723,7 +6263,9 @@ pub enum PromptWithdrawal {
 /// interrupting it withdraws that Prompt instead; the client that asked is
 /// told which Prompt so it can return the text to its own composer, where
 /// every other viewer only sees the Prompt go (ADR 0024).
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case", tag = "outcome")]
 pub enum InterruptOutcome {
     /// The interrupt stopped work already under way: an active Turn, or the
@@ -5732,12 +6274,16 @@ pub enum InterruptOutcome {
     /// The interrupt withdrew a Prompt that had been admitted to begin a Turn
     /// and never delivered. The Prompt is carried as it now stands, Cancelled.
     WithdrewPrompt { prompt: Box<Prompt> },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A request that a Session's Provider compact its context now, which begins
 /// a Turn of its own holding that one Compaction (ADR 0041). Only an idle,
 /// top-level Session on a Provider that compacts on request accepts it.
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CompactSessionRequest {
     /// What the summary should keep, in the user's words: everything typed
     /// after `/compact`. A Provider that takes no instructions refuses a
@@ -5749,7 +6295,8 @@ pub struct CompactSessionRequest {
 /// The disjoint measurements a Provider reported for one Turn. An absent
 /// field means the Provider did not state it; a reported zero remains
 /// `Some(0)`, so absence is never fabricated into a number.
-#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Usage {
     pub fresh_input_tokens: Option<u64>,
     pub cache_read_tokens: Option<u64>,
@@ -5925,24 +6472,37 @@ travels_as!(Cost, f64);
 
 /// Who computed a stored Cost. This is independent of whether an account's
 /// billing arrangement made the Turn marginally chargeable.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum CostBasis {
     Reported,
     Estimated,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The work one frozen Cost accounts for. A Turn measurement covers only the
 /// Turn carrying it. A Session-subtree measurement is cumulative within one
 /// Provider reporting lifetime and includes that Session and every descendant.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "scope", rename_all = "snake_case")]
 pub enum CostCoverage {
     Turn,
-    SessionSubtree { reporting_lifetime: String },
+    SessionSubtree {
+        reporting_lifetime: String,
+    },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CostRecord {
     pub cost: Cost,
     pub basis: CostBasis,
@@ -5954,7 +6514,8 @@ pub struct CostRecord {
 /// Attribution accompanying a Turn's current Cost. Earlier independent
 /// reporting lifetimes remain as records so reconnecting cannot erase frozen
 /// historical amounts.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CostDetails {
     pub coverage: CostCoverage,
     pub recorded_at: SessionTimestamp,
@@ -5963,7 +6524,8 @@ pub struct CostDetails {
     pub prior: Vec<CostRecord>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CostTotal {
     pub cost: Cost,
     pub is_partial: bool,
@@ -5981,7 +6543,8 @@ pub struct CostTotal {
 /// model, and a native meter is in a unit only its Provider defines — the one
 /// Provider that reports it already counts a whole Session, so summing two
 /// would count the same spend twice.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct UsageTotal {
     pub fresh_input_tokens: Option<u64>,
     pub cache_read_tokens: Option<u64>,
@@ -6092,7 +6655,8 @@ fn add_parts(held: Option<u64>, added: Option<u64>) -> Option<u64> {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(try_from = "TurnWire")]
 pub struct Turn {
     pub id: TurnId,
@@ -6148,7 +6712,8 @@ pub struct Turn {
 /// the Share's is that Model's running total within the same lifetime — the
 /// cumulative figure, never this Turn's increment — and Cost Coverage takes
 /// each Share's increments as it takes the Turn's.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelShare {
     pub model: ModelId,
     pub usage: Usage,
@@ -6169,7 +6734,8 @@ impl ModelShare {
     }
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct TurnWire {
     id: TurnId,
     prompt_id: Option<PromptId>,
@@ -6295,7 +6861,8 @@ impl Turn {
 }
 
 /// Provider evidence of the concrete Model used beneath a routed selection.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ModelAttribution {
     pub provider: ProviderId,
     pub selected: ModelId,
@@ -6304,13 +6871,15 @@ pub struct ModelAttribution {
 
 /// Provider evidence of the concrete Model working in a Turn: the one last
 /// seen executing, while nothing since contradicts it.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorkingModel {
     pub turn_id: TurnId,
     pub model: ModelAttribution,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Message {
     pub id: MessageId,
     pub turn_id: TurnId,
@@ -6350,18 +6919,28 @@ impl Message {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TranscriptItem {
-    Message { message_id: MessageId },
-    Activity { activity_id: ActivityId },
+    Message {
+        message_id: MessageId,
+    },
+    Activity {
+        activity_id: ActivityId,
+    },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Live intervention availability from one descendant, without its Approval
 /// detail, Questions, Answers, or Decisions. Every ancestor names the
 /// immediate child through which it is reached; the revision belongs to the
 /// owning descendant Session.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SubagentInterventions {
     pub session_id: SessionId,
     pub via_session_id: SessionId,
@@ -6388,13 +6967,15 @@ impl SubagentInterventions {
 /// Session is told what it is Monitoring: in the words its Provider gave it,
 /// and since when the Server heard it start. It is never stored, since no
 /// Watch outlives the Provider process that runs it.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WatchSummary {
     pub description: String,
     pub started_at: SessionTimestamp,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionSnapshot {
     pub title: String,
     /// The Icon Catalog name standing beside this Session's Title. See
@@ -6515,6 +7096,7 @@ impl SessionSnapshot {
         let settled_at = |item: &TranscriptItem| match item {
             TranscriptItem::Activity { activity_id } => settled.get(activity_id).copied(),
             TranscriptItem::Message { .. } => None,
+            TranscriptItem::Unknown => None,
         };
         let mut read = Vec::with_capacity(self.transcript.len());
         let mut in_place = self.transcript.iter().enumerate();
@@ -6637,14 +7219,17 @@ impl SessionSnapshot {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionUpdate {
     pub session_id: SessionId,
     pub revision: SessionRevision,
     pub changes: Vec<SessionChange>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SessionChange {
     WorkspaceChanged {
@@ -6993,7 +7578,8 @@ impl SessionUpdate {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct InitialPrompt {
     pub id: PromptId,
     pub text: String,
@@ -7003,7 +7589,8 @@ pub struct InitialPrompt {
     pub attachments: Vec<AttachmentBinding>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CreateSessionRequest {
     #[serde(default)]
     pub preparation_id: Option<PreparationId>,
@@ -7020,7 +7607,8 @@ pub struct CreateSessionRequest {
     pub session_id: Option<SessionId>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AdmitPromptRequest {
     pub prompt: InitialPrompt,
     pub delivery: PromptDelivery,
@@ -7029,7 +7617,8 @@ pub struct AdmitPromptRequest {
 /// Whether a Session is being set aside as done for now, or brought back. The
 /// intent is carried rather than a toggle so a client that has been looking at
 /// a stale listing cannot flip a Session it meant to leave alone.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SettleSessionRequest {
     pub settled: bool,
 }
@@ -7039,7 +7628,8 @@ pub struct SettleSessionRequest {
 /// Icon that would only ever draw as absent. Unlike a derived Icon, which only
 /// ever fills an absence, a chosen Icon replaces whatever the Session already
 /// carried — a user's choice always stands.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SetSessionIconRequest {
     pub icon: String,
 }
@@ -7048,20 +7638,23 @@ pub struct SetSessionIconRequest {
 /// before it stands; refused where nothing is left or more than a Title may
 /// carry is. A Title set this way replaces whatever stood, and a derivation
 /// still in flight never overwrites it.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SetSessionTitleRequest {
     pub title: String,
 }
 
 /// Where a Session is asked to Move (CONTEXT.md: Move). It names the
 /// destination alone: the Session it Moves is the one the request is sent to.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct MoveSessionRequest {
     pub destination: MoveDestination,
 }
 
 /// Where a Move takes a Session.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MoveDestination {
     /// A directory that exists on the Session's Server, named as the
@@ -7082,7 +7675,9 @@ pub enum MoveDestination {
 }
 
 /// What came of a Move the Session's Server took.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum MoveOutcome {
     /// The Session works in its destination from now on, as its summary
@@ -7098,11 +7693,15 @@ pub enum MoveOutcome {
     /// The Session already works in its destination, and the Move pending
     /// to elsewhere is cancelled.
     PendingCancelled { session: SessionSummary },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A Move waiting for what the Session's Provider process is running to settle:
 /// the Activity recording it, and where it will take the Session (ADR 0059).
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PendingMove {
     pub activity_id: ActivityId,
     pub destination: ExecutionDirectory,
@@ -7117,7 +7716,8 @@ pub struct PendingMove {
 /// Whether the Session's Origin would derive a Title proposal for it if
 /// asked: as the derivation Setting in force there decides, and only where
 /// that Setting has a Provider to derive with.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionTitleProposalOffer {
     pub offered: bool,
 }
@@ -7125,7 +7725,8 @@ pub struct SessionTitleProposalOffer {
 /// A Title derived anew from a Session's Prompts so far, at the user's
 /// asking. Only a proposal: nothing about the Session changes until the user
 /// keeps it by setting it as the Title.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionTitleProposal {
     pub title: String,
 }
@@ -7137,7 +7738,8 @@ pub struct SessionTitleProposal {
 /// server knows no such Workspace at all. Unlike a derived Icon, which only
 /// ever fills an absence, a chosen Icon replaces whatever the Workspace
 /// already carried — a user's choice always stands.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SetWorkspaceIconRequest {
     pub workspace_id: WorkspaceId,
     pub icon: String,
@@ -7150,7 +7752,8 @@ pub struct SetWorkspaceIconRequest {
 /// Description, so the next Session created in the Workspace may derive one
 /// again. Refused where this server cannot tell the Workspace is one of its
 /// own, or where the text runs longer than a Description may.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SetWorkspaceDescriptionRequest {
     pub workspace_id: WorkspaceId,
     /// Where the Workspace is presented — its [`Workspace::path`] — for one
@@ -7172,7 +7775,8 @@ pub struct SetWorkspaceDescriptionRequest {
 /// Roots and its own rules, and refuses it — by
 /// [`SessionErrorCode::CloneRefused`], or the Sidekick Workspace's own code —
 /// in its own words.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CloneWorkspaceRequest {
     pub repository_url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -7187,7 +7791,8 @@ pub struct CloneWorkspaceRequest {
 /// the Server's own Workspace listing gives it, with the paths it is spelled
 /// in, so the Peer names it in the owning Server's own syntax as a listing
 /// lets it.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ClonedWorkspace {
     pub workspace_paths: WorkspacePaths,
     pub workspace: Workspace,
@@ -7201,7 +7806,8 @@ pub struct ClonedWorkspace {
 /// work in, most recently worked in first, then the rest, by path. The same
 /// listing is pushed on its Session catalog stream (ADR 0052), and its
 /// revision says which of the two a Client heard last is the newer.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceListing {
     pub revision: WorkspaceListingRevision,
     pub workspace_paths: WorkspacePaths,
@@ -7215,7 +7821,8 @@ pub struct WorkspaceListing {
 /// and two at the same revision list the same; between runs the count says
 /// nothing, so a Client takes the run its Server's Session catalog stream
 /// speaks for.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceListingRevision {
     pub run: Uuid,
     pub changes: u64,
@@ -7245,7 +7852,8 @@ impl WorkspaceListingRevision {
 /// Questionnaires and Approvals with when each was asked and how it stands.
 /// Nothing anyone wrote in it is carried, so it is small however long the
 /// work ran; what a Peer's Server follows its Sidekick's work there by.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionTreeOutline {
     /// When it was read, on the Server's own clock: everything it says
     /// happened at or before that moment, and nothing after.
@@ -7255,7 +7863,8 @@ pub struct SessionTreeOutline {
     pub sessions: Vec<SessionSnapshot>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SnapshotWithSummary {
     pub snapshot: SessionSnapshot,
     pub summary: SessionSummary,
@@ -7263,12 +7872,14 @@ pub struct SnapshotWithSummary {
 
 /// One report that a Client has a root Session open in its main view. The
 /// identity makes transport retries one operation rather than later Views.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ViewSessionRequest {
     pub operation_id: ViewSessionOperationId,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct UpdateAgentSelectionRequest {
     pub operation_id: AgentSelectionOperationId,
     pub selection: AgentSelection,
@@ -7276,12 +7887,15 @@ pub struct UpdateAgentSelectionRequest {
 
 /// Pins one Provider-native Approval Posture on a Session, or resets it to
 /// follow the current Server Setting when `posture` is absent.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct UpdateApprovalPostureRequest {
     pub posture: Option<ApprovalPosture>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum SessionErrorCode {
     InvalidCommand,
@@ -7488,7 +8102,8 @@ pub enum SessionErrorCode {
     Other,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionError {
     pub code: SessionErrorCode,
     pub message: String,
@@ -7510,7 +8125,8 @@ fn known_unreachable_reason<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<UnreachableReason>, D::Error> {
     Ok(Option::<serde_json::Value>::deserialize(deserializer)?
-        .and_then(|reason| serde_json::from_value(reason).ok()))
+        .and_then(|reason| serde_json::from_value(reason).ok())
+        .filter(|reason| *reason != UnreachableReason::Unknown))
 }
 
 impl SessionErrorCode {
@@ -7532,16 +8148,22 @@ impl std::fmt::Display for SessionError {
 
 impl std::error::Error for SessionError {}
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum LifecycleState {
     Starting,
     Ready,
     Stopping,
     Failed,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ServerIdentity {
     pub instance_id: Uuid,
     pub pid: u32,
@@ -7606,7 +8228,8 @@ impl std::ops::DerefMut for Health {
     }
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct HealthWire {
     workspace_paths: WorkspacePaths,
     instance_id: Uuid,
@@ -7680,7 +8303,8 @@ impl std::ops::DerefMut for RuntimeDescriptor {
 
 /// How `runtime.json` spells a descriptor. Only a machine's own Clients read
 /// it, so it crosses no Pairing and stays strict.
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct RuntimeDescriptorWire {
     base_url: String,
@@ -7710,14 +8334,16 @@ impl<'de> Deserialize<'de> for RuntimeDescriptor {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ShutdownReason {
     Manual,
     Replacement,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ServerShutdown {
     pub instance_id: Uuid,
     pub reason: ShutdownReason,
@@ -7728,19 +8354,22 @@ pub struct ServerShutdown {
 /// more: what a row draws — a Title, a Workspace, when the work was made —
 /// comes with the listing a client asks for in answer, because the catalog
 /// carries the changes to a body of work rather than the work itself.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionCreated {
     pub session_id: SessionId,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionDeleted {
     pub session_id: SessionId,
 }
 
 /// A Session set aside as done for now, or brought back, carried to a client
 /// that may be listing that Session without having it open.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionSettlementChanged {
     pub session_id: SessionId,
     pub settled_at: Option<SessionTimestamp>,
@@ -7750,7 +8379,8 @@ pub struct SessionSettlementChanged {
 /// to a client that may be listing that Session without having it open: what a
 /// listing says live work has been running for is only true while someone
 /// announces it changing.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionWorkingChanged {
     pub session_id: SessionId,
     pub working_since: Option<SessionTimestamp>,
@@ -7758,7 +8388,8 @@ pub struct SessionWorkingChanged {
 
 /// A Session began or stopped Monitoring, carried to a client that may be
 /// listing that Session without having it open.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionMonitoringChanged {
     pub session_id: SessionId,
     pub monitoring_since: Option<SessionTimestamp>,
@@ -7766,7 +8397,8 @@ pub struct SessionMonitoringChanged {
 
 /// The owning Server's current reading of one Worktree, carried independently
 /// of whether any listing surface is open.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CheckoutStateChanged {
     pub checkout_id: CheckoutId,
     pub checkout_state: Option<CheckoutSummary>,
@@ -7774,7 +8406,8 @@ pub struct CheckoutStateChanged {
 
 /// A Session's complete Standing input, carried to a client that may be
 /// listing that Session without having it open.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionStandingInputsChanged {
     pub session_id: SessionId,
     pub inputs: SessionStandingInputs,
@@ -7783,7 +8416,8 @@ pub struct SessionStandingInputsChanged {
 /// A Session's total Usage — its own Turns and its Subagent subtree together
 /// — as the server rolled it up, carried to a client that may be listing that
 /// Session without having it open.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionUsageChanged {
     pub session_id: SessionId,
     pub total_usage: Option<UsageTotal>,
@@ -7792,7 +8426,8 @@ pub struct SessionUsageChanged {
 
 /// A Session's Title — and the Icon beside it — as a derivation left them,
 /// carried to a client that may be listing that Session without having it open.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionTitleChanged {
     pub session_id: SessionId,
     pub title: String,
@@ -7802,7 +8437,8 @@ pub struct SessionTitleChanged {
 /// A Workspace's Icon as a derivation — or, later, a choice — left it, carried
 /// to every client that may list a Session rooted there without having any of
 /// them open.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceIconChanged {
     pub workspace_id: WorkspaceId,
     pub icon: Option<String>,
@@ -7810,7 +8446,8 @@ pub struct WorkspaceIconChanged {
 
 /// A Workspace's Description as a derivation, a setting, or a clearing left
 /// it, carried to every client the way [`WorkspaceIconChanged`] is.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorkspaceDescriptionChanged {
     pub workspace_id: WorkspaceId,
     pub description: Option<WorkspaceDescription>,
@@ -7819,7 +8456,8 @@ pub struct WorkspaceDescriptionChanged {
 /// The Sessions a Sidekick's Session began on Remotes, as they now stand,
 /// carried to a client that may be listing that Session without having it
 /// open.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SessionRemoteSubsessionsChanged {
     pub session_id: SessionId,
     pub remote_subsessions: Vec<RemoteSession>,

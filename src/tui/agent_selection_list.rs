@@ -943,6 +943,9 @@ fn provider_condition(status: &ProviderCatalogStatus) -> Option<ProviderConditio
         | ProviderCatalogStatus::Warning { .. }
         | ProviderCatalogStatus::Refreshing
         | ProviderCatalogStatus::Disabled => None,
+        ProviderCatalogStatus::Unknown => Some(ProviderCondition::Failing(
+            "Its Models stand in a way this Shaman does not know",
+        )),
     }
 }
 

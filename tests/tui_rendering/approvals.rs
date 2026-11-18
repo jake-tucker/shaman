@@ -289,6 +289,7 @@ fn decision_number_and_focus_keys_only_submit_from_an_explicitly_open_approval()
                 Decision::AcceptForSession => SemanticCommandId::ApprovalAcceptForSession,
                 Decision::Decline => SemanticCommandId::ApprovalDecline,
                 Decision::DeclineAndInterrupt => SemanticCommandId::ApprovalDeclineAndInterrupt,
+                Decision::Unknown => unreachable!("every Decision offered is one this build knows"),
             }))
         );
         assert!(matches!(

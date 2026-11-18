@@ -613,6 +613,9 @@ impl SourceControl for GitSourceControl {
             RepositoryLocation::UnknownMain => {
                 return Err("Managed creation requires the main checkout location".to_owned());
             }
+            RepositoryLocation::Unknown => {
+                return Err("Managed creation requires the main checkout location".to_owned());
+            }
         };
         let source_path = source
             .execution_directory
@@ -886,6 +889,9 @@ impl SourceControl for GitSourceControl {
             RepositoryLocation::UnknownMain => {
                 return Err("The main checkout location is unknown".to_owned());
             }
+            RepositoryLocation::Unknown => {
+                return Err("The main checkout location is unknown".to_owned());
+            }
         };
         if self.common(root).await?.as_ref() != Some(&plan.repository.metadata_directory) {
             return Err("Repository metadata is unavailable or has changed".to_owned());
@@ -1004,6 +1010,7 @@ impl SourceControl for GitSourceControl {
         let main_root = match &repository.location {
             RepositoryLocation::Main { root } => Some(root.as_path()),
             RepositoryLocation::Bare { .. } | RepositoryLocation::UnknownMain => None,
+            RepositoryLocation::Unknown => None,
         };
         Ok(listed_checkouts(entries, &repository.id, main_root)
             .into_iter()

@@ -54,6 +54,7 @@ fn turn_entries(snapshot: &SessionSnapshot, turn_id: TurnId) -> Vec<TranscriptIt
                     activity.id() == *activity_id && activity.turn_id() == Some(turn_id)
                 })
             }
+            TranscriptItem::Unknown => false,
         })
         .collect()
 }

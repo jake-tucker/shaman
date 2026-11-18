@@ -829,6 +829,10 @@ impl SettingsPanel {
                 ProviderCatalogStatus::Fresh
                 | ProviderCatalogStatus::Stale { .. }
                 | ProviderCatalogStatus::Disabled => (RowAvailability::Quiet, None),
+                ProviderCatalogStatus::Unknown => (
+                    RowAvailability::Failed,
+                    Some("Its Models stand in a way this Shaman does not know".to_owned()),
+                ),
             };
             reading.availability = availability;
             reading.message = message;

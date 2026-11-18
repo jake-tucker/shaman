@@ -527,7 +527,7 @@ impl StoredRows {
             .iter()
             .enumerate()
             .skip(stored.transcript)
-            .map(|(order, item)| (transcript_identity(*item), order))
+            .filter_map(|(order, item)| Some((transcript_identity(*item)?, order)))
             .collect::<HashMap<_, _>>();
         let attachment_ids = new_prompts
             .iter()
@@ -731,7 +731,7 @@ impl SessionRow {
                 .session
                 .begun_by
                 .clone()
-                .map(StoredAuthor::from)
+                .and_then(StoredAuthor::of)
                 .as_ref()
                 .map(|author| encode(session_id, "beginning author", author))
                 .transpose()?,
@@ -933,7 +933,7 @@ impl PromptRow {
                 delivery: prompt.delivery,
                 status: prompt.status,
                 withdrawal: prompt.withdrawal,
-                author: prompt.author.clone().map(StoredAuthor::from),
+                author: prompt.author.clone().and_then(StoredAuthor::of),
                 taken: prompt.taken,
             },
         )
@@ -1067,7 +1067,7 @@ impl MessageRow {
                 skill_invocations: stored_skill_invocations(&message.skill_invocations),
                 attachments: Cow::Borrowed(&message.attachments),
                 truncated: message.truncated,
-                author: message.author.clone().map(StoredAuthor::from),
+                author: message.author.clone().and_then(StoredAuthor::of),
             },
         )
     }
@@ -1181,11 +1181,14 @@ enum TranscriptIdentity {
     Activity(ActivityId),
 }
 
-fn transcript_identity(item: TranscriptItem) -> TranscriptIdentity {
-    match item {
+/// The identity `item` is stored by, or `None` for one of a kind this build
+/// does not know, which is never stored.
+fn transcript_identity(item: TranscriptItem) -> Option<TranscriptIdentity> {
+    Some(match item {
         TranscriptItem::Message { message_id } => TranscriptIdentity::Message(message_id),
         TranscriptItem::Activity { activity_id } => TranscriptIdentity::Activity(activity_id),
-    }
+        TranscriptItem::Unknown => return None,
+    })
 }
 
 /// A Session's Prompt Cache as storage holds it: the moment it lapses and the
@@ -1292,7 +1295,12 @@ impl From<AgentSelection> for StoredAgentSelection {
         Self {
             provider: selection.provider,
             model: selection.model,
-            options: selection.options.into_iter().map(Into::into).collect(),
+            // A value of a kind this build does not know is never stored.
+            options: selection
+                .options
+                .into_iter()
+                .filter_map(StoredModelOptionSelection::of)
+                .collect(),
         }
     }
 }
@@ -1313,12 +1321,12 @@ struct StoredModelOptionSelection {
     value: StoredModelOptionValue,
 }
 
-impl From<ModelOptionSelection> for StoredModelOptionSelection {
-    fn from(selection: ModelOptionSelection) -> Self {
-        Self {
+impl StoredModelOptionSelection {
+    fn of(selection: ModelOptionSelection) -> Option<Self> {
+        Some(Self {
             id: selection.id,
-            value: selection.value.into(),
-        }
+            value: StoredModelOptionValue::of(selection.value)?,
+        })
     }
 }
 
@@ -1338,12 +1346,13 @@ enum StoredModelOptionValue {
     Toggle { enabled: bool },
 }
 
-impl From<ModelOptionValue> for StoredModelOptionValue {
-    fn from(value: ModelOptionValue) -> Self {
-        match value {
+impl StoredModelOptionValue {
+    fn of(value: ModelOptionValue) -> Option<Self> {
+        Some(match value {
             ModelOptionValue::Select { choice } => Self::Select { choice },
             ModelOptionValue::Toggle { enabled } => Self::Toggle { enabled },
-        }
+            ModelOptionValue::Unknown => return None,
+        })
     }
 }
 
@@ -1398,9 +1407,11 @@ enum StoredAuthor {
     },
 }
 
-impl From<Author> for StoredAuthor {
-    fn from(author: Author) -> Self {
-        match author {
+impl StoredAuthor {
+    /// How `author` is stored, or `None` for one of a kind this build does
+    /// not know, which is never stored.
+    fn of(author: Author) -> Option<Self> {
+        Some(match author {
             Author::Sidekick { session_id, title } => Self::Sidekick { session_id, title },
             Author::PeerSidekick {
                 peer,
@@ -1411,7 +1422,8 @@ impl From<Author> for StoredAuthor {
                 fingerprint,
                 act,
             },
-        }
+            Author::Unknown => return None,
+        })
     }
 }
 
@@ -1908,7 +1920,7 @@ impl<'a> StoredActivityPayload<'a> {
                 questionnaire: Cow::Borrowed(questionnaire),
                 outcome: *outcome,
                 answer: answer.as_ref().map(Cow::Borrowed),
-                author: author.clone().map(StoredAuthor::from),
+                author: author.clone().and_then(StoredAuthor::of),
                 asked_at: *asked_at,
                 settled_at: *settled_at,
             },
@@ -1947,7 +1959,11 @@ impl<'a> StoredActivityPayload<'a> {
                 status, changes, ..
             } => Self::FileChange {
                 status: *status,
-                changes: changes.iter().cloned().map(Into::into).collect(),
+                changes: changes
+                    .iter()
+                    .cloned()
+                    .filter_map(StoredFileChange::of)
+                    .collect(),
             },
             Activity::ToolCall {
                 status,
@@ -2092,13 +2108,16 @@ enum StoredFileChange {
     },
 }
 
-impl From<FileChange> for StoredFileChange {
-    fn from(change: FileChange) -> Self {
-        match change {
+impl StoredFileChange {
+    /// How `change` is stored, or `None` for one of a kind this build does
+    /// not know, which is never stored.
+    fn of(change: FileChange) -> Option<Self> {
+        Some(match change {
             FileChange::Add { path } => Self::Add { path },
             FileChange::Delete { path } => Self::Delete { path },
             FileChange::Update { path, moved_to } => Self::Update { path, moved_to },
-        }
+            FileChange::Unknown => return None,
+        })
     }
 }
 

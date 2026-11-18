@@ -260,6 +260,7 @@ impl RestoredCostState {
                         .entry(reporting_lifetime.clone())
                         .or_default()
                         .push((turn.id, record)),
+                    CostCoverage::Unknown => {}
                 }
             }
             if turn.cost.is_none()

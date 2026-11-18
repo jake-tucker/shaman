@@ -2524,6 +2524,7 @@ impl TuiState {
             UnreachableReason::RelayLoginNeeded { relay } => Some(relay),
             UnreachableReason::RelayCapReached { .. }
             | UnreachableReason::RelayDifferentAccounts { .. } => None,
+            UnreachableReason::Unknown => None,
         }
     }
 
@@ -7344,6 +7345,9 @@ impl Application {
                         .pending_move
                         .filter(|pending| !self.state.move_has_settled(pending.activity_id))
                         .map(|pending| move_pending_acknowledgement(&pending.destination.path)),
+                    MoveOutcome::Unknown => {
+                        Some("The move came to something this Shaman does not know.".to_owned())
+                    }
                 };
                 if acknowledged.is_some() {
                     self.state.submission_error = acknowledged;
@@ -8032,6 +8036,9 @@ impl Application {
                                     }
                                     crate::protocol::CheckoutBranchOutcome::Retained => {
                                         "Worktree removed. Branch retained; session histories retained"
+                                    }
+                                    crate::protocol::CheckoutBranchOutcome::Unknown => {
+                                        "Worktree removed; session histories retained"
                                     }
                                 }
                                 .into(),
@@ -9569,6 +9576,12 @@ impl Application {
             (ExecutionDirectoryStatus::Available, Some(directory)) => {
                 let path = directory.path.clone();
                 self.issue_move_to(session, path)
+            }
+            (ExecutionDirectoryStatus::Unknown, _) => {
+                self.state.refuse_move_choice(
+                    "That workspace stands in a way this Shaman does not know".to_owned(),
+                );
+                ApplicationTransition::Continue
             }
         }
     }

@@ -2,7 +2,6 @@
 
 use std::path::Path;
 
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// The directory a Server puts the Worktrees it manages under. What it lays
@@ -12,11 +11,16 @@ use serde::{Deserialize, Serialize};
 /// both answer for the same directory, so both name it from here.
 pub const MANAGED_WORKTREE_DIRECTORY: &str = ".worktrees";
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(rename_all = "snake_case")]
 pub enum PathStyle {
     Unix,
     Windows,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 impl PathStyle {
@@ -37,6 +41,7 @@ impl PathStyle {
         match self {
             Self::Unix => '/',
             Self::Windows => '\\',
+            Self::Unknown => '/',
         }
     }
 
@@ -53,7 +58,8 @@ const SIDEKICK_WORKSPACE_NAME: &str = "Sidekick";
 
 /// The owning Server's resolved home and path syntax. Paths stay strings here:
 /// a Client's native `Path` parser cannot interpret another platform's roots.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WorkspacePaths {
     pub home: Option<String>,
     pub style: PathStyle,
@@ -214,6 +220,7 @@ impl WorkspacePaths {
                     path.strip_prefix(r"\\?\").unwrap_or(&path).to_owned()
                 }
             }
+            PathStyle::Unknown => path.to_owned(),
         }
     }
 }

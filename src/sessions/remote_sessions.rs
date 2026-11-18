@@ -1324,6 +1324,7 @@ fn remote_session(
                 TurnStatus::Completed => ActivityStatus::Completed,
                 TurnStatus::Failed => ActivityStatus::Failed,
                 TurnStatus::Interrupted => ActivityStatus::Interrupted,
+                TurnStatus::Unknown => ActivityStatus::Unknown,
             })
     };
     let (status, worked_ms, working_since, monitoring_since) =

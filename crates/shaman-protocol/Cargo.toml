@@ -11,13 +11,15 @@ publish = false
 [features]
 # Fixtures, such as `Session::for_tests`, that Shaman's own tests build its types from.
 test-support = []
+# The JSON Schema of each wire type, which `shaman-pairing-wire` builds the Pairing wire's schema from.
+schema = ["dep:schemars"]
 
 [dependencies]
 anyhow = "1.0.99"
 blake3 = "1.8.2"
 # Describes each wire type a Peer may be sent or answered, so the Pairing wire's schema is built from the types
-# themselves (`shaman-pairing-wire`).
-schemars = { version = "1.2.2", default-features = false, features = ["derive", "std", "uuid1"] }
+# themselves; only `shaman-pairing-wire` turns it on, so neither the Server nor a thin Client builds it.
+schemars = { version = "1.2.2", default-features = false, features = ["derive", "std", "uuid1"], optional = true }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.143", features = ["preserve_order"] }
 uuid = { version = "1.18.1", features = ["serde", "v4"] }

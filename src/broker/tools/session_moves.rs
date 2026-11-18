@@ -205,6 +205,8 @@ impl MoveAnswer {
     /// the Session it speaks of, into a Worktree made for it where
     /// `new_worktree`.
     fn of(outcome: &MoveOutcome, speaker: Speaker<'_>, new_worktree: bool) -> Self {
+        // What a Move only a newer Server knows came to names no directory.
+        let nowhere = std::path::PathBuf::new();
         let (outcome, directory, message) = match outcome {
             MoveOutcome::Moved { session } => {
                 let directory = &session.session.execution_directory.path;
@@ -247,6 +249,11 @@ impl MoveAnswer {
                     speaker.pending(directory, from, new_worktree),
                 )
             }
+            MoveOutcome::Unknown => (
+                "unknown",
+                &nowhere,
+                "The Move came to something this Shaman does not know.".to_owned(),
+            ),
         };
         Self {
             session_id: speaker.session_id(),

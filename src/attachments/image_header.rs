@@ -188,6 +188,21 @@ fn le24(bytes: &[u8], at: usize) -> Option<u32> {
 mod tests {
     use super::*;
 
+    /// What the Pairing wire's schema says an upload may be is what is
+    /// admitted.
+    #[test]
+    fn the_admitted_formats_are_the_content_types_the_wire_names() {
+        let admitted: Vec<_> = [
+            ImageFormat::Png,
+            ImageFormat::Jpeg,
+            ImageFormat::Gif,
+            ImageFormat::WebP,
+        ]
+        .map(ImageFormat::mime_type)
+        .into();
+        assert_eq!(admitted, crate::protocol::ATTACHMENT_CONTENT_TYPES);
+    }
+
     fn png(width: u32, height: u32) -> Vec<u8> {
         let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
         bytes.extend(13_u32.to_be_bytes());

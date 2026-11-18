@@ -514,6 +514,7 @@ impl fmt::Display for Cloner<'_> {
             Author::PeerSidekick {
                 peer, fingerprint, ..
             } => write!(formatter, "a Sidekick on the Peer `{peer}` ({fingerprint})"),
+            Author::Unknown => formatter.write_str("an author this Server does not know"),
         }
     }
 }

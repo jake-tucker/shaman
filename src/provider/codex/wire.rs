@@ -341,6 +341,8 @@ impl CodexPosture {
             CodexApprovalPolicy::Untrusted => "untrusted",
             CodexApprovalPolicy::OnRequest => "on-request",
             CodexApprovalPolicy::Never => "never",
+            // Never set here: the most careful policy, were it ever to be.
+            CodexApprovalPolicy::Unknown => "untrusted",
         }
     }
 
@@ -349,6 +351,7 @@ impl CodexPosture {
             CodexSandboxMode::ReadOnly => "read-only",
             CodexSandboxMode::WorkspaceWrite => "workspace-write",
             CodexSandboxMode::DangerFullAccess => "danger-full-access",
+            CodexSandboxMode::Unknown => "read-only",
         }
     }
 
@@ -357,6 +360,7 @@ impl CodexPosture {
             CodexSandboxMode::ReadOnly => NativeSandboxPolicy::ReadOnly,
             CodexSandboxMode::WorkspaceWrite => NativeSandboxPolicy::WorkspaceWrite,
             CodexSandboxMode::DangerFullAccess => NativeSandboxPolicy::DangerFullAccess,
+            CodexSandboxMode::Unknown => NativeSandboxPolicy::ReadOnly,
         }
     }
 }

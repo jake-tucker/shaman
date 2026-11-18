@@ -10,14 +10,13 @@
 use std::convert::Infallible;
 
 use axum::{
-    Json, Router,
+    Json,
     extract::{Path as AxumPath, Request, State},
     http::{HeaderMap, StatusCode},
     response::{
         IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
     },
-    routing::get,
 };
 use futures_util::{Stream, stream};
 use tokio::sync::watch;
@@ -32,22 +31,21 @@ use crate::{
     relays::failure_status,
 };
 
-pub(super) fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/v1/relays", get(list_relays).post(add_relay))
-        .route("/v1/relays/{address}", axum::routing::delete(remove_relay))
-        .route(
-            "/v1/relays/{address}/login",
-            get(follow_relay_login).put(log_in_at_relay),
-        )
-        .route("/v1/relays/{address}/machines", get(list_relay_machines))
-        .route(
+pub(super) fn routes() -> crate::route_table::Routes<AppState> {
+    crate::route_table::Routes::new()
+        .get("/v1/relays", list_relays)
+        .post("/v1/relays", add_relay)
+        .delete("/v1/relays/{address}", remove_relay)
+        .get("/v1/relays/{address}/login", follow_relay_login)
+        .put("/v1/relays/{address}/login", log_in_at_relay)
+        .get("/v1/relays/{address}/machines", list_relay_machines)
+        .put(
             "/v1/relays/{address}/serve-through",
-            axum::routing::put(set_relay_serve_through),
+            set_relay_serve_through,
         )
-        .route(
+        .post(
             "/v1/relays/{address}/login-needed-notice",
-            axum::routing::post(notice_relay_login_needed),
+            notice_relay_login_needed,
         )
 }
 

@@ -138,6 +138,7 @@ impl CodexQuestionnaires {
                     QuestionAnswer::SecretAnswered => {
                         unreachable!("validated Answers contain no history placeholders")
                     }
+                    QuestionAnswer::Unknown => Vec::new(),
                 };
                 if question.secret {
                     secrets.extend(values.clone());

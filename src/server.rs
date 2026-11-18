@@ -17,7 +17,6 @@ use axum::{
         header::{self, AUTHORIZATION},
     },
     response::{IntoResponse, Response, sse::Event, sse::Sse},
-    routing::{get, post, put},
 };
 use futures_util::{StreamExt, stream};
 use serde::de::DeserializeOwned;
@@ -59,6 +58,7 @@ use crate::provider::{
     ContextBreakdownError, ProviderOrchestrator, ProviderRuntime, ProviderUpdateGate,
     built_in_runtimes, wait_for_shutdown,
 };
+use crate::route_table::Routes;
 use crate::runtime::protect_current_user_file;
 use crate::serving::{ForgedAuthor, ServingController};
 use crate::sessions::{
@@ -2153,140 +2153,14 @@ async fn start(
         cache_rates: crate::provider::HostedCacheRates::new(runtimes.clone()),
     };
     let outlines_served = state.outlines_served.clone();
-    let app = Router::new()
-        .route("/health", get(health))
-        .route("/v1/events", get(events))
-        .route("/v1/session-events", get(session_catalog_events))
-        .route("/v1/settings", post(mutate_setting))
-        .route("/v1/pairing/invites", post(issue_invite))
-        .route("/v1/pairing/invites/preview", post(preview_invite))
-        .route("/v1/pairing/invites/short-code", post(new_short_code))
-        .route("/v1/pairing/invites/delivery", post(fetch_short_invite))
-        .route("/v1/pairing/remotes", get(list_remotes).post(redeem_invite))
-        .route("/v1/pairing/remotes/{name}/health", post(probe_remote))
-        .route("/v1/pairing/remotes/{name}/icon", post(set_remote_icon))
-        .route(
-            "/v1/pairing/remotes/{name}",
-            axum::routing::delete(remove_remote),
-        )
-        .route(
-            "/v1/remotes/{name}/{*path}",
-            axum::routing::any(proxy_remote),
-        )
-        .route("/v1/pairing/offers", get(list_offers))
-        .route(
-            "/v1/pairing/offers/{id}",
-            axum::routing::delete(withdraw_offer),
-        )
-        .route("/v1/pairing/offers/{id}/answer", post(answer_offer))
-        .route("/v1/pairing/offers/{id}/notice", post(claim_offer_notice))
-        .route("/v1/pairing/peers", get(list_peers))
-        .route(
-            "/v1/pairing/peers/{peer_id}",
-            axum::routing::delete(remove_peer),
-        )
-        .route("/v1/models", get(list_models))
-        .route("/v1/models/refresh", post(refresh_models))
-        .route("/v1/models/warm", post(warm_models))
-        .route("/v1/skills", post(list_skills))
-        .route("/v1/skills/refresh", post(refresh_skills))
-        .route(
-            "/v1/landing-agent-selection",
-            put(confirm_landing_agent_selection),
-        )
-        .route("/v1/onboarded", put(mark_onboarded))
-        .route("/v1/workspaces", get(list_workspaces))
-        .route("/v1/workspaces/resolve", post(resolve_workspace))
-        .route("/v1/workspaces/directory", get(list_directory))
-        .route("/v1/workspaces/icon", post(set_workspace_icon))
-        .route(
-            "/v1/workspaces/description",
-            post(set_workspace_description),
-        )
-        .route("/v1/workspaces/clone", post(clone_workspace))
-        .route("/v1/workspaces/sidekick", post(resolve_sidekick_workspace))
-        .route("/v1/checkouts/prepare", post(prepare_checkout))
-        .route(
-            "/v1/checkouts/removal-preview",
-            post(preview_checkout_removal),
-        )
-        .route("/v1/checkouts/remove", post(remove_checkout))
-        .route("/v1/attachments", post(attachments::upload_attachment))
-        .route(
-            "/v1/attachments/{attachment_id}",
-            get(attachments::fetch_attachment).head(attachments::head_attachment),
-        )
-        .route("/v1/sessions", get(list_sessions).post(create_session))
-        .route("/v1/usage-metrics", post(read_usage_metrics))
-        .route("/v1/usage-metrics/insights", post(read_insights))
-        .merge(
-            Router::new()
-                .route(
-                    "/v1/sessions/{session_id}",
-                    get(read_session).delete(delete_session),
-                )
-                .route(
-                    "/v1/sessions/{session_id}/with-summary",
-                    get(read_session_with_summary),
-                )
-                .route(
-                    "/v1/sessions/{session_id}/outline",
-                    get(read_session_tree_outline),
-                )
-                .route(SESSION_READING_PATH, get(read_session_reading))
-                .route(
-                    "/v1/sessions/{session_id}/agent-selection",
-                    post(update_agent_selection),
-                )
-                .route(
-                    "/v1/sessions/{session_id}/approval-posture",
-                    post(update_approval_posture),
-                )
-                .route("/v1/sessions/{session_id}/settlement", post(settle_session))
-                .route("/v1/sessions/{session_id}/icon", post(set_session_icon))
-                .route("/v1/sessions/{session_id}/title", post(set_session_title))
-                .route("/v1/sessions/{session_id}/move", post(move_session))
-                .route(
-                    "/v1/sessions/{session_id}/title/proposal",
-                    get(title_proposal_offer).post(propose_session_title),
-                )
-                .route("/v1/sessions/{session_id}/viewed", post(view_session))
-                .route("/v1/sessions/{session_id}/prompts", post(admit_prompt))
-                .route(
-                    "/v1/sessions/{session_id}/prompts/{prompt_id}/promote",
-                    post(promote_prompt),
-                )
-                .route(
-                    "/v1/sessions/{session_id}/prompts/{prompt_id}/cancel",
-                    post(cancel_prompt),
-                )
-                .route(
-                    "/v1/sessions/{session_id}/questionnaires/{id}",
-                    post(submit_questionnaire),
-                )
-                .route(
-                    "/v1/sessions/{session_id}/approvals/{id}/decision",
-                    post(submit_decision),
-                )
-                .route(
-                    "/v1/sessions/{session_id}/interrupt",
-                    post(interrupt_session),
-                )
-                .route("/v1/sessions/{session_id}/compact", post(compact_session))
-                .route("/v1/sessions/{session_id}/context", get(context_breakdown))
-                .route("/v1/sessions/{session_id}/events", get(session_events))
-                .route(
-                    "/v1/sessions/{session_id}/subagent-tree",
-                    get(subagent_tree_events),
-                )
-                .route_layer(axum::middleware::from_fn_with_state(
-                    state.clone(),
-                    hydrate_session_request,
-                )),
-        )
-        .route("/v1/server/stop", post(stop_server))
-        .merge(relays::routes())
-        .merge(serve::routes())
+    let (app, _) = served_routes(|routes| {
+        routes.route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            hydrate_session_request,
+        ))
+    })
+    .into_parts();
+    let app = app
         .layer(DefaultBodyLimit::max(COMMAND_BODY_LIMIT))
         .with_state(state)
         .merge(broker_routes);
@@ -3355,6 +3229,137 @@ fn session_catalog_event_stream(
         .chain(updates)
 }
 
+/// Every route this Server's own API serves, the Broker's aside, as
+/// [`served_routes`] lists them.
+#[cfg(test)]
+pub(crate) fn served_api_routes() -> Vec<crate::route_table::Served> {
+    served_routes(|routes| routes).served()
+}
+
+/// Every route this Server's own API serves, its administration among them,
+/// short of the Broker's: the Session routes each passed through `hydrated`,
+/// which brings the Session a request names into memory first.
+fn served_routes(hydrated: impl FnOnce(Router<AppState>) -> Router<AppState>) -> Routes<AppState> {
+    Routes::new()
+        .get("/health", health)
+        .get("/v1/events", events)
+        .get("/v1/session-events", session_catalog_events)
+        .post("/v1/settings", mutate_setting)
+        .post("/v1/pairing/invites", issue_invite)
+        .post("/v1/pairing/invites/preview", preview_invite)
+        .post("/v1/pairing/invites/short-code", new_short_code)
+        .post("/v1/pairing/invites/delivery", fetch_short_invite)
+        .get("/v1/pairing/remotes", list_remotes)
+        .post("/v1/pairing/remotes", redeem_invite)
+        .post("/v1/pairing/remotes/{name}/health", probe_remote)
+        .post("/v1/pairing/remotes/{name}/icon", set_remote_icon)
+        .delete("/v1/pairing/remotes/{name}", remove_remote)
+        .any("/v1/remotes/{name}/{*path}", proxy_remote)
+        .get("/v1/pairing/offers", list_offers)
+        .delete("/v1/pairing/offers/{id}", withdraw_offer)
+        .post("/v1/pairing/offers/{id}/answer", answer_offer)
+        .post("/v1/pairing/offers/{id}/notice", claim_offer_notice)
+        .get("/v1/pairing/peers", list_peers)
+        .delete("/v1/pairing/peers/{peer_id}", remove_peer)
+        .get("/v1/models", list_models)
+        .post("/v1/models/refresh", refresh_models)
+        .post("/v1/models/warm", warm_models)
+        .post("/v1/skills", list_skills)
+        .post("/v1/skills/refresh", refresh_skills)
+        .put(
+            "/v1/landing-agent-selection",
+            confirm_landing_agent_selection,
+        )
+        .put("/v1/onboarded", mark_onboarded)
+        .get("/v1/workspaces", list_workspaces)
+        .post("/v1/workspaces/resolve", resolve_workspace)
+        .get("/v1/workspaces/directory", list_directory)
+        .post("/v1/workspaces/icon", set_workspace_icon)
+        .post("/v1/workspaces/description", set_workspace_description)
+        .post("/v1/workspaces/clone", clone_workspace)
+        .post("/v1/workspaces/sidekick", resolve_sidekick_workspace)
+        .post("/v1/checkouts/prepare", prepare_checkout)
+        .post("/v1/checkouts/removal-preview", preview_checkout_removal)
+        .post("/v1/checkouts/remove", remove_checkout)
+        .post("/v1/attachments", attachments::upload_attachment)
+        .get(
+            "/v1/attachments/{attachment_id}",
+            attachments::fetch_attachment,
+        )
+        .head(
+            "/v1/attachments/{attachment_id}",
+            attachments::head_attachment,
+        )
+        .get("/v1/sessions", list_sessions)
+        .post("/v1/sessions", create_session)
+        .post("/v1/usage-metrics", read_usage_metrics)
+        .post("/v1/usage-metrics/insights", read_insights)
+        .merge(
+            Routes::new()
+                .get("/v1/sessions/{session_id}", read_session)
+                .delete("/v1/sessions/{session_id}", delete_session)
+                .get(
+                    "/v1/sessions/{session_id}/with-summary",
+                    read_session_with_summary,
+                )
+                .get(
+                    "/v1/sessions/{session_id}/outline",
+                    read_session_tree_outline,
+                )
+                .get(SESSION_READING_PATH, read_session_reading)
+                .post(
+                    "/v1/sessions/{session_id}/agent-selection",
+                    update_agent_selection,
+                )
+                .post(
+                    "/v1/sessions/{session_id}/approval-posture",
+                    update_approval_posture,
+                )
+                .post("/v1/sessions/{session_id}/settlement", settle_session)
+                .post("/v1/sessions/{session_id}/icon", set_session_icon)
+                .post("/v1/sessions/{session_id}/title", set_session_title)
+                .post("/v1/sessions/{session_id}/move", move_session)
+                .get(
+                    "/v1/sessions/{session_id}/title/proposal",
+                    title_proposal_offer,
+                )
+                .post(
+                    "/v1/sessions/{session_id}/title/proposal",
+                    propose_session_title,
+                )
+                .post("/v1/sessions/{session_id}/viewed", view_session)
+                .post("/v1/sessions/{session_id}/prompts", admit_prompt)
+                .post(
+                    "/v1/sessions/{session_id}/prompts/{prompt_id}/promote",
+                    promote_prompt,
+                )
+                .post(
+                    "/v1/sessions/{session_id}/prompts/{prompt_id}/cancel",
+                    cancel_prompt,
+                )
+                .post(
+                    "/v1/sessions/{session_id}/questionnaires/{id}",
+                    submit_questionnaire,
+                )
+                .post(
+                    "/v1/sessions/{session_id}/approvals/{id}/decision",
+                    submit_decision,
+                )
+                .post("/v1/sessions/{session_id}/interrupt", interrupt_session)
+                .post("/v1/sessions/{session_id}/compact", compact_session)
+                .get("/v1/sessions/{session_id}/context", context_breakdown)
+                .get("/v1/sessions/{session_id}/events", session_events)
+                .get(
+                    "/v1/sessions/{session_id}/subagent-tree",
+                    subagent_tree_events,
+                )
+                .map_router(hydrated),
+        )
+        .post("/v1/server/stop", stop_server)
+        .merge(relays::routes())
+        .merge(serve::routes())
+}
+
 async fn health(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     if !is_authenticated(&headers, &state.descriptor.token) {
         return StatusCode::UNAUTHORIZED.into_response();
@@ -3625,6 +3630,9 @@ async fn update_approval_posture(
         Ok(request) => request,
         Err(response) => return response,
     };
+    if request.posture.is_some_and(|posture| !posture.is_known()) {
+        return too_old_for_this();
+    }
     let settings = state.settings.borrow().settings.clone();
     match state
         .sessions
@@ -3830,6 +3838,9 @@ async fn admit_prompt(
             Ok(request) => request,
             Err(response) => return response,
         };
+    if request.delivery == crate::protocol::PromptDelivery::Unknown {
+        return too_old_for_this();
+    }
     match state
         .operations
         .admit_prompt(session_id, request, author)
@@ -4037,6 +4048,9 @@ async fn submit_decision(
     if !is_authenticated(&headers, &state.descriptor.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
+    if decision == crate::protocol::Decision::Unknown {
+        return too_old_for_this();
+    }
     match state
         .providers
         .submit_decision(session_id, id, decision)
@@ -4098,6 +4112,8 @@ async fn interrupt_session(
             };
             session_error_response(status, code, refusal.to_string())
         }
+        // This Server's own interruption never comes to a kind it does not know.
+        Ok(InterruptOutcome::Unknown) => StatusCode::NO_CONTENT.into_response(),
     }
 }
 
@@ -5366,6 +5382,16 @@ where
 /// A Session error as every route answers one: its code and message in the
 /// body, and its code again in [`SESSION_ERROR_CODE_HEADER`], which a body-less
 /// answer keeps.
+/// The answer to a request naming a kind of value this Server does not know,
+/// sent by a newer side: that this Server is too old for it (ADR-0078).
+fn too_old_for_this() -> Response {
+    session_error_response(
+        StatusCode::BAD_REQUEST,
+        SessionErrorCode::ServerTooOld,
+        crate::protocol::TOO_OLD_FOR_THIS,
+    )
+}
+
 pub(crate) fn session_error_response(
     status: StatusCode,
     code: SessionErrorCode,

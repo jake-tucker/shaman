@@ -2015,7 +2015,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         ]),
         reset: SettingMutation::ProviderCodexApprovalPolicy { value: None },
         apply: |settings, value| {
-            apply_value(value, |policy| {
+            apply_known_value(value, CodexApprovalPolicy::Unknown, |policy| {
                 settings.provider.codex.approval_policy = policy;
             })
         },
@@ -2050,7 +2050,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         ]),
         reset: SettingMutation::ProviderCodexSandboxMode { value: None },
         apply: |settings, value| {
-            apply_value(value, |mode| {
+            apply_known_value(value, CodexSandboxMode::Unknown, |mode| {
                 settings.provider.codex.sandbox_mode = mode;
             })
         },
@@ -2110,7 +2110,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         ]),
         reset: SettingMutation::ProviderCopilotPermissions { value: None },
         apply: |settings, value| {
-            apply_value(value, |permissions| {
+            apply_known_value(value, CopilotPermissions::Unknown, |permissions| {
                 settings.provider.copilot.permissions = permissions;
             })
         },
@@ -2182,7 +2182,7 @@ pub const SCHEMA: &[SettingDescriptor] = &[
         ]),
         reset: SettingMutation::ProviderClaudePermissionMode { value: None },
         apply: |settings, value| {
-            apply_value(value, |mode| {
+            apply_known_value(value, ClaudePermissionMode::Unknown, |mode| {
                 settings.provider.claude.permission_mode = mode
             })
         },
@@ -2563,6 +2563,23 @@ fn apply_value<T: serde::de::DeserializeOwned>(value: &Value, write: impl FnOnce
             Applied::Whole
         }
         Err(_) => Applied::Refused,
+    }
+}
+
+/// As [`apply_value`], for a closed set the wire reads tolerantly: a value of
+/// a kind this build does not know reads there as `unknown`, its fallback, and
+/// is refused here, in a document written by hand, as any other misspelling.
+fn apply_known_value<T: serde::de::DeserializeOwned + PartialEq>(
+    value: &Value,
+    unknown: T,
+    write: impl FnOnce(T),
+) -> Applied {
+    match serde_json::from_value::<T>(value.clone()) {
+        Ok(read) if read != unknown => {
+            write(read);
+            Applied::Whole
+        }
+        _ => Applied::Refused,
     }
 }
 
@@ -3475,6 +3492,33 @@ mod tests {
                 ),
                 "the same value on the wire is read past what it adds"
             );
+        }
+    }
+
+    /// A Provider's own approval Setting a document spells otherwise than any
+    /// value it takes is refused, even though the wire reads the same
+    /// spelling as a kind this build does not know.
+    #[test]
+    fn a_provider_approval_setting_a_document_misspells_is_refused() {
+        for key in [
+            PROVIDER_CODEX_APPROVAL_POLICY,
+            PROVIDER_CODEX_SANDBOX_MODE,
+            PROVIDER_COPILOT_PERMISSIONS,
+            PROVIDER_CLAUDE_PERMISSION_MODE,
+        ] {
+            let descriptor = SCHEMA
+                .iter()
+                .find(|descriptor| descriptor.key == key)
+                .expect("the Setting is in the schema");
+            let mut settings = EffectiveSettings::default();
+            for misspelt in ["sometimes", "unknown"] {
+                assert_eq!(
+                    (descriptor.apply)(&mut settings, &serde_json::json!(misspelt)),
+                    Applied::Refused,
+                    "{key} = {misspelt:?}"
+                );
+            }
+            assert_eq!(settings, EffectiveSettings::default(), "{key}");
         }
     }
 

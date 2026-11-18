@@ -756,6 +756,10 @@ fn printed_way(way: &Way) -> PrintedWay {
             kind: "relay",
             address: address.clone(),
         },
+        Way::Unknown => PrintedWay {
+            kind: "unknown",
+            address: String::new(),
+        },
     }
 }
 

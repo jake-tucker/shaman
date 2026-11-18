@@ -155,6 +155,7 @@ impl CopilotApprovals {
         let mode = match permissions {
             CopilotPermissions::Auto => PermissionMode::Assisted,
             CopilotPermissions::Ask | CopilotPermissions::AllowAll => PermissionMode::Manual,
+            CopilotPermissions::Unknown => PermissionMode::Manual,
         };
         if applied.as_ref() == Some(&mode) {
             return;
@@ -451,6 +452,8 @@ fn native_decision(decision: Decision, data: &PermissionRequestData) -> Permissi
             PermissionDecision::Reject(PermissionDecisionReject::default())
         }
         Decision::AcceptForSession => session_decision(data),
+        // Refused before it reaches a Provider; declined were it ever to.
+        Decision::Unknown => PermissionDecision::Reject(PermissionDecisionReject::default()),
     }
 }
 

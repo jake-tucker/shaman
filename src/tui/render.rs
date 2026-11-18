@@ -685,6 +685,7 @@ fn render_connect_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             let standing = match way {
                 Way::Relay(address) => Some(standing(address)),
                 Way::Direct(_) => None,
+                Way::Unknown => None,
             };
             body.extend(way_lines(
                 "",
@@ -2587,6 +2588,7 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
             match preview.branch_outcome {
                 crate::protocol::CheckoutBranchOutcome::Deleted => "Branch will be deleted",
                 crate::protocol::CheckoutBranchOutcome::Retained => "Branch retained",
+                crate::protocol::CheckoutBranchOutcome::Unknown => "Branch outcome unknown",
             }
         )));
         lines.push(Line::raw(if picker.loading {
@@ -2646,6 +2648,9 @@ fn render_worktree_picker(frame: &mut Frame<'_>, state: &TuiState, main: Rect, t
                         format!("New worktree unavailable · {reason}")
                     }
                     None => "New worktree unavailable · no repository".to_owned(),
+                    Some(crate::protocol::SourceControlCapability::Unknown) => {
+                        "New worktree unavailable".to_owned()
+                    }
                 });
                 rows.extend(context.checkouts.iter().map(|checkout| {
                     // The Worktree the reader is already in is marked rather
@@ -3136,6 +3141,7 @@ fn directory_browser_row_text(
         Some(DirectorySourceControl::LinkedWorktreeRoot { revision }) => {
             (CheckoutKind::Linked, revision)
         }
+        Some(DirectorySourceControl::Unknown) => return truncate_to_width(&text, width),
     };
     text.push_str(separator);
     let reading = CheckoutStateReading {
@@ -6330,6 +6336,7 @@ impl<'a> CheckoutStateReading<'a> {
             SourceControlAvailability::NotDetected => return None,
             SourceControlAvailability::Unavailable { .. } => None,
             SourceControlAvailability::Available => reading.revision.as_ref(),
+            SourceControlAvailability::Unknown => None,
         };
         Some(Self {
             kind: reading.association.kind,
@@ -6379,8 +6386,10 @@ impl<'a> CheckoutStateReading<'a> {
             CheckoutRevision::Branch { .. } => Some(match self.kind {
                 CheckoutKind::Main => shaman_icons::GIT_BRANCH,
                 CheckoutKind::Linked => shaman_icons::WORKTREE,
+                CheckoutKind::Unknown => shaman_icons::GIT_BRANCH,
             }),
             CheckoutRevision::Detached { .. } => Some(shaman_icons::GIT_COMMIT),
+            CheckoutRevision::Unknown => None,
         }
     }
 }
@@ -6433,6 +6442,7 @@ impl CheckoutStateLabel {
                 suffix: match reading.kind {
                     CheckoutKind::Main => "",
                     CheckoutKind::Linked => " (worktree)",
+                    CheckoutKind::Unknown => "",
                 },
             },
             Some(CheckoutRevision::Detached { commit }) => Self {
@@ -6446,6 +6456,10 @@ impl CheckoutStateLabel {
             },
             None => Self {
                 state: "[unavailable]".to_owned(),
+                suffix: "",
+            },
+            Some(CheckoutRevision::Unknown) => Self {
+                state: "[unknown]".to_owned(),
                 suffix: "",
             },
         }
@@ -8580,6 +8594,7 @@ fn render_pending_prompts(
                     ),
                     None,
                 ),
+                Some(Author::Unknown) => return Line::styled(format!("{marker}{text}"), style),
             };
             let start = area
                 .x

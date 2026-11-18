@@ -1308,6 +1308,7 @@ pub(crate) fn settled_report(
         TurnStatus::Completed => SidekickTurnOutcome::Completed,
         TurnStatus::Failed => SidekickTurnOutcome::Failed,
         TurnStatus::Interrupted => SidekickTurnOutcome::Interrupted,
+        TurnStatus::Unknown => return None,
     };
     Some(
         SidekickReport::turn_settled(
@@ -1338,6 +1339,7 @@ pub(crate) fn settled_report_past_budget(
         TurnStatus::Completed => SidekickTurnOutcome::Completed,
         TurnStatus::Failed => SidekickTurnOutcome::Failed,
         TurnStatus::Interrupted => SidekickTurnOutcome::Interrupted,
+        TurnStatus::Unknown => return None,
     };
     Some(
         SidekickReport::turn_settled_past_budget(subject, outcome, turn.worked_ms()).left_working(

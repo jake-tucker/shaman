@@ -215,6 +215,7 @@ pub(crate) fn render(excerpt: SessionExcerpt, at: &ReadAt) -> SessionReading {
             .map(|span| match span {
                 ReadingSpan::Text(text) => text.clone(),
                 ReadingSpan::Names(reference) => reference_named(reference, at),
+                ReadingSpan::Unknown => String::new(),
             })
             .collect(),
         before: excerpt.before,
@@ -261,6 +262,7 @@ fn reference_named(reference: &ServerReference, at: &ReadAt) -> String {
                  read."
             ),
         },
+        ServerReference::Unknown => "something this server does not know".to_owned(),
     }
 }
 
@@ -299,6 +301,7 @@ impl Spans {
             match span {
                 ReadingSpan::Text(text) => self.push_str(&text),
                 names @ ReadingSpan::Names(_) => self.0.push(names),
+                ReadingSpan::Unknown => {}
             }
         }
     }
@@ -473,6 +476,7 @@ impl<'a> Transcript<'a> {
                     Some(Activity::Reasoning { .. }) | None => continue,
                     Some(activity) => (activity.turn_id().or(reached), Entry::Activity(activity)),
                 },
+                TranscriptItem::Unknown => continue,
             };
             reached = turn_id.or(reached);
             if let Some(turn) = turn_id
@@ -679,6 +683,7 @@ impl<'a> Transcript<'a> {
                     heading.push_str(&format!(": {}", one_line(failure)));
                 }
             }
+            TurnStatus::Unknown => heading.push_str(" · in a state this server does not know"),
         }
         if detail == Detail::Messages {
             let (mut messages, mut activities) = (0, 0);
@@ -745,6 +750,7 @@ impl<'a> Transcript<'a> {
                     detail == Detail::Activities || turn.final_message == Some(entry)
                 }
                 MessageRole::User | MessageRole::Delegation(_) => true,
+                MessageRole::Unknown => true,
             },
             Entry::Activity(_) => detail == Detail::Activities,
         }
@@ -810,6 +816,7 @@ impl<'a> Transcript<'a> {
                 MessageRole::Delegation(delegator) => {
                     Spans::text(format!("delegation from Session {}", delegator.session_id))
                 }
+                MessageRole::Unknown => Spans::text("a sender this server does not know"),
             },
             Entry::Activity(activity) => activity_label(activity),
         }
@@ -1257,6 +1264,7 @@ fn file_change(change: &FileChange, path: impl Fn(&Path) -> String) -> String {
             path: updated,
             moved_to: Some(moved),
         } => format!("move {} to {}", path(updated), path(moved)),
+        FileChange::Unknown => "a change of a kind this server does not know".to_owned(),
     }
 }
 
@@ -1272,6 +1280,7 @@ fn activity_label(activity: &Activity) -> Spans {
         ActivityStatus::Completed => "completed",
         ActivityStatus::Failed => "failed",
         ActivityStatus::Interrupted => "interrupted",
+        ActivityStatus::Unknown => "in an unknown state",
     };
     let label = match activity {
         Activity::Command {
@@ -1312,6 +1321,7 @@ fn activity_label(activity: &Activity) -> Spans {
                 WatchOutcomeStatus::Completed => "completed",
                 WatchOutcomeStatus::Failed => "failed",
                 WatchOutcomeStatus::Stopped => "stopped",
+                WatchOutcomeStatus::Unknown => "unknown",
             }
         ),
         Activity::Compaction {
@@ -1320,6 +1330,7 @@ fn activity_label(activity: &Activity) -> Spans {
             CompactionTrigger::Manual => format!("compaction [{}]", stood(*status)),
             CompactionTrigger::Automatic => format!("compaction [{}, automatic]", stood(*status)),
             CompactionTrigger::Scheduled => format!("compaction [{}, scheduled]", stood(*status)),
+            CompactionTrigger::Unknown => format!("compaction [{}]", stood(*status)),
         },
         Activity::Reasoning { .. } => "reasoning".to_owned(),
         Activity::Route { .. } => "route".to_owned(),
@@ -1381,11 +1392,13 @@ fn approval_outcome(outcome: ApprovalOutcome, decision: Option<Decision>) -> Str
             Some(Decision::Decline) => "declined".to_owned(),
             Some(Decision::DeclineAndInterrupt) => "declined and interrupted".to_owned(),
             None => "decided".to_owned(),
+            Some(Decision::Unknown) => "decided".to_owned(),
         },
         ApprovalOutcome::Withdrawn => "withdrawn".to_owned(),
         ApprovalOutcome::TurnEnded => "its Turn ended".to_owned(),
         ApprovalOutcome::Unavailable => "unavailable".to_owned(),
         ApprovalOutcome::DeliveryUncertain => "Decision's delivery uncertain".to_owned(),
+        ApprovalOutcome::Unknown => "in a state this server does not know".to_owned(),
     }
 }
 
@@ -1401,6 +1414,7 @@ const fn questionnaire_outcome(outcome: QuestionnaireOutcome) -> &'static str {
         QuestionnaireOutcome::TurnEnded => "its Turn ended",
         QuestionnaireOutcome::Unavailable => "unavailable",
         QuestionnaireOutcome::DeliveryUncertain => "Answer's delivery uncertain",
+        QuestionnaireOutcome::Unknown => "in a state this server does not know",
     }
 }
 
@@ -1429,6 +1443,7 @@ fn asks(approval: &Approval) -> String {
         ApprovalSubject::Network { host_or_url } => format!("reach {host_or_url}"),
         ApprovalSubject::PermissionGrant { profile } => format!("be granted {profile}"),
         ApprovalSubject::OtherTool { name, input } => format!("use {name} with {input}"),
+        ApprovalSubject::Unknown => "do something this server does not know how to name".to_owned(),
     }
 }
 
@@ -1552,6 +1567,7 @@ fn push_questionnaire(whole: &mut Spans, questionnaire: &Questionnaire, answer: 
             QuestionAnswer::Freeform { text } => text.clone(),
             QuestionAnswer::Omitted => "left unanswered".to_owned(),
             QuestionAnswer::SecretAnswered => "answered in secret".to_owned(),
+            QuestionAnswer::Unknown => "answered in a way this server does not know".to_owned(),
         };
         whole.push_str(&format!("\nAnswer {}: {said}", index + 1));
     }
@@ -1602,6 +1618,7 @@ fn named(author: &Author, at: &ReadAt) -> String {
                 _ => format!("a Sidekick on a server the Remote `{through}` knows as {the_peer}"),
             }
         }
+        Author::Unknown => "an author this server does not know".to_owned(),
     }
 }
 

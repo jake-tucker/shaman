@@ -5,7 +5,6 @@
 //! timestamps, cut where its own calendar falls, and is answered with the
 //! figures each one holds. A report is read on request and never stored.
 
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{Cost, CostTotal, ModelId, ProviderId, SessionId, SessionTimestamp, WorkspaceId};
@@ -20,7 +19,8 @@ pub const MAX_USAGE_METRICS_BUCKETS: usize = 512;
 pub const MAX_USAGE_METRICS_TOP_SESSIONS: usize = 100;
 
 /// What a reader asks of a Server's Usage Metrics.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct UsageMetricsQuery {
     /// The time buckets, earliest first, none overlapping another and none
     /// more than [`MAX_USAGE_METRICS_BUCKETS`] of them. None at all asks only
@@ -44,7 +44,8 @@ pub struct UsageMetricsQuery {
 }
 
 /// A half-open span of time, from `start` up to but not including `end`.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct UsageMetricsInterval {
     pub start: SessionTimestamp,
     pub end: SessionTimestamp,
@@ -57,7 +58,8 @@ impl UsageMetricsInterval {
 }
 
 /// How each bucket's figures are split.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum UsageMetricsBreakdown {
     /// By the Provider and Model of the Agent that ran each Turn.
@@ -71,7 +73,8 @@ pub enum UsageMetricsBreakdown {
 }
 
 /// Which Model a Turn's work counts under in a breakdown by Model.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum UsageMetricsModelView {
     /// The Model each Turn's Agent Selection named, whatever ran: all of a
@@ -88,7 +91,9 @@ pub enum UsageMetricsModelView {
 }
 
 /// One part of a breakdown.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UsageMetricsKey {
     /// A Model as reached through one Provider: the same Model id under two
@@ -109,6 +114,9 @@ pub enum UsageMetricsKey {
     /// is counted apart from the work of every Session. It holds Usage and
     /// Cost alone, never a Session, Subagent, or Turn.
     Errands,
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unrecognized,
 }
 
 /// A breakdown key and the name a reader is shown for it: a Model's name, a
@@ -117,14 +125,16 @@ pub enum UsageMetricsKey {
 /// told apart from every other the Server's counted Sessions worked under,
 /// at any moment, not only those the report names, so one key reads alike
 /// in every report a Server gives.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct UsageMetricsKeyLabel {
     pub key: UsageMetricsKey,
     pub label: String,
 }
 
 /// A Server's answer to a [`UsageMetricsQuery`].
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct UsageMetricsReport {
     /// One for each bucket asked for, in the order asked.
     pub buckets: Vec<UsageMetricsBucket>,
@@ -162,7 +172,8 @@ pub struct UsageMetricsReport {
 /// overlaps removed (ADR 0054), however much it cost outside them; a
 /// Subsession's is its own, apart from the Sidekick whose tree Cost rolls it
 /// up, since it is a Session of its own to open.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct UsageMetricsSession {
     pub session_id: SessionId,
     pub title: String,
@@ -184,14 +195,16 @@ pub struct UsageMetricsSession {
 /// The figures of one bucket: its whole, and its part under each key a Turn
 /// in the bucket ran under, whether or not that Turn recorded any Usage, and
 /// under [`UsageMetricsKey::Errands`] where an Errand began in it.
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct UsageMetricsBucket {
     pub total: UsageMetricsAggregate,
     pub by_key: Vec<KeyedUsageMetrics>,
 }
 
 /// The part of a bucket one key holds.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct KeyedUsageMetrics {
     pub key: UsageMetricsKey,
     pub aggregate: UsageMetricsAggregate,
@@ -203,7 +216,8 @@ pub struct KeyedUsageMetrics {
 /// contributions and Errand Costs add up to, how many Sessions they are the
 /// work of, and how many Turns they are and how those ended. An Errand adds
 /// to the Usage and Cost alone: it is neither a Session nor a Turn.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct UsageMetricsAggregate {
     pub fresh_input_tokens: Option<u64>,
     pub cache_read_tokens: Option<u64>,
@@ -277,7 +291,8 @@ impl UsageMetricsAggregate {
 /// count, and whether work among them has a Cost no counted amount accounts
 /// for, so the amount says less than it cost. Every figure a read gives that
 /// adds contributions up is one, and adds them by [`Self::add`] alone.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CountedCost {
     /// Absent where nothing counted contributes a known amount, never a
     /// zero nobody measured.
@@ -355,7 +370,8 @@ pub fn cache_read_share(
 /// What a reader asks of a Server's Insights: how the Sessions living there
 /// worked over one span of time, rather than how much they consumed in each
 /// of many. The Server places each Turn in it as it places one in a bucket.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct InsightsQuery {
     /// Refused where it ends before it begins.
     pub interval: UsageMetricsInterval,
@@ -364,7 +380,8 @@ pub struct InsightsQuery {
 /// A Server's answer to an [`InsightsQuery`], over the Turns its interval
 /// holds: those with a recorded moment to place them by, of the Sessions a
 /// [`UsageMetricsReport`] counts. Each part is one panel's figures.
-#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct InsightsReport {
     pub turns: TurnInsights,
     /// The Turns placed in each UTC quarter-hour, earliest first: only those
@@ -400,7 +417,8 @@ pub struct InsightsReport {
 
 /// How much of the interval's input its Turns and Errands read from cache,
 /// and an estimate of what caching saved them.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CacheInsights {
     /// The three parts of the Turns' and Errands' input, each absent where
     /// none of them reported it, as a [`UsageMetricsAggregate`] keeps them.
@@ -428,7 +446,8 @@ impl CacheInsights {
 /// A what-if, never a Cost: it is worked out afresh at every read, never
 /// frozen or stored, and adds into no Cost figure (ADR 0016 governs Cost,
 /// not this).
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct EstimatedSaving {
     /// In billionths of a dollar; negative where writing the cache cost
     /// more than reading it saved. Absent where no Turn or Errand that read
@@ -448,7 +467,8 @@ pub struct EstimatedSaving {
 /// Provider that reports a whole tree's Cost on its own Turns — Claude's,
 /// for the native Subagents it runs — leaves those Subagents' work inside
 /// the Session that reported it.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct DelegationInsights {
     /// Top-level Sessions that are neither a Sidekick's nor Subsessions.
     pub own_sessions: CountedCost,
@@ -484,7 +504,8 @@ impl DelegationInsights {
 
 /// How many Compactions the interval's Turns held, of each trigger and
 /// status, and how much of the context they freed.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CompactionInsights {
     /// Those the Provider chose to do.
     pub automatic: CompactionCounts,
@@ -505,7 +526,8 @@ impl CompactionInsights {
 }
 
 /// How many Compactions of one trigger stand at each status.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CompactionCounts {
     /// Still summarising when storage last saved them.
     pub active: u64,
@@ -524,7 +546,8 @@ impl CompactionCounts {
 /// before, over the Compactions that completed knowing both figures with
 /// some context before. One failed or interrupted left the context as it
 /// was, so says nothing of what a Compaction frees.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct FreedShare {
     /// How many Compactions the average is over: at least one.
     pub compactions: u64,
@@ -537,7 +560,8 @@ pub struct FreedShare {
 /// How many Approvals the interval's Turns asked, and how each stands by
 /// the Decision recorded for it. Every Approval asked is counted in exactly
 /// one of the other figures.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ApprovalInsights {
     pub asked: u64,
     /// Decided: Accept.
@@ -558,9 +582,9 @@ pub struct ApprovalInsights {
 }
 
 /// A Tool an Agent used, as the Insights tab tells them apart.
-#[derive(
-    Clone, Debug, Deserialize, Eq, Hash, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
-)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(extend("x-unknown-kinds" = "tolerated")))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InsightsTool {
     /// A Command run in a shell.
@@ -577,11 +601,15 @@ pub enum InsightsTool {
         name: String,
         server: Option<String>,
     },
+    /// A kind this build does not know, from a side newer than it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// How often the interval's Turns used one Tool, and how many of those
 /// uses failed.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ToolTally {
     pub tool: InsightsTool,
     pub uses: u64,
@@ -594,7 +622,8 @@ pub const QUARTER_HOUR_MS: u64 = 15 * 60 * 1_000;
 
 /// The Turns placed in one UTC quarter-hour — by when each began, otherwise
 /// when it Settled, as the interval places them — and what they consumed.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct QuarterHourTurns {
     /// When the quarter-hour begins: a whole number of [`QUARTER_HOUR_MS`]
     /// since the epoch.
@@ -611,7 +640,8 @@ pub struct QuarterHourTurns {
 }
 
 /// How long the interval's Turns took to Settle, and how they ended.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TurnInsights {
     /// Over every Settled Turn that recorded when it began and when it
     /// Settled; absent where none did. A Turn still working has no duration
@@ -635,7 +665,8 @@ pub const TURN_DURATION_BIN_ENDS_MS: [u64; TURN_DURATION_BINS - 1] =
 /// The durations of a set of Turns, each its settle time less its start
 /// time, in milliseconds. The median and p90 are nearest-rank: the duration
 /// at least half, or nine in ten, of the Turns took no longer than.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TurnDurations {
     pub median_ms: u64,
     pub p90_ms: u64,

@@ -3215,6 +3215,7 @@ fn relay_login_needed(error: &anyhow::Error) -> Option<String> {
         crate::protocol::UnreachableReason::RelayLoginNeeded { relay } => Some(relay.clone()),
         crate::protocol::UnreachableReason::RelayCapReached { .. }
         | crate::protocol::UnreachableReason::RelayDifferentAccounts { .. } => None,
+        crate::protocol::UnreachableReason::Unknown => None,
     }
 }
 

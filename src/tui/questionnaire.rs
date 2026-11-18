@@ -846,6 +846,7 @@ pub(super) fn answer_text(question: &Question, answer: Option<&QuestionAnswer>) 
             format!("{}; {}", labels(choices), text)
         }
         Some(QuestionAnswer::Freeform { text }) => text.clone(),
+        Some(QuestionAnswer::Unknown) => "Answered".into(),
     }
 }
 

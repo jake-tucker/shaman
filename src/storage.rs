@@ -364,6 +364,7 @@ impl WorkspacePresentation {
             Some(RepositoryLocation::Main { .. }) => Self::MainRoot,
             Some(RepositoryLocation::Bare { .. }) => Self::BareRoot,
             Some(RepositoryLocation::UnknownMain) => Self::RepositoryMetadata,
+            Some(RepositoryLocation::Unknown) => Self::RepositoryMetadata,
         }
     }
 }

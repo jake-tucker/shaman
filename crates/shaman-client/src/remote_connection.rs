@@ -93,7 +93,7 @@ fn failure_of(error: SessionError, server_error: bool) -> RemoteConnectionFailur
 pub(crate) fn too_old_for_this() -> SessionError {
     SessionError {
         code: SessionErrorCode::ServerTooOld,
-        message: "That server is too old for this; update Shaman there".to_owned(),
+        message: crate::protocol::TOO_OLD_FOR_THIS.to_owned(),
         unreachable: None,
     }
 }

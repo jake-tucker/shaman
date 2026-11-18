@@ -56,6 +56,7 @@ fn codex_fix(reason: ProviderUnavailability) -> &'static str {
         }
         ProviderUnavailability::NotSignedIn => "run `codex login`",
         ProviderUnavailability::IncompatibleVersion => "update the Codex CLI",
+        ProviderUnavailability::Unknown => "see the Codex CLI's own documentation",
     }
 }
 

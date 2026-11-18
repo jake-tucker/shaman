@@ -249,6 +249,9 @@ pub async fn open_connection(
                 "this Server reaches no Relay",
             )),
         },
+        Way::Unknown => Err(std::io::Error::other(
+            "a way of a kind this build does not know cannot be dialled",
+        )),
     }
 }
 
@@ -979,6 +982,7 @@ impl WayDialer {
         match way {
             Way::Direct(_) => true,
             Way::Relay(relay) => self.relays.get().is_some_and(|relays| relays.chosen(relay)),
+            Way::Unknown => false,
         }
     }
 }

@@ -310,6 +310,9 @@ fn refusal(refusal: ReadRefusal, request: &ReadRequest) -> ToolRefusal {
             if entries == 1 { "entry" } else { "entries" },
             turn = entry.turn(),
         ),
+        ReadRefusal::Unknown => format!(
+            "read_session's `{argument}` was refused for a reason this Shaman does not know."
+        ),
     })
 }
 

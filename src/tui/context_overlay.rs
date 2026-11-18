@@ -234,6 +234,7 @@ fn source_label(source: &ContextSource) -> &str {
         ContextSource::Agents => "Agents",
         ContextSource::Messages => "Messages",
         ContextSource::Other { label } => label,
+        ContextSource::Unknown => "Other",
     }
 }
 

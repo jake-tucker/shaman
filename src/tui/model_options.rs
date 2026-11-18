@@ -512,6 +512,7 @@ impl From<&ModelOptionValue> for ChoiceValue {
         match value {
             ModelOptionValue::Select { choice } => Self::Select(choice.clone()),
             ModelOptionValue::Toggle { enabled } => Self::Toggle(*enabled),
+            ModelOptionValue::Unknown => Self::ProviderDefault,
         }
     }
 }
@@ -662,6 +663,7 @@ fn choice_values(
         ModelOptionKind::Toggle { .. } => {
             vec![ChoiceValue::Toggle(false), ChoiceValue::Toggle(true)]
         }
+        ModelOptionKind::Unknown => Vec::new(),
     };
     if matches!(purpose, ModelPickerPurpose::Setting(_)) {
         values.insert(0, ChoiceValue::ProviderDefault);

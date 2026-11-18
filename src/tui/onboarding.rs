@@ -890,6 +890,9 @@ impl<'a> Standing<'a> {
                 reason: *reason,
                 fix,
             },
+            Some(ProviderCatalogStatus::Unknown) => {
+                Self::Failed("Its Models stand in a way this Shaman does not know")
+            }
         }
     }
 

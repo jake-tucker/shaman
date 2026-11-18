@@ -475,6 +475,7 @@ impl SubagentWork {
             TurnStatus::Completed => ActivityStatus::Completed,
             TurnStatus::Failed => ActivityStatus::Failed,
             TurnStatus::Interrupted => ActivityStatus::Interrupted,
+            TurnStatus::Unknown => ActivityStatus::Unknown,
         };
         Some(Self {
             status,

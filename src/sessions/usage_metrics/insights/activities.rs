@@ -99,12 +99,14 @@ impl ActivityTally {
             CompactionTrigger::Automatic => &mut self.compactions.automatic,
             CompactionTrigger::Manual => &mut self.compactions.manual,
             CompactionTrigger::Scheduled => &mut self.compactions.scheduled,
+            CompactionTrigger::Unknown => return,
         };
         let count = match status {
             ActivityStatus::Active => &mut counts.active,
             ActivityStatus::Completed => &mut counts.completed,
             ActivityStatus::Failed => &mut counts.failed,
             ActivityStatus::Interrupted => &mut counts.interrupted,
+            ActivityStatus::Unknown => return,
         };
         *count += 1;
         if *status == ActivityStatus::Completed
@@ -161,6 +163,7 @@ impl ActivityTally {
                 | ApprovalOutcome::DeliveryUncertain,
                 _,
             ) => &mut approvals.expired,
+            (ApprovalOutcome::Unknown, _) => return,
         };
         *count += 1;
     }

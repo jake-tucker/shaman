@@ -38,9 +38,10 @@ use axum::{
     extract::{ConnectInfo, Path as AxumPath, State},
     http::{HeaderMap, Method, Request, StatusCode, header, uri::PathAndQuery},
     response::{IntoResponse, Response},
-    routing::{any, get, post},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+use crate::route_table::Routes;
 use futures_util::{FutureExt as _, Stream, StreamExt, stream, task::AtomicWaker};
 use hyper_util::{
     rt::{TokioExecutor, TokioIo, TokioTimer},
@@ -1015,6 +1016,10 @@ impl ServingController {
                         ),
                     )
                 }),
+            Way::Unknown => Err(PairingFailure::new(
+                SessionErrorCode::InvalidInviteWays,
+                "a way of a kind this Server does not know cannot be offered",
+            )),
         }
     }
 
@@ -1797,17 +1802,8 @@ async fn serve(
         hostname: machine_hostname(),
         protocol,
     };
-    let app = Router::new()
-        .route("/health", get(serving_health))
-        .route("/v1/pairing/enroll", post(enroll_peer))
-        .route(PAIRING_WITHDRAWAL_PATH, post(withdraw_peer))
-        .route(OFFERED_RELAYS_PATH, get(tell_offered_relays))
-        .route(
-            OFFER_PATH,
-            post(take_offer_word)
-                .layer(axum::extract::DefaultBodyLimit::max(PAIRING_ANSWER_BUDGET)),
-        )
-        .route("/v1/pairing/proxy/{*path}", any(forward_peer_api))
+    let (app, _) = listener_routes().into_parts();
+    let app = app
         // Every answer states the version this Server speaks, so a Peer
         // judges it against its own floor whatever it asked.
         .layer(axum::middleware::map_response(
@@ -2116,6 +2112,21 @@ fn peer_route_class(method: &Method, path: &str) -> PeerRouteClass {
     } else {
         PeerRouteClass::Api
     }
+}
+
+/// Every route the Serving listener answers a Peer on: the ceremony that
+/// forms a Pairing, what a Peer says of it after, and the Session API it
+/// carries on to this Server's own.
+fn listener_routes() -> Routes<ServingState> {
+    Routes::new()
+        .get("/health", serving_health)
+        .post("/v1/pairing/enroll", enroll_peer)
+        .post(PAIRING_WITHDRAWAL_PATH, withdraw_peer)
+        .get(OFFERED_RELAYS_PATH, tell_offered_relays)
+        .on_layered(Method::POST, OFFER_PATH, take_offer_word, |route| {
+            route.layer(axum::extract::DefaultBodyLimit::max(PAIRING_ANSWER_BUDGET))
+        })
+        .any("/v1/pairing/proxy/{*path}", forward_peer_api)
 }
 
 /// Carries a Peer's `request` on to this Server's own Session API, with
@@ -3121,7 +3132,10 @@ mod tests {
     #[tokio::test]
     async fn a_joined_stream_the_serving_side_cannot_flush_is_let_go_once_judged_gone() {
         let (serving_end, redeeming_end) = tokio::io::duplex(64 * 1024);
-        let app = Router::new().route("/attachment", get(|| async { vec![7_u8; 8 * 1024 * 1024] }));
+        let app = Router::new().route(
+            "/attachment",
+            axum::routing::get(|| async { vec![7_u8; 8 * 1024 * 1024] }),
+        );
         let serving = tokio::spawn(serve_together(
             serving_end,
             app,
@@ -3630,37 +3644,73 @@ mod tests {
         }
     }
 
-    /// The schema the Pairing wire is held to names only routes of the Session
-    /// API a Peer may ask, so none of what it holds is administration, or
-    /// what only loopback may ask.
-    #[test]
-    fn every_route_the_pairing_wire_schema_holds_is_one_a_peer_may_ask() {
-        let wire = shaman_pairing_wire::pairing_wire();
-        let routes = wire["api"]
+    /// `route` as a Peer would ask it, each segment that names a value given
+    /// one, and a route answering every method asked by `GET`.
+    fn asked(route: &crate::route_table::Served) -> (Method, String) {
+        let method = match route.method.as_str() {
+            "ANY" => Method::GET,
+            method => Method::from_bytes(method.as_bytes()).expect("a method"),
+        };
+        let path = route
+            .path
+            .split('/')
+            .map(|segment| match segment {
+                "{*path}" => "v1/sessions",
+                segment if segment.starts_with('{') => "0198b27e",
+                segment => segment,
+            })
+            .collect::<Vec<_>>()
+            .join("/");
+        (method, path)
+    }
+
+    fn schema_routes(section: &str) -> std::collections::BTreeSet<String> {
+        shaman_pairing_wire::pairing_wire()[section]
             .as_object()
-            .expect("the schema holds its routes");
-        assert!(!routes.is_empty());
-        for route in routes.keys() {
-            let (method, path) = route.split_once(' ').expect("a route names its method");
-            let method = match method {
-                "ANY" => Method::GET,
-                method => Method::from_bytes(method.as_bytes()).expect("a method"),
-            };
-            // Each segment a route names a value by is given one.
-            let path = path
-                .split('/')
-                .map(|segment| match segment {
-                    "{*path}" => "v1/sessions",
-                    segment if segment.starts_with('{') => "0198b27e",
-                    segment => segment,
-                })
-                .collect::<Vec<_>>()
-                .join("/");
-            assert!(
-                peer_route_class(&method, &path) == PeerRouteClass::Api,
-                "{route}, as {method} {path}"
-            );
-        }
+            .expect("the schema holds its routes")
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    /// The schema the Pairing wire is held to names exactly the routes of
+    /// this Server's API a Peer may ask: every one `peer_route_class` lets
+    /// through, and none of its administration or what only loopback may ask.
+    #[test]
+    fn the_pairing_wire_schema_holds_every_route_a_peer_may_ask_and_no_other() {
+        let served = crate::server::served_api_routes();
+        let asked: std::collections::BTreeSet<String> = served
+            .iter()
+            .filter(|route| {
+                let (method, path) = asked(route);
+                peer_route_class(&method, &path) == PeerRouteClass::Api
+            })
+            .map(crate::route_table::Served::named)
+            .collect();
+        assert!(asked.len() > 40, "{asked:?}");
+        let held = schema_routes("api");
+        let unheld: Vec<_> = asked.difference(&held).collect();
+        assert!(
+            unheld.is_empty(),
+            "a Peer may ask {unheld:?}, which the Pairing wire's schema does not hold; give each \
+             its entry in crates/shaman-pairing-wire/src/pairing.rs"
+        );
+        let unasked: Vec<_> = held.difference(&asked).collect();
+        assert!(
+            unasked.is_empty(),
+            "the Pairing wire's schema holds {unasked:?}, which this Server does not serve a Peer"
+        );
+    }
+
+    /// The schema names exactly the routes the Serving listener answers.
+    #[test]
+    fn the_pairing_wire_schema_holds_every_route_of_the_serving_listener() {
+        let served: std::collections::BTreeSet<String> = listener_routes()
+            .served()
+            .iter()
+            .map(crate::route_table::Served::named)
+            .collect();
+        assert_eq!(served, schema_routes("listener"));
     }
 
     /// However deep a path is encoded, deciding what it means takes a few passes:

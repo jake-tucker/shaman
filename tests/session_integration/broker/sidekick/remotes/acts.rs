@@ -62,6 +62,9 @@ pub(super) fn of_the_peer(author: Option<Author>) -> Option<Author> {
             }
         }
         sidekick @ Author::Sidekick { .. } => sidekick,
+        Author::Unknown => {
+            panic!("a Server of this build writes no item of a kind it does not know")
+        }
     })
 }
 

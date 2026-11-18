@@ -697,6 +697,7 @@ impl Part {
             TurnStatus::Failed => self.aggregate.failed_turns += 1,
             TurnStatus::Interrupted => self.aggregate.interrupted_turns += 1,
             TurnStatus::Active | TurnStatus::Completed => {}
+            TurnStatus::Unknown => {}
         }
         if self.sessions.insert(turn.session_id) {
             let count = if turn.is_subagent {
@@ -1151,6 +1152,7 @@ fn key_order(key: &UsageMetricsKey) -> (u8, &str, &str) {
         UsageMetricsKey::Workspace { workspace } => (0, &workspace.0, ""),
         UsageMetricsKey::Unknown => (1, "", ""),
         UsageMetricsKey::Errands => (2, "", ""),
+        UsageMetricsKey::Unrecognized => (3, "", ""),
     }
 }
 
@@ -1176,6 +1178,7 @@ fn labels(keys: &[UsageMetricsKey], reported: &[UsageMetricsKey], names: &KeyNam
             }
             UsageMetricsKey::Unknown => "Unknown".to_owned(),
             UsageMetricsKey::Errands => ERRANDS_LABEL.to_owned(),
+            UsageMetricsKey::Unrecognized => "Other".to_owned(),
         })
         .collect()
 }

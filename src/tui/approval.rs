@@ -308,6 +308,7 @@ pub(super) fn decision_text(decision: Decision) -> &'static str {
         Decision::AcceptForSession => "Accepted for session",
         Decision::Decline => "Declined",
         Decision::DeclineAndInterrupt => "Declined and interrupted",
+        Decision::Unknown => "Decided",
     }
 }
 
@@ -343,6 +344,7 @@ pub(super) fn outcome_text(
         (ApprovalOutcome::DeliveryUncertain, _) => {
             "Delivery uncertain; decision will not be resent".into()
         }
+        (ApprovalOutcome::Unknown, _) => "In a state this Shaman does not know".into(),
     }
 }
 
@@ -357,6 +359,7 @@ pub(super) fn subject_summary(subject: &ApprovalSubject) -> String {
         ApprovalSubject::Network { host_or_url } => compact_subject("Network", Some(host_or_url)),
         ApprovalSubject::PermissionGrant { .. } => compact_subject("Permission Grant", None),
         ApprovalSubject::OtherTool { name, .. } => compact_subject("Other tool", Some(name)),
+        ApprovalSubject::Unknown => compact_subject("Request", None),
     }
 }
 
@@ -427,6 +430,9 @@ pub(super) fn detail_lines(
                     CommandAction::Unknown { command } => {
                         lines.push(format!("Action: {command}"));
                     }
+                    CommandAction::Unrecognized => {
+                        lines.push("An action this Shaman does not know".to_owned());
+                    }
                 }
             }
         }
@@ -452,6 +458,9 @@ pub(super) fn detail_lines(
         ApprovalSubject::OtherTool { name, input } => {
             lines.push(format!("Other tool: {name}"));
             push_json(&mut lines, "Input", input);
+        }
+        ApprovalSubject::Unknown => {
+            lines.push("Asks for something this Shaman does not know how to show".to_owned());
         }
     }
     if tool_activity_id.is_some() {

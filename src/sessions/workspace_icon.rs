@@ -156,6 +156,7 @@ fn main_root(workspace: &Workspace) -> Option<&Path> {
     match &workspace.repository.as_ref()?.location {
         RepositoryLocation::Main { root } => Some(root.as_path()),
         RepositoryLocation::Bare { .. } | RepositoryLocation::UnknownMain => None,
+        RepositoryLocation::Unknown => None,
     }
 }
 

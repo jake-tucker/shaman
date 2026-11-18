@@ -106,6 +106,7 @@ impl SessionRecord {
                 .settled_at
                 .zip(since)
                 .is_some_and(|(settled, since)| settled > since),
+            TurnStatus::Unknown => false,
         }
     }
 }

@@ -1736,6 +1736,7 @@ impl RenderUnit<'_> {
                 // A Sidekick on a Peer is named, and leads nowhere: its
                 // Session is on that Peer, and nothing here reaches it.
                 Some(Author::PeerSidekick { .. }) | None => UnitKey::Message(message.id),
+                Some(Author::Unknown) => UnitKey::Message(message.id),
             },
             Self::Activity(activity) | Self::GroupMember(activity) => {
                 Self::activity_unit_key(activity)
@@ -1749,6 +1750,7 @@ impl RenderUnit<'_> {
                     sidekick: *session_id,
                 },
                 Some(Author::PeerSidekick { .. }) | None => UnitKey::Provisional(pending.prompt.id),
+                Some(Author::Unknown) => UnitKey::Provisional(pending.prompt.id),
             },
         }
     }
@@ -2123,6 +2125,7 @@ impl SettledTurn {
             TurnStatus::Completed => Some(Self::Completed),
             TurnStatus::Interrupted => Some(Self::Interrupted),
             TurnStatus::Failed => Some(Self::Failed),
+            TurnStatus::Unknown => None,
         }
     }
 
@@ -2288,6 +2291,7 @@ impl<'a> TranscriptContent<'a> {
                 .copied()
                 .filter(|activity| !transcript_shows_nothing(activity, self.visibility))
                 .map(TranscriptEntry::Activity),
+            TranscriptItem::Unknown => None,
         }
     }
 }
@@ -2384,6 +2388,7 @@ impl TranscriptEntry<'_> {
                     }
                     MessageRole::Agent if message.content.is_empty() => return None,
                     MessageRole::Agent => TurnEntryRole::Work,
+                    MessageRole::Unknown => TurnEntryRole::Work,
                 },
             },
             Self::Activity(activity) => TurnEntry {
@@ -3417,6 +3422,7 @@ fn activity_fingerprint(activity: &Activity, step: FoldStep) -> u64 {
                         path.hash(&mut hasher);
                         moved_to.hash(&mut hasher);
                     }
+                    FileChange::Unknown => 3u8.hash(&mut hasher),
                 }
             }
         }
@@ -3636,7 +3642,9 @@ fn render_message_with_model_names(
             );
             None
         }
-        (MessageRole::Agent, _) => {
+        // A Message from a sender this Shaman does not know reads as the
+        // Agent's.
+        (MessageRole::Agent | MessageRole::Unknown, _) => {
             if (!message.content.is_empty() || message.truncated)
                 && let Some(model) = &message.model
                 && let Some(heading) = model_heading(model_names, model)
@@ -3757,6 +3765,7 @@ fn authored_heading(verb: &str, author: &Author) -> String {
         Author::PeerSidekick { peer, .. } => {
             format!("{verb} by a sidekick on {}", one_line(peer))
         }
+        Author::Unknown => format!("{verb} by someone this Shaman does not know"),
     }
 }
 
@@ -3896,6 +3905,8 @@ fn render_activity_with_model_names(
                             crate::protocol::QuestionnaireOutcome::Declined => "Declined",
                             crate::protocol::QuestionnaireOutcome::Withdrawn => "Withdrawn",
                             crate::protocol::QuestionnaireOutcome::TurnEnded => "TurnEnded",
+                            crate::protocol::QuestionnaireOutcome::Unknown =>
+                                "In a state this Shaman does not know",
                         },
                         questionnaire.questions.len(),
                         if outcome.is_answerable() {
@@ -4278,6 +4289,7 @@ fn first_changed_path(member: &Activity) -> Option<&Path> {
         FileChange::Add { path }
         | FileChange::Delete { path }
         | FileChange::Update { path, .. } => path.as_path(),
+        FileChange::Unknown => Path::new(""),
     })
 }
 
@@ -4848,6 +4860,7 @@ fn push_output_fold(
         // Cut off by an interrupt: the face an interrupted Turn wears, so the
         // stop reads as a stop rather than as the work going wrong.
         ActivityStatus::Interrupted => ("× ", theme.feedback.warning),
+        ActivityStatus::Unknown => ("? ", theme.text.subdued),
     };
     if step == FoldStep::Folded {
         let mut anchor = push_folded_output_row(
@@ -5248,6 +5261,16 @@ fn push_file_change_activity(
                 edit: "Stopped editing",
             },
         ),
+        ActivityStatus::Unknown => (
+            "? ",
+            theme.text.subdued,
+            FileChangeActions {
+                create: "Created",
+                delete: "Deleted",
+                rename: "Renamed",
+                edit: "Edited",
+            },
+        ),
     };
     let header_start = lines.len();
     let listed = if folded {
@@ -5288,6 +5311,10 @@ fn push_file_change_activity(
                 transcript_path(path, workspace)
                     .to_string_lossy()
                     .into_owned(),
+            ),
+            FileChange::Unknown => (
+                "Changed",
+                "a file, in a way this Shaman does not know".to_owned(),
             ),
         };
         let marker_lead = format!("  {marker}");
@@ -5394,6 +5421,7 @@ fn reasoning_marker(
         ActivityStatus::Failed | ActivityStatus::Interrupted => {
             ("× ", REASONING_FAILED_LABEL, theme.feedback.error)
         }
+        ActivityStatus::Unknown => ("? ", REASONING_COMPLETED_LABEL, theme.text.subdued),
     }
 }
 
@@ -5666,6 +5694,7 @@ fn push_move_activity(
             Some(error) => format!("Move from {from} to {to} did not apply: {error}"),
             None => format!("Move from {from} to {to} did not apply"),
         },
+        ActivityStatus::Unknown => format!("Move from {from} to {to}"),
     };
     push_prefixed_lines_with_indent(lines, &format!("  {marker}"), "    ", &text, style);
 }
@@ -5689,6 +5718,7 @@ fn push_watch_outcome_activity(
         WatchOutcomeStatus::Completed => (ActivityStatus::Completed, "completed"),
         WatchOutcomeStatus::Failed => (ActivityStatus::Failed, "failed"),
         WatchOutcomeStatus::Stopped => (ActivityStatus::Interrupted, "stopped"),
+        WatchOutcomeStatus::Unknown => (ActivityStatus::Unknown, "ended"),
     };
     let (marker, style) = subagent_marker(settled, theme);
     let summary = summary.filter(|summary| !summary.trim().is_empty());
@@ -5752,6 +5782,7 @@ fn push_compaction_activity(
                 CompactionTrigger::Automatic => text.push_str(" (automatic)"),
                 CompactionTrigger::Scheduled => text.push_str(" (scheduled)"),
                 CompactionTrigger::Manual => {}
+                CompactionTrigger::Unknown => {}
             }
             text
         }
@@ -5764,6 +5795,7 @@ fn push_compaction_activity(
             None => "Compaction failed".to_owned(),
         },
         ActivityStatus::Interrupted => "Compaction stopped".to_owned(),
+        ActivityStatus::Unknown => "Compaction".to_owned(),
     };
     let header_start = lines.len();
     push_prefixed_lines_with_indent(lines, &format!("  {marker}"), "    ", &text, style);
@@ -5910,6 +5942,7 @@ pub(super) fn subagent_marker(
         // Stopped on request: the same face an interrupted Turn wears, so a
         // stop reads as a stop rather than as the Subagent going wrong.
         ActivityStatus::Interrupted => ("× ", theme.feedback.warning),
+        ActivityStatus::Unknown => ("? ", theme.text.subdued),
     }
 }
 

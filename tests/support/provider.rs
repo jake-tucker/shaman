@@ -32,6 +32,7 @@ fn controlled_fix(reason: ProviderUnavailability) -> &'static str {
         ProviderUnavailability::NotInstalled => "install the CLI",
         ProviderUnavailability::NotSignedIn => "sign in to the CLI",
         ProviderUnavailability::IncompatibleVersion => "update the CLI",
+        ProviderUnavailability::Unknown => "see the CLI's own documentation",
     }
 }
 

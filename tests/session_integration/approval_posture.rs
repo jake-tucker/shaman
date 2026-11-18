@@ -866,3 +866,102 @@ async fn subagent_posture_is_inherited_and_cannot_be_independently_mutated() {
     );
     server.shutdown().await.unwrap();
 }
+
+/// What a newer side asks naming a kind of value this Server does not know —
+/// a Decision, an Approval Posture, a Prompt's delivery — is refused as asked
+/// of a Server too old for it, and nothing is done.
+#[tokio::test]
+async fn a_request_naming_a_kind_this_server_does_not_know_is_refused_as_too_old() {
+    let state = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let (runtime, mut provider) = ControlledProvider::with_provider(
+        ProviderId::new("codex"),
+        vec![hosted_model("codex", "gpt-test")],
+    );
+    let server = server::spawn_with_provider(
+        ServerConfig::new(state.path(), "unknown-kinds-refused").unwrap(),
+        runtime,
+    )
+    .await
+    .unwrap();
+    let mut client = ManagedClient::connect(
+        ManagedClientConfig::new(state.path(), "unknown-kinds-refused").unwrap(),
+    )
+    .await
+    .unwrap();
+    receive_managed_client_initial_state(&mut client).await;
+    let created = client
+        .create_session(CreateSessionRequest {
+            session_id: None,
+            preparation_id: None,
+            agent_selection: Some(hosted_selection("codex", "gpt-test")),
+            execution_directory: shaman::protocol::ExecutionDirectory {
+                path: workspace.path().into(),
+            },
+            prompt: InitialPrompt {
+                id: PromptId::new(),
+                text: "work".into(),
+                skill_invocations: Vec::new(),
+                attachments: Vec::new(),
+            },
+        })
+        .await
+        .unwrap();
+    let _native = provider.next_start().await;
+    let session_id = created.session.id;
+    let descriptor = server.descriptor();
+    let http = crate::support::loopback_client();
+    for (path, body) in [
+        (
+            format!(
+                "/v1/sessions/{session_id}/approvals/{}/decision",
+                ApprovalId::new()
+            ),
+            serde_json::json!("accept_with_edits"),
+        ),
+        (
+            format!("/v1/sessions/{session_id}/approval-posture"),
+            serde_json::json!({ "posture": { "provider": "claude", "permission_mode": "sometimes" } }),
+        ),
+        (
+            format!("/v1/sessions/{session_id}/approval-posture"),
+            serde_json::json!({ "posture": { "provider": "gemini" } }),
+        ),
+        (format!("/v1/sessions/{session_id}/prompts"), {
+            let mut admitted = serde_json::to_value(AdmitPromptRequest {
+                prompt: InitialPrompt {
+                    id: PromptId::new(),
+                    text: "later".into(),
+                    skill_invocations: Vec::new(),
+                    attachments: Vec::new(),
+                },
+                delivery: PromptDelivery::Queue,
+            })
+            .unwrap();
+            admitted["delivery"] = serde_json::json!("after_lunch");
+            admitted
+        }),
+    ] {
+        let response = http
+            .post(format!("{}{path}", descriptor.base_url))
+            .bearer_auth(&descriptor.token)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::BAD_REQUEST,
+            "{path}"
+        );
+        let refused: shaman::protocol::SessionError = response.json().await.unwrap();
+        assert_eq!(
+            (refused.code, refused.message.as_str()),
+            (
+                shaman::protocol::SessionErrorCode::ServerTooOld,
+                shaman::protocol::TOO_OLD_FOR_THIS
+            ),
+            "{path} {body}"
+        );
+    }
+}

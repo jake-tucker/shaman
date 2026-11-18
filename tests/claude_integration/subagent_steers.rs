@@ -126,6 +126,9 @@ fn outline(snapshot: &SessionSnapshot, parent: Option<SessionId>) -> Vec<String>
                     turn(activity.turn_id().expect("the Activity belongs to a Turn"))
                 )
             }
+            TranscriptItem::Unknown => {
+                panic!("a Server of this build writes no item of a kind it does not know")
+            }
         })
         .collect()
 }

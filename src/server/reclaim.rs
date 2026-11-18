@@ -844,6 +844,7 @@ fn branch_outcome(outcome: CheckoutBranchOutcome) -> &'static str {
     match outcome {
         CheckoutBranchOutcome::Deleted => "deleted",
         CheckoutBranchOutcome::Retained => "retained",
+        CheckoutBranchOutcome::Unknown => "unknown",
     }
 }
 
@@ -854,6 +855,7 @@ fn is_managed(repository: &Repository, checkout: &CheckoutAssociation) -> bool {
     let root = match &repository.location {
         RepositoryLocation::Main { root } | RepositoryLocation::Bare { root } => root,
         RepositoryLocation::UnknownMain => return false,
+        RepositoryLocation::Unknown => return false,
     };
     let Ok(relative) = checkout.root.strip_prefix(root) else {
         return false;

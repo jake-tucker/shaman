@@ -97,6 +97,7 @@ fn heading_activity(snapshot: &SessionSnapshot, turn_index: usize) -> &Activity 
             .iter()
             .find(|activity| activity.id() == *activity_id && activity.turn_id() == Some(turn_id))
             .map(Some),
+        TranscriptItem::Unknown => None,
     });
     heading
         .flatten()

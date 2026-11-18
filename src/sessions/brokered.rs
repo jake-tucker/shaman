@@ -786,6 +786,8 @@ impl SessionStoreState {
             TurnStatus::Failed => SubagentReportOutcome::Failed,
             TurnStatus::Interrupted if self.stopped_by_ancestor(child, turn.id) => return None,
             TurnStatus::Interrupted => SubagentReportOutcome::Stopped,
+            // A status only a newer Server knows says nothing settled.
+            TurnStatus::Unknown => return None,
         };
         let name =
             self.sessions[&holder].snapshot.activities.iter().find_map(
@@ -865,6 +867,7 @@ impl SessionStoreState {
                 TurnStatus::Completed => ActivityStatus::Completed,
                 TurnStatus::Failed => ActivityStatus::Failed,
                 TurnStatus::Interrupted => ActivityStatus::Interrupted,
+                TurnStatus::Unknown => continue,
             };
             let duration_ms = if repaired.contains(&turn.id) {
                 None
@@ -932,6 +935,7 @@ impl SessionStoreState {
             TurnStatus::Completed | TurnStatus::Failed | TurnStatus::Interrupted => {
                 self.settled_duration(subagent, snapshot, latest)
             }
+            TurnStatus::Unknown => None,
         };
         BrokeredSubagentReading {
             session_id: subagent,

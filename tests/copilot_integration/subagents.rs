@@ -198,6 +198,7 @@ async fn a_task_tool_spawn_opens_its_child_turn_with_the_prompt_as_a_delegation(
                 .iter()
                 .find(|message| message.id == *message_id),
             TranscriptItem::Activity { .. } => None,
+            TranscriptItem::Unknown => None,
         })
         .map(|message| (message.turn_id, &message.role, message.content.as_str()))
         .collect::<Vec<_>>();

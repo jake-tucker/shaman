@@ -2372,6 +2372,7 @@ fn project_file_change_approval(
                 paths.extend(moved_to.clone());
                 paths
             }
+            FileChange::Unknown => Vec::new(),
         })
         .collect();
     let id = correlation.approvals.register(NativeApprovalIdentity {

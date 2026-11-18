@@ -202,6 +202,10 @@ impl ClaudeApprovals {
             Decision::DeclineAndInterrupt => {
                 json!({"behavior":"deny", "message":DECLINED_MESSAGE, "interrupt":true})
             }
+            // Refused before it reaches a Provider; declined were it ever to.
+            Decision::Unknown => {
+                json!({"behavior":"deny", "message":DECLINED_MESSAGE, "interrupt":false})
+            }
         };
         let declined = matches!(decision, Decision::Decline | Decision::DeclineAndInterrupt);
         let transport = self.transport()?;

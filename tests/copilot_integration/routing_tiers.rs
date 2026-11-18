@@ -952,6 +952,7 @@ async fn pushed_catalog_offering(client: &mut ManagedClient, tiers: usize) {
                 .map_or(0, |option| match &option.kind {
                     ModelOptionKind::Select { choices, .. } => choices.len(),
                     ModelOptionKind::Toggle { .. } => 0,
+                    ModelOptionKind::Unknown => 0,
                 });
             if offered == tiers && copilot_catalog(&catalog).status == ProviderCatalogStatus::Fresh
             {

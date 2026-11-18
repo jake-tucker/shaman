@@ -21,7 +21,7 @@ use crate::protocol::{
     AdmitPromptRequest, AgentSelection, AttachmentDescriptor, AttachmentId, CreateSessionRequest,
     InterruptOutcome, ModelCatalog, MoveOutcome, MoveSessionRequest, Prompt, PromptId,
     ResolveWorkspaceRequest, SESSION_ERROR_CODE_HEADER, SessionApprovalPosture, SessionError,
-    SessionErrorCode, SessionId, SessionListItem, SessionSnapshot, SessionSummary,
+    SessionErrorCode, SessionId, SessionListItem, SessionListing, SessionSnapshot, SessionSummary,
     SessionTitleProposal, SessionTitleProposalOffer, SetSessionIconRequest, SetSessionTitleRequest,
     SetWorkspaceDescriptionRequest, SetWorkspaceIconRequest, SettleSessionRequest, SkillCatalog,
     SkillCatalogRequest, UpdateAgentSelectionRequest, UpdateApprovalPostureRequest,
@@ -641,7 +641,9 @@ impl SessionCommands {
             Some(workspace) => with_query("/v1/sessions", &[("workspace_id", &workspace.0)])?,
             None => "/v1/sessions".to_owned(),
         };
-        self.get_json(&path, "Session listing").await
+        self.get_json::<SessionListing>(&path, "Session listing")
+            .await
+            .map(|listing| listing.0)
     }
 
     pub async fn list_sessions(&self, workspace: Option<&Path>) -> Result<Vec<SessionListItem>> {
@@ -649,7 +651,9 @@ impl SessionCommands {
             Some(workspace) => with_query("/v1/sessions", &[("workspace", workspace)])?,
             None => "/v1/sessions".to_owned(),
         };
-        self.get_json(&path, "Session listing").await
+        self.get_json::<SessionListing>(&path, "Session listing")
+            .await
+            .map(|listing| listing.0)
     }
 
     pub async fn list_workspaces(&self) -> Result<WorkspaceListing> {
