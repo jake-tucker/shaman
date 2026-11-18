@@ -22,8 +22,8 @@ use crate::session_integration::{
 use shaman::{
     protocol::{
         Activity, AdmitPromptRequest, AgentId, AgentIdentity, AgentSelection, CreateSessionRequest,
-        InitialPrompt, ModelCatalog, PromptDelivery, PromptId, ProviderCatalogStatus, ProviderId,
-        RuntimeDescriptor, SessionId, SettingMutation, SettingsSnapshot, TurnStatus,
+        Health, InitialPrompt, ModelCatalog, PromptDelivery, PromptId, ProviderCatalogStatus,
+        ProviderId, RuntimeDescriptor, SessionId, SettingMutation, SettingsSnapshot, TurnStatus,
     },
     provider::ProviderEvent,
     server::{self, RunningServer, ServerConfig},
@@ -688,6 +688,165 @@ async fn every_provider_disabled_leaves_nothing_selectable_and_no_startup_failur
         error.contains("every Provider is disabled"),
         "the state is recoverable from inside the app rather than fatal, got {error:?}"
     );
+
+    server.shutdown().await.expect("shut down server");
+}
+
+/// What the Server says of itself, as any Client reads it.
+async fn health(descriptor: &RuntimeDescriptor) -> Health {
+    crate::support::loopback_client()
+        .get(format!("{}/health", descriptor.base_url))
+        .bearer_auth(&descriptor.token)
+        .send()
+        .await
+        .expect("read health")
+        .error_for_status()
+        .expect("health answers")
+        .json::<Health>()
+        .await
+        .expect("decode health")
+}
+
+/// Stores `selection` as the Landing's, as a Client confirms it.
+async fn confirm_landing(descriptor: &RuntimeDescriptor, selection: &AgentSelection) {
+    crate::support::loopback_client()
+        .put(format!(
+            "{}/v1/landing-agent-selection",
+            descriptor.base_url
+        ))
+        .bearer_auth(&descriptor.token)
+        .json(selection)
+        .send()
+        .await
+        .expect("confirm the Landing selection")
+        .error_for_status()
+        .expect("Landing selection confirmation succeeds");
+}
+
+/// Asserts that Health names `expected` as the Agent a new Session would get,
+/// and that a Session then begun with none gets it.
+async fn a_new_session_gets(
+    descriptor: &RuntimeDescriptor,
+    workspace: &Path,
+    expected: Option<AgentSelection>,
+    why: &str,
+) {
+    assert_eq!(
+        health(descriptor).await.new_session_agent_selection,
+        expected,
+        "Health says {why}"
+    );
+    let created = create_session(
+        descriptor,
+        &session_request(workspace, None, "Begin with whatever Health said"),
+    )
+    .await;
+    assert_eq!(
+        created.session.agent_selection, expected,
+        "a Session begun with none gets what Health said: {why}"
+    );
+}
+
+#[tokio::test]
+async fn health_says_a_stored_selection_that_holds_is_what_a_new_session_gets() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let workspace = tempfile::tempdir().expect("create valid Workspace");
+    let (codex_runtime, _codex) = provider("codex");
+    let (copilot_runtime, _copilot) = provider("copilot");
+    let server = spawn(
+        state_dir.path(),
+        None,
+        "health-new-session-stored",
+        vec![codex_runtime, copilot_runtime],
+    )
+    .await;
+    let descriptor = server.descriptor().clone();
+    refresh_catalog(&descriptor).await;
+    let stored = hosted_selection("copilot", "copilot-default");
+    confirm_landing(&descriptor, &stored).await;
+
+    assert_eq!(
+        health(&descriptor).await.landing_agent_selection,
+        Some(stored.clone())
+    );
+    a_new_session_gets(
+        &descriptor,
+        workspace.path(),
+        Some(stored),
+        "the stored selection, its Provider hosted and on, over the first Provider's default",
+    )
+    .await;
+
+    server.shutdown().await.expect("shut down server");
+}
+
+#[tokio::test]
+async fn health_says_a_new_session_passes_over_a_stored_selection_whose_provider_is_off() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let workspace = tempfile::tempdir().expect("create valid Workspace");
+    let config_dir = tempfile::tempdir().expect("create isolated config directory");
+    let (codex_runtime, _codex) = provider("codex");
+    let (copilot_runtime, _copilot) = provider("copilot");
+    let server = spawn(
+        state_dir.path(),
+        Some(config_dir.path()),
+        "health-new-session-provider-off",
+        vec![codex_runtime, copilot_runtime],
+    )
+    .await;
+    let descriptor = server.descriptor().clone();
+    refresh_catalog(&descriptor).await;
+    let stored = hosted_selection("codex", "codex-default");
+    confirm_landing(&descriptor, &stored).await;
+    mutate_setting(
+        &descriptor,
+        SettingMutation::ProviderCodexEnabled { value: Some(false) },
+    )
+    .await;
+
+    assert_eq!(
+        health(&descriptor).await.landing_agent_selection,
+        Some(stored),
+        "the stored selection is kept as it was"
+    );
+    a_new_session_gets(
+        &descriptor,
+        workspace.path(),
+        Some(hosted_selection("copilot", "copilot-default")),
+        "the first enabled Provider's default where the stored one's is off",
+    )
+    .await;
+
+    server.shutdown().await.expect("shut down server");
+}
+
+#[tokio::test]
+async fn health_says_no_agent_selection_where_no_provider_can_serve() {
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let workspace = tempfile::tempdir().expect("create valid Workspace");
+    let config_dir = config_dir_disabling(&["codex", "copilot"]);
+    let (codex_runtime, _codex) = provider("codex");
+    let (copilot_runtime, _copilot) = provider("copilot");
+    let server = spawn(
+        state_dir.path(),
+        Some(config_dir.path()),
+        "health-new-session-none",
+        vec![codex_runtime, copilot_runtime],
+    )
+    .await;
+    let descriptor = server.descriptor().clone();
+    refresh_catalog(&descriptor).await;
+
+    let said = health(&descriptor).await;
+    assert_eq!(said.landing_agent_selection, None);
+    assert!(said.says_new_session_agent_selection());
+    a_new_session_gets(
+        &descriptor,
+        workspace.path(),
+        None,
+        "none where every Provider is off",
+    )
+    .await;
 
     server.shutdown().await.expect("shut down server");
 }

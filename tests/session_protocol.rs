@@ -439,6 +439,85 @@ fn health_carries_whether_the_server_has_been_onboarded() {
     );
 }
 
+/// Health says the Agent a Session begun with none would get, beside the
+/// one the Server has stored, and says it is none where it is: what a Server
+/// that does not send it says is read as nothing, as a Peer of an older
+/// Server reads it, and told from a Server saying none by what it speaks.
+#[test]
+fn health_says_the_agent_selection_a_new_session_would_get() {
+    const {
+        assert!(
+            PROTOCOL_VERSION >= shaman::protocol::NEW_SESSION_AGENT_SELECTION_SINCE,
+            "saying the Agent a new Session would get changes the wire"
+        );
+    }
+    let identity = |protocol_version| shaman::protocol::ServerIdentity {
+        instance_id: Uuid::nil(),
+        pid: 1,
+        protocol_version,
+        build_identity: "shaman@test".to_owned(),
+    };
+    let stored = AgentSelection {
+        provider: ProviderId::new("codex"),
+        model: ModelId::new("gpt-5.5"),
+        options: Vec::new(),
+    };
+    let fallen_back = AgentSelection {
+        provider: ProviderId::new("copilot"),
+        model: ModelId::new("claude-sonnet-5.5"),
+        options: Vec::new(),
+    };
+    let health = shaman::protocol::Health::new(
+        identity(PROTOCOL_VERSION),
+        shaman::protocol::LifecycleState::Ready,
+    )
+    .with_landing_agent_selection(Some(stored.clone()))
+    .with_new_session_agent_selection(Some(fallen_back.clone()));
+    let encoded = serde_json::to_value(&health).expect("encode health");
+    assert_eq!(
+        encoded["new_session_agent_selection"],
+        serde_json::to_value(&fallen_back).expect("encode the selection")
+    );
+    assert_eq!(
+        serde_json::from_value::<shaman::protocol::Health>(encoded).expect("decode health"),
+        health
+    );
+    assert!(health.says_new_session_agent_selection());
+
+    let none = health.clone().with_new_session_agent_selection(None);
+    let encoded = serde_json::to_value(&none).expect("encode health");
+    assert_eq!(
+        encoded["new_session_agent_selection"],
+        json!(null),
+        "a Server where no Provider can serve says so"
+    );
+    assert_eq!(
+        serde_json::from_value::<shaman::protocol::Health>(encoded).expect("decode health"),
+        none
+    );
+
+    let mut older = serde_json::to_value(
+        shaman::protocol::Health::new(
+            identity(shaman::protocol::NEW_SESSION_AGENT_SELECTION_SINCE - 1),
+            shaman::protocol::LifecycleState::Ready,
+        )
+        .with_landing_agent_selection(Some(stored.clone())),
+    )
+    .expect("encode health");
+    older
+        .as_object_mut()
+        .expect("health is an object")
+        .remove("new_session_agent_selection");
+    let older = serde_json::from_value::<shaman::protocol::Health>(older)
+        .expect("a Server that does not say is still read");
+    assert_eq!(older.new_session_agent_selection, None);
+    assert_eq!(older.landing_agent_selection, Some(stored));
+    assert!(
+        !older.says_new_session_agent_selection(),
+        "a Server that does not say is not read as saying none"
+    );
+}
+
 #[test]
 fn skill_catalog_request_round_trips_provider_and_workspace_context() {
     let request = SkillCatalogRequest {

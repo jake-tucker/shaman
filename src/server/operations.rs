@@ -1464,6 +1464,10 @@ impl SessionOperations {
     /// the user's own choice of Providers, so one naming a Provider this
     /// server does not host — or one the user has since turned off — yields
     /// to the built-in default rather than stranding them on it.
+    ///
+    /// `GET /health` says what this answers as the Agent a new Session would
+    /// get, so a Client shows it before beginning one; it is this rule a
+    /// Client reads, and none repeats it.
     pub(crate) fn landing_selection(&self) -> Option<AgentSelection> {
         self.landing_agent_selection
             .current()

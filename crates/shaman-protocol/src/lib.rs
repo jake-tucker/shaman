@@ -88,7 +88,7 @@ pub use workspace_paths::{MANAGED_WORKTREE_DIRECTORY, PathStyle, WorkspacePaths}
 /// The protocol version this build speaks: stated on every request a Peer
 /// makes of a Serving Server and on every answer that Server gives, and
 /// moved with every change to the wire (ADR-0078).
-pub const PROTOCOL_VERSION: u32 = 117;
+pub const PROTOCOL_VERSION: u32 = 118;
 
 /// The oldest protocol version this build still speaks with across a
 /// Pairing: a Peer or a Serving Server stating one at or above it is
@@ -97,6 +97,11 @@ pub const PROTOCOL_VERSION: u32 = 117;
 /// cannot be made by addition. The loopback wire is not held to it: a
 /// machine's own Client and Server match [`PROTOCOL_VERSION`] exactly.
 pub const PROTOCOL_FLOOR: u32 = 117;
+
+/// The protocol version since which a Server's [`Health`] says the Agent
+/// Selection a Session begun with none would get. A Peer of a Server stating
+/// less is told nothing of it, which is not the Server saying none.
+pub const NEW_SESSION_AGENT_SELECTION_SINCE: u32 = 118;
 mod attachment;
 mod divided_usage;
 mod pair_back;
@@ -8223,7 +8228,15 @@ pub struct ServerIdentity {
 pub struct Health {
     pub workspace_paths: WorkspacePaths,
     pub lifecycle: LifecycleState,
+    /// The Agent Selection this Server's Landing has stored, as a Client
+    /// last confirmed it, whatever has become of its Provider since.
     pub landing_agent_selection: Option<AgentSelection>,
+    /// The Agent Selection a Session begun with none would get now: the
+    /// stored one where its Provider is still hosted and enabled, and
+    /// otherwise the first enabled, available Provider's default. None where
+    /// no Provider can serve — and where the Server is one too old to say,
+    /// which [`Health::says_new_session_agent_selection`] tells apart.
+    pub new_session_agent_selection: Option<AgentSelection>,
     /// Whether a Client has taken this Server's Onboarding, finishing it or
     /// leaving it. A Server's own fact, kept in its storage rather than any
     /// Config Document.
@@ -8238,6 +8251,7 @@ impl Health {
             lifecycle,
             workspace_paths: WorkspacePaths::default(),
             landing_agent_selection: None,
+            new_session_agent_selection: None,
             onboarded: false,
             identity,
         }
@@ -8259,6 +8273,21 @@ impl Health {
     ) -> Self {
         self.landing_agent_selection = landing_agent_selection;
         self
+    }
+
+    pub fn with_new_session_agent_selection(
+        mut self,
+        new_session_agent_selection: Option<AgentSelection>,
+    ) -> Self {
+        self.new_session_agent_selection = new_session_agent_selection;
+        self
+    }
+
+    /// Whether this Server says the Agent a new Session would get, so that
+    /// [`Health::new_session_agent_selection`] being none means no Provider
+    /// can serve; a Server older than that says nothing of it.
+    pub fn says_new_session_agent_selection(&self) -> bool {
+        self.protocol_version >= NEW_SESSION_AGENT_SELECTION_SINCE
     }
 }
 
@@ -8287,6 +8316,10 @@ struct HealthWire {
     build_identity: String,
     #[serde(default)]
     landing_agent_selection: Option<AgentSelection>,
+    /// Sent by every Server since [`NEW_SESSION_AGENT_SELECTION_SINCE`],
+    /// null where no Provider can serve.
+    #[serde(default)]
+    new_session_agent_selection: Option<AgentSelection>,
     onboarded: bool,
 }
 
@@ -8306,6 +8339,7 @@ impl<'de> Deserialize<'de> for Health {
             wire.lifecycle,
         )
         .with_landing_agent_selection(wire.landing_agent_selection)
+        .with_new_session_agent_selection(wire.new_session_agent_selection)
         .with_onboarded(wire.onboarded)
         .with_workspace_paths(wire.workspace_paths))
     }

@@ -1,5 +1,5 @@
 {
-  "protocol_version": 117,
+  "protocol_version": 118,
   "protocol_floor": 117,
   "headers": {
     "x-shaman-act": {
@@ -3725,6 +3725,17 @@
           ],
           "default": null
         },
+        "new_session_agent_selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentSelection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "onboarded": {
           "type": "boolean"
         }
@@ -3746,6 +3757,7 @@
         "protocol_version",
         "build_identity",
         "landing_agent_selection",
+        "new_session_agent_selection",
         "onboarded"
       ]
     },

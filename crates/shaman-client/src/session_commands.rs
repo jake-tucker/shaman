@@ -19,7 +19,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::protocol::{
     AdmitPromptRequest, AgentSelection, AttachmentDescriptor, AttachmentId, CreateSessionRequest,
-    InterruptOutcome, ModelCatalog, MoveOutcome, MoveSessionRequest, Prompt, PromptId,
+    Health, InterruptOutcome, ModelCatalog, MoveOutcome, MoveSessionRequest, Prompt, PromptId,
     ResolveWorkspaceRequest, SESSION_ERROR_CODE_HEADER, SessionApprovalPosture, SessionError,
     SessionErrorCode, SessionId, SessionListItem, SessionListing, SessionSnapshot, SessionSummary,
     SessionTitleProposal, SessionTitleProposalOffer, SetSessionIconRequest, SetSessionTitleRequest,
@@ -151,6 +151,12 @@ impl SessionCommands {
     pub async fn refresh_skills(&self, request: SkillCatalogRequest) -> Result<SkillCatalog> {
         self.post_json("/v1/skills/refresh", &request, "Skill Catalog refresh")
             .await
+    }
+
+    /// What the Server says of itself: its lifecycle, the Agent Selection its
+    /// Landing has stored and the one a Session begun with none would get.
+    pub async fn health(&self) -> Result<Health> {
+        self.get_json("/health", "Health").await
     }
 
     pub async fn list_models(&self) -> Result<ModelCatalog> {

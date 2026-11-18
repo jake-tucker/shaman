@@ -3382,6 +3382,7 @@ async fn health(State(state): State<AppState>, headers: HeaderMap) -> impl IntoR
             .health(state.shutdown.lifecycle())
             .with_workspace_paths(state.workspace_paths.clone())
             .with_landing_agent_selection(state.landing_agent_selection.current())
+            .with_new_session_agent_selection(state.operations.landing_selection())
             .with_onboarded(state.onboarded.current()),
     )
     .into_response()

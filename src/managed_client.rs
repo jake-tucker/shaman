@@ -1466,7 +1466,7 @@ pub async fn server_status(config: &ManagedClientConfig) -> Result<ServerStatus>
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServerStop {
     /// This Server was running, and has stopped.
-    Stopped(Health),
+    Stopped(Box<Health>),
     /// No Server was running: it had crashed, say. The stop is recorded all the
     /// same, so nothing launched before it serves the Channel in its place.
     NoneRunning,
@@ -1490,7 +1490,7 @@ pub async fn stop_server(config: &ManagedClientConfig) -> Result<ServerStop> {
                     tokio::time::Instant::now() + config.stop_timeout,
                 )
                 .await?;
-                return Ok(ServerStop::Stopped(registration.health));
+                return Ok(ServerStop::Stopped(Box::new(registration.health)));
             }
             lifecycle::RegistrationInspection::Missing => {
                 "cannot stop missing Shaman server".to_owned()

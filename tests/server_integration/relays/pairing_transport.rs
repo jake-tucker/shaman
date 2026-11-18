@@ -11,10 +11,11 @@ use std::{path::Path, sync::Arc, time::Duration};
 use rcgen::PublicKeyData as _;
 use shaman::protocol::{
     Activity, AdmitPromptRequest, AgentId, AgentIdentity, AgentSelection, Approval, ApprovalId,
-    ApprovalSubject, CreateSessionRequest, Decision, ExecutionDirectory, InitialPrompt, ModelId,
-    Outlook, PROTOCOL_VERSION, Prompt, PromptDelivery, PromptId, ProviderId, RedeemInviteRequest,
-    RelayLoginOutcome, Remote, RemoteStatus, SessionChange, SessionCreated, SessionDeleted,
-    SessionError, SessionErrorCode, SessionId, SessionSnapshot, UPLOAD_BODY_LIMIT, Way,
+    ApprovalSubject, CreateSessionRequest, Decision, ExecutionDirectory, InitialPrompt,
+    ModelAvailability, ModelDescriptor, ModelId, Outlook, PROTOCOL_VERSION, Prompt, PromptDelivery,
+    PromptId, ProviderId, RedeemInviteRequest, RelayLoginOutcome, Remote, RemoteStatus,
+    SessionChange, SessionCreated, SessionDeleted, SessionError, SessionErrorCode, SessionId,
+    SessionSnapshot, UPLOAD_BODY_LIMIT, Way,
 };
 use shaman::provider::ProviderEvent;
 use shaman_client::{
@@ -533,6 +534,67 @@ impl PairedDirectly {
         self.client.shutdown().await;
         self.workstation.shutdown().await;
     }
+}
+
+/// A Client with no Server reads, before it begins a Session, the Agent the
+/// Serving Server would begin it with where it names none, and a Session it
+/// then begins naming none gets that Agent.
+#[tokio::test]
+async fn a_client_with_no_server_reads_the_agent_a_new_session_would_get() {
+    let served = AgentSelection {
+        provider: ProviderId::new("controlled"),
+        model: ModelId::new("controlled-default"),
+        options: Vec::new(),
+    };
+    let (runtime, mut provider) = ControlledProvider::with_provider(
+        served.provider.clone(),
+        vec![ModelDescriptor {
+            provider: served.provider.clone(),
+            id: served.model.clone(),
+            display_name: "Controlled".to_owned(),
+            description: String::new(),
+            is_default: true,
+            availability: ModelAvailability::Available,
+            options: Vec::new(),
+            details: Default::default(),
+        }],
+    );
+    let workstation =
+        TestServer::on_provider("thin-pairing-new-session-agent", relay_timings(), runtime).await;
+    workstation.serve().await;
+    let client = NoServer::new();
+    client
+        .redeem(
+            workstation
+                .invite(vec![Way::Direct(workstation.serving_address())])
+                .await,
+        )
+        .await;
+    let commands = commands_over(client.transport(), QUICK);
+    commands
+        .refresh_models()
+        .await
+        .expect("refresh the Remote's Model Catalog");
+
+    let health = commands.health().await.expect("read the Remote's health");
+    assert_eq!(health.landing_agent_selection, None, "nothing is stored");
+    assert!(health.says_new_session_agent_selection());
+    assert_eq!(
+        health.new_session_agent_selection,
+        Some(served.clone()),
+        "the first Provider's default is what a Session begun with none gets"
+    );
+
+    let workspace = tempfile::tempdir().expect("create a Workspace on the Serving Server");
+    let created = commands
+        .create_session(new_session(workspace.path(), "Begin on the Agent said"))
+        .await
+        .expect("begin a Session on the Remote");
+    assert_eq!(created.session.agent_selection, Some(served));
+    begin_turn(&mut provider).await;
+
+    client.shutdown().await;
+    workstation.shutdown().await;
 }
 
 #[tokio::test]
