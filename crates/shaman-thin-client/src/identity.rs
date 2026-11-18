@@ -18,7 +18,10 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use shaman_pairing::{IdentityMaterial, relay::RELAYS_FILE, signer::IdentitySigner};
 
-use crate::device::{DeviceRecord, RECORD_FILE, Records};
+use crate::{
+    OpenError,
+    device::{DeviceRecord, RECORD_FILE, Records},
+};
 
 /// Signs with this phone's identity key, wherever the app keeps it: the
 /// signer, written in Swift, that the core takes up.
@@ -122,7 +125,20 @@ pub(crate) struct Reconciled {
 /// held a Remote or a Relay entry. The certificate is minted only where none
 /// of this key is kept, so a start signs once at most, and a key that will
 /// not sign discards nothing.
-pub(crate) fn reconcile(records: &Records, signer: IdentitySigner) -> Result<Reconciled> {
+pub(crate) fn reconcile(
+    records: &Records,
+    signer: IdentitySigner,
+) -> Result<Reconciled, OpenError> {
+    reconcile_discarding(records, signer, discard)
+}
+
+/// [`reconcile`], each record of another key going by `discard`, which a
+/// test may end partway, as the app may be ended.
+fn reconcile_discarding(
+    records: &Records,
+    signer: IdentitySigner,
+    discard: impl Fn(&Path) -> Result<()>,
+) -> Result<Reconciled, OpenError> {
     let mut record = records.read()?;
     let fingerprint = shaman_pairing::fingerprint(signer.public_key());
     let theirs = record
@@ -133,7 +149,7 @@ pub(crate) fn reconcile(records: &Records, signer: IdentitySigner) -> Result<Rec
         return Ok(Reconciled { record, identity });
     }
 
-    let identity = IdentityMaterial::minted(signer).context("sign this phone's certificate")?;
+    let identity = IdentityMaterial::minted(signer).map_err(|error| OpenError::unsigned(&error))?;
     if !theirs {
         let others = records.others()?;
         if !others.is_empty() {
@@ -143,14 +159,14 @@ pub(crate) fn reconcile(records: &Records, signer: IdentitySigner) -> Result<Rec
             };
             // Kept before anything goes, so a start ended midway still says
             // it the next time.
-            records.write(&record)?;
+            records.write(&record).map_err(OpenError::unkept)?;
             for other in &others {
-                discard(other)?;
+                discard(other).map_err(OpenError::unkept)?;
             }
         }
     }
     record.key = Some(KeptKey::of(&identity));
-    records.write(&record)?;
+    records.write(&record).map_err(OpenError::unkept)?;
     Ok(Reconciled { record, identity })
 }
 
@@ -192,5 +208,47 @@ impl Records {
             }
         }
         Ok(others)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::bail;
+    use shaman_pairing::signer::testing::CallbackSigner;
+
+    use super::*;
+
+    fn new_key() -> IdentitySigner {
+        IdentitySigner::new(CallbackSigner::elsewhere()).unwrap()
+    }
+
+    #[test]
+    fn a_start_ended_while_discarding_still_says_this_phone_must_pair_again() {
+        let directory = tempfile::tempdir().unwrap();
+        let records = Records::open(directory.path().to_owned()).unwrap();
+        reconcile(&records, new_key()).unwrap();
+        let remotes = directory.path().join(shaman_pairing::REMOTES_FILE);
+        std::fs::write(&remotes, br#"[{"name":"laptop"}]"#).unwrap();
+        std::fs::write(directory.path().join("drafts.json"), b"{}").unwrap();
+
+        // The app is ended once the Remote is gone, before the start is
+        // done, so nothing left says a Remote was held.
+        let new = new_key();
+        let ended = reconcile_discarding(&records, new.clone(), |path| {
+            std::fs::remove_file(path)?;
+            if path.ends_with(shaman_pairing::REMOTES_FILE) {
+                bail!("the app was ended");
+            }
+            Ok(())
+        });
+        assert!(
+            matches!(ended, Err(OpenError::Failed { .. })),
+            "ended partway"
+        );
+        assert!(!remotes.exists());
+
+        let started = reconcile(&records, new).expect("the next start");
+        assert!(started.record.pair_again, "still says it");
+        assert_eq!(records.others().unwrap(), Vec::<std::path::PathBuf>::new());
     }
 }

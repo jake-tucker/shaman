@@ -57,10 +57,9 @@ impl ThinClient {
     /// and opens nothing.
     #[uniffi::constructor]
     pub fn open(directory: String, signer: Arc<dyn KeySigner>) -> Result<Arc<Self>, OpenError> {
-        let signer = identity::taken_up(signer).map_err(OpenError::key)?;
+        let signer = identity::taken_up(signer).map_err(OpenError::unusable_key)?;
         let records = Records::open(PathBuf::from(directory)).map_err(OpenError::from)?;
-        let identity::Reconciled { record, identity } =
-            identity::reconcile(&records, signer).map_err(OpenError::from)?;
+        let identity::Reconciled { record, identity } = identity::reconcile(&records, signer)?;
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("shaman-core")
@@ -184,16 +183,38 @@ impl Drop for Subscription {
 }
 
 /// Why the core could not be opened, in words for whoever opened it.
-#[derive(Debug, uniffi::Error)]
+#[derive(Debug, PartialEq, Eq, uniffi::Error)]
 pub enum OpenError {
+    /// The records could not be read or kept, or the core could not start.
     Failed { message: String },
+    /// The key the app handed in cannot prove this phone: it is of another
+    /// kind, or it would not sign. Nothing was discarded; starting again
+    /// under a new key is the user's to choose.
+    KeyRefused { message: String },
 }
 
 impl OpenError {
     /// The key the app handed in is not one this phone can be proved by.
-    fn key(error: anyhow::Error) -> Self {
-        Self::Failed {
+    fn unusable_key(error: anyhow::Error) -> Self {
+        Self::KeyRefused {
             message: format!("This phone's identity key could not be used: {error:#}"),
+        }
+    }
+
+    /// The key would not sign, in the words of whatever holds it.
+    fn unsigned(error: &anyhow::Error) -> Self {
+        Self::KeyRefused {
+            message: format!(
+                "This phone's identity key would not sign: {}",
+                error.root_cause()
+            ),
+        }
+    }
+
+    /// The records could not be kept as they are to be.
+    fn unkept(error: anyhow::Error) -> Self {
+        Self::Failed {
+            message: format!("This phone's records could not be kept: {error:#}"),
         }
     }
 }
@@ -208,7 +229,7 @@ impl From<anyhow::Error> for OpenError {
 
 impl fmt::Display for OpenError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self::Failed { message } = self;
+        let (Self::Failed { message } | Self::KeyRefused { message }) = self;
         formatter.write_str(message)
     }
 }
@@ -509,19 +530,21 @@ mod tests {
     }
 
     #[test]
-    fn a_key_that_will_not_sign_opens_nothing_and_discards_nothing() {
+    fn a_key_that_will_not_sign_is_refused_in_its_words_and_discards_nothing() {
         let directory = tempfile::tempdir().unwrap();
         drop(opened(directory.path(), &TestKey::new()));
         keep_records(directory.path());
         let before = std::fs::read(directory.path().join(device::RECORD_FILE)).unwrap();
 
-        let Err(OpenError::Failed { message }) = open(directory.path(), &TestKey::refusing())
-        else {
-            panic!("opened over a key that will not sign");
-        };
-        assert!(
-            message.contains("the chip will not take the key"),
-            "{message}"
+        let refused = open(directory.path(), &TestKey::refusing())
+            .err()
+            .expect("opened over a key that will not sign");
+        assert_eq!(
+            refused,
+            OpenError::KeyRefused {
+                message: "This phone's identity key would not sign: the chip will not take the key"
+                    .to_owned()
+            }
         );
         assert_eq!(
             std::fs::read(directory.path().join(device::RECORD_FILE)).unwrap(),
@@ -532,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn a_key_of_another_kind_is_said_so() {
+    fn a_key_of_another_kind_is_refused() {
         struct NotAKey;
         impl KeySigner for NotAKey {
             fn public_key(&self) -> Vec<u8> {
@@ -543,17 +566,49 @@ mod tests {
             }
         }
         let directory = tempfile::tempdir().unwrap();
-        let Err(OpenError::Failed { message }) = ThinClient::open(
+        let Err(OpenError::KeyRefused { message }) = ThinClient::open(
             directory.path().to_string_lossy().into_owned(),
             Arc::new(NotAKey),
         ) else {
             panic!("opened over no key");
         };
         assert!(
-            message.starts_with("This phone's identity key could not be used"),
+            message.starts_with("This phone's identity key could not be used: "),
             "{message}"
         );
         assert!(message.contains("P-256"), "{message}");
+    }
+
+    #[test]
+    fn a_kept_certificate_not_of_the_key_is_signed_again_and_kept_in_its_place() {
+        let directory = tempfile::tempdir().unwrap();
+        let key = TestKey::new();
+        let signed = key.signed();
+        drop(opened(directory.path(), &key));
+
+        // The certificate kept beside the key's fingerprint is another key's.
+        let elsewhere = tempfile::tempdir().unwrap();
+        let other = opened(elsewhere.path(), &TestKey::new());
+        let path = directory.path().join(device::RECORD_FILE);
+        let mut kept: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        kept["key"]["certificate"] = base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            &other.identity().certificate,
+        )
+        .into();
+        std::fs::write(&path, serde_json::to_vec(&kept).unwrap()).unwrap();
+
+        let core = opened(directory.path(), &key);
+        let presented = shaman_pairing::public_key_from_certificate(
+            &core.identity().certificate.clone().into(),
+        )
+        .unwrap();
+        assert_eq!(presented, key.public_key(), "the certificate is of the key");
+        assert_eq!(signed.load(Ordering::Acquire), 2, "signed again");
+        drop(core);
+        drop(opened(directory.path(), &key));
+        assert_eq!(signed.load(Ordering::Acquire), 2, "and kept");
     }
 
     #[test]
@@ -619,7 +674,7 @@ mod tests {
         let path = directory.path().join(device::RECORD_FILE);
         std::fs::write(&path, b"{ not json").unwrap();
         let Err(OpenError::Failed { message }) = open(directory.path(), &TestKey::new()) else {
-            panic!("opened over records it cannot read");
+            panic!("opened over records it cannot read, or said the key was refused");
         };
         assert!(
             message.starts_with("This phone's records could not be read"),

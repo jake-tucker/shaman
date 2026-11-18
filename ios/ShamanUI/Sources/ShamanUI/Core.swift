@@ -30,7 +30,7 @@ extension OpenError {
   /// The words the core wrote for the failure.
   public var message: String {
     switch self {
-    case .Failed(let message): message
+    case .Failed(let message), .KeyRefused(let message): message
     }
   }
 }
