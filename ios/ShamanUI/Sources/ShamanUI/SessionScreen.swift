@@ -100,7 +100,7 @@ private struct ApprovalSheet: View {
   @State private var armed = false
 
   var body: some View {
-    let deciding = model.deciding == approval.reference
+    let deciding = model.deciding.contains(approval.reference)
     VStack(spacing: 12) {
       Text(verbatim: approval.title)
         .font(.headline)
@@ -834,8 +834,8 @@ final class SessionModel {
   private(set) var stopping = false
   /// The queued Prompts an act is under way on.
   private(set) var acting: Set<String> = []
-  /// The Approval a Decision is under way on, whose sheet is dimmed until the Server answers.
-  private(set) var deciding: String?
+  /// The Approvals a Decision is under way on, each of whose sheets is dimmed until the Server answers.
+  private(set) var deciding: Set<String> = []
   /// How long a failure's banner stands before it goes by itself.
   @ObservationIgnored private let failureStands: Duration
   @ObservationIgnored private var clearing: Task<Void, Never>?
@@ -923,8 +923,8 @@ final class SessionModel {
 
   /// Answers the Approval `approval` names with `decision`, dimming its sheet until the Server has answered.
   func decide(_ approval: String, _ decision: DecisionKind) async {
-    deciding = approval
-    defer { deciding = nil }
+    deciding.insert(approval)
+    defer { deciding.remove(approval) }
     do {
       try await opened.decide(approval, decision)
     } catch {

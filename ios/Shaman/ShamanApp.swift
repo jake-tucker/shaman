@@ -60,11 +60,12 @@ struct ShamanApp: App {
     }
 
     /// How long `--arming-moment <seconds>` asks an Intervention presented to take no tap for, so a UI test can see
-    /// it refuse one before it takes one.
+    /// it refuse one before it takes one: up to an hour, and the usual moment for anything else, NaN, an infinity or
+    /// a negative included.
     static var arming: Duration? {
       let arguments = ProcessInfo.processInfo.arguments
       guard let flag = arguments.firstIndex(of: "--arming-moment"), arguments.indices.contains(flag + 1),
-        let seconds = Double(arguments[flag + 1])
+        let seconds = Double(arguments[flag + 1]), (0...3_600).contains(seconds)
       else { return nil }
       return .milliseconds(Int(seconds * 1_000))
     }

@@ -655,9 +655,9 @@ private final class RefusingSigner: KeySigner {
     #expect(model.presented?.id == "approval:\(approval.reference)")
 
     let deciding = Task { await model.decide(approval.reference, .acceptOnce) }
-    try await until(model) { $0.deciding == approval.reference }
+    try await until(model) { $0.deciding == [approval.reference] }
     await deciding.value
-    #expect(model.deciding == nil)
+    #expect(model.deciding.isEmpty)
     #expect(model.banner == nil)
     try await until(model) { $0.presented == nil }
     #expect(model.frame?.bar?.kind == .working)
@@ -678,11 +678,28 @@ private final class RefusingSigner: KeySigner {
     try await until(model) { $0.presented != nil }
   }
 
+  @Test func eachDecisionUnderWayDimsItsOwnSheetUntilItsOwnAnswerComes() async throws {
+    let model = SessionModel(core: FakeCore(.several), session: "laptop-key/4")
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.presented != nil }
+    let first = Task { await model.decide("approval-file-change", .decline) }
+    try await until(model) { $0.deciding == ["approval-file-change"] }
+    // Asked a second later, so its answer comes a second after the first's.
+    try await Task.sleep(for: .seconds(1))
+    let second = Task { await model.decide("approval-tool", .acceptOnce) }
+    try await until(model) { $0.deciding == ["approval-file-change", "approval-tool"] }
+    await first.value
+    #expect(model.deciding == ["approval-tool"], "the first answered leaves the second dimmed")
+    await second.value
+    #expect(model.deciding.isEmpty)
+  }
+
   @Test func aDecisionOnAnApprovalNoLongerWaitingStandsInTheBanner() async {
     let model = SessionModel(core: FakeCore(.paired), session: waiting, failureStands: .seconds(3600))
     await model.decide("no such approval", .decline)
     #expect(model.banner == "That approval is no longer waiting")
-    #expect(model.deciding == nil)
+    #expect(model.deciding.isEmpty)
     #expect(!model.popped)
   }
 }
