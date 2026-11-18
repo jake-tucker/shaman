@@ -6,7 +6,9 @@
   /// The tree of a fake Session whose Agent delegates, as the core would make it: the workstation's Session finding
   /// what holds the session lock, and the Subagents beneath it, working, settled, failed and monitoring, one of them
   /// spawning one of its own that cannot be stopped alone. Every Session of it reads its frame, conversation and work
-  /// from here, and a stop from its sheet or a Subagent's bar reaches every screen of it.
+  /// from here, and a stop from its sheet or a Subagent's bar reaches every screen of it. Where its Subagents wait on
+  /// Interventions, as `Waits` says, the Session above marks its bar and rows with them, and each presents itself only
+  /// in its own Session, an answer there reaching every screen of the tree.
   final class FakeTree: Sendable {
     /// One Session of the tree.
     struct Member: Sendable {
@@ -64,7 +66,53 @@
         delegatedBy: "The delegating agent", asked: "Review the lock's tests for what they miss.", spawned: []),
     ]
 
+    /// Which of the tree's Sessions wait on Interventions.
+    enum Waits: Sendable {
+      /// None.
+      case none
+      /// The top-level Session waits on an Approval of its own, and Explorer on one.
+      case one
+      /// Explorer waits on an Approval, and Grepper, beneath it, on a Questionnaire.
+      case several
+    }
+
+    /// An Approval one of the tree's Sessions waits on.
+    static let explorerApproval = PendingApproval(
+      reference: "approval-explorer", title: "Run this command?",
+      facts: [
+        Fact(label: "Command", value: "rg session.lock ~/.local/state/shaman", style: .monospace),
+        Fact(label: "Reason", value: "Reads the logs outside the workspace.", style: .prose),
+      ], sections: [], note: nil,
+      large: [
+        DecisionOffer(decision: .decline, label: "Decline"),
+        DecisionOffer(decision: .acceptOnce, label: "Accept once"),
+      ],
+      beneath: [
+        DecisionOffer(decision: .declineAndInterrupt, label: "Decline and interrupt"),
+        DecisionOffer(decision: .acceptForSession, label: "Accept for session"),
+      ])
+
+    /// The top-level Session's own Approval.
+    static let topApproval = PendingApproval(
+      reference: "approval-top", title: "Run this command?",
+      facts: [Fact(label: "Command", value: "git stash list", style: .monospace)], sections: [], note: nil,
+      large: explorerApproval.large, beneath: explorerApproval.beneath)
+
+    /// Grepper's Questionnaire.
+    static let grepperQuestionnaire = PendingQuestionnaire(
+      reference: "questionnaire-grepper",
+      questions: [
+        PendingQuestion(
+          position: "Question 1 of 1", heading: "Logs", text: "Which night's logs should I grep?", hint: nil,
+          choices: [
+            ChoiceCard(choice: "last", label: "Last night", description: "When the lock was held.", badge: nil),
+            ChoiceCard(choice: "week", label: "The whole week", description: "Slower, and finds more.", badge: nil),
+          ], multiple: false, field: nil, skip: nil, secret: nil)
+      ], note: nil, decline: "Decline", next: "Next", send: "Send answers", back: "Back")
+
     private struct State {
+      /// The Interventions answered, by reference.
+      var answered: Set<String> = []
       /// The Subagents stopped, and how long each had worked.
       var stopped: [String: String] = [:]
       /// Whether the top-level Session was stopped.
@@ -88,12 +136,91 @@
 
     private let opened: Date
     private let reading: Reading
+    private let waits: Waits
     private let state = Mutex(State())
     private let changes = Listeners<Void>()
 
-    init(opened: Date = Date(), reading: Reading = .lands) {
+    init(opened: Date = Date(), reading: Reading = .lands, waits: Waits = .none) {
       self.opened = opened
       self.reading = reading
+      self.waits = waits
+    }
+
+    /// Every Intervention the Session `session` of the tree was asked, oldest first, answered or not.
+    private func asked(of session: String) -> [Intervention] {
+      switch (waits, session) {
+      case (.one, Self.top): [.approval(approval: Self.topApproval)]
+      case (.one, "workstation-key/12.1"), (.several, "workstation-key/12.1"):
+        [.approval(approval: Self.explorerApproval)]
+      case (.several, "workstation-key/12.4"): [.questionnaire(questionnaire: Self.grepperQuestionnaire)]
+      default: []
+      }
+    }
+
+    /// The Interventions the Session `session` of the tree waits on, oldest first.
+    func interventions(of session: String) -> [Intervention] {
+      let answered = state.withLock { $0.answered }
+      return asked(of: session).filter { !answered.contains($0.reference) }
+    }
+
+    /// Takes the Intervention `reference` names away, answered, on every screen of the tree.
+    func answer(_ reference: String) {
+      let listeners = state.withLock { state in
+        state.answered.insert(reference)
+        return Array(state.listeners.values)
+      }
+      for (open, continuation) in listeners {
+        continuation.yield(sheet(for: open))
+      }
+      changes.tell(())
+    }
+
+    /// What the Session `session` of the tree waits on, as a row says it: "Needs approval", "Needs an answer", "Needs
+    /// you".
+    private func needs(_ session: String) -> String? {
+      Self.needs(interventions(of: session))
+    }
+
+    private static func needs(_ waiting: [Intervention]) -> String? {
+      switch waiting.count {
+      case 0: return nil
+      case 1:
+        if case .approval = waiting[0] { return "approval" }
+        return "an answer"
+      default: return "you"
+      }
+    }
+
+    /// The Subagents beneath the Session `session`, at any depth, in the Subagents Section's order.
+    private static func beneath(_ session: String) -> [Member] {
+      let spawned: [Member] =
+        if let above = member(session) { above.spawned.compactMap { member($0) } } else {
+          members.filter { $0.depth == 1 }
+        }
+      return spawned.flatMap { (spawned: Member) -> [Member] in [spawned] + beneath(spawned.session) }
+    }
+
+    /// What waits in the Subagent `member` or beneath it.
+    private func waiting(through member: Member) -> [Intervention] {
+      ([member] + Self.beneath(member.session)).flatMap { interventions(of: $0.session) }
+    }
+
+    /// The orange bar of the Session `session` while its Subagents' Interventions wait, as the core makes it: the one
+    /// by its name, its "Review" pushing its Session, or several by how many, their "Review" opening the tree.
+    func waitingBeneath(_ session: String) -> Bar? {
+      let waiting = Self.beneath(session).filter { !interventions(of: $0.session).isEmpty }
+      let (words, opens): (String, ReviewOpens)
+      switch waiting.count {
+      case 0: return nil
+      case 1:
+        let needs = Self.needs(interventions(of: waiting[0].session)) ?? "you"
+        (words, opens) = ("\(waiting[0].name) needs \(needs)", .session(session: waiting[0].session))
+      default: (words, opens) = ("\(waiting.count) subagents need you", .tree)
+      }
+      let stops = Self.member(session)?.stoppable ?? true
+      return Bar(
+        kind: .waiting, words: words, since: nil, watching: nil, stop: stops ? "Stop" : nil,
+        review: Review(label: "Review", opens: opens))
     }
 
     /// The sheet while the tree is not in hand: "Loading", or why it cannot be read.
@@ -212,10 +339,12 @@
     /// The sheet over `open`.
     func sheet(for open: String) -> SubagentTree {
       let topStopped = topStopped
+      let topNeeds = needs(Self.top).map { "Needs \($0)" }
       let top = TreeRow(
         id: Self.top, session: Self.top, depth: 0, marker: topStopped ? .stopped : .running, title: Self.title,
-        line: topStopped ? "Claude · opus · Stopped" : "Claude · opus", trailing: topStopped ? "3m 10s" : nil,
-        needsYou: false, since: topStopped ? nil : opened.addingTimeInterval(-190), open: open == Self.top, stop: nil)
+        line: topStopped ? "Claude · opus · Stopped" : "Claude · opus",
+        trailing: topNeeds ?? (topStopped ? "3m 10s" : nil), needsYou: topNeeds != nil,
+        since: topStopped || topNeeds != nil ? nil : opened.addingTimeInterval(-190), open: open == Self.top, stop: nil)
       let rows = Self.members.map { member in
         let stoppedAfter = stopped(member)
         let working = member.working != nil && stoppedAfter == nil
@@ -224,11 +353,13 @@
             settled
           } else { (.running, nil) }
         let outcome = marker == .failed ? "Failed" : marker == .stopped ? "Stopped" : nil
+        // One waiting on the reader says what it waits on in place of its time.
+        let needs = needs(member.session).map { "Needs \($0)" }
         return TreeRow(
           id: member.session, session: member.session, depth: member.depth, marker: marker, title: member.title,
           line: ([member.name, member.model] + [outcome].compactMap { $0 }).joined(separator: " · "),
-          trailing: working ? nil : member.monitoring ? "monitoring" : worked, needsYou: false,
-          since: member.working.flatMap { working ? opened.addingTimeInterval(-$0) : nil },
+          trailing: needs ?? (working ? nil : member.monitoring ? "monitoring" : worked), needsYou: needs != nil,
+          since: member.working.flatMap { working && needs == nil ? opened.addingTimeInterval(-$0) : nil },
           open: open == member.session, stop: working && member.stoppable ? "Stop" : nil)
       }
       let working = workingCount
@@ -271,18 +402,26 @@
 
     /// The conversation of the Session `session` of the tree.
     func items(of session: String) -> [ConversationItem] {
+      let ownWaits = !interventions(of: session).isEmpty
       guard let member = Self.member(session) else {
         return [
           FakeConversation.user("open", Self.prompt),
           topStopped
             ? FakeConversation.card("work", .stopped, "Stopped after 3m 10s", "2 tools")
-            : FakeConversation.card("work", .working, "Explorer: find what held the lock", "2 tools"),
+            : ownWaits
+              ? FakeConversation.card("work", .waiting, "Waiting on you", "2 tools")
+              : FakeConversation.card("work", .working, "Explorer: find what held the lock", "2 tools"),
         ]
       }
       let delegation = ConversationItem(
         id: "delegation", kind: .delegation(text: member.asked, from: member.delegatedBy))
       if working(member) {
-        return [delegation, FakeConversation.card("work", .working, "rg session.lock", "1 tool")]
+        return [
+          delegation,
+          ownWaits
+            ? FakeConversation.card("work", .waiting, "Waiting on you", "1 tool")
+            : FakeConversation.card("work", .working, "rg session.lock", "1 tool"),
+        ]
       }
       let line =
         if let stopped = stopped(member) { "Stopped after \(stopped)" } else if member.settled?.0 == .failed {
@@ -311,7 +450,7 @@
             kind: .row(
               row: WorkRow(
                 glyph: "\u{eb6d}", title: "Read src/sessions/store.rs", titleStyle: .monospace, line: nil,
-                trailing: nil, tone: .succeeded, tap: .nothing)))
+                trailing: nil, needsYou: false, tone: .succeeded, tap: .nothing)))
         ]
         + spawned.map { member in
           let stoppedAfter = stopped(member)
@@ -320,12 +459,15 @@
           let worked = stoppedAfter ?? member.settled?.1
           let outcome = tone == .failed ? "Failed" : tone == .stopped ? "Stopped" : nil
           let trailing = ([outcome] + [worked]).compactMap { $0 }.joined(separator: " · ")
+          // Where an Intervention waits in it or beneath it, it says so in orange.
+          let needs = Self.needs(waiting(through: member)).map { "Needs \($0)" }
           return WorkItem(
             id: "activity:\(member.session)",
             kind: .row(
               row: WorkRow(
                 glyph: "\u{f167a}", title: member.name, titleStyle: .prose, line: member.title,
-                trailing: trailing.isEmpty ? nil : trailing, tone: tone, tap: .session(session: member.session))))
+                trailing: needs ?? (trailing.isEmpty ? nil : trailing), needsYou: needs != nil, tone: tone,
+                tap: .session(session: member.session))))
         }
       let working = Self.member(session).map(working) ?? true
       return TurnWork(title: working ? "Working" : "Worked for 41s", items: rows, empty: nil)

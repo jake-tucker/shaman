@@ -8,7 +8,9 @@ import Textual
 /// its foot the bar says what the work is doing, with Stop, above the composer, whose send steers a working Turn and
 /// whose held send queues; a Prompt queued waits as a dashed bubble at the foot of the conversation. The Session's own
 /// Approval presents itself as a half-height sheet, and its Questionnaire as a full-height one; swiped away, either
-/// waits behind the orange bar's "Review". An act's failure is a banner over the screen, or over the sheet that asked,
+/// waits behind the orange bar's "Review". A Subagent's Intervention presents nothing here: the bar turns orange and
+/// says who needs the reader, and its "Review" pushes that Subagent's Session, where its sheet presents itself, or,
+/// where several wait, opens the tree. An act's failure is a banner over the screen, or over the sheet that asked,
 /// but a Session gone, which pops it. A Subagent's Session is named by the Subagent and has no composer. Where the tree
 /// the Session belongs to has Subagents, a button in the navigation bar opens it as a sheet, and choosing an entry there
 /// has `stack` show that Session.
@@ -39,7 +41,13 @@ struct SessionScreen: View {
     .scrollDismissesKeyboard(.interactively)
     .accessibilityIdentifier("session.conversation")
     .safeAreaInset(edge: .bottom, spacing: 0) {
-      SessionFoot(model: model)
+      SessionFoot(model: model) { opens in
+        if let stack {
+          showingTree = stack.review(opens, over: model.route)
+        } else if opens == .interventions {
+          model.review()
+        }
+      }
     }
     .safeAreaInset(edge: .top) {
       // While a sheet stands, its own banner says it.
@@ -516,6 +524,8 @@ private struct QueuedBubble: View {
 /// composer.
 private struct SessionFoot: View {
   @Bindable var model: SessionModel
+  /// Follows the bar's "Review" where it leads.
+  let review: (ReviewOpens) -> Void
 
   var body: some View {
     if let frame = model.frame, frame.bar != nil || frame.composer != nil {
@@ -536,7 +546,7 @@ private struct SessionFoot: View {
           BarView(bar: bar, stopping: model.stopping) {
             Task { await model.stop() }
           } review: {
-            model.review()
+            review($0)
           }
         }
         if let composer = frame.composer {
@@ -551,12 +561,13 @@ private struct SessionFoot: View {
 }
 
 /// The bar above the composer: what the work is doing and for how long, what a Monitoring Session waits on, and Stop,
-/// which takes one tap; or, orange, that an Intervention waits out of sight, with "Review" to bring it back.
+/// which takes one tap; or, orange, that an Intervention waits out of sight, its own or a Subagent's, with "Review" to
+/// lead to it.
 private struct BarView: View {
   let bar: Bar
   let stopping: Bool
   let stop: () -> Void
-  let review: () -> Void
+  let review: (ReviewOpens) -> Void
 
   var body: some View {
     let tint: Color =
@@ -600,9 +611,11 @@ private struct BarView: View {
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      if let words = bar.review {
-        Button(action: review) {
-          Text(verbatim: words)
+      if let offered = bar.review {
+        Button {
+          review(offered.opens)
+        } label: {
+          Text(verbatim: offered.label)
         }
         .buttonStyle(.borderedProminent)
         .tint(.orange)
@@ -1170,6 +1183,22 @@ final class SessionStack {
       path.removeSubrange(path.index(after: pushed)...)
     } else {
       path.append(.session(SessionRoute(session: session)))
+    }
+  }
+
+  /// Follows the "Review" on the bar of the Session pushed as `route` where it leads: its own Interventions presented
+  /// again, or the one Subagent's Session whose Intervention waits shown as an entry of its tree is. Answers whether
+  /// the tree is to be opened, as it is where several Subagents' wait.
+  func review(_ opens: ReviewOpens, over route: SessionRoute) -> Bool {
+    switch opens {
+    case .interventions:
+      model(for: route).review()
+      return false
+    case .session(let session):
+      show(session, over: route)
+      return false
+    case .tree:
+      return true
     }
   }
 

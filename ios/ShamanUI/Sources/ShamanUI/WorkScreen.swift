@@ -81,7 +81,8 @@ private struct SessionRowLink: View {
   }
 }
 
-/// One Activity among a Turn's work: its glyph in its tone, its title over the line beneath, and its trailing words.
+/// One Activity among a Turn's work: its glyph in its tone, its title over the line beneath, and its trailing words, in
+/// orange where they say it needs the reader.
 struct WorkRowView: View {
   let row: WorkRow
 
@@ -107,7 +108,10 @@ struct WorkRowView: View {
         Text(verbatim: trailing)
           .font(.caption)
           .monospacedDigit()
-          .foregroundStyle(row.tone == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+          .foregroundStyle(
+            row.needsYou
+              ? AnyShapeStyle(.orange) : row.tone == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary)
+          )
           .fixedSize()
       }
     }

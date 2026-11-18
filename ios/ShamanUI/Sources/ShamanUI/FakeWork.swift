@@ -130,7 +130,7 @@
           row: WorkRow(
             glyph: kind.rawValue, title: title,
             titleStyle: [.command, .toolCall, .fileChange].contains(kind) ? .monospace : .prose, line: line,
-            trailing: trailing, tone: tone,
+            trailing: trailing, needsYou: false, tone: tone,
             tap: tap ?? .detail(activity: id))))
     }
 

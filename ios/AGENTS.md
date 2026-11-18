@@ -87,9 +87,13 @@ Approvals, presented one by one; in `reaching`, `homelab-key/2` is never read, s
 In `unreachable` the home lab, every way to which is on the local network, stands as a slim row at the foot of the
 listing and answers once tried again; in `offline` the phone has no network, so its one Remote reads Unreachable however
 often it is tried; and in `unreadTree` and `unreadableTree` the `paired` phone's trees are never read, or cannot be, so
-`/12`'s sheet stands at "Loading" or says why. A card pushes its Turn's work from `FakeWork`, and a row its Activity's
-whole: in `/7` the work holds a settled Approval, File Changes and the placeholder for a kind a newer Server sent, and
-in `/1` the running command's output grows a line at a time while its screen is up. Every act a fake Session is asked is
+`/12`'s sheet stands at "Loading" or says why. In `subagentWaits` `/12` waits on an Approval of its own, its sheet
+presenting itself, and Explorer, `/12.1`, on another, which marks `/12`'s bar once its own is swiped away and whose
+"Review" pushes `/12.1`, where its sheet presents itself; in `subagentsWait` Explorer waits on an Approval and Grepper,
+`/12.4`, on a Questionnaire, so `/12`'s bar counts them and its "Review" opens the tree. A card pushes its Turn's work
+from `FakeWork`, and a row its Activity's whole: in `/7` the work holds a settled Approval, File Changes and the
+placeholder for a kind a newer Server sent, and in `/1` the running command's output grows a line at a time while its
+screen is up. Every act a fake Session is asked is
 answered as the core would answer it, after a moment: a Prompt holding "fail" is refused, one holding "gone" finds the
 Session gone, which pops its screen, and one holding "unanswered" is never answered, so its text stays in the composer
 with the line saying it may have been sent; answers to a Questionnaire holding "fail" are refused.

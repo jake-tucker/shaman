@@ -112,13 +112,23 @@
       var pending: [Intervention] = []
       /// Those this screen dismissed.
       var dismissed: Set<String> = []
+      /// The orange bar the Interventions of the Subagents beneath it make, where any wait.
+      var beneath: Bar?
 
-      /// The frame as the core shows it: the oldest Intervention not dismissed presented while the Origin answers,
-      /// and otherwise the orange bar naming the oldest, with "Review" where there is anything to bring back.
+      /// The frame as the core shows it: the oldest Intervention not dismissed presented while the Origin answers;
+      /// and otherwise, once that is answered or dismissed, the orange bar of a Subagent's waiting, or of the oldest of
+      /// its own, with "Review" where there is anything to lead to. Nothing is reviewed on an Unreachable Origin.
       func shown(unreachable: Bool) -> SessionFrame {
         var shown = frame
         shown.waiting = pending.map(\.reference)
-        guard let oldest = pending.first else { return shown }
+        var beneath = beneath
+        if unreachable {
+          beneath?.review = nil
+        }
+        guard let oldest = pending.first else {
+          shown.bar = beneath ?? shown.bar
+          return shown
+        }
         let presenting = unreachable ? nil : pending.first { !dismissed.contains($0.reference) }
         shown.intervention = presenting
         if presenting == nil {
@@ -127,9 +137,10 @@
             case .approval: "Approval waiting"
             case .questionnaire: "Questionnaire waiting"
             }
-          shown.bar = Bar(
+          let own = Bar(
             kind: .waiting, words: words, since: nil, watching: nil, stop: "Stop",
-            review: unreachable ? nil : "Review")
+            review: unreachable ? nil : Review(label: "Review", opens: .interventions))
+          shown.bar = unreachable ? own : beneath ?? own
         }
         return shown
       }
@@ -167,9 +178,16 @@
         let follow = Task { [weak self] in
           for await _ in tree.changed() {
             guard let self, !Task.isCancelled else { return }
-            changeFrame { $0 = tree.frame(of: session, top: $0) }
-            // Once the conversation has landed, it moves with the tree.
-            if state.withLock({ $0.items.first?.id != "loading" }) {
+            // Once the conversation has landed, it moves with the tree, and so do the Interventions it waits on.
+            let landed = state.withLock { $0.items.first?.id != "loading" }
+            changeState { state in
+              state.frame = tree.frame(of: session, top: state.frame)
+              state.beneath = tree.waitingBeneath(session)
+              if landed {
+                state.pending = tree.interventions(of: session)
+              }
+            }
+            if landed {
               change { $0 = tree.items(of: session) }
             }
           }
@@ -179,7 +197,10 @@
       let task = Task { [weak self] in
         try? await Task.sleep(for: .milliseconds(600))
         self?.change { $0 = tree?.items(of: session) ?? FakeConversation.items(scenario) }
-        self?.changeState { $0.pending = FakeConversation.interventions(scenario) }
+        self?.changeState { state in
+          state.pending = tree?.interventions(of: session) ?? FakeConversation.interventions(scenario)
+          state.beneath = tree?.waitingBeneath(session)
+        }
         guard scenario == .working else { return }
         for text in FakeConversation.streamed.dropFirst() {
           try? await Task.sleep(for: .milliseconds(700))
@@ -411,8 +432,13 @@
       }
     }
 
-    /// Takes the Intervention `reference` names away, answered: the Turn works again once nothing else waits.
+    /// Takes the Intervention `reference` names away, answered: the Turn works again once nothing else waits. One of a
+    /// tree's is answered on every screen of it.
     private func answered(_ reference: String) {
+      if let family {
+        family.answer(reference)
+        return
+      }
       let answeredAll = state.withLock { state in
         state.pending.removeAll { $0.reference == reference }
         return state.pending.isEmpty

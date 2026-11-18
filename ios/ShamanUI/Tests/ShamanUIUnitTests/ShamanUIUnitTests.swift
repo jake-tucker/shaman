@@ -557,6 +557,32 @@ private final class RefusingSigner: KeySigner {
   }
 }
 
+@Suite @MainActor struct ReviewTests {
+  @Test func aBarsReviewPushesTheOneSubagentWaitingOpensTheTreeOrPresentsTheSessionsOwn() {
+    let core = FakeCore(.subagentsWait)
+    let parent = SessionRoute(session: "workstation-key/12")
+    let stack = SessionStack(core: core)
+    stack.path = [.session(parent)]
+
+    // One Subagent waiting: its Session is pushed over the one whose bar it was.
+    #expect(!stack.review(.session(session: "workstation-key/12.4"), over: parent), "no tree")
+    guard case .session(let grepper) = stack.path.last else {
+      Issue.record("a Session pushed")
+      return
+    }
+    #expect(grepper.session == "workstation-key/12.4")
+    #expect(stack.path.count == 2)
+
+    // Several: the tree is opened, and nothing pushed.
+    #expect(stack.review(.tree, over: grepper))
+    #expect(stack.path.count == 2)
+
+    // Its own, presented again by the core where it stands.
+    #expect(!stack.review(.interventions, over: grepper))
+    #expect(stack.path == [.session(parent), .session(grepper)])
+  }
+}
+
 @Suite @MainActor struct SessionModelTests {
   private let working = "workstation-key/1"
 
@@ -711,7 +737,7 @@ private final class RefusingSigner: KeySigner {
     try await until(model) { $0.presented == nil }
     #expect(model.frame?.bar?.kind == .waiting)
     #expect(model.frame?.bar?.words == "Approval waiting")
-    #expect(model.frame?.bar?.review == "Review")
+    #expect(model.frame?.bar?.review == Review(label: "Review", opens: .interventions))
     #expect(model.frame?.bar?.since == nil)
     model.review()
     try await until(model) { $0.presented != nil }
@@ -995,7 +1021,7 @@ private final class HeldTime: BackgroundTasks {
     model.dismissInterventions()
     try await until(model) { $0.presented == nil }
     #expect(model.frame?.bar?.words == "Questionnaire waiting")
-    #expect(model.frame?.bar?.review == "Review")
+    #expect(model.frame?.bar?.review == Review(label: "Review", opens: .interventions))
     model.review()
     try await until(model) { $0.presented != nil }
     let kept = model.draft(of: try presented(model))

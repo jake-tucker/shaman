@@ -29,6 +29,12 @@
       case unreadTree
       /// The `paired` phone whose Session trees cannot be read, so a tree's sheet says why.
       case unreadableTree
+      /// The `paired` phone where the Session heading the tree waits on an Approval of its own, and one of its
+      /// Subagents, Explorer, on another.
+      case subagentWaits
+      /// The `paired` phone where two of the tree's Subagents wait: Explorer on an Approval, and Grepper, beneath it,
+      /// on a Questionnaire.
+      case subagentsWait
     }
 
     /// The Invite the fake reads as the workstation's. One holding "dead" reads as the workstation's too, and fails to
@@ -63,11 +69,13 @@
     public init(_ scenario: Scenario) {
       device = Mutex(Self.device(in: scenario))
       tree = FakeTree(
-        reading: scenario == .unreadTree ? .never : scenario == .unreadableTree ? .fails : .lands)
+        reading: scenario == .unreadTree ? .never : scenario == .unreadableTree ? .fails : .lands,
+        waits: scenario == .subagentWaits ? .one : scenario == .subagentsWait ? .several : .none)
       let remotes: [ServerRow] =
         switch scenario {
         case .fresh, .named, .pairAgain: []
-        case .paired, .offline, .unreadTree, .unreadableTree: [Self.workstation(named: "workstation")]
+        case .paired, .offline, .unreadTree, .unreadableTree, .subagentWaits, .subagentsWait:
+          [Self.workstation(named: "workstation")]
         case .several, .reaching, .unreachable: [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
         }
       held = Mutex(remotes)
