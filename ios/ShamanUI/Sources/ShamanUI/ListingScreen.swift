@@ -9,9 +9,8 @@ struct ListingScreen: View {
   let beginsIn: BeginsIn
   @State private var model: ListingModel
   @State private var sheet: ListingSheet?
-  /// The Sessions pushed over the listing, the one on top last.
-  @State private var path: [SessionRoute] = []
-  @State private var opened = OpenedSessions()
+  /// The Sessions pushed over the listing, each closed in the core as its screen is popped.
+  @State private var stack: SessionStack
 
   init(core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?, opening: String? = nil) {
     self.core = core
@@ -19,11 +18,11 @@ struct ListingScreen: View {
     self.beginsIn = beginsIn
     _model = State(initialValue: ListingModel(core: core))
     _sheet = State(initialValue: invite.map(ListingSheet.pairing))
-    _path = State(initialValue: opening.map { [SessionRoute(session: $0)] } ?? [])
+    _stack = State(initialValue: SessionStack(core: core, path: opening.map { [SessionRoute(session: $0)] } ?? []))
   }
 
   var body: some View {
-    NavigationStack(path: $path) {
+    NavigationStack(path: $stack.path) {
       List {
         if let listing = model.listing {
           rows(listing)
@@ -54,11 +53,9 @@ struct ListingScreen: View {
       }
       .toolbar { bottomBar }
       .navigationDestination(for: SessionRoute.self) { route in
-        SessionScreen(model: opened.model(for: route, core: core))
+        SessionScreen(model: stack.model(for: route))
       }
     }
-    // A screen popped ends its Session in the core.
-    .onChange(of: path) { _, path in opened.keep(only: path) }
     .task { await model.follow() }
     .sheet(item: $sheet) { sheet in
       switch sheet {

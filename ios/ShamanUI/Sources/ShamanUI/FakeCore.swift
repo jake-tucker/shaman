@@ -82,7 +82,8 @@
         ?? SessionFrame(title: "", place: "", gone: "This session no longer exists")
       if let found {
         turned.withLock { $0 = found.remote }
-        turnedWorkspace.withLock { $0[found.remote] = found.workspace }
+        // The Workspace remembered for the Remote stays; only where none is does the Session's own become it.
+        turnedWorkspace.withLock { $0[found.remote] = $0[found.remote] ?? found.workspace }
         outlookListeners.tell(currentOutlook())
       }
       // A Session on a Remote yet to answer is never read: its loading mark stands.

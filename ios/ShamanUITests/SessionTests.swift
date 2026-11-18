@@ -72,6 +72,16 @@ final class SessionTests: XCTestCase {
     XCTAssertEqual(
       element("home.beginsIn", in: app).label, "New sessions begin in workstation · shaman",
       "opening it turned the Outlook toward its Origin and Workspace")
+
+    // Another Session there, in another Workspace, turns only the Remote: the Workspace remembered for it stays.
+    let other = app.descendants(matching: .any).matching(identifier: "listing.active")
+      .matching(NSPredicate(format: "label CONTAINS %@", "Tidy zsh startup time")).firstMatch
+    XCTAssertTrue(other.waitForExistence(timeout: 5))
+    other.tap()
+    XCTAssertEqual(element("session.place", in: app).label, "dotfiles · main")
+    app.navigationBars.buttons.firstMatch.tap()
+    XCTAssertTrue(app.navigationBars["All workspaces"].waitForExistence(timeout: 5))
+    XCTAssertEqual(element("home.beginsIn", in: app).label, "New sessions begin in workstation · shaman")
   }
 
   @MainActor
@@ -86,6 +96,15 @@ final class SessionTests: XCTestCase {
   }
 
   @MainActor
+  func testASessionThatIsGoneSaysSo() {
+    let app = launched("paired", opening: "workstation-key/999")
+    let gone = element("session.gone", in: app)
+    XCTAssertTrue(gone.waitForExistence(timeout: 10))
+    XCTAssertEqual(gone.label, "This session no longer exists")
+    attach(app, "A session that is gone")
+  }
+
+  @MainActor
   func testASettledTurnReadsHowItSettledOverItsCountAndItsAnswerStandsOutside() {
     let app = launched("paired", opening: "workstation-key/7")
     let card = lastCard(in: app)
@@ -95,6 +114,17 @@ final class SessionTests: XCTestCase {
       element("session.compaction", in: app).label, "Compacted context · 180K → 40K (automatic)")
     XCTAssertEqual(element("session.model", in: app).label, "auto · gpt-5.5")
     attach(app, "A settled turn")
+
+    // The code block is wider than the screen, so it scrolls sideways rather than wraps.
+    let wide = element("session.conversation", in: app).scrollViews
+      .containing(NSPredicate(format: "label BEGINSWITH 'Horizontal scroll bar' AND NOT (label ENDSWITH ', 1 page')"))
+      .firstMatch
+    XCTAssertTrue(wide.waitForExistence(timeout: 5), "a code block wider than the screen scrolls")
+    let content = wide.children(matching: .other).element(boundBy: 0)
+    let before = content.frame.minX
+    wide.swipeLeft()
+    XCTAssertLessThan(content.frame.minX, before, "swiped sideways, it moved")
+    attach(app, "A settled turn's code block scrolled sideways")
   }
 
   @MainActor

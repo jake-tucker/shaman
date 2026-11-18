@@ -163,8 +163,9 @@ If the phone is locked, stop and ask for it to be unlocked.
 - Everything the app keeps, the core keeps, in the one directory `CoreDirectory.prepare` makes and keeps out of
   backups. Nothing goes in `UserDefaults` or `@AppStorage`.
 - The fake and every debug-only path stay behind `#if DEBUG`.
-- `ShamanUI` depends on one package from outside, Textual, which draws an agent Message's Markdown; it is pinned
-  exactly, and both `Package.resolved` files are committed. Move it deliberately.
+- `ShamanUI` depends on one package from outside, Textual, which draws an agent Message's Markdown, and through it on
+  two more, swift-concurrency-extras and swiftui-math. Textual is pinned exactly, and both `Package.resolved` files,
+  which pin all three, are committed. Move them deliberately.
 - Add a Swift file by creating it in a synced folder; the project does not list files. Change a build setting with
   `xcrun xcodeproj setting set`, and keep `Shaman.xcodeproj` committed.
 - The app's version is its own (`MARKETING_VERSION`, from 0.1.0) and its build number is set by hand. Commits under

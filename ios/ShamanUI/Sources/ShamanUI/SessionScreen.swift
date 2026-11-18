@@ -75,10 +75,10 @@ private struct ItemView: View {
   var body: some View {
     switch item.kind {
     case .loading(let words):
+      // Centred in what the conversation will fill.
       ProgressView()
         .controlSize(.regular)
-        .frame(maxWidth: .infinity)
-        .padding(.top, 40)
+        .containerRelativeFrame([.horizontal, .vertical])
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: words))
         .accessibilityIdentifier("session.loading")
@@ -107,7 +107,7 @@ private struct ItemView: View {
       Label {
         Text(verbatim: words)
       } icon: {
-        tone.symbol
+        CompactionSymbol(tone: tone)
       }
       .font(.footnote)
       .foregroundStyle(.secondary)
@@ -235,14 +235,17 @@ private struct TurnCardView: View {
   }
 }
 
-extension Tone {
-  /// The symbol a piece of work standing as this is led by.
-  @ViewBuilder var symbol: some View {
-    switch self {
+/// The symbol a Compaction standing as `tone` is led by.
+private struct CompactionSymbol: View {
+  let tone: Tone
+
+  var body: some View {
+    switch tone {
     case .running: ProgressView().controlSize(.mini)
     case .succeeded: Image(systemName: "rectangle.compress.vertical")
     case .failed: Image(systemName: "exclamationmark.triangle").foregroundStyle(.red)
     case .stopped: Image(systemName: "stop.circle").foregroundStyle(.yellow)
+    case .unknown: Image(systemName: "questionmark.circle")
     }
   }
 }
@@ -314,13 +317,24 @@ final class SessionModel {
   }
 }
 
-/// The Sessions open on the screens pushed over the listing, each closed in the core as its screen is popped.
-@MainActor
-final class OpenedSessions {
-  private var models: [SessionRoute: SessionModel] = [:]
+/// The Sessions pushed over the listing, as its navigation stack holds them: each opened in the core as its screen is
+/// first drawn, and closed there as its screen leaves the path, however it leaves.
+@MainActor @Observable
+final class SessionStack {
+  /// The screens pushed, the one on top last.
+  var path: [SessionRoute] {
+    didSet { closeUnpushed() }
+  }
+  @ObservationIgnored private let core: any Core
+  @ObservationIgnored private var models: [SessionRoute: SessionModel] = [:]
+
+  init(core: any Core, path: [SessionRoute] = []) {
+    self.core = core
+    self.path = path
+  }
 
   /// The model of the screen `route` pushed, opened the first time it is asked for.
-  func model(for route: SessionRoute, core: any Core) -> SessionModel {
+  func model(for route: SessionRoute) -> SessionModel {
     if let model = models[route] {
       return model
     }
@@ -329,8 +343,8 @@ final class OpenedSessions {
     return model
   }
 
-  /// Closes every Session whose screen is no longer on `path`.
-  func keep(only path: [SessionRoute]) {
+  /// Closes every Session whose screen is no longer on the path.
+  private func closeUnpushed() {
     let pushed = Set(path)
     for (route, model) in models where !pushed.contains(route) {
       model.close()

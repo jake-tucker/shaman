@@ -419,23 +419,26 @@ private final class RefusingSigner: KeySigner {
   }
 }
 
-@Suite @MainActor struct OpenedSessionsTests {
-  @Test func aSessionIsClosedInTheCoreOnceItsScreenLeavesThePath() {
+@Suite @MainActor struct SessionStackTests {
+  @Test func aSessionIsClosedInTheCoreOnceItsScreenLeavesThePathAndNotBefore() {
     let core = FakeCore(.paired)
-    let opened = OpenedSessions()
     let working = SessionRoute(session: "workstation-key/1")
     let settled = SessionRoute(session: "workstation-key/7")
-    let model = opened.model(for: working, core: core)
-    #expect(opened.model(for: working, core: core) === model, "opened once for its screen")
-    _ = opened.model(for: settled, core: core)
+    let stack = SessionStack(core: core)
+    stack.path = [working]
+    let model = stack.model(for: working)
+    #expect(stack.model(for: working) === model, "opened once for its screen")
+    stack.path.append(settled)
+    _ = stack.model(for: settled)
     let sessions = core.opened.withLock { $0 }
     #expect(sessions.count == 2)
+    #expect(!sessions[0].isClosed && !sessions[1].isClosed, "both still pushed")
 
-    opened.keep(only: [working])
+    stack.path.removeLast()
     #expect(!sessions[0].isClosed, "still pushed")
     #expect(sessions[1].isClosed, "popped, so closed")
-    opened.keep(only: [])
-    #expect(sessions[0].isClosed)
+    stack.path = []
+    #expect(sessions[0].isClosed, "popped to the listing, so closed")
   }
 
   @Test func theSameSessionPushedTwiceIsTwoScreens() {
