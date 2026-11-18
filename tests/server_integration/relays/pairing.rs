@@ -1363,7 +1363,7 @@ async fn a_peer_too_old_for_its_remote_through_a_relay_is_refused_as_it_is_direc
     // the side to update.
     assert_eq!(
         error_message(&refused),
-        "That Server no longer pairs with a Shaman as old as this one: update Shaman here, then \
+        "That server no longer pairs with a Shaman as old as this one: update Shaman here, then \
          pair again"
     );
     assert_eq!(error_message(&refused), error_message(&refused_directly));

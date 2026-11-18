@@ -195,7 +195,7 @@ async fn a_peer_below_the_serving_floor_is_refused_as_behind_listed_so_and_heale
     assert_eq!(refusal.code, SessionErrorCode::PairingPeerBehind);
     assert_eq!(
         refusal.message,
-        "That Server no longer works with a Shaman as old as this one: update Shaman here, and \
+        "That server no longer works with a Shaman as old as this one: update Shaman here, and \
          the pairing works again"
     );
     let health = machines.probe().await;
@@ -237,7 +237,7 @@ async fn a_serving_server_below_the_peers_floor_is_refused_as_behind_and_healed_
     assert_eq!(refusal.code, SessionErrorCode::PairingServerBehind);
     assert_eq!(
         refusal.message,
-        "That Server's Shaman is too old to work with this one: update Shaman there, and the \
+        "That server's Shaman is too old to work with this one: update Shaman there, and the \
          pairing works again"
     );
     let health = machines.probe().await;

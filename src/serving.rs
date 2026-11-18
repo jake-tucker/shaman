@@ -272,6 +272,14 @@ impl PeerRecords {
             *held = before;
             return Err(internal_pairing_failure(error));
         }
+        // A Peer removed, withdrawn or enrolled anew is behind no longer:
+        // what it is told next of is what it next asks as.
+        self.behind
+            .lock()
+            .expect("behind Peer lock is not poisoned")
+            .retain(|id| {
+                before.iter().any(|peer| &peer.id == id) && held.iter().any(|peer| &peer.id == id)
+            });
         Ok((answer, true))
     }
 }
@@ -1541,6 +1549,8 @@ impl ServingController {
             }
             Ok(())
         })?;
+        // It enrolled speaking with this Server, so it is behind no longer.
+        self.peers.note_behind(&id, false);
         // A key's revocation stands until it is revoked, so the connections
         // that answer to it — those kept across a withdrawal among them —
         // answer to it however often the key enrolls again; only a removed
@@ -3668,6 +3678,86 @@ mod tests {
             let _ = axum::serve(listener, app).await;
         });
         (format!("http://{address}"), arrived)
+    }
+
+    /// A Peer noted behind is behind no longer once it is removed, withdraws
+    /// or enrolls again, so one updated and paired anew is never listed as
+    /// too old, and nothing is kept of a Peer that is gone.
+    #[tokio::test]
+    async fn a_peer_noted_behind_is_so_no_longer_once_removed_withdrawn_or_enrolled_again() {
+        let data = tempfile::tempdir().expect("create a data directory");
+        let controller = ServingController::for_tests(
+            data.path(),
+            IdentityKey::new(data.path()),
+            "http://127.0.0.1:9",
+        );
+        let older = PairingProtocol {
+            version: crate::protocol::PROTOCOL_FLOOR - 1,
+            floor: crate::protocol::PROTOCOL_FLOOR - 1,
+        }
+        .stated();
+        let keys = [
+            b"removed".to_vec(),
+            b"withdrawn".to_vec(),
+            b"enrolled".to_vec(),
+        ];
+        for key in &keys {
+            controller.peers.write().push(StoredPeer {
+                id: fingerprint(key),
+                public_key: key.clone(),
+                name: String::new(),
+                offer: None,
+            });
+            let refused = controller
+                .peer_speaks(&fingerprint(key), &older)
+                .expect_err("an older Peer is refused");
+            assert_eq!(refused.code, SessionErrorCode::PairingPeerBehind);
+        }
+        assert!(controller.list_peers().iter().all(|peer| peer.behind));
+
+        controller
+            .remove_peer(&fingerprint(&keys[0]))
+            .unwrap_or_else(|failure| panic!("{}", failure.message));
+        controller
+            .withdraw_peer(&keys[1])
+            .unwrap_or_else(|failure| panic!("{}", failure.message));
+        let token = [7_u8; 32];
+        controller
+            .invites
+            .lock()
+            .expect("Invite ledger lock is not poisoned")
+            .issued
+            .push(IssuedToken {
+                token,
+                expires_at: tokio::time::Instant::now() + tokio::time::Duration::from_secs(60),
+                state: TokenState::Outstanding,
+                bound_to: None,
+            });
+        controller
+            .enroll(
+                EnrollmentRequest {
+                    token: URL_SAFE_NO_PAD.encode(token),
+                    protocol_version: PairingProtocol::CURRENT.version,
+                    phase: EnrollmentPhase::Commit,
+                    hostname: Some("laptop".to_owned()),
+                    offer: None,
+                },
+                keys[2].clone(),
+            )
+            .unwrap_or_else(|failure| panic!("{}", failure.message));
+
+        let listed = controller.list_peers();
+        assert_eq!(listed.len(), 1);
+        assert!(!listed[0].behind, "the Peer enrolled again is not behind");
+        assert!(
+            controller
+                .peers
+                .behind
+                .lock()
+                .expect("behind Peer lock is not poisoned")
+                .is_empty(),
+            "nothing is kept of the Peers that are gone"
+        );
     }
 
     /// Nothing a Peer sends removes, shadows or forges the author the

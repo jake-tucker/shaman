@@ -2622,21 +2622,27 @@ pub struct Peer {
 
 /// Whether a Remote can serve this Server's protocol. Kept on the successful
 /// status response so a Client can present incompatibility without treating
-/// the local Server request itself as failed.
+/// the local Server request itself as failed, and stored with the Remote as
+/// what it last stood as, which the next probe refreshes.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RemoteStatus {
     Available,
-    Unavailable,
     Revoked,
-    /// The Remote is older than this side still speaks with, so this side
-    /// asks it nothing: Shaman there needs updating. The Pairing stands, and
-    /// updating it heals the Pairing.
+    /// The Remote is older than this side still speaks with, so nothing
+    /// this side asks is done there or read here: Shaman there needs
+    /// updating. The Pairing stands, and updating it heals the Pairing.
     Behind,
     /// The Remote no longer speaks with a side as old as this one, and
     /// refuses what it asks: Shaman here needs updating. The Pairing stands,
     /// and updating this side heals the Pairing.
     Ahead,
+    /// Not answering just now. A status this build does not know — stored by
+    /// another build, `protocol_mismatch` among them, or told by a newer
+    /// Server — reads as this one, since it is only what the Remote last
+    /// stood as and asking it again finds what it stands as now.
+    #[serde(other)]
+    Unavailable,
 }
 
 /// The outcome of removing a Remote. Removal always ends the Pairing on this
@@ -7331,10 +7337,13 @@ pub enum SessionErrorCode {
     /// with: Shaman on the Peer needs updating. The Pairing stands, and
     /// updating the Peer heals it (ADR-0078).
     PairingPeerBehind,
-    /// The redeeming side refused what the Serving Server answered, as older
-    /// than the redeeming side still speaks with: Shaman on the Serving
-    /// Server needs updating. The Pairing stands, and updating that Server
-    /// heals it (ADR-0078). No Serving Server sends it.
+    /// The Serving Server is older than the redeeming side still speaks
+    /// with: Shaman on the Serving Server needs updating. A Serving Server
+    /// sends it, refusing what a Peer asks before doing any of it, where it
+    /// is below the floor the Peer states; the redeeming side says it itself
+    /// where it finds the Serving Server's answer, or its side of the
+    /// ceremony, below that floor. The Pairing stands, and updating that
+    /// Server heals it (ADR-0078).
     PairingServerBehind,
     /// As many requests await the Remote's answer as this Server asks of it
     /// at once, so this one was not asked; asked again shortly, once some

@@ -1784,8 +1784,6 @@ pub fn same_pairing(stored: &StoredRemote, other: &StoredRemote) -> bool {
         && stored.generation == other.generation
 }
 
-/// Asks `remote` as [`first_answer`] does, by those of its ways this Server
-/// dials ([`WayDialer::dials`]), in the order each kind is dialled in.
 /// What a Remote that refused what was asked under `code` stands as, where
 /// it refused it for one side being too far behind the other:
 /// [`RemoteStatus::Ahead`] where it refused this side as behind, and
@@ -1799,6 +1797,8 @@ fn behind_status(code: SessionErrorCode) -> Option<RemoteStatus> {
     }
 }
 
+/// Asks `remote` as [`first_answer`] does, by those of its ways this Server
+/// dials ([`WayDialer::dials`]), in the order each kind is dialled in.
 pub async fn first_remote_answer<T, F, Fut>(
     remote: &StoredRemote,
     client: &PairingHttpClient,
@@ -2330,6 +2330,48 @@ mod tests {
             RedeemerTimings::default(),
         )
         .expect("read the Remotes' records")
+    }
+
+    /// A Remote's stored status is only what it last stood as, so one this
+    /// build does not know — as the build before it stored for a Remote of
+    /// another protocol — reads as not answering just now, and the records
+    /// are read rather than the Server refusing to start.
+    #[test]
+    fn a_stored_status_this_build_does_not_know_reads_as_unavailable() {
+        let data = tempfile::tempdir().expect("create a data directory");
+        let stored = |status: &str| StoredRemote {
+            remote: Remote {
+                name: format!("{status}-remote"),
+                fingerprint: "ab12".to_owned(),
+                ways: vec![Way::Direct(SocketAddr::from(([192, 0, 2, 1], 7000)))],
+                status: RemoteStatus::Available,
+                icon: None,
+            },
+            public_key: status.as_bytes().to_vec(),
+            answered: Vec::new(),
+            generation: 0,
+            offer: None,
+        };
+        let records = ["protocol_mismatch", "a_status_added_since_this_build"].map(|status| {
+            let mut record = serde_json::to_value(stored(status)).expect("encode a record");
+            record["status"] = serde_json::json!(status);
+            record
+        });
+        std::fs::write(
+            data.path().join(REMOTES_FILE),
+            serde_json::to_vec(&records).expect("encode the records"),
+        )
+        .expect("write the records");
+
+        let remotes = redeemer(&data).list_remotes();
+
+        assert_eq!(remotes.len(), 2);
+        assert!(
+            remotes
+                .iter()
+                .all(|remote| remote.status == RemoteStatus::Unavailable),
+            "{remotes:?}"
+        );
     }
 
     #[test]

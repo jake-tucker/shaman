@@ -93,7 +93,7 @@ fn failure_of(error: SessionError, server_error: bool) -> RemoteConnectionFailur
 pub(crate) fn too_old_for_this() -> SessionError {
     SessionError {
         code: SessionErrorCode::ServerTooOld,
-        message: "That Server is too old for this; update Shaman there".to_owned(),
+        message: "That server is too old for this; update Shaman there".to_owned(),
         unreachable: None,
     }
 }
@@ -218,7 +218,7 @@ mod tests {
             matches!(
                 refused,
                 Err(RemoteConnectionFailure::Rejected(ref message))
-                    if message == "That Server is too old for this; update Shaman there"
+                    if message == "That server is too old for this; update Shaman there"
             ),
             "the reader is told which side to update"
         );

@@ -367,15 +367,14 @@ struct OriginListing {
 
 /// The Origins an Everywhere surface asks, preserving the local Server first
 /// and the durable Remote order after it. Ended Pairings cannot answer and do
-/// not participate; an unavailable one may recover and remains included.
+/// not participate; an unavailable one may recover and remains included, and
+/// so does one too far apart from this Server to speak with when last asked,
+/// whose Pairing stands for an update to heal: asking it is what finds it
+/// healed.
 pub(super) fn everywhere_origins(remotes: Vec<Remote>) -> Vec<Outlook> {
     let mut origins = vec![Outlook::Local];
     origins.extend(remotes.into_iter().filter_map(|remote| {
-        (!matches!(
-            remote.status,
-            RemoteStatus::Revoked | RemoteStatus::Behind | RemoteStatus::Ahead
-        ))
-        .then_some(Outlook::Remote(remote.name))
+        (remote.status != RemoteStatus::Revoked).then_some(Outlook::Remote(remote.name))
     }));
     origins
 }

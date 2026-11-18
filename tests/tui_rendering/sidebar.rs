@@ -5997,16 +5997,21 @@ fn everywhere_asks_each_non_terminal_origin_and_merges_both_shelves_by_reported_
             Outlook::Local,
             Outlook::Remote("studio".to_owned()),
             Outlook::Remote("sleeping".to_owned()),
+            Outlook::Remote("older".to_owned()),
+            Outlook::Remote("newer".to_owned()),
         ]),
-        "terminal remotes are not asked, while an unavailable pairing may answer again"
+        "an ended pairing is not asked, while one unavailable, or too far apart to speak \
+         when last asked, may answer again once updated"
     );
     assert_eq!(
         catalog_origins,
         std::collections::HashSet::from([
             Outlook::Remote("studio".to_owned()),
             Outlook::Remote("sleeping".to_owned()),
+            Outlook::Remote("older".to_owned()),
+            Outlook::Remote("newer".to_owned()),
         ]),
-        "Everywhere watches every paired, non-terminal remote"
+        "Everywhere watches every remote whose pairing stands"
     );
     assert!(requests.iter().all(|request| {
         request.surface() == SessionListSurface::Sidebar
@@ -6040,7 +6045,9 @@ fn everywhere_asks_each_non_terminal_origin_and_merges_both_shelves_by_reported_
                     minutes_ago(2),
                 ),
             ],
-            Outlook::Remote(name) if name == "sleeping" => Vec::new(),
+            Outlook::Remote(name) if ["sleeping", "older", "newer"].contains(&name.as_str()) => {
+                Vec::new()
+            }
             other => panic!("unexpected listing origin: {other:?}"),
         };
         application

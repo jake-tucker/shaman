@@ -1159,7 +1159,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "That Server is too old for this; update Shaman there"
+            "That server is too old for this; update Shaman there"
         );
         assert_eq!(
             error

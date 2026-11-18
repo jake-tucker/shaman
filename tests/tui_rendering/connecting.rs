@@ -1340,7 +1340,7 @@ fn every_invite_refusal_is_precise_and_visible_on_the_step_that_failed() {
         ),
         (
             "shaman-v2-e30",
-            "That Invite is from a newer Shaman; update Shaman here",
+            "That invite is from a newer Shaman; update Shaman here",
         ),
     ] {
         let mut application = invite_entry();

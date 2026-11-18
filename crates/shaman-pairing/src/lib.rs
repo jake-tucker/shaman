@@ -896,7 +896,7 @@ pub fn parse_invite(invite: &str) -> std::result::Result<ParsedInvite, PairingFa
     if version != "v1" {
         return Err(PairingFailure::new(
             SessionErrorCode::UnsupportedInviteVersion,
-            "That Invite is from a newer Shaman; update Shaman here",
+            "That invite is from a newer Shaman; update Shaman here",
         ));
     }
     let payload = URL_SAFE_NO_PAD

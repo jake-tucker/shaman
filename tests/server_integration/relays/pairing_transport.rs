@@ -899,7 +899,7 @@ async fn what_a_serving_server_does_not_know_reads_as_it_being_too_old_for_this(
     assert_eq!(refusal_code(&refused), SessionErrorCode::ServerTooOld);
     assert_eq!(
         refused.to_string(),
-        "That Server is too old for this; update Shaman there"
+        "That server is too old for this; update Shaman there"
     );
 
     paired.shutdown().await;

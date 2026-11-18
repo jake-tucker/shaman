@@ -113,12 +113,12 @@ impl Behind {
         match self {
             Self::Peer => PairingFailure::new(
                 SessionErrorCode::PairingPeerBehind,
-                "That Server no longer works with a Shaman as old as this one: update Shaman \
+                "That server no longer works with a Shaman as old as this one: update Shaman \
                  here, and the pairing works again",
             ),
             Self::Server => PairingFailure::new(
                 SessionErrorCode::PairingServerBehind,
-                "That Server's Shaman is too old to work with this one: update Shaman there, and \
+                "That server's Shaman is too old to work with this one: update Shaman there, and \
                  the pairing works again",
             ),
         }
@@ -130,12 +130,12 @@ impl Behind {
         match self {
             Self::Peer => PairingFailure::new(
                 SessionErrorCode::PairingPeerBehind,
-                "That Server no longer pairs with a Shaman as old as this one: update Shaman \
+                "That server no longer pairs with a Shaman as old as this one: update Shaman \
                  here, then pair again",
             ),
             Self::Server => PairingFailure::new(
                 SessionErrorCode::PairingServerBehind,
-                "That Server's Shaman is too old to pair with this one: update Shaman there, then \
+                "That server's Shaman is too old to pair with this one: update Shaman there, then \
                  pair again",
             ),
         }
