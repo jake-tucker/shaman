@@ -1228,14 +1228,12 @@ impl Listings {
                 message: "This phone has no network connection".to_owned(),
             });
         }
-        // A dial abandoned by the check fails whatever waited on it, which
-        // says nothing of the ways, so then only an answer or the hold ends
-        // the wait.
+        // What fails for the check's own doing is excused and never counted,
+        // so a failure counted since is every way failing.
         let since = reach.noted();
         let checked =
             reach::check(&self.shared.redeemer, &name, &transport, &reach, deadline).await;
-        let answered =
-            checked.answered > 0 || reach.answers_after(since, checked.abandoned == 0).await;
+        let answered = checked.answered > 0 || reach.answers_after(since).await;
         if answered {
             return Ok(());
         }

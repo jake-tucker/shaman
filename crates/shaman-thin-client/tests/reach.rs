@@ -7,7 +7,13 @@
 
 mod support;
 
-use std::time::Duration;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use shaman::{
     protocol::Way,
@@ -16,8 +22,8 @@ use shaman::{
 use shaman_client::SessionCommandTimings;
 use shaman_pairing::{Keepalive, RedeemerTimings};
 use shaman_thin_client::{
-    ActError, ConversationItem, CoreTimings, ItemKind, Listing, PairingOutcome, TurnCard,
-    TurnOutcome, UnreachableHint,
+    ActError, ConversationItem, CoreTimings, ItemKind, Listing, ListingListener, PairingOutcome,
+    Subscription, TurnCard, TurnOutcome, UnreachableHint,
 };
 
 use support::{Cut, Gate, Phone, SCRIPTED, ServingServer, WORKING};
@@ -381,6 +387,149 @@ async fn a_redial_signs_once_at_most_and_a_resumed_one_signs_nothing() {
             "round {round}: the TLS session resumed, so its handshake signed nothing"
         );
     }
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+/// Hears every listing the core tells, noting whether any ever read a Remote
+/// Unreachable.
+struct Watching(AtomicBool);
+
+impl ListingListener for Watching {
+    fn changed(&self, listing: Listing) {
+        if !answering(&listing) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
+}
+
+/// Watches every listing `phone` tells from now on.
+fn watch_for_unreachable(phone: &Phone) -> (Arc<Watching>, Arc<Subscription>) {
+    let watching = Arc::new(Watching(AtomicBool::new(false)));
+    let subscription = phone.core.watch_listing(watching.clone());
+    (watching, subscription)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_request_riding_a_connection_the_check_gives_up_never_reads_the_remote_unreachable() {
+    let desk = ServingServer::start("thin-reach-riding").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    // A hold far past the test: the Remote may read Unreachable only where
+    // every way has truly failed.
+    let phone = Phone::with(timings(Duration::from_secs(600)));
+    pair_through(&phone, &desk, &gate, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, WORKING), "Map the workspace")
+        .await;
+    let listing = phone
+        .listing_until(|listing| listed(listing, "Map the workspace"))
+        .await;
+    let (watching, _subscription) = watch_for_unreachable(&phone);
+
+    // The network was swapped while the phone slept, and a Session opened as
+    // it returns asks over the connection that looks alive and is not.
+    gate.cut(Cut::Silent);
+    gate.mend();
+    let reading = phone.open(&listing.active[0].session);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    desk.begin(&workspace(&holder, WORKING), "Write the tests")
+        .await;
+    phone.core.came_to_front();
+
+    phone
+        .listing_until(|listing| listed(listing, "Write the tests"))
+        .await;
+    reading
+        .conversation_until(|items| {
+            items
+                .iter()
+                .any(|item| matches!(item.kind, ItemKind::UserMessage { .. }))
+        })
+        .await;
+    assert!(
+        !watching.0.load(Ordering::Acquire),
+        "what the check gave up never read the Remote Unreachable"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dial_left_hanging_is_abandoned_by_the_next_check_and_redialled_without_reading_unreachable()
+ {
+    let desk = ServingServer::start("thin-reach-abandoned").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let phone = Phone::with(timings(Duration::from_secs(600)));
+    pair_through(&phone, &desk, &gate, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, WORKING), "Map the workspace")
+        .await;
+    phone
+        .listing_until(|listing| listed(listing, "Map the workspace"))
+        .await;
+    let (watching, _subscription) = watch_for_unreachable(&phone);
+
+    // The phone returns over a network that has gone: what it held is given
+    // up, and the dial made in its place hears nothing.
+    gate.cut(Cut::Silent);
+    phone.core.came_to_front();
+    let attempted = gate.attempted();
+    let redialled = tokio::time::timeout(support::PROGRESS_DEADLINE, async {
+        while gate.attempted() == attempted {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    redialled.expect("redialled into the silence");
+
+    // A network comes back while that dial still hangs.
+    gate.mend();
+    desk.begin(&workspace(&holder, WORKING), "Write the tests")
+        .await;
+    phone.core.came_to_front();
+    let listing = phone
+        .listing_until(|listing| listed(listing, "Write the tests"))
+        .await;
+    assert!(answering(&listing));
+    assert!(
+        !watching.0.load(Ordering::Acquire),
+        "the dial the check abandoned never read the Remote Unreachable"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_path_change_checks_every_remote_and_redials_what_went_silent() {
+    let desk = ServingServer::start("thin-reach-path-change").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let phone = Phone::with(timings(Duration::from_secs(600)));
+    pair_through(&phone, &desk, &gate, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, WORKING), "Map the workspace")
+        .await;
+    phone
+        .listing_until(|listing| listed(listing, "Map the workspace"))
+        .await;
+    let (watching, _subscription) = watch_for_unreachable(&phone);
+    let dialled = gate.dialled();
+
+    // Wi-Fi gave way to another network while the app stayed in front.
+    gate.cut(Cut::Silent);
+    gate.mend();
+    desk.begin(&workspace(&holder, WORKING), "Write the tests")
+        .await;
+    phone.core.path_changed(true);
+
+    let listing = phone
+        .listing_until(|listing| listed(listing, "Write the tests"))
+        .await;
+    assert!(answering(&listing));
+    assert!(gate.dialled() > dialled, "redialled");
+    assert!(!watching.0.load(Ordering::Acquire));
 
     phone.shutdown();
     desk.shutdown().await;

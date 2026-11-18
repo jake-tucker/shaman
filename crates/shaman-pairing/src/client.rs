@@ -775,7 +775,18 @@ impl SharedConnection {
             };
             (made.number, made.connection.clone(), made.making.clone())
         };
-        let checked = match connection.peek().cloned() {
+        // Let go before it is given up or abandoned, so nothing asked
+        // meanwhile finds it standing and goes over it.
+        let let_go = || {
+            let mut current = self
+                .current
+                .lock()
+                .expect("shared connection lock is not poisoned");
+            if current.as_ref().is_some_and(|made| made.number == number) {
+                *current = None;
+            }
+        };
+        match connection.peek().cloned() {
             Some(Ok(carrier)) if !carrier.sender.is_closed() => {
                 let liveness = carrier.liveness.clone();
                 if matches!(
@@ -784,31 +795,25 @@ impl SharedConnection {
                 ) {
                     return CheckedConnection::Answered;
                 }
+                let_go();
                 if let Some(liveness) = liveness {
                     liveness.give_up();
                 }
                 CheckedConnection::GivenUp
             }
-            Some(_) => return CheckedConnection::NoneStanding,
+            Some(_) => CheckedConnection::NoneStanding,
             None => match tokio::time::timeout(deadline, connection).await {
-                Ok(Ok(_)) => return CheckedConnection::Answered,
-                Ok(Err(_)) => return CheckedConnection::NoneStanding,
+                Ok(Ok(_)) => CheckedConnection::Answered,
+                Ok(Err(_)) => CheckedConnection::NoneStanding,
                 Err(_) => {
+                    let_go();
                     if let Some(making) = making {
                         making.abort();
                     }
                     CheckedConnection::Abandoned
                 }
             },
-        };
-        let mut current = self
-            .current
-            .lock()
-            .expect("shared connection lock is not poisoned");
-        if current.as_ref().is_some_and(|made| made.number == number) {
-            *current = None;
         }
-        checked
     }
 
     /// What carries a request over this way, once its connection stands: the
