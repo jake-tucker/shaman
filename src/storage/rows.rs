@@ -1648,6 +1648,12 @@ enum StoredActivityPayload<'a> {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         settled_at: Option<usize>,
     },
+    /// A placeholder for an Activity of a kind this build does not know. A
+    /// Server records none of its own; it is stored as it reads, should one
+    /// ever reach storage, rather than lost.
+    Unknown {
+        sent_as: Cow<'a, str>,
+    },
 }
 
 impl StoredActivityPayload<'_> {
@@ -1861,6 +1867,11 @@ impl StoredActivityPayload<'_> {
                 to_checkout: to_checkout.map(Cow::into_owned),
                 settled_at,
             },
+            Self::Unknown { sent_as } => Activity::Unknown {
+                id,
+                turn_id,
+                kind: sent_as.into_owned(),
+            },
         })
     }
 }
@@ -2054,6 +2065,9 @@ impl<'a> From<&'a Activity> for StoredActivityPayload<'a> {
                 new_worktree: *new_worktree,
                 to_checkout: to_checkout.as_ref().map(Cow::Borrowed),
                 settled_at: *settled_at,
+            },
+            Activity::Unknown { kind, .. } => Self::Unknown {
+                sent_as: Cow::Borrowed(kind),
             },
         }
     }

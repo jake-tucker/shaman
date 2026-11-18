@@ -7,7 +7,10 @@
 //! existed at its floor, and a field added since is optional or defaulted
 //! until the floor passes the version that added it. A Session error under a
 //! code this build does not know reads as [`SessionErrorCode::Other`], its
-//! message standing for it. Administration, which only a machine's own
+//! message standing for it. An Activity of a kind it does not know reads as
+//! [`Activity::Unknown`], holding its place, and a change of a kind it does
+//! not know, on the Session's stream or another, reads as an `Unknown` change
+//! a reader passes over. Administration, which only a machine's own
 //! Clients ask, shares these tolerant types too. Only these stay strict:
 //! Config Documents, which a user writes by hand, what a Server stores for
 //! itself, and `runtime.json`.
@@ -3335,8 +3338,17 @@ pub const BROKER_SERVER_NAME: &str = "shaman";
 /// stays open for as long as the wait does.
 pub const WAIT_SUBAGENTS_TOOL: &str = "wait_subagents";
 
+/// One thing a Turn's Agent did or was asked, or a Move between Turns, as
+/// its Transcript records it.
+///
+/// It is read tolerantly of a kind this build was built without, which a
+/// newer Server may send (ADR-0078): that reads as [`Self::Unknown`], which
+/// holds the place the Activity stands in, so a Transcript from a newer
+/// Server stays whole. Every kind this build knows is read as strictly as its
+/// own shape asks; a known kind whose fields will not read is refused, never
+/// taken for an unknown one.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(remote = "Self", tag = "kind", rename_all = "snake_case")]
 pub enum Activity {
     Approval {
         id: ActivityId,
@@ -3635,6 +3647,88 @@ pub enum Activity {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         settled_at: Option<usize>,
     },
+    /// An Activity of a kind this build was built without, from a Server
+    /// newer than it. It holds the place the Activity stands in — in its
+    /// Turn, where it names one — and keeps nothing of it but its identity
+    /// and the kind it was sent as, so a reader can say something stands
+    /// there that it cannot show. A change to it is of a kind this build
+    /// does not know either, and is skipped as one. No Server records one
+    /// of its own.
+    #[serde(skip)]
+    Unknown {
+        id: ActivityId,
+        turn_id: Option<TurnId>,
+        /// The kind it was sent as, as the newer Server spells it.
+        kind: String,
+    },
+}
+
+/// Every kind of [`Activity`] this build knows, as the wire names it: a kind
+/// not among them reads as [`Activity::Unknown`]. It names each kind
+/// [`Activity`] does, and no other.
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum KnownActivityKind {
+    Approval,
+    Questionnaire,
+    Status,
+    Error,
+    ModelCalls,
+    Command,
+    FileChange,
+    ToolCall,
+    Reasoning,
+    Subagent,
+    WatchOutcome,
+    Compaction,
+    Route,
+    Reroute,
+    Subsession,
+    Move,
+    #[serde(other)]
+    Unknown,
+}
+
+/// What a placeholder keeps of an Activity of a kind this build does not
+/// know, and how it is written again.
+#[derive(Deserialize, Serialize)]
+struct UnknownActivity {
+    kind: String,
+    id: ActivityId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    turn_id: Option<TurnId>,
+}
+
+impl Serialize for Activity {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            // Written as it was read, so a reader passing it on — a Server
+            // proxying a newer Remote — hands on the same placeholder.
+            Self::Unknown { id, turn_id, kind } => UnknownActivity {
+                kind: kind.clone(),
+                id: *id,
+                turn_id: *turn_id,
+            }
+            .serialize(serializer),
+            known => Self::serialize(known, serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Activity {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let known = value
+            .get("kind")
+            .and_then(|kind| KnownActivityKind::deserialize(kind).ok())
+            .is_some_and(|kind| !matches!(kind, KnownActivityKind::Unknown));
+        if known {
+            return Self::deserialize(value).map_err(D::Error::custom);
+        }
+        let UnknownActivity { kind, id, turn_id } =
+            UnknownActivity::deserialize(value).map_err(D::Error::custom)?;
+        Ok(Self::Unknown { id, turn_id, kind })
+    }
 }
 
 /// One end of a Move: an Execution Directory, and the branch checked out in
@@ -3677,12 +3771,14 @@ impl Activity {
             | Self::Route { id, .. }
             | Self::Reroute { id, .. }
             | Self::Subsession { id, .. }
-            | Self::Move { id, .. } => *id,
+            | Self::Move { id, .. }
+            | Self::Unknown { id, .. } => *id,
         }
     }
 
     /// The Turn this Activity was recorded in, or `None` for a
-    /// [`Self::Move`], which happens between Turns.
+    /// [`Self::Move`], which happens between Turns, and for an
+    /// [`Self::Unknown`] sent as belonging to none.
     pub const fn turn_id(&self) -> Option<TurnId> {
         match self {
             Self::Approval { turn_id, .. }
@@ -3701,6 +3797,7 @@ impl Activity {
             | Self::Reroute { turn_id, .. }
             | Self::Subsession { turn_id, .. } => Some(*turn_id),
             Self::Move { .. } => None,
+            Self::Unknown { turn_id, .. } => *turn_id,
         }
     }
 
@@ -3743,7 +3840,8 @@ impl Activity {
             | Self::ModelCalls { .. }
             | Self::Route { .. }
             | Self::Reroute { .. }
-            | Self::Subsession { .. } => None,
+            | Self::Subsession { .. }
+            | Self::Unknown { .. } => None,
             Self::Command { status, .. }
             | Self::FileChange { status, .. }
             | Self::ToolCall { status, .. }
@@ -4049,6 +4147,163 @@ impl<'de> Deserialize<'de> for LapsePenalty {
             return Err(D::Error::custom("a Lapse Penalty is never negative"));
         }
         Self::from_usd(usd).ok_or_else(|| D::Error::custom("a Lapse Penalty is a USD figure"))
+    }
+}
+
+#[cfg(test)]
+mod newer_kind_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn an_activity_of_a_kind_this_build_does_not_know_reads_as_a_placeholder() {
+        let id = ActivityId::new();
+        let turn_id = TurnId::new();
+        let sent = json!({
+            "kind": "deploy_preview",
+            "id": id,
+            "turn_id": turn_id,
+            "status": "active",
+            "url": "https://preview.example.test",
+        });
+
+        let read = serde_json::from_value::<Activity>(sent).expect("an unknown kind still reads");
+
+        assert_eq!(
+            read,
+            Activity::Unknown {
+                id,
+                turn_id: Some(turn_id),
+                kind: "deploy_preview".to_owned(),
+            }
+        );
+        assert_eq!(read.id(), id);
+        assert_eq!(read.turn_id(), Some(turn_id));
+        assert_eq!(read.status(), None, "nothing is known of how it settles");
+    }
+
+    #[test]
+    fn a_placeholder_is_written_again_as_the_same_placeholder() {
+        let placeholder = Activity::Unknown {
+            id: ActivityId::new(),
+            turn_id: None,
+            kind: "deploy_preview".to_owned(),
+        };
+
+        let written = serde_json::to_value(&placeholder).expect("a placeholder is written");
+
+        assert_eq!(
+            written,
+            json!({ "kind": "deploy_preview", "id": placeholder.id() }),
+            "it belongs to no Turn, so it names none"
+        );
+        assert_eq!(
+            serde_json::from_value::<Activity>(written).expect("read again"),
+            placeholder
+        );
+    }
+
+    #[test]
+    fn a_kind_this_build_knows_is_never_taken_for_an_unknown_one() {
+        let status = Activity::Status {
+            id: ActivityId::new(),
+            turn_id: TurnId::new(),
+            text: "Thinking".to_owned(),
+        };
+        let written = serde_json::to_value(&status).expect("encode a Status");
+        assert_eq!(written["kind"], json!("status"));
+        assert_eq!(
+            serde_json::from_value::<Activity>(written).expect("decode a Status"),
+            status
+        );
+
+        let malformed = json!({
+            "kind": "status",
+            "id": ActivityId::new(),
+            "turn_id": TurnId::new(),
+        });
+        assert!(
+            serde_json::from_value::<Activity>(malformed).is_err(),
+            "a known kind missing what it requires is refused, not passed over"
+        );
+        assert!(
+            serde_json::from_value::<Activity>(json!({ "kind": "deploy_preview" })).is_err(),
+            "even an unknown kind names the Activity it is"
+        );
+    }
+
+    #[test]
+    fn a_change_of_a_kind_this_build_does_not_know_reads_as_unknown_on_every_stream() {
+        let sent = json!({ "type": "session_mood_changed", "mood": "sunny" });
+
+        assert_eq!(
+            serde_json::from_value::<SessionChange>(sent.clone()).expect("a Session change"),
+            SessionChange::Unknown
+        );
+        assert_eq!(
+            serde_json::from_value::<SessionCatalogChange>(sent.clone()).expect("a catalog change"),
+            SessionCatalogChange::Unknown
+        );
+        assert_eq!(
+            serde_json::from_value::<SubagentTreeChange>(sent).expect("a tree change"),
+            SubagentTreeChange::Unknown
+        );
+        assert!(
+            serde_json::from_value::<SessionChange>(json!({ "type": "title_changed" })).is_err(),
+            "a known change missing what it requires is refused, not passed over"
+        );
+    }
+
+    #[test]
+    fn an_update_says_whether_it_skips_a_change() {
+        let update = serde_json::from_value::<SessionUpdate>(json!({
+            "session_id": SessionId::new(),
+            "revision": 4,
+            "changes": [
+                { "type": "title_changed", "title": "Map the seams", "icon": null },
+                { "type": "session_mood_changed", "mood": "sunny" },
+            ],
+        }))
+        .expect("an update carrying an unknown change still reads");
+
+        assert!(update.skips_a_change());
+        assert!(
+            !SessionUpdate {
+                changes: update.changes[..1].to_vec(),
+                ..update
+            }
+            .skips_a_change()
+        );
+    }
+
+    #[test]
+    fn a_tree_passes_over_a_change_this_build_does_not_know() {
+        let mut tree = SubagentTreeSnapshot {
+            revision: SubagentTreeRevision(1),
+            top_level: SubagentTreeTopLevel {
+                session_id: SessionId::new(),
+                title: "Map the seams".to_owned(),
+                working_since: None,
+                monitoring_since: None,
+                status: None,
+                worked_ms: None,
+                own_working_since: None,
+                workspace_path: PathBuf::from("workspace"),
+                workspace_icon: None,
+                provider: None,
+                model: None,
+                needs_intervention: false,
+                sidekick: false,
+            },
+            subagents: Vec::new(),
+            sessions: Vec::new(),
+        };
+        let before = tree.clone();
+
+        tree.apply(SubagentTreeChange::Unknown);
+
+        assert_eq!(tree, before);
     }
 }
 
@@ -4601,6 +4856,11 @@ pub enum SessionCatalogChange {
         session_id: SessionId,
         remote_subsessions: Vec<RemoteSession>,
     },
+    /// A change of a kind this build was built without, from a Server newer
+    /// than it (ADR-0078), passed over as [`SessionChange::Unknown`] is. No
+    /// Server sends one of its own.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -4942,6 +5202,11 @@ pub enum SubagentTreeChange {
     /// it. It is the stream's last word: nothing follows it, and asking for
     /// the tree again finds no Session to answer for.
     TreeDeleted,
+    /// A change of a kind this build was built without, from a Server newer
+    /// than it (ADR-0078), passed over as [`SessionChange::Unknown`] is. No
+    /// Server sends one of its own.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -5066,8 +5331,9 @@ impl SubagentTreeSnapshot {
                     true
                 });
             }
-            // Nothing follows the tree's last word.
-            SubagentTreeChange::TreeDeleted => {}
+            // Nothing follows the tree's last word, and a change this build
+            // does not know moves nothing it holds.
+            SubagentTreeChange::TreeDeleted | SubagentTreeChange::Unknown => {}
         }
     }
 
@@ -6385,6 +6651,27 @@ pub enum SessionChange {
     SessionStatusChanged {
         status: SessionStatus,
     },
+    /// A change of a kind this build was built without, from a Server newer
+    /// than it (ADR-0078). It moves nothing a reader holds and is passed
+    /// over; a reader that meets one may say the Server is newer and some
+    /// things may not show. No Server sends one of its own.
+    #[serde(other)]
+    Unknown,
+}
+
+impl SessionChange {
+    /// Whether this is a change this build does not know, passed over.
+    pub const fn is_unknown(&self) -> bool {
+        matches!(self, Self::Unknown)
+    }
+}
+
+impl SessionUpdate {
+    /// Whether this update carries a change this build does not know, which
+    /// a reader passes over while the rest lands.
+    pub fn skips_a_change(&self) -> bool {
+        self.changes.iter().any(SessionChange::is_unknown)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

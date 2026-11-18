@@ -30,6 +30,7 @@ mod model_options;
 mod model_picker;
 mod monitoring;
 mod moves;
+mod newer_server;
 mod onboarding;
 mod pairing_back;
 mod prompt_cache;

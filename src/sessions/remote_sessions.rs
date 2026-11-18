@@ -700,7 +700,9 @@ impl SessionStore {
             | SessionCatalogChange::Deleted { .. }
             | SessionCatalogChange::UsageChanged { .. }
             | SessionCatalogChange::WorkspaceDescriptionChanged { .. }
-            | SessionCatalogChange::RemoteSubsessionsChanged { .. } => None,
+            | SessionCatalogChange::RemoteSubsessionsChanged { .. }
+            // A newer Remote's change moves nothing this build holds of it.
+            | SessionCatalogChange::Unknown => None,
         };
         if moved.is_some() {
             state.announce_trees_listing(remote);

@@ -3484,6 +3484,7 @@ fn activity_fingerprint(activity: &Activity, step: FoldStep) -> u64 {
             to.hash(&mut hasher);
             error.hash(&mut hasher);
         }
+        Activity::Unknown { kind, .. } => kind.hash(&mut hasher),
     }
     hasher.finish()
 }
@@ -4128,7 +4129,31 @@ fn render_activity_with_model_names(
             push_move_activity(projection.lines, *status, from, to, error.as_deref(), theme);
             None
         }
+        Activity::Unknown { kind, .. } => {
+            push_styled_prefixed_lines(
+                projection,
+                ContentGutter {
+                    lead: "  ",
+                    indent: "  ",
+                },
+                &unknown_activity_row(kind),
+                theme.text.subdued,
+                theme,
+            );
+            None
+        }
     }
+}
+
+/// The row an Activity of a kind this Client does not know stands as, from a
+/// Server newer than it (ADR-0078): it holds the Activity's place, saying what
+/// kind it was sent as, in words, so the Transcript stays whole.
+fn unknown_activity_row(kind: &str) -> String {
+    let kind = crate::shown_text::shown(&kind.replace('_', " "), 40);
+    if kind.trim().is_empty() {
+        return "Not shown: something from a newer Shaman".to_owned();
+    }
+    format!("Not shown: {kind}, from a newer Shaman")
 }
 
 /// Draws client-local failures in the same register as a Transcript Error
@@ -7945,6 +7970,7 @@ mod tests {
             | Activity::ModelCalls { turn_id: id, .. }
             | Activity::Reroute { turn_id: id, .. }
             | Activity::Subsession { turn_id: id, .. } => *id = turn_id,
+            Activity::Unknown { turn_id: id, .. } => *id = Some(turn_id),
             Activity::Move { .. } => {}
         }
     }

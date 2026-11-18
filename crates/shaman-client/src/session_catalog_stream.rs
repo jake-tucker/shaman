@@ -74,6 +74,10 @@ pub enum SessionCatalogEvent {
     /// The whole catalog as a fresh connection's snapshot has it, every
     /// Session deleted while the reader was away already announced.
     SessionCatalogReconciled(SessionCatalogSnapshot),
+    /// The Server sent a change of a kind this build does not know, being
+    /// newer than it, and it was passed over (ADR-0078): some of what it
+    /// moved may not show.
+    ChangeSkipped,
 }
 
 async fn open_over(
@@ -552,6 +556,9 @@ fn apply_update(
                 },
             ))
         }
+        // A newer Server's change moves nothing this client knows the catalog
+        // holds, and its reader hears that one was passed over.
+        SessionCatalogChange::Unknown => Ok(SessionCatalogEvent::ChangeSkipped),
     }
 }
 
@@ -816,6 +823,69 @@ mod tests {
                 session_id: created
             })),
             "the change after the events passed over follows its snapshot unbroken"
+        );
+        assert_eq!(received.recv().await, None);
+        assert_eq!(known, Some(HashSet::from([listed, created])));
+    }
+
+    #[tokio::test]
+    async fn a_change_a_newer_server_added_is_said_skipped_and_the_stream_goes_on() {
+        let listed = SessionId::new();
+        let created = SessionId::new();
+        let snapshot = SessionCatalogSnapshot {
+            workspace_paths: Default::default(),
+            revision: SessionCatalogRevision(2),
+            session_ids: vec![listed],
+            checkout_states: Vec::new(),
+        };
+        let update = SessionCatalogUpdate {
+            revision: SessionCatalogRevision(4),
+            change: SessionCatalogChange::Created {
+                session_id: created,
+            },
+        };
+        let response = stream_of(&[
+            (
+                SESSION_CATALOG_SNAPSHOT_EVENT,
+                Some(2),
+                serde_json::to_string(&snapshot).expect("encode the snapshot"),
+            ),
+            (
+                SESSION_CATALOG_UPDATED_EVENT,
+                Some(3),
+                serde_json::json!({
+                    "revision": 3,
+                    "change": { "type": "session_mood_changed", "session_id": listed },
+                })
+                .to_string(),
+            ),
+            (
+                SESSION_CATALOG_UPDATED_EVENT,
+                Some(4),
+                serde_json::to_string(&update).expect("encode the update"),
+            ),
+        ]);
+        let (events, mut received) = mpsc::channel::<SessionCatalogEvent>(8);
+        let (hydrated, _was_hydrated) = oneshot::channel();
+        let mut known = None;
+
+        let outcome = consume_session_catalog(response, &events, &mut known, hydrated, true, None)
+            .await
+            .expect("a change this build does not know ends nothing");
+
+        assert!(matches!(outcome, SessionCatalogOutcome::Disconnected));
+        drop(events);
+        assert_eq!(
+            received.recv().await,
+            Some(SessionCatalogEvent::ChangeSkipped),
+            "the reader is told something was passed over"
+        );
+        assert_eq!(
+            received.recv().await,
+            Some(SessionCatalogEvent::SessionCreated(SessionCreated {
+                session_id: created
+            })),
+            "the revision it carried counts, so the next follows it unbroken"
         );
         assert_eq!(received.recv().await, None);
         assert_eq!(known, Some(HashSet::from([listed, created])));

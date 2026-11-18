@@ -248,7 +248,7 @@ An agent Message a Route passed over for another Model's work. It stays where it
 _Avoid_: Draft, rejected Message
 
 **Activity**:
-User-visible progress, operational detail, or failure associated with a turn but not authored by the user or agent. A Move's Activity is the one that belongs to no Turn, since a Move happens between them.
+User-visible progress, operational detail, or failure associated with a turn but not authored by the user or agent. A Move's Activity is the one that belongs to no Turn, since a Move happens between them. An Activity of a kind a reader was built without, from a Server newer than it, holds its place in the Transcript as a placeholder naming the kind it was sent as, so the Transcript stays whole (ADR-0078).
 _Avoid_: Message, notification
 
 **Tool**:

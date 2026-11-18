@@ -39,6 +39,10 @@ pub enum SubagentTreeEvent {
     /// The tree cannot be read — its Server holds no such Session, or the
     /// Remote serving it ended the Pairing — and the subscription has ended.
     Failed(String),
+    /// The Server sent a change of a kind this build does not know, being
+    /// newer than it, and it was passed over (ADR-0078): some of what it
+    /// moved may not show. The subscription goes on.
+    ChangeSkipped,
 }
 
 /// A reconnecting subscription to the tree one Session belongs to, on the
@@ -218,6 +222,7 @@ fn decode_event(
             *revision = Some(update.revision);
             Ok(match update.change {
                 SubagentTreeChange::TreeDeleted => SubagentTreeEvent::Deleted,
+                SubagentTreeChange::Unknown => SubagentTreeEvent::ChangeSkipped,
                 change => SubagentTreeEvent::Changed(change),
             })
         }
@@ -591,6 +596,57 @@ mod tests {
             received.recv().await,
             Some(SubagentTreeEvent::Changed(next.change)),
             "the change after the events passed over follows its snapshot unbroken"
+        );
+        assert_eq!(received.recv().await, None);
+    }
+
+    #[tokio::test]
+    async fn a_change_a_newer_server_added_is_said_skipped_and_the_stream_goes_on() {
+        let opened = snapshot(4);
+        let next = settle(6);
+        let response = stream_of(&[
+            (
+                SUBAGENT_TREE_SNAPSHOT_EVENT,
+                Some(4),
+                serde_json::to_string(&opened).expect("encode the snapshot"),
+            ),
+            (
+                SUBAGENT_TREE_UPDATED_EVENT,
+                Some(5),
+                serde_json::json!({
+                    "revision": 5,
+                    "change": { "type": "subagent_mood_changed", "mood": "sunny" },
+                })
+                .to_string(),
+            ),
+            (
+                SUBAGENT_TREE_UPDATED_EVENT,
+                Some(6),
+                serde_json::to_string(&next).expect("encode the update"),
+            ),
+        ]);
+        let (events, mut received) = mpsc::channel(8);
+
+        let outcome = consume(response, &events).await;
+
+        assert!(
+            matches!(outcome, StreamOutcome::Disconnected { hydrated: true }),
+            "a change this build does not know ends nothing"
+        );
+        drop(events);
+        assert_eq!(
+            received.recv().await,
+            Some(SubagentTreeEvent::Snapshot(opened))
+        );
+        assert_eq!(
+            received.recv().await,
+            Some(SubagentTreeEvent::ChangeSkipped),
+            "the reader is told something was passed over"
+        );
+        assert_eq!(
+            received.recv().await,
+            Some(SubagentTreeEvent::Changed(next.change)),
+            "the revision it carried counts, so the next follows it unbroken"
         );
         assert_eq!(received.recv().await, None);
     }

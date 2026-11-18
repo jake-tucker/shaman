@@ -905,6 +905,7 @@ impl<'a> Transcript<'a> {
             Activity::Move { from, to, .. } => {
                 format!("from {from} to {to}")
             }
+            Activity::Unknown { .. } => UNKNOWN_ACTIVITY.to_owned(),
         }
     }
 
@@ -1131,6 +1132,7 @@ impl<'a> Transcript<'a> {
                 }
             }
             Activity::Reasoning { .. } => {}
+            Activity::Unknown { .. } => whole.push_str(UNKNOWN_ACTIVITY),
         }
         Ok(whole)
     }
@@ -1258,6 +1260,10 @@ fn file_change(change: &FileChange, path: impl Fn(&Path) -> String) -> String {
     }
 }
 
+/// What an Activity of a kind this build does not know says of itself: only
+/// that it stands there, sent by a Server newer than this one (ADR-0078).
+const UNKNOWN_ACTIVITY: &str = "an Activity this Shaman cannot read, from a newer Shaman";
+
 /// What an Activity's line names it as: its kind, and how it stands where it
 /// settles through a lifecycle.
 fn activity_label(activity: &Activity) -> Spans {
@@ -1320,6 +1326,7 @@ fn activity_label(activity: &Activity) -> Spans {
         Activity::Reroute { .. } => "reroute".to_owned(),
         Activity::ModelCalls { .. } => "model calls".to_owned(),
         Activity::Move { status, .. } => format!("move [{}]", stood(*status)),
+        Activity::Unknown { kind, .. } => kind.replace('_', " "),
         Activity::Subsession {
             session_id,
             origin,

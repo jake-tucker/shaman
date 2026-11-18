@@ -2934,7 +2934,7 @@ fn agent_selection_change_is_typed_and_replaceable() {
         serde_json::from_value::<SessionUpdate>(expected).expect("decode Agent Selection update"),
         update
     );
-    assert!(
+    assert_eq!(
         serde_json::from_value::<SessionUpdate>(json!({
             "session_id": "0198b27e-26ec-7c4c-a83b-a83a4787453f",
             "revision": 2,
@@ -2947,8 +2947,11 @@ fn agent_selection_change_is_typed_and_replaceable() {
                 }
             }]
         }))
-        .is_err(),
-        "the removed one-time Agent binding is not a compatibility path"
+        .expect("a change this build does not know still reads")
+        .changes,
+        [SessionChange::Unknown],
+        "the removed one-time Agent binding is not a compatibility path: it is passed over as \
+         any change this build does not know is"
     );
 }
 

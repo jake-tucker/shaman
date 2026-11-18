@@ -599,6 +599,9 @@ impl Aside {
                 self.stand_in = None;
                 true
             }
+            // A change passed over moves nothing the Aside draws; that its
+            // Origin is newer is said elsewhere.
+            SubagentTreeEvent::ChangeSkipped => false,
             SubagentTreeEvent::Changed(change) => {
                 if self.tree.through.as_ref() != Some(&through) {
                     return false;

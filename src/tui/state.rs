@@ -2266,6 +2266,12 @@ impl TuiState {
     }
 
     fn apply_origin_catalog(&mut self, outlook: &Outlook, event: ManagedEvent) {
+        // A change passed over is the Origin's own news, whichever Outlook
+        // the reader is turned toward.
+        if matches!(event, ManagedEvent::ChangeSkipped) {
+            self.note_newer_server(outlook);
+            return;
+        }
         if let ManagedEvent::ModelCatalog(catalog) = event {
             self.model_picker.adopt_catalog(outlook.clone(), catalog);
             if *outlook == Outlook::Local {
@@ -2881,6 +2887,9 @@ impl TuiState {
                 self.fatal_error = None;
             }
             ManagedEvent::RemoteRecovered => self.end_recovery(&Outlook::Local),
+            // A change the local Server's catalog passed over says that
+            // Server is newer.
+            ManagedEvent::ChangeSkipped => self.note_newer_server(&Outlook::Local),
             // The managed catalog stream is the local Server's, so the
             // listing it pushes is the Local Outlook's whichever Outlook is
             // on screen; a Remote's is taken in `apply_origin_catalog`.
@@ -3010,7 +3019,8 @@ impl TuiState {
             | ManagedEvent::CheckoutStateChanged(_)
             | ManagedEvent::SessionCreated(_)
             | ManagedEvent::SessionUsageChanged(_)
-            | ManagedEvent::WorkspaceDescriptionChanged(_) => {}
+            | ManagedEvent::WorkspaceDescriptionChanged(_)
+            | ManagedEvent::ChangeSkipped => {}
             ManagedEvent::SessionRemoteSubsessionsChanged(changed) => {
                 self.sidebar.set_remote_subsessions_origin(
                     outlook.clone(),
@@ -3103,7 +3113,8 @@ impl TuiState {
             | ManagedEvent::SessionCreated(_)
             | ManagedEvent::SessionWorkingChanged(_)
             | ManagedEvent::SessionMonitoringChanged(_)
-            | ManagedEvent::SessionUsageChanged(_) => {}
+            | ManagedEvent::SessionUsageChanged(_)
+            | ManagedEvent::ChangeSkipped => {}
             ManagedEvent::SessionStandingInputsChanged(changed) => {
                 self.session_picker.set_standing_inputs(
                     outlook.clone(),
@@ -3376,12 +3387,29 @@ impl TuiState {
         self.sync_composer_completion();
     }
 
+    /// Says, once for each Server, that the Server `outlook` names is newer
+    /// than this Client and some things may not show: one of its streams
+    /// sent a change this Client does not know, which was passed over
+    /// (ADR-0078).
+    pub(super) fn note_newer_server(&mut self, outlook: &Outlook) {
+        self.application_notice.receive_newer_server(outlook);
+    }
+
     /// Lands `event` on the open Session, answering whether it moved
     /// anything: an update the Session already holds, or any event while
     /// Session events are blocked, is passed over with all it would set off.
     fn apply_session(&mut self, event: SessionEvent) -> Result<bool> {
         if self.session_events_blocked {
             return Ok(false);
+        }
+        // The open Session is on the Server the Outlook names, and an update
+        // passing over a change says that Server is newer, whether or not
+        // the rest of it lands.
+        if let SessionEvent::Updated(update) = &event
+            && update.skips_a_change()
+        {
+            let outlook = self.outlook.clone();
+            self.note_newer_server(&outlook);
         }
         // What the event means for the view, read before the event is consumed.
         // A Snapshot replaces the Session wholesale, so it always resettles the
@@ -7127,6 +7155,12 @@ impl Application {
                 ))
             }
             ApplicationEvent::SubagentTree { through, event } => {
+                // A tree is its Origin's, and a change it passed over says
+                // that Origin is newer.
+                if matches!(event, SubagentTreeEvent::ChangeSkipped) {
+                    self.state.note_newer_server(&through.origin);
+                    return Ok(ApplicationTransition::Continue);
+                }
                 let open = self.state.route.clone();
                 let named = self.state.aside.catalog_origins();
                 self.state.aside.receive_tree(through, event, open.as_ref());
@@ -11564,6 +11598,8 @@ impl Application {
         let listed_by_picker = self.state.session_picker.includes_origin(outlook);
         let named_by_aside = self.state.aside.catalog_origins().contains(outlook);
         outlook == &self.state.outlook
+            // That an Origin is newer is said whichever Outlook is turned to.
+            || matches!(event, ManagedEvent::ChangeSkipped)
             || matches!(event, ManagedEvent::WorkspaceListing(_))
             || (matches!(event, ManagedEvent::ModelCatalog(_))
                 && (listed_by_sidebar || listed_by_picker || named_by_aside))

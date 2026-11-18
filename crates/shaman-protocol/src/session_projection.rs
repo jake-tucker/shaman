@@ -674,6 +674,8 @@ impl ValidatedChanges {
                         .clone_from(skill_invocations);
                 }
                 SessionChange::SessionStatusChanged { status } => next.session.status = *status,
+                // A change this build does not know moves nothing it holds.
+                SessionChange::Unknown => {}
             }
         }
         self.targets
@@ -767,7 +769,8 @@ impl<'a> Validation<'a> {
             | SessionChange::SessionWaitingOnSubagentsChanged { .. }
             | SessionChange::WorkspaceChanged { .. }
             | SessionChange::Moved { .. }
-            | SessionChange::SessionStatusChanged { .. } => None,
+            | SessionChange::SessionStatusChanged { .. }
+            | SessionChange::Unknown => None,
             SessionChange::PromptAdded { prompt } => {
                 if self.prompts.position(|held| held.id == prompt.id).is_some() {
                     bail!("Session update reused a Prompt identity");
@@ -1904,7 +1907,8 @@ impl From<&Activity> for ActivityStanding {
             | Activity::Error { .. }
             | Activity::WatchOutcome { .. }
             | Activity::Route { .. }
-            | Activity::Reroute { .. } => Self::Other,
+            | Activity::Reroute { .. }
+            | Activity::Unknown { .. } => Self::Other,
         }
     }
 }
@@ -2034,6 +2038,106 @@ mod tests {
             cost_details: None,
             model_shares: Vec::new(),
         }
+    }
+
+    /// `value`, a Session update as a Server newer than this build sends it.
+    fn update_from_a_newer_server(value: serde_json::Value) -> SessionUpdate {
+        serde_json::from_value(value).expect("an update from a newer Server still reads")
+    }
+
+    #[test]
+    fn an_activity_of_a_kind_this_build_does_not_know_holds_its_place_in_order() {
+        let session_id = SessionId::new();
+        let turn_id = TurnId::new();
+        let (before, newer, after) = (ActivityId::new(), ActivityId::new(), ActivityId::new());
+        let mut snapshot = empty_snapshot(session_id);
+        snapshot.turns.push(active_continuation(turn_id));
+        let update = update_from_a_newer_server(serde_json::json!({
+            "session_id": session_id,
+            "revision": 2,
+            "changes": [
+                { "type": "activity_added", "activity": {
+                    "kind": "status", "id": before, "turn_id": turn_id, "text": "Planning",
+                } },
+                { "type": "activity_added", "activity": {
+                    "kind": "deploy_preview", "id": newer, "turn_id": turn_id,
+                    "status": "active", "url": "https://preview.example.test",
+                } },
+                { "type": "activity_added", "activity": {
+                    "kind": "error", "id": after, "turn_id": turn_id, "text": "Build failed",
+                } },
+            ],
+        }));
+
+        apply_update(&mut snapshot, &update).expect("the update lands whole");
+
+        assert_eq!(
+            snapshot.transcript,
+            [before, newer, after]
+                .map(|activity_id| TranscriptItem::Activity { activity_id })
+                .to_vec(),
+            "the Activity this build cannot show stands where it was added"
+        );
+        assert_eq!(
+            snapshot.activities[1],
+            Activity::Unknown {
+                id: newer,
+                turn_id: Some(turn_id),
+                kind: "deploy_preview".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_snapshot_from_a_newer_server_keeps_its_unknown_activity_in_order() {
+        let session_id = SessionId::new();
+        let turn_id = TurnId::new();
+        let (newer, after) = (ActivityId::new(), ActivityId::new());
+        let mut snapshot = empty_snapshot(session_id);
+        snapshot.turns.push(active_continuation(turn_id));
+        snapshot.activities = vec![
+            Activity::Unknown {
+                id: newer,
+                turn_id: Some(turn_id),
+                kind: "deploy_preview".to_owned(),
+            },
+            Activity::Status {
+                id: after,
+                turn_id,
+                text: "Planning".to_owned(),
+            },
+        ];
+        snapshot.transcript = [newer, after]
+            .map(|activity_id| TranscriptItem::Activity { activity_id })
+            .to_vec();
+
+        let read = serde_json::from_value::<SessionSnapshot>(
+            serde_json::to_value(&snapshot).expect("encode the snapshot"),
+        )
+        .expect("decode the snapshot");
+
+        assert_eq!(read, snapshot);
+    }
+
+    #[test]
+    fn a_change_this_build_does_not_know_is_passed_over_and_the_rest_land() {
+        let session_id = SessionId::new();
+        let mut snapshot = empty_snapshot(session_id);
+        let update = update_from_a_newer_server(serde_json::json!({
+            "session_id": session_id,
+            "revision": 2,
+            "changes": [
+                { "type": "session_mood_changed", "mood": "sunny" },
+                { "type": "title_changed", "title": "Map the seams", "icon": null },
+            ],
+        }));
+        assert!(update.skips_a_change());
+
+        let landed = land_update(&mut snapshot, &update).expect("the update lands");
+
+        assert_eq!(landed, [None, None], "the unknown change moved nothing");
+        assert_eq!(snapshot.title, "Map the seams");
+        assert_eq!(snapshot.revision, SessionRevision(2));
     }
 
     #[test]

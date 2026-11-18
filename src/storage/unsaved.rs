@@ -494,6 +494,7 @@ fn moved_row(change: &SessionChange) -> Option<Table> {
         | SessionChange::SessionWatchesChanged { .. }
         | SessionChange::SessionWaitingOnSubagentsChanged { .. }
         | SessionChange::CurrentModelChanged { .. }
-        | SessionChange::SessionStatusChanged { .. } => None,
+        | SessionChange::SessionStatusChanged { .. }
+        | SessionChange::Unknown => None,
     }
 }

@@ -488,6 +488,66 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn a_change_or_activity_a_newer_server_added_arrives_without_ending_the_stream() {
+        let session_id = SessionId::new();
+        let opened = snapshot(session_id, 3);
+        let activity_id = crate::protocol::ActivityId::new();
+        let response = stream_of(&[
+            (
+                SESSION_SNAPSHOT_EVENT,
+                Some(3),
+                serde_json::to_string(&opened).expect("encode the snapshot"),
+            ),
+            (
+                SESSION_UPDATED_EVENT,
+                Some(4),
+                serde_json::json!({
+                    "session_id": session_id,
+                    "revision": 4,
+                    "changes": [
+                        { "type": "session_mood_changed", "mood": "sunny" },
+                        { "type": "activity_added", "activity": {
+                            "kind": "deploy_preview", "id": activity_id,
+                        } },
+                    ],
+                })
+                .to_string(),
+            ),
+        ]);
+        let (events, mut received) = mpsc::channel(SESSION_EVENT_CAPACITY);
+
+        let outcome = consume(response, session_id, &events, &mut None).await;
+
+        assert!(
+            matches!(outcome, StreamOutcome::Disconnected { hydrated: true }),
+            "neither breaks the protocol"
+        );
+        drop(events);
+        assert_eq!(
+            received.recv().await,
+            Some(Ok(SessionEvent::snapshot(opened)))
+        );
+        let Some(Ok(SessionEvent::Updated(update))) = received.recv().await else {
+            panic!("the update arrives");
+        };
+        assert!(
+            update.skips_a_change(),
+            "its reader can tell one was skipped"
+        );
+        assert_eq!(
+            update.changes[1],
+            SessionChange::ActivityAdded {
+                activity: crate::protocol::Activity::Unknown {
+                    id: activity_id,
+                    turn_id: None,
+                    kind: "deploy_preview".to_owned(),
+                },
+            },
+            "the Activity arrives as its placeholder"
+        );
+    }
+
     /// The stream of a Session's snapshot at `revision` alone, as a Server
     /// sends it before the Server ends it.
     fn snapshot_stream(session_id: SessionId, revision: u64) -> TransportResponse {

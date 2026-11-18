@@ -325,6 +325,9 @@ pub enum ManagedEvent {
     /// client hiding Subsessions reads it wherever it lists that Session.
     SessionRemoteSubsessionsChanged(SessionRemoteSubsessionsChanged),
     SessionCatalogReconciled(SessionCatalogSnapshot),
+    /// The Server's catalog sent a change of a kind this build does not
+    /// know, being newer than it, and it was passed over (ADR-0078).
+    ChangeSkipped,
     Fatal(String),
 }
 
@@ -417,6 +420,7 @@ impl From<SessionCatalogEvent> for ManagedEvent {
             SessionCatalogEvent::SessionCatalogReconciled(snapshot) => {
                 Self::SessionCatalogReconciled(snapshot)
             }
+            SessionCatalogEvent::ChangeSkipped => Self::ChangeSkipped,
         }
     }
 }
