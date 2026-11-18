@@ -632,17 +632,15 @@ async fn a_remote_whose_commit_never_landed_is_dropped_as_the_core_opens() {
             .await,
         PairingOutcome::Paired { .. }
     ));
-    let core = phone.core.clone();
-    drop(core);
-
-    // As the app ended mid-commit leaves it: the Remote marked uncommitted.
-    let path = phone.directory().join("remotes.json");
-    let mut remotes: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-    remotes[0]["uncommitted"] = true.into();
-    std::fs::write(&path, serde_json::to_vec(&remotes).unwrap()).unwrap();
-
-    let phone = phone.relaunched();
+    // As the app ended mid-commit leaves it: the Remote marked uncommitted,
+    // with nothing of the core left running to write over that.
+    let phone = phone.relaunched_after(|directory| {
+        let path = directory.join("remotes.json");
+        let mut remotes: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        remotes[0]["uncommitted"] = true.into();
+        std::fs::write(&path, serde_json::to_vec(&remotes).unwrap()).unwrap();
+    });
     assert!(phone.servers().await.remotes.is_empty());
     assert_eq!(phone.outlook().await, Outlook::Nowhere);
     phone.shutdown();

@@ -545,6 +545,12 @@ impl Phone {
 
     /// The phone after the app was ended and launched again.
     pub fn relaunched(self) -> Self {
+        self.relaunched_after(|_| {})
+    }
+
+    /// The phone after the app was ended, its directory changed by `change`
+    /// while nothing of the core runs to write over it, and launched again.
+    pub fn relaunched_after(self, change: impl FnOnce(&std::path::Path)) -> Self {
         let Self {
             directory,
             key,
@@ -552,6 +558,7 @@ impl Phone {
             core,
         } = self;
         drop(core);
+        change(directory.path());
         let core = open(&directory, &key, timings);
         Self {
             directory,
