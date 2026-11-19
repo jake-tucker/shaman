@@ -67,6 +67,8 @@ pub(crate) fn remote(name: &str, sessions: Vec<SessionSummary>) -> Answered {
         workspaces: None,
         unreached: None,
         local_only: false,
+        agent: None,
+        models: None,
     }
 }
 
@@ -1431,4 +1433,41 @@ fn only_the_unreachable_remotes_in_scope_stand_as_rows() {
     assert!(narrowed_to_desk.unreachable.is_empty());
     let everywhere = read(&[desk, lab]);
     assert_eq!(everywhere.unreachable.len(), 1);
+}
+
+#[tokio::test]
+async fn what_a_new_session_would_get_is_asked_each_time_it_is_wanted_and_again_while_unanswered() {
+    let wanted = Arc::new(Notify::new());
+    let asked = Arc::new(AtomicU64::new(0));
+    let (told, mut heard) = tokio::sync::mpsc::unbounded_channel();
+    let counting = asked.clone();
+    let asker = tokio::spawn(ask_for_agent(
+        wanted.clone(),
+        TryNow::never(),
+        SessionCommandTimings {
+            initial_recovery_backoff: Duration::from_millis(1),
+            max_recovery_backoff: Duration::from_millis(5),
+            attachment_fetch_timeout: Duration::from_secs(5),
+        },
+        move || {
+            let asked = counting.fetch_add(1, Ordering::AcqRel);
+            async move {
+                match asked {
+                    // The first is not answered, and is asked again.
+                    0 => Err(anyhow::anyhow!("not answered")),
+                    1 => Ok(NewSessionAgent::NoAgent),
+                    _ => Ok(NewSessionAgent::NotSaid),
+                }
+            }
+        },
+        move |agent| told.send(agent).is_ok(),
+    ));
+    // Reached: asked.
+    wanted.notify_one();
+    assert_eq!(heard.recv().await, Some(NewSessionAgent::NoAgent));
+    assert_eq!(asked.load(Ordering::Acquire), 2);
+    // The Models moved: asked again.
+    wanted.notify_one();
+    assert_eq!(heard.recv().await, Some(NewSessionAgent::NotSaid));
+    asker.abort();
 }

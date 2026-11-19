@@ -695,3 +695,21 @@ async fn a_prompt_written_instead_once_the_first_began_the_session_goes_back_as_
     phone.shutdown();
     desk.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_landing_shows_the_agent_its_server_says_a_new_session_would_get() {
+    let desk = ServingServer::start("thin-begin-agent").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let phone = paired_through(&desk, &gate).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    remember(&phone, &desk, &workspace(&holder, WORKING), WORKING).await;
+
+    // The test Server's one Provider lists no Models, so a Session begun
+    // now would get none, and its health says so.
+    let landing = phone.landing_until(|landing| landing.agent.is_some()).await;
+    assert_eq!(landing.agent.as_deref(), Some("Agent unavailable"));
+    assert!(landing.can_send, "the Server's refusal says the rest");
+
+    phone.shutdown();
+    desk.shutdown().await;
+}

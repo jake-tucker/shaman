@@ -248,6 +248,10 @@ impl ThinClient {
     /// cancelled.
     pub fn watch_landing(&self, listener: Arc<dyn LandingListener>) -> Arc<Subscription> {
         let inner = self.inner.clone();
+        // What a new Session would get is read again as the screen opens.
+        if let Some((remote, _)) = inner.remotes.standing() {
+            inner.listing.ask_for_agent(&remote);
+        }
         let mut outlook = inner.remotes.outlook();
         let mut moved = inner.listing.moved();
         let mut noted = inner.landing_note.subscribe();

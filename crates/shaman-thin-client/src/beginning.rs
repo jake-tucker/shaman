@@ -32,7 +32,8 @@
 use std::path::PathBuf;
 
 use shaman_protocol::{
-    CreateSessionRequest, ExecutionDirectory, InitialPrompt, SessionId, SessionSnapshot,
+    AgentSelection, CreateSessionRequest, ExecutionDirectory, InitialPrompt, ModelCatalog,
+    ModelOptionKind, ModelOptionValue, NewSessionAgent, SessionId, SessionSnapshot,
 };
 
 use crate::device::RememberedWorkspace;
@@ -63,6 +64,10 @@ pub struct Landing {
     /// Said where no Workspace is remembered for the Outlook's Remote,
     /// asking for one.
     pub asks: Option<String>,
+    /// The Agent a Session begun here would get, shown and not chosen, as its
+    /// Server's health last said: "Agent unavailable" where it says none,
+    /// and none where it has yet to say, or is too old to.
+    pub agent: Option<String>,
     /// Said above the composer while the Outlook's Remote is Unreachable,
     /// when the composer takes a draft and nothing begins.
     pub unreachable: Option<String>,
@@ -104,6 +109,8 @@ pub(crate) struct Known {
     pub unreachable: bool,
     /// Whether the phone holds more than one Remote, and so names Origins.
     pub origin_named: bool,
+    /// The Agent a Session begun there would get, in words.
+    pub agent: Option<String>,
 }
 
 /// The Landing where the Outlook stands at the Remote `remote`, in the
@@ -120,6 +127,7 @@ pub(crate) fn landing(
             place: String::new(),
             workspace: None,
             asks: Some("Pair with a server to begin a session there".to_owned()),
+            agent: None,
             unreachable: None,
             note,
             placeholder: PLACEHOLDER.to_owned(),
@@ -155,6 +163,7 @@ pub(crate) fn landing(
         asks: workspace
             .is_none()
             .then(|| asks(known.origin_named.then_some(remote))),
+        agent: known.agent.clone(),
         can_send: workspace.is_some() && unreachable.is_none(),
         unreachable,
         note,
@@ -173,6 +182,66 @@ pub(crate) fn asks(named: Option<&str>) -> String {
     format!(
         "Choose a workspace{on} to begin in: narrow the listing to one, or open a session there."
     )
+}
+
+/// Said where a Server says a Session begun now would get no Agent: no
+/// Provider can serve, or its Models are not known yet. Its refusal says
+/// the rest.
+pub(crate) const AGENT_UNAVAILABLE: &str = "Agent unavailable";
+
+/// The Agent `agent` says a new Session would get, in words, named as
+/// `models` names its Provider, its Model and each choice made of its
+/// Options: none where its Server has yet to say, or is too old to.
+pub(crate) fn agent_words(
+    agent: &NewSessionAgent,
+    models: Option<&ModelCatalog>,
+) -> Option<String> {
+    match agent {
+        NewSessionAgent::NotSaid => None,
+        NewSessionAgent::NoAgent => Some(AGENT_UNAVAILABLE.to_owned()),
+        NewSessionAgent::Agent(selection) => Some(selection_words(selection, models)),
+    }
+}
+
+/// `selection` as "Claude · Fable 5.2 · high", by the names `models` gives,
+/// and by its identities where it gives none.
+fn selection_words(selection: &AgentSelection, models: Option<&ModelCatalog>) -> String {
+    let provider = models.and_then(|models| {
+        models
+            .providers
+            .iter()
+            .find(|provider| provider.provider == selection.provider)
+    });
+    let model = models.and_then(|models| models.model(&selection.provider, &selection.model));
+    let choices = selection.options.iter().filter_map(|chosen| {
+        let option = model?
+            .options
+            .iter()
+            .find(|option| option.id == chosen.id)?;
+        let (ModelOptionKind::Select { choices, .. }, ModelOptionValue::Select { choice }) =
+            (&option.kind, &chosen.value)
+        else {
+            return None;
+        };
+        choices
+            .iter()
+            .find(|candidate| candidate.id == *choice)
+            .map(|candidate| candidate.label.clone())
+    });
+    [
+        provider.map_or_else(
+            || selection.provider.as_str().to_owned(),
+            |provider| provider.display_name.clone(),
+        ),
+        model.map_or_else(
+            || selection.model.as_str().to_owned(),
+            |model| model.display_name.clone(),
+        ),
+    ]
+    .into_iter()
+    .chain(choices)
+    .collect::<Vec<_>>()
+    .join(" · ")
 }
 
 /// How a Session being begun stands, until its Server is seen holding it.
@@ -312,6 +381,7 @@ mod tests {
             description: Some("A terminal client for coding agents".to_owned()),
             unreachable: false,
             origin_named: true,
+            agent: None,
         };
         let landing = landing(Some(("desk", Some(&workspace))), &known, None);
         assert_eq!(landing.title, "New session");
@@ -330,6 +400,83 @@ mod tests {
         assert_eq!(landing.note, None);
         assert!(landing.can_send);
         assert_eq!(landing.draft, LANDING_DRAFT);
+    }
+
+    fn catalog() -> ModelCatalog {
+        serde_json::from_value(serde_json::json!({
+            "providers": [{
+                "provider": "claude",
+                "display_name": "Claude",
+                "status": {"state": "fresh"},
+                "models": [{
+                    "provider": "claude",
+                    "id": "claude-fable-5-2",
+                    "display_name": "Fable 5.2",
+                    "description": "",
+                    "is_default": true,
+                    "availability": "available",
+                    "details": serde_json::to_value(shaman_protocol::ModelDetails::default()).unwrap(),
+                    "options": [{
+                        "id": "effort",
+                        "label": "Effort",
+                        "description": null,
+                        "role": "reasoning_effort",
+                        "kind": {
+                            "type": "select",
+                            "default": "medium",
+                            "choices": [
+                                {"id": "medium", "label": "medium", "description": null,
+                                 "availability": "available"},
+                                {"id": "high", "label": "high", "description": null,
+                                 "availability": "available"}
+                            ]
+                        }
+                    }]
+                }]
+            }]
+        }))
+        .expect("a Model Catalog")
+    }
+
+    fn fable(effort: &str) -> AgentSelection {
+        serde_json::from_value(serde_json::json!({
+            "provider": "claude",
+            "model": "claude-fable-5-2",
+            "options": [{"id": "effort", "value": {"type": "select", "choice": effort}}]
+        }))
+        .expect("an Agent Selection")
+    }
+
+    #[test]
+    fn the_agent_is_named_as_the_model_catalog_names_it_and_unavailable_where_there_is_none() {
+        let models = catalog();
+        assert_eq!(
+            agent_words(&NewSessionAgent::Agent(fable("high")), Some(&models)).as_deref(),
+            Some("Claude · Fable 5.2 · high")
+        );
+        assert_eq!(
+            agent_words(&NewSessionAgent::Agent(fable("high")), None).as_deref(),
+            Some("claude · claude-fable-5-2"),
+            "by its identities before the catalog names it"
+        );
+        assert_eq!(
+            agent_words(&NewSessionAgent::NoAgent, Some(&models)).as_deref(),
+            Some("Agent unavailable")
+        );
+        assert_eq!(
+            agent_words(&NewSessionAgent::NotSaid, Some(&models)),
+            None,
+            "a Server too old to say shows no line"
+        );
+        let landing = landing(
+            Some(("desk", Some(&remembered("shaman")))),
+            &Known {
+                agent: Some("Agent unavailable".to_owned()),
+                ..Known::default()
+            },
+            None,
+        );
+        assert_eq!(landing.agent.as_deref(), Some("Agent unavailable"));
     }
 
     #[test]

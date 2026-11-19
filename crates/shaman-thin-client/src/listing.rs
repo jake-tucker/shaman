@@ -37,9 +37,10 @@ use shaman_client::{
 };
 use shaman_pairing::{Redeemer, StoredRemote};
 use shaman_protocol::{
-    Author, CheckoutKind, CheckoutRevision, CheckoutSummary, SessionError, SessionErrorCode,
-    SessionId, SessionListItem, SessionStanding, SessionSummary, SessionTimestamp,
-    SourceControlAvailability, StandingReading, Workspace, WorkspaceId, WorkspacePaths,
+    Author, CheckoutKind, CheckoutRevision, CheckoutSummary, ModelCatalog, NewSessionAgent,
+    SessionError, SessionErrorCode, SessionId, SessionListItem, SessionStanding, SessionSummary,
+    SessionTimestamp, SourceControlAvailability, StandingReading, Workspace, WorkspaceId,
+    WorkspacePaths,
 };
 use tokio::{runtime::Handle, sync::Notify, sync::watch, task::JoinHandle};
 
@@ -425,6 +426,12 @@ pub(crate) struct Answered {
     /// Whether every way it is dialled by is an address on the local
     /// network.
     pub local_only: bool,
+    /// The Agent a Session begun there with none would get, as its health
+    /// last said, or none before it has been asked.
+    pub agent: Option<NewSessionAgent>,
+    /// Its Model Catalog, which names that Agent, or none before its Session
+    /// catalog has first carried one.
+    pub models: Option<ModelCatalog>,
 }
 
 impl Answered {
@@ -1047,6 +1054,8 @@ struct Followed {
     /// Whether it answers, as what is asked of it over `commands` finds.
     reach: Reach,
     commands: SessionCommands,
+    /// Told to ask the Remote again which Agent a new Session would get.
+    agent_wanted: Arc<Notify>,
     /// Its catalog's reader and its listing's asker, which go with it.
     _readers: Readers,
 }
@@ -1318,6 +1327,20 @@ impl Listings {
             .map(|followed| followed.answered.fingerprint.clone())
     }
 
+    /// Asks the Remote `name` again which Agent a new Session would get, as
+    /// the Landing opens.
+    pub fn ask_for_agent(&self, name: &str) {
+        if let Some(followed) = self
+            .shared
+            .lock()
+            .remotes
+            .iter()
+            .find(|followed| followed.answered.name == name)
+        {
+            followed.agent_wanted.notify_one();
+        }
+    }
+
     /// What the listing knows of the Workspace at `workspace` on the Remote
     /// `name`, as the Landing names it.
     pub fn landing(&self, name: &str, workspace: Option<&Path>) -> crate::beginning::Known {
@@ -1347,6 +1370,10 @@ impl Listings {
                 .filter(|text| !text.trim().is_empty()),
             unreachable: remote.unreached.is_some(),
             origin_named: state.remotes.len() > 1,
+            agent: remote
+                .agent
+                .as_ref()
+                .and_then(|agent| crate::beginning::agent_words(agent, remote.models.as_ref())),
         }
     }
 
@@ -1455,6 +1482,7 @@ impl Listings {
             transport,
             reach,
             commands: SessionCommands::new(reaching, self.shared.timings),
+            agent_wanted: Arc::new(Notify::new()),
             _readers: Readers(Vec::new()),
         });
         self.shared.render();
@@ -1526,6 +1554,7 @@ impl Shared {
         ));
         let commands = SessionCommands::new(reaching, self.timings);
         let wanted = Arc::new(Notify::new());
+        let agent_wanted = Arc::new(Notify::new());
         let generation = stored.generation;
         reach.settle();
         let reading = self.runtime.spawn(follow_reach(
@@ -1541,6 +1570,33 @@ impl Shared {
             name.clone(),
             generation,
             wanted.clone(),
+            agent_wanted.clone(),
+        ));
+        let shared = Arc::downgrade(self);
+        let agent_taker = name.clone();
+        let health = commands.clone();
+        let agent_asker = self.runtime.spawn(ask_for_agent(
+            agent_wanted.clone(),
+            transport.try_now(),
+            self.timings,
+            move || {
+                let health = health.clone();
+                async move {
+                    health
+                        .health()
+                        .await
+                        .map(|health| health.new_session_agent())
+                }
+            },
+            move |agent| {
+                let Some(shared) = shared.upgrade() else {
+                    return false;
+                };
+                shared.change(&agent_taker, generation, |answered| {
+                    answered.agent = Some(agent);
+                });
+                true
+            },
         ));
         let shared = Arc::downgrade(self);
         let taker = name.clone();
@@ -1568,12 +1624,15 @@ impl Shared {
                 workspaces: None,
                 unreached: None,
                 local_only: false,
+                agent: None,
+                models: None,
             },
             generation,
             transport,
             reach,
             commands,
-            _readers: Readers(vec![reading, reader, asker]),
+            agent_wanted,
+            _readers: Readers(vec![reading, reader, asker, agent_asker]),
         }
     }
 
@@ -1693,13 +1752,29 @@ async fn follow_catalog(
     name: String,
     generation: u64,
     wanted: Arc<Notify>,
+    agent_wanted: Arc<Notify>,
 ) {
     let mut catalog = commands.subscribe_catalog();
     while let Some(event) = catalog.next().await {
         let (paths, workspaces) = match event {
+            // Reached, anew or for the first time: what a new Session would
+            // get is asked again too.
             SessionCatalogEvent::SessionCatalogReconciled(snapshot) => {
                 wanted.notify_one();
+                agent_wanted.notify_one();
                 (Some(snapshot.workspace_paths), None)
+            }
+            // The Models moved, and with them what a new Session would get:
+            // a cold catalog gives none.
+            SessionCatalogEvent::ModelCatalog(models) => {
+                let Some(shared) = shared.upgrade() else {
+                    return;
+                };
+                shared.change(&name, generation, |answered| {
+                    answered.models = Some(models);
+                });
+                agent_wanted.notify_one();
+                (None, None)
             }
             SessionCatalogEvent::WorkspaceListing(listing) => {
                 (Some(listing.workspace_paths), Some(listing.workspaces))
@@ -1711,8 +1786,7 @@ async fn follow_catalog(
                 (None, None)
             }
             // Nothing a row shows moves with these.
-            SessionCatalogEvent::ModelCatalog(_)
-            | SessionCatalogEvent::SkillCatalogUpdated(_)
+            SessionCatalogEvent::SkillCatalogUpdated(_)
             | SessionCatalogEvent::SessionUsageChanged(_)
             | SessionCatalogEvent::RemoteRecovered
             | SessionCatalogEvent::RemoteFailed { .. }
@@ -1745,6 +1819,48 @@ async fn follow_catalog(
                     answered.workspaces = Some(workspaces);
                 }
             });
+        }
+    }
+}
+
+/// Asks a Remote which Agent a Session begun there with none would get, by
+/// `ask`, each time `wanted` says, handing each answer to `take` until it
+/// says nothing is left to take them. One not answered is asked again on the
+/// readers' backoff, at once when the transport says to try now, or when
+/// it is wanted again.
+async fn ask_for_agent<F>(
+    wanted: Arc<Notify>,
+    mut try_now: TryNow,
+    timings: SessionCommandTimings,
+    mut ask: impl FnMut() -> F,
+    take: impl Fn(NewSessionAgent) -> bool,
+) where
+    F: Future<Output = anyhow::Result<NewSessionAgent>>,
+{
+    let mut backoff = RecoveryBackoff::new(
+        timings.initial_recovery_backoff,
+        timings.max_recovery_backoff,
+    );
+    loop {
+        wanted.notified().await;
+        loop {
+            match ask().await {
+                Ok(agent) => {
+                    backoff.reset();
+                    if !take(agent) {
+                        return;
+                    }
+                    break;
+                }
+                Err(error) => {
+                    tracing::debug!("what a new session would get was not answered: {error:#}");
+                    let retry_in = backoff.next();
+                    tokio::select! {
+                        () = wanted.notified() => {}
+                        _ = try_now.or_after(retry_in) => {}
+                    }
+                }
+            }
         }
     }
 }
