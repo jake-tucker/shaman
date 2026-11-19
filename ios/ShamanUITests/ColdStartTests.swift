@@ -17,7 +17,7 @@ final class ColdStartTests: XCTestCase {
     // Whatever a test leaves open, the next one starts from a new scene's listing.
     addTeardownBlock { @MainActor in
       let forgetting = XCUIApplication()
-      forgetting.launchArguments = ["--fake", scenario, "--forget-scene"]
+      forgetting.launchArguments = ["--fake", "paired", "--forget-scene"]
       forgetting.launch()
       XCTAssertTrue(forgetting.buttons["home.compose"].waitForExistence(timeout: 10))
       self.ended(forgetting)
@@ -203,10 +203,13 @@ final class ColdStartTests: XCTestCase {
     attach(app, "The listing under everywhere after the session and scope kept were gone")
   }
 
-  /// The app's half of a launch after the user swipes it away: a scene whose storage holds nothing, stood in for by
-  /// `--forget-scene`. Whether iOS gives the scene up on that swipe is iOS's half; the iOS 27.2 simulator keeps it.
+  /// Covers only the app's half of a launch after the user swipes the app away: a new scene, whose storage holds
+  /// nothing, stood in for by `--forget-scene`, starts at the listing under Everywhere. Whether iOS gives the scene up
+  /// on that swipe is iOS's half, which no test here reaches: the iOS 27.2 simulator keeps the scene's storage through
+  /// a swipe away, and no scene API tells the app of one. That half is the spec's check on the phone, "Scene storage:
+  /// back in the open Session after a system kill, at the listing after a swipe away" (#662, Checks on the phone, 5).
   @MainActor
-  func testALaunchInANewSceneStartsAtTheListingUnderEverywhere() {
+  func testOnlyTheAppsHalfOfASwipeAwayANewSceneStartsAtTheListingUnderEverywhere() {
     var app = launched("several", ["--open", "workstation-key/1"])
     titled("Draw the invite as a QR code in /serve", in: app)
     ended(app)
@@ -214,6 +217,47 @@ final class ColdStartTests: XCTestCase {
     app.launchArguments = ["--fake", "several", "--forget-scene"]
     app.launch()
     listing(at: "Everywhere", in: app)
+    XCTAssertFalse(app.staticTexts["session.title"].exists)
+  }
+
+  /// The control `identifier` names, scrolled to until it can be tapped.
+  @MainActor
+  private func shown(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+    let element = app.descendants(matching: .any)[identifier]
+    XCTAssertTrue(element.waitForExistence(timeout: 10), identifier)
+    var swipes = 0
+    while !element.isHittable && swipes < 5 {
+      app.swipeUp()
+      swipes += 1
+    }
+    return element
+  }
+
+  @MainActor
+  func testAPhoneThatPairsAgainLandsOnItsNewListingAndNotOnWhatItKeptBefore() {
+    // Kept while the phone held the workstation, under a scope of it.
+    var app = launched("paired", ["--open", "workstation-key/1"])
+    titled("Draw the invite as a QR code in /serve", in: app)
+    back(in: app)
+    choose("dotfiles", titled: "dotfiles", in: app)
+    element("listing.active", holding: "Tidy zsh startup time", in: app).tap()
+    titled("Tidy zsh startup time", in: app)
+    ended(app)
+
+    // Launched again holding no Remote, it pairs with the same Server.
+    app = XCUIApplication()
+    app.launchArguments = ["--fake", "fresh"]
+    app.launchEnvironment["SHAMAN_INVITE"] = "shaman-v1-fake-workstation"
+    app.launch()
+    shown("confirm.pair", in: app).tap()
+    listing(at: "All workspaces", in: app)
+    XCTAssertFalse(app.staticTexts["session.title"].exists, "nothing of what was kept before is pushed")
+    XCTAssertTrue(element("listing.active", holding: "Draw the invite as a QR code", in: app).exists)
+    attach(app, "Paired again, on the new listing")
+
+    // Nor does a cold start after it bring back what was kept before the phone held no Remote.
+    app = relaunched(app, "paired")
+    listing(at: "All workspaces", in: app)
     XCTAssertFalse(app.staticTexts["session.title"].exists)
   }
 }

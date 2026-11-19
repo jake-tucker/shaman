@@ -13,8 +13,9 @@ public struct RootScreen: View {
   private let opening: String?
   /// Whether the listing opens on the new-session screen, pushed over it at once.
   private let composing: Bool
-  /// Whether what the scene kept is forgotten, so the listing opens as it would in a new scene.
-  private let forgetting: Bool
+  /// Whether what the scene kept is still to be handed to a listing: to the first one a launch shows, and never once
+  /// the phone has held no Remote, nor where a debug build is asked to forget it.
+  @State private var restoring: Bool
   @State private var outlook: Outlook?
   @Environment(\.scenePhase) private var scenePhase
   /// What the scene keeps of the listing and what is pushed over it, which iOS restores after it ends the app: a
@@ -33,7 +34,7 @@ public struct RootScreen: View {
     self.appVersion = appVersion
     self.opening = opening
     self.composing = composing
-    self.forgetting = forgetting
+    _restoring = State(initialValue: !forgetting)
     _invite = State(initialValue: invite)
   }
 
@@ -47,7 +48,7 @@ public struct RootScreen: View {
       case .remote(_, let beginsIn):
         ListingScreen(
           core: core, appVersion: appVersion, beginsIn: beginsIn, invite: invite,
-          kept: forgetting ? KeptScene() : KeptScene(stored: kept), keep: { kept = $0.stored }, opening: opening,
+          kept: restoring ? KeptScene(stored: kept) : KeptScene(), keep: { kept = $0.stored }, opening: opening,
           composing: composing)
       }
     }
@@ -59,6 +60,16 @@ public struct RootScreen: View {
       for await outlook in core.outlook() {
         if self.outlook != nil {
           invite = nil
+        }
+        switch (self.outlook, outlook) {
+        case (_, .nowhere):
+          // A phone holding no Remote has nothing to return to, now or once it pairs again.
+          kept = ""
+          restoring = false
+        case (.remote, .remote):
+          // Handed already to the listing shown, once this launch.
+          restoring = false
+        default: break
         }
         self.outlook = outlook
       }

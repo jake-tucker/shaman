@@ -1433,6 +1433,23 @@ private final class HeldTime: BackgroundTasks {
     #expect(core.opened.withLock { $0.allSatisfy(\.isClosed) }, "every Session closed with its screen")
   }
 
+  @Test func aSessionKeptIsSentBackToTheListingOnlyUntilItHasBeenRead() async throws {
+    let core = FakeCore(.paired)
+    let stack = SessionStack(core: core, restoring: [.session("workstation-key/7")])
+    guard case .session(let route) = stack.path.first else {
+      Issue.record("a Session pushed")
+      return
+    }
+    let model = stack.model(for: route)
+    #expect(model.whenGone != nil, "found gone as it is read again, it leaves nothing to return to")
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until { !model.conversation.shown.isEmpty }
+    // Read, it is the Session the reader is in: gone later, its screen says so, as a tapped one's does.
+    try await until { model.whenGone == nil }
+    #expect(stack.path.count == 1)
+  }
+
   @Test func aSessionPushedWhileTheAppRunsThatIsGoneStaysToSaySo() async throws {
     let core = FakeCore(.paired)
     let stack = SessionStack(core: core)

@@ -885,6 +885,14 @@ struct Conversation: Equatable {
     order.compactMap { items[$0] }
   }
 
+  /// Whether the Session has been read: it holds items, and no loading mark stands among them.
+  var read: Bool {
+    !order.isEmpty
+      && !shown.contains {
+        if case .loading = $0.kind { true } else { false }
+      }
+  }
+
   /// Takes `change` in: the conversation whole, or the items that changed and the order every item stands in now.
   mutating func take(_ change: ConversationChange) {
     switch change {
@@ -948,7 +956,7 @@ final class SessionModel {
   /// How long a failure's banner stands before it goes by itself.
   @ObservationIgnored private let failureStands: Duration
   @ObservationIgnored private var clearing: Task<Void, Never>?
-  /// Told each time the frame says the Session, or the Remote it is on, is gone.
+  /// Told each time the frame says the Session, or the Remote it is on, is gone, until the Session has been read.
   @ObservationIgnored var whenGone: (() -> Void)?
 
   convenience init(core: any Core, session: String, failureStands: Duration = .seconds(6)) {
@@ -1181,6 +1189,9 @@ final class SessionModel {
   private func followConversation() async {
     for await change in opened.conversation() {
       conversation.take(change)
+      if whenGone != nil, conversation.read {
+        whenGone = nil
+      }
     }
   }
 
@@ -1227,7 +1238,8 @@ final class SessionStack {
   @ObservationIgnored private let core: any Core
   @ObservationIgnored private var models: [SessionRoute: SessionModel] = [:]
   @ObservationIgnored private var landings: [LandingRoute: NewSessionModel] = [:]
-  /// The Sessions' screens restored after a cold start, any of which found gone sends the reader back to the listing.
+  /// The Sessions' screens restored after a cold start, any of which found gone before it is read sends the reader
+  /// back to the listing.
   @ObservationIgnored private var restored: Set<SessionRoute> = []
 
   init(core: any Core, path: [Pushed] = []) {
@@ -1279,7 +1291,8 @@ final class SessionStack {
     }
     let model = SessionModel(core: core, route: route)
     if restored.contains(route) {
-      // A Session kept across a cold start that is gone, or whose Remote is, leaves nothing to return to.
+      // A Session kept across a cold start found gone as it is read again, or whose Remote is, leaves nothing to
+      // return to. Once read it is the Session the reader is in, and gone later its screen says so.
       model.whenGone = { [weak self] in self?.path = [] }
     }
     models[route] = model
