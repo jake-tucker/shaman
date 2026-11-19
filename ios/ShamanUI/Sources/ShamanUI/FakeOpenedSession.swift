@@ -174,6 +174,8 @@
     private let scenario: FakeConversation.Scenario?
     /// The tree the Session belongs to, where it is one of `FakeTree`'s.
     private let family: FakeTree?
+    /// Whether the tree it belongs to is the Sidekick's `FakeSidekick` makes.
+    private let sidekick: Bool
     private let unreachable: Bool
     private let acts: FakeActs
     private let state: Mutex<State>
@@ -202,6 +204,7 @@
       self.session = session
       scenario = nil
       family = nil
+      sidekick = false
       unreachable = false
       self.acts = acts
       self.place = place
@@ -219,6 +222,7 @@
       self.session = session
       scenario = nil
       family = nil
+      sidekick = false
       unreachable = false
       self.acts = acts
       self.place = place
@@ -228,11 +232,12 @@
 
     init(
       session: String, frame: SessionFrame, scenario: FakeConversation.Scenario?, unreachable: Bool = false,
-      acts: FakeActs, tree: FakeTree? = nil
+      acts: FakeActs, tree: FakeTree? = nil, sidekick: Bool = false
     ) {
       self.session = session
       self.scenario = scenario
       family = tree
+      self.sidekick = sidekick
       self.unreachable = unreachable
       self.acts = acts
       place = ""
@@ -264,7 +269,11 @@
       }
       let task = Task { [weak self] in
         try? await Task.sleep(for: .milliseconds(600))
-        self?.change { $0 = tree?.items(of: session) ?? FakeConversation.items(scenario) }
+        self?.change {
+          $0 =
+            tree?.items(of: session)
+            ?? (sidekick && session == FakeSidekick.top ? FakeSidekick.items : FakeConversation.items(scenario))
+        }
         self?.changeState { state in
           state.pending = tree?.interventions(of: session) ?? FakeConversation.interventions(scenario)
           state.beneath = tree?.waitingBeneath(session)
@@ -422,6 +431,9 @@
     }
 
     func work(_ turn: String) -> AsyncStream<TurnWork> {
+      if sidekick && session == FakeSidekick.top {
+        return AsyncStream { $0.yield(FakeSidekick.work()) }
+      }
       guard let tree = family else { return FakeWork.work(of: turn, in: scenario) }
       let session = session
       return AsyncStream { continuation in
@@ -436,6 +448,10 @@
     }
 
     func tree() -> AsyncStream<SubagentTree> {
+      if sidekick {
+        let session = session
+        return AsyncStream { $0.yield(FakeSidekick.sheet(for: session)) }
+      }
       guard let tree = family else {
         return AsyncStream { continuation in
           continuation.yield(SubagentTree(title: "Subagents", count: nil, loading: nil, failed: nil, rows: []))

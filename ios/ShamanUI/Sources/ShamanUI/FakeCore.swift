@@ -41,6 +41,10 @@
       /// The `paired` phone whose Outlook remembers the workstation's `shaman` Workspace, so the Landing offers send
       /// there. A Prompt holding "refuse" is refused the first time it is asked.
       case composing
+      /// The `several` phone, which also lists a Sidekick's Session on the workstation, `workstation-key/20`, whose tree
+      /// stands its Subsessions and the Sessions it acted on across Servers, the phone not paired with some of them;
+      /// the home lab reads Unreachable here, though the workstation still reaches it.
+      case sidekick
     }
 
     /// The Invite the fake reads as the workstation's. One holding "dead" reads as the workstation's too, and fails to
@@ -71,6 +75,8 @@
     private let acts = FakeActs()
     /// The tree of the Session whose Agent delegates, which every Session of it reads.
     private let tree: FakeTree
+    /// Whether the phone holds the Sidekick's Session `FakeSidekick` makes the tree of.
+    private let sidekick: Bool
 
     public init(_ scenario: Scenario) {
       device = Mutex(Self.device(in: scenario))
@@ -89,22 +95,27 @@
         case .paired, .offline, .unreadTree, .unreadableTree, .subagentWaits, .subagentsWait, .longSubagentName,
           .composing:
           [Self.workstation(named: "workstation")]
-        case .several, .reaching, .unreachable: [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
+        case .several, .reaching, .unreachable, .sidekick:
+          [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
         }
+      sidekick = scenario == .sidekick
       held = Mutex(remotes)
       unanswered = scenario == .reaching ? ["homelab"] : []
       let unreachable: [String: UnreachableHint] =
         switch scenario {
-        case .unreachable: ["homelab": .localNetwork]
+        case .unreachable, .sidekick: ["homelab": .localNetwork]
         case .offline: ["workstation": .noNetwork]
         default: [:]
         }
       self.unreachable = Mutex(unreachable)
-      if scenario == .several || scenario == .reaching || scenario == .unreachable {
+      if scenario == .several || scenario == .reaching || scenario == .unreachable || scenario == .sidekick {
         turned.withLock { $0 = "workstation" }
       }
       if scenario == .composing {
         turnedWorkspace.withLock { $0["workstation"] = "shaman" }
+      }
+      if sidekick {
+        sessions.withLock { $0 = FakeSidekick.listed + $0 }
       }
     }
 
@@ -249,10 +260,22 @@
       let gone = SessionFrame(
         title: "", place: "", gone: "This session no longer exists", bar: nil, composer: nil, queued: [],
         intervention: nil, tree: nil, waiting: [])
-      let listed = found?.frame(originNamed: remotes.count > 1, unreachable: cut, now: Date())
+      var listed = found?.frame(originNamed: remotes.count > 1, unreachable: cut, now: Date())
+      // A Session the Sidekick has a hand in that no listing carries is read from its Remote all the same.
+      let remote = String(session.prefix { $0 != "-" })
+      let unlistedCut = sidekick && unreachable.withLock { $0[remote] != nil }
+      let handIn =
+        sidekick
+        ? FakeSidekick.frame(
+          of: session,
+          unreachable: unlistedCut ? "\(remote) is unreachable. Nothing sent goes anywhere until it answers." : nil)
+        : nil
+      if sidekick && session == FakeSidekick.top {
+        listed?.tree = FakeSidekick.button
+      }
       let frame =
         FakeTree.holds(session) && (found != nil || delegated)
-        ? tree.frame(of: session, top: listed ?? gone) : listed ?? gone
+        ? tree.frame(of: session, top: listed ?? gone) : listed ?? handIn ?? gone
       if let found {
         turned.withLock { $0 = found.remote }
         // The Workspace remembered for the Remote stays; only where none is does the Session's own become it.
@@ -260,13 +283,16 @@
         turnedOutlook()
       }
       // A Session on a Remote yet to answer is never read: its loading mark stands.
-      let read = found.flatMap { unanswered.contains($0.remote) ? nil : $0.reads } ?? (delegated ? .delegating : nil)
+      let read =
+        found.flatMap { unanswered.contains($0.remote) ? nil : $0.reads }
+        ?? (delegated ? .delegating : handIn != nil ? .settled : nil)
       if FakeTree.holds(session) && read != nil {
         tree.opening()
       }
       let opened = FakeOpenedSession(
-        session: session, frame: frame, scenario: read, unreachable: cut, acts: acts,
-        tree: FakeTree.holds(session) && read != nil ? tree : nil)
+        session: session, frame: frame, scenario: read, unreachable: cut || (handIn != nil && unlistedCut),
+        acts: acts, tree: FakeTree.holds(session) && read != nil ? tree : nil,
+        sidekick: sidekick && FakeSidekick.holds(session))
       self.opened.withLock { $0.append(opened) }
       return opened
     }

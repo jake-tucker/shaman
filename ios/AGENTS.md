@@ -91,7 +91,12 @@ often it is tried; and in `unreadTree` and `unreadableTree` the `paired` phone's
 presenting itself, and Explorer, `/12.1`, on another, which marks `/12`'s bar once its own is swiped away and whose
 "Review" pushes `/12.1`, where its sheet presents itself; in `subagentsWait` Explorer waits on an Approval and Grepper,
 `/12.4`, on a Questionnaire, so `/12`'s bar counts them and its "Review" opens the tree; and in `longSubagentName`
-Explorer alone waits, on an Approval, under a name longer than any bar has room for. A card pushes its Turn's work
+Explorer alone waits, on an Approval, under a name longer than any bar has room for. In `sidekick` the `several` phone
+also lists a Sidekick's Session, `workstation-key/20`, whose tree, headed "Sessions", stands its Subsessions and the
+Sessions it acted on across Servers: `/21` on the workstation, `laptop-key/22` and `/24` on the laptop (which the
+workstation calls "build"), `homelab-key/23` on the home lab, which reads Unreachable to the phone, and entries on
+"attic" and "nas", which the phone is not paired with and so cannot open; its card's rows open its Subsessions by the
+same rule. A card pushes its Turn's work
 from `FakeWork`, and a row its Activity's whole: in `/7` the work holds a settled Approval, File Changes and the
 placeholder for a kind a newer Server sent, and in `/1` the running command's output grows a line at a time while its
 screen is up. Every act a fake Session is asked is answered as the core would answer it, after a moment: a Prompt

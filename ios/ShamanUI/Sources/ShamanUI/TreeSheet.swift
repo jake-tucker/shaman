@@ -23,8 +23,9 @@ struct TreeButtonView: View {
 }
 
 /// The tree an open Session belongs to, as a sheet: its top-level Session first, then every Subagent beneath the one
-/// that spawned it, in the order the core gives, the open Session highlighted. Choosing an entry hands its Session to
-/// `choose`; a working Subagent that can be stopped alone is stopped by a swipe, which asks nothing first. It crosses
+/// that spawned it — and beneath a Sidekick's, the Sessions it has a hand in, on whichever Server — in the order the
+/// core gives, the open Session highlighted. Choosing an entry hands its Session to `choose`, and one the core gives
+/// none for, on a Server this phone cannot open it on, is not chosen; a working Subagent that can be stopped alone is stopped by a swipe, which asks nothing first. It crosses
 /// from the core only while it is up.
 struct TreeSheet: View {
   let model: SessionModel
@@ -121,8 +122,10 @@ struct TreeSheet: View {
   }
 }
 
-/// One entry of the tree: its Marker and Title, its name and Model beneath, and at the right how long it has worked,
-/// counting while it works, or what it says in the time's place; indented as deep as it stands.
+/// One entry of the tree: its Marker and Title; where it is a Session a Sidekick has a hand in, where it works; its
+/// name and Model beneath; why it opens nothing, where it opens nothing; and at the right how long it has worked,
+/// counting while it works, or what it says in the time's place; indented as deep as it stands, and dimmed where
+/// nothing of its work is current.
 private struct TreeRowView: View {
   let row: TreeRow
 
@@ -135,11 +138,32 @@ private struct TreeRowView: View {
           .font(.subheadline.weight(row.open ? .semibold : .regular))
           .foregroundStyle(row.open ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
           .lineLimit(2)
+        if let place = row.place {
+          HStack(spacing: 4) {
+            if let glyph = row.placeGlyph {
+              Glyph(glyph: glyph, style: .caption)
+                .foregroundStyle(.secondary)
+            }
+            Text(verbatim: place)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+          }
+          .accessibilityElement(children: .combine)
+          .accessibilityIdentifier("tree.place")
+        }
         if let line = row.line {
           Text(verbatim: line)
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
+        }
+        if let note = row.note {
+          Text(verbatim: note)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .accessibilityIdentifier("tree.note")
         }
       }
       Spacer(minLength: 0)
@@ -158,6 +182,7 @@ private struct TreeRowView: View {
       .fixedSize()
     }
     .padding(.leading, CGFloat(row.depth) * 16)
+    .opacity(row.dimmed ? 0.55 : 1)
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
   }
