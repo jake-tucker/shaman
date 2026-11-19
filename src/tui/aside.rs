@@ -1350,6 +1350,7 @@ mod tests {
         SubagentTreeEntry {
             unanswered: false,
             origin: None,
+            origin_fingerprint: None,
             session_id,
             parent_session_id: parent,
             spawn_order,

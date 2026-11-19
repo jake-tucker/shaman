@@ -10507,6 +10507,7 @@ impl Family {
         let entry = |session_id, parent_session_id, name: &str| SubagentTreeEntry {
             unanswered: false,
             origin: None,
+            origin_fingerprint: None,
             session_id,
             parent_session_id,
             spawn_order: 0,
@@ -10653,6 +10654,7 @@ fn a_subsession_open_within_its_sidekicks_tree_highlights_its_own_row() {
         unconfirmed: false,
         session_id: subsession,
         origin: None,
+        origin_fingerprint: None,
         unanswered: false,
         title: "Work it began".to_owned(),
         subsession: true,

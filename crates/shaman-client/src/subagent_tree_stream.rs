@@ -412,6 +412,7 @@ mod tests {
         tree.subagents.push(crate::protocol::SubagentTreeEntry {
             unanswered: false,
             origin: None,
+            origin_fingerprint: None,
             session_id: subagent,
             parent_session_id: tree.top_level.session_id,
             spawn_order: 0,

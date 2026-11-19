@@ -1,5 +1,5 @@
 {
-  "protocol_version": 118,
+  "protocol_version": 119,
   "protocol_floor": 117,
   "headers": {
     "x-shaman-act": {
@@ -10868,6 +10868,12 @@
             "null"
           ]
         },
+        "origin_fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "unanswered": {
           "type": "boolean"
         },
@@ -10965,6 +10971,12 @@
           "format": "uuid"
         },
         "origin": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin_fingerprint": {
           "type": [
             "string",
             "null"

@@ -174,6 +174,13 @@ impl Act {
         }
     }
 
+    /// The key fingerprint of the Remote the act was carried to, as this
+    /// Server is paired with it — what a Subsession's row names that Remote
+    /// by — and `None` for an act of this Server's own.
+    pub(crate) fn origin_fingerprint(&self) -> Option<String> {
+        (!self.pairing.is_empty()).then(|| self.pairing.clone())
+    }
+
     /// Takes up `recorded`, a later act on the same Session. An act not
     /// known to have been done moves nothing an act that was already says:
     /// it may never have happened.

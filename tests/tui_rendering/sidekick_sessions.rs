@@ -148,6 +148,7 @@ impl Sidekick {
             unconfirmed: false,
             session_id,
             origin: None,
+            origin_fingerprint: None,
             unanswered: false,
             title: title.to_owned(),
             subsession: session_id == self.subsession,
@@ -180,6 +181,7 @@ fn subagent(
     SubagentTreeEntry {
         unanswered: false,
         origin: None,
+        origin_fingerprint: None,
         session_id,
         parent_session_id,
         spawn_order: 0,
@@ -1014,6 +1016,7 @@ fn remote_entry(session_id: SessionId, title: &str, workspace: &str) -> Subagent
         unconfirmed: false,
         session_id,
         origin: Some(REMOTE.to_owned()),
+        origin_fingerprint: Some("workstation-key".to_owned()),
         unanswered: false,
         title: title.to_owned(),
         subsession: false,

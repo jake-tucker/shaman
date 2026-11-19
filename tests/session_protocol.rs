@@ -1252,6 +1252,7 @@ fn a_sidekicks_tree_carries_the_sessions_it_has_a_hand_in_and_every_other_tree_i
         unconfirmed: false,
         session_id: acted_on,
         origin: None,
+        origin_fingerprint: None,
         unanswered: false,
         title: "Fix the flaky login test".to_owned(),
         subsession: true,
@@ -1388,6 +1389,126 @@ fn a_sidekicks_tree_carries_the_sessions_it_has_a_hand_in_and_every_other_tree_i
         .expect("decode a Session changing"),
         changed
     );
+}
+
+/// A tree's Session or Subagent on a Remote names that Remote's key beside
+/// its name, as a Subsession's row does, so a reader on another Server can
+/// tell which Server it is. One of the heading Server's own says neither, and
+/// a tree from a Server too old to say the key reads as naming none.
+#[test]
+fn a_trees_session_and_subagent_on_a_remote_name_its_key_beside_its_name() {
+    const {
+        assert!(
+            PROTOCOL_VERSION >= 119,
+            "the key of a tree's Remote changes the wire"
+        );
+    }
+    use shaman::protocol::{SubagentTreeEntry, SubagentTreeSession};
+    let session_id = SessionId::from_uuid(fixture_id("0198b27e-26ec-7c4c-a83b-a83a4787453f"));
+    let parent = SessionId::from_uuid(fixture_id("0198b27e-3a01-7c4c-a83b-a83a4787453f"));
+    let session = SubagentTreeSession {
+        subagents_unshown: false,
+        unconfirmed: false,
+        session_id,
+        origin: Some("workstation".to_owned()),
+        origin_fingerprint: Some("ab12cd34ef56".to_owned()),
+        unanswered: false,
+        title: "Write the parser".to_owned(),
+        subsession: false,
+        workspace_path: std::env::temp_dir().join("parser"),
+        workspace_icon: None,
+        provider: None,
+        model: None,
+        status: None,
+        worked_ms: None,
+        working_since: None,
+        monitoring_since: None,
+        needs_intervention: false,
+        acted_at: SessionTimestamp(1_700),
+    };
+    let entry = SubagentTreeEntry {
+        session_id,
+        origin: Some("workstation".to_owned()),
+        origin_fingerprint: Some("ab12cd34ef56".to_owned()),
+        unanswered: false,
+        parent_session_id: parent,
+        spawn_order: 0,
+        name: "Explore".to_owned(),
+        title: "Survey the flaky tests".to_owned(),
+        model: None,
+        status: ActivityStatus::Active,
+        worked_ms: Some(0),
+        working_since: None,
+        monitoring_since: None,
+        needs_intervention: false,
+    };
+    for (kind, mut encoded) in [
+        (
+            "Session",
+            serde_json::to_value(&session).expect("encode a Remote's Session"),
+        ),
+        (
+            "Subagent",
+            serde_json::to_value(&entry).expect("encode a Remote's Subagent"),
+        ),
+    ] {
+        assert_eq!(
+            (&encoded["origin"], &encoded["origin_fingerprint"]),
+            (&json!("workstation"), &json!("ab12cd34ef56")),
+            "a {kind} on a Remote names it by name and by key"
+        );
+        encoded
+            .as_object_mut()
+            .expect("an entry is an object")
+            .remove("origin_fingerprint");
+        let older = match kind {
+            "Session" => {
+                serde_json::from_value::<SubagentTreeSession>(encoded)
+                    .expect("decode an older Server's Session")
+                    .origin_fingerprint
+            }
+            _ => {
+                serde_json::from_value::<SubagentTreeEntry>(encoded)
+                    .expect("decode an older Server's Subagent")
+                    .origin_fingerprint
+            }
+        };
+        assert_eq!(older, None, "an older Server's {kind} names no key");
+    }
+    assert_eq!(
+        serde_json::from_value::<SubagentTreeSession>(
+            serde_json::to_value(&session).expect("encode it")
+        )
+        .expect("decode it"),
+        session
+    );
+    assert_eq!(
+        serde_json::from_value::<SubagentTreeEntry>(
+            serde_json::to_value(&entry).expect("encode it")
+        )
+        .expect("decode it"),
+        entry
+    );
+
+    let own_session = SubagentTreeSession {
+        origin: None,
+        origin_fingerprint: None,
+        ..session
+    };
+    let own_entry = SubagentTreeEntry {
+        origin: None,
+        origin_fingerprint: None,
+        ..entry
+    };
+    for encoded in [
+        serde_json::to_value(&own_session).expect("encode an own Session"),
+        serde_json::to_value(&own_entry).expect("encode an own Subagent"),
+    ] {
+        assert!(
+            encoded.get("origin").is_none() && encoded.get("origin_fingerprint").is_none(),
+            "one of the heading Server's own names neither: {encoded}"
+        );
+    }
 }
 
 /// A Sidekick's act on a Remote travels there with its author, and stands

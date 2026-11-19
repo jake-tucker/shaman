@@ -68,6 +68,7 @@ fn session_with_its_tree(
                 subagents: vec![SubagentTreeEntry {
                     unanswered: false,
                     origin: None,
+                    origin_fingerprint: None,
                     session_id: SessionId::new(),
                     parent_session_id: session_id,
                     spawn_order: 0,

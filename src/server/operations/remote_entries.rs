@@ -1214,6 +1214,7 @@ mod tests {
         SubagentTreeEntry {
             unanswered: false,
             origin: None,
+            origin_fingerprint: None,
             session_id,
             parent_session_id,
             spawn_order: 0,
@@ -1352,6 +1353,7 @@ mod tests {
                 unconfirmed: false,
                 session_id: subsession,
                 origin: None,
+                origin_fingerprint: None,
                 unanswered: false,
                 title: "Fix the parser".to_owned(),
                 subsession: true,

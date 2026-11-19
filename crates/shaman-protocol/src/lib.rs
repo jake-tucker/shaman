@@ -88,7 +88,7 @@ pub use workspace_paths::{MANAGED_WORKTREE_DIRECTORY, PathStyle, WorkspacePaths}
 /// The protocol version this build speaks: stated on every request a Peer
 /// makes of a Serving Server and on every answer that Server gives, and
 /// moved with every change to the wire (ADR-0078).
-pub const PROTOCOL_VERSION: u32 = 118;
+pub const PROTOCOL_VERSION: u32 = 119;
 
 /// The oldest protocol version this build still speaks with across a
 /// Pairing: a Peer or a Serving Server stating one at or above it is
@@ -5873,6 +5873,15 @@ pub struct SubagentTreeSession {
     /// tree knows it by; absent for a Session of that Server's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
+    /// The key fingerprint of the Remote `origin` names, as the Server
+    /// heading the tree is paired with it — what an
+    /// [`Activity::Subsession`] row carries beside its `origin`. `origin` is
+    /// that Server's own name, which means nothing to a reader on another
+    /// Server; the key tells such a reader which Server it is, so one with a
+    /// Pairing of its own to it can open the Session there. Absent with
+    /// `origin`; absent beside it only from a Server too old to say it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_fingerprint: Option<String>,
     /// Whether the Session's Remote does not answer now: its Title and
     /// Workspace are what the Remote last said, so a reader still knows which
     /// Session it is — empty where it said nothing since it was kept in view
@@ -5954,6 +5963,12 @@ pub struct SubagentTreeEntry {
     /// spawner lives on the same Server as it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
+    /// The key fingerprint of the Remote `origin` names, as the Server
+    /// heading the tree is paired with it, as
+    /// [`SubagentTreeSession::origin_fingerprint`] says it of the Session
+    /// heading the Subagent there. Absent with `origin`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_fingerprint: Option<String>,
     /// Whether, beneath a Remote's Session, what its Remote says of the
     /// Subagent is not read now — the Remote does not answer, or its tree
     /// there is not followed — so it stands by what last named it, and

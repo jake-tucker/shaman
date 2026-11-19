@@ -416,6 +416,8 @@ async fn a_session_begun_on_a_remote_stands_as_a_row_naming_its_remote_that_foll
 /// whose first Turn settled.
 struct ActedOn {
     remote: Serving,
+    /// The key the own Server is paired with the Remote by.
+    fingerprint: String,
     own: OwnServer,
     sidekick_id: SessionId,
     sidekick: McpClient,
@@ -429,7 +431,7 @@ impl ActedOn {
     async fn start(channel: &str, remote: Serving, timings: ServerTimings) -> Self {
         let mut remote = remote;
         let mut own = OwnServer::start(channel, timings).await;
-        pair(&own.descriptor(), &remote, REMOTE).await;
+        let fingerprint = pair(&own.descriptor(), &remote, REMOTE).await;
         let there = tempfile::tempdir().expect("create a Workspace on the Remote");
         let (sidekick_id, sidekick, sidekick_provider) =
             start_sidekick(&own.descriptor(), &mut own.claude).await;
@@ -443,6 +445,7 @@ impl ActedOn {
         complete_turn(&remote.descriptor(), target, &target_provider).await;
         let mut acted_on = Self {
             remote,
+            fingerprint,
             own,
             sidekick_id,
             sidekick,
@@ -1093,5 +1096,136 @@ async fn an_act_on_a_remotes_subagent_stands_by_the_session_heading_it_and_stays
         acted_on.own.stored_remote_acts()
     );
 
+    acted_on.shutdown().await;
+}
+
+/// Every Session and Subagent a Sidekick's tree holds on a Remote names that
+/// Remote's key beside its name — the key a Subsession's row in the
+/// Sidekick's Transcript names it by — so a reader on another Server, whose
+/// own name for that Remote may differ, can tell which Server it is and open
+/// it through a Pairing of its own; and goes on naming it once the Remote
+/// does not answer.
+#[tokio::test]
+async fn a_sidekicks_tree_names_the_key_of_the_remote_its_sessions_there_live_on() {
+    let mut acted_on = ActedOn::start(
+        "sidekick-remote-tree-keys",
+        Serving::start("sidekick-remote-tree-keys").await,
+        ServerTimings::default().with_remote_retry_interval(Duration::from_millis(50)),
+    )
+    .await;
+    let key = Some(acted_on.fingerprint.clone());
+    let remote = acted_on.remote.descriptor();
+    let there = tempfile::tempdir().expect("create another Workspace on the Remote");
+    let directory = shaman::paths::canonical(there.path()).expect("read the Remote's Workspace");
+    let (spawner, spawner_provider) = started_session(
+        &remote,
+        &mut acted_on.remote.provider,
+        there.path(),
+        "Survey the tests",
+    )
+    .await;
+    acted(
+        &mut acted_on.sidekick,
+        "settle_session",
+        json!({ "session_id": spawner, "origin": REMOTE }),
+    )
+    .await;
+    let (tree, mut updates) = open_tree(&acted_on.own.descriptor(), acted_on.sidekick_id).await;
+    let mut revision = tree.revision;
+    let acted_on_entry = remote_entry(&mut updates, &mut revision, spawner, |_| true).await;
+    assert_eq!(
+        acted_on_entry.origin_fingerprint, key,
+        "a Session acted on there names its Remote's key"
+    );
+
+    spawner_provider
+        .emit_attributed_and_wait_until_observed(
+            shaman::provider::ProviderEventAttribution::OwningSession,
+            ProviderEvent::SubagentStarted {
+                subagent_id: shaman::provider::ProviderSubagentId::new("explorer"),
+                name: "Explore".to_owned(),
+                description: "Survey the flaky tests".to_owned(),
+                delegation: None,
+            },
+        )
+        .await;
+    let spawned = remote_subagent(&mut updates, &mut revision, |_| true).await;
+    assert_eq!(
+        (spawned.parent_session_id, spawned.origin_fingerprint),
+        (spawner, key.clone()),
+        "a Subagent beneath it there names that key too"
+    );
+
+    let begun = acted(
+        &mut acted_on.sidekick,
+        "begin_session",
+        json!({ "origin": REMOTE, "directory": directory, "prompt": "Tidy the docs." }),
+    )
+    .await;
+    let begun: SessionId =
+        serde_json::from_value(begun["session_id"].clone()).expect("the Session begun is named");
+    let begun_entry =
+        remote_entry(&mut updates, &mut revision, begun, |entry| entry.subsession).await;
+    let snapshot = read_session_until(
+        &crate::support::loopback_client(),
+        &acted_on.own.descriptor(),
+        acted_on.sidekick_id,
+        "the Sidekick's Transcript leads into what it began",
+        |snapshot| {
+            snapshot
+                .activities
+                .iter()
+                .any(|activity| matches!(activity, Activity::Subsession { .. }))
+        },
+    )
+    .await;
+    let row_key = snapshot
+        .activities
+        .iter()
+        .find_map(|activity| match activity {
+            Activity::Subsession {
+                session_id,
+                origin_fingerprint,
+                ..
+            } if *session_id == begun => Some(origin_fingerprint.clone()),
+            _ => None,
+        });
+    assert_eq!(
+        (begun_entry.origin_fingerprint.clone(), row_key),
+        (key.clone(), Some(key.clone())),
+        "a Subsession begun there names the key its row in the Sidekick's Transcript names"
+    );
+
+    let (reopened, _) = open_tree(&acted_on.own.descriptor(), acted_on.sidekick_id).await;
+    let mut keys = reopened
+        .sessions
+        .iter()
+        .map(|session| (session.session_id, session.origin_fingerprint.clone()))
+        .chain(
+            reopened
+                .subagents
+                .iter()
+                .map(|entry| (entry.session_id, entry.origin_fingerprint.clone())),
+        )
+        .collect::<Vec<_>>();
+    keys.sort_by_key(|(session_id, _)| session_id.as_uuid());
+    let mut expected = [acted_on.target, spawner, spawned.session_id, begun]
+        .map(|session_id| (session_id, key.clone()))
+        .to_vec();
+    expected.sort_by_key(|(session_id, _)| session_id.as_uuid());
+    assert_eq!(
+        keys, expected,
+        "a reader opening the tree now is given each key"
+    );
+
+    // Not answering, its Sessions keep naming the Remote by name and key.
+    acted_on.remote.route.set_online(false).await;
+    let silent = remote_entry(&mut updates, &mut revision, spawner, |entry| {
+        entry.unanswered
+    })
+    .await;
+    assert_eq!(silent.origin_fingerprint, key, "what names it stays");
+
+    drop(updates);
     acted_on.shutdown().await;
 }

@@ -663,6 +663,7 @@ fn sidekicks_tree(sidekick: &Sidekick, subagent: SessionId, root: &Path) -> Suba
         subagents: vec![SubagentTreeEntry {
             unanswered: false,
             origin: None,
+            origin_fingerprint: None,
             session_id: subagent,
             parent_session_id: sidekick.subsession,
             spawn_order: 0,
@@ -680,6 +681,7 @@ fn sidekicks_tree(sidekick: &Sidekick, subagent: SessionId, root: &Path) -> Suba
             unconfirmed: false,
             session_id: sidekick.subsession,
             origin: None,
+            origin_fingerprint: None,
             unanswered: false,
             title: "Fixing the parser".to_owned(),
             subsession: true,

@@ -1047,6 +1047,7 @@ impl SessionStoreState {
                     unconfirmed: !act.confirmed,
                     session_id: acted_on.session_id,
                     origin: Some(remote.to_owned()),
+                    origin_fingerprint: act.origin_fingerprint(),
                     unanswered: matches!(
                         self.remote_readings.by_remote.get(remote),
                         Some(RemoteReading::Silent(_))
@@ -1083,7 +1084,7 @@ impl SessionStoreState {
         self.sidekick_acts
             .everywhere_of(sidekick)
             .filter(|(_, act)| act.resolved)
-            .filter_map(|(acted_on, _)| {
+            .filter_map(|(acted_on, act)| {
                 let remote = acted_on.origin.remote_name()?;
                 let held = self
                     .remote_readings
@@ -1093,12 +1094,14 @@ impl SessionStoreState {
                 // Where the Remote does not answer, or the tree is not read,
                 // its Subagents stand by what last named them.
                 let answering = !held.stale && self.remote_holds(remote, acted_on.session_id);
-                Some(((remote, acted_on.session_id, answering), &held.tree))
+                let origin = (remote, act.origin_fingerprint());
+                Some(((origin, acted_on.session_id, answering), &held.tree))
             })
-            .flat_map(|((remote, session_id, answering), tree)| {
+            .flat_map(|(((remote, fingerprint), session_id, answering), tree)| {
                 branch_of(tree, session_id).into_iter().map(move |entry| {
                     let entry = SubagentTreeEntry {
                         origin: Some(remote.to_owned()),
+                        origin_fingerprint: fingerprint.clone(),
                         ..entry.clone()
                     };
                     if answering {
@@ -1342,6 +1345,7 @@ fn remote_session(
         unconfirmed: !act.confirmed,
         session_id: session.id,
         origin: Some(remote.to_owned()),
+        origin_fingerprint: act.origin_fingerprint(),
         unanswered: false,
         title: summary.title.clone(),
         subsession: act.began,
@@ -1387,6 +1391,7 @@ mod tests {
             unanswered: false,
             session_id,
             origin: None,
+            origin_fingerprint: None,
             parent_session_id,
             spawn_order: 0,
             name: "Explore".to_owned(),
@@ -1428,6 +1433,7 @@ mod tests {
             sessions: vec![SubagentTreeSession {
                 session_id: subsession,
                 origin: None,
+                origin_fingerprint: None,
                 unanswered: false,
                 unconfirmed: false,
                 subagents_unshown: false,

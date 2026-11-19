@@ -524,7 +524,7 @@ async fn redeem(own: &RuntimeDescriptor, remote: &Serving, name: &str) -> reqwes
 }
 
 /// Pairs the Server `own` describes with `remote`, naming it `name`.
-async fn pair(own: &RuntimeDescriptor, remote: &Serving, name: &str) {
+async fn pair(own: &RuntimeDescriptor, remote: &Serving, name: &str) -> String {
     let redeemed: Remote = redeem(own, remote, name)
         .await
         .error_for_status()
@@ -533,6 +533,7 @@ async fn pair(own: &RuntimeDescriptor, remote: &Serving, name: &str) {
         .await
         .expect("decode the Remote");
     assert_eq!(redeemed.name, name);
+    redeemed.fingerprint
 }
 
 /// The Sidekick's own Server for `channel`, running by `timings`, hosting the

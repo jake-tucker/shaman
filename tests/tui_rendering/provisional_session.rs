@@ -925,6 +925,7 @@ mod aside {
             subagents: vec![SubagentTreeEntry {
                 unanswered: false,
                 origin: None,
+                origin_fingerprint: None,
                 session_id: subagent,
                 parent_session_id: top,
                 spawn_order: 0,

@@ -107,6 +107,7 @@ fn entry(
     SubagentTreeEntry {
         unanswered: false,
         origin: None,
+        origin_fingerprint: None,
         session_id,
         parent_session_id,
         spawn_order,

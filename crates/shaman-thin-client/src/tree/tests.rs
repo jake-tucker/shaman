@@ -42,6 +42,7 @@ fn entry(
     SubagentTreeEntry {
         session_id: SessionId::new(),
         origin: None,
+        origin_fingerprint: None,
         unanswered: false,
         parent_session_id: parent,
         spawn_order,
