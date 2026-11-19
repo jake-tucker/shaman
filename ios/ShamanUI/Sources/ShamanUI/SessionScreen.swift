@@ -948,6 +948,8 @@ final class SessionModel {
   /// How long a failure's banner stands before it goes by itself.
   @ObservationIgnored private let failureStands: Duration
   @ObservationIgnored private var clearing: Task<Void, Never>?
+  /// Told each time the frame says the Session, or the Remote it is on, is gone.
+  @ObservationIgnored var whenGone: (() -> Void)?
 
   convenience init(core: any Core, session: String, failureStands: Duration = .seconds(6)) {
     self.init(core: core, route: SessionRoute(session: session), failureStands: failureStands)
@@ -1160,6 +1162,9 @@ final class SessionModel {
     for await frame in opened.frame() {
       self.frame = frame
       forgetSettled(frame)
+      if frame.gone != nil {
+        whenGone?()
+      }
     }
   }
 
@@ -1211,7 +1216,8 @@ final class SessionModel {
 
 /// The Sessions pushed over the listing, and what is pushed over each, as its navigation stack holds them: each
 /// Session opened in the core as its screen is first drawn, and closed there once no screen of it is on the path,
-/// however it leaves.
+/// however it leaves. What the scene keeps of it, and a path restored from what it kept, cross as `KeptScene`'s
+/// screens.
 @MainActor @Observable
 final class SessionStack {
   /// The screens pushed, the one on top last.
@@ -1221,10 +1227,37 @@ final class SessionStack {
   @ObservationIgnored private let core: any Core
   @ObservationIgnored private var models: [SessionRoute: SessionModel] = [:]
   @ObservationIgnored private var landings: [LandingRoute: NewSessionModel] = [:]
+  /// The Sessions' screens restored after a cold start, any of which found gone sends the reader back to the listing.
+  @ObservationIgnored private var restored: Set<SessionRoute> = []
 
   init(core: any Core, path: [Pushed] = []) {
     self.core = core
     self.path = path
+  }
+
+  /// The stack the scene kept, `kept`, pushed again after a cold start: each Session's screen, and the new-session
+  /// screen, read afresh.
+  convenience init(core: any Core, restoring kept: [KeptScene.Screen]) {
+    let path = kept.map { screen -> Pushed in
+      switch screen {
+      case .session(let session): .session(SessionRoute(session: session))
+      case .landing: .landing(LandingRoute())
+      }
+    }
+    self.init(core: core, path: path)
+    restored = Set(path.compactMap(\.route))
+  }
+
+  /// What the scene keeps of the path: each Session's screen, a new-session screen that has begun its Session kept as
+  /// that Session's, and the new-session screen; never the screens of a Turn's work or an Activity.
+  var kept: [KeptScene.Screen] {
+    path.compactMap { pushed in
+      switch pushed {
+      case .session(let route): .session(route.session)
+      case .landing(let route): landings[route]?.begun.map { .session($0.session) } ?? .landing
+      case .work, .detail: nil
+      }
+    }
   }
 
   /// The model of the new-session screen `route` pushed, made the first time it is asked for. The Session begun from
@@ -1245,6 +1278,10 @@ final class SessionStack {
       return model
     }
     let model = SessionModel(core: core, route: route)
+    if restored.contains(route) {
+      // A Session kept across a cold start that is gone, or whose Remote is, leaves nothing to return to.
+      model.whenGone = { [weak self] in self?.path = [] }
+    }
     models[route] = model
     return model
   }

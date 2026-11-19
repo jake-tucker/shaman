@@ -13,19 +13,27 @@ public struct RootScreen: View {
   private let opening: String?
   /// Whether the listing opens on the new-session screen, pushed over it at once.
   private let composing: Bool
+  /// Whether what the scene kept is forgotten, so the listing opens as it would in a new scene.
+  private let forgetting: Bool
   @State private var outlook: Outlook?
   @Environment(\.scenePhase) private var scenePhase
+  /// What the scene keeps of the listing and what is pushed over it, which iOS restores after it ends the app: a
+  /// `KeptScene`, as its plain string.
+  @SceneStorage("listing") private var kept = ""
 
   /// The app over `core`, showing `appVersion` as its own version, already confirming `invite` where one is given, as
-  /// one arriving by the launch environment in a debug build is, and with the Session `opening` names pushed over the
-  /// listing where one is named, or the new-session screen where it is `composing`.
+  /// one arriving by the launch environment in a debug build is, and returning to what the scene kept, but with the
+  /// Session `opening` names pushed over the listing where one is named, or the new-session screen where it is
+  /// `composing`, and as a new scene would open where it is `forgetting` what the scene kept.
   public init(
-    core: any Core, appVersion: String, invite: String? = nil, opening: String? = nil, composing: Bool = false
+    core: any Core, appVersion: String, invite: String? = nil, opening: String? = nil, composing: Bool = false,
+    forgetting: Bool = false
   ) {
     self.core = core
     self.appVersion = appVersion
     self.opening = opening
     self.composing = composing
+    self.forgetting = forgetting
     _invite = State(initialValue: invite)
   }
 
@@ -38,7 +46,8 @@ public struct RootScreen: View {
         PairingScreen(core: core, invite: invite)
       case .remote(_, let beginsIn):
         ListingScreen(
-          core: core, appVersion: appVersion, beginsIn: beginsIn, invite: invite, opening: opening,
+          core: core, appVersion: appVersion, beginsIn: beginsIn, invite: invite,
+          kept: forgetting ? KeptScene() : KeptScene(stored: kept), keep: { kept = $0.stored }, opening: opening,
           composing: composing)
       }
     }

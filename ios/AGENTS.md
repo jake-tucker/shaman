@@ -127,6 +127,14 @@ the home lab's Workspaces are "Loading workspaces…", in `unreachable` its head
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake composing --compose
 ```
 
+**A cold start.** The app keeps the listing's scope and the Sessions pushed over it, or the new-session screen, in
+Swift's scene storage, which iOS writes a moment after the app leaves the front and restores at the next launch. To see
+it, open something, send the app to the background (launch another app, such as `com.apple.Preferences`), wait a few
+seconds, `xcrun simctl terminate` it and launch it again without `--open` or `--compose`, which push their screen over
+whatever the scene kept. `--forget-scene` opens as a new scene would, and keeps afresh from there: launch with it, send
+the app to the background and end it to leave nothing behind, as `ColdStartTests` does after each test. The iOS 27.2
+simulator keeps a scene's storage when the app is swiped away in the app switcher too.
+
 An Intervention presented takes no tap for a moment; `--arming-moment <seconds>` makes that moment as long as a UI test
 needs to see a tap refused before one is taken.
 

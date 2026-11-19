@@ -1352,3 +1352,151 @@ private final class HeldTime: BackgroundTasks {
   }
 
 }
+
+@Suite struct KeptSceneTests {
+  @Test func whatTheSceneKeepsCrossesItsPlainStringWhole() {
+    let kept = KeptScene(
+      scope: "workspace/workstation-key/dotfiles",
+      pushed: [.session("workstation-key/12"), .session("workstation-key/12.1")]
+    )
+    #expect(KeptScene(stored: kept.stored) == kept)
+    #expect(KeptScene(stored: KeptScene(pushed: [.landing]).stored).pushed == [.landing])
+  }
+
+  @Test func aNewSceneOrOneKeptByAnotherBuildKeepsNothing() {
+    for stored in ["", "not json", "{\"pushed\": 3}"] {
+      #expect(KeptScene(stored: stored) == KeptScene(), "\(stored)")
+    }
+  }
+}
+
+@Suite @MainActor struct RestoredStackTests {
+  /// Waits until `shown` holds, for as long as a moment.
+  private func until(_ shown: @MainActor () -> Bool) async throws {
+    for _ in 0..<300 where !shown() {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(shown())
+  }
+
+  @Test func theSceneKeepsEachSessionPushedAndTheNewSessionScreenButNoTurnsWorkOrActivity() {
+    let core = FakeCore(.paired)
+    let parent = SessionRoute(session: "workstation-key/12")
+    let explorer = SessionRoute(session: "workstation-key/12.1")
+    let stack = SessionStack(core: core)
+    #expect(stack.kept.isEmpty)
+    stack.path = [
+      .session(parent), .work(parent, turn: "work"), .session(explorer), .work(explorer, turn: "work"),
+      .detail(explorer, activity: "check"),
+    ]
+    #expect(stack.kept == [.session("workstation-key/12"), .session("workstation-key/12.1")])
+    stack.path = [.landing(LandingRoute())]
+    #expect(stack.kept == [.landing])
+  }
+
+  @Test func aStackKeptIsPushedAgainEachScreenReadAfresh() {
+    let core = FakeCore(.paired)
+    let stack = SessionStack(
+      core: core, restoring: [.session("workstation-key/12"), .session("workstation-key/12.1")])
+    guard case .session(let parent) = stack.path.first, case .session(let explorer) = stack.path.last,
+      stack.path.count == 2
+    else {
+      Issue.record("two Sessions' screens pushed: \(stack.path)")
+      return
+    }
+    #expect(parent.session == "workstation-key/12")
+    #expect(explorer.session == "workstation-key/12.1")
+    #expect(core.opened.withLock { $0.isEmpty }, "nothing opened until its screen is drawn")
+    _ = stack.model(for: explorer)
+    #expect(core.opened.withLock { $0.count } == 1)
+    #expect(stack.kept == [.session("workstation-key/12"), .session("workstation-key/12.1")])
+
+    let landing = SessionStack(core: core, restoring: [.landing])
+    guard case .landing = landing.path.first, landing.path.count == 1 else {
+      Issue.record("the new-session screen pushed: \(landing.path)")
+      return
+    }
+  }
+
+  @Test func aSessionKeptThatIsGoneSendsTheReaderBackToTheListing() async throws {
+    // The `several` phone's home lab is not held by the `paired` one.
+    let core = FakeCore(.paired)
+    let stack = SessionStack(core: core, restoring: [.session("workstation-key/1"), .session("homelab-key/6")])
+    guard case .session(let gone) = stack.path.last else {
+      Issue.record("a Session pushed")
+      return
+    }
+    let model = stack.model(for: gone)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until { stack.path.isEmpty }
+    #expect(core.opened.withLock { $0.allSatisfy(\.isClosed) }, "every Session closed with its screen")
+  }
+
+  @Test func aSessionPushedWhileTheAppRunsThatIsGoneStaysToSaySo() async throws {
+    let core = FakeCore(.paired)
+    let stack = SessionStack(core: core)
+    let gone = SessionRoute(session: "homelab-key/6")
+    stack.path = [.session(gone)]
+    let model = stack.model(for: gone)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until { model.frame?.gone != nil }
+    #expect(stack.path.count == 1, "its screen says it is gone")
+  }
+
+  @Test func aNewSessionScreenThatHasBegunItsSessionIsKeptAsThatSession() async throws {
+    let core = FakeCore(.composing)
+    let route = LandingRoute()
+    let stack = SessionStack(core: core)
+    stack.path = [.landing(route)]
+    let landing = stack.landing(for: route)
+    let following = Task { await landing.follow() }
+    defer { following.cancel() }
+    try await until { landing.landing != nil }
+    #expect(stack.kept == [.landing], "before its first Prompt")
+    landing.text = "Map the workspace"
+    landing.send()
+    let begun = try #require(landing.begun)
+    #expect(stack.kept == [.session(begun.session)])
+  }
+}
+
+@Suite @MainActor struct RestoredListingTests {
+  /// Waits until the model's listing shows what `shown` looks for.
+  private func listing(of model: ListingModel, until shown: (Listing) -> Bool) async throws -> Listing {
+    for _ in 0..<200 {
+      if let listing = model.listing, shown(listing) { return listing }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    Issue.record("the listing never showed what was looked for")
+    return try #require(model.listing)
+  }
+
+  @Test func theScopeKeptNarrowsTheListingAgainAndTurnsNothing() async throws {
+    let core = FakeCore(.several)
+    let model = ListingModel(core: core)
+    let following = Task { await model.follow(restoring: "workspace/laptop-key/billing-api") }
+    defer { following.cancel() }
+    let listing = try await listing(of: model) { _ in true }
+    #expect(listing.title == "laptop · billing-api")
+    #expect(listing.scope == "workspace/laptop-key/billing-api")
+    var outlooks = core.outlook().makeAsyncIterator()
+    guard case .remote(let name, _) = await outlooks.next() else {
+      Issue.record("an Outlook")
+      return
+    }
+    #expect(name == "workstation", "the Outlook stays where it stood")
+  }
+
+  @Test func aScopeKeptThatIsGoneNarrowsTheListingToEverywhere() async throws {
+    for gone in ["remote/homelab-key", "workspace/homelab-key/home-assistant", "workspace/workstation-key/gone"] {
+      let model = ListingModel(core: FakeCore(.paired))
+      let following = Task { await model.follow(restoring: gone) }
+      defer { following.cancel() }
+      let listing = try await listing(of: model) { _ in true }
+      #expect(listing.scope == "everywhere", "\(gone)")
+      #expect(listing.title == "All workspaces", "\(gone)")
+    }
+  }
+}

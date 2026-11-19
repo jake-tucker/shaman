@@ -16,7 +16,7 @@ struct ShamanApp: App {
           } else {
             RootScreen(
               core: core, appVersion: Self.version, invite: Launch.invite, opening: Launch.opening,
-              composing: Launch.composing
+              composing: Launch.composing, forgetting: Launch.forgettingScene
             )
             .environment(\.interventionArming, Launch.arming ?? EnvironmentValues().interventionArming)
           }
@@ -77,6 +77,12 @@ struct ShamanApp: App {
     /// button pushes it.
     static var composing: Bool {
       ProcessInfo.processInfo.arguments.contains("--compose")
+    }
+
+    /// Whether `--forget-scene` asks for what the scene kept to be forgotten, so the listing opens as in a new scene
+    /// and the scene keeps afresh from there, as a UI test that left a Session open asks to leave nothing behind.
+    static var forgettingScene: Bool {
+      ProcessInfo.processInfo.arguments.contains("--forget-scene")
     }
 
     /// Whether `--servers-and-device` asks for the sheet of Servers, Relays and This device alone, which a phone

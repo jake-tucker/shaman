@@ -3,11 +3,16 @@ import SwiftUI
 
 /// What the app shows when no Session is open: every Remote's Sessions in one flat list, active rows above the shelf
 /// of settled ones, under a title that is a menu narrowing it to a Remote or a Workspace and a field searching it by
-/// Title, and the bottom bar, with the sheet of Servers, Relays and This device behind its button.
+/// Title, and the bottom bar, with the sheet of Servers, Relays and This device behind its button. It returns to what
+/// the scene kept after a cold start, and hands the scene what to keep on each change.
 struct ListingScreen: View {
   let core: any Core
   let appVersion: String
   let beginsIn: BeginsIn
+  /// The scope the scene kept, handed back to the core as the listing is first followed.
+  private let restoring: String?
+  /// Hands the scene what to keep of the listing and what is pushed over it.
+  private let keep: (KeptScene) -> Void
   @State private var model: ListingModel
   @State private var sheet: ListingSheet?
   /// The Sessions pushed over the listing, each closed in the core as its screen is popped.
@@ -15,20 +20,32 @@ struct ListingScreen: View {
   /// What the search field holds, which the core is handed as it changes and keeps no longer than the core runs.
   @State private var query = ""
 
-  /// The listing over `core`, confirming `invite` where one is given, with the Session `opening` names pushed over it,
-  /// or the new-session screen where it is `composing`.
+  /// The listing over `core`, confirming `invite` where one is given, returned to what the scene kept, `kept`, which
+  /// `keep` is handed again on each change; but with the Session `opening` names pushed over it, or the new-session
+  /// screen where it is `composing`.
   init(
-    core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?, opening: String? = nil,
-    composing: Bool = false
+    core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?, kept: KeptScene = KeptScene(),
+    keep: @escaping (KeptScene) -> Void = { _ in }, opening: String? = nil, composing: Bool = false
   ) {
     self.core = core
     self.appVersion = appVersion
     self.beginsIn = beginsIn
+    self.restoring = kept.scope
+    self.keep = keep
     _model = State(initialValue: ListingModel(core: core))
     _sheet = State(initialValue: invite.map(ListingSheet.pairing))
-    let path: [Pushed] =
-      composing ? [.landing(LandingRoute())] : opening.map { [.session(SessionRoute(session: $0))] } ?? []
-    _stack = State(initialValue: SessionStack(core: core, path: path))
+    // Pushed at launch as a tap pushes it, where a debug build asks; otherwise what the scene kept, restored.
+    let pushed: [Pushed]? =
+      composing ? [.landing(LandingRoute())] : opening.map { [.session(SessionRoute(session: $0))] }
+    _stack = State(
+      initialValue: pushed.map { SessionStack(core: core, path: $0) }
+        ?? SessionStack(core: core, restoring: kept.pushed))
+  }
+
+  /// What the scene is to keep now: the scope the listing stands at, or the one it was handed back until it says, and
+  /// what is pushed over it.
+  private var kept: KeptScene {
+    KeptScene(scope: model.listing?.scope ?? restoring, pushed: stack.kept)
   }
 
   var body: some View {
@@ -87,7 +104,8 @@ struct ListingScreen: View {
         }
       }
     }
-    .task { await model.follow() }
+    .task { await model.follow(restoring: restoring) }
+    .onChange(of: kept, initial: true) { _, kept in keep(kept) }
     .onChange(of: model.listing?.unreachable) {
       // A Remote that answers again on its own takes its sheet with it.
       if case .unreachable(let remote) = sheet, model.unreachable(remote) == nil {
@@ -296,8 +314,12 @@ final class ListingModel {
     listing?.unreachable.first { $0.remote == remote }
   }
 
-  /// Follows what the core lists until the screen goes.
-  func follow() async {
+  /// Follows what the core lists until the screen goes, first narrowed to the scope `restoring` names, as the scene
+  /// kept it, where one is.
+  func follow(restoring: String? = nil) async {
+    if let restoring {
+      core.restoreListing(restoring)
+    }
     for await listing in core.listing() {
       self.listing = listing
     }
