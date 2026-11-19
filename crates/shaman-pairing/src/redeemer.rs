@@ -124,8 +124,8 @@ pub enum WayStanding {
 
 /// What a Server's offer to pair back attaches to its redeemer by (ADR-0066).
 /// Each is told the redeemer it acts for, so whatever implements these holds
-/// none. A thin Client passes none: it offers nothing, so no redemption it
-/// makes asks to.
+/// none. A thin Client offers nothing, so no redemption it makes asks to: it
+/// attaches hooks only to hear that a Remote refused its key.
 pub trait RedeemerHooks: Send + Sync {
     /// The offer to make the Serving Server whose key is `server_key`, asked
     /// as a redemption that asks to make one begins, before anything is
@@ -749,6 +749,41 @@ impl Redeemer {
             stored.remote.icon = Some(icon.to_owned());
             Ok(())
         })
+    }
+
+    /// Renames the Remote `name` to `new_name`, which the shared rule must
+    /// allow and no other Remote may hold, keeping its Pairing: nothing is
+    /// asked of the Remote, which never hears what this side calls it, and
+    /// the client and TLS it was asked through go on under the new name, so
+    /// asking it again dials and signs nothing more. Whatever followed it
+    /// under its old name hears the Remotes paired changed.
+    pub fn rename_remote(
+        &self,
+        name: &str,
+        new_name: &str,
+    ) -> std::result::Result<(), PairingFailure> {
+        validate_remote_name(new_name)?;
+        if name == new_name {
+            return self.stored_remote(name).map(|_| ());
+        }
+        self.change_remotes(|remotes| {
+            if remotes.iter().any(|stored| stored.remote.name == new_name) {
+                return Err(remote_name_conflict(new_name));
+            }
+            let Some(stored) = remotes.iter_mut().find(|stored| stored.remote.name == name) else {
+                return Err(PairingFailure::new(
+                    SessionErrorCode::RemoteNotFound,
+                    "Remote not found",
+                ));
+            };
+            new_name.clone_into(&mut stored.remote.name);
+            Ok(())
+        })?;
+        rekey(&self.remote_clients, name, new_name);
+        rekey(&self.remote_tls, name, new_name);
+        rekey(&self.awaiting, name, new_name);
+        self.note_pairing_change();
+        Ok(())
     }
 
     /// Forgets the Remote `name` here, asking nothing of it.
@@ -1997,6 +2032,14 @@ pub fn ordered_ways(
     Ok(chosen.to_vec())
 }
 
+/// Moves what `held` holds under the name `from` to the name `to`.
+fn rekey<T>(held: &StdMutex<HashMap<String, T>>, from: &str, to: &str) {
+    let mut held = held.lock().unwrap_or_else(|poison| poison.into_inner());
+    if let Some(value) = held.remove(from) {
+        held.insert(to.to_owned(), value);
+    }
+}
+
 pub fn remote_name_conflict(name: &str) -> PairingFailure {
     PairingFailure::new(
         SessionErrorCode::RemoteNameConflict,
@@ -2494,6 +2537,55 @@ mod tests {
                 .all(|remote| remote.status == RemoteStatus::Unavailable),
             "{remotes:?}"
         );
+    }
+
+    #[test]
+    fn a_remote_renamed_keeps_its_place_and_key_and_refuses_a_name_held_or_ruled_out() {
+        let data = tempfile::tempdir().expect("create a data directory");
+        let redeemer = redeemer(&data);
+        redeemer
+            .change_remotes(|remotes| {
+                remotes.extend([stored("desk", b"desk-key"), stored("lab", b"lab-key")]);
+                Ok(())
+            })
+            .unwrap_or_else(|failure| panic!("{}", failure.message));
+        let changes = redeemer.pairing_changes();
+        let before = *changes.borrow();
+
+        redeemer
+            .rename_remote("desk", "study")
+            .unwrap_or_else(|failure| panic!("{}", failure.message));
+        let names = |redeemer: &Redeemer| {
+            redeemer
+                .records()
+                .into_iter()
+                .map(|stored| (stored.remote.name, stored.public_key))
+                .collect::<Vec<_>>()
+        };
+        let renamed = vec![
+            ("study".to_owned(), b"desk-key".to_vec()),
+            ("lab".to_owned(), b"lab-key".to_vec()),
+        ];
+        assert_eq!(names(&redeemer), renamed);
+        assert_ne!(*changes.borrow(), before, "followers hear of it");
+        assert_eq!(names(&self::redeemer(&data)), renamed, "and it is stored");
+
+        let held = redeemer
+            .rename_remote("study", "lab")
+            .expect_err("a name held");
+        assert_eq!(held.code, SessionErrorCode::RemoteNameConflict);
+        let ruled_out = redeemer
+            .rename_remote("study", "everywhere")
+            .expect_err("a name the rule refuses");
+        assert_eq!(ruled_out.code, SessionErrorCode::InvalidRemoteName);
+        let gone = redeemer
+            .rename_remote("desk", "attic")
+            .expect_err("no Remote of that name");
+        assert_eq!(gone.code, SessionErrorCode::RemoteNotFound);
+        redeemer
+            .rename_remote("study", "study")
+            .unwrap_or_else(|failure| panic!("{}", failure.message));
+        assert_eq!(names(&redeemer), renamed, "nothing changed");
     }
 
     #[test]
