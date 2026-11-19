@@ -31,6 +31,7 @@ final class RelayLoginTests: XCTestCase {
   }
 
   /// The system's prompt to sign in through github.com, which the authentication sheet opens with.
+  @MainActor
   private var prompt: XCUIElement {
     XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
   }
@@ -241,6 +242,12 @@ final class RelayLoginTests: XCTestCase {
     XCTAssertTrue(failure.waitForExistence(timeout: 10))
     XCTAssertTrue(failure.label.contains("pairing goes on by itself"), failure.label)
     attach(app, "Pairing asks for the login")
+    // Trying again as it is stays: no way answers until the login is done.
+    let tryAgain = app.buttons["confirm.tryAgain"]
+    XCTAssertTrue(tryAgain.exists, "trying again is offered beside the login")
+    tryAgain.tap()
+    XCTAssertTrue(app.buttons["confirm.login"].waitForExistence(timeout: 10))
+    XCTAssertTrue(failure.waitForExistence(timeout: 10))
     app.buttons["confirm.login"].tap()
     XCTAssertTrue(app.staticTexts["login.code"].waitForExistence(timeout: 10))
     XCTAssertTrue(gone(app.staticTexts["login.code"]), "the login's sheet closes itself once confirmed")

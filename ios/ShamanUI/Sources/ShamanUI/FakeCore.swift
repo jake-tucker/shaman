@@ -694,9 +694,9 @@
       if invite.contains("relayonly") && loggedIn != true {
         return .loginNeeded(
           message:
-            "No way this invite offers answered, but it offers the relay at relay.example.com, where this phone "
-            + "needs to log in. Log in there, and pairing goes on by itself.",
-          login: LoginOffer(relay: Self.relay, words: "Log in"))
+            "No way this invite offers answered. It offers the relay at relay.example.com, where this phone needs to "
+            + "log in: log in there and pairing goes on by itself, or try again once this phone can reach the server.",
+          login: LoginOffer(relay: Self.relay, words: "Log in"), tryAgain: "Try again")
       }
       if invite.contains("unanswered") {
         return .failed(

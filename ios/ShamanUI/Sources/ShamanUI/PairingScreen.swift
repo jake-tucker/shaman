@@ -205,10 +205,12 @@ struct ConfirmationScreen: View {
         .accessibilityIdentifier("confirm.pairing")
       } else {
         switch model.failure?.again {
-        case .logIn(let login):
+        case .logIn(let login, let tryAgain):
           Button(login.words) { model.logIn(login) }
             .bold()
             .accessibilityIdentifier("confirm.login")
+          Button(tryAgain) { Task { await pair() } }
+            .accessibilityIdentifier("confirm.tryAgain")
         case .scanAgain:
           Button("Scan again", action: scanAgain)
             .accessibilityIdentifier("confirm.scanAgain")
@@ -269,8 +271,8 @@ final class ConfirmationModel {
   enum Again {
     case scanAgain
     case tryAgain
-    /// A login at a Relay, after which the pairing goes on by itself.
-    case logIn(LoginOffer)
+    /// A login at a Relay, after which the pairing goes on by itself, or trying again as it is, in the words given.
+    case logIn(LoginOffer, tryAgain: String)
   }
   private(set) var remoteRefusal: String?
   private(set) var deviceRefusal: String?
@@ -301,8 +303,8 @@ final class ConfirmationModel {
       return true
     case .failed(let message, let again):
       failure = (message, again == .scanAgain ? .scanAgain : .tryAgain)
-    case .loginNeeded(let message, let login):
-      failure = (message, .logIn(login))
+    case .loginNeeded(let message, let login, let tryAgain):
+      failure = (message, .logIn(login, tryAgain: tryAgain))
     case .remoteNameRefused(let message):
       remoteRefusal = message
     case .deviceNameRefused(let message):
