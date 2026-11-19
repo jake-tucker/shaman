@@ -859,6 +859,19 @@ impl Phone {
         }
     }
 
+    /// Every Servers section the core shows from now on, for as long as what
+    /// this answers is held.
+    pub fn hear_servers(&self) -> ServersHeard {
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let subscription = self
+            .core
+            .watch_servers(Arc::new(EveryServers(heard.clone())));
+        ServersHeard {
+            _subscription: subscription,
+            heard,
+        }
+    }
+
     /// Logs in at the Relay at `relay` through the core, followed until the
     /// login is dropped.
     pub fn log_in(&self, relay: &str) -> Login {
@@ -1271,6 +1284,27 @@ async fn heard_at_once<T: Clone>(heard: &mut watch::Receiver<Option<T>>) -> T {
 
 /// A listener keeping the latest it heard.
 struct Heard<T>(watch::Sender<Option<T>>);
+
+/// Every Servers section a phone's core has shown since it was asked.
+pub struct ServersHeard {
+    _subscription: Arc<Subscription>,
+    heard: Arc<Mutex<Vec<Servers>>>,
+}
+
+impl ServersHeard {
+    /// What has been shown so far, in order.
+    pub fn heard(&self) -> Vec<Servers> {
+        self.heard.lock().expect("what was heard").clone()
+    }
+}
+
+struct EveryServers(Arc<Mutex<Vec<Servers>>>);
+
+impl ServersListener for EveryServers {
+    fn changed(&self, servers: Servers) {
+        self.0.lock().expect("what was heard").push(servers);
+    }
+}
 
 impl DeviceListener for Heard<ThisDevice> {
     fn changed(&self, device: ThisDevice) {

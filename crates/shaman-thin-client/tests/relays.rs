@@ -327,7 +327,7 @@ async fn pairing_through_a_relay_alone_asks_for_the_login_and_goes_on_once_it_is
 #[tokio::test(flavor = "multi_thread")]
 async fn pairing_waits_on_a_login_only_while_its_invite_lives() {
     let relay = TestRelay::start().await;
-    let life = Duration::from_secs(2);
+    let life = Duration::from_millis(100);
     let desk = ServingServer::start_with_invites_living("thin-relay-life", life).await;
     desk.log_in_at(&relay, "octocat").await;
     desk.serve_through(&relay).await;
@@ -951,18 +951,33 @@ async fn a_relay_turned_on_after_pairing_reads_login_needed_and_one_turned_off_s
     );
     kept(&phone, |stored| !stored.contains(&relay.address())).await;
 
-    // Out of reach directly, the Relay is not dialled.
+    // Out of reach directly, and whatever the Relay still carried cut, the
+    // phone dials the desk afresh, and not through the Relay.
     let joined = joins(&relay, &phone);
     gate.cut(Cut::Refusing);
-    let phone = phone.relaunched();
-    let listing = phone
-        .listing_until(|listing| !listing.unreachable.is_empty())
-        .await;
+    relay.cut_carried();
+    phone.core.came_to_front();
+    let unreachable = |listing: &Listing| !listing.unreachable.is_empty();
+    let listing = phone.listing_until(unreachable).await;
     assert_ne!(
         listing.unreachable[0].sheet.hint,
         UnreachableHint::LoginNeeded
     );
     assert_eq!(listing.unreachable[0].sheet.login, None);
+    phone
+        .core
+        .try_again(listing.unreachable[0].remote.clone())
+        .await
+        .expect_err("no way to the desk answers");
+    assert_eq!(
+        joins(&relay, &phone),
+        joined,
+        "the Relay is dialled no more"
+    );
+
+    // Nor once the phone opens afresh from what it kept.
+    let phone = phone.relaunched();
+    phone.listing_until(unreachable).await;
     assert_eq!(
         joins(&relay, &phone),
         joined,
@@ -1171,4 +1186,61 @@ async fn the_phone_keeps_no_connection_to_a_relay_and_asks_none_for_the_accounts
 
     phone.shutdown();
     desk.shutdown().await;
+}
+
+/// A Relay a Remote turns on later, where this phone's Login stands already,
+/// is asked whether it answers and reads so, while the ways the Remote had
+/// read as they did throughout.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_relay_turned_on_where_the_phone_is_logged_in_already_is_asked_whether_it_answers() {
+    let relay = TestRelay::start().await;
+    // The phone logs in at the Relay another Server's Invite offers.
+    let (attic, _attic_gate) = serving_through("thin-relay-attic", &relay).await;
+    let phone = Phone::with(timings());
+    let offered = attic.invite(vec![Way::Relay(relay.address())]).await;
+    let _read = phone.core.read_invite(offered);
+    phone.logged_in(&relay, "octocat").await;
+
+    let desk = ServingServer::start("thin-relay-told-held").await;
+    desk.log_in_at(&relay, "octocat").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    assert_eq!(
+        pair(&phone, &desk, vec![Way::Direct(gate.address())]).await,
+        paired()
+    );
+    let direct = gate.address().to_string();
+    phone
+        .servers_until(|servers| ways(servers) == [(direct.clone(), WayState::Answering)])
+        .await;
+
+    let heard = phone.hear_servers();
+    desk.serve_through(&relay).await;
+    let servers = phone
+        .servers_until(|servers| {
+            relay_way(servers).is_some_and(|(state, _)| state == WayState::Answering)
+        })
+        .await;
+    assert_eq!(
+        ways(&servers),
+        [
+            (direct.clone(), WayState::Answering),
+            (Way::Relay(relay.address()).to_string(), WayState::Answering),
+        ]
+    );
+    let shown = heard.heard();
+    assert!(
+        shown.iter().any(|servers| ways(servers).len() == 2),
+        "the Relay told was shown"
+    );
+    for servers in &shown {
+        assert_eq!(
+            ways(servers).first(),
+            Some(&(direct.clone(), WayState::Answering)),
+            "the direct way reads answering throughout: {servers:?}"
+        );
+    }
+
+    phone.shutdown();
+    desk.shutdown().await;
+    attic.shutdown().await;
 }

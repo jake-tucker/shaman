@@ -20,6 +20,22 @@ pub struct TestRelay {
     /// What each connection carried through the route asked, in the order
     /// they were made.
     connections: Arc<Mutex<Vec<Carried>>>,
+    /// What carries each connection, which cutting them aborts.
+    carrying: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+}
+
+/// Notes the connection at `index` closed as it is dropped.
+struct Closed {
+    noted: Arc<Mutex<Vec<Carried>>>,
+    index: usize,
+}
+
+impl Drop for Closed {
+    fn drop(&mut self) {
+        if let Ok(mut noted) = self.noted.lock() {
+            noted[self.index].open = false;
+        }
+    }
 }
 
 /// One connection the route carried to the Relay.
@@ -71,11 +87,13 @@ impl TestRelay {
         .expect("start the Relay");
         let relay = running.address();
         let connections = Arc::new(Mutex::new(Vec::<Carried>::new()));
+        let carrying = Arc::new(Mutex::new(Vec::<tokio::task::JoinHandle<()>>::new()));
         let noted = connections.clone();
+        let carriers = carrying.clone();
         let route = tokio::spawn(async move {
             while let Ok((accepted, _)) = route.accept().await {
                 let noted = noted.clone();
-                tokio::spawn(async move {
+                let carrier = tokio::spawn(async move {
                     let Ok(onward) = tokio::net::TcpStream::connect(relay).await else {
                         return;
                     };
@@ -87,9 +105,14 @@ impl TestRelay {
                         });
                         noted.len() - 1
                     };
+                    // Noted as closed however carrying it ends, cut or not.
+                    let _closed = Closed {
+                        noted: noted.clone(),
+                        index,
+                    };
                     carry(accepted, onward, &noted, index).await;
-                    noted.lock().expect("the route's notes")[index].open = false;
                 });
+                carriers.lock().expect("the route's carriers").push(carrier);
             }
         });
         Self {
@@ -99,6 +122,20 @@ impl TestRelay {
             running,
             route,
             connections,
+            carrying,
+        }
+    }
+
+    /// Cuts every connection the route carries now, as a network lost
+    /// would: what was joined through the Relay ends with it.
+    pub fn cut_carried(&self) {
+        for carrier in self
+            .carrying
+            .lock()
+            .expect("the route's carriers")
+            .drain(..)
+        {
+            carrier.abort();
         }
     }
 
