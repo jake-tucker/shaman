@@ -994,6 +994,51 @@ async fn a_relay_turned_on_after_pairing_reads_login_needed_and_one_turned_off_s
 /// alone, which its sheet leads to logging in at; and the first is dialled
 /// no more.
 #[tokio::test(flavor = "multi_thread")]
+async fn a_relay_turned_on_after_a_rename_is_learned_under_the_new_name() {
+    let relay = TestRelay::start().await;
+    let desk = ServingServer::start("thin-relay-told-renamed").await;
+    desk.log_in_at(&relay, "octocat").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let phone = Phone::with(timings());
+    assert_eq!(
+        pair(&phone, &desk, vec![Way::Direct(gate.address())]).await,
+        paired()
+    );
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder), "Map the workspace").await;
+    phone
+        .listing_until(|listing| listed(listing, "Map the workspace"))
+        .await;
+    let remote = phone.servers().await.remotes[0].remote.clone();
+    // Read across the rename, the desk is asked through the one client
+    // throughout.
+    let listing = phone.listing_until(|_| true).await;
+    let reading = phone.open(&listing.active[0].session);
+    reading.conversation_until(|items| !items.is_empty()).await;
+
+    phone
+        .core
+        .rename_remote(remote, "study".to_owned())
+        .await
+        .expect("renamed");
+    desk.serve_through(&relay).await;
+
+    let servers = phone
+        .servers_until(|servers| relay_way(servers).is_some())
+        .await;
+    assert_eq!(servers.remotes[0].name, "study");
+    assert_eq!(
+        relay_way(&servers).map(|(state, _)| state),
+        Some(WayState::LoginNeeded),
+        "followed on under its new name"
+    );
+
+    drop(reading);
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn pairing_through_a_relay_alone_follows_a_relay_turned_on_later() {
     let first = TestRelay::start().await;
     let second = TestRelay::start().await;

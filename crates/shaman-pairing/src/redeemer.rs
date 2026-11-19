@@ -1045,14 +1045,14 @@ impl Redeemer {
         tokio::spawn(self.clone().keep_up(remote.clone(), client.clone()));
     }
 
-    async fn keep_up(self, remote: StoredRemote, client: Arc<PairingHttpClient>) {
+    async fn keep_up(self, mut remote: StoredRemote, client: Arc<PairingHttpClient>) {
         let held = Arc::downgrade(&client);
         let mut interest = client.interest.subscribe();
         let mut asking = Some(client);
         while let Some(client) = asking.take() {
             let answers = client.answers.load(Ordering::SeqCst);
             match self
-                .follow_told(&remote, client, &held, &mut interest)
+                .follow_told(&mut remote, client, &held, &mut interest)
                 .await
             {
                 Followed::LetGo | Followed::Refused => return,
@@ -1078,10 +1078,11 @@ impl Redeemer {
     /// timeout — so what it tells as it is connected to is taken up however
     /// soon what connected lets it go; and then, holding nothing, each change
     /// it tells, until nothing asks the Remote through the client any longer
-    /// (`interest`) or its Pairing no longer stands as it did.
+    /// (`interest`) or its Pairing no longer stands as it did. Renamed
+    /// meanwhile, it is followed on under its new name.
     async fn follow_told(
         &self,
-        remote: &StoredRemote,
+        remote: &mut StoredRemote,
         client: Arc<PairingHttpClient>,
         held: &Weak<PairingHttpClient>,
         interest: &mut watch::Receiver<()>,
@@ -1100,7 +1101,7 @@ impl Redeemer {
                 request.headers_mut().extend(protocol.stated());
                 request
             };
-            let answer = first_remote_answer(remote, &client, asking, |answer| async move {
+            let answer = first_remote_answer(&*remote, &client, asking, |answer| async move {
                 match answer {
                     Ok(response) => WayAttempt::Answered(response),
                     Err(_) => WayAttempt::TryNext,
@@ -1131,7 +1132,7 @@ impl Redeemer {
         if !self.take_up_told(remote, held, &said.relays) {
             return Followed::LetGo;
         }
-        self.hooked(|hooks| hooks.told(self, remote, &client, said.offer));
+        self.hooked(|hooks| hooks.told(self, &*remote, &client, said.offer));
         drop(client);
         let mut pairings = self.pairing_changes();
         loop {
@@ -1146,7 +1147,7 @@ impl Redeemer {
                 said = told.next() => match said {
                     Ok(said) if self.take_up_told(remote, held, &said.relays) => {
                         if let Some(client) = held.upgrade() {
-                            self.hooked(|hooks| hooks.told(self, remote, &client, said.offer));
+                            self.hooked(|hooks| hooks.told(self, &*remote, &client, said.offer));
                         }
                     }
                     Ok(_) => return Followed::LetGo,
@@ -1169,7 +1170,7 @@ impl Redeemer {
     /// ([`Self::store_told_soon`]).
     fn take_up_told(
         &self,
-        followed: &StoredRemote,
+        followed: &mut StoredRemote,
         client: &Weak<PairingHttpClient>,
         relays: &[String],
     ) -> bool {
@@ -1181,7 +1182,7 @@ impl Redeemer {
             .remotes
             .write()
             .expect("Remote record lock is not poisoned");
-        let Some(index) = followed_at(&clients, &remotes, followed, client) else {
+        let Some(index) = renamed_followed_at(&clients, &remotes, followed, client) else {
             return false;
         };
         let ways = kept_up(&remotes[index].remote.ways, relays);
@@ -1249,8 +1250,13 @@ impl Redeemer {
     }
 
     /// Whether the Remote `followed` is still asked through `client`, under
-    /// the Pairing it was followed under.
-    fn still_followed(&self, followed: &StoredRemote, client: &Weak<PairingHttpClient>) -> bool {
+    /// the Pairing it was followed under, `followed` taking the name it was
+    /// renamed to since.
+    fn still_followed(
+        &self,
+        followed: &mut StoredRemote,
+        client: &Weak<PairingHttpClient>,
+    ) -> bool {
         let clients = self
             .remote_clients
             .lock()
@@ -1259,7 +1265,7 @@ impl Redeemer {
             .remotes
             .read()
             .expect("Remote record lock is not poisoned");
-        followed_at(&clients, &remotes, followed, client).is_some()
+        renamed_followed_at(&clients, &remotes, followed, client).is_some()
     }
 
     /// Records how `remote` stands, and the way it last answered by where it
@@ -1930,6 +1936,24 @@ pub fn followed_at(
     remotes
         .iter()
         .position(|stored| same_pairing(stored, followed))
+}
+
+/// [`followed_at`], where the Pairing `followed` was followed under may
+/// have been renamed since ([`Redeemer::rename_remote`]): found by its key
+/// and the time it was made, `followed` takes the name it goes by now. A
+/// Server never renames a Remote, so for it this is [`followed_at`].
+fn renamed_followed_at(
+    clients: &HashMap<String, Weak<PairingHttpClient>>,
+    remotes: &[StoredRemote],
+    followed: &mut StoredRemote,
+    client: &Weak<PairingHttpClient>,
+) -> Option<usize> {
+    if let Some(now) = remotes.iter().find(|stored| {
+        stored.public_key == followed.public_key && stored.generation == followed.generation
+    }) {
+        now.remote.name.clone_into(&mut followed.remote.name);
+    }
+    followed_at(clients, remotes, followed, client)
 }
 
 /// Whether `stored` and `other` are records of the one Pairing: under one
