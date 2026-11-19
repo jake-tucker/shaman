@@ -173,6 +173,13 @@ private struct LandingFoot: View {
         .accessibilityLabel(Text("Send"))
         .accessibilityIdentifier("landing.send")
       }
+      if let note = landing.note {
+        Text(verbatim: note)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+          .accessibilityIdentifier("landing.note")
+      }
       if let invalid = model.invalid {
         Text(verbatim: invalid)
           .font(.caption)

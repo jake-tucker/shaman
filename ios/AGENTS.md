@@ -107,7 +107,8 @@ xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --
 the Outlook stands: in `composing`, the `paired` phone whose Outlook remembers the workstation's `shaman` Workspace, it
 offers send, and a first Prompt turns it into the Provisional Session, reading "Starting", and a moment later into the
 Session the fake began, which the listing then carries; a Prompt holding "refuse" is refused the first time it is asked,
-and begins when tried again. In `paired` no Workspace is remembered, so the screen asks for one and send is disabled;
+and one holding "unanswered" is never answered, so it may have begun, which the Landing says once it is left; each begins
+when tried again. In `paired` no Workspace is remembered, so the screen asks for one and send is disabled;
 in `unreachable`, opening `homelab-key/2` turns the Outlook toward the home lab, where nothing begins until it answers.
 
 ```sh

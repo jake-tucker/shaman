@@ -398,8 +398,8 @@ private struct ItemView: View {
       .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
       .accessibilityElement(children: .combine)
       .accessibilityIdentifier("session.error")
-    case .refused(let words, let tryAgain):
-      RefusedRow(words: words, tryAgain: tryAgain, model: model)
+    case .refused(let words, let mayHaveBegun, let tryAgain):
+      RefusedRow(words: words, mayHaveBegun: mayHaveBegun, tryAgain: tryAgain, model: model)
     case .compaction(let words, let tone, let detail):
       let compaction = Label {
         Text(verbatim: words)
@@ -430,22 +430,24 @@ private struct ItemView: View {
   }
 }
 
-/// Where the work of a Session being begun would be, once its Server refused it: why, and "Try again", which asks
-/// again with the same Prompt.
+/// Where the work of a Session being begun would be, once its Server refused it, in red, or never answered so that
+/// it may have begun, in orange: what is known, and "Try again", which asks again with the same Prompt.
 private struct RefusedRow: View {
   let words: String
+  let mayHaveBegun: Bool
   let tryAgain: String
   let model: SessionModel
 
   var body: some View {
+    let tint: Color = mayHaveBegun ? .orange : .red
     VStack(alignment: .leading, spacing: 10) {
       Label {
         Text(verbatim: words)
           .accessibilityIdentifier("session.refusedWords")
       } icon: {
-        Image(systemName: "exclamationmark.triangle.fill")
+        Image(systemName: mayHaveBegun ? "questionmark.circle.fill" : "exclamationmark.triangle.fill")
       }
-      .foregroundStyle(.red)
+      .foregroundStyle(tint)
       Button {
         Task { await model.tryAgain() }
       } label: {
@@ -459,9 +461,9 @@ private struct RefusedRow: View {
     .font(.footnote)
     .padding(10)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+    .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
     .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("session.refused")
+    .accessibilityIdentifier(mayHaveBegun ? "session.mayHaveBegun" : "session.refused")
   }
 }
 

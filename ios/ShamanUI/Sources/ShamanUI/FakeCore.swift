@@ -133,6 +133,8 @@
     /// How many Sessions have been begun from the Landing.
     private let begunCount = Atomic<Int>(0)
     private let landingListeners = Listeners<Landing>()
+    /// What the Landing says of a beginning left while it may have begun.
+    private let landingNote = Mutex<String?>(nil)
 
     public func landing() -> AsyncStream<Landing> {
       landingListeners.stream(now: currentLanding())
@@ -148,8 +150,21 @@
       let number = begunCount.add(1, ordering: .relaxed).newValue
       let session = "\(remote)-key/begun-\(number)"
       let place = ((held.withLock { $0.count > 1 } ? [remote] : []) + [workspace.name]).joined(separator: " · ")
-      let opened = FakeOpenedSession(beginning: session, text: text, place: place, acts: acts) { [weak self] text in
-        self?.list(session, begunWith: text, on: remote, in: workspace.name)
+      // A Session begun anew says nothing more of one left before.
+      landingNote.withLock { $0 = nil }
+      landingListeners.tell(currentLanding())
+      let opened = FakeOpenedSession(beginning: session, text: text, place: place, acts: acts) { [weak self] told in
+        guard let self else { return }
+        switch told {
+        case .began(let text): list(session, begunWith: text, on: remote, in: workspace.name)
+        case .leftUnsure:
+          landingNote.withLock {
+            $0 =
+              "The server did not answer, so a session may have begun with this prompt. Look for it in the listing "
+              + "before sending it again."
+          }
+          landingListeners.tell(currentLanding())
+        }
       }
       self.opened.withLock { $0.append(opened) }
       return opened
@@ -167,25 +182,32 @@
       listingListeners.tell(currentListing())
     }
 
-    /// The Landing where the Outlook stands, as the core would show it.
+    /// The Landing where the Outlook stands, as the core would show it: naming the Remote only beside others.
     private func currentLanding() -> Landing {
+      let note = landingNote.withLock { $0 }
       guard let remote = currentRemote() else {
         return Landing(
           title: "New session", place: "", workspace: nil, asks: "Pair with a server to begin a session there",
-          unreachable: nil, placeholder: "Message", canSend: false, draft: FakeOpenedSession.landingDraft)
+          unreachable: nil, note: note, placeholder: "Message", canSend: false,
+          draft: FakeOpenedSession.landingDraft)
       }
+      let named = held.withLock { $0.count > 1 }
       let workspace = turnedWorkspace.withLock { $0[remote] }
       let cut = unreachable.withLock { $0[remote] != nil }
       return Landing(
-        title: "New session", place: workspace.map { "\(remote) · \($0)" } ?? remote,
+        title: "New session",
+        place: ((named ? [remote] : []) + [workspace].compactMap { $0 }).joined(separator: " · "),
         workspace: workspace.map {
           LandingWorkspace(
             glyph: Self.workspaceGlyphs[$0], name: $0, origin: remote, description: Self.descriptions[$0])
         },
         asks: workspace == nil
-          ? "Choose a workspace on \(remote) to begin in: narrow the listing to one, or open a session there." : nil,
-        unreachable: cut ? "\(remote) is unreachable. Nothing begins there until it answers." : nil,
-        placeholder: "Message", canSend: workspace != nil && !cut, draft: FakeOpenedSession.landingDraft)
+          ? "Choose a workspace\(named ? " on \(remote)" : "") to begin in: narrow the listing to one, or open a "
+            + "session there." : nil,
+        unreachable: cut
+          ? "\(named ? remote : "The server") is unreachable. Nothing begins there until it answers." : nil,
+        note: note, placeholder: "Message", canSend: workspace != nil && !cut,
+        draft: FakeOpenedSession.landingDraft)
     }
 
     /// The Icons of the fake's Workspaces, as the core resolves them from the Catalog.

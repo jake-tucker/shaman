@@ -58,7 +58,8 @@ final class NewSessionTests: XCTestCase {
     let app = launched("composing")
     compose(app)
     XCTAssertEqual(element("landing.title", in: app).label, "New session")
-    XCTAssertEqual(element("landing.place", in: app).label, "workstation · shaman", "over where it will begin")
+    XCTAssertEqual(
+      element("landing.place", in: app).label, "shaman", "over where it will begin, with one Remote naming no Origin")
     XCTAssertEqual(element("landing.workspace", in: app).label, "shaman")
     XCTAssertEqual(element("landing.origin", in: app).label, "workstation")
     XCTAssertTrue(element("landing.description", in: app).label.hasPrefix("A terminal client for coding agents"))
@@ -171,13 +172,35 @@ final class NewSessionTests: XCTestCase {
   }
 
   @MainActor
+  func testABeginningNeverAnsweredSaysItMayHaveBegunAndLeftTheLandingSaysSo() {
+    let app = launched("composing")
+    compose(app)
+    write("Unanswered, this one", in: app)
+    app.buttons["landing.send"].tap()
+    let words = element("session.refusedWords", in: app)
+    XCTAssertTrue(words.waitForExistence(timeout: 10))
+    XCTAssertEqual(words.label, "The server did not answer, so the session may have begun")
+    XCTAssertTrue(element("session.mayHaveBegun", in: app).exists, "never that it was refused")
+    XCTAssertFalse(element("session.refused", in: app).exists)
+    attach(app, "A beginning never answered")
+
+    back(app)
+    compose(app)
+    XCTAssertEqual(element("landing.composer", in: app).value as? String, "Unanswered, this one", "kept as the draft")
+    let note = element("landing.note", in: app)
+    XCTAssertTrue(note.waitForExistence(timeout: 5))
+    XCTAssertTrue(note.label.contains("may have begun"), note.label)
+    attach(app, "The landing after a beginning never answered")
+  }
+
+  @MainActor
   func testWhereNoWorkspaceIsRememberedTheScreenAsksForOneAndSendIsDisabled() {
     let app = launched("paired")
     compose(app)
-    XCTAssertEqual(element("landing.place", in: app).label, "workstation")
+    XCTAssertFalse(element("landing.place", in: app).exists, "with one Remote and no Workspace, nothing to say")
     let asks = element("landing.asks", in: app)
     XCTAssertTrue(asks.exists)
-    XCTAssertTrue(asks.label.hasPrefix("Choose a workspace on workstation"), asks.label)
+    XCTAssertTrue(asks.label.hasPrefix("Choose a workspace to begin in"), asks.label)
     write("Tidy the build", in: app)
     XCTAssertFalse(app.buttons["landing.send"].isEnabled, "nowhere to begin")
     attach(app, "No workspace remembered")

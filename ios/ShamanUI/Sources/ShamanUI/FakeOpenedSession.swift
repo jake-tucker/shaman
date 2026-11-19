@@ -103,10 +103,26 @@
   /// so a screen can be seen failing each way. The Interventions its Turn waits on present themselves once it lands,
   /// oldest first, and wait behind "Review" once dismissed, as the core's do. Answers holding "fail" are refused.
   final class FakeOpenedSession: OpenedSession {
-    /// A Session being begun from the Landing: its Prompt, and whether the fake's Server refused it.
+    /// A Session being begun from the Landing: its Prompt, and how the fake's Server answered, where it has and not
+    /// with the Session.
     private struct Provisional {
       var text: String
-      var refused = false
+      var outcome: Outcome?
+    }
+
+    /// How a beginning stands where the fake's Server did not answer with the Session.
+    private enum Outcome {
+      case refused
+      /// Its answer never came, so it may have begun.
+      case unanswered
+    }
+
+    /// What a Session being begun tells the fake core.
+    enum Told: Sendable {
+      /// The fake's Server made it, with the Prompt it holds, so it is listed.
+      case began(String)
+      /// Its screen went while it may have begun, which the Landing says.
+      case leftUnsure
     }
 
     private struct State {
@@ -169,18 +185,19 @@
     private let following = Mutex<Task<Void, Never>?>(nil)
     /// Where a Session being begun stands, beneath its Title.
     private let place: String
-    /// Told the Prompt of a Session being begun once the fake's Server has made it, so it is listed.
-    private let began: (@Sendable (String) -> Void)?
+    /// Told what becomes of a Session being begun that the fake core keeps.
+    private let told: (@Sendable (Told) -> Void)?
 
     /// The key the Landing's draft is kept under, as the core names it.
     static let landingDraft = "new-session"
 
     /// A Session being begun as `session` with the Prompt `text` in the Workspace `place` names: the Provisional
     /// Session at once, and a moment later the Session the fake's Server made, which `began` is told of so it is
-    /// listed. A Prompt holding "refuse" is refused the first time it is asked, and begins when asked again.
+    /// listed. A Prompt holding "refuse" is refused the first time it is asked, and one holding "unanswered" is never
+    /// answered, so it may have begun; each begins when asked again.
     init(
       beginning session: String, text: String, place: String, acts: FakeActs,
-      began: @escaping @Sendable (String) -> Void
+      told: @escaping @Sendable (Told) -> Void
     ) {
       self.session = session
       scenario = nil
@@ -188,9 +205,9 @@
       unreachable = false
       self.acts = acts
       self.place = place
-      self.began = began
+      self.told = told
       var beginning = State(
-        frame: Self.provisionalFrame(text, place: place, refused: false),
+        frame: Self.provisionalFrame(text, place: place, answered: false),
         items: Self.provisionalItems(Provisional(text: text)))
       beginning.provisional = Provisional(text: text)
       state = Mutex(beginning)
@@ -205,7 +222,7 @@
       unreachable = false
       self.acts = acts
       self.place = place
-      began = nil
+      told = nil
       state = Mutex(State(frame: Self.begunFrame(text, place: place), items: Self.begunItems(text)))
     }
 
@@ -219,7 +236,7 @@
       self.unreachable = unreachable
       self.acts = acts
       place = ""
-      began = nil
+      told = nil
       state = Mutex(
         State(frame: frame, items: [ConversationItem(id: "loading", kind: .loading(words: "Loading the conversation"))])
       )
@@ -273,7 +290,7 @@
 
     func tryAgain() async throws(ActError) {
       try await acts.during { () async throws(ActError) in
-        guard let text = state.withLock({ $0.provisional?.refused == true ? $0.provisional?.text : nil }) else {
+        guard let text = state.withLock({ $0.provisional?.outcome != nil ? $0.provisional?.text : nil }) else {
           throw .Invalid(message: "Nothing is sent until the session has begun")
         }
         await asking(text, again: true)
@@ -289,34 +306,38 @@
       }
     }
 
-    /// Asks the fake's Server to begin the Session with the Prompt `text`, `again` where it was refused before,
-    /// answering once it has.
+    /// Asks the fake's Server to begin the Session with the Prompt `text`, `again` where it was refused or unanswered
+    /// before, answering once it has.
     private func asking(_ text: String, again: Bool) async {
       changeState { state in
         state.provisional = Provisional(text: text)
-        state.frame = Self.provisionalFrame(text, place: place, refused: false)
+        state.frame = Self.provisionalFrame(text, place: place, answered: false)
       }
       change { $0 = Self.provisionalItems(Provisional(text: text)) }
-      try? await Task.sleep(for: .milliseconds(1_500))
-      if text.lowercased().contains("refuse") && !again {
+      // As long as a send to a fake Session takes, so a test sees it starting.
+      try? await Task.sleep(for: .milliseconds(2_500))
+      let lowered = text.lowercased()
+      let outcome: Outcome? =
+        again ? nil : lowered.contains("refuse") ? .refused : lowered.contains("unanswered") ? .unanswered : nil
+      if let outcome {
         let left = state.withLock { state -> Bool in
           guard !isClosed else {
             state.provisional = nil
             return true
           }
-          state.provisional?.refused = true
+          state.provisional?.outcome = outcome
           return false
         }
         if left {
-          // The screen went: the refused Prompt is the Landing's draft again.
-          acts.giveBack(text, to: Self.landingDraft)
+          // The screen went: the Prompt is the Landing's draft again, the Landing saying where it may have begun.
+          self.left(text, outcome)
           return
         }
-        changeFrame { $0 = Self.provisionalFrame(text, place: place, refused: true) }
-        change { $0 = Self.provisionalItems(Provisional(text: text, refused: true)) }
+        changeFrame { $0 = Self.provisionalFrame(text, place: place, answered: true) }
+        change { $0 = Self.provisionalItems(Provisional(text: text, outcome: outcome)) }
         return
       }
-      began?(text)
+      told?(.began(text))
       changeState { state in
         state.provisional = nil
         state.frame = Self.begunFrame(text, place: place)
@@ -324,31 +345,49 @@
       change { $0 = Self.begunItems(text) }
     }
 
+    /// Keeps the Prompt `text` of a beginning whose screen went as the Landing's draft, the Landing saying so where
+    /// its `outcome` leaves it maybe begun.
+    private func left(_ text: String, _ outcome: Outcome) {
+      acts.giveBack(text, to: Self.landingDraft)
+      if outcome == .unanswered {
+        told?(.leftUnsure)
+      }
+    }
+
     /// What frames a Session being begun with the Prompt `text`: its first line as the Title, and "Starting" with no
-    /// time and no Stop until it is begun or, `refused`, a composer whose Prompt replaces the refused one.
-    private static func provisionalFrame(_ text: String, place: String, refused: Bool) -> SessionFrame {
+    /// time and no Stop until it is begun or, `answered` otherwise, a composer whose Prompt is written instead.
+    private static func provisionalFrame(_ text: String, place: String, answered: Bool) -> SessionFrame {
       let title =
         text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
       return SessionFrame(
         title: title, place: place, gone: nil,
-        bar: refused
+        bar: answered
           ? nil : Bar(kind: .working, words: "Starting", since: nil, watching: nil, stop: nil, review: nil),
         composer: Composer(
-          placeholder: refused ? "Write a new prompt instead" : "Message", queue: nil, unreachable: nil, note: nil,
-          canSend: refused),
+          placeholder: answered ? "Write a new prompt instead" : "Message", queue: nil, unreachable: nil, note: nil,
+          canSend: answered),
         queued: [], intervention: nil, tree: nil, waiting: [])
     }
 
     private static func provisionalItems(_ provisional: Provisional) -> [ConversationItem] {
-      [FakeConversation.user("prompt", provisional.text, sending: !provisional.refused)]
-        + (provisional.refused
-          ? [
-            ConversationItem(
-              id: "refused",
-              kind: .refused(
-                words: "Could not create session: the workspace's directory could not be read",
-                tryAgain: "Try again"))
-          ] : [])
+      let row: ConversationItem? =
+        switch provisional.outcome {
+        case nil: nil
+        case .refused:
+          ConversationItem(
+            id: "refused",
+            kind: .refused(
+              words: "Could not create session: the workspace's directory could not be read", mayHaveBegun: false,
+              tryAgain: "Try again"))
+        case .unanswered:
+          ConversationItem(
+            id: "refused",
+            kind: .refused(
+              words: "The server did not answer, so the session may have begun", mayHaveBegun: true,
+              tryAgain: "Try again"))
+        }
+      return [FakeConversation.user("prompt", provisional.text, sending: provisional.outcome == nil)]
+        + (row.map { [$0] } ?? [])
     }
 
     /// What frames the Session the fake's Server made from the Prompt `text`: Working, with Stop.
@@ -417,14 +456,14 @@
     }
 
     func close() {
-      // A refused beginning left is discarded, its Prompt the Landing's draft again.
-      let discarded = state.withLock { state -> String? in
-        guard let provisional = state.provisional, provisional.refused else { return nil }
+      // A beginning refused or unanswered left is discarded, its Prompt the Landing's draft again.
+      let discarded = state.withLock { state -> (String, Outcome)? in
+        guard let provisional = state.provisional, let outcome = provisional.outcome else { return nil }
         state.provisional = nil
-        return provisional.text
+        return (provisional.text, outcome)
       }
-      if let discarded {
-        acts.giveBack(discarded, to: Self.landingDraft)
+      if let (text, outcome) = discarded {
+        left(text, outcome)
       }
       closed.store(true, ordering: .relaxed)
       landing.withLock { $0?.cancel() }
@@ -435,8 +474,8 @@
       try await acts.during { () async throws(ActError) in
         let text = try prompt(text)
         if let provisional = state.withLock({ $0.provisional }) {
-          // A Prompt written on a refused beginning replaces its own; until then nothing is sent.
-          guard provisional.refused else {
+          // A Prompt written on a beginning refused or unanswered replaces its own; until then nothing is sent.
+          guard provisional.outcome != nil else {
             acts.giveBack(text, to: session)
             throw .Invalid(message: "Nothing is sent until the session has begun")
           }
