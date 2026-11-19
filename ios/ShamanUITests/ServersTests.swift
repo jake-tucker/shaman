@@ -81,7 +81,7 @@ final class ServersTests: XCTestCase {
     swiped.tap()
     let confirm = app.buttons["server.remove.confirm"].firstMatch
     XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-    let asked = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "This phone forgets \(remote)"))
+    let asked = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "This phone removes \(remote)"))
     XCTAssertTrue(asked.firstMatch.exists, "what removing ends is said first")
     attach(app, "Removing a server asks first")
     confirm.tap()
@@ -166,6 +166,19 @@ final class ServersTests: XCTestCase {
       said.label, "workstation removed this phone; pair with it again to reach it. New sessions begin in laptop")
     XCTAssertEqual(beginsIn.label, "New sessions begin in laptop", "the laptop was turned toward before it")
     attach(app, "A server removed this phone")
+  }
+
+  @MainActor
+  func testASessionOpenOnAServerThatRemovesThisPhoneIsReadNoMore() {
+    let app = launched("removedThere", ["--removed-after", "8", "--open", "workstation-key/1"])
+    XCTAssertTrue(element("session.title", in: app).waitForExistence(timeout: 10))
+    XCTAssertTrue(element("session.composer", in: app).waitForExistence(timeout: 10), "read and written to")
+
+    let gone = app.staticTexts["session.gone"]
+    XCTAssertTrue(gone.waitForExistence(timeout: 20))
+    XCTAssertEqual(gone.label, "This phone is no longer paired with the server this session is on")
+    XCTAssertFalse(element("session.composer", in: app).exists, "nothing is offered on it")
+    attach(app, "A session on a server that removed this phone")
   }
 
   @MainActor

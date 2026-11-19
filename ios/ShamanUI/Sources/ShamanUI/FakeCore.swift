@@ -949,6 +949,10 @@
       turned.withLock { $0.removeAll { $0 == row.name } }
       _ = turnedWorkspace.withLock { $0.removeValue(forKey: row.name) }
       acts.forgetDrafts(on: "\(row.name)-key/")
+      // A Session open on it is read no more, as the core's is.
+      for session in opened.withLock({ $0 }) where session.reference.hasPrefix("\(row.name)-key/") {
+        session.end("This phone is no longer paired with the server this session is on")
+      }
       let turnedTo: String? =
         if stoodThere, case .remote(_, let beginsIn) = currentOutlook() { beginsIn.said } else { nil }
       let why: String? =
@@ -1002,8 +1006,8 @@
 
     /// What removing the Remote `name` asks, as the core says it.
     private static func removal(of name: String) -> String {
-      "This phone forgets \(name), with what it was writing there, and asks \(name) to forget this phone. Seeing it "
-        + "again takes a new invite."
+      "This phone removes \(name), with what it was writing there, and asks \(name) to remove this phone too. Seeing "
+        + "it again takes a new invite."
     }
 
     /// The scratch Server of `emptyServer`, which holds nothing.

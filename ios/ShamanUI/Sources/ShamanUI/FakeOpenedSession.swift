@@ -81,7 +81,6 @@
       }
     }
 
-    /// Gives `text` back to the composer of `session`, ahead of anything written there, as the core does.
     /// Drops the draft of every Session whose reference begins with `prefix`, as a Remote removed does.
     func forgetDrafts(on prefix: String) {
       drafts.withLock { drafts in
@@ -91,6 +90,7 @@
       }
     }
 
+    /// Gives `text` back to the composer of `session`, ahead of anything written there, as the core does.
     func giveBack(_ text: String, to session: String) {
       let draft = drafts.withLock { drafts in
         var held = drafts[session] ?? Held()
@@ -528,6 +528,21 @@
 
     func detail(_ activity: String) -> AsyncStream<ActivityDetail> {
       FakeWork.detail(of: activity, in: scenario)
+    }
+
+    /// Ends the Session's reading as the core does where it is gone, saying `why`: what was read stays beneath it,
+    /// and nothing is offered on it any more.
+    func end(_ why: String) {
+      changeState { state in
+        state.pending = []
+        state.beneath = nil
+        state.frame.gone = why
+        state.frame.bar = nil
+        state.frame.composer = nil
+        state.frame.queued = []
+        state.frame.intervention = nil
+        state.frame.tree = nil
+      }
     }
 
     func close() {
