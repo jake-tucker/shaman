@@ -375,6 +375,52 @@ private final class RefusingSigner: KeySigner {
   }
 }
 
+@Suite @MainActor struct NoticeModelTests {
+  /// Waits until the model's notice stands as `shown` looks for.
+  private func notice(of model: NoticeModel, until shown: (Notice?) -> Bool) async throws -> Notice? {
+    for _ in 0..<200 {
+      if shown(model.notice) { return model.notice }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    Issue.record("the notice never stood as looked for")
+    return model.notice
+  }
+
+  @Test func aNoticeStandsUntilTappedAwayAndIsNeverSaidAgain() async throws {
+    let core = FakeCore(.releases)
+    let model = NoticeModel(core: core, stands: .seconds(3600))
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    let said = try await notice(of: model) { $0 != nil }
+    #expect(said?.words == "workstation runs a newer Shaman; some things may not show")
+    model.dismiss()
+    #expect(model.notice == nil)
+    // Followed afresh, the core says it no more.
+    let again = NoticeModel(core: core, stands: .seconds(3600))
+    let refollowing = Task { await again.follow() }
+    defer { refollowing.cancel() }
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(again.notice == nil)
+  }
+
+  @Test func aNoticeGoesByItselfOnceItHasStoodAWhile() async throws {
+    let model = NoticeModel(core: FakeCore(.releases), stands: .milliseconds(50))
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    _ = try await notice(of: model) { $0 != nil }
+    _ = try await notice(of: model) { $0 == nil }
+  }
+
+  @Test func theLiveCoreSaysNothingOfItsOwnAccordAsItOpens() async throws {
+    let base = try scratch()
+    defer { try? FileManager.default.removeItem(at: base) }
+    let core = try LiveCore(directory: try CoreDirectory.prepare(in: base), signer: try madeKey())
+    var heard = core.notices().makeAsyncIterator()
+    let first = await heard.next()
+    #expect(first == .some(nil))
+  }
+}
+
 @Suite @MainActor struct ListingModelTests {
   @Test func anActsFailureStandsInTheBannerUntilTappedAway() async {
     let model = ListingModel(core: FakeCore(.paired), failureStands: .seconds(3600))

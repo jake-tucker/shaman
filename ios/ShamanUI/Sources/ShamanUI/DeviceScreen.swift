@@ -311,16 +311,24 @@ struct Fingerprint: View {
   }
 }
 
-/// An act's failure, over the screen that asked.
+/// An act's failure, over the screen that asked; or, `quiet`, what the core says of its own accord, which is no
+/// failure.
 struct Banner: View {
   let text: String
+  var quiet = false
 
   var body: some View {
     Text(text)
       .font(.callout)
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding()
-      .background(.red.opacity(0.15), in: .rect(cornerRadius: 12))
+      .background {
+        if quiet {
+          RoundedRectangle(cornerRadius: 12).fill(.regularMaterial)
+        } else {
+          RoundedRectangle(cornerRadius: 12).fill(.red.opacity(0.15))
+        }
+      }
       .padding(.horizontal)
       .accessibilityIdentifier("banner")
   }

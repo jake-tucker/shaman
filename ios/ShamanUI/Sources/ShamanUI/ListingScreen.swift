@@ -490,7 +490,8 @@ final class TryAgainModel {
 }
 
 extension UnreachableHint {
-  /// The symbol an Unreachable Remote's row and sheet are drawn with.
+  /// The symbol an Unreachable Remote's row and sheet are drawn with, or one that answers but works with the phone no
+  /// more until a side is updated.
   var symbol: String {
     switch self {
     case .plain: "exclamationmark.icloud"
@@ -498,6 +499,8 @@ extension UnreachableHint {
     case .noNetwork: "wifi.slash"
     case .loginNeeded: "person.badge.key"
     case .otherAccount: "person.2.slash"
+    case .updateApp: "arrow.down.app"
+    case .updateServer: "server.rack"
     }
   }
 }

@@ -91,6 +91,12 @@ extension Forwarder: TreeListener where Model == SubagentTree {
   }
 }
 
+extension Forwarder: NoticeListener where Model == Notice? {
+  func changed(notice: Notice?) {
+    send(notice)
+  }
+}
+
 extension Forwarder: ActsListener where Model == Bool {
   func changed(underWay: Bool) {
     send(underWay)

@@ -111,6 +111,14 @@ public final class LiveCore: Core {
     listened { send in client.watchActs(listener: Forwarder(send)) }
   }
 
+  public func notices() -> AsyncStream<Notice?> {
+    listened { send in client.watchNotices(listener: Forwarder(send)) }
+  }
+
+  public func noticeSeen(_ id: UInt64) {
+    client.noticeSeen(id: id)
+  }
+
   public func tryAgain(_ remote: String) async throws(ActError) {
     try await acted { try await client.tryAgain(remote: remote) }
   }

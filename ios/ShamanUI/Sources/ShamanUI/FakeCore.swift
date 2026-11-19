@@ -64,6 +64,10 @@
       /// The `relayed` phone whose workstation turns the relay off a moment after the app opens, so that way goes,
       /// while the phone's login there stays listed.
       case relayTurnedOff
+      /// The `several` phone across releases: the laptop no longer works with an app as old as this one and the home
+      /// lab's Shaman is too old for the app, so each stands where an Unreachable Remote's row would, naming the side to
+      /// update, and trying either again is refused so; and the workstation is newer, which the core says once.
+      case releases
     }
 
     /// The relay the fake's workstation is reached through in the relay scenarios, and its Invite offers.
@@ -92,6 +96,12 @@
     private let query = Mutex("")
     /// The Remotes held that read Unreachable, and why.
     private let unreachable: Mutex<[String: UnreachableHint]>
+    /// The Remotes held that answer but that the phone and they no longer work together across, and which side is to
+    /// be updated: `.updateApp` or `.updateServer`.
+    private let behind: [String: UnreachableHint]
+    /// What the core says of its own accord, until it is seen.
+    private let notice: Mutex<Notice?>
+    private let noticeListeners = Listeners<Notice?>()
     /// How long trying a Remote again takes to answer.
     private let tryingTakes = Duration.milliseconds(400)
 
@@ -160,7 +170,7 @@
         case .paired, .offline, .unreadTree, .unreadableTree, .subagentWaits, .subagentsWait, .longSubagentName,
           .composing, .relayLogin, .relayed, .loginNeeded, .otherAccount, .relayTurnedOn, .relayTurnedOff:
           [Self.workstation(named: "workstation")]
-        case .several, .reaching, .unreachable, .sidekick:
+        case .several, .reaching, .unreachable, .sidekick, .releases:
           [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
         case .emptyServer: [Self.scratch]
         }
@@ -176,7 +186,13 @@
         default: [:]
         }
       self.unreachable = Mutex(unreachable)
-      if scenario == .several || scenario == .reaching || scenario == .unreachable || scenario == .sidekick {
+      behind = scenario == .releases ? ["laptop": .updateApp, "homelab": .updateServer] : [:]
+      notice = Mutex(
+        scenario == .releases
+          ? Notice(id: 1, words: "workstation runs a newer Shaman; some things may not show") : nil)
+      if scenario == .several || scenario == .reaching || scenario == .unreachable || scenario == .sidekick
+        || scenario == .releases
+      {
         turned.withLock { $0 = "workstation" }
       }
       if scenario == .composing {
@@ -445,6 +461,22 @@
       acts.stream()
     }
 
+    public func notices() -> AsyncStream<Notice?> {
+      noticeListeners.stream(now: notice.withLock { $0 })
+    }
+
+    /// Says the notice no more, as the core never says it again.
+    public func noticeSeen(_ id: UInt64) {
+      let seen = notice.withLock { notice in
+        guard notice?.id == id else { return false }
+        notice = nil
+        return true
+      }
+      if seen {
+        noticeListeners.tell(nil)
+      }
+    }
+
     /// Gives `text` back to the composer of `session` as the core does after a failed send, for a test to see what
     /// the field makes of it.
     static func giveBack(_ text: String, in core: FakeCore, to session: String) {
@@ -485,6 +517,17 @@
       let names = held.withLock { $0.filter { $0.fingerprint == remote }.map(\.name) }
       guard let name = names.first else {
         throw .Gone(message: "This phone is no longer paired with that server")
+      }
+      switch behind[name] {
+      case .updateApp:
+        throw .Refused(
+          message: "That server no longer works with an app as old as this one: update the app, and the pairing works "
+            + "again")
+      case .updateServer:
+        throw .Refused(
+          message: "That server's Shaman is too old to work with this app: update Shaman there, and the pairing works "
+            + "again")
+      default: break
       }
       let loggedIn = relayStandings.withLock { $0[Self.relay] }.map { if case .loggedIn = $0 { true } else { false } }
       let stillUnreachable = unreachable.withLock { unreachable -> String? in
@@ -549,7 +592,7 @@
       let remotes = held.withLock { $0.map(\.name) }
       return FakeSession.listing(
         of: sessions.withLock { $0 }, on: remotes, unanswered: unanswered,
-        unreachable: unreachable.withLock { $0 }, showing: onShow.withLock { $0 },
+        unreachable: unreachable.withLock { $0 }.merging(behind) { held, _ in held }, showing: onShow.withLock { $0 },
         scope: scope.withLock { $0 }, query: query.withLock { $0 }, now: Date())
     }
 

@@ -125,9 +125,30 @@
         }
     }
 
-    /// The slim row the core makes for the Remote `remote`, Unreachable as `hint` says.
+    /// The slim row the core makes for the Remote `remote`, Unreachable as `hint` says, or answering but too far
+    /// apart from the phone to work with it until the side `hint` names is updated.
     static func unreachableRow(_ remote: String, hint: UnreachableHint, originNamed: Bool) -> UnreachableRow {
       let named = originNamed ? remote : "the server"
+      let sentence = originNamed ? remote : "The server"
+      switch hint {
+      case .updateApp:
+        return UnreachableRow(
+          remote: FakeCore.fingerprint(of: remote), words: "Update the app to reach \(named)", tryAgain: "Try again",
+          sheet: UnreachableSheet(
+            title: "Update the app",
+            explanation: "\(sentence) no longer works with an app as old as this one. Update the app, and it works "
+              + "again: nothing needs pairing again.",
+            hint: hint, openSettings: nil, login: nil, tryAgain: "Try again"))
+      case .updateServer:
+        return UnreachableRow(
+          remote: FakeCore.fingerprint(of: remote), words: "Update Shaman on \(named)", tryAgain: "Try again",
+          sheet: UnreachableSheet(
+            title: "Update Shaman on \(named)",
+            explanation: "\(sentence) runs a Shaman too old to work with this app. Update Shaman there, and it works "
+              + "again: nothing needs pairing again.",
+            hint: hint, openSettings: nil, login: nil, tryAgain: "Try again"))
+      default: break
+      }
       let explanation =
         switch hint {
         case .noNetwork: "This phone has no network connection. Shaman tries again as soon as it has one."
@@ -142,6 +163,7 @@
           "This phone is logged in at the relay at relay.example.com as hubot (github), and \(named) under another "
             + "account. The relay joins only those logged in under the same account, so log this phone in there as "
             + "the user \(named) is logged in as."
+        case .updateApp, .updateServer: ""
         }
       let login: LoginOffer? =
         switch hint {

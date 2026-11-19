@@ -85,6 +85,14 @@ public protocol Core: AnyObject, Sendable {
   /// Whether any act is under way, now and each time that changes: iOS background time is held only while one is.
   func actsUnderWay() -> AsyncStream<Bool>
 
+  /// What the core says of its own accord, beside what an act's failure says, now and on every change: that a Remote
+  /// is newer than the app, once for each. It stands in the banner an act's failure is shown in until `noticeSeen` says
+  /// it was seen, and is never said again.
+  func notices() -> AsyncStream<Notice?>
+
+  /// Says the notice `id` names has been seen, so the next waiting is shown.
+  func noticeSeen(_ id: UInt64)
+
   /// Tries an Unreachable Remote again, as its slim row offers, once it answers; or fails as Unreachable where it
   /// still does not.
   func tryAgain(_ remote: String) async throws(ActError)
