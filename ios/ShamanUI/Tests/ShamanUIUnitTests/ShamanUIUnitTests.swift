@@ -1201,6 +1201,65 @@ private final class HeldTime: BackgroundTasks {
   }
 }
 
+@Suite @MainActor struct KeptDraftTests {
+  /// Follows `model` until the Landing stands, for as long as a moment.
+  private func landed(_ model: NewSessionModel) async throws {
+    for _ in 0..<200 where model.landing == nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.landing != nil)
+  }
+
+  /// The new-session screen over `core`, followed until its Landing stands, and what follows it.
+  private func screen(over core: any Core) async throws -> (NewSessionModel, Task<Void, Never>) {
+    let model = NewSessionModel(core: core)
+    let following = Task { await model.follow() }
+    try await landed(model)
+    return (model, following)
+  }
+
+  @Test func whatTheLandingsFieldHeldAsTheAppLeftTheFrontIsInItTheNextRunOverTheLiveCore() async throws {
+    let base = try scratch()
+    defer { try? FileManager.default.removeItem(at: base) }
+    let directory = try CoreDirectory.prepare(in: base)
+    let key = try madeKey()
+    do {
+      let core = try LiveCore(directory: directory, signer: key)
+      let (model, following) = try await screen(over: core)
+      model.text = "half a thought"
+      core.leftFront()
+      following.cancel()
+      await following.value
+    }
+    #expect(
+      FileManager.default.fileExists(atPath: directory.appending(path: "drafts.json").path(percentEncoded: false)),
+      "kept in the core's directory")
+
+    let core = try LiveCore(directory: directory, signer: key)
+    let (model, following) = try await screen(over: core)
+    defer { following.cancel() }
+    #expect(model.text == "half a thought")
+  }
+
+  @Test func theFakeKeepsItsDraftsInTheFileItIsGivenAsTheAppLeavesTheFront() async throws {
+    let base = try scratch()
+    defer { try? FileManager.default.removeItem(at: base) }
+    let file = base.appending(path: "drafts.json")
+    let core = FakeCore(.composing, keepingDraftsIn: file)
+    core.setDraft("half a thought", version: 0, for: FakeOpenedSession.landingDraft)
+    core.setDraft("  ", version: 0, for: "workstation-key/1")
+    #expect(!FileManager.default.fileExists(atPath: file.path(percentEncoded: false)), "not before it leaves")
+    core.leftFront()
+
+    let again = FakeCore(.composing, keepingDraftsIn: file)
+    #expect(again.draft(for: FakeOpenedSession.landingDraft) == Draft(text: "half a thought", version: 0))
+    let (model, following) = try await screen(over: again)
+    defer { following.cancel() }
+    #expect(model.text == "half a thought")
+    #expect(FakeCore(.composing).draft(for: FakeOpenedSession.landingDraft).text == "", "kept only where told to")
+  }
+}
+
 @Suite @MainActor struct NewSessionModelTests {
   /// Follows `model` until `shown` holds of it, for as long as a moment.
   private func until(_ model: NewSessionModel, _ shown: @MainActor (NewSessionModel) -> Bool) async throws {

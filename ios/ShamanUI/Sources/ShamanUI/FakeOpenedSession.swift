@@ -3,7 +3,9 @@
   import ShamanCore
   import Synchronization
 
-  /// What the fake's acts share with the fake core: each composer's draft, and whether any act is under way.
+  /// What the fake's acts share with the fake core: each composer's draft, and whether any act is under way. Where it
+  /// is given a file, its drafts are kept there as text alone as the app leaves the front, and read back as it is
+  /// made, as the core keeps them from one run to the next; otherwise they last for its life.
   final class FakeActs: Sendable {
     /// One composer's draft, versioned as the core versions it.
     private struct Held {
@@ -13,10 +15,36 @@
       var given: [(UInt64, String)] = []
     }
 
-    private let drafts = Mutex<[String: Held]>([:])
+    private let drafts: Mutex<[String: Held]>
+    /// Where the drafts are kept, if anywhere.
+    private let kept: URL?
     private let draftListeners = Mutex<[String: Listeners<Draft>]>([:])
     private let underWay = Mutex(0)
     private let listeners = Listeners<Bool>()
+
+    /// The fake's acts, their drafts kept in `kept` where it names a file, and read back from it.
+    init(keepingDraftsIn kept: URL? = nil) {
+      self.kept = kept
+      let read =
+        kept.flatMap { try? Data(contentsOf: $0) }.flatMap {
+          try? JSONDecoder().decode([String: String].self, from: $0)
+        }
+        ?? [:]
+      drafts = Mutex(read.mapValues { Held(text: $0) })
+    }
+
+    /// Keeps every draft with anything in it in the file given, as the core does as the app leaves the front.
+    func keepDrafts() {
+      guard let kept else { return }
+      let texts = drafts.withLock { drafts in
+        drafts.mapValues(\.text).filter { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+      }
+      do {
+        try JSONEncoder().encode(texts).write(to: kept, options: .atomic)
+      } catch {
+        assertionFailure("The fake's drafts could not be kept: \(error)")
+      }
+    }
 
     func stream() -> AsyncStream<Bool> {
       listeners.stream(now: underWay.withLock { $0 > 0 })

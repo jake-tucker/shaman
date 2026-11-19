@@ -117,7 +117,8 @@ private enum Opened {
   #endif
 
   /// The live core, kept in its directory and proving this phone by the identity key in the Keychain. In debug builds
-  /// `--fake <scenario>` chooses the fake instead, and the environment's `SHAMAN_CORE_DIRECTORY` names a directory of
+  /// `--fake <scenario>` chooses the fake instead, which keeps its drafts in the directory `SHAMAN_CORE_DIRECTORY`
+  /// names where it names one, and the environment's `SHAMAN_CORE_DIRECTORY` names a directory of
   /// its own for the live core and `SHAMAN_KEY_ITEM` a Keychain item of its own for its key, so a UI test starts
   /// afresh; `--remove-core-directory` removes that directory, and that item where one is named, and opens nothing, so
   /// the test leaves nothing behind. `--spoil-key` puts a blob the chip will not take in the named item first.
@@ -130,7 +131,11 @@ private enum Opened {
           let known = FakeCore.Scenario.allCases.map(\.rawValue).joined(separator: ", ")
           return .failed("No fake scenario is called \"\(named)\"; there are \(known).")
         }
-        return .core(FakeCore(scenario))
+        // Where a directory is named, the fake keeps its drafts there from one run to the next, as the core does.
+        let kept = ProcessInfo.processInfo.environment["SHAMAN_CORE_DIRECTORY"].flatMap {
+          try? CoreDirectory.prepare(named: $0).appending(path: "drafts.json")
+        }
+        return .core(FakeCore(scenario, keepingDraftsIn: kept))
       }
       let environment = ProcessInfo.processInfo.environment
       let name = environment["SHAMAN_CORE_DIRECTORY"] ?? CoreDirectory.defaultName

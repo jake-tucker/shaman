@@ -149,7 +149,10 @@ An Intervention presented takes no tap for a moment; `--arming-moment <seconds>`
 needs to see a tap refused before one is taken.
 
 Over the live core a debug build keeps its records in Application Support's `Core`, or in the directory
-`SHAMAN_CORE_DIRECTORY` names, for a run that starts afresh. `simctl` passes `SIMCTL_CHILD_`-prefixed variables on:
+`SHAMAN_CORE_DIRECTORY` names, for a run that starts afresh. Among them is `drafts.json`, each composer's unsent text,
+which the core writes a moment after typing stops and as the app leaves the front. The fake keeps nothing from one run
+to the next but where `SHAMAN_CORE_DIRECTORY` names a directory, where it keeps its drafts as the app leaves the front,
+so `DraftTests` can end the app and find what a composer held in it again. `simctl` passes `SIMCTL_CHILD_`-prefixed variables on:
 
 ```sh
 SIMCTL_CHILD_SHAMAN_CORE_DIRECTORY=scratch-$RANDOM xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman
@@ -192,7 +195,8 @@ from an empty database, Serving on the Mac's addresses, makes an Invite and laun
 directory and under a key of its own, for a person to press Pair; with `--test` it runs `LivePairingTests` instead,
 which pairs, checks where the app lands and what it lists, opens a Session the script began there and reads it live,
 sends a Prompt to it, reads its title's menu and its search, reads the Workspace Picker and chooses its Workspace,
-begins a Session of its own where the Outlook stands and finds it listed, checks that the Pairing survives a relaunch, has the script
+begins a Session of its own where the Outlook stands and finds it listed, checks that the Pairing survives a relaunch
+and that what the new-session screen's composer held is in it after the app is ended, has the script
 stop the Server and sees it read Unreachable, has it started again and sees it answer, and stops the Server. That Session runs on whichever Agent the scratch Server would give it, asked for one word; where that Agent is
 not signed in its Turn fails, which reads as well. `--stop` stops it otherwise. Run it before merging a change to
 pairing or transport; never in CI, where `LivePairingTests` skips. By hand, `--stop` while the app runs has the Remote

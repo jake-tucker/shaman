@@ -106,7 +106,7 @@
     private let tryingTakes = Duration.milliseconds(400)
 
     /// Each composer's draft, and whether an act is under way.
-    private let acts = FakeActs()
+    private let acts: FakeActs
     /// The tree of the Session whose Agent delegates, which every Session of it reads.
     private let tree: FakeTree
     /// Whether the phone holds the Sidekick's Session `FakeSidekick` makes the tree of.
@@ -126,8 +126,10 @@
     /// as a UI test needs.
     private let loginConfirms: Duration
 
-    /// The fake beginning as `scenario` says, its relay confirming a login after `loginConfirmsAfter` where given.
-    public init(_ scenario: Scenario, loginConfirmsAfter: Duration? = nil) {
+    /// The fake beginning as `scenario` says, its relay confirming a login after `loginConfirmsAfter` where given, and
+    /// keeping its drafts in the file `keepingDraftsIn` names from one run to the next, where one is named.
+    public init(_ scenario: Scenario, loginConfirmsAfter: Duration? = nil, keepingDraftsIn drafts: URL? = nil) {
+      acts = FakeActs(keepingDraftsIn: drafts)
       device = Mutex(Self.device(in: scenario))
       let relayScenarios: [Scenario] = [.relayLogin, .relayed, .loginNeeded, .otherAccount, .relayTurnedOff]
       relayed = Mutex(relayScenarios.contains(scenario) ? ["workstation"] : [])
@@ -576,8 +578,9 @@
 
     public func cameToFront() {}
 
-    /// Every login under way is given up, as the core gives them up.
+    /// Every draft is kept, and every login under way given up, as the core does both.
     public func leftFront() {
+      acts.keepDrafts()
       let given = loggingIn.withLock { logins in
         defer { logins.removeAll() }
         return Array(logins.values)

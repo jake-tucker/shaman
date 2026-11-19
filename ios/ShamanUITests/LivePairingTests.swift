@@ -128,8 +128,39 @@ final class LivePairingTests: XCTestCase {
     XCTAssertTrue(
       app.descendants(matching: .any)["home.beginsIn"].waitForExistence(timeout: 10), "the Pairing survives a relaunch")
     XCTAssertEqual(app.descendants(matching: .any)["home.beginsIn"].label, shown)
+    app = keptADraft(app, run)
 
     try unreachableAndBack(app, signals: environment["SHAMAN_LIVE_SIGNALS"])
+  }
+
+  /// What the new-session screen's composer held as the app left the front is in it once iOS has ended the app and it
+  /// is launched again, the live core having kept it in its directory; and back leaves the listing.
+  @MainActor
+  private func keptADraft(_ app: XCUIApplication, _ run: String) -> XCUIApplication {
+    let unsent = "Find why the relay drops idle joins"
+    app.buttons["home.compose"].tap()
+    var field = app.descendants(matching: .any)["landing.composer"]
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    field.tap()
+    field.typeText(unsent)
+    XCUIDevice.shared.press(.home)
+    XCTAssertTrue(
+      app.wait(for: .runningBackground, timeout: 10) || app.wait(for: .runningBackgroundSuspended, timeout: 5))
+    // iOS writes what the scene keeps a moment after the app leaves the front.
+    _ = XCTWaiter.wait(for: [XCTestExpectation(description: "the scene kept")], timeout: 2)
+    app.terminate()
+
+    let relaunched = launched(run)
+    field = relaunched.descendants(matching: .any)["landing.composer"]
+    XCTAssertTrue(field.waitForExistence(timeout: 10), "the new-session screen is open again")
+    let holding = NSPredicate(format: "value == %@", unsent)
+    XCTAssertTrue(
+      XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: holding, object: field)], timeout: 10) == .completed,
+      "the unsent text was kept, not \(String(describing: field.value))")
+    attach(relaunched, "Unsent text kept by the live core after the app was ended")
+    relaunched.navigationBars.buttons.firstMatch.tap()
+    XCTAssertTrue(relaunched.descendants(matching: .any)["home.beginsIn"].waitForExistence(timeout: 10))
+    return relaunched
   }
 
   /// The compose button pushes the new-session screen where the Outlook stands, the Workspace of the Session opened
