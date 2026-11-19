@@ -8,7 +8,10 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use shaman_pairing::{Redeemer, StoredRemote, WayStanding};
@@ -143,6 +146,46 @@ struct Turned {
 /// How each way of one Remote stood when last asked.
 type Standings = Vec<(Way, WayStanding)>;
 
+/// What was last shown of how one Remote's ways stood.
+#[derive(Clone, Debug, PartialEq)]
+struct Asked {
+    /// The generation of the Pairing asked.
+    generation: u64,
+    /// Which asking it was, of all the core's, counted up from the first.
+    asking: u64,
+    /// How each way stood, until they are asked again afresh.
+    standings: Option<Standings>,
+}
+
+/// Shows `standings`, which the asking `asking` of the Pairing `generation`
+/// with the Remote `name` found, where nothing a later asking of that
+/// Pairing found is shown already, nor were they forgotten after it began:
+/// answering whether it is shown. An asking that ends after one begun later
+/// is not the last word.
+fn land(
+    shown: &mut HashMap<String, Asked>,
+    name: &str,
+    generation: u64,
+    asking: u64,
+    standings: Standings,
+) -> bool {
+    if shown
+        .get(name)
+        .is_some_and(|asked| asked.generation == generation && asked.asking >= asking)
+    {
+        return false;
+    }
+    shown.insert(
+        name.to_owned(),
+        Asked {
+            generation,
+            asking,
+            standings: Some(standings),
+        },
+    );
+    true
+}
+
 /// The Remotes as the core shows them, kept up as they change.
 #[derive(Clone)]
 pub(crate) struct Remotes {
@@ -153,7 +196,10 @@ pub(crate) struct Remotes {
     /// How each Remote's ways stood when last asked, by the Remote's name,
     /// with the generation of the Pairing asked: shown only while that
     /// Pairing stands.
-    standings: Arc<Mutex<HashMap<String, (u64, Standings)>>>,
+    standings: Arc<Mutex<HashMap<String, Asked>>>,
+    /// How many times the core has asked a Remote's ways, so what each
+    /// asking found is shown only where no later one's is.
+    askings: Arc<AtomicU64>,
     /// The Remotes, by name, in the order last turned toward, as last shown:
     /// whatever shows the Remotes again shows the Outlook by it.
     turned: Arc<Mutex<Turned>>,
@@ -177,6 +223,7 @@ impl Remotes {
             }),
             outlook: watch::Sender::new(Outlook::Nowhere),
             standings: Arc::default(),
+            askings: Arc::default(),
             turned: Arc::default(),
         };
         remotes.show(turned, workspaces);
@@ -281,8 +328,8 @@ impl Remotes {
                 .map(|stored| {
                     let asked = standings
                         .get(&stored.remote.name)
-                        .filter(|(generation, _)| *generation == stored.generation)
-                        .map(|(_, standings)| standings);
+                        .filter(|asked| asked.generation == stored.generation)
+                        .and_then(|asked| asked.standings.as_ref());
                     row(&stored.remote, asked, &self.relays)
                 })
                 .collect(),
@@ -320,6 +367,7 @@ impl Remotes {
         let Some(generation) = self.generation_of(name) else {
             return;
         };
+        let asking = self.askings.fetch_add(1, Ordering::SeqCst) + 1;
         let Ok(standings) = self.redeemer.probe_ways(name).await else {
             // Gone meanwhile: nothing of it is shown.
             return;
@@ -331,10 +379,11 @@ impl Remotes {
                 .unwrap_or_else(|poison| poison.into_inner());
             // What a Pairing since replaced said is not the Pairing in its
             // place's to show.
-            if self.generation_of(name) != Some(generation) {
+            if self.generation_of(name) != Some(generation)
+                || !land(&mut held, name, generation, asking, standings)
+            {
                 return;
             }
-            held.insert(name.to_owned(), (generation, standings));
         }
         self.refresh();
     }
@@ -348,12 +397,29 @@ impl Remotes {
     }
 
     /// Forgets how the ways of the Remote `name` stood, so they read as
-    /// being asked again.
+    /// being asked again: what an asking begun before finds is not shown.
     pub fn forget_ways(&self, name: &str) {
-        self.standings
+        let begun = self.askings.load(Ordering::SeqCst);
+        let generation = self.generation_of(name);
+        let mut shown = self
+            .standings
             .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .remove(name);
+            .unwrap_or_else(|poison| poison.into_inner());
+        match generation {
+            Some(generation) => {
+                shown.insert(
+                    name.to_owned(),
+                    Asked {
+                        generation,
+                        asking: begun,
+                        standings: None,
+                    },
+                );
+            }
+            None => {
+                shown.remove(name);
+            }
+        }
     }
 }
 
@@ -394,5 +460,100 @@ fn row(remote: &Remote, standings: Option<&Standings>, relays: &Relays) -> Serve
         name: remote.name.clone(),
         fingerprint: remote.fingerprint.clone(),
         ways,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use shaman_pairing::WayStanding;
+    use shaman_protocol::Way;
+
+    use super::{Asked, Standings, land};
+
+    fn standing(standing: WayStanding) -> Standings {
+        vec![(Way::Relay("https://relay.example.com".to_owned()), standing)]
+    }
+
+    fn shown(shown: &HashMap<String, Asked>) -> Option<Standings> {
+        shown.get("desk").and_then(|asked| asked.standings.clone())
+    }
+
+    #[test]
+    fn an_asking_that_ends_after_a_later_one_is_not_shown() {
+        let mut held = HashMap::new();
+        assert!(land(
+            &mut held,
+            "desk",
+            1,
+            2,
+            standing(WayStanding::Answering)
+        ));
+        assert!(!land(
+            &mut held,
+            "desk",
+            1,
+            1,
+            standing(WayStanding::NotDialled)
+        ));
+        assert_eq!(shown(&held), Some(standing(WayStanding::Answering)));
+
+        assert!(land(
+            &mut held,
+            "desk",
+            1,
+            3,
+            standing(WayStanding::NotAnswering)
+        ));
+        assert_eq!(shown(&held), Some(standing(WayStanding::NotAnswering)));
+    }
+
+    #[test]
+    fn an_asking_begun_before_its_ways_were_forgotten_is_not_shown() {
+        let mut held = HashMap::from([(
+            "desk".to_owned(),
+            Asked {
+                generation: 1,
+                asking: 4,
+                standings: None,
+            },
+        )]);
+        assert!(!land(
+            &mut held,
+            "desk",
+            1,
+            4,
+            standing(WayStanding::Answering)
+        ));
+        assert_eq!(shown(&held), None);
+        assert!(land(
+            &mut held,
+            "desk",
+            1,
+            5,
+            standing(WayStanding::Answering)
+        ));
+        assert_eq!(shown(&held), Some(standing(WayStanding::Answering)));
+    }
+
+    #[test]
+    fn a_later_pairing_shows_what_it_was_found_to_be_whatever_an_earlier_showed() {
+        let mut held = HashMap::new();
+        assert!(land(
+            &mut held,
+            "desk",
+            1,
+            9,
+            standing(WayStanding::Answering)
+        ));
+        assert!(land(
+            &mut held,
+            "desk",
+            2,
+            3,
+            standing(WayStanding::NotAnswering)
+        ));
+        assert_eq!(shown(&held), Some(standing(WayStanding::NotAnswering)));
     }
 }
