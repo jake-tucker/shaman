@@ -453,6 +453,7 @@ impl InviteLedger {
         self.standing.send_replace(InviteStanding {
             serial,
             state: InviteState::Standing,
+            redeemed_by: None,
         });
         let standing = self.standing.clone();
         tokio::spawn(async move {
@@ -470,10 +471,20 @@ impl InviteLedger {
 
     /// Takes that the latest Invite ended as `state` says, where it stood.
     fn ended(&self, state: InviteState) {
+        self.end(state, None);
+    }
+
+    /// Takes that `peer` redeemed the latest Invite, where it stood.
+    fn redeemed(&self, peer: Peer) {
+        self.end(InviteState::Spent, Some(peer));
+    }
+
+    fn end(&self, state: InviteState, redeemed_by: Option<Peer>) {
         self.standing.send_if_modified(|standing| {
             let news = standing.serial > 0 && standing.state == InviteState::Standing;
             if news {
                 standing.state = state;
+                standing.redeemed_by = redeemed_by;
             }
             news
         });
@@ -1527,7 +1538,7 @@ impl ServingController {
         }
 
         let id = fingerprint(&public_key);
-        self.change_peers(|peers| {
+        let paired = self.change_peers(|peers| {
             let others = peers
                 .iter()
                 .filter(|peer| peer.id != id)
@@ -1540,6 +1551,12 @@ impl ServingController {
             );
             // Enrolling again is another ceremony, and another Pairing: whatever
             // offer the last made gives way to what this one makes, if anything.
+            let paired = Peer {
+                id: id.clone(),
+                fingerprint: id.clone(),
+                name: name.clone(),
+                behind: false,
+            };
             if let Some(existing) = peers.iter_mut().find(|peer| peer.id == id) {
                 existing.public_key = public_key;
                 existing.name = name;
@@ -1552,7 +1569,7 @@ impl ServingController {
                     offer,
                 });
             }
-            Ok(())
+            Ok(paired)
         })?;
         // It enrolled speaking with this Server, so it is behind no longer.
         self.peers.note_behind(&id, false);
@@ -1594,7 +1611,7 @@ impl ServingController {
         // stands for another Invite stays as it was.
         if issued.bound_to.is_none() {
             self.short_codes.redeemed(&issued.token);
-            invites.ended(InviteState::Spent);
+            invites.redeemed(paired);
         }
         Ok(())
     }

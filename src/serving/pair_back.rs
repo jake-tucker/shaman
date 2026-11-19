@@ -1713,6 +1713,7 @@ mod tests {
             crate::protocol::InviteStanding {
                 serial: later.serial,
                 state: crate::protocol::InviteState::Standing,
+                redeemed_by: None,
             },
             "and spending it says nothing of the Invite shown"
         );

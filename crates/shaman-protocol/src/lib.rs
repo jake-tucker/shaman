@@ -2620,6 +2620,10 @@ pub struct InviteStanding {
     /// Client is showing has replaced the one it shows.
     pub serial: u64,
     pub state: InviteState,
+    /// The Peer that redeemed it, once it is [`InviteState::Spent`], so the
+    /// surface showing it says who paired.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub redeemed_by: Option<Peer>,
 }
 
 /// Where the latest Invite has got to.

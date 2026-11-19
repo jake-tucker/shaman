@@ -734,7 +734,11 @@ fn showing_a_direct_invite(serial: u64) -> Application {
 fn told_invite(application: &mut Application, serial: u64, state: InviteState) {
     application
         .handle_event(ApplicationEvent::Managed(ManagedEvent::InviteStanding(
-            InviteStanding { serial, state },
+            InviteStanding {
+                serial,
+                state,
+                redeemed_by: None,
+            },
         )))
         .expect("take how the invite stands");
 }

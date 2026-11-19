@@ -1782,6 +1782,7 @@ async fn a_client_is_told_of_an_invite_replaced_or_expired_by_any_hand() {
         InviteStanding {
             serial: second.serial,
             state: InviteState::Expired,
+            redeemed_by: None,
         }
     );
     server.shutdown().await;
@@ -1813,12 +1814,16 @@ async fn a_client_is_told_of_an_invite_spent_or_discarded() {
         .await
         .expect("redeem the Invite");
     let told = told_invite(&mut workstation, |told| told.state != InviteState::Standing).await;
+    let paired = workstation.client.list_peers().await.unwrap();
+    assert_eq!(paired.len(), 1, "{paired:?}");
     assert_eq!(
         told,
         InviteStanding {
             serial: issued.serial,
             state: InviteState::Spent,
-        }
+            redeemed_by: paired.into_iter().next(),
+        },
+        "it says which Peer paired"
     );
 
     let issued = workstation
