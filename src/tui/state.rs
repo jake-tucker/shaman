@@ -12611,6 +12611,14 @@ impl Application {
                 }
                 Ok(ApplicationTransition::Continue)
             }
+            SemanticCommandId::ServeShowQrCode => {
+                self.state.serve_overlay.show_qr_code();
+                Ok(ApplicationTransition::Continue)
+            }
+            SemanticCommandId::ServeHideQrCode => {
+                self.state.serve_overlay.hide_qr_code();
+                Ok(ApplicationTransition::Continue)
+            }
             SemanticCommandId::ServeClose => {
                 self.state.serve_overlay.close();
                 Ok(ApplicationTransition::Continue)
@@ -14706,6 +14714,7 @@ impl Application {
                             .serve_overlay
                             .focused_action(self.state.serve_ways()),
                         self.state.serve_overlay.removal_armed(),
+                        self.state.serve_overlay.qr_code().is_some(),
                     );
                 }
                 SelectionSurface::Relay => {

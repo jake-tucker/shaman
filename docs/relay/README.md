@@ -679,6 +679,13 @@ and gains them nothing else.
 Reopening `/serve` while an Invite stands says so, since Enter replaces it and its code, and the code cannot be shown
 again: it is held to be typed, not looked up.
 
+For a phone, `q` draws the Invite as a QR code in place of the overlay, for the Shaman app to scan, and `q` or Esc goes
+back. The code holds the Invite itself and nothing else, and is drawn only when asked: in half-blocks at the lowest
+error-correction level, with a margin of two modules, dark on light whatever the theme. One offering a single address
+takes up to 69 columns by 35 rows, and each address or Relay more makes it larger; a terminal too small says what size it
+needs. Once the Invite is redeemed the code closes on the overlay, which says which peer paired and lists it. Ended any
+other way, the code is taken down and the view says why.
+
 The Invite on screen can end from elsewhere: `shaman serve invite` or another Shaman attached to this Server replaces it,
 someone redeems it, it runs out, or Serving stops. `/serve` then says it no longer works, and why, in its place. Neither it
 nor its code is shown any more, `Ctrl+C` copies nothing, and closing this and running `/serve` issues another.
@@ -921,7 +928,7 @@ shaman relay add <address>
 shaman relay login <address>
 shaman relay serve-through <address> on|off
 shaman relay remove <address>
-shaman serve invite [--no-addresses] [--no-relays] [--relay <address>]... [--json]
+shaman serve invite [--no-addresses] [--no-relays] [--relay <address>]... [--json] [--qr]
 ```
 
 A headless set-up, from nothing to an issued Invite:
@@ -946,7 +953,7 @@ does, so keep to one install. `SHAMAN_CONFIG_DIR` matters only where a command s
 
 **What goes where.** What was asked for goes to standard output, and only that: the listing, the Invite, or the line
 saying where to log in. Everything else goes to standard error, including that Serving was turned on, what Serving
-through a Relay does, and why something was left out. Nothing carries colour.
+through a Relay does, and why something was left out. Nothing carries colour but an Invite's QR code.
 
 - **`relay add`** writes the address the one way a Relay's is written, as `/relay` does. Adding one held already, or
   pinned, is success, because running a script twice is normal.
@@ -967,7 +974,10 @@ through a Relay does, and why something was left out. Nothing carries colour.
   exactly the Relays named, however each is written. Naming one the Server cannot offer fails, saying why and turning
   nothing on; so does asking for nothing that could be offered, such as a listener bound to loopback with no Relay to offer.
   A listener found unable to listen, its port taken say, is said, and the Invite offers the Relays all the same where there
-  are any; where there are none it fails, with Serving left on, as it says.
+  are any; where there are none it fails, with Serving left on, as it says. `--qr` draws the Invite once more as a QR code
+  for a phone to scan, as `/serve` does, last of all on standard error, so standard output stays the Invite alone, then
+  leaves. The code holds the Invite, so it is drawn only where standard error is a terminal; a terminal too small for it
+  says what size it needs instead. Either way the Invite is issued and printed, and the command exits 0.
 
 An Invite lasts ten minutes, is redeemed once, and **replaces any issued before it**, so running `serve invite` twice kills
 the first, and an open `/serve` showing it says so. Standard output closed outright (`>&-`) cannot be told from

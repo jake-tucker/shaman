@@ -3,16 +3,18 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use crate::tui_rendering::support::{
-    deliver_listener, deliver_settings, open_at, ready_health, rendered_application_rows,
-    rendered_application_rows_at, type_terminal_text,
+    buffer_rows, deliver_listener, deliver_settings, open_at, ready_health,
+    rendered_application_buffer, rendered_application_rows, rendered_application_rows_at,
+    type_terminal_text,
 };
 use crossterm::event::{Event as InputEvent, KeyCode, KeyEvent, KeyModifiers};
+use ratatui::{buffer::Buffer, style::Color};
 use shaman::{
     managed_client::ManagedEvent,
     protocol::{
-        EffectiveSettings, InviteStanding, InviteState, IssueInviteRequest, IssuedInvite,
-        IssuedShortCode, ListenerState, Peer, SettingsSnapshot, ShortCode, ShortCodeStanding,
-        ShortCodeState, Way,
+        AppearanceMode, AppearanceSettings, EffectiveSettings, InviteStanding, InviteState,
+        IssueInviteRequest, IssuedInvite, IssuedShortCode, LandingPage, ListenerState, Peer,
+        SettingsSnapshot, ShortCode, ShortCodeStanding, ShortCodeState, Way,
     },
     tui::{Application, ApplicationEvent, ApplicationTransition, SemanticCommandId},
 };
@@ -959,4 +961,299 @@ fn a_peer_refused_as_too_old_is_listed_as_the_side_to_update() {
         rows.join("\n")
     );
     assert!(!rows.join("\n").to_lowercase().contains("version"));
+}
+
+/// An Invite shaped as `/serve` issues one offering one LAN address.
+const LONG_INVITE: &str = "shaman-v1-eyJ3IjpbeyJkaXJlY3QiOiIxOTIuMTY4LjEuMjA6Nzc3NyJ9XSwiayI6IkFBRUNBd1FGQm\
+     djSUNRb0xEQTBPRHhBUkVoTVVGUllYR0JrYUd4d2RIaDhnSVNJakpDVW1KeWdwS2lzc0xTNHZNREV5TX\
+     pRMU5qYzRPVG83UEQwLVAwQkJRa05FUlVaSFNFbEtTMHhOVGs5UVVWSlRWRlZXVjFoWldnIiwidCI6Il\
+     pHVm1aMmhwYW10c2JXNXZjSEZ5YzNSMWRuZDRlWHA3ZkgxLWY0Q0Jnb00iLCJoIjoid29ya3N0YXRpb2\
+     4ifQ";
+
+/// The ink and ground a QR code is drawn in, the colour cube's black and white.
+const DARK: Color = Color::Indexed(16);
+const LIGHT: Color = Color::Indexed(231);
+
+/// `/serve` showing [`LONG_INVITE`], issued as serial 7, in the theme `theme`
+/// asks for, where it asks for one.
+fn showing_a_long_invite(theme: Option<(&str, AppearanceMode)>) -> Application {
+    let mut application = Application::default();
+    let mut settings = EffectiveSettings::default();
+    settings.serving.enabled = true;
+    settings.serving.port = 7777;
+    if let Some((theme, mode)) = theme {
+        settings.appearance = AppearanceSettings {
+            theme: theme.to_owned(),
+            mode,
+            landing_page: LandingPage::Fancy,
+            show_icons: false,
+        };
+    }
+    deliver_settings(&mut application, settings);
+    deliver_listener(&mut application, open_at(7777));
+    type_terminal_text(&mut application, "/serve");
+    let ApplicationTransition::BeginServing { request } = press(&mut application, KeyCode::Enter)
+    else {
+        panic!("/serve has the server prepare serving");
+    };
+    let way = Way::Direct(SocketAddr::from((Ipv4Addr::new(192, 168, 1, 20), 7777)));
+    application
+        .handle_event(ApplicationEvent::ServingPrepared {
+            request,
+            settings: None,
+            candidates: vec![way.clone()],
+        })
+        .expect("load serving candidates");
+    let ApplicationTransition::IssueInvite { request, .. } =
+        press(&mut application, KeyCode::Enter)
+    else {
+        panic!("Enter issues an invite");
+    };
+    application
+        .handle_event(ApplicationEvent::InviteIssued {
+            request,
+            invite: IssuedInvite {
+                invite: LONG_INVITE.into(),
+                serial: 7,
+                ways: vec![way],
+                short_code: None,
+            },
+            peers: vec![peer("laptop")],
+        })
+        .expect("show the invite");
+    application
+}
+
+fn peer(name: &str) -> Peer {
+    Peer {
+        id: format!("peer-{name}"),
+        fingerprint: format!("{name}-fingerprint"),
+        name: name.to_owned(),
+        behind: false,
+    }
+}
+
+/// The QR code a frame drew, as the half-blocks of each row: every cell drawn
+/// on the code's light ground, each of which must be in its dark ink.
+fn drawn_code(buffer: &Buffer) -> Vec<String> {
+    let area = buffer.area;
+    (0..area.height)
+        .map(|row| {
+            (0..area.width)
+                .map(|column| &buffer[(column, row)])
+                .filter(|cell| cell.bg == LIGHT)
+                .map(|cell| {
+                    assert_eq!(cell.fg, DARK, "drawn dark on light");
+                    cell.symbol().to_owned()
+                })
+                .collect::<String>()
+        })
+        .filter(|row| !row.is_empty())
+        .collect()
+}
+
+/// Reads drawn half-blocks back to the text they hold, as a phone's scanner
+/// would, with only the code's own margin around them.
+fn read_back(lines: &[String]) -> Option<String> {
+    const SCALE: usize = 4;
+    let cells = lines
+        .iter()
+        .map(|line| line.chars().collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    let columns = cells.iter().map(Vec::len).max()?;
+    let dark = |x: usize, y: usize| {
+        let (column, module_row) = (x / SCALE, y / SCALE);
+        let cell = cells[module_row / 2].get(column).copied().unwrap_or(' ');
+        matches!((cell, module_row % 2), ('█', _) | ('▀', 0) | ('▄', 1))
+    };
+    let mut image = rqrr::PreparedImage::prepare_from_greyscale(
+        columns * SCALE,
+        cells.len() * 2 * SCALE,
+        |x, y| if dark(x, y) { 0 } else { 255 },
+    );
+    let grids = image.detect_grids();
+    grids.first()?.decode().ok().map(|(_, text)| text)
+}
+
+/// The columns and rows the QR code of [`LONG_INVITE`] takes, its caption's row
+/// beneath it among them.
+fn code_size() -> (u16, u16) {
+    let modules = qrcode::QrCode::with_error_correction_level(LONG_INVITE, qrcode::EcLevel::L)
+        .unwrap()
+        .width()
+        + 4;
+    (modules as u16, modules.div_ceil(2) as u16 + 1)
+}
+
+/// The code is drawn only when asked, in place of the overlay, holding the bare
+/// Invite: in half-blocks at the lowest error-correction level, with a
+/// two-module margin, dark on light whatever the theme.
+#[test]
+fn q_draws_the_invite_as_a_qr_code_in_place_of_the_overlay_whatever_the_theme() {
+    for theme in [
+        None,
+        Some(("github", AppearanceMode::Light)),
+        Some(("github", AppearanceMode::Dark)),
+    ] {
+        let mut application = showing_a_long_invite(theme);
+        let overlay = rendered_application_buffer(&application, 120, 60);
+        assert!(drawn_code(&overlay).is_empty(), "drawn only when asked");
+        assert!(
+            buffer_rows(&overlay).join("\n").contains("q QR code"),
+            "the key is offered"
+        );
+
+        assert_eq!(
+            press(&mut application, KeyCode::Char('q')),
+            ApplicationTransition::Continue
+        );
+        let frame = rendered_application_buffer(&application, 120, 60);
+        let text = buffer_rows(&frame).join("\n");
+        assert!(
+            !text.contains("Fresh invite"),
+            "in place of the overlay: {text}"
+        );
+        assert!(!text.contains(LONG_INVITE), "never as text");
+        assert!(text.contains("Scan it with Shaman on your phone"), "{text}");
+        let code = drawn_code(&frame);
+        let (columns, rows) = code_size();
+        assert_eq!(code.len(), usize::from(rows - 1), "{theme:?}");
+        assert!(
+            code.iter()
+                .all(|row| row.chars().count() == usize::from(columns))
+        );
+        // Two modules of margin: a whole light row above, and two light columns
+        // either side.
+        assert!(code[0].trim().is_empty(), "{:?}", code[0]);
+        assert!(
+            code.iter()
+                .all(|row| row.starts_with("  ") && row.ends_with("  "))
+        );
+        assert_eq!(read_back(&code).as_deref(), Some(LONG_INVITE), "{theme:?}");
+    }
+}
+
+/// Esc goes back from the code to the overlay, and a second closes it.
+#[test]
+fn esc_takes_the_code_down_back_to_the_overlay() {
+    let mut application = showing_a_long_invite(None);
+    press(&mut application, KeyCode::Char('q'));
+    press(&mut application, KeyCode::Char('x'));
+    assert_eq!(
+        press(&mut application, KeyCode::Esc),
+        ApplicationTransition::Continue
+    );
+    let frame = rendered_application_buffer(&application, 120, 60);
+    assert!(drawn_code(&frame).is_empty());
+    let text = buffer_rows(&frame).join("\n");
+    assert!(text.contains("Fresh invite"), "{text}");
+    assert!(
+        !text.contains("x confirm removal"),
+        "no key acted on the overlay beneath the code: {text}"
+    );
+    press(&mut application, KeyCode::Char('q'));
+    press(&mut application, KeyCode::Char('q'));
+    assert!(drawn_code(&rendered_application_buffer(&application, 120, 60)).is_empty());
+    press(&mut application, KeyCode::Esc);
+    assert!(
+        !buffer_rows(&rendered_application_buffer(&application, 120, 60))
+            .join("\n")
+            .contains("Enrolled peers"),
+        "closed"
+    );
+}
+
+/// A terminal too small for the code says what size it needs, rather than draw a
+/// code nobody could scan.
+#[test]
+fn a_terminal_too_small_for_the_code_says_what_size_it_needs() {
+    let mut application = showing_a_long_invite(None);
+    press(&mut application, KeyCode::Char('q'));
+    let (columns, rows) = code_size();
+    for (width, height) in [(columns - 1, rows + 5), (columns + 5, rows - 1)] {
+        let frame = rendered_application_buffer(&application, width, height);
+        assert!(drawn_code(&frame).is_empty(), "{width}x{height}");
+        let text = buffer_rows(&frame).join(" ");
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            text.contains(&format!("needs {columns} columns by {rows} rows")),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!("it is {width} by {height}")),
+            "{text}"
+        );
+    }
+    let frame = rendered_application_buffer(&application, columns, rows);
+    assert_eq!(
+        read_back(&drawn_code(&frame)).as_deref(),
+        Some(LONG_INVITE),
+        "just fits"
+    );
+}
+
+/// Redeemed, the code closes on the overlay, which says which Peer paired and
+/// lists it.
+#[test]
+fn a_redeemed_invite_closes_the_code_on_the_overlay_saying_which_peer_paired() {
+    let mut application = showing_a_long_invite(None);
+    press(&mut application, KeyCode::Char('q'));
+    application
+        .handle_event(ApplicationEvent::Managed(ManagedEvent::InviteStanding(
+            InviteStanding {
+                serial: 7,
+                state: InviteState::Spent,
+                redeemed_by: Some(peer("phone")),
+            },
+        )))
+        .expect("take how the invite stands");
+    let frame = rendered_application_buffer(&application, 120, 60);
+    assert!(drawn_code(&frame).is_empty(), "the code is down");
+    let rows = buffer_rows(&frame);
+    let text = rows.join("\n");
+    assert!(text.contains("Paired with phone"), "{text}");
+    assert!(
+        text.contains("phone-fingerprint"),
+        "listed among the peers: {text}"
+    );
+    assert!(text.contains("laptop-fingerprint"), "{text}");
+    assert!(!text.contains("q QR code"), "nothing left to draw: {text}");
+    assert_eq!(
+        press(&mut application, KeyCode::Char('q')),
+        ApplicationTransition::Continue
+    );
+    assert!(drawn_code(&rendered_application_buffer(&application, 120, 60)).is_empty());
+}
+
+/// Expired or superseded, the code is taken down and the view says so.
+#[test]
+fn an_invite_expired_or_superseded_takes_the_code_down_saying_so() {
+    for (serial, state, why) in [
+        (7, InviteState::Expired, "It expired unredeemed"),
+        (
+            8,
+            InviteState::Standing,
+            "A newer invite has replaced this one",
+        ),
+        (7, InviteState::Discarded, "Serving stopped"),
+    ] {
+        let mut application = showing_a_long_invite(None);
+        press(&mut application, KeyCode::Char('q'));
+        told_invite(&mut application, serial, state);
+        let frame = rendered_application_buffer(&application, 120, 60);
+        assert!(drawn_code(&frame).is_empty(), "{state:?}");
+        let text = buffer_rows(&frame).join(" ");
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(text.contains("This invite no longer works"), "{text}");
+        assert!(text.contains(why), "{text}");
+        assert!(text.contains("QR code is taken down"), "{text}");
+        assert!(
+            !text.contains("Enrolled peers"),
+            "still in place of the overlay"
+        );
+        press(&mut application, KeyCode::Esc);
+        let text = buffer_rows(&rendered_application_buffer(&application, 120, 60)).join(" ");
+        assert!(text.contains("This invite no longer works"), "{text}");
+        assert!(text.contains("Enrolled peers"), "{text}");
+    }
 }

@@ -5,6 +5,7 @@ mod change_count;
 pub mod cli;
 mod clock;
 mod errands;
+mod invite_qr;
 pub mod logging;
 pub mod login_start;
 pub mod managed_client;

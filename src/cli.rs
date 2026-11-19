@@ -5,8 +5,8 @@
 //!
 //! What a command was asked for goes to standard output, and only that, so a
 //! script can capture it. Everything else goes to standard error, and neither
-//! carries colour. An Invite and its short code reach no Log (ADR-0008) and are
-//! never taken as arguments. How each command exits is [`EXIT_STATUSES`], which
+//! carries colour but an Invite's QR code, drawn dark on light. An Invite and its
+//! short code reach no Log (ADR-0008) and are never taken as arguments. How each command exits is [`EXIT_STATUSES`], which
 //! `docs/relay/README.md` repeats.
 
 use std::io::{IsTerminal as _, Write};
@@ -16,6 +16,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use serde::Serialize;
 
 use crate::{
+    invite_qr::InviteQrCode,
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         InviteOfferAnswer, InviteRelays, OfferInviteRequest, OfferedInvite, Relay, RelayLogin,
@@ -138,6 +139,11 @@ pub struct InviteArguments {
     /// Prints the Invite, its ways and its short code as JSON on standard output.
     #[arg(long)]
     json: bool,
+    /// Draws the Invite as a QR code on standard error too, once, for a phone
+    /// to scan: where standard error is a terminal large enough to show it
+    /// whole, and otherwise says why not. Standard output stays as it is.
+    #[arg(long)]
+    qr: bool,
 }
 
 impl InviteArguments {
@@ -200,8 +206,11 @@ pub async fn serve(config: ManagedClientConfig, command: ServeCommand) -> u8 {
     match client.offer_invite(request).await {
         Ok(InviteOfferAnswer::Issued(offered)) => print_invite(
             &offered,
-            arguments.json,
-            std::io::stderr().is_terminal(),
+            Printing {
+                json: arguments.json,
+                qr: arguments.qr,
+            },
+            StandardError::now(),
             &mut out,
             &mut err,
         ),
@@ -763,17 +772,66 @@ fn printed_way(way: &Way) -> PrintedWay {
     }
 }
 
+/// What `shaman serve invite` was asked to print the Invite as.
+#[derive(Clone, Copy, Debug, Default)]
+struct Printing {
+    /// As JSON, with its ways and short code, on standard output.
+    json: bool,
+    /// As a QR code too, on standard error.
+    qr: bool,
+}
+
+/// What standard error is, which decides what may be shown there.
+#[derive(Clone, Copy, Debug, Default)]
+struct StandardError {
+    /// Whether it is a terminal, rather than something that may be kept.
+    terminal: bool,
+    /// Whether that terminal draws colour, which a QR code needs.
+    colour: bool,
+    /// The terminal's columns and rows, where they can be told.
+    size: Option<(u16, u16)>,
+}
+
+impl StandardError {
+    fn now() -> Self {
+        let terminal = std::io::stderr().is_terminal();
+        Self {
+            terminal,
+            colour: terminal && draws_colour(),
+            size: terminal
+                .then(crossterm::terminal::size)
+                .and_then(Result::ok),
+        }
+    }
+}
+
+/// Whether the console draws the escapes a QR code is coloured by. Windows draws
+/// them once asked to, which this asks; everywhere else a terminal does.
+fn draws_colour() -> bool {
+    #[cfg(windows)]
+    {
+        crossterm::ansi_support::supports_ansi()
+    }
+    #[cfg(not(windows))]
+    {
+        true
+    }
+}
+
 /// Prints what the Server issued. The Invite alone goes to standard output, and
 /// its short code goes to standard error only where that is a terminal: it is as
 /// secret as the Invite, and what a provisioning script keeps is its standard
-/// error. `--json` carries both on standard output for whoever wants them.
+/// error. `--json` carries both on standard output for whoever wants them. Its QR
+/// code holds the Invite as well, so it is drawn on the same terms, last of all.
 fn print_invite(
     offered: &OfferedInvite,
-    json: bool,
-    terminal: bool,
+    printing: Printing,
+    standard_error: StandardError,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> u8 {
+    let Printing { json, qr } = printing;
+    let terminal = standard_error.terminal;
     if let Some(serving) = offered.serving {
         say(err, serving_change_said(serving));
     }
@@ -839,7 +897,58 @@ fn print_invite(
             );
         }
     }
+    if qr {
+        draw_qr_code(&issued.invite.0, standard_error, err);
+    }
     SUCCESS
+}
+
+/// Draws `invite` as a QR code on standard error, once, where that is a terminal
+/// with the colour and the room to show it whole, and otherwise says why not. The
+/// Invite stands either way, printed on standard output.
+fn draw_qr_code(invite: &str, standard_error: StandardError, err: &mut dyn Write) {
+    if !standard_error.terminal {
+        say(
+            err,
+            "Its QR code is left out, as standard error is not a terminal and may be kept in a \
+             log",
+        );
+        return;
+    }
+    if !standard_error.colour {
+        say(
+            err,
+            "Its QR code is left out, as this terminal does not draw the colours it needs",
+        );
+        return;
+    }
+    let code = match InviteQrCode::of(invite) {
+        Ok(code) => code,
+        Err(why) => {
+            say(err, &format!("Error: {why}"));
+            return;
+        }
+    };
+    // The line the shell prompts on next takes a row beneath the code.
+    let (columns, rows) = (code.columns(), code.rows() + 1);
+    if let Some((width, height)) = standard_error.size
+        && (usize::from(width) < columns || usize::from(height) < rows)
+    {
+        say(
+            err,
+            &format!(
+                "Its QR code is left out, as this terminal is too small for it: it needs {columns} \
+                 columns by {rows} rows, and this one is {width} by {height}. Enlarge it and run \
+                 this again for a new invite to scan"
+            ),
+        );
+        return;
+    }
+    say(err, "Scan its QR code with Shaman on your phone:");
+    let mut drawn = code.ansi_lines().join("\n");
+    drawn.push('\n');
+    // Nobody reading standard error is no failure, as nothing said there is.
+    let _ = err.write_all(drawn.as_bytes()).and_then(|()| err.flush());
 }
 
 #[cfg(test)]
@@ -995,8 +1104,14 @@ mod tests {
         let (mut out, mut err) = (Vec::new(), Vec::new());
         let status = print_invite(
             &offered(Some(a_short_code())),
-            false,
-            true,
+            Printing {
+                json: false,
+                qr: false,
+            },
+            StandardError {
+                terminal: true,
+                ..StandardError::default()
+            },
             &mut out,
             &mut err,
         );
@@ -1008,8 +1123,14 @@ mod tests {
         let (mut out, mut err) = (Vec::new(), Vec::new());
         print_invite(
             &offered(Some(a_short_code())),
-            false,
-            false,
+            Printing {
+                json: false,
+                qr: false,
+            },
+            StandardError {
+                terminal: false,
+                ..StandardError::default()
+            },
             &mut out,
             &mut err,
         );
@@ -1023,8 +1144,14 @@ mod tests {
         let (mut out, mut err) = (Vec::new(), Vec::new());
         print_invite(
             &offered(Some(a_short_code())),
-            true,
-            true,
+            Printing {
+                json: true,
+                qr: false,
+            },
+            StandardError {
+                terminal: true,
+                ..StandardError::default()
+            },
             &mut out,
             &mut err,
         );
@@ -1058,14 +1185,180 @@ mod tests {
         let mut err = Vec::new();
         let status = print_invite(
             &offered(Some(a_short_code())),
-            false,
-            false,
+            Printing {
+                json: false,
+                qr: false,
+            },
+            StandardError {
+                terminal: false,
+                ..StandardError::default()
+            },
             &mut Closed,
             &mut err,
         );
         assert_eq!(status, FAILED);
         assert!(said(&err).contains("could not print the invite"));
         assert!(!said(&err).contains("shaman-v1-secret"));
+    }
+
+    /// An Invite shaped as a Server issues one offering one address, so its
+    /// code is the smallest a real one has.
+    const LONG_INVITE: &str = "shaman-v1-eyJ3IjpbeyJkaXJlY3QiOiIxOTIuMTY4LjEuMjA6Nzc3NyJ9XSwiayI6IkFBRUNBd1FGQm\
+         djSUNRb0xEQTBPRHhBUkVoTVVGUllYR0JrYUd4d2RIaDhnSVNJakpDVW1KeWdwS2lzc0xTNHZNREV5TX\
+         pRMU5qYzRPVG83UEQwLVAwQkJRa05FUlVaSFNFbEtTMHhOVGs5UVVWSlRWRlZXVjFoWldnIiwidCI6Il\
+         pHVm1aMmhwYW10c2JXNXZjSEZ5YzNSMWRuZDRlWHA3ZkgxLWY0Q0Jnb00iLCJoIjoid29ya3N0YXRpb2\
+         4ifQ";
+
+    fn offered_long() -> OfferedInvite {
+        let mut offered = offered(Some(a_short_code()));
+        offered.issued.invite = LONG_INVITE.into();
+        offered
+    }
+
+    fn a_terminal(size: Option<(u16, u16)>) -> StandardError {
+        StandardError {
+            terminal: true,
+            colour: true,
+            size,
+        }
+    }
+
+    const QR: Printing = Printing {
+        json: false,
+        qr: true,
+    };
+
+    /// The lines of a code drawn on standard error, its colours taken off.
+    fn drawn_code(err: &str) -> Vec<String> {
+        err.lines()
+            .filter(|line| line.starts_with("\x1b[38;5;16;48;5;231m"))
+            .map(|line| {
+                line.trim_start_matches("\x1b[38;5;16;48;5;231m")
+                    .trim_end_matches("\x1b[0m")
+                    .to_owned()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_qr_code_is_drawn_once_on_standard_error_and_reads_back_to_the_invite() {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let status = print_invite(
+            &offered_long(),
+            QR,
+            a_terminal(Some((200, 80))),
+            &mut out,
+            &mut err,
+        );
+        assert_eq!(status, SUCCESS);
+        assert_eq!(said(&out), format!("{LONG_INVITE}\n"), "the invite alone");
+        let err = said(&err);
+        let code = drawn_code(&err);
+        let expected = InviteQrCode::of(LONG_INVITE).unwrap();
+        assert_eq!(code, expected.lines(), "drawn once, whole: {err}");
+        assert_eq!(
+            crate::invite_qr::read_back(&code).as_deref(),
+            Some(LONG_INVITE)
+        );
+        assert!(err.contains("Scan its QR code"), "{err}");
+        assert!(err.ends_with("\x1b[0m\n"), "the code is last: {err:?}");
+        assert!(!err.contains(LONG_INVITE), "never as text: {err}");
+    }
+
+    #[test]
+    fn a_qr_code_is_drawn_beside_json_and_leaves_standard_output_as_it_was() {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        print_invite(
+            &offered_long(),
+            Printing {
+                json: true,
+                qr: true,
+            },
+            a_terminal(None),
+            &mut out,
+            &mut err,
+        );
+        let printed = serde_json::from_slice::<serde_json::Value>(&out).unwrap();
+        assert_eq!(printed["invite"], LONG_INVITE);
+        assert!(!said(&out).contains('\x1b'), "{}", said(&out));
+        assert!(
+            !drawn_code(&said(&err)).is_empty(),
+            "drawn where its size is unknown"
+        );
+    }
+
+    #[test]
+    fn a_terminal_too_small_for_the_qr_code_says_what_size_it_needs() {
+        let code = InviteQrCode::of(LONG_INVITE).unwrap();
+        let (columns, rows) = (code.columns(), code.rows() + 1);
+        for size in [(columns - 1, rows), (columns, rows - 1)] {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            let size = (size.0 as u16, size.1 as u16);
+            let status = print_invite(
+                &offered_long(),
+                QR,
+                a_terminal(Some(size)),
+                &mut out,
+                &mut err,
+            );
+            assert_eq!(status, SUCCESS, "the invite stands, printed");
+            assert_eq!(said(&out), format!("{LONG_INVITE}\n"));
+            let err = said(&err);
+            assert!(drawn_code(&err).is_empty(), "{err}");
+            assert!(
+                err.contains(&format!("it needs {columns} columns by {rows} rows")),
+                "{err}"
+            );
+            assert!(
+                err.contains(&format!("this one is {} by {}", size.0, size.1)),
+                "{err}"
+            );
+        }
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let size = (columns as u16, rows as u16);
+        print_invite(
+            &offered_long(),
+            QR,
+            a_terminal(Some(size)),
+            &mut out,
+            &mut err,
+        );
+        assert!(!drawn_code(&said(&err)).is_empty(), "just big enough");
+    }
+
+    #[test]
+    fn a_qr_code_is_kept_from_anything_but_a_terminal_that_draws_it() {
+        for (standard_error, why) in [
+            (StandardError::default(), "not a terminal"),
+            (
+                StandardError {
+                    colour: false,
+                    ..a_terminal(None)
+                },
+                "does not draw the colours",
+            ),
+        ] {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            print_invite(&offered_long(), QR, standard_error, &mut out, &mut err);
+            assert_eq!(said(&out), format!("{LONG_INVITE}\n"));
+            let err = said(&err);
+            assert!(!err.contains('\x1b'), "{err}");
+            assert!(err.contains(why), "{err}");
+        }
+    }
+
+    #[test]
+    fn no_qr_code_is_drawn_unless_asked_for() {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        print_invite(
+            &offered_long(),
+            Printing::default(),
+            a_terminal(Some((200, 80))),
+            &mut out,
+            &mut err,
+        );
+        assert!(!said(&err).contains("QR"), "{}", said(&err));
+        assert!(!said(&err).contains('\x1b'));
     }
 
     #[test]
@@ -1099,6 +1392,7 @@ mod tests {
             no_relays: true,
             relay: Vec::new(),
             json: false,
+            qr: false,
         };
         assert!(arguments.request().unwrap_err().contains("no way to offer"));
     }

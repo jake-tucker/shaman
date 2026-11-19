@@ -616,17 +616,29 @@ fn command_for_insights_wheel(
 /// `a` adds a Relay: what either opens stands over the picker with keys of its
 /// own, as [`command_for_relay_overlay_event`] takes them. With a Peer's removal
 /// armed `n` only puts that down, as any other key does, rather than replace the
-/// code as well.
+/// code as well. `q` draws the Invite shown as a QR code in place of the overlay,
+/// and while it is drawn `q` or Esc goes back to the overlay and nothing else
+/// acts.
 pub(super) fn command_for_serve_overlay_event(
     event: InputEvent,
     action: WayAction,
     removal_armed: bool,
+    qr_code_shown: bool,
 ) -> Option<CommandId> {
     let InputEvent::Key(key) = event else {
         return None;
     };
     if key.kind != KeyEventKind::Press {
         return None;
+    }
+    if qr_code_shown {
+        return matches!(
+            (key.code, key.modifiers),
+            (KeyCode::Esc | KeyCode::Char('q'), KeyModifiers::NONE)
+        )
+        .then_some(CommandId::InvokeSemantic(
+            SemanticCommandId::ServeHideQrCode,
+        ));
     }
     let command = match (key.code, key.modifiers) {
         (KeyCode::Up, KeyModifiers::NONE) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
@@ -644,6 +656,7 @@ pub(super) fn command_for_serve_overlay_event(
             SemanticCommandId::ServeNewShortCode
         }
         (KeyCode::Char('x'), KeyModifiers::NONE) => SemanticCommandId::ServeRemovePeer,
+        (KeyCode::Char('q'), KeyModifiers::NONE) => SemanticCommandId::ServeShowQrCode,
         (KeyCode::Esc, KeyModifiers::NONE) => SemanticCommandId::ServeClose,
         _ => return None,
     };

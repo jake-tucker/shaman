@@ -84,6 +84,9 @@ if-addrs = "0.15.0"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 libsqlite3-sys = { version = "0.38.2", features = ["bundled"] }
 pulldown-cmark = "0.13.4"
+# Draws an Invite as a QR code for a phone to scan, in `/serve` and `shaman serve invite --qr`. Without its defaults it
+# compiles no image encoder and depends on nothing.
+qrcode = { version = "0.15.0", default-features = false, features = ["std"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "ring"] }
 # The HKDF, HMAC, AEAD and randomness a short Invite's exchange takes from what the Pairing's TLS is already built on
 # (ADR-0065), so nothing new is compiled for them.
@@ -162,6 +165,9 @@ portable-pty = "0.9.0"
 sysinfo = "0.37.2"
 # The Claude fixtures verify the spawn-time session identifier is a well-formed UUID.
 uuid = "1.18.1"
+# Reads a QR code drawn for an Invite back to the Invite, as a phone's scanner would. Without its defaults it compiles no
+# image decoder.
+rqrr = { version = "0.11.0", default-features = false }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 # A Secret Service of the tests' own, which the Linux identity store is tested against over a peer-to-peer connection.

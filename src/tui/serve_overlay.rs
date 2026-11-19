@@ -43,6 +43,11 @@
 //! The Server says so ([`InviteStanding`]), and from then on the picker says it
 //! no longer works and shows neither it nor its code, so nothing dead can be
 //! read off the screen or copied.
+//!
+//! The Invite shown can be drawn as a QR code for a phone to scan, on a key and
+//! only then, in place of the overlay (see [`crate::invite_qr`]). The code is
+//! taken down as the Invite ends: redeemed, the view closes on the overlay
+//! saying which Peer paired; ended any other way, the view says so instead.
 
 use std::{
     cell::{Cell, RefCell},
@@ -51,6 +56,7 @@ use std::{
 };
 
 use crate::{
+    invite_qr::InviteQrCode,
     protocol::{
         InviteStanding, InviteState, IssueInviteRequest, IssuedInvite, IssuedShortCode,
         ListenerState, Peer, ShortCodeStanding, ShortCodeState, Way,
@@ -163,7 +169,23 @@ enum ServeOverlayState {
         renewing: Option<ServeRequest>,
         /// What ended the Invite shown, where something has.
         ended: Option<InviteEnded>,
+        /// The Peer that redeemed the Invite shown, where one has.
+        paired: Option<Peer>,
+        /// The Invite drawn as a QR code in place of the overlay, where the
+        /// reader asked for it, or why it could not be drawn.
+        qr_code: Option<Result<InviteQrCode, String>>,
     },
+}
+
+/// What stands in place of the overlay while the reader has the Invite shown
+/// as a QR code.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum QrCodeView<'a> {
+    Code(&'a InviteQrCode),
+    /// The Invite could not be drawn, and why.
+    Undrawable(&'a str),
+    /// The Invite ended other than by being redeemed, so its code is down.
+    Ended(InviteEnded),
 }
 
 /// What ended the Invite on screen, whichever surface it came to that by.
@@ -180,6 +202,17 @@ pub(super) enum InviteEnded {
 }
 
 impl InviteEnded {
+    /// Why it no longer works, alone.
+    pub(super) fn why(self) -> &'static str {
+        match self {
+            Self::Replaced => "A newer invite has replaced this one",
+            Self::Expired => "It expired unredeemed",
+            Self::Spent => "It has been redeemed",
+            Self::Discarded => "Serving stopped, or its listener moved, which ends every invite",
+            Self::ServerGone => "The server has restarted, so this invite is gone",
+        }
+    }
+
     /// What is said in its place: that it is dead, why, and how to get another.
     pub(super) fn said(self) -> &'static str {
         match self {
@@ -924,15 +957,75 @@ impl ServeOverlay {
             error: None,
             renewing: None,
             ended: None,
+            paired: None,
+            qr_code: None,
         };
         self.window.open();
+    }
+
+    /// Draws the Invite shown as a QR code in place of the overlay, where it
+    /// still works.
+    pub(super) fn show_qr_code(&mut self) {
+        if let ServeOverlayState::Managing {
+            invite,
+            ended: None,
+            qr_code,
+            ..
+        } = &mut self.state
+        {
+            *qr_code = Some(InviteQrCode::of(&invite.invite.0));
+        }
+    }
+
+    /// Takes the QR code down, back to the overlay.
+    pub(super) fn hide_qr_code(&mut self) {
+        if let ServeOverlayState::Managing { qr_code, .. } = &mut self.state {
+            *qr_code = None;
+        }
+    }
+
+    /// What stands in place of the overlay, where the reader has the Invite
+    /// shown as a QR code.
+    pub(super) fn qr_code(&self) -> Option<QrCodeView<'_>> {
+        let ServeOverlayState::Managing {
+            qr_code: Some(qr_code),
+            ended,
+            ..
+        } = &self.state
+        else {
+            return None;
+        };
+        Some(match (ended, qr_code) {
+            (Some(ended), _) => QrCodeView::Ended(*ended),
+            (None, Ok(code)) => QrCodeView::Code(code),
+            (None, Err(why)) => QrCodeView::Undrawable(why),
+        })
+    }
+
+    /// The Peer that redeemed the Invite shown, where one has.
+    pub(super) fn paired(&self) -> Option<&Peer> {
+        match &self.state {
+            ServeOverlayState::Managing { paired, .. } => paired.as_ref(),
+            _ => None,
+        }
     }
 
     /// Takes how the Server's latest Invite stands, which may end the one shown.
     /// One it says of later than that replaced it; of an earlier one, it says
     /// nothing of this, having only yet to hear of it.
+    /// Redeemed, it closes a QR code shown on the overlay, which lists the Peer
+    /// that paired with the keys on it.
     pub(super) fn hear_invite_standing(&mut self, standing: &InviteStanding) {
-        let ServeOverlayState::Managing { invite, ended, .. } = &mut self.state else {
+        let ServeOverlayState::Managing {
+            invite,
+            ended,
+            peers,
+            selected,
+            paired,
+            qr_code,
+            ..
+        } = &mut self.state
+        else {
             return;
         };
         if ended.is_some() || standing.serial < invite.serial {
@@ -948,6 +1041,24 @@ impl ServeOverlay {
                 InviteState::Discarded => Some(InviteEnded::Discarded),
             }
         };
+        if *ended != Some(InviteEnded::Spent) {
+            return;
+        }
+        *qr_code = None;
+        if let Some(peer) = &standing.redeemed_by {
+            *selected = match peers.iter().position(|listed| listed.id == peer.id) {
+                Some(index) => {
+                    peers[index] = peer.clone();
+                    index
+                }
+                None => {
+                    peers.push(peer.clone());
+                    peers.len() - 1
+                }
+            };
+            *paired = Some(peer.clone());
+            self.window.reveal();
+        }
     }
 
     /// What ended the Invite shown, where something has.

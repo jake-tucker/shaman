@@ -470,6 +470,36 @@ async fn a_short_code_comes_on_standard_output_with_json_and_is_left_out_of_a_pi
     assert!(!logs.contains(invite["invite"].as_str().unwrap()));
 }
 
+/// `--qr` leaves standard output the Invite alone, and its code holds the Invite
+/// as well, so a piped standard error has it left out, as a short code is.
+#[tokio::test]
+async fn a_qr_code_leaves_standard_output_the_invite_alone_and_a_piped_standard_error_without_it() {
+    let relay = TestRelay::start().await;
+    let address = relay.address();
+    let machine = Machine::new("qr-code");
+    machine.log_in(&relay, &address).await;
+    machine
+        .succeed(&["relay", "serve-through", &address, "on"])
+        .await;
+
+    let issued = machine
+        .succeed(&["serve", "invite", "--no-addresses", "--qr"])
+        .await;
+    let invite = said(&issued.stdout);
+    assert!(invite.starts_with("shaman-v1-"), "{invite}");
+    assert_eq!(invite.lines().count(), 1, "the invite alone: {invite:?}");
+    assert!(
+        invite.ends_with('\n') && !invite.contains('\x1b'),
+        "{invite:?}"
+    );
+    let told = said(&issued.stderr);
+    assert!(
+        told.contains("QR code is left out") && told.contains("not a terminal"),
+        "{told}"
+    );
+    assert!(!told.contains('\x1b') && !told.contains('▀'), "{told}");
+}
+
 #[tokio::test]
 async fn the_listing_says_how_each_relay_stands_as_documented() {
     let mut relay = TestRelay::start().await;

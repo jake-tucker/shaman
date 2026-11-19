@@ -16,6 +16,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::{
+    invite_qr,
     managed_client::SessionProjection,
     protocol::{
         Author, CostTotal, LandingPage, LapsePenalty, ListenerState, MAX_TITLE_CHARS,
@@ -54,8 +55,8 @@ use super::{
     relay_overlay::{ListNote, RelaySurface, serve_through_status},
     rename_dialog::RenameGeometry,
     serve_overlay::{
-        CandidateWay, LISTENER_FAILED, LISTENER_LOOPBACK, LISTENER_OFF, ServePickerLayout,
-        ServePickerNeeds, TOO_SMALL,
+        CandidateWay, LISTENER_FAILED, LISTENER_LOOPBACK, LISTENER_OFF, QrCodeView,
+        ServePickerLayout, ServePickerNeeds, TOO_SMALL,
     },
     session_picker::SessionPickerRow,
     setting_details,
@@ -1785,6 +1786,28 @@ fn way_lines(
     lines
 }
 
+/// `keys` said one after another, each kept whole on a line where it fits on one.
+fn key_lines(keys: &[&str], width: u16, style: Style) -> Vec<Line<'static>> {
+    const BETWEEN: &str = " · ";
+    let mut lines = Vec::<String>::new();
+    for key in keys {
+        match lines.last_mut() {
+            Some(line)
+                if UnicodeWidthStr::width(format!("{line}{BETWEEN}{key}").as_str())
+                    <= usize::from(width) =>
+            {
+                line.push_str(BETWEEN);
+                line.push_str(key);
+            }
+            _ => lines.push((*key).to_owned()),
+        }
+    }
+    lines
+        .iter()
+        .flat_map(|line| wrapped_lines(line, width, style))
+        .collect()
+}
+
 /// `text` wrapped to `width`, each Row of it in `style`.
 fn wrapped_lines(text: &str, width: u16, style: Style) -> Vec<Line<'static>> {
     TextLayout::new(text, width)
@@ -1922,6 +1945,10 @@ fn context_row_line(row: &ContextRow, width: usize, theme: &Theme) -> Line<'stat
 }
 
 fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, theme: &Theme) {
+    if let Some(view) = state.serve_overlay.qr_code() {
+        render_invite_qr_code(frame, state, view, theme);
+        return;
+    }
     let area = centered_rect(
         main,
         main.width.saturating_sub(4).min(96),
@@ -1952,12 +1979,17 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
                 .map(|row| Line::styled(row.text.to_owned(), theme.text.primary))
                 .collect::<Vec<_>>(),
         };
-        let mut lines = vec![match invite_ended {
-            Some(_) => Line::styled(
+        let paired = state.serve_overlay.paired();
+        let mut lines = vec![match (invite_ended, paired) {
+            (Some(_), Some(peer)) => Line::styled(
+                format!("Paired with {}", peer.name),
+                theme.feedback.success.add_modifier(Modifier::BOLD),
+            ),
+            (Some(_), None) => Line::styled(
                 "This invite no longer works",
                 theme.feedback.error.add_modifier(Modifier::BOLD),
             ),
-            None => Line::styled(
+            (None, _) => Line::styled(
                 "Fresh invite",
                 theme.text.primary.add_modifier(Modifier::BOLD),
             ),
@@ -2028,24 +2060,29 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
             lines.push(Line::styled(error.to_owned(), theme.feedback.error));
         }
         let keys = if state.serve_overlay.removal_armed() {
-            "x confirm removal · any other key cancels".to_owned()
+            vec!["x confirm removal", "any other key cancels"]
         } else {
+            let live = invite_ended.is_none();
             let copy_code = shown_code
                 .as_ref()
-                .filter(|shown_code| shown_code.code.is_some())
-                .map_or("", |_| "c copy code · ");
+                .is_some_and(|shown_code| shown_code.code.is_some());
             let new_code = shown_code
                 .as_ref()
-                .filter(|shown_code| shown_code.renewable)
-                .map_or("", |_| "n new code · ");
-            let copy_invite = if invite_ended.is_some() {
-                ""
-            } else {
-                "Ctrl+C copy invite · "
-            };
-            format!("{copy_invite}{copy_code}{new_code}↑↓ choose peer · x remove · Esc close")
+                .is_some_and(|shown_code| shown_code.renewable);
+            [
+                (live, "Ctrl+C copy invite"),
+                (live, "q QR code"),
+                (copy_code, "c copy code"),
+                (new_code, "n new code"),
+                (true, "↑↓ choose peer"),
+                (true, "x remove"),
+                (true, "Esc close"),
+            ]
+            .into_iter()
+            .filter_map(|(offered, key)| offered.then_some(key))
+            .collect()
         };
-        lines.extend(wrapped_lines(&keys, content_width, theme.text.subdued));
+        lines.extend(key_lines(&keys, content_width, theme.text.subdued));
         render_overlay_box(
             frame,
             state,
@@ -2066,6 +2103,98 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
         serve_picker_lines(state, area, theme),
         " Serve ",
         theme,
+    );
+}
+
+/// The Invite shown as a QR code, in place of `/serve`'s overlay and over the
+/// whole frame so it fits as many terminals as it can. The code is drawn dark on
+/// light in colours no theme moves; where the frame cannot hold it, or it has been
+/// taken down, that is said in its place.
+fn render_invite_qr_code(
+    frame: &mut Frame<'_>,
+    state: &TuiState,
+    view: QrCodeView<'_>,
+    theme: &Theme,
+) {
+    let area = frame.area();
+    clear_over(frame, state, area);
+    frame.render_widget(
+        Block::default().style(theme.surface.base.patch(theme.text.primary)),
+        area,
+    );
+    // The view takes every click, and has nothing a selection could copy.
+    state.selection_overlay_area.set(Some(area));
+    const BACK: &str = "q or Esc back";
+    let said = |frame: &mut Frame<'_>, heading: Option<&str>, text: &str| {
+        let width = area.width.saturating_sub(4).min(72);
+        let mut lines = heading
+            .map(|heading| {
+                Line::styled(
+                    heading.to_owned(),
+                    theme.feedback.error.add_modifier(Modifier::BOLD),
+                )
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
+        lines.extend(wrapped_lines(text, width, theme.text.primary));
+        lines.extend(wrapped_lines(BACK, width, theme.text.subdued));
+        let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+        frame.render_widget(Paragraph::new(lines), centered_rect(area, width, height));
+    };
+    let code = match view {
+        QrCodeView::Code(code) => code,
+        QrCodeView::Undrawable(why) => return said(frame, None, why),
+        QrCodeView::Ended(ended) => {
+            return said(
+                frame,
+                Some("This invite no longer works"),
+                &format!("{}. The QR code is taken down", ended.why()),
+            );
+        }
+    };
+    // The caption takes a row beneath the code.
+    let (columns, rows) = (code.columns(), code.rows() + 1);
+    let Some((width, height)) = u16::try_from(columns)
+        .ok()
+        .zip(u16::try_from(rows).ok())
+        .filter(|(width, height)| *width <= area.width && *height <= area.height)
+    else {
+        return said(
+            frame,
+            None,
+            &format!(
+                "This terminal is too small for the invite's QR code, which needs {columns} \
+                 columns by {rows} rows; it is {} by {}. Enlarge it to scan the code",
+                area.width, area.height
+            ),
+        );
+    };
+    let drawn = centered_rect(area, width, height);
+    let ink = Style::new()
+        .fg(Color::Indexed(invite_qr::DARK))
+        .bg(Color::Indexed(invite_qr::LIGHT));
+    let code_lines = code
+        .lines()
+        .into_iter()
+        .map(|line| Line::styled(line, ink))
+        .collect::<Vec<_>>();
+    frame.render_widget(
+        Paragraph::new(code_lines),
+        Rect {
+            height: height - 1,
+            ..drawn
+        },
+    );
+    let caption = format!("Scan it with Shaman on your phone · {BACK}");
+    frame.render_widget(
+        Paragraph::new(
+            Line::styled(
+                truncate_to_width(&caption, usize::from(area.width)),
+                theme.text.subdued,
+            )
+            .centered(),
+        ),
+        Rect::new(area.x, drawn.bottom() - 1, area.width, 1),
     );
 }
 
