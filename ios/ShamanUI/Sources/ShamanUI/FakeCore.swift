@@ -58,6 +58,12 @@
       /// The `relayed` phone logged in at the relay as hubot, under another account than the workstation's, so the
       /// workstation reads Unreachable and the login is offered again.
       case otherAccount
+      /// The `paired` phone whose workstation turns on `relay.example.com` a moment after the app opens, so that way
+      /// appears beside its direct ways reading "login needed".
+      case relayTurnedOn
+      /// The `relayed` phone whose workstation turns the relay off a moment after the app opens, so that way goes,
+      /// while the phone's login there stays listed.
+      case relayTurnedOff
     }
 
     /// The relay the fake's workstation is reached through in the relay scenarios, and its Invite offers.
@@ -100,6 +106,9 @@
     private let relayStandings: Mutex<[String: FakeRelayStanding]>
     /// The Remotes, by name, also reached through `relay`.
     private let relayed: Mutex<Set<String>>
+    /// How long after the fake opens its workstation turns the relay on or off, in `relayTurnedOn` and
+    /// `relayTurnedOff`: `--relay-told-after <seconds>` makes it as long as a UI test needs.
+    private let relayToldAfter: Duration
     /// The logins under way, each given up as the app leaves the front.
     private let loggingIn = Mutex<[Int: FakeLogin]>([:])
     private let nextLogin = Atomic<Int>(0)
@@ -110,11 +119,11 @@
     /// The fake beginning as `scenario` says, its relay confirming a login after `loginConfirmsAfter` where given.
     public init(_ scenario: Scenario, loginConfirmsAfter: Duration? = nil) {
       device = Mutex(Self.device(in: scenario))
-      let relayScenarios: [Scenario] = [.relayLogin, .relayed, .loginNeeded, .otherAccount]
+      let relayScenarios: [Scenario] = [.relayLogin, .relayed, .loginNeeded, .otherAccount, .relayTurnedOff]
       relayed = Mutex(relayScenarios.contains(scenario) ? ["workstation"] : [])
       let standings: [String: FakeRelayStanding] =
         switch scenario {
-        case .relayed: [Self.relay: .loggedIn("octocat (github)")]
+        case .relayed, .relayTurnedOff: [Self.relay: .loggedIn("octocat (github)")]
         case .otherAccount: [Self.relay: .otherAccount("hubot (github)")]
         default: [:]
         }
@@ -129,6 +138,13 @@
       } else {
         loginConfirms = .seconds(3)
       }
+      if let flag = arguments.firstIndex(of: "--relay-told-after"), arguments.indices.contains(flag + 1),
+        let seconds = Double(arguments[flag + 1])
+      {
+        relayToldAfter = .seconds(seconds)
+      } else {
+        relayToldAfter = .seconds(3)
+      }
       let waits: FakeTree.Waits =
         switch scenario {
         case .subagentWaits: .one
@@ -142,7 +158,7 @@
         switch scenario {
         case .fresh, .named, .pairAgain: []
         case .paired, .offline, .unreadTree, .unreadableTree, .subagentWaits, .subagentsWait, .longSubagentName,
-          .composing, .relayLogin, .relayed, .loginNeeded, .otherAccount:
+          .composing, .relayLogin, .relayed, .loginNeeded, .otherAccount, .relayTurnedOn, .relayTurnedOff:
           [Self.workstation(named: "workstation")]
         case .several, .reaching, .unreachable, .sidekick:
           [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
@@ -169,6 +185,28 @@
       if sidekick {
         sessions.withLock { $0 = FakeSidekick.listed + $0 }
       }
+      if scenario == .relayTurnedOn || scenario == .relayTurnedOff {
+        let after = relayToldAfter
+        let on = scenario == .relayTurnedOn
+        Task { [weak self] in
+          try? await Task.sleep(for: after)
+          self?.workstationServesThroughRelay(on)
+        }
+      }
+    }
+
+    /// The workstation tells the phone it Serves through the relay, or no longer does, as the core follows what a
+    /// Remote tells.
+    private func workstationServesThroughRelay(_ serves: Bool) {
+      relayed.withLock { relayed in
+        if serves {
+          relayed.insert("workstation")
+        } else {
+          relayed.remove("workstation")
+        }
+      }
+      tellServers()
+      listingListeners.tell(currentListing())
     }
 
     public func listing() -> AsyncStream<Listing> {

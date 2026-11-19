@@ -170,7 +170,11 @@ the code is always `WDJB-MJHT`. In `relayLogin` the `paired` phone's workstation
 `relay.example.com`, where the phone holds no login, so that way reads "login needed" with "Log in"; in `relayed` the
 phone is logged in there as octocat, which the Relays section lists and a swipe removes; in `loginNeeded` the
 workstation answers by no direct way, so it reads Unreachable and its sheet's offer leads to the login; and in
-`otherAccount` the phone is logged in there as hubot, under another account than the workstation's.
+`otherAccount` the phone is logged in there as hubot, under another account than the workstation's. In
+`relayTurnedOn` the `paired` workstation turns the relay on a few seconds after launch, or after
+`--relay-told-after <seconds>`, so its way appears reading "login needed", as the core follows what a Remote tells of
+the Relays it Serves through; in `relayTurnedOff` the `relayed` workstation turns it off as long after, so its way goes
+while the login there stays listed.
 
 ```sh
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake relayLogin --servers-and-device
