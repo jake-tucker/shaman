@@ -127,6 +127,15 @@ public protocol Core: AnyObject, Sendable {
 
   /// Removes the Relay entry a row of the Relays section hands back, giving up this phone's Login there.
   func removeRelay(_ relay: String) async throws(ActError)
+
+  /// Renames the Remote a row of the Servers section hands back to `name`, or fails with why, in the core's words. Its
+  /// Pairing stands as it was, and what was remembered for it goes with the name.
+  func renameRemote(_ remote: String, to name: String) async throws(ActError)
+
+  /// Removes the Remote a row of the Servers section hands back, ending its Pairing: it is asked to forget this phone,
+  /// and is forgotten here whether or not it answers, with its drafts and what was remembered for it. Where the Outlook
+  /// stood there it turns to the Remote turned toward before, which a notice says, or to none.
+  func removeRemote(_ remote: String) async throws(ActError)
 }
 
 /// One Session open on a pushed screen, read live until it is closed.

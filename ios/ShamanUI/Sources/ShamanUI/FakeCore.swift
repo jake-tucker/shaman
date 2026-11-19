@@ -68,6 +68,12 @@
       /// lab's Shaman is too old for the app, so each stands where an Unreachable Remote's row would, naming the side to
       /// update, and trying either again is refused so; and the workstation is newer, which the core says once.
       case releases
+      /// The `several` phone whose workstation, where the Outlook stands, removes this phone a moment after the app
+      /// opens, so the Outlook turns to the laptop, turned toward before it, saying why.
+      case removedThere
+      /// The `paired` phone whose one server, the workstation, removes this phone a moment after the app opens, so it
+      /// offers pairing alone, saying why.
+      case lastRemovedThere
     }
 
     /// The relay the fake's workstation is reached through in the relay scenarios, and its Invite offers.
@@ -170,9 +176,10 @@
         switch scenario {
         case .fresh, .named, .pairAgain: []
         case .paired, .offline, .unreadTree, .unreadableTree, .subagentWaits, .subagentsWait, .longSubagentName,
-          .composing, .relayLogin, .relayed, .loginNeeded, .otherAccount, .relayTurnedOn, .relayTurnedOff:
+          .composing, .relayLogin, .relayed, .loginNeeded, .otherAccount, .relayTurnedOn, .relayTurnedOff,
+          .lastRemovedThere:
           [Self.workstation(named: "workstation")]
-        case .several, .reaching, .unreachable, .sidekick, .releases:
+        case .several, .reaching, .unreachable, .sidekick, .releases, .removedThere:
           [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
         case .emptyServer: [Self.scratch]
         }
@@ -195,7 +202,25 @@
       if scenario == .several || scenario == .reaching || scenario == .unreachable || scenario == .sidekick
         || scenario == .releases
       {
-        turned.withLock { $0 = "workstation" }
+        turn("workstation")
+      }
+      if scenario == .removedThere {
+        turn("laptop")
+        turn("workstation")
+      }
+      if scenario == .removedThere || scenario == .lastRemovedThere {
+        // `--removed-after <seconds>` makes the moment as long as a UI test needs.
+        var after = Duration.seconds(3)
+        if let flag = arguments.firstIndex(of: "--removed-after"), arguments.indices.contains(flag + 1),
+          let seconds = Double(arguments[flag + 1])
+        {
+          after = .seconds(seconds)
+        }
+        Task { [weak self] in
+          try? await Task.sleep(for: after)
+          guard let self, let row = self.held.withLock({ $0.first { $0.name == "workstation" } }) else { return }
+          self.forget(row, removedThere: true)
+        }
       }
       if scenario == .composing {
         turnedWorkspace.withLock { $0["workstation"] = "shaman" }
@@ -377,7 +402,7 @@
       if let unavailable = listed.unavailable {
         throw .Invalid(message: unavailable)
       }
-      turned.withLock { $0 = remote }
+      turn(remote)
       turnedWorkspace.withLock { $0[remote] = name }
       turnedOutlook()
     }
@@ -436,7 +461,7 @@
         FakeTree.holds(session) && (found != nil || delegated)
         ? tree.frame(of: session, top: listed ?? gone) : listed ?? handIn ?? gone
       if let found {
-        turned.withLock { $0 = found.remote }
+        turn(found.remote)
         // The Workspace remembered for the Remote stays; only where none is does the Session's own become it.
         turnedWorkspace.withLock { $0[found.remote] = $0[found.remote] ?? found.workspace }
         turnedOutlook()
@@ -520,7 +545,7 @@
       let chosen = FakeScope(reference).within(remotes, sessions: sessions.withLock { $0 })
       scope.withLock { $0 = chosen }
       if let remote = chosen.remote {
-        turned.withLock { $0 = remote }
+        turn(remote)
         if case .workspace(_, let workspace) = chosen {
           turnedWorkspace.withLock { $0[remote] = workspace }
         }
@@ -620,10 +645,17 @@
     /// The listing of every held Remote's Sessions, as the core would make it.
     private func currentListing() -> Listing {
       let remotes = held.withLock { $0.map(\.name) }
-      return FakeSession.listing(
+      var listing = FakeSession.listing(
         of: sessions.withLock { $0 }, on: remotes, unanswered: unanswered,
         unreachable: unreachable.withLock { $0 }.merging(behind) { held, _ in held }, showing: onShow.withLock { $0 },
         scope: scope.withLock { $0 }, query: query.withLock { $0 }, now: Date())
+      // A Remote renamed is named so where a row names its Origin.
+      for (was, now) in renamed.withLock({ $0 }) {
+        for index in listing.active.indices where listing.active[index].place.hasPrefix("\(was) · ") {
+          listing.active[index].place = now + listing.active[index].place.dropFirst(was.count)
+        }
+      }
+      return listing
     }
 
     public func thisDevice() -> AsyncStream<ThisDevice> {
@@ -643,10 +675,13 @@
     private func currentServers() -> Servers {
       let standings = relayStandings.withLock { $0 }
       let relayed = relayed.withLock { $0 }
-      let remotes = held.withLock { $0 }.map { row in
-        guard relayed.contains(row.name) else { return row }
-        var row = row
-        row.ways.append(Self.relayWay(standings[Self.relay]))
+      let remotes = held.withLock { $0 }.map { held in
+        var row = held
+        row.name = shown(held.name)
+        row.removal = Self.removal(of: row.name)
+        if relayed.contains(held.name) {
+          row.ways.append(Self.relayWay(standings[Self.relay]))
+        }
         return row
       }
       let underWay = !loggingIn.withLock { $0.isEmpty }
@@ -829,7 +864,7 @@
         held.append(Self.workstation(named: remoteName))
       }
       relayed.withLock { $0 = invite.contains("relay") ? [remoteName] : [] }
-      turned.withLock { $0 = remoteName }
+      turn(remoteName)
       change { $0.name = deviceName }
       tellServers()
       turnedOutlook()
@@ -837,23 +872,104 @@
       return .paired(name: remoteName)
     }
 
-    /// The Remote last turned toward, which the Outlook stands at.
-    private let turned = Mutex<String?>(nil)
+    /// The Remotes in the order last turned toward, the latest first: the Outlook stands at the first held.
+    private let turned = Mutex<[String]>([])
+
+    /// Turns the Outlook toward the Remote `remote`, first among those turned toward.
+    private func turn(_ remote: String) {
+      turned.withLock { turned in
+        turned.removeAll { $0 == remote }
+        turned.insert(remote, at: 0)
+      }
+    }
 
     /// The Remote the Outlook stands at, where the phone holds any.
     private func currentRemote() -> String? {
       let names = held.withLock { $0.map(\.name) }
-      return turned.withLock({ $0 }).flatMap({ names.contains($0) ? $0 : nil }) ?? names.first
+      return turned.withLock({ $0 }).first(where: names.contains) ?? names.first
     }
 
     private func currentOutlook() -> Outlook {
       guard let name = currentRemote() else {
         return .nowhere
       }
-      let place = turnedWorkspace.withLock { $0[name] }.map { "\(name) · \($0)" } ?? name
+      let shown = shown(name)
+      let place = turnedWorkspace.withLock { $0[name] }.map { "\(shown) · \($0)" } ?? shown
       return .remote(
-        name: name,
+        name: shown,
         beginsIn: BeginsIn(lead: "New sessions begin in", place: place, said: "New sessions begin in \(place)"))
+    }
+
+    /// What each Remote renamed is called now, by the name the fake holds it under.
+    private let renamed = Mutex<[String: String]>([:])
+
+    /// What the Remote the fake holds as `name` is called now.
+    private func shown(_ name: String) -> String {
+      renamed.withLock { $0[name] } ?? name
+    }
+
+    public func renameRemote(_ remote: String, to name: String) async throws(ActError) {
+      try? await Task.sleep(for: .milliseconds(200))
+      let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+      let rows = held.withLock { $0 }
+      guard let row = rows.first(where: { $0.remote == remote }) else {
+        throw .Gone(message: "This phone is no longer paired with that server")
+      }
+      if name.isEmpty {
+        throw .Invalid(message: "A remote's name must contain non-whitespace characters without outer whitespace")
+      }
+      if name.lowercased() == "everywhere" {
+        throw .Invalid(
+          message: "`everywhere` names every server at once, so no remote may be named so; choose another name")
+      }
+      if rows.contains(where: { $0.remote != remote && shown($0.name) == name }) {
+        throw .Invalid(message: "This phone holds another server as \(name); choose another name")
+      }
+      renamed.withLock { $0[row.name] = name }
+      tellServers()
+      turnedOutlook()
+      listingListeners.tell(currentListing())
+    }
+
+    public func removeRemote(_ remote: String) async throws(ActError) {
+      try? await Task.sleep(for: .milliseconds(400))
+      guard let row = held.withLock({ $0.first { $0.remote == remote } }) else {
+        throw .Gone(message: "This phone is no longer paired with that server")
+      }
+      forget(row, removedThere: false)
+    }
+
+    /// Forgets the Remote `row`, as its Pairing ended, by this phone's user removing it or, where `removedThere`, by
+    /// its own user removing this phone: the Outlook, where it stood there, turns to the Remote turned toward before,
+    /// saying so.
+    private func forget(_ row: ServerRow, removedThere: Bool) {
+      let stoodThere = currentRemote() == row.name
+      let name = shown(row.name)
+      held.withLock { $0.removeAll { $0.remote == row.remote } }
+      turned.withLock { $0.removeAll { $0 == row.name } }
+      _ = turnedWorkspace.withLock { $0.removeValue(forKey: row.name) }
+      acts.forgetDrafts(on: "\(row.name)-key/")
+      let turnedTo: String? =
+        if stoodThere, case .remote(_, let beginsIn) = currentOutlook() { beginsIn.said } else { nil }
+      let why: String? =
+        removedThere
+        ? "\(name) removed this phone; pair with it again to reach it" : turnedTo.map { _ in "\(name) was removed" }
+      if let why {
+        say(turnedTo.map { "\(why). \($0)" } ?? why)
+      }
+      tellServers()
+      turnedOutlook()
+      listingListeners.tell(currentListing())
+    }
+
+    /// Says `words` in the notice banner, until they are seen.
+    private func say(_ words: String) {
+      let said = notice.withLock { notice in
+        let next = Notice(id: (notice?.id ?? 0) + 100, words: words)
+        notice = next
+        return next
+      }
+      noticeListeners.tell(said)
     }
 
     private func change(_ change: (inout ThisDevice) -> Void) {
@@ -877,25 +993,37 @@
 
     private static func workstation(named name: String) -> ServerRow {
       ServerRow(
-        name: name, fingerprint: fingerprint,
+        remote: fingerprint, name: name, fingerprint: fingerprint,
         ways: [
           WayRow(address: "192.168.1.20:7791", state: .answering, words: "answering", login: nil),
           WayRow(address: "100.64.0.7:7791", state: .notAnswering, words: "not answering", login: nil),
-        ])
+        ], removal: removal(of: name))
+    }
+
+    /// What removing the Remote `name` asks, as the core says it.
+    private static func removal(of name: String) -> String {
+      "This phone forgets \(name), with what it was writing there, and asks \(name) to forget this phone. Seeing it "
+        + "again takes a new invite."
     }
 
     /// The scratch Server of `emptyServer`, which holds nothing.
     private static let scratch = ServerRow(
-      name: "scratch", fingerprint: "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9",
-      ways: [WayRow(address: "192.168.1.50:7791", state: .answering, words: "answering", login: nil)])
+      remote: "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9", name: "scratch",
+      fingerprint: "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9",
+      ways: [WayRow(address: "192.168.1.50:7791", state: .answering, words: "answering", login: nil)],
+      removal: removal(of: "scratch"))
 
     private static let laptop = ServerRow(
-      name: "laptop", fingerprint: "5d1e8f0a2c4b6d8e0f1a3c5e7b9d2f4a6c8e0b1d3f5a7c9e2b4d6f8a0c1e3b5d",
-      ways: [WayRow(address: "100.84.12.7:7791", state: .answering, words: "answering", login: nil)])
+      remote: "5d1e8f0a2c4b6d8e0f1a3c5e7b9d2f4a6c8e0b1d3f5a7c9e2b4d6f8a0c1e3b5d", name: "laptop",
+      fingerprint: "5d1e8f0a2c4b6d8e0f1a3c5e7b9d2f4a6c8e0b1d3f5a7c9e2b4d6f8a0c1e3b5d",
+      ways: [WayRow(address: "100.84.12.7:7791", state: .answering, words: "answering", login: nil)],
+      removal: removal(of: "laptop"))
 
     private static let homelab = ServerRow(
-      name: "homelab", fingerprint: "e2b4d6f8a0c1e3b55d1e8f0a2c4b6d8e0f1a3c5e7b9d2f4a6c8e0b1d3f5a7c9a",
-      ways: [WayRow(address: "192.168.1.40:7791", state: .answering, words: "answering", login: nil)])
+      remote: "e2b4d6f8a0c1e3b55d1e8f0a2c4b6d8e0f1a3c5e7b9d2f4a6c8e0b1d3f5a7c9a", name: "homelab",
+      fingerprint: "e2b4d6f8a0c1e3b55d1e8f0a2c4b6d8e0f1a3c5e7b9d2f4a6c8e0b1d3f5a7c9a",
+      ways: [WayRow(address: "192.168.1.40:7791", state: .answering, words: "answering", login: nil)],
+      removal: removal(of: "homelab"))
 
     private static func device(in scenario: Scenario) -> ThisDevice {
       let note =

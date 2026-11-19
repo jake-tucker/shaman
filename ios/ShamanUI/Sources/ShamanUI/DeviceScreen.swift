@@ -6,6 +6,8 @@ import SwiftUI
 public struct DeviceScreen: View {
   @State private var model: DeviceModel
   @State private var path: [DeviceRoute] = []
+  /// The Remote whose name is being written, while one is.
+  @FocusState private var naming: String?
   @Environment(\.dismiss) private var dismiss
   private let core: any Core
   private let appVersion: String
@@ -49,9 +51,23 @@ public struct DeviceScreen: View {
           Banner(text: failure)
         }
       }
+      .noticeBanner(covered: model.loggingIn != nil)
     }
     .task { await model.follow() }
     .task { await model.followServers() }
+    .onChange(of: naming) { was, _ in
+      // A name left unkept goes back to the one the core holds.
+      if let was { model.leftNaming(was) }
+    }
+    .confirmationDialog(
+      "Remove server", isPresented: model.removingRemoteShown, titleVisibility: .visible,
+      presenting: model.removingRemote
+    ) { row in
+      Button("Remove", role: .destructive) { Task { await model.remove(row) } }
+        .accessibilityIdentifier("server.remove.confirm")
+    } message: { row in
+      Text(verbatim: row.removal)
+    }
     .relayLogin($model.loggingIn, core: core) { _ in }
     .confirmationDialog(
       "Remove relay", isPresented: model.removingShown, titleVisibility: .visible, presenting: model.removing
@@ -66,11 +82,34 @@ public struct DeviceScreen: View {
   /// Each Remote with its ways, and the offer to pair another server.
   private func servers(_ remotes: [ServerRow]) -> some View {
     Section("Servers") {
-      ForEach(remotes, id: \.name) { remote in
+      ForEach(remotes, id: \.remote) { remote in
         VStack(alignment: .leading, spacing: 6) {
-          Text(remote.name)
-            .font(.headline)
-            .accessibilityIdentifier("server.\(remote.name)")
+          HStack {
+            TextField("Name", text: model.name(of: remote))
+              .font(.headline)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+              .submitLabel(.done)
+              .focused($naming, equals: remote.remote)
+              .disabled(model.renamingRemote == remote.remote || model.removingNow == remote.remote)
+              .onSubmit { model.rename(remote) }
+              .accessibilityIdentifier("server.\(remote.name)")
+            if model.removingNow == remote.remote {
+              ProgressView()
+                .accessibilityIdentifier("server.\(remote.name).removing")
+            } else if naming != remote.remote {
+              // The name is written over where it stands.
+              Image(systemName: "pencil")
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+            }
+          }
+          if let refusal = model.nameRefusals[remote.remote] {
+            Text(refusal)
+              .font(.footnote)
+              .foregroundStyle(.red)
+              .accessibilityIdentifier("server.\(remote.name).refusal")
+          }
           ForEach(Array(remote.ways.enumerated()), id: \.offset) { index, way in
             HStack {
               Text(verbatim: way.address)
@@ -95,6 +134,10 @@ public struct DeviceScreen: View {
                 .accessibilityIdentifier("server.\(remote.name).way.\(index).login")
             }
           }
+        }
+        .swipeActions {
+          Button("Remove", role: .destructive) { model.removingRemote = remote }
+            .accessibilityIdentifier("server.\(remote.name).remove")
         }
       }
       NavigationLink(value: DeviceRoute.pairAnother) {
@@ -177,6 +220,7 @@ public struct DeviceScreen: View {
         Text(device.nameNote)
           .font(.footnote)
           .foregroundStyle(.secondary)
+          .accessibilityIdentifier("device.name.note")
       }
       VStack(alignment: .leading, spacing: 4) {
         Text("Fingerprint")
@@ -222,6 +266,34 @@ final class DeviceModel {
   var loggingIn: LoginAsk?
   /// The Relay entry whose removal is being confirmed, while it is.
   var removing: RelayRow?
+  /// Each Remote's name as it is being written, by the Remote, until it is kept or left.
+  private var remoteNames: [String: String] = [:]
+  /// Why the core refused a Remote's name, by the Remote, shown beside it.
+  private(set) var nameRefusals: [String: String] = [:]
+  /// The Remote whose renaming is under way, while one is.
+  private(set) var renamingRemote: String?
+  /// The Remote whose removal is being confirmed, while it is.
+  var removingRemote: ServerRow?
+  /// The Remote whose removal is under way, while one is.
+  private(set) var removingNow: String?
+
+  /// Whether the removal of a Remote is being confirmed.
+  var removingRemoteShown: Binding<Bool> {
+    Binding {
+      self.removingRemote != nil
+    } set: {
+      if !$0 { self.removingRemote = nil }
+    }
+  }
+
+  /// The name of `remote` as it is being written, or as the core holds it.
+  func name(of remote: ServerRow) -> Binding<String> {
+    Binding {
+      self.remoteNames[remote.remote] ?? remote.name
+    } set: {
+      self.remoteNames[remote.remote] = $0
+    }
+  }
 
   /// Whether the removal of a Relay entry is being confirmed.
   var removingShown: Binding<Bool> {
@@ -248,6 +320,56 @@ final class DeviceModel {
   func followServers() async {
     for await servers in core.servers() {
       self.servers = servers
+    }
+  }
+
+  /// Renames `remote` to the name written for it, keeping its Pairing: begun at once, so the name is taken before the
+  /// field is left.
+  func rename(_ remote: ServerRow) {
+    guard let name = remoteNames[remote.remote], name != remote.name else {
+      nameRefusals[remote.remote] = nil
+      remoteNames[remote.remote] = nil
+      return
+    }
+    renamingRemote = remote.remote
+    Task { await rename(remote, to: name) }
+  }
+
+  private func rename(_ remote: ServerRow, to name: String) async {
+    defer { renamingRemote = nil }
+    do {
+      try await core.renameRemote(remote.remote, to: name)
+      remoteNames[remote.remote] = nil
+      nameRefusals[remote.remote] = nil
+      failure = nil
+    } catch .Invalid(let message) {
+      nameRefusals[remote.remote] = message
+      failure = nil
+    } catch {
+      nameRefusals[remote.remote] = nil
+      failure = error.message
+    }
+  }
+
+  /// The name of the Remote `remote` was left unkept: it reads as the core holds it again, unless the core refused it,
+  /// when what was written stays beside why.
+  func leftNaming(_ remote: String) {
+    guard renamingRemote != remote, nameRefusals[remote] == nil else { return }
+    remoteNames[remote] = nil
+  }
+
+  /// Removes the Remote `row`, ending its Pairing.
+  func remove(_ row: ServerRow) async {
+    removingRemote = nil
+    removingNow = row.remote
+    defer { removingNow = nil }
+    do {
+      try await core.removeRemote(row.remote)
+      remoteNames[row.remote] = nil
+      nameRefusals[row.remote] = nil
+      failure = nil
+    } catch {
+      failure = error.message
     }
   }
 

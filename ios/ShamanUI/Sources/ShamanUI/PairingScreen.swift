@@ -16,6 +16,8 @@ public struct PairingScreen: View {
   public var body: some View {
     NavigationStack(path: $path) {
       PairingStart(core: core) { path.append($0) }
+        // Where a server ended this phone's last pairing, what the core says of it stands here.
+        .noticeBanner()
         .navigationDestination(for: String.self) { invite in
           ConfirmationScreen(core: core, invite: invite) {
             path.removeAll()

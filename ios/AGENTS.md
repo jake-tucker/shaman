@@ -192,6 +192,14 @@ while the login there stays listed.
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake relayLogin --servers-and-device
 ```
 
+**Servers.** A Remote is renamed by writing over its name in its row of the sheet, and removed by a swipe and a
+confirmation; over the fake a name another Remote holds, or one the shared rule refuses, is refused beside it, and
+removing the Remote the Outlook stands at turns the Outlook to the Remote turned toward before, which the notice banner
+says, or, removing the last, leaves pairing alone. In `removedThere` the `several` phone's workstation, where the
+Outlook stands, removes this phone a few seconds after launch, or after `--removed-after <seconds>`, so the Outlook
+turns to the laptop, saying why; in `lastRemovedThere` the `paired` phone's one server does, so it offers pairing alone,
+saying why.
+
 **A real Server.** `../scripts/ios-pair-scratch-server.sh` builds Shaman, starts a scratch Server of this checkout's own
 from an empty database, Serving on the Mac's addresses, makes an Invite and launches the built app with it, in a core
 directory and under a key of its own, for a person to press Pair; with `--test` it runs `LivePairingTests` instead,

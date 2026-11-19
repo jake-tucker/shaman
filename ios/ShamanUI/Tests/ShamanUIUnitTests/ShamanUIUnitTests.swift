@@ -1738,3 +1738,89 @@ private final class RecordingBrowser: LoginBrowser {
     _ = await following.value
   }
 }
+
+@Suite @MainActor struct ServersSectionTests {
+  /// The model of a sheet over `core`, following its Remotes, once it holds them.
+  private func following(_ core: FakeCore) async throws -> (DeviceModel, Task<Void, Never>) {
+    let model = DeviceModel(core: core)
+    let task = Task { await model.followServers() }
+    while model.servers == nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    return (model, task)
+  }
+
+  private func row(_ name: String, in model: DeviceModel) throws -> ServerRow {
+    try #require(model.servers?.remotes.first { $0.name == name })
+  }
+
+  /// Waits until `done` holds.
+  private func until(_ done: () -> Bool) async throws {
+    for _ in 0..<300 where !done() {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(done())
+  }
+
+  @Test func aRefusedNameStaysBesideWhyAndAKeptOneReadsAsTheCoreHoldsIt() async throws {
+    let (model, task) = try await following(FakeCore(.several))
+    defer { task.cancel() }
+    let workstation = try row("workstation", in: model)
+    let name = model.name(of: workstation)
+
+    name.wrappedValue = "laptop"
+    model.rename(workstation)
+    try await until { model.renamingRemote == nil && model.nameRefusals[workstation.remote] != nil }
+    #expect(model.nameRefusals[workstation.remote] == "This phone holds another server as laptop; choose another name")
+    model.leftNaming(workstation.remote)
+    #expect(name.wrappedValue == "laptop", "what was refused stays beside why")
+
+    name.wrappedValue = "studio"
+    model.rename(workstation)
+    #expect(model.renamingRemote == workstation.remote, "taken at once, before the field is left")
+    model.leftNaming(workstation.remote)
+    try await until { model.renamingRemote == nil }
+    #expect(model.nameRefusals[workstation.remote] == nil)
+    try await until { model.servers?.remotes.first?.name == "studio" }
+    #expect(model.name(of: try row("studio", in: model)).wrappedValue == "studio")
+  }
+
+  @Test func aNameLeftUnkeptReadsAsTheCoreHoldsItAgain() async throws {
+    let (model, task) = try await following(FakeCore(.several))
+    defer { task.cancel() }
+    let laptop = try row("laptop", in: model)
+    let name = model.name(of: laptop)
+    name.wrappedValue = "attic"
+    model.leftNaming(laptop.remote)
+    #expect(name.wrappedValue == "laptop")
+    model.rename(laptop)
+    #expect(model.renamingRemote == nil, "nothing changed, nothing asked")
+  }
+
+  @Test func aRemovalConfirmedGoesAndOneOfARemoteGoneSaysSoInTheBanner() async throws {
+    let (model, task) = try await following(FakeCore(.several))
+    defer { task.cancel() }
+    let workstation = try row("workstation", in: model)
+    model.removingRemote = workstation
+    #expect(model.removingRemoteShown.wrappedValue)
+
+    await model.remove(workstation)
+    #expect(model.removingRemote == nil && model.removingNow == nil)
+    #expect(model.failure == nil)
+    try await until { model.servers?.remotes.map(\.name) == ["laptop", "homelab"] }
+
+    await model.remove(workstation)
+    #expect(model.failure == "This phone is no longer paired with that server")
+  }
+}
+
+@Suite struct LiveRemotesTests {
+  @Test func aRemoteTheCoreDoesNotHoldIsGoneToRenameOrRemove() async throws {
+    let base = try scratch()
+    defer { try? FileManager.default.removeItem(at: base) }
+    let core = try LiveCore(directory: try CoreDirectory.prepare(in: base), signer: try madeKey())
+    let gone = ActError.Gone(message: "This phone is no longer paired with that server")
+    await #expect(throws: gone) { try await core.renameRemote("not-a-remote", to: "study") }
+    await #expect(throws: gone) { try await core.removeRemote("not-a-remote") }
+  }
+}

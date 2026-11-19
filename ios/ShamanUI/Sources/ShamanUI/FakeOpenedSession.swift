@@ -82,6 +82,15 @@
     }
 
     /// Gives `text` back to the composer of `session`, ahead of anything written there, as the core does.
+    /// Drops the draft of every Session whose reference begins with `prefix`, as a Remote removed does.
+    func forgetDrafts(on prefix: String) {
+      drafts.withLock { drafts in
+        for session in drafts.keys where session.hasPrefix(prefix) {
+          drafts[session] = nil
+        }
+      }
+    }
+
     func giveBack(_ text: String, to session: String) {
       let draft = drafts.withLock { drafts in
         var held = drafts[session] ?? Held()

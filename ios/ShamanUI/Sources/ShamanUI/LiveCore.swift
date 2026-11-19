@@ -154,6 +154,14 @@ public final class LiveCore: Core {
   public func removeRelay(_ relay: String) async throws(ActError) {
     try await acted { try await client.removeRelay(relay: relay) }
   }
+
+  public func renameRemote(_ remote: String, to name: String) async throws(ActError) {
+    try await acted { try await client.renameRemote(remote: remote, name: name) }
+  }
+
+  public func removeRemote(_ remote: String) async throws(ActError) {
+    try await acted { try await client.removeRemote(remote: remote) }
+  }
 }
 
 /// A Session the core holds open.
