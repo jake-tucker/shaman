@@ -1366,8 +1366,28 @@ impl Listings {
             state.remotes = held
                 .iter()
                 .map(|stored| {
-                    kept.remove(&(stored.remote.name.clone(), stored.generation))
-                        .unwrap_or_else(|| shared.read(stored))
+                    if let Some(kept) =
+                        kept.remove(&(stored.remote.name.clone(), stored.generation))
+                    {
+                        return kept;
+                    }
+                    let mut read = shared.read(stored);
+                    // Renamed, the one Pairing is read under its new name,
+                    // showing what it last answered until it answers again.
+                    let renamed = kept
+                        .iter()
+                        .find(|(_, followed)| {
+                            followed.generation == stored.generation
+                                && followed.answered.fingerprint == stored.remote.fingerprint
+                        })
+                        .map(|(key, _)| key.clone());
+                    if let Some(followed) = renamed.and_then(|key| kept.remove(&key)) {
+                        read.answered = Answered {
+                            name: stored.remote.name.clone(),
+                            ..followed.answered
+                        };
+                    }
+                    read
                 })
                 .collect();
         }

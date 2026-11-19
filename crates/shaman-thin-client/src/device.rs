@@ -130,6 +130,27 @@ impl DeviceRecord {
     }
 }
 
+impl DeviceRecord {
+    /// Remembers whatever was remembered of the Remote `from` of the Remote
+    /// `to`, which is what it is called now.
+    pub fn rename(&mut self, from: &str, to: &str) {
+        for turned in &mut self.turned {
+            if turned == from {
+                to.clone_into(turned);
+            }
+        }
+        if let Some(workspace) = self.workspaces.remove(from) {
+            self.workspaces.insert(to.to_owned(), workspace);
+        }
+    }
+
+    /// Forgets whatever was remembered of the Remote `remote`.
+    pub fn forget(&mut self, remote: &str) {
+        self.turned.retain(|turned| turned != remote);
+        self.workspaces.remove(remote);
+    }
+}
+
 impl Default for DeviceRecord {
     fn default() -> Self {
         Self::named(first_name())
@@ -242,5 +263,22 @@ mod tests {
             "turning toward the Remote alone keeps its Workspace"
         );
         assert_eq!(record.workspaces.get("lab"), None);
+    }
+
+    #[test]
+    fn what_was_remembered_of_a_remote_goes_with_its_name_and_is_forgotten_with_it() {
+        let mut record = DeviceRecord::default();
+        record.turn("lab", Some(remembered("notes")));
+        record.turn("desk", Some(remembered("shaman")));
+
+        record.rename("desk", "study");
+        assert_eq!(record.turned, ["study", "lab"], "in its place");
+        assert_eq!(record.workspaces.get("study"), Some(&remembered("shaman")));
+        assert_eq!(record.workspaces.get("desk"), None);
+
+        record.forget("study");
+        assert_eq!(record.turned, ["lab"]);
+        assert_eq!(record.workspaces.get("study"), None);
+        assert_eq!(record.workspaces.get("lab"), Some(&remembered("notes")));
     }
 }

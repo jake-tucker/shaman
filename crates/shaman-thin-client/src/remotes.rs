@@ -37,12 +37,16 @@ pub struct Servers {
 /// One Remote, as the sheet lists it.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct ServerRow {
+    /// The Remote, as the core is handed it back to rename or remove it.
+    pub remote: String,
     /// The name this phone knows it by.
     pub name: String,
     /// The fingerprint of its identity key, whole.
     pub fingerprint: String,
     /// Its ways, in the order they are dialled in.
     pub ways: Vec<WayRow>,
+    /// What removing it asks before it is done.
+    pub removal: String,
 }
 
 /// One way of a Remote, and how it stood when it was last asked.
@@ -423,6 +427,103 @@ impl Remotes {
     }
 }
 
+/// What an act on a Remote this phone no longer holds fails as.
+pub(crate) fn gone() -> crate::ActError {
+    crate::ActError::Gone {
+        message: "This phone is no longer paired with that server".to_owned(),
+    }
+}
+
+/// How a Pairing ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Ending {
+    /// This phone's user removed the Remote, which heard of it where
+    /// `acknowledged`.
+    Removed { acknowledged: bool },
+    /// The Remote refused this phone's key: its user removed this phone.
+    EndedThere,
+}
+
+impl Ending {
+    /// What is said of the Remote `name`'s Pairing ending so, where anything
+    /// is: why, where it was not this phone's own doing or did not reach the
+    /// Remote, and where the Outlook turned, as `turned` says it, where it
+    /// stood there and another Remote stays.
+    pub fn words(self, name: &str, turned: Option<&str>) -> Option<String> {
+        let why = match self {
+            Self::Removed { acknowledged: true } => turned.map(|_| format!("{name} was removed")),
+            Self::Removed {
+                acknowledged: false,
+            } => Some(format!(
+                "{name} did not answer, so it may still list this phone until it is removed there"
+            )),
+            Self::EndedThere => Some(format!(
+                "{name} removed this phone; pair with it again to reach it"
+            )),
+        }?;
+        Some(match turned {
+            Some(turned) => format!("{why}. {turned}"),
+            None => why,
+        })
+    }
+}
+
+/// What the redeemer is told of by its hooks: a thin Client offers nothing to
+/// pair back, and hears only that a Remote refused its key, ending the
+/// Pairing from its side, which it sends on as the Remote's name and the
+/// Pairing's generation.
+pub(crate) struct Endings {
+    ended: tokio::sync::mpsc::UnboundedSender<(String, u64)>,
+}
+
+impl Endings {
+    pub fn new(ended: tokio::sync::mpsc::UnboundedSender<(String, u64)>) -> Self {
+        Self { ended }
+    }
+}
+
+impl shaman_pairing::RedeemerHooks for Endings {
+    fn offer(
+        &self,
+        _redeemer: &Redeemer,
+        _server_key: &[u8],
+    ) -> Result<shaman_pairing::StoredMadeOffer, shaman_pairing::PairingFailure> {
+        Err(shaman_pairing::PairingFailure::new(
+            shaman_protocol::SessionErrorCode::PairingConnectionFailed,
+            "A phone makes no offer to pair back",
+        ))
+    }
+
+    fn redeemed(&self, _redeemer: &Redeemer, _remote: &Remote) {}
+
+    fn told(
+        &self,
+        _redeemer: &Redeemer,
+        _remote: &StoredRemote,
+        _client: &shaman_pairing::StrongClient,
+        _offer: Option<shaman_pairing::ToldOffer>,
+    ) {
+    }
+
+    fn refused(&self, redeemer: &Redeemer, key: &[u8]) {
+        // The Pairing refused is the one held as it is refused: one made in
+        // its place since is not what was refused.
+        let refused = redeemer
+            .records()
+            .into_iter()
+            .find(|stored| stored.public_key == key && !stored.uncommitted);
+        if let Some(stored) = refused {
+            let _ = self.ended.send((stored.remote.name, stored.generation));
+        }
+    }
+
+    fn withdrawn(&self, _redeemer: &Redeemer, _key: &[u8]) {}
+
+    fn forgotten(&self, _redeemer: &Redeemer, _remote: &StoredRemote) {}
+
+    fn changed(&self, _redeemer: &Redeemer) {}
+}
+
 /// `remote` as the sheet lists it, its ways standing as `standings` last
 /// said, and a Relay way as this phone stands at its Relay now.
 fn row(remote: &Remote, standings: Option<&Standings>, relays: &Relays) -> ServerRow {
@@ -457,9 +558,15 @@ fn row(remote: &Remote, standings: Option<&Standings>, relays: &Relays) -> Serve
         })
         .collect();
     ServerRow {
+        remote: remote.fingerprint.clone(),
         name: remote.name.clone(),
         fingerprint: remote.fingerprint.clone(),
         ways,
+        removal: format!(
+            "This phone forgets {name}, with what it was writing there, and asks {name} to \
+             forget this phone. Seeing it again takes a new invite.",
+            name = remote.name
+        ),
     }
 }
 

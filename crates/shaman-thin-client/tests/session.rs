@@ -600,7 +600,7 @@ async fn a_session_deleted_while_it_is_open_says_it_is_gone_and_is_read_no_more(
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_session_whose_pairing_was_ended_says_so_in_the_servers_words() {
+async fn a_session_whose_pairing_was_ended_says_it_is_gone() {
     let desk = ServingServer::start("thin-open-revoked").await;
     let phone = Phone::new();
     pair(&phone, &desk, "desk").await;
@@ -608,25 +608,19 @@ async fn a_session_whose_pairing_was_ended_says_so_in_the_servers_words() {
     desk.begin(&workspace(&holder, "shaman"), "Map the workspace")
         .await;
     let row = row(&phone, "Map the workspace").await;
+    let reading = phone.open(&row.session);
+    reading.conversation_until(failed_turn).await;
 
     desk.remove_peer(&phone.fingerprint()).await;
-    let reading = phone.open(&row.session);
     let frame = reading.frame_until(|frame| frame.gone.is_some()).await;
     assert_eq!(
-        frame.title, "Map the workspace",
-        "framed by what the listing knew"
+        frame.gone.as_deref(),
+        Some("This phone is no longer paired with the server this session is on")
     );
-    assert!(
-        frame
-            .gone
-            .as_deref()
-            .is_some_and(|gone| gone.contains("revoked")),
-        "{frame:?}"
-    );
-    assert!(
-        !loaded(&reading.conversation_now().items),
-        "never read, so the loading mark stands"
-    );
+    assert_eq!(frame.title, "Map the workspace", "as it was read");
+    phone
+        .outlook_until(|outlook| *outlook == shaman_thin_client::Outlook::Nowhere)
+        .await;
 
     phone.shutdown();
     desk.shutdown().await;

@@ -1497,6 +1497,9 @@ enum Relisted {
 fn refusal(refused: &SessionStreamError) -> Ended {
     if refused.deleted_session().is_some() {
         Ended::Gone(GONE_SESSION.to_owned())
+    } else if refused.remote_status() == Some(shaman_protocol::RemoteStatus::Revoked) {
+        // Its Server removed this phone, which forgets it for that.
+        Ended::Gone(GONE_REMOTE.to_owned())
     } else if refused
         .remote_status()
         .and_then(Behind::of_status)
@@ -1548,6 +1551,11 @@ impl Reader {
                 Err(error) => match error.downcast_ref::<SessionStreamError>() {
                     // A refusal no reopening gets past ends the reading in its
                     // words, as one that comes mid-stream does.
+                    // Refused for the Remote being held no more, as one
+                    // forgotten as the reading opened is.
+                    Some(_) if self.relist() == Relisted::Gone => {
+                        Ended::Gone(GONE_REMOTE.to_owned())
+                    }
                     Some(refused) if !refused.is_recoverable() => refusal(refused),
                     _ => {
                         tracing::debug!("the session was not read: {error:#}");
@@ -2078,8 +2086,8 @@ mod tests {
         );
         assert_eq!(
             gone_within(&runtime, &mut frame),
-            "Remote revoked this pairing",
-            "in the words a refusal mid-stream is said in"
+            GONE_REMOTE,
+            "in the words a refusal mid-stream is said in: its Server removed this phone"
         );
         runtime.block_on(reader).unwrap();
         assert_eq!(transport.asked(), 1, "and it is asked no more");

@@ -649,6 +649,29 @@ impl ThinClient {
         .await?
     }
 
+    /// Renames the Remote a row of the Servers section hands back to `name`,
+    /// as the shared rule for a Remote's name allows and no other Remote
+    /// holds, refusing one it would not with why. Its Pairing stands as it
+    /// was, and what was remembered for it goes with the name; the Server
+    /// never hears what this phone calls it.
+    pub async fn rename_remote(&self, remote: String, name: String) -> Result<(), ActError> {
+        let inner = self.inner.clone();
+        self.run(async move { inner.rename_remote(&remote, name.trim()).await })
+            .await?
+    }
+
+    /// Removes the Remote a row of the Servers section hands back, ending
+    /// its Pairing: the Remote is asked to withdraw this phone's Peer, and
+    /// one that does not answer within a moment is forgotten here all the
+    /// same, which is said. Its drafts and what was remembered for it go
+    /// with it, and the Outlook, where it stood there, turns to the Remote
+    /// turned toward before it, saying so, or to none.
+    pub async fn remove_remote(&self, remote: String) -> Result<(), ActError> {
+        let inner = self.inner.clone();
+        self.run(async move { inner.remove_remote(&remote).await })
+            .await?
+    }
+
     /// Hears that the network path changed, and whether there is one at
     /// all: with none nothing is dialled and every Remote reads Unreachable;
     /// with one every Remote is checked, as on a return to the front.
@@ -831,6 +854,21 @@ impl ThinClient {
             let inner = inner.clone();
             runtime.spawn(async move { inner.remotes.ask_ways(&name).await });
         }
+        // A Remote that refuses this phone's key has ended the Pairing on its
+        // side, and is forgotten here too.
+        let (ended, mut endings) = tokio::sync::mpsc::unbounded_channel();
+        inner
+            .redeemer
+            .attach(Arc::new(remotes::Endings::new(ended)));
+        let forgetting = Arc::downgrade(&inner);
+        runtime.spawn(async move {
+            while let Some((name, generation)) = endings.recv().await {
+                let Some(inner) = forgetting.upgrade() else {
+                    return;
+                };
+                inner.pairing_ended(&name, generation).await;
+            }
+        });
         // Whatever shows how this phone stands at a Relay shows it again as
         // that changes: a login done, a Login refused, an entry removed.
         let mut relays_changed = inner.relays.changes();
@@ -1019,6 +1057,151 @@ impl Inner {
                 .unwrap_or_else(|poison| poison.into_inner())
                 .iter()
                 .any(|relay| relay == address)
+    }
+
+    /// Whether the Outlook stands at `stored`.
+    fn outlook_at(&self, stored: &shaman_pairing::StoredRemote) -> bool {
+        self.remotes
+            .standing()
+            .is_some_and(|(name, _)| name == stored.remote.name)
+    }
+
+    /// The Remote held, its Pairing made, whose key's fingerprint is
+    /// `fingerprint`.
+    fn held_remote(&self, fingerprint: &str) -> Option<shaman_pairing::StoredRemote> {
+        self.remotes
+            .held()
+            .into_iter()
+            .find(|stored| stored.remote.fingerprint == fingerprint)
+    }
+
+    /// Renames the Remote whose key's fingerprint is `remote` to `name`.
+    async fn rename_remote(&self, remote: &str, name: &str) -> Result<(), ActError> {
+        // One change to the Remotes at a time, a pairing's included.
+        let _pairing = self.pairing.lock().await;
+        let stored = self.held_remote(remote).ok_or_else(remotes::gone)?;
+        shaman_pairing::validate_remote_name(name).map_err(|failure| ActError::Invalid {
+            message: failure.message,
+        })?;
+        let was = stored.remote.name;
+        if was == name {
+            return Ok(());
+        }
+        if self
+            .redeemer
+            .records()
+            .iter()
+            .any(|other| other.remote.name == name)
+        {
+            return Err(ActError::Invalid {
+                message: format!("This phone holds another server as {name}; choose another name"),
+            });
+        }
+        self.redeemer
+            .rename_remote(&was, name)
+            .map_err(|failure| match failure.code {
+                shaman_protocol::SessionErrorCode::RemoteNotFound => remotes::gone(),
+                _ => ActError::Invalid {
+                    message: failure.message,
+                },
+            })?;
+        let (from, to) = (was.clone(), name.to_owned());
+        // Renamed, it is renamed wherever it is shown, kept or not: a record
+        // that could not be written now is written whole by the next change.
+        let shown = self
+            .change_record_shown(move |record| record.rename(&from, &to))
+            .await;
+        if let Err(error) = shown {
+            tracing::warn!("a Remote was renamed but this phone's records were not kept: {error}");
+        }
+        self.listing.follow(&self.remotes.held());
+        self.remotes.forget_ways(&was);
+        // Its ways are asked again under its new name, which the rename
+        // does not wait on.
+        let (remotes, name) = (self.remotes.clone(), name.to_owned());
+        tokio::spawn(async move { remotes.ask_ways_again(&name).await });
+        Ok(())
+    }
+
+    /// Removes the Remote whose key's fingerprint is `remote`, asking it to
+    /// withdraw this phone's Peer first.
+    async fn remove_remote(&self, remote: &str) -> Result<(), ActError> {
+        let _pairing = self.pairing.lock().await;
+        let stored = self.held_remote(remote).ok_or_else(remotes::gone)?;
+        let stood_there = self.outlook_at(&stored);
+        let removal = self
+            .redeemer
+            .remove_remote(&stored.remote.name)
+            .await
+            .map_err(|failure| match failure.code {
+                shaman_protocol::SessionErrorCode::RemoteNotFound => remotes::gone(),
+                _ => ActError::failed(anyhow::anyhow!(failure.message)),
+            })?;
+        self.forgotten(
+            &stored,
+            remotes::Ending::Removed {
+                acknowledged: removal.acknowledged,
+            },
+            stood_there,
+        )
+        .await;
+        Ok(())
+    }
+
+    /// Forgets the Remote `name`, whose Pairing `generation` its Server
+    /// ended by refusing this phone's key, where that Pairing still stands
+    /// here.
+    async fn pairing_ended(&self, name: &str, generation: u64) {
+        let _pairing = self.pairing.lock().await;
+        let Some(stored) = self
+            .remotes
+            .held()
+            .into_iter()
+            .find(|stored| stored.remote.name == name && stored.generation == generation)
+        else {
+            return;
+        };
+        let stood_there = self.outlook_at(&stored);
+        if let Err(failure) = self.redeemer.delete_remote(name) {
+            tracing::warn!(
+                "{name} ended its pairing and was not forgotten: {}",
+                failure.message
+            );
+            return;
+        }
+        self.forgotten(&stored, remotes::Ending::EndedThere, stood_there)
+            .await;
+    }
+
+    /// Forgets everything held of `stored`, whose record is gone, as its
+    /// Pairing ended by `ending`: what was remembered for it, its drafts,
+    /// its Sessions and its ways, turning the Outlook, where it stood
+    /// there, as `stood_there` says, to the Remote turned toward before it,
+    /// and saying so.
+    async fn forgotten(
+        &self,
+        stored: &shaman_pairing::StoredRemote,
+        ending: remotes::Ending,
+        stood_there: bool,
+    ) {
+        let name = stored.remote.name.clone();
+        let forgotten = name.clone();
+        let shown = self
+            .change_record_shown(move |record| record.forget(&forgotten))
+            .await;
+        if let Err(error) = shown {
+            tracing::warn!("{name} was forgotten but this phone's records were not kept: {error}");
+        }
+        self.drafts.forget_remote(&stored.remote.fingerprint);
+        self.listing.follow(&self.remotes.held());
+        self.remotes.forget_ways(&name);
+        let turned = match &*self.remotes.outlook().borrow() {
+            Outlook::Remote { begins_in, .. } if stood_there => Some(begins_in.said.clone()),
+            _ => None,
+        };
+        if let Some(words) = ending.words(&name, turned.as_deref()) {
+            self.listing.notices().say(words);
+        }
     }
 
     /// The Landing where the Outlook stands now.

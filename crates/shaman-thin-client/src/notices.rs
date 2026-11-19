@@ -1,8 +1,9 @@
-//! What the core says of its own accord, beside what an act's failure says:
-//! that a Remote is newer than the app, once a change it sent was passed
-//! over as one this build does not know (ADR-0078). It is said once for each
-//! Remote for as long as the core runs, quietly, in the banner an act's
-//! failure is shown in, however many more such changes that Remote sends.
+//! What the core says of its own accord, beside what an act's failure says,
+//! quietly, in the banner an act's failure is shown in: that a Remote is
+//! newer than the app, once a change it sent was passed over as one this
+//! build does not know (ADR-0078), which is said once for each Remote for as
+//! long as the core runs, however many more such changes that Remote sends;
+//! and that a Pairing has ended, and where the Outlook turned for it.
 
 use std::{
     collections::{HashSet, VecDeque},
@@ -89,13 +90,23 @@ impl Notices {
         if !held.said.insert(fingerprint.to_owned()) {
             return;
         }
+        self.wait(&mut held, words);
+    }
+
+    /// Says `words`, after whatever is waiting to be said.
+    pub fn say(&self, words: String) {
+        let mut held = self.lock();
+        self.wait(&mut held, words);
+    }
+
+    fn wait(&self, held: &mut Held, words: String) {
         held.next += 1;
         let notice = Notice {
             id: held.next,
             words,
         };
         held.waiting.push_back(notice);
-        self.show(&held);
+        self.show(held);
     }
 
     /// Swift has seen the notice `id` names: the next waiting is shown.
