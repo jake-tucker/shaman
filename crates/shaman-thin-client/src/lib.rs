@@ -84,6 +84,9 @@ uniffi::setup_scaffolding!();
 pub struct CoreTimings {
     /// How the redeemer reaches each Remote.
     pub redeemer: RedeemerTimings,
+    /// How long each Relay is given to answer what a login, a join or a
+    /// removal asks of it.
+    pub relays: shaman_pairing::relay::RelayClientTimings,
     /// How long confirming a pairing keeps dialling while no way answers,
     /// so that allowing the local network prompt is followed by success.
     pub pairing_keeps_dialling: Duration,
@@ -114,6 +117,7 @@ impl Default for CoreTimings {
     fn default() -> Self {
         Self {
             redeemer: RedeemerTimings::default(),
+            relays: shaman_pairing::relay::RelayClientTimings::default(),
             pairing_keeps_dialling: Duration::from_secs(8),
             pairing_redial: Duration::from_millis(500),
             readers: SessionCommandTimings {
@@ -588,8 +592,17 @@ impl ThinClient {
     /// and one that does not answer is forgotten here all the same.
     pub async fn remove_relay(&self, relay: String) -> Result<(), ActError> {
         let inner = self.inner.clone();
-        self.run(async move { inner.relays.remove(&relay).await })
-            .await?
+        self.run(async move {
+            inner.relays.remove(&relay).await?;
+            // A way that answered through it, or beside it, is asked anew,
+            // so none reads answering while its Remote no longer does.
+            for name in inner.remotes.names() {
+                let asking = inner.clone();
+                tokio::spawn(async move { asking.remotes.ask_ways(&name).await });
+            }
+            Ok(())
+        })
+        .await?
     }
 
     /// Hears that the network path changed, and whether there is one at
@@ -702,6 +715,7 @@ impl ThinClient {
             records.directory(),
             Arc::new(GivenIdentity(identity.clone())),
             device.subscribe(),
+            timings.relays,
             runtime.handle(),
         )
         .map_err(OpenError::from)?;
@@ -1167,6 +1181,68 @@ mod tests {
     use shaman_pairing::signer::{Signer, testing::CallbackSigner};
 
     use super::*;
+
+    /// Every line of the core's source whose literal runs spaces together
+    /// within its words, between the line's first and last quote: where a
+    /// lost line continuation joins a long literal's lines.
+    fn literal_runs_of_spaces() -> Vec<String> {
+        fn visit(directory: &std::path::Path, found: &mut Vec<String>) {
+            for entry in std::fs::read_dir(directory).expect("read the core's source") {
+                let path = entry.expect("read the core's source").path();
+                if path.is_dir() {
+                    visit(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    let source = std::fs::read_to_string(&path).expect("read a source file");
+                    for (number, line) in source.lines().enumerate() {
+                        let (Some(first), Some(last)) = (line.find('"'), line.rfind('"')) else {
+                            continue;
+                        };
+                        if first < last && joins_words(&line[first + 1..last]) {
+                            found.push(format!("{}:{}: {line}", path.display(), number + 1));
+                        }
+                    }
+                }
+            }
+        }
+        let mut found = Vec::new();
+        visit(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut found,
+        );
+        found
+    }
+
+    /// Whether `quoted` runs spaces together between two words, as a lost
+    /// line continuation does: not at its edges, nor beside an escape such
+    /// as `\n`, where a test pads its input on purpose.
+    fn joins_words(quoted: &str) -> bool {
+        let characters = quoted.chars().collect::<Vec<_>>();
+        let mut at = 0;
+        while at < characters.len() {
+            if characters[at] != ' ' {
+                at += 1;
+                continue;
+            }
+            let start = at;
+            while at < characters.len() && characters[at] == ' ' {
+                at += 1;
+            }
+            let escaped_before = start >= 2 && characters[start - 2] == '\\';
+            let worded = start > 0 && at < characters.len() && characters[at] != '\\';
+            if at - start >= 2 && worded && !escaped_before {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// No word the core writes runs spaces together, as one does where a
+    /// long literal's line continuation was lost.
+    #[test]
+    fn no_literal_of_the_core_runs_spaces_together() {
+        let found = literal_runs_of_spaces();
+        assert!(found.is_empty(), "{}", found.join("\n"));
+    }
 
     /// How long a test waits for the listener to hear something it must.
     const HEARD_WITHIN: Duration = Duration::from_secs(5);

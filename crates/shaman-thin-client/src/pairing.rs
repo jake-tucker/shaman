@@ -76,10 +76,15 @@ pub enum PairingOutcome {
     RemoteNameRefused { message: String },
     /// The phone's name is not one the Server would keep, said beside it.
     DeviceNameRefused { message: String },
-    /// No way answered but a Relay way at a Relay where this phone needs to
-    /// log in, as `message` says: pairing goes on by itself once the login
-    /// `login` offers is done, while the Invite lives.
-    LoginNeeded { message: String, login: LoginOffer },
+    /// No way answered, and a Relay way would once this phone logs in at
+    /// its Relay, as `message` says: pairing goes on by itself once the
+    /// login `login` offers is done, while the Invite lives; or it may be
+    /// tried again as it is, as where a direct way failed for a moment.
+    LoginNeeded {
+        message: String,
+        login: LoginOffer,
+        try_again: String,
+    },
 }
 
 /// What a failed pairing offers next.
@@ -210,12 +215,17 @@ pub(crate) async fn confirm(
     // One pairing at a time, so two never replace one another's Remote.
     let _pairing = inner.pairing.lock().await;
     let replaced = held_as(inner, &invite);
-    let relay_hint = inner.relays.hint(&invite.ways);
+    let ways = invite.ways.clone();
     let remote = match keep_dialling(inner, invite, &remote_name, &device_name).await {
         Ok(remote) => remote,
         Err(failure) => {
             // Whatever was shown of it while it was under way goes.
             inner.remotes.refresh();
+            // What this attempt's refused join said comes first; then how
+            // this phone stands at each Relay now, which a refused join has
+            // just changed where the Login there lapsed or stands under
+            // another Account than the Server's.
+            let relay_hint = refused_at(&failure).or_else(|| inner.relays.hint(&ways));
             return match relay_hint {
                 // No way answered, or the one a Relay way's join was asked
                 // at refused it for want of the login.
@@ -303,7 +313,9 @@ async fn keep_dialling(
 fn login_needed(hint: &RelayHint) -> PairingOutcome {
     let message = match hint {
         RelayHint::LoginNeeded { relay } => format!(
-            "No way this invite offers answered, but it offers the relay at {}, where this phone              needs to log in. Log in there, and pairing goes on by itself.",
+            "No way this invite offers answered. It offers the relay at {}, where this phone \
+             needs to log in: log in there and pairing goes on by itself, or try again once this \
+             phone can reach the server.",
             relays::shown(relay)
         ),
         RelayHint::OtherAccount { relay, account } => {
@@ -313,6 +325,19 @@ fn login_needed(hint: &RelayHint) -> PairingOutcome {
     PairingOutcome::LoginNeeded {
         message,
         login: hint.offer(),
+        try_again: "Try again".to_owned(),
+    }
+}
+
+/// What a Relay way's refused join says is in the way of `failure`, where
+/// it says.
+fn refused_at(failure: &PairingFailure) -> Option<RelayHint> {
+    match failure.unreachable.clone()? {
+        UnreachableReason::RelayLoginNeeded { relay } => Some(RelayHint::LoginNeeded { relay }),
+        UnreachableReason::RelayDifferentAccounts { relay, account } => {
+            Some(RelayHint::OtherAccount { relay, account })
+        }
+        _ => None,
     }
 }
 
@@ -335,14 +360,25 @@ fn failed(failure: PairingFailure) -> PairingOutcome {
         SessionErrorCode::RelayCapReached => PairingOutcome::Failed {
             message: match failure.unreachable {
                 Some(UnreachableReason::RelayCapReached { relay, limit }) => format!(
-                    "The relay at {} joins at most {limit} connections at once for one account,                      and yours has as many. Try again once one ends.",
+                    "The relay at {} joins at most {limit} connections at once for one account, \
+                     and yours has as many. Try again once one ends.",
                     relays::shown(&relay)
                 ),
-                _ => "The relay joins no more connections for this account just now. Try again                       once one ends."
+                _ => "The relay joins no more connections for this account just now. Try again \
+                      once one ends."
                     .to_owned(),
             },
             again: TryInstead::TryAgain,
         },
+        // Where nothing said which Relay refused, still in the phone's words.
+        SessionErrorCode::RelayLoginNeeded | SessionErrorCode::RelayDifferentAccounts => {
+            PairingOutcome::Failed {
+                message: "A relay this invite offers would not join this phone to the server. \
+                          Check this phone's login there in Servers & device, then try again."
+                    .to_owned(),
+                again: TryInstead::TryAgain,
+            }
+        }
         SessionErrorCode::RemoteBusy | SessionErrorCode::PairingOutcomeUnknown => {
             PairingOutcome::Failed {
                 message: failure.message,

@@ -14,9 +14,10 @@
 //! of each entry beyond what is here rides on the entry: stored beside its
 //! own fields, as an extension this writes as it is and never reads
 //! ([`RelayHooks::Stored`]), and held beside it for as long as it is held
-//! ([`RelayHooks::Beside`]). A holder with nothing of its own to keep there,
-//! as a thin Client, keeps whatever another stored there unread
-//! ([`Unattached`]).
+//! ([`RelayHooks::Beside`]). A thin Client attaches hooks of its own, which
+//! store the Account each Login stands under and report the name it keeps
+//! for itself; a holder with nothing of its own to keep there keeps whatever
+//! another stored there unread ([`Unattached`]).
 //!
 //! Nothing of an entry — an address, a code, an Account — reaches a Log
 //! (ADR-0008).
@@ -152,8 +153,8 @@ pub trait RelayHooks: Send + Sync + Sized + 'static {
 pub type Extension = serde_json::Map<String, serde_json::Value>;
 
 /// The hooks of a holder that keeps nothing of its own on its Relay entries,
-/// and has no say in them: a thin Client's. Whatever another stored on an
-/// entry stays as it was.
+/// and has no say in them, as a test's or a tool's. Whatever another stored
+/// on an entry stays as it was.
 pub struct Unattached;
 
 impl RelayHooks for Unattached {

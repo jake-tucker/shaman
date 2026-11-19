@@ -229,12 +229,13 @@ impl Relays {
         directory: &std::path::Path,
         identity: Arc<dyn Identity>,
         device: watch::Receiver<ThisDevice>,
+        timings: RelayClientTimings,
         runtime: &Handle,
     ) -> anyhow::Result<Self> {
         let client = RelayClient::new(
             directory,
             identity,
-            RelayClientTimings::default(),
+            timings,
             PhoneHooks {
                 device,
                 changes: watch::Sender::new(0),
@@ -280,6 +281,7 @@ impl Relays {
                 shaman_pairing::IdentityMaterial::fresh(),
             )),
             watch::channel(device).1,
+            RelayClientTimings::default(),
             runtime,
         )
         .expect("open the Relay entries")

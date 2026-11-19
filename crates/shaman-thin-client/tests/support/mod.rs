@@ -66,6 +66,9 @@ pub const PROGRESS_DEADLINE: Duration = Duration::from_secs(20);
 /// pairing keeps dialling for not much longer.
 pub fn timings() -> CoreTimings {
     CoreTimings {
+        relays: shaman_pairing::relay::RelayClientTimings {
+            answer_timeout: Duration::from_secs(5),
+        },
         redeemer: RedeemerTimings {
             handshake_timeout: Duration::from_millis(150),
             direct_head_start: Duration::from_millis(25),

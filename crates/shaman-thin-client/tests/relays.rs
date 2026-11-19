@@ -13,8 +13,8 @@ use std::time::Duration;
 use shaman::protocol::Way;
 use shaman_pairing::RedeemerTimings;
 use shaman_thin_client::{
-    CoreTimings, DeviceLogin, InviteReading, Listing, LoginOffer, PairingOutcome, RelayRowState,
-    Servers, UnreachableHint, WayState,
+    CoreTimings, DeviceLogin, InviteReading, ItemKind, Listing, LoginOffer, PairingOutcome,
+    RelayRowState, Servers, UnreachableHint, WayState,
 };
 
 use support::{Cut, Gate, Phone, ServingServer, WORKING, relay::TestRelay};
@@ -205,9 +205,35 @@ async fn a_remote_out_of_reach_for_want_of_a_login_leads_to_it_and_is_read_throu
         .listing_until(|listing| listed(listing, "Map the workspace"))
         .await;
     desk.begin(&workspace(&holder), "Write the tests").await;
-    phone
+    let listing = phone
         .listing_until(|listing| listed(listing, "Write the tests"))
         .await;
+    // A Session opens and is read through the Relay alone.
+    let session = listing
+        .active
+        .iter()
+        .find(|row| row.title == "Write the tests")
+        .expect("the Session is listed")
+        .session
+        .clone();
+    let reading = phone.open(&session);
+    reading
+        .conversation_until(|items| {
+            items.iter().any(|item| {
+                matches!(&item.kind, ItemKind::UserMessage { text, .. } if text == "Write the tests")
+            })
+        })
+        .await;
+    assert_eq!(reading.frame().await.gone, None);
+    assert_eq!(
+        reading
+            .frame()
+            .await
+            .composer
+            .map(|composer| composer.unreachable),
+        Some(None),
+        "nothing says the desk is out of reach"
+    );
     let servers = phone
         .servers_until(|servers| {
             relay_way(servers).is_some_and(|(state, _)| state == WayState::Answering)
@@ -262,11 +288,22 @@ async fn pairing_through_a_relay_alone_asks_for_the_login_and_goes_on_once_it_is
         .core
         .confirm_pairing(invite.clone(), "desk".to_owned(), "Pocket".to_owned())
         .await;
-    let PairingOutcome::LoginNeeded { message, login } = outcome else {
-        panic!("a login is asked for: {outcome:?}");
-    };
-    assert!(message.contains("goes on by itself"), "{message}");
-    assert_eq!(login.relay, relay.address());
+    assert_eq!(
+        outcome,
+        PairingOutcome::LoginNeeded {
+            message: format!(
+                "No way this invite offers answered. It offers the relay at {}, where this phone \
+                 needs to log in: log in there and pairing goes on by itself, or try again once \
+                 this phone can reach the server.",
+                relay.address()
+            ),
+            login: LoginOffer {
+                relay: relay.address(),
+                words: "Log in".to_owned(),
+            },
+            try_again: "Try again".to_owned(),
+        }
+    );
     assert!(phone.servers().await.remotes.is_empty(), "nothing is kept");
 
     phone.logged_in(&relay, "octocat").await;
@@ -552,6 +589,212 @@ async fn the_relay_is_dialled_at_once_where_every_direct_way_fails_and_a_moment_
         took >= head_start,
         "the direct way is given its head start: {took:?}"
     );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+/// A pairing by an Invite whose Relay way alone answers, refused there for
+/// the phone's Login standing under another Account than the Server's, says
+/// so in the phone's words and offers to log in again, or to try again; and
+/// pairs once logged in as the Server's user.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pairing_refused_for_different_accounts_says_so_and_offers_to_log_in_again() {
+    let relay = TestRelay::start().await;
+    let (desk, _gate) = serving_through("thin-relay-pair-accounts", &relay).await;
+    let phone = Phone::with(timings());
+    let invite = desk.invite(vec![Way::Relay(relay.address())]).await;
+    let _read = phone.core.read_invite(invite.clone());
+    phone.logged_in(&relay, "hubot").await;
+
+    let outcome = phone
+        .core
+        .confirm_pairing(invite.clone(), "desk".to_owned(), "Pocket".to_owned())
+        .await;
+    assert_eq!(
+        outcome,
+        PairingOutcome::LoginNeeded {
+            message: format!(
+                "This phone is logged in at the relay at {} as hubot (scripted), and the server \
+                 under another account. The relay joins only those logged in under the same \
+                 account, so log this phone in there as the user the server is logged in as.",
+                relay.address()
+            ),
+            login: LoginOffer {
+                relay: relay.address(),
+                words: "Log in again".to_owned(),
+            },
+            try_again: "Try again".to_owned(),
+        }
+    );
+
+    phone.logged_in(&relay, "octocat").await;
+    let outcome = phone
+        .core
+        .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
+        .await;
+    assert_eq!(outcome, paired());
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+/// A pairing by an Invite whose Relay way alone answers, refused there for
+/// the phone's Login having lapsed, asks for the login in the phone's words,
+/// and pairs once it is done.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pairing_refused_for_a_lapsed_login_asks_for_it_again() {
+    let relay = TestRelay::start().await;
+    let (desk, _gate) = serving_through("thin-relay-pair-lapsed", &relay).await;
+    let phone = Phone::with(timings());
+    let invite = desk.invite(vec![Way::Relay(relay.address())]).await;
+    let _read = phone.core.read_invite(invite.clone());
+    phone.logged_in(&relay, "octocat").await;
+    relay.admit("octocat", false).await;
+
+    let outcome = phone
+        .core
+        .confirm_pairing(invite.clone(), "desk".to_owned(), "Pocket".to_owned())
+        .await;
+    assert_eq!(
+        outcome,
+        PairingOutcome::LoginNeeded {
+            message: format!(
+                "No way this invite offers answered. It offers the relay at {}, where this phone \
+                 needs to log in: log in there and pairing goes on by itself, or try again once \
+                 this phone can reach the server.",
+                relay.address()
+            ),
+            login: LoginOffer {
+                relay: relay.address(),
+                words: "Log in".to_owned(),
+            },
+            try_again: "Try again".to_owned(),
+        }
+    );
+    let servers = phone.servers().await;
+    assert_eq!(
+        servers.relays[0].state,
+        RelayRowState::LoginNeeded,
+        "the refused join taught the phone its Login lapsed"
+    );
+
+    // One fresh login restores every Login of the Account, the Server's too.
+    relay.admit("octocat", true).await;
+    phone.logged_in(&relay, "octocat").await;
+    let outcome = phone
+        .core
+        .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
+        .await;
+    assert_eq!(outcome, paired());
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+/// A pairing no direct way answered just now, whose Relay way needs a
+/// login, offers to try again beside the login: the same Invite pairs by
+/// the direct way once it answers, as after the local network prompt is
+/// allowed late.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pairing_that_needs_a_login_may_be_tried_again_by_a_direct_way() {
+    let relay = TestRelay::start().await;
+    let (desk, gate) = serving_through("thin-relay-pair-again", &relay).await;
+    let phone = Phone::with(CoreTimings {
+        pairing_keeps_dialling: Duration::from_millis(300),
+        ..timings()
+    });
+    let invite = desk
+        .invite(vec![
+            Way::Direct(gate.address()),
+            Way::Relay(relay.address()),
+        ])
+        .await;
+    gate.cut(Cut::Refusing);
+
+    let outcome = phone
+        .core
+        .confirm_pairing(invite.clone(), "desk".to_owned(), "Pocket".to_owned())
+        .await;
+    let PairingOutcome::LoginNeeded { try_again, .. } = outcome else {
+        panic!("a login is offered: {outcome:?}");
+    };
+    assert_eq!(try_again, "Try again");
+    assert!(phone.servers().await.remotes.is_empty(), "nothing is kept");
+
+    gate.mend();
+    let outcome = phone
+        .core
+        .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
+        .await;
+    assert_eq!(outcome, paired(), "tried again, the direct way pairs");
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+/// A Login that stood, refused at a join as its Account lapses, reads
+/// "login needed" from then on: the Remote reached through it alone reads
+/// Unreachable and leads to the login, which restores it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_login_that_lapses_is_learned_from_a_refused_join() {
+    let relay = TestRelay::start().await;
+    let (desk, gate) = serving_through("thin-relay-lapse", &relay).await;
+    let phone = Phone::with(timings());
+    assert_eq!(
+        pair(
+            &phone,
+            &desk,
+            vec![Way::Direct(gate.address()), Way::Relay(relay.address())]
+        )
+        .await,
+        paired()
+    );
+    phone.logged_in(&relay, "octocat").await;
+    gate.cut(Cut::Refusing);
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder), "Map the workspace").await;
+    phone
+        .listing_until(|listing| listed(listing, "Map the workspace"))
+        .await;
+
+    relay.admit("octocat", false).await;
+    phone.core.came_to_front();
+    let listing = phone
+        .listing_until(|listing| {
+            listing
+                .unreachable
+                .first()
+                .is_some_and(|row| row.sheet.hint == UnreachableHint::LoginNeeded)
+        })
+        .await;
+    assert_eq!(
+        listing.unreachable[0]
+            .sheet
+            .login
+            .as_ref()
+            .map(|login| login.words.as_str()),
+        Some("Log in")
+    );
+    let servers = phone
+        .servers_until(|servers| {
+            servers
+                .relays
+                .first()
+                .is_some_and(|row| row.state == RelayRowState::LoginNeeded)
+        })
+        .await;
+    assert_eq!(servers.relays[0].words, "login needed");
+    assert_eq!(
+        relay_way(&servers).map(|(state, _)| state),
+        Some(WayState::LoginNeeded)
+    );
+
+    relay.admit("octocat", true).await;
+    phone.logged_in(&relay, "octocat").await;
+    phone
+        .listing_until(|listing| listed(listing, "Map the workspace"))
+        .await;
 
     phone.shutdown();
     desk.shutdown().await;

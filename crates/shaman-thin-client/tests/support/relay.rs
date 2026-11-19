@@ -9,7 +9,7 @@ pub struct TestRelay {
     address: String,
     provider: Arc<ScriptedProvider>,
     _directory: tempfile::TempDir,
-    _running: shaman_relay::RunningRelay,
+    running: shaman_relay::RunningRelay,
     route: tokio::task::JoinHandle<()>,
 }
 
@@ -33,7 +33,10 @@ impl TestRelay {
                 address.clone(),
             )
             .with_connection_log(std::io::sink())
-            .with_admission(Admission::by([provider.clone() as Arc<dyn AdmissionRule>])),
+            .with_admission(Admission::by([provider.clone() as Arc<dyn AdmissionRule>]))
+            // Checked often, so an Account the test stops admitting lapses at
+            // once.
+            .with_admission_interval(std::time::Duration::from_millis(10)),
             provider.clone(),
         )
         .await
@@ -52,7 +55,7 @@ impl TestRelay {
             address,
             provider,
             _directory: directory,
-            _running: running,
+            running,
             route,
         }
     }
@@ -73,6 +76,35 @@ impl TestRelay {
                 username: username.to_owned(),
             },
         )
+    }
+}
+
+impl TestRelay {
+    /// Has the Relay admit the user `username` or not, as its rules come to
+    /// say: one no longer admitted lapses, and the Relay refuses every Login
+    /// under it until a fresh login once it is admitted again.
+    pub async fn admit(&self, username: &str, admitted: bool) {
+        self.provider
+            .set_admitted(&format!("subject-{username}"), admitted);
+        if admitted {
+            return;
+        }
+        tokio::time::timeout(super::PROGRESS_DEADLINE, async {
+            loop {
+                let accounts = self
+                    .running
+                    .store()
+                    .accounts()
+                    .await
+                    .expect("read the Accounts");
+                if accounts.iter().any(|account| account.lapsed) {
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the Account lapses");
     }
 }
 
