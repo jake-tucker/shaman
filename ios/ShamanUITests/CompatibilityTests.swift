@@ -30,8 +30,9 @@ final class CompatibilityTests: XCTestCase {
     let bar = app.buttons["home.servers"]
     let clear = { element.exists && element.isHittable && (!bar.exists || element.frame.maxY <= bar.frame.minY) }
     var swipes = 0
-    while !clear() && swipes < 12 {
-      app.swipeUp()
+    // Slowly, so a slim row at the listing's foot is not flicked past between one swipe and the next.
+    while !clear() && swipes < 24 {
+      app.swipeUp(velocity: .slow)
       swipes += 1
     }
     XCTAssertTrue(element.isHittable, "scrolled to \(element)")
@@ -45,23 +46,29 @@ final class CompatibilityTests: XCTestCase {
       .firstMatch
   }
 
+  /// The `releases` phone's listing, with the note that the workstation is newer tapped away so the listing holds
+  /// still beneath where it stood.
   @MainActor
-  func testRemotesTooFarApartStandWhereUnreachableRowsWouldNamingTheSideToUpdateAndTryingAgainSaysSo() {
+  private func listing() -> XCUIApplication {
     let app = launched("releases")
     XCTAssertTrue(app.navigationBars["Everywhere"].waitForExistence(timeout: 10))
-    // The note that the workstation is newer, tapped away so the listing holds still beneath it.
     let said = notice(app)
     XCTAssertTrue(said.waitForExistence(timeout: 10))
     said.tap()
     XCTAssertTrue(said.waitForNonExistence(timeout: 10))
+    return app
+  }
+
+  @MainActor
+  func testARemoteRefusingTheAppStandsWhereAnUnreachableRowWouldSayingToUpdateTheApp() {
+    let app = listing()
     let laptop = app.descendants(matching: .any).matching(identifier: "listing.active")
       .matching(NSPredicate(format: "label CONTAINS %@", "laptop · ")).firstMatch
     XCTAssertTrue(laptop.waitForExistence(timeout: 10), "its rows stay")
 
     let appBehind = scrolled(to: slim("Update the app to reach laptop", in: app), in: app)
     XCTAssertTrue(appBehind.label.contains("Try again"), appBehind.label)
-    let serverBehind = slim("Update Shaman on homelab", in: app)
-    XCTAssertTrue(serverBehind.exists)
+    XCTAssertTrue(slim("Update Shaman on homelab", in: app).exists)
     attach(app, "The laptop and the home lab, each naming the side to update")
 
     appBehind.tap()
@@ -78,11 +85,14 @@ final class CompatibilityTests: XCTestCase {
     XCTAssertTrue(banner.waitForExistence(timeout: 10))
     XCTAssertTrue(explanation.exists, "the sheet stays up")
     attach(app, "Trying the laptop again says to update the app")
-    app.swipeDown(velocity: .fast)
-    XCTAssertTrue(explanation.waitForNonExistence(timeout: 10))
+  }
 
-    _ = scrolled(to: serverBehind, in: app)
+  @MainActor
+  func testARemoteTooOldForTheAppStandsWhereAnUnreachableRowWouldSayingToUpdateShamanThere() {
+    let app = listing()
+    let serverBehind = scrolled(to: slim("Update Shaman on homelab", in: app), in: app)
     serverBehind.tap()
+    let explanation = app.staticTexts["unreachable.explanation"]
     XCTAssertTrue(explanation.waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["Update Shaman on homelab"].exists)
     XCTAssertTrue(explanation.label.contains("Update Shaman there"), explanation.label)
