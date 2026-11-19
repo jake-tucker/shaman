@@ -52,7 +52,7 @@ use crate::{
     behind::Behind,
     conversation::{self, ConversationItem},
     drafts::Drafts,
-    frame::{self, GONE_REMOTE, Local, Outgoing, SessionFrame, frame_of},
+    frame::{self, Cut, GONE_REMOTE, Local, Outgoing, SessionFrame, frame_of},
     intervention::{self, DecisionKind, GivenAnswer, InterventionId},
     listing::{Listed, Listings},
     tree::{self, InTree, Known, Lease, Pairings, SubagentTree, TreeState, Trees},
@@ -713,9 +713,12 @@ fn opened(
     // read frames it at once. A Session being begun belongs to none until
     // its Server holds it.
     let lease = opening.as_ref().filter(|_| !beginning).map(|opening| {
-        asked
-            .trees
-            .hold(&remote, opening.session_id, &opening.commands)
+        asked.trees.hold(
+            &remote,
+            opening.session_id,
+            &opening.commands,
+            opening.behind.clone(),
+        )
     });
     let (tree_seeing, tree_seen) = match &lease {
         Some(lease) => (None, lease.seen()),
@@ -740,7 +743,7 @@ fn opened(
         None,
         None,
         &held,
-        false,
+        None,
         &in_tree,
     ));
     let (conversation, conversation_seen) = watch::channel(shown(
@@ -777,6 +780,7 @@ fn opened(
             snapshot: None,
             local: Arc::downgrade(&local),
             unreachable: opening.unreachable,
+            behind: opening.behind,
             frame,
             conversation,
             pacing,
@@ -1419,6 +1423,9 @@ struct Reader {
     /// Whether the Session's Remote reads Unreachable, as the listing reads
     /// it.
     unreachable: watch::Receiver<crate::reach::Reading>,
+    /// The side too old for the other, where the Session's Remote and the
+    /// phone can no longer work together, as the listing reads it.
+    behind: watch::Receiver<Option<Behind>>,
     frame: watch::Sender<SessionFrame>,
     conversation: watch::Sender<Shown>,
     pacing: Pacing,
@@ -1554,6 +1561,7 @@ impl Reader {
                     self.session_id,
                     &self.commands,
                     seeing,
+                    self.behind.clone(),
                 ));
                 self.show();
                 return Ok(());
@@ -1576,6 +1584,7 @@ impl Reader {
                     self.look_for_it().await;
                 }
                 Ok(()) = self.unreachable.changed() => self.show_frame(),
+                Ok(()) = self.behind.changed() => self.show_frame(),
             }
         }
     }
@@ -1637,6 +1646,11 @@ impl Reader {
         local: &mut watch::Receiver<Local>,
         attaching: &mut watch::Receiver<u64>,
     ) -> Result<(), String> {
+        // Refused as the phone or its Server being behind, which the reading
+        // may have heard before this Session asked: the screen says so now.
+        if self.behind.borrow().is_some() {
+            self.show();
+        }
         let until = tokio::time::Instant::now() + retry_in;
         loop {
             let left = until.saturating_duration_since(tokio::time::Instant::now());
@@ -1655,6 +1669,14 @@ impl Reader {
                 Ok(()) = self.pairings.changed() => self.fill_attached(),
                 Ok(()) = self.unreachable.changed() => self.show_frame(),
                 Ok(()) = self.tree_seen.changed() => self.show_frame(),
+                // The Remote works with the phone again, so the Session is
+                // read again now; or no longer does, which the screen says.
+                Ok(()) = self.behind.changed() => {
+                    if self.behind.borrow().is_none() {
+                        return Ok(());
+                    }
+                    self.show();
+                }
             }
         }
     }
@@ -1697,6 +1719,7 @@ impl Reader {
                 Ok(()) = self.pairings.changed() => self.fill_attached(),
                 Ok(()) = self.unreachable.changed() => self.show_frame(),
                 Ok(()) = self.tree_seen.changed() => self.show_frame(),
+                Ok(()) = self.behind.changed() => self.show(),
             }
         }
     }
@@ -1780,7 +1803,14 @@ impl Reader {
             match (&self.snapshot, &local.provisional) {
                 (Some(snapshot), _) => conversation::conversation(snapshot),
                 (None, Some(provisional)) => frame::provisional_items(provisional),
-                (None, None) => conversation::loading(),
+                // Not read, and not to be until the side behind is updated:
+                // why stands where the conversation would.
+                (None, None) => match *self.behind.borrow() {
+                    Some(behind) => conversation::unread(
+                        &behind.unread(self.listed.origin.as_deref().unwrap_or("The server")),
+                    ),
+                    None => conversation::loading(),
+                },
             },
             &local,
         );
@@ -1805,6 +1835,16 @@ impl Reader {
             .fill(self.snapshot.as_ref(), &self.remote, &pairings);
     }
 
+    /// What keeps the Session apart for now, where anything does: its
+    /// Remote being Unreachable, or it and the phone no longer working
+    /// together.
+    fn cut(&self) -> Option<Cut> {
+        if self.unreachable.borrow().is_some() {
+            return Some(Cut::Unreachable);
+        }
+        (*self.behind.borrow()).map(Cut::Behind)
+    }
+
     fn show_frame(&self) {
         let in_tree = tree::in_tree(
             &self.tree_seen.borrow(),
@@ -1817,7 +1857,7 @@ impl Reader {
             self.snapshot.as_ref(),
             self.gone.clone(),
             &self.local(),
-            self.unreachable.borrow().is_some(),
+            self.cut(),
             &in_tree,
         );
         self.frame.send_if_modified(|current| {
@@ -1898,7 +1938,7 @@ mod tests {
             None,
             None,
             &Local::default(),
-            false,
+            None,
             &InTree::default(),
         ));
         let (conversation, _) = watch::channel(shown(None, conversation::loading()));
@@ -1930,6 +1970,7 @@ mod tests {
             snapshot: None,
             local: Weak::new(),
             unreachable: opening.unreachable,
+            behind: opening.behind,
             frame,
             conversation,
             pacing: Pacing {

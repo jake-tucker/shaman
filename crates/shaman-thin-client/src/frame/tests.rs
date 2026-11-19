@@ -55,7 +55,7 @@ fn framed(snapshot: &SessionSnapshot, local: &Local, unreachable: bool) -> Sessi
         Some(snapshot),
         None,
         local,
-        unreachable,
+        unreachable.then_some(Cut::Unreachable),
         &InTree::default(),
     )
 }
@@ -133,7 +133,7 @@ fn on_an_unreachable_origin_the_composer_says_nothing_sent_goes_anywhere_until_i
         Some(&snapshot()),
         None,
         &Local::default(),
-        true,
+        Some(Cut::Unreachable),
         &InTree::default(),
     );
     assert_eq!(
@@ -148,7 +148,7 @@ fn on_an_unreachable_origin_the_composer_says_nothing_sent_goes_anywhere_until_i
         Some(&snapshot()),
         None,
         &Local::default(),
-        true,
+        Some(Cut::Unreachable),
         &InTree::default(),
     );
     assert_eq!(
@@ -175,7 +175,7 @@ fn a_subagents_session_and_one_gone_have_no_composer() {
         Some(&working()),
         Some("This session no longer exists".to_owned()),
         &Local::default(),
-        false,
+        None,
         &InTree::default(),
     );
     assert_eq!(
@@ -479,7 +479,7 @@ fn a_subagents_session_is_named_by_the_subagent_and_offers_stop_only_where_it_st
             snapshot,
             None,
             &Local::default(),
-            false,
+            None,
             &in_tree(stoppable),
         )
     };
@@ -527,7 +527,7 @@ fn a_session_no_listing_carries_takes_no_prompt_until_it_is_read_as_a_top_level_
             snapshot,
             None,
             &Local::default(),
-            false,
+            None,
             &InTree::default(),
         )
     };
@@ -546,7 +546,7 @@ fn a_session_no_listing_carries_takes_no_prompt_until_it_is_read_as_a_top_level_
                 None,
                 None,
                 &Local::default(),
-                false,
+                None,
                 &InTree::default()
             )
             .composer
@@ -739,7 +739,7 @@ fn one_waiting_deeper_down_is_named_as_its_tree_names_it_and_pushed_itself() {
             Some(&snapshot),
             None,
             &Local::default(),
-            false,
+            None,
             in_tree,
         )
         .bar
@@ -890,7 +890,7 @@ fn provisionally_framed(local: &Local, unreachable: bool) -> SessionFrame {
         None,
         None,
         local,
-        unreachable,
+        unreachable.then_some(Cut::Unreachable),
         &InTree::default(),
     )
 }

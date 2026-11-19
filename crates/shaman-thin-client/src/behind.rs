@@ -50,6 +50,55 @@ impl Behind {
         }
     }
 
+    /// Why the Remote `named` — its name, or "The server" where the phone
+    /// names no Origin — and the phone no longer work together, as a
+    /// sentence that leads with it and names the side to update.
+    fn apart(self, named: &str) -> String {
+        match self {
+            Self::App => {
+                format!("{named} no longer works with an app as old as this one: update the app")
+            }
+            Self::Server => {
+                format!("{named} runs a Shaman too old to work with this app: update Shaman there")
+            }
+        }
+    }
+
+    /// Said above an open Session's composer, which takes nothing meanwhile.
+    pub fn composer_line(self, named: &str) -> String {
+        format!(
+            "{}. Nothing sent goes anywhere until then.",
+            self.apart(named)
+        )
+    }
+
+    /// Said on the new-session screen, where nothing begins meanwhile.
+    pub fn landing_line(self, named: &str) -> String {
+        format!("{}. Nothing begins there until then.", self.apart(named))
+    }
+
+    /// Said where the conversation of a Session not yet read would be.
+    pub fn unread(self, named: &str) -> String {
+        format!(
+            "This session cannot be read yet. {}, and it is read as soon as it can be.",
+            self.apart(named)
+        )
+    }
+
+    /// Why a tree cannot be read, after "Could not load subagents: ".
+    pub fn tree_refusal(self) -> String {
+        match self {
+            Self::App => {
+                "that server no longer works with an app as old as this one; update the app"
+                    .to_owned()
+            }
+            Self::Server => {
+                "that server's Shaman is too old to work with this app; update Shaman there"
+                    .to_owned()
+            }
+        }
+    }
+
     /// What the confirmation screen says where pairing is refused for it.
     pub fn pairing_refused(self) -> String {
         match self {
@@ -92,7 +141,14 @@ mod tests {
             (Behind::App, "update the app"),
             (Behind::Server, "update Shaman there"),
         ] {
-            for words in [behind.refusal(), behind.pairing_refused()] {
+            for words in [
+                behind.refusal(),
+                behind.pairing_refused(),
+                behind.composer_line("desk"),
+                behind.landing_line("desk"),
+                behind.unread("desk"),
+                behind.tree_refusal(),
+            ] {
                 assert!(words.contains(side), "{words}");
                 let lowered = words.to_lowercase();
                 assert!(

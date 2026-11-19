@@ -27,7 +27,7 @@ use std::{
 use bytes::Bytes;
 use shaman_client::{PairingTransport, Transport, TransportResponse, TryNow};
 use shaman_pairing::{ConnectionsChecked, Redeemer};
-use shaman_protocol::{SessionError, SessionErrorCode, Way};
+use shaman_protocol::{SESSION_ERROR_CODE_HEADER, SessionError, SessionErrorCode, Way};
 use tokio::{
     runtime::Handle,
     sync::{Notify, watch},
@@ -105,6 +105,10 @@ struct ReachInner {
     checks_ended: AtomicU64,
     /// Told of each.
     noted: Notify,
+    /// The side too old for the other, where the Remote last answered that
+    /// it and the phone can no longer work together; none once anything is
+    /// answered with success.
+    behind: watch::Sender<Option<Behind>>,
 }
 
 /// A Remote's being reached anew.
@@ -135,12 +139,30 @@ impl Reach {
                 checks_begun: AtomicU64::new(0),
                 checks_ended: AtomicU64::new(0),
                 noted: Notify::new(),
+                behind: watch::Sender::new(None),
             }),
         }
     }
 
     pub fn reading(&self) -> watch::Receiver<Reading> {
         self.inner.reading.subscribe()
+    }
+
+    /// The side too old for the other, where the Remote and the phone can
+    /// no longer work together, now and on every change: what every screen
+    /// of the Remote's shows the side to update by.
+    pub fn behind(&self) -> watch::Receiver<Option<Behind>> {
+        self.inner.behind.subscribe()
+    }
+
+    /// What the Remote last answered says of whether it and the phone work
+    /// together.
+    fn found_behind(&self, behind: Option<Behind>) {
+        self.inner.behind.send_if_modified(|held| {
+            let changed = *held != behind;
+            *held = behind;
+            changed
+        });
     }
 
     /// Something asked of the Remote was answered.
@@ -280,7 +302,17 @@ impl Transport for Reaching {
         let sent = self.reach.sent();
         let answered = self.transport.send(request).await;
         match &answered {
-            Ok(_) => self.reach.answered(),
+            // Refused by the Server as behind, which says so by the code it
+            // stands its refusal under; or answered with success, so that
+            // whatever kept the two apart no longer does.
+            Ok(response) => {
+                self.reach.answered();
+                if response.status().is_success() {
+                    self.reach.found_behind(None);
+                } else if let Some(behind) = refused_as_behind(response.headers()) {
+                    self.reach.found_behind(Some(behind));
+                }
+            }
             // Failed for what a check did to the way it rode, which the
             // reader asks again over one made afresh as the check tells it to.
             Err(_) if self.reach.overlapped(sent) => {}
@@ -294,7 +326,10 @@ impl Transport for Reaching {
             }
             // Refused as too old for this phone, or too old for it: the
             // Remote answered, however little it will do.
-            Err(failure) if Behind::of_code(failure.code).is_some() => self.reach.answered(),
+            Err(failure) if Behind::of_code(failure.code).is_some() => {
+                self.reach.answered();
+                self.reach.found_behind(Behind::of_code(failure.code));
+            }
             // Refused for its Pairing, or for being busy: either way it was
             // no answer about the ways.
             Err(_) => {}
@@ -311,6 +346,14 @@ impl Transport for Reaching {
     fn attached(self: Arc<Self>) -> Arc<dyn Transport> {
         self
     }
+}
+
+/// The side a refusal whose code `headers` carry says is behind, where it
+/// says one is.
+fn refused_as_behind(headers: &http::HeaderMap) -> Option<Behind> {
+    let code = headers.get(SESSION_ERROR_CODE_HEADER)?.to_str().ok()?;
+    let code = serde_json::from_value(serde_json::Value::String(code.to_owned())).ok()?;
+    Behind::of_code(code)
 }
 
 /// Checks the Remote `name`, read over `transport`, as the app comes to the

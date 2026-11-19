@@ -42,6 +42,11 @@ pub enum ItemKind {
     /// The quiet mark standing where the conversation will be, until the
     /// Session has been read.
     Loading { words: String },
+    /// What stands where the conversation would be while the Session cannot
+    /// be read, its Server and the phone no longer working together: why,
+    /// naming the side to update. The conversation takes its place once it
+    /// is read.
+    Unread { words: String },
     /// A bubble at the right: what the user said.
     UserMessage {
         text: String,
@@ -145,6 +150,17 @@ impl From<ActivityStatus> for Tone {
 }
 
 /// The conversation before the Session has been read: the loading mark alone.
+/// What stands where the conversation would be, while the Session cannot
+/// be read: `words` say why.
+pub(crate) fn unread(words: &str) -> Vec<ConversationItem> {
+    vec![ConversationItem {
+        id: LOADING.to_owned(),
+        kind: ItemKind::Unread {
+            words: words.to_owned(),
+        },
+    }]
+}
+
 pub(crate) fn loading() -> Vec<ConversationItem> {
     vec![ConversationItem {
         id: LOADING.to_owned(),

@@ -1494,9 +1494,18 @@ impl Listings {
         })?;
         if let Some(commands) = behind {
             // Told to try now, its catalog is read afresh, and stands as the
-            // Remote answers it.
+            // Remote answers it; asked within the deadline any try is.
             transport.say_try_now();
-            return commands.health().await.map(|_| ()).map_err(failed);
+            return match tokio::time::timeout(deadline, commands.health()).await {
+                Ok(answered) => answered.map(|_| ()).map_err(failed),
+                Err(_) => Err(ActError::Unreachable {
+                    message: if origin_named {
+                        format!("{name} did not answer in time")
+                    } else {
+                        "The server did not answer in time".to_owned()
+                    },
+                }),
+            };
         }
         if !self.shared.network.has_path() {
             reach.unreached(Unreached::NoNetwork);
@@ -1762,6 +1771,7 @@ impl Listings {
                 .map(|description| description.text.clone())
                 .filter(|text| !text.trim().is_empty()),
             unreachable: remote.unreached.is_some(),
+            behind: remote.behind,
             origin_named: state.remotes.len() > 1,
             agent: remote
                 .agent
@@ -1800,6 +1810,7 @@ impl Listings {
             commands: followed.commands.clone(),
             try_now: followed.transport.try_now(),
             unreachable: followed.reach.reading(),
+            behind: followed.reach.behind(),
             listed: Listed {
                 remote: remote.name.clone(),
                 origin: origin_named.then(|| remote.name.clone()),
@@ -1841,6 +1852,9 @@ pub(crate) struct Opening {
     /// Whether its Remote reads Unreachable, and why, now and on every
     /// change: the one reading the listing shows it by.
     pub unreachable: watch::Receiver<Reading>,
+    /// The side too old for the other, where its Remote and the phone can no
+    /// longer work together, now and on every change.
+    pub behind: watch::Receiver<Option<Behind>>,
     pub listed: Listed,
 }
 
@@ -1984,6 +1998,7 @@ impl Shared {
         let reading = self.runtime.spawn(follow_reach(
             Arc::downgrade(self),
             reach.reading(),
+            reach.behind(),
             name.clone(),
             generation,
         ));
@@ -2224,26 +2239,34 @@ async fn settle_when_left_alone(shared: Arc<Shared>) {
 }
 
 /// Shows the Remote `name`, under the Pairing of `generation`, as `reading`
-/// says it reads, now and on every change.
+/// says it reads, and as `behind` says whether it and the phone work
+/// together, now and on every change.
 async fn follow_reach(
     shared: Weak<Shared>,
     mut reading: watch::Receiver<Reading>,
+    mut behind: watch::Receiver<Option<Behind>>,
     name: String,
     generation: u64,
 ) {
     loop {
         let unreached = *reading.borrow_and_update();
+        let apart = *behind.borrow_and_update();
         let Some(shared) = shared.upgrade() else {
             return;
         };
         let (local_only, relay_hint) = shared.ways_reading(&name);
         shared.change(&name, generation, |answered| {
             answered.unreached = unreached;
+            answered.behind = apart;
             answered.local_only = local_only;
             answered.relay_hint = relay_hint;
         });
         drop(shared);
-        if reading.changed().await.is_err() {
+        let changed = tokio::select! {
+            changed = reading.changed() => changed,
+            changed = behind.changed() => changed,
+        };
+        if changed.is_err() {
             return;
         }
     }
@@ -2333,17 +2356,10 @@ async fn follow_catalog(
                     None
                 }
                 // The stream ended for good, which, for a side too old for
-                // the other, is until that side is updated.
+                // the other, is until that side is updated. What the refusal
+                // says of the side is shown from what the transport found.
                 SessionCatalogEvent::RemoteFailed { status, .. } => {
                     refused = Behind::of_status(status);
-                    if let Some(behind) = refused {
-                        let Some(shared) = shared.upgrade() else {
-                            return;
-                        };
-                        shared.change(&name, generation, |answered| {
-                            answered.behind = Some(behind);
-                        });
-                    }
                     None
                 }
                 // Something a newer Server sends: said once.
@@ -2387,7 +2403,6 @@ async fn follow_catalog(
                 shared.change(&name, generation, |answered| {
                     answered.paths = paths;
                     answered.paths_heard = true;
-                    answered.behind = None;
                 });
             }
         }

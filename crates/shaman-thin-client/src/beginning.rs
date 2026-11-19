@@ -39,7 +39,7 @@ use shaman_protocol::{
     SessionSnapshot, SourceControlAvailability, SourceControlCapability, Workspace,
 };
 
-use crate::device::RememberedWorkspace;
+use crate::{behind::Behind, device::RememberedWorkspace};
 
 /// The key the Landing's own draft is kept under, which no Session's
 /// reference can be.
@@ -82,7 +82,8 @@ pub struct Landing {
     /// and none where it has yet to say, or is too old to.
     pub agent: Option<String>,
     /// Said above the composer while the Outlook's Remote is Unreachable,
-    /// when the composer takes a draft and nothing begins.
+    /// or it and the phone can no longer work together, naming the side to
+    /// update: the composer takes a draft and nothing begins.
     pub unreachable: Option<String>,
     /// Said beneath the composer where a Session begun from here may have
     /// begun though its Server never answered, its Prompt back in the field.
@@ -90,7 +91,7 @@ pub struct Landing {
     /// What the empty composer says.
     pub placeholder: String,
     /// Whether send is offered: only where a Workspace is remembered and its
-    /// Remote answers.
+    /// Remote answers and works with the phone.
     pub can_send: bool,
     /// The key the composer's draft is kept under, as Swift hands it back to
     /// read and write the draft.
@@ -134,6 +135,9 @@ pub(crate) struct Known {
     pub description: Option<String>,
     /// Whether its Remote reads Unreachable.
     pub unreachable: bool,
+    /// The side too old for the other, where its Remote and the phone can no
+    /// longer work together.
+    pub behind: Option<Behind>,
     /// Whether the phone holds more than one Remote, and so names Origins.
     pub origin_named: bool,
     /// The Agent a Session begun there would get, in words.
@@ -274,9 +278,13 @@ pub(crate) fn landing(
     } else {
         "The server".to_owned()
     };
-    let unreachable = known
-        .unreachable
-        .then(|| format!("{named} is unreachable. Nothing begins there until it answers."));
+    let unreachable = if known.unreachable {
+        Some(format!(
+            "{named} is unreachable. Nothing begins there until it answers."
+        ))
+    } else {
+        known.behind.map(|behind| behind.landing_line(&named))
+    };
     let (worktree, working_copy) = match (workspace, &known.worktrees) {
         (None, _) | (_, Worktrees::Directory) => (None, None),
         (Some(_), Worktrees::Repository { main }) => (
@@ -626,6 +634,7 @@ mod tests {
             glyph: Some("\u{e7a8}".to_owned()),
             description: Some("A terminal client for coding agents".to_owned()),
             unreachable: false,
+            behind: None,
             origin_named: true,
             agent: None,
             worktrees: Worktrees::Directory,

@@ -575,7 +575,7 @@ async fn a_change_a_newer_server_sent_on_a_tree_is_passed_over_and_its_remote_sa
     let trees = Trees::new(Handle::current(), notices.clone());
     let mut shown = notices.shown();
 
-    let held = trees.hold(REMOTE, top, &remote.commands);
+    let held = trees.hold(REMOTE, top, &remote.commands, never_apart());
     seen_until(&held, is_read).await;
     remote.change_unknown(2);
     remote.change_unknown(3);
@@ -597,6 +597,11 @@ async fn a_change_a_newer_server_sent_on_a_tree_is_passed_over_and_its_remote_sa
 }
 
 const WITHIN: Duration = Duration::from_secs(5);
+
+/// A Remote's reading that never says it and the phone are apart.
+fn never_apart() -> watch::Receiver<Option<Behind>> {
+    watch::channel(None).1
+}
 
 async fn until(what: &str, done: impl Fn() -> bool) {
     tokio::time::timeout(WITHIN, async {
@@ -628,10 +633,10 @@ async fn a_tree_is_read_once_for_as_long_as_any_session_of_it_is_open() {
     let remote = Remote::new(tree(top, vec![child.clone()]));
     let trees = Trees::new(Handle::current(), Notices::default());
 
-    let parent = trees.hold(REMOTE, top, &remote.commands);
+    let parent = trees.hold(REMOTE, top, &remote.commands, never_apart());
     seen_until(&parent, is_read).await;
     // The Subagent opened from it joins the tree already read.
-    let subagent = trees.hold(REMOTE, child.session_id, &remote.commands);
+    let subagent = trees.hold(REMOTE, child.session_id, &remote.commands, never_apart());
     assert!(is_read(&subagent.seen().borrow()), "read at once");
     assert_eq!(remote.asked.load(Ordering::Acquire), 1);
     assert_eq!(trees.read(), 1);
@@ -675,8 +680,8 @@ async fn two_sessions_of_one_tree_opened_before_it_is_read_are_made_one_tree() {
 
     let (parent, subagent) = {
         // Held together, before either stream has answered.
-        let parent = trees.hold(REMOTE, top, &remote.commands);
-        let subagent = trees.hold(REMOTE, child.session_id, &remote.commands);
+        let parent = trees.hold(REMOTE, top, &remote.commands, never_apart());
+        let subagent = trees.hold(REMOTE, child.session_id, &remote.commands, never_apart());
         (parent, subagent)
     };
     seen_until(&parent, is_read).await;
@@ -730,7 +735,7 @@ async fn a_session_whose_tree_could_not_be_read_joins_it_once_another_reads_it()
     let remote = Remote::new(tree(top, vec![child.clone()]));
     let trees = Trees::new(Handle::current(), Notices::default());
 
-    let first = trees.hold(REMOTE, child.session_id, &refusing);
+    let first = trees.hold(REMOTE, child.session_id, &refusing, never_apart());
     let failed = seen_until(&first, |state| matches!(state.reading, Reading::Failed(_))).await;
     let Reading::Failed(why) = failed.reading else {
         unreachable!()
@@ -738,7 +743,7 @@ async fn a_session_whose_tree_could_not_be_read_joins_it_once_another_reads_it()
     assert!(why.contains("No such session"), "{why}");
 
     // The parent opened, its tree read, the Subagent's screen reads it too.
-    let parent = trees.hold(REMOTE, top, &remote.commands);
+    let parent = trees.hold(REMOTE, top, &remote.commands, never_apart());
     seen_until(&parent, is_read).await;
     seen_until(&first, is_read).await;
     assert_eq!(trees.read(), 1, "the failure went with the Session it held");
@@ -1151,10 +1156,10 @@ async fn a_subsession_open_here_reads_the_tree_it_heads_once_its_sidekicks_sessi
         })
     };
     let trees = Trees::new(Handle::current(), Notices::default());
-    let sidekick = trees.hold(REMOTE, top, &remote.commands);
+    let sidekick = trees.hold(REMOTE, top, &remote.commands, never_apart());
     seen_until(&sidekick, is_read).await;
-    let subsession = trees.hold(REMOTE, docs.session_id, &remote.commands);
-    let beneath = trees.hold(REMOTE, reader.session_id, &remote.commands);
+    let subsession = trees.hold(REMOTE, docs.session_id, &remote.commands, never_apart());
+    let beneath = trees.hold(REMOTE, reader.session_id, &remote.commands, never_apart());
     assert_eq!(trees.read(), 1, "a Subsession's tree is its Sidekick's");
 
     deleted.store(true, Ordering::Release);

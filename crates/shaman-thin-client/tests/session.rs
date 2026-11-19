@@ -86,6 +86,7 @@ fn read_as(items: &[ConversationItem]) -> Vec<String> {
         .iter()
         .map(|item| match &item.kind {
             ItemKind::Loading { .. } => "loading".to_owned(),
+            ItemKind::Unread { words } => format!("unread: {words}"),
             ItemKind::UserMessage { text, .. } => format!("user: {text}"),
             ItemKind::Delegation { text, from } => format!("delegation from {from}: {text}"),
             ItemKind::AgentMessage { markdown, .. } => format!("agent: {markdown}"),

@@ -17,6 +17,7 @@ use shaman_protocol::{
 
 use crate::{
     beginning::{self, Progress, Provisional},
+    behind::Behind,
     conversation::{ConversationItem, ItemKind},
     intervention::{self, Intervention, InterventionId, Standing},
     listing::Listed,
@@ -123,13 +124,15 @@ pub struct Composer {
     /// for after it rather than steer it.
     pub queue: Option<String>,
     /// Said above the composer while the Session's Origin is Unreachable,
-    /// when the composer takes nothing.
+    /// or it and the phone can no longer work together, naming the side to
+    /// update: the composer takes nothing meanwhile.
     pub unreachable: Option<String>,
     /// Said beneath the composer after a send went unanswered: its text is
     /// back in the field, and it may have been sent.
     pub note: Option<String>,
     /// Whether send is offered: not while a Session being begun waits on its
-    /// Server, when the composer takes a draft and delivers nothing.
+    /// Server, when the composer takes a draft and delivers nothing, nor
+    /// while anything keeps the Session apart.
     pub can_send: bool,
 }
 
@@ -258,18 +261,22 @@ pub(crate) fn prompt_referenced(reference: &str) -> Option<PromptId> {
 
 /// What frames a Session on the Remote `remote` names: its Title and place
 /// as the listing and its snapshot last said them, or that it is gone; what
-/// its work is doing; and what this screen sent of its own. `unreachable`
-/// says whether its Origin answered the last time it was asked, and `tree`
-/// what the tree the Session belongs to says of it.
+/// its work is doing; and what this screen sent of its own. `cut` says why
+/// nothing sent from it goes anywhere for now, where something does: its
+/// Origin did not answer the last time it was asked, or it and the phone no
+/// longer work together; and `tree` what the tree the Session belongs to
+/// says of it.
 pub(crate) fn frame_of(
     remote: &str,
     listed: Option<&Listed>,
     snapshot: Option<&SessionSnapshot>,
     gone: Option<String>,
     local: &Local,
-    unreachable: bool,
+    cut: Option<Cut>,
     tree: &InTree,
 ) -> SessionFrame {
+    // An Intervention waits out of sight whatever keeps the Session apart.
+    let unreachable = cut.is_some();
     let Some(listed) = listed else {
         return SessionFrame {
             title: String::new(),
@@ -284,7 +291,7 @@ pub(crate) fn frame_of(
         };
     };
     if let (Some(provisional), None, None) = (&local.provisional, snapshot, &gone) {
-        return provisional_frame(provisional, listed, local, unreachable);
+        return provisional_frame(provisional, listed, local, cut);
     }
     // A Subagent's Session, which no listing carries, is titled by what its
     // tree says it was asked until it has been read.
@@ -342,9 +349,9 @@ pub(crate) fn frame_of(
         }
         .to_owned(),
         queue: working.then(|| "Queue for after this turn".to_owned()),
-        unreachable: unreachable.then(|| unreachable_line(listed)),
+        unreachable: cut.map(|cut| cut_line(cut, listed)),
         note: local.note.clone(),
-        can_send: true,
+        can_send: cut.is_none(),
     });
     let standing = snapshot.map_or(Standing::None, |snapshot| {
         intervention::standing(snapshot, &local.dismissed, unreachable)
@@ -402,7 +409,7 @@ fn provisional_frame(
     provisional: &Provisional,
     listed: &Listed,
     local: &Local,
-    unreachable: bool,
+    cut: Option<Cut>,
 ) -> SessionFrame {
     let starting = provisional.starting();
     SessionFrame {
@@ -425,9 +432,9 @@ fn provisional_frame(
             }
             .to_owned(),
             queue: None,
-            unreachable: unreachable.then(|| unreachable_line(listed)),
+            unreachable: cut.map(|cut| cut_line(cut, listed)),
             note: local.note.clone(),
-            can_send: !starting,
+            can_send: !starting && cut.is_none(),
         }),
         queued: Vec::new(),
         intervention: None,
@@ -545,14 +552,26 @@ fn subagents_waiting(
 pub(crate) const GONE_REMOTE: &str =
     "This phone is no longer paired with the server this session is on";
 
-/// Said above the composer while the Session's Origin is Unreachable,
-/// naming it where the phone names Origins at all.
-fn unreachable_line(listed: &Listed) -> String {
-    let named = listed.origin.as_ref().map_or_else(
-        || "The server is unreachable".to_owned(),
-        |origin| format!("{origin} is unreachable"),
-    );
-    format!("{named}. Nothing sent goes anywhere until it answers.")
+/// Why nothing sent from an open Session's screen goes anywhere for now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Cut {
+    /// Its Origin is Unreachable.
+    Unreachable,
+    /// Its Origin and the phone no longer work together, until the side
+    /// behind is updated.
+    Behind(Behind),
+}
+
+/// Said above the composer while `cut` keeps the Session apart, naming its
+/// Origin where the phone names Origins at all.
+fn cut_line(cut: Cut, listed: &Listed) -> String {
+    let named = listed.origin.as_deref().unwrap_or("The server");
+    match cut {
+        Cut::Unreachable => {
+            format!("{named} is unreachable. Nothing sent goes anywhere until it answers.")
+        }
+        Cut::Behind(behind) => behind.composer_line(named),
+    }
 }
 
 /// The bar, while the Session is Working, or else Monitoring. Stop stops a

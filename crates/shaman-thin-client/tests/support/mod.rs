@@ -492,6 +492,16 @@ impl ServingServer {
         self.server.shutdown().await.expect("stop the Server");
     }
 
+    /// Has this Server send, on the Session `session`'s stream, a change of
+    /// a kind no build knows, as a Server newer than the phone sends one.
+    pub async fn send_unknown_change(&self, session: SessionId) {
+        self.server
+            .session_event_sink()
+            .publish(session, vec![shaman::protocol::SessionChange::Unknown])
+            .await
+            .expect("publish a change of a kind no build knows");
+    }
+
     /// This Server stopped and started again on the address it Serves on,
     /// keeping its records and so every Pairing, speaking `protocol` to its
     /// Peers: as it would after an update to another release.

@@ -1099,12 +1099,13 @@ pub trait DeviceLoginListener: Send + Sync {
     fn changed(&self, login: DeviceLogin);
 }
 
-/// Hears whether any act is under way, at once and each time that changes.
+/// Hears what the core says of its own accord, at once and on every change.
 #[uniffi::export(with_foreign)]
 pub trait NoticeListener: Send + Sync {
     fn changed(&self, notice: Option<Notice>);
 }
 
+/// Hears whether any act is under way, at once and each time that changes.
 #[uniffi::export(with_foreign)]
 pub trait ActsListener: Send + Sync {
     fn changed(&self, under_way: bool);

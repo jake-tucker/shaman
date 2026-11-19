@@ -108,7 +108,7 @@ pub(crate) fn read(inner: &Inner, text: &str) -> InviteReading {
         Ok(invite) => invite,
         Err(failure) => {
             return InviteReading::Unreadable {
-                message: failure.message,
+                message: unread(failure),
             };
         }
     };
@@ -174,7 +174,7 @@ pub(crate) async fn confirm(
         Ok(invite) => invite,
         Err(failure) => {
             return PairingOutcome::Failed {
-                message: failure.message,
+                message: unread(failure),
                 again: TryInstead::ScanAgain,
             };
         }
@@ -339,6 +339,19 @@ fn refused_at(failure: &PairingFailure) -> Option<RelayHint> {
             Some(RelayHint::OtherAccount { relay, account })
         }
         _ => None,
+    }
+}
+
+/// Why an Invite could not be read, as `failure` says: in the phone's words
+/// where it is from a newer Shaman than the app, which the shared reader
+/// tells a Server's user to update Shaman for.
+fn unread(failure: PairingFailure) -> String {
+    match failure.code {
+        SessionErrorCode::UnsupportedInviteVersion => {
+            "That invite is from a newer Shaman than this app can pair with; update the app"
+                .to_owned()
+        }
+        _ => failure.message,
     }
 }
 

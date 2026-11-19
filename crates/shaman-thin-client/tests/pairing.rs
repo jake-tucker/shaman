@@ -764,3 +764,43 @@ async fn a_pairing_under_way_is_not_shown_and_one_whose_commit_fails_leaves_what
     phone.shutdown();
     server.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_invite_from_a_newer_shaman_says_to_update_the_app_read_or_confirmed() {
+    let server = ServingServer::start("thin-newer-invite").await;
+    let invite = server
+        .invite(vec![Way::Direct(server.serving_address())])
+        .await;
+    let encoded = invite.strip_prefix("shaman-v1-").expect("a v1 Invite");
+    let mut payload: serde_json::Value =
+        serde_json::from_slice(&URL_SAFE_NO_PAD.decode(encoded).unwrap()).unwrap();
+    // Offering only a kind of way a newer Shaman knows.
+    payload["w"] = serde_json::json!([{ "carrier_pigeon": "loft 7" }]);
+    let only_newer_ways = format!(
+        "shaman-v1-{}",
+        URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload).unwrap())
+    );
+    let phone = Phone::new();
+    let words = "That invite is from a newer Shaman than this app can pair with; update the app";
+
+    for newer in [format!("shaman-v2-{encoded}"), only_newer_ways] {
+        let InviteReading::Unreadable { message } = phone.core.read_invite(newer.clone()) else {
+            panic!("an Invite from a newer Shaman was read");
+        };
+        assert_eq!(message, words);
+        let failed = phone
+            .core
+            .confirm_pairing(newer, DESK.to_owned(), "iPhone".to_owned())
+            .await;
+        assert_eq!(
+            failed,
+            PairingOutcome::Failed {
+                message: words.to_owned(),
+                again: TryInstead::ScanAgain,
+            }
+        );
+    }
+
+    phone.shutdown();
+    server.shutdown().await;
+}

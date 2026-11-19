@@ -87,6 +87,7 @@ fn read_as(items: &[ConversationItem]) -> Vec<String> {
                 if *may_have_begun { "maybe" } else { "refused" }
             ),
             ItemKind::Loading { .. } => "loading".to_owned(),
+            ItemKind::Unread { words } => format!("unread: {words}"),
             ItemKind::Delegation { .. } => "delegation".to_owned(),
             ItemKind::AgentMessage { .. } => "agent".to_owned(),
             ItemKind::Turn { .. } => "card".to_owned(),

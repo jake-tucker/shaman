@@ -38,6 +38,7 @@ use shaman_protocol::{
 use tokio::{runtime::Handle, sync::watch, task::JoinHandle};
 
 use crate::{
+    behind::Behind,
     conversation::{Tone, humanized_duration},
     intervention::{self, Owed},
     notices::Notices,
@@ -349,6 +350,9 @@ struct Tree {
     /// What it is read over, which a Session outliving it reads its own
     /// tree over.
     commands: SessionCommands,
+    /// Where its Remote and the phone no longer work together, as the
+    /// Remote's reading says.
+    behind: watch::Receiver<Option<Behind>>,
     reading: Reading,
     /// What reads it, until the last lease goes.
     reader: Option<JoinHandle<()>>,
@@ -415,13 +419,23 @@ impl Trees {
 
     /// Holds the tree the Session `session_id` on the Remote `remote` names
     /// belongs to, read over `commands`: the one already read where it holds
-    /// that Session, and otherwise one read for it now.
-    pub fn hold(&self, remote: &str, session_id: SessionId, commands: &SessionCommands) -> Lease {
+    /// that Session, and otherwise one read for it now. `behind` says, as
+    /// the Remote's reading does, where it and the phone no longer work
+    /// together, so that a tree refused for it says so and is read again
+    /// once they do.
+    pub fn hold(
+        &self,
+        remote: &str,
+        session_id: SessionId,
+        commands: &SessionCommands,
+        behind: watch::Receiver<Option<Behind>>,
+    ) -> Lease {
         self.hold_through(
             remote,
             session_id,
             commands,
             watch::Sender::new(TreeState::default()),
+            behind,
         )
     }
 
@@ -433,6 +447,7 @@ impl Trees {
         session_id: SessionId,
         commands: &SessionCommands,
         seen: watch::Sender<TreeState>,
+        behind: watch::Receiver<Option<Behind>>,
     ) -> Lease {
         let mut held = self.held();
         held.next += 1;
@@ -450,12 +465,14 @@ impl Trees {
                 tree_id,
                 commands.clone(),
                 session_id,
+                behind.clone(),
             ));
             held.trees.insert(
                 tree_id,
                 Tree {
                     remote: remote.to_owned(),
                     commands: commands.clone(),
+                    behind,
                     reading: Reading::Loading,
                     reader: Some(reader),
                     holders: HashMap::new(),
@@ -602,6 +619,19 @@ impl Trees {
         !ended
     }
 
+    /// Has the tree `tree_id`, refused as `behind` is too old for the other,
+    /// say so in the phone's words, its reader kept to read it again once
+    /// the two work together; answering whether it is still held.
+    fn refused_apart(&self, tree_id: u64, behind: Behind) -> bool {
+        let mut held = self.held();
+        let Some(tree) = held.trees.get_mut(&tree_id) else {
+            return false;
+        };
+        tree.reading = Reading::Failed(behind.tree_refusal());
+        tree.tell();
+        true
+    }
+
     /// Has each holder of the tree `tree_id` whose Session outlives the
     /// tree's top-level Session — a Subsession of the Sidekick heading it, or
     /// a Subagent beneath one — read a tree of its own from now on, as its
@@ -620,7 +650,11 @@ impl Trees {
             .filter(|(_, holder)| heading(snapshot, holder.session_id) == Some(Heading::Subsession))
             .map(|(lease, _)| *lease)
             .collect::<Vec<_>>();
-        let (remote, commands) = (tree.remote.clone(), tree.commands.clone());
+        let (remote, commands, behind) = (
+            tree.remote.clone(),
+            tree.commands.clone(),
+            tree.behind.clone(),
+        );
         let moving = outliving
             .into_iter()
             .filter_map(|lease| tree.holders.remove_entry(&lease))
@@ -633,10 +667,12 @@ impl Trees {
                 own,
                 commands.clone(),
                 holder.session_id,
+                behind.clone(),
             ));
             let mut tree = Tree {
                 remote: remote.clone(),
                 commands: commands.clone(),
+                behind: behind.clone(),
                 reading: Reading::Loading,
                 reader: Some(reader),
                 holders: HashMap::new(),
@@ -746,13 +782,34 @@ fn absorb_failed(held: &mut Held, into: u64) {
 
 /// Reads the tree the Session `session_id` belongs to over `commands`, as the
 /// tree `tree_id`, until it ends or is let go. The stream is opened here, on
-/// the runtime that reads it.
-async fn read(trees: Trees, tree_id: u64, commands: SessionCommands, session_id: SessionId) {
-    let mut subscription = commands.subscribe_subagent_tree(session_id);
-    while let Some(event) = subscription.next().await {
-        if !trees.take(tree_id, event) {
-            return;
+/// the runtime that reads it. Refused for its Remote and the phone no longer
+/// working together, as `behind` says, the tree says so in the phone's words
+/// and is read again once they work together again.
+async fn read(
+    trees: Trees,
+    tree_id: u64,
+    commands: SessionCommands,
+    session_id: SessionId,
+    mut behind: watch::Receiver<Option<Behind>>,
+) {
+    'reading: loop {
+        let mut subscription = commands.subscribe_subagent_tree(session_id);
+        while let Some(event) = subscription.next().await {
+            let apart = *behind.borrow_and_update();
+            if let (SubagentTreeEvent::Failed(_), Some(apart)) = (&event, apart) {
+                if !trees.refused_apart(tree_id, apart) {
+                    return;
+                }
+                if behind.wait_for(Option::is_none).await.is_err() {
+                    return;
+                }
+                continue 'reading;
+            }
+            if !trees.take(tree_id, event) {
+                return;
+            }
         }
+        return;
     }
 }
 

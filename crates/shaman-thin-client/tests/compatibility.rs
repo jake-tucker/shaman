@@ -12,7 +12,8 @@ use shaman::{
     server::PairingProtocol,
 };
 use shaman_thin_client::{
-    ActError, Listing, PairingOutcome, TryInstead, UnreachableHint, UnreachableRow,
+    ActError, ConversationItem, ItemKind, Listing, PairingOutcome, TryInstead, UnreachableHint,
+    UnreachableRow,
 };
 
 use support::{Phone, ServingServer};
@@ -290,5 +291,213 @@ async fn pairing_across_a_gap_is_refused_naming_the_side_to_update_and_keeps_not
         phone.shutdown();
     }
 
+    server.shutdown().await;
+}
+
+/// What a Session across the gap the app behind says above its composer,
+/// which takes nothing meanwhile.
+const UPDATE_THE_APP: &str = "The server no longer works with an app as old as this one: update \
+                              the app. Nothing sent goes anywhere until then.";
+
+/// Whether `items` hold the conversation the Session was read into, its
+/// Prompt standing in it.
+fn read_into(items: &[ConversationItem], prompt: &str) -> bool {
+    items
+        .iter()
+        .any(|item| matches!(&item.kind, ItemKind::UserMessage { text, .. } if text == prompt))
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sessions_and_their_trees_across_the_gap_say_which_side_to_update_and_heal_with_it() {
+    let server = ServingServer::start("thin-compat-sessions").await;
+    let phone = Phone::new();
+    pair(&phone, &server, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let shaman = workspace(&holder, "shaman");
+    server.begin(&shaman, "Read before").await;
+    server.begin(&shaman, "Opened after").await;
+    let listing = phone
+        .listing_until(|listing| listing.active.len() == 2)
+        .await;
+    let session = |title: &str| {
+        listing
+            .active
+            .iter()
+            .find(|row| row.title == title)
+            .expect("listed")
+            .session
+            .clone()
+    };
+    let (before, after) = (session("Read before"), session("Opened after"));
+    let read = phone.open(&before);
+    read.conversation_until(|items| read_into(items, "Read before"))
+        .await;
+
+    let server = server.restarted_speaking(NEWER).await;
+    phone
+        .listing_until(|listing| standing(listing, UnreachableHint::UpdateApp).is_some())
+        .await;
+
+    // Read already, it keeps its conversation, its composer taking nothing.
+    let frame = read
+        .frame_until(|frame| {
+            frame
+                .composer
+                .as_ref()
+                .is_some_and(|composer| composer.unreachable.as_deref() == Some(UPDATE_THE_APP))
+        })
+        .await;
+    let composer = frame.composer.expect("a composer");
+    assert_eq!(composer.unreachable.as_deref(), Some(UPDATE_THE_APP));
+    assert!(!composer.can_send);
+    assert!(read_into(&read.conversation_now().items, "Read before"));
+
+    // Opened across the gap, it says why it cannot be read, and so does its
+    // tree, in the phone's words.
+    let opened = phone.open(&after);
+    let tree = opened.tree();
+    let unread = opened
+        .conversation_until(|items| {
+            items
+                .iter()
+                .any(|item| matches!(item.kind, ItemKind::Unread { .. }))
+        })
+        .await;
+    let [
+        ConversationItem {
+            kind: ItemKind::Unread { words },
+            ..
+        },
+    ] = unread.items.as_slice()
+    else {
+        panic!("why it cannot be read stands alone: {unread:?}");
+    };
+    assert_eq!(
+        words,
+        "This session cannot be read yet. The server no longer works with an app as old as this \
+         one: update the app, and it is read as soon as it can be."
+    );
+    assert!(plain(words.as_str()));
+    let frame = opened
+        .frame_until(|frame| {
+            frame
+                .composer
+                .as_ref()
+                .is_some_and(|composer| composer.unreachable.as_deref() == Some(UPDATE_THE_APP))
+        })
+        .await;
+    assert_eq!(
+        frame
+            .composer
+            .and_then(|composer| composer.unreachable)
+            .as_deref(),
+        Some(UPDATE_THE_APP)
+    );
+    let failed = tree.until(|tree| tree.failed.is_some()).await;
+    assert_eq!(
+        failed.failed.as_deref(),
+        Some(
+            "Could not load subagents: that server no longer works with an app as old as this \
+             one; update the app"
+        )
+    );
+
+    // Updated, the Remote heals, and with it both Sessions and the tree.
+    let server = server.restarted_speaking(PairingProtocol::CURRENT).await;
+    phone.core.came_to_front();
+    phone
+        .listing_until(|listing| listing.unreachable.is_empty())
+        .await;
+    opened
+        .conversation_until(|items| read_into(items, "Opened after"))
+        .await;
+    for session in [&read, &opened] {
+        session
+            .frame_until(|frame| {
+                frame
+                    .composer
+                    .as_ref()
+                    .is_some_and(|composer| composer.unreachable.is_none() && composer.can_send)
+            })
+            .await;
+    }
+    let healed = tree
+        .until(|tree| tree.failed.is_none() && !tree.rows.is_empty())
+        .await;
+    assert_eq!(healed.loading, None);
+
+    phone.shutdown();
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_new_session_screen_across_the_gap_names_the_side_to_update_and_begins_nothing() {
+    let server = ServingServer::start("thin-compat-landing").await;
+    let phone = Phone::new();
+    pair(&phone, &server, "desk").await;
+    let server = server.restarted_speaking(OLDER).await;
+    phone
+        .listing_until(|listing| standing(listing, UnreachableHint::UpdateServer).is_some())
+        .await;
+
+    let landing = phone
+        .landing_until(|landing| landing.unreachable.is_some())
+        .await;
+    assert_eq!(
+        landing.unreachable.as_deref(),
+        Some(
+            "The server runs a Shaman too old to work with this app: update Shaman there. \
+             Nothing begins there until then."
+        )
+    );
+    assert!(!landing.can_send);
+
+    let server = server.restarted_speaking(PairingProtocol::CURRENT).await;
+    phone.core.came_to_front();
+    phone
+        .landing_until(|landing| landing.unreachable.is_none())
+        .await;
+
+    phone.shutdown();
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_server_sending_what_this_build_does_not_know_is_said_once_to_be_newer() {
+    let server = ServingServer::start("thin-compat-unknown-change").await;
+    let phone = Phone::new();
+    pair(&phone, &server, "desk").await;
+    let server = server.restarted_speaking(NEWER_SPEAKING).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let session = server
+        .begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+    let listing = phone
+        .listing_until(|listing| listing.active.len() == 1)
+        .await;
+    let reading = phone.open(&listing.active[0].session);
+    reading
+        .conversation_until(|items| read_into(items, "Map the workspace"))
+        .await;
+
+    server.send_unknown_change(session).await;
+    server.send_unknown_change(session).await;
+    let said = phone.notice_until(Option::is_some).await.expect("said");
+    assert_eq!(
+        said.words,
+        "The server runs a newer Shaman; some things may not show"
+    );
+    assert!(plain(&said.words));
+    phone.core.notice_seen(said.id);
+    server.send_unknown_change(session).await;
+    phone.notice_until(Option::is_none).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(phone.notice_until(|_| true).await, None, "never said again");
+    assert!(
+        read_into(&reading.conversation_now().items, "Map the workspace"),
+        "the Session reads on"
+    );
+
+    phone.shutdown();
     server.shutdown().await;
 }
