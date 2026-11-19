@@ -81,7 +81,12 @@ impl Built {
     }
 
     fn work(&self, turn: TurnId) -> TurnWork {
-        turn_work(Some(&self.snapshot), &turn.to_string(), REMOTE)
+        turn_work(
+            Some(&self.snapshot),
+            &turn.to_string(),
+            REMOTE,
+            &crate::tree::Pairings::default(),
+        )
     }
 
     fn detail(&self, activity: ActivityId) -> ActivityDetail {
@@ -258,17 +263,27 @@ fn a_live_turns_work_reads_working_or_waiting_and_says_where_it_has_done_nothing
 #[test]
 fn a_turn_not_read_yet_or_no_longer_held_says_so_and_so_does_an_activity() {
     assert_eq!(
-        turn_work(None, &TurnId::new().to_string(), REMOTE)
-            .empty
-            .as_deref(),
+        turn_work(
+            None,
+            &TurnId::new().to_string(),
+            REMOTE,
+            &crate::tree::Pairings::default()
+        )
+        .empty
+        .as_deref(),
         Some("Loading")
     );
     let built = Built::new();
     for reference in [TurnId::new().to_string(), "not a turn".to_owned()] {
         assert_eq!(
-            turn_work(Some(&built.snapshot), &reference, REMOTE)
-                .empty
-                .as_deref(),
+            turn_work(
+                Some(&built.snapshot),
+                &reference,
+                REMOTE,
+                &crate::tree::Pairings::default()
+            )
+            .empty
+            .as_deref(),
             Some("This turn is no longer in the session")
         );
     }
@@ -989,6 +1004,80 @@ fn a_subsession_names_its_title_what_it_was_asked_and_where_it_was_begun() {
             ("Title", "Rotate the relay certs", BodyStyle::Prose),
             ("On", "homelab", BodyStyle::Prose),
         ]
+    );
+}
+
+#[test]
+fn a_subsessions_row_opens_it_where_this_phone_holds_its_server_and_says_why_not_where_it_does_not()
+{
+    let mut built = Built::new();
+    let turn = built.turn(TurnStatus::Completed, Some(4_000));
+    let subsession = |origin: Option<(&str, &str)>, title: &str| Activity::Subsession {
+        id: ActivityId::new(),
+        turn_id: turn,
+        session_id: SessionId::new(),
+        origin: origin.map(|(name, _)| name.to_owned()),
+        origin_fingerprint: origin.map(|(_, key)| key.to_owned()),
+        title: title.to_owned(),
+        prompt: format!("{title}, please."),
+    };
+    let here = subsession(None, "Tidy the docs");
+    let held = subsession(Some(("build", "lab-key")), "Write the parser");
+    let unheld = subsession(Some(("attic", "attic-key")), "Fix the lights");
+    for activity in [&here, &held, &unheld] {
+        built.activity(activity.clone());
+    }
+    let pairings = crate::tree::Pairings(vec![crate::tree::Paired {
+        fingerprint: "lab-key".to_owned(),
+        name: "lab".to_owned(),
+        paths: shaman_protocol::WorkspacePaths::default(),
+    }]);
+    let work = turn_work(Some(&built.snapshot), &turn.to_string(), REMOTE, &pairings);
+    let row = |title: &str| {
+        work.items
+            .iter()
+            .find_map(|item| match &item.kind {
+                WorkKind::Row { row } if row.title == title => Some(row.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{title}'s row"))
+    };
+    let session_of = |activity: &Activity| match activity {
+        Activity::Subsession { session_id, .. } => *session_id,
+        _ => unreachable!(),
+    };
+
+    let docs = row("Tidy the docs");
+    assert_eq!(
+        docs.tap,
+        Tap::Session {
+            session: format!("{REMOTE}/{}", session_of(&here))
+        },
+        "one on the same Server opens as the top-level Session it is"
+    );
+    assert_eq!(docs.trailing, None);
+    let parser = row("Write the parser");
+    assert_eq!(
+        parser.tap,
+        Tap::Session {
+            session: format!("lab-key/{}", session_of(&held))
+        },
+        "one on a Server the phone holds opens there, by its key"
+    );
+    assert_eq!(
+        parser.trailing.as_deref(),
+        Some("lab"),
+        "named as the phone names it"
+    );
+    let lights = row("Fix the lights");
+    assert!(
+        matches!(lights.tap, Tap::Detail { .. }),
+        "it opens its detail alone"
+    );
+    assert_eq!(lights.trailing.as_deref(), Some("attic"));
+    assert_eq!(
+        lights.line.as_deref(),
+        Some("This phone is not paired with attic")
     );
 }
 

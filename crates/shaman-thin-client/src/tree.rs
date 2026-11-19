@@ -15,6 +15,14 @@
 //! wherever it can be stopped alone — and what the open Session's frame takes
 //! from it: the button the sheet is opened by, the Subagent's name and Model
 //! its header names, and whether its own bar offers Stop.
+//!
+//! A Sidekick's Session heads a tree answering for everything the Sidekick
+//! has a hand in, and its sheet is headed "Sessions": beneath its own
+//! Subagents stand its Subsessions and the Sessions it acted on, each with
+//! its Subagents beneath it. The tree names a Session on another Server as
+//! the Server heading it does, and its entries are keyed by those names; the
+//! key of that other Server, which the tree carries beside its name, says
+//! which of this phone's own Pairings opens it, where the phone holds one.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -25,7 +33,7 @@ use std::{
 use shaman_client::{SessionCommands, SubagentTreeEvent};
 use shaman_protocol::{
     Activity, ActivityStatus, ProviderId, SessionId, SessionSnapshot, SessionTimestamp,
-    SubagentTreeEntry, SubagentTreeSnapshot,
+    SubagentTreeEntry, SubagentTreeSession, SubagentTreeSnapshot, WorkspacePaths,
 };
 use tokio::{runtime::Handle, sync::watch, task::JoinHandle};
 
@@ -74,9 +82,21 @@ pub struct TreeRow {
     /// there is nothing current to say of its work.
     pub marker: Option<Tone>,
     pub title: String,
+    /// Where a Session a Sidekick has a hand in works, and where the
+    /// Sidekick's own does: the Remote, where it lives on another Server,
+    /// and its Workspace.
+    pub place: Option<String>,
+    /// The glyph its Workspace is led by, resolved, where `place` names one.
+    pub place_glyph: Option<String>,
     /// Beneath the title: its name and Model, and its outcome where the
     /// Marker alone would not tell it.
     pub line: Option<String>,
+    /// Why choosing it opens nothing, where it lives on a Server this phone
+    /// cannot open it on.
+    pub note: Option<String>,
+    /// Whether nothing of its work is current, its Server not answering for
+    /// it or the act on it not confirmed, so the entry is drawn dimmed.
+    pub dimmed: bool,
     /// At the right, where it is not counting: how long it worked, that it is
     /// monitoring, or that it needs the reader.
     pub trailing: Option<String>,
@@ -205,6 +225,90 @@ pub(crate) const STOPS_A_SUBAGENT_ALONE: [&str; 2] = ["claude", "codex"];
 /// Said on a working Subagent's entry, which its swipe stops.
 const STOP: &str = "Stop";
 
+/// One Remote this phone holds a Pairing with.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Paired {
+    /// The fingerprint of its key, which its Sessions are referred to by.
+    pub fingerprint: String,
+    /// The name this phone knows it by.
+    pub name: String,
+    /// How it spells and names its paths.
+    pub paths: WorkspacePaths,
+}
+
+/// Every Remote this phone holds a Pairing with: what an entry of a tree,
+/// or a row among a Turn's work, on a Server other than the one heading it
+/// is opened through.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Pairings(pub Vec<Paired>);
+
+/// How a Session named by the Server heading a tree, or holding a
+/// Transcript, is reached from this phone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Reached {
+    /// It opens by `reference`: it lives on that Server, or on another this
+    /// phone holds a Pairing with, which `on` names as the phone does.
+    Opens {
+        reference: String,
+        on: Option<String>,
+    },
+    /// It lives on a Server this phone cannot open it on: `on` names that
+    /// Server as the one heading the tree does, and `why` says why.
+    Closed { on: String, why: String },
+}
+
+impl Pairings {
+    /// The Remote whose key is `fingerprint`, where this phone holds it.
+    pub fn by_key(&self, fingerprint: &str) -> Option<&Paired> {
+        self.0
+            .iter()
+            .find(|paired| paired.fingerprint == fingerprint)
+    }
+
+    /// How the Session `session_id` is reached that the Server whose key is
+    /// `heading` names on its Remote `origin`, whose key it gives as
+    /// `origin_fingerprint` — or on itself, where it names none. A Session
+    /// of a Remote's is matched to this phone's own Pairing by that key
+    /// alone: the name is the heading Server's, and may name another Server
+    /// here or none.
+    pub fn reach(
+        &self,
+        heading: &str,
+        origin: Option<&str>,
+        origin_fingerprint: Option<&str>,
+        session_id: SessionId,
+    ) -> Reached {
+        let Some(origin) = origin else {
+            return Reached::Opens {
+                reference: reference(heading, session_id),
+                on: None,
+            };
+        };
+        match origin_fingerprint {
+            Some(fingerprint) => match self.by_key(fingerprint) {
+                Some(paired) => Reached::Opens {
+                    reference: reference(&paired.fingerprint, session_id),
+                    on: Some(paired.name.clone()),
+                },
+                None => Reached::Closed {
+                    on: origin.to_owned(),
+                    why: format!("This phone is not paired with {origin}"),
+                },
+            },
+            // A Server too old to give the key gives no way to tell which
+            // Server its name means.
+            None => Reached::Closed {
+                on: origin.to_owned(),
+                why: format!(
+                    "Update {} to open this here",
+                    self.by_key(heading)
+                        .map_or("its server", |paired| paired.name.as_str())
+                ),
+            },
+        }
+    }
+}
+
 /// Every tree read for the Sessions open on this phone.
 #[derive(Clone)]
 pub(crate) struct Trees {
@@ -240,16 +344,13 @@ struct Holder {
 }
 
 impl Tree {
-    /// Whether the tree read holds the Session `session_id`.
+    /// Whether the tree read holds the Session `session_id`, of its own
+    /// Server, as the tree it belongs to.
     fn holds(&self, session_id: SessionId) -> bool {
         let Reading::Read(tree) = &self.reading else {
             return false;
         };
-        tree.top_level.session_id == session_id
-            || tree
-                .subagents
-                .iter()
-                .any(|entry| entry.origin.is_none() && entry.session_id == session_id)
+        belongs(tree, session_id)
     }
 
     /// Tells every holder what the tree is now.
@@ -474,6 +575,33 @@ impl Trees {
     }
 }
 
+/// Whether `tree` is the tree the Session `session_id` of its own Server
+/// belongs to: the top-level Session, a Subagent beneath it, a Subsession —
+/// whose tree is its Sidekick's — or a Subagent beneath one. A Session the
+/// Sidekick only acted on, and anything beneath it, heads a tree of its own.
+fn belongs(tree: &SubagentTreeSnapshot, session_id: SessionId) -> bool {
+    let mut at = session_id;
+    // A Subagent cannot be its own ancestor, so a walk longer than the tree
+    // is one round a cycle, and ends there.
+    for _ in 0..=tree.subagents.len() {
+        if at == tree.top_level.session_id {
+            return true;
+        }
+        if let Some(session) = tree
+            .sessions
+            .iter()
+            .find(|session| session.origin.is_none() && session.session_id == at)
+        {
+            return session.subsession;
+        }
+        let Some(entry) = own(tree, at) else {
+            return false;
+        };
+        at = entry.parent_session_id;
+    }
+    false
+}
+
 /// Has the Sessions held by a tree no stream could read join the tree `into`,
 /// read now, where it holds them: a failure stands only until another Session
 /// of the same tree is opened and its tree read. The tree they leave, if it
@@ -565,16 +693,20 @@ pub(crate) fn reference(remote: &str, session_id: SessionId) -> String {
 
 /// What the button the sheet is opened by says before the tree is read, or
 /// where it cannot be: that the Session has Subagents, without counting them.
+/// It heads the sheet of every tree but a Sidekick's.
 const SUBAGENTS: &str = "Subagents";
 
-/// Whether `snapshot` shows its Session belongs to a tree with Subagents in
-/// it: it is a Subagent's, or it has spawned one.
+/// Whether `snapshot` shows its Session belongs to a tree with entries
+/// beneath its top-level Session: it is a Subagent's, or it has spawned
+/// one, or begun a Subsession.
 fn has_subagents(snapshot: &SessionSnapshot) -> bool {
     snapshot.session.parent.is_some()
-        || snapshot
-            .activities
-            .iter()
-            .any(|activity| matches!(activity, Activity::Subagent { .. }))
+        || snapshot.activities.iter().any(|activity| {
+            matches!(
+                activity,
+                Activity::Subagent { .. } | Activity::Subsession { .. }
+            )
+        })
 }
 
 /// What the frame of the Session `open` takes from the tree as `state` says
@@ -598,20 +730,26 @@ pub(crate) fn in_tree(
         };
     };
     let entry = own(tree, open);
-    let counted = (!tree.subagents.is_empty()).then(|| {
-        let count = tree.subagents.len();
+    let counted = (entries(tree) > 0).then(|| {
+        let count = entries(tree);
         let working = working_count(tree);
-        let subagents = if count == 1 {
-            "1 subagent".to_owned()
+        // A Sidekick's sheet is headed "Sessions", and counts them so.
+        let noun = if tree.top_level.sidekick {
+            "session"
         } else {
-            format!("{count} subagents")
+            "subagent"
+        };
+        let counted = if count == 1 {
+            format!("1 {noun}")
+        } else {
+            format!("{count} {noun}s")
         };
         TreeButton {
             working: (working > 0).then(|| working.to_string()),
             label: if working > 0 {
-                format!("{subagents}, {working} working")
+                format!("{counted}, {working} working")
             } else {
-                subagents
+                counted
             },
         }
     });
@@ -697,20 +835,52 @@ fn provider_of(
     None
 }
 
-/// How many Subagents of `tree`, at any depth, work now.
+/// How many entries stand beneath the top-level Session of `tree`, at any
+/// depth: its Subagents, and where a Sidekick's Session heads it, the
+/// Sessions the Sidekick has a hand in.
+fn entries(tree: &SubagentTreeSnapshot) -> usize {
+    tree.subagents.len() + tree.sessions.len()
+}
+
+/// How many entries of `tree`, at any depth, work now.
 fn working_count(tree: &SubagentTreeSnapshot) -> usize {
     tree.subagents
         .iter()
         .filter(|entry| !entry.unanswered && entry.status == ActivityStatus::Active)
         .count()
+        + tree
+            .sessions
+            .iter()
+            .filter(|session| session.status == Some(ActivityStatus::Active))
+            .count()
 }
 
 /// An entry of a tree as its Server knows it: the Remote it lives on, by that
 /// Server's name for it, and its identity there.
 type Key<'a> = (Option<&'a str>, SessionId);
 
-/// The Sessions whose branch holds work still going: every working Subagent,
-/// and each Session above it.
+/// What an entry beneath the top-level Session stands for.
+#[derive(Clone, Copy, Debug)]
+enum Node<'a> {
+    /// A Subagent, beneath the Session that spawned it.
+    Subagent(&'a SubagentTreeEntry),
+    /// A Session a Sidekick has a hand in, beneath the Sidekick's Session.
+    Session(&'a SubagentTreeSession),
+}
+
+impl<'a> Node<'a> {
+    fn key(self) -> Key<'a> {
+        match self {
+            Self::Subagent(entry) => (entry.origin.as_deref(), entry.session_id),
+            Self::Session(session) => (session.origin.as_deref(), session.session_id),
+        }
+    }
+}
+
+/// The Sessions whose branch holds work still going: every working Subagent
+/// and Session, and each Session above it, each known by its Origin and
+/// identity, so one of a Remote's never lends its work to one of this
+/// Server's sharing its identity.
 fn live_branches(tree: &SubagentTreeSnapshot) -> HashSet<Key<'_>> {
     let parents = tree
         .subagents
@@ -723,7 +893,12 @@ fn live_branches(tree: &SubagentTreeSnapshot) -> HashSet<Key<'_>> {
             )
         })
         .collect::<HashMap<_, _>>();
-    let mut live = HashSet::new();
+    let mut live = tree
+        .sessions
+        .iter()
+        .filter(|session| session.status == Some(ActivityStatus::Active))
+        .map(|session| (session.origin.as_deref(), session.session_id))
+        .collect::<HashSet<_>>();
     for entry in &tree.subagents {
         if entry.unanswered || entry.status != ActivityStatus::Active {
             continue;
@@ -741,11 +916,15 @@ fn live_branches(tree: &SubagentTreeSnapshot) -> HashSet<Key<'_>> {
     live
 }
 
-/// Every Subagent of `tree` depth-first, with how deep it stands: each after
-/// the Session that spawned it and its own after it. Among siblings a branch
-/// with work going anywhere in it comes first, and within each the most
-/// recently spawned, so the hierarchy is never broken to bring work forward.
-fn depth_first(tree: &SubagentTreeSnapshot) -> Vec<(u32, &SubagentTreeEntry)> {
+/// Every entry beneath the top-level Session of `tree` depth-first, with how
+/// deep it stands: each Subagent after the Session that spawned it and its
+/// own after it, and beneath a Sidekick's Session the Sessions it has a hand
+/// in after its own Subagents, each with its Subagents after it. Among
+/// sibling Subagents a branch with work going anywhere in it comes first,
+/// and within each the most recently spawned, so the hierarchy is never
+/// broken to bring work forward; among the Sessions, those with work going
+/// come first, and within each the one the Sidekick acted on most recently.
+fn depth_first(tree: &SubagentTreeSnapshot) -> Vec<(u32, Node<'_>)> {
     let live = live_branches(tree);
     let mut children: HashMap<Key<'_>, Vec<&SubagentTreeEntry>> = HashMap::new();
     for entry in &tree.subagents {
@@ -762,33 +941,66 @@ fn depth_first(tree: &SubagentTreeSnapshot) -> Vec<(u32, &SubagentTreeEntry)> {
             )
         });
     }
-    let mut ordered = Vec::with_capacity(tree.subagents.len());
-    let mut stack = vec![(
-        1_u32,
-        children
-            .remove(&(None, tree.top_level.session_id))
-            .unwrap_or_default()
-            .into_iter(),
-    )];
+    let mut sessions = tree.sessions.iter().collect::<Vec<_>>();
+    sessions.sort_by_key(|session| {
+        (
+            std::cmp::Reverse(live.contains(&(session.origin.as_deref(), session.session_id))),
+            std::cmp::Reverse(session.acted_at),
+        )
+    });
+    let top = children
+        .remove(&(None, tree.top_level.session_id))
+        .unwrap_or_default()
+        .into_iter()
+        .map(Node::Subagent)
+        .chain(sessions.into_iter().map(Node::Session))
+        .collect::<Vec<_>>();
+    let mut ordered = Vec::with_capacity(entries(tree));
+    let mut stack = vec![(1_u32, top.into_iter())];
     while let Some((depth, siblings)) = stack.last_mut() {
         let depth = *depth;
-        let Some(entry) = siblings.next() else {
+        let Some(node) = siblings.next() else {
             stack.pop();
             continue;
         };
-        ordered.push((depth, entry));
+        ordered.push((depth, node));
         // Taken once, so a cycle is walked no further.
-        if let Some(below) = children.remove(&(entry.origin.as_deref(), entry.session_id)) {
+        if let Some(below) = children.remove(&node.key()) {
+            let below = below.into_iter().map(Node::Subagent).collect::<Vec<_>>();
             stack.push((depth + 1, below.into_iter()));
         }
     }
     ordered
 }
 
-/// The tree's sheet, for the Session `open` on the Remote `remote`.
-pub(crate) fn sheet(state: &TreeState, remote: &str, open: SessionId) -> SubagentTree {
+/// What the entry of a Session whose Remote does not answer says in place of
+/// its Model and time, which it has nothing current to say of — and in place
+/// of its Title, where the Remote never said one.
+const NOT_ANSWERING: &str = "not answering";
+
+/// What the entry of a Session the Sidekick's act on is not yet known to
+/// have reached says, as one whose Remote does not answer says it is not
+/// answering.
+const NOT_CONFIRMED: &str = "not confirmed";
+
+/// What the entry of a Remote's Session says beside its Model where not all
+/// of the Subagents beneath it are shown: that opening the Session, read
+/// from its Remote, shows them.
+const NOT_ALL_SHOWN: &str = "open for all subagents";
+
+/// What a tree's sheet is headed where a Sidekick's Session heads it.
+const SESSIONS: &str = "Sessions";
+
+/// The tree's sheet, for the Session `open` on the Remote whose key is
+/// `remote`, its entries on other Servers opened through `pairings`.
+pub(crate) fn sheet(
+    state: &TreeState,
+    remote: &str,
+    open: SessionId,
+    pairings: &Pairings,
+) -> SubagentTree {
     let empty = |loading: Option<&str>, failed: Option<String>| SubagentTree {
-        title: "Subagents".to_owned(),
+        title: SUBAGENTS.to_owned(),
         count: None,
         loading: loading.map(str::to_owned),
         failed,
@@ -804,25 +1016,28 @@ pub(crate) fn sheet(state: &TreeState, remote: &str, open: SessionId) -> Subagen
     };
     let top = &tree.top_level;
     let top_reference = reference(remote, top.session_id);
+    // A Sidekick's Session names where it works, as each Session beneath it
+    // does.
+    let (place, place_glyph) = if top.sidekick {
+        located(
+            None,
+            &top.workspace_path,
+            top.workspace_icon.as_deref(),
+            pairings.by_key(remote),
+        )
+    } else {
+        (None, None)
+    };
     let mut rows = vec![TreeRow {
         id: top_reference.clone(),
         session: Some(top_reference),
         depth: 0,
         marker: top.status.map(Tone::from),
         title: top.title.clone(),
-        line: Some(
-            top.provider
-                .as_ref()
-                .map(crate::work::provider_name)
-                .into_iter()
-                .chain(top.model.as_ref().map(ToString::to_string))
-                .chain(top.status.and_then(outcome_word).map(str::to_owned))
-                .collect::<Vec<_>>()
-                .join(" · "),
-        )
-        .filter(|line| !line.is_empty()),
+        place,
+        place_glyph,
+        line: selection_line(top.provider.as_ref(), top.model.as_ref(), false, top.status),
         open: top.session_id == open,
-        stop: None,
         ..slot(Slot {
             waits_on: top
                 .needs_intervention
@@ -833,68 +1048,18 @@ pub(crate) fn sheet(state: &TreeState, remote: &str, open: SessionId) -> Subagen
             monitoring: top.monitoring_since.is_some(),
         })
     }];
-    for (depth, entry) in depth_first(tree) {
-        let session = entry
-            .origin
-            .is_none()
-            .then(|| reference(remote, entry.session_id));
-        let id = session.clone().unwrap_or_else(|| {
-            format!(
-                "{}@{}",
-                entry.session_id,
-                entry.origin.as_deref().unwrap_or_default()
-            )
-        });
-        let open = entry.origin.is_none() && entry.session_id == open;
-        if entry.unanswered {
-            // Nothing of its work is current: it names itself and no more.
-            rows.push(TreeRow {
-                id,
-                session,
-                depth,
-                marker: None,
-                title: entry.title.clone(),
-                line: Some(format!("{} · not answering", entry.name)),
-                trailing: None,
-                needs_you: false,
-                since: None,
-                open,
-                stop: None,
-            });
-            continue;
-        }
-        let working = entry.status == ActivityStatus::Active;
-        rows.push(TreeRow {
-            id,
-            depth,
-            marker: Some(entry.status.into()),
-            title: entry.title.clone(),
-            line: Some(
-                std::iter::once(entry.name.clone())
-                    .chain(entry.model.as_ref().map(ToString::to_string))
-                    .chain(outcome_word(entry.status).map(str::to_owned))
-                    .collect::<Vec<_>>()
-                    .join(" · "),
-            ),
-            open,
-            stop: (working && session.is_some() && stoppable(state, tree, entry.session_id))
-                .then(|| STOP.to_owned()),
-            session,
-            ..slot(Slot {
-                waits_on: entry
-                    .needs_intervention
-                    .then(|| waits_on(state, entry.session_id)),
-                working,
-                worked_ms: entry.worked_ms,
-                working_since: entry.working_since,
-                monitoring: entry.monitoring_since.is_some(),
-            })
+    for (depth, node) in depth_first(tree) {
+        rows.push(match node {
+            Node::Subagent(entry) => {
+                subagent_row(state, tree, remote, open, pairings, depth, entry)
+            }
+            Node::Session(session) => session_row(state, remote, open, pairings, depth, session),
         });
     }
-    let count = tree.subagents.len();
+    let count = entries(tree);
     let working = working_count(tree);
     SubagentTree {
-        title: "Subagents".to_owned(),
+        title: if top.sidekick { SESSIONS } else { SUBAGENTS }.to_owned(),
         count: Some(if working > 0 {
             format!("{count} · {working} working")
         } else {
@@ -903,6 +1068,265 @@ pub(crate) fn sheet(state: &TreeState, remote: &str, open: SessionId) -> Subagen
         loading: None,
         failed: None,
         rows,
+    }
+}
+
+/// What an entry keyed by its Server's names stands under, however the tree
+/// moves and whichever of this phone's Pairings opens it: the reference of
+/// one of that Server's own, and its identity at the name of a Remote's.
+fn entry_id(remote: &str, origin: Option<&str>, session_id: SessionId) -> String {
+    match origin {
+        None => reference(remote, session_id),
+        Some(origin) => format!("{session_id}@{origin}"),
+    }
+}
+
+/// The Session an entry opens, the name of the Remote it lives on where that
+/// is another Server's, and why it opens nothing where it does not.
+fn opened(reached: Reached) -> (Option<String>, Option<String>, Option<String>) {
+    match reached {
+        Reached::Opens { reference, on } => (Some(reference), on, None),
+        Reached::Closed { on, why } => (None, Some(on), Some(why)),
+    }
+}
+
+/// A Subagent's entry of `tree`, read on the Remote `remote`.
+fn subagent_row(
+    state: &TreeState,
+    tree: &SubagentTreeSnapshot,
+    remote: &str,
+    open: SessionId,
+    pairings: &Pairings,
+    depth: u32,
+    entry: &SubagentTreeEntry,
+) -> TreeRow {
+    let id = entry_id(remote, entry.origin.as_deref(), entry.session_id);
+    let (session, _, note) = opened(pairings.reach(
+        remote,
+        entry.origin.as_deref(),
+        entry.origin_fingerprint.as_deref(),
+        entry.session_id,
+    ));
+    let open = entry.origin.is_none() && entry.session_id == open;
+    if entry.unanswered {
+        // Nothing of its work is current: it names itself and no more.
+        return TreeRow {
+            id,
+            session,
+            depth,
+            marker: None,
+            title: entry.title.clone(),
+            place: None,
+            place_glyph: None,
+            line: Some(format!("{} · {NOT_ANSWERING}", entry.name)),
+            note,
+            dimmed: true,
+            trailing: None,
+            needs_you: false,
+            since: None,
+            open,
+            stop: None,
+        };
+    }
+    let working = entry.status == ActivityStatus::Active;
+    TreeRow {
+        id,
+        depth,
+        marker: Some(entry.status.into()),
+        title: entry.title.clone(),
+        line: Some(
+            std::iter::once(entry.name.clone())
+                .chain(entry.model.as_ref().map(ToString::to_string))
+                .chain(outcome_word(entry.status).map(str::to_owned))
+                .collect::<Vec<_>>()
+                .join(" · "),
+        ),
+        note,
+        open,
+        stop: (working
+            && entry.origin.is_none()
+            && session.is_some()
+            && stoppable(state, tree, entry.session_id))
+        .then(|| STOP.to_owned()),
+        session,
+        ..slot(Slot {
+            waits_on: entry.needs_intervention.then(|| {
+                if entry.origin.is_none() {
+                    waits_on(state, entry.session_id)
+                } else {
+                    NEEDS_YOU.to_owned()
+                }
+            }),
+            working,
+            worked_ms: entry.worked_ms,
+            working_since: entry.working_since,
+            monitoring: entry.monitoring_since.is_some(),
+        })
+    }
+}
+
+/// The entry of a Session the Sidekick heading the tree read on the Remote
+/// `remote` has a hand in, drawn alike whether it began it or only acted on
+/// it: its Marker and Title, where it works, and the Provider and Model its
+/// Agent Selection names, with its outcome where the Marker would not tell
+/// and the time a Subagent's entry carries. It is a top-level Session of its
+/// own, so nothing stops it from here.
+fn session_row(
+    state: &TreeState,
+    remote: &str,
+    open: SessionId,
+    pairings: &Pairings,
+    depth: u32,
+    session: &SubagentTreeSession,
+) -> TreeRow {
+    let origin = session.origin.as_deref();
+    let (reference, on, note) = opened(pairings.reach(
+        remote,
+        origin,
+        session.origin_fingerprint.as_deref(),
+        session.session_id,
+    ));
+    // Its Workspace is named in the paths of the Server it lives on, where
+    // the phone holds that Server.
+    let paths_of = match origin {
+        None => pairings.by_key(remote),
+        Some(_) => session
+            .origin_fingerprint
+            .as_deref()
+            .and_then(|key| pairings.by_key(key)),
+    };
+    let (place, place_glyph) = located(
+        on.as_deref(),
+        &session.workspace_path,
+        session.workspace_icon.as_deref(),
+        paths_of,
+    );
+    // One the Sidekick's act on is not known to have reached stands as one
+    // whose Remote does not answer does, saying which it is.
+    let silent = if session.unanswered {
+        Some(NOT_ANSWERING)
+    } else {
+        session.unconfirmed.then_some(NOT_CONFIRMED)
+    };
+    let row = TreeRow {
+        id: entry_id(remote, origin, session.session_id),
+        session: reference,
+        depth,
+        marker: None,
+        title: if session.title.is_empty() {
+            silent.unwrap_or_default().to_owned()
+        } else {
+            session.title.clone()
+        },
+        place,
+        place_glyph,
+        line: None,
+        note,
+        dimmed: false,
+        trailing: None,
+        needs_you: false,
+        since: None,
+        open: origin.is_none() && session.session_id == open,
+        stop: None,
+    };
+    if let Some(silent) = silent {
+        return TreeRow {
+            line: Some(silent.to_owned()),
+            dimmed: true,
+            ..row
+        };
+    }
+    let slotted = slot(Slot {
+        waits_on: session.needs_intervention.then(|| {
+            if origin.is_none() {
+                waits_on(state, session.session_id)
+            } else {
+                NEEDS_YOU.to_owned()
+            }
+        }),
+        working: session.status == Some(ActivityStatus::Active),
+        worked_ms: session.worked_ms,
+        working_since: session.working_since,
+        monitoring: session.monitoring_since.is_some(),
+    });
+    TreeRow {
+        marker: session.status.map(Tone::from),
+        line: selection_line(
+            session.provider.as_ref(),
+            session.model.as_ref(),
+            session.subagents_unshown,
+            session.status,
+        ),
+        trailing: slotted.trailing,
+        needs_you: slotted.needs_you,
+        since: slotted.since,
+        ..row
+    }
+}
+
+/// The line beneath a Session's Title: the Provider and Model its Agent
+/// Selection names, that opening it shows Subagents not shown here, and its
+/// outcome where the Marker would not tell it.
+fn selection_line(
+    provider: Option<&ProviderId>,
+    model: Option<&shaman_protocol::ModelId>,
+    subagents_unshown: bool,
+    status: Option<ActivityStatus>,
+) -> Option<String> {
+    Some(
+        provider
+            .map(crate::work::provider_name)
+            .into_iter()
+            .chain(model.map(ToString::to_string))
+            .chain(subagents_unshown.then(|| NOT_ALL_SHOWN.to_owned()))
+            .chain(status.and_then(outcome_word).map(str::to_owned))
+            .collect::<Vec<_>>()
+            .join(" · "),
+    )
+    .filter(|line| !line.is_empty())
+}
+
+/// Where a Session works, as its entry says it: the Remote `on`, where it
+/// lives on another Server, then its Workspace at `path`, named as `paired`
+/// names its paths where the phone holds the Server it lives on, and its
+/// glyph. A Session whose Remote has not said where it works says only
+/// which Remote.
+fn located(
+    on: Option<&str>,
+    path: &std::path::Path,
+    icon: Option<&str>,
+    paired: Option<&Paired>,
+) -> (Option<String>, Option<String>) {
+    let workspace = (!path.as_os_str().is_empty()).then(|| {
+        paired.map_or_else(
+            || any_workspace_name(path),
+            |paired| paired.paths.name(path),
+        )
+    });
+    let glyph = workspace.as_ref().map(|_| {
+        icon.and_then(shaman_icons::glyph)
+            .unwrap_or(shaman_icons::FOLDER)
+            .to_string()
+    });
+    let place = on
+        .map(str::to_owned)
+        .into_iter()
+        .chain(workspace)
+        .collect::<Vec<_>>()
+        .join(" · ");
+    ((!place.is_empty()).then_some(place), glyph)
+}
+
+/// The name of the Workspace at `path` where the phone does not hold the
+/// Server it is on, so has not heard how that Server spells paths: the last
+/// part of it, on either separator, since a Remote's paths may be another
+/// platform's.
+fn any_workspace_name(path: &std::path::Path) -> String {
+    let spelled = path.to_string_lossy();
+    let trimmed = spelled.trim_end_matches(['/', '\\']);
+    match trimmed.rsplit(['/', '\\']).next() {
+        Some(name) if !name.is_empty() => name.to_owned(),
+        _ => spelled.into_owned(),
     }
 }
 
@@ -936,8 +1360,12 @@ fn waits_on(state: &TreeState, session_id: SessionId) -> String {
         .and_then(owed)
         .or_else(|| state.known.values().find_map(owed))
         .and_then(Owed::row_words)
-        .unwrap_or_else(|| "Needs you".to_owned())
+        .unwrap_or_else(|| NEEDS_YOU.to_owned())
 }
+
+/// What an entry waiting on the reader says where the phone cannot say on
+/// what.
+const NEEDS_YOU: &str = "Needs you";
 
 /// An entry's right-hand slot: that it needs the reader; or, while it works,
 /// the instant its time counts up from, as long before the work now going
@@ -967,7 +1395,11 @@ fn slot(slot: Slot) -> TreeRow {
         depth: 0,
         marker: None,
         title: String::new(),
+        place: None,
+        place_glyph: None,
         line: None,
+        note: None,
+        dimmed: false,
         trailing,
         needs_you,
         since,

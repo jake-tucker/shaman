@@ -48,6 +48,7 @@ use crate::{
     ActError,
     device::RememberedWorkspace,
     reach::{self, Network, Reach, Reaching, Reading, Unreached},
+    tree::{Paired, Pairings},
 };
 
 /// How long a phone leaves a Session untouched before it settles on its own:
@@ -1025,6 +1026,9 @@ struct Shared {
     /// Moves on each time the listing is made, so what is drawn from what
     /// a Remote last answered beside it is drawn again.
     moved: watch::Sender<u64>,
+    /// The Remotes followed, by key, name and paths: what a Session one
+    /// Server names on another is opened through.
+    pairings: watch::Sender<Pairings>,
     /// How many times the listing has been made, for a test to see it is
     /// made no more often than something changes.
     renders: AtomicU64,
@@ -1100,6 +1104,7 @@ impl Listings {
             renders: AtomicU64::new(0),
             shown: watch::Sender::new(listing),
             moved: watch::Sender::new(0),
+            pairings: watch::Sender::new(Pairings::default()),
             state: Mutex::new(State {
                 on_show: SHELF_OPENING,
                 ..State::default()
@@ -1112,6 +1117,11 @@ impl Listings {
 
     pub fn listing(&self) -> watch::Receiver<Listing> {
         self.shared.shown.subscribe()
+    }
+
+    /// The Remotes this phone holds a Pairing with, now and on every change.
+    pub fn pairings(&self) -> watch::Receiver<Pairings> {
+        self.shared.pairings.subscribe()
     }
 
     /// Follows every Remote the redeemer holds and no other: a Remote
@@ -1681,6 +1691,21 @@ impl Shared {
                 self.settle_after,
                 &state.narrowing,
             );
+            let pairings = Pairings(
+                answered
+                    .iter()
+                    .map(|remote| Paired {
+                        fingerprint: remote.fingerprint.clone(),
+                        name: remote.name.clone(),
+                        paths: remote.paths.clone(),
+                    })
+                    .collect(),
+            );
+            self.pairings.send_if_modified(|held| {
+                let changed = *held != pairings;
+                *held = pairings;
+                changed
+            });
             self.renders.fetch_add(1, Ordering::Relaxed);
             self.moved.send_modify(|moved| *moved += 1);
             self.shown.send_if_modified(|shown| {

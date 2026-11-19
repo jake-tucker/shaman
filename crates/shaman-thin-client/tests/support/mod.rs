@@ -16,16 +16,17 @@ use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
         AgentId, AgentIdentity, AgentSelection, ApprovalId, ApprovalPosture, CreateSessionRequest,
-        Decision, ExecutionDirectory, InitialPrompt, IssueInviteRequest, ModelId, Peer, PromptId,
-        ProviderId, QuestionnaireId, QuestionnaireSubmission, SessionId, SettingMutation,
-        SkillCatalog, Way,
+        Decision, ExecutionDirectory, InitialPrompt, IssueInviteRequest, ModelAvailability,
+        ModelDescriptor, ModelDetails, ModelId, Peer, PromptId, ProviderId, QuestionnaireId,
+        QuestionnaireSubmission, RedeemInviteRequest, SessionId, SettingMutation, SkillCatalog,
+        Way,
     },
     provider::{
-        AttributedProviderEvent, ErrandFuture, ProviderDecisionDelivery, ProviderErrand,
-        ProviderError, ProviderEvent, ProviderEventStream, ProviderFuture, ProviderInterruption,
-        ProviderModelDiscovery, ProviderPostureApplication, ProviderRuntime, ProviderSession,
-        ProviderSessionConnection, ProviderSessionRequest, ProviderSteerInput, ProviderSubagentId,
-        ProviderTurnInput,
+        AttributedProviderEvent, BrokerHandoff, ErrandFuture, ProviderDecisionDelivery,
+        ProviderErrand, ProviderError, ProviderEvent, ProviderEventStream, ProviderFuture,
+        ProviderInterruption, ProviderModelDiscovery, ProviderPostureApplication, ProviderRuntime,
+        ProviderSession, ProviderSessionConnection, ProviderSessionRequest, ProviderSteerInput,
+        ProviderSubagentId, ProviderTurnInput,
     },
     server::{self, ServerConfig, ServerTimings},
 };
@@ -96,12 +97,23 @@ pub struct ServingServer {
     server: server::RunningServer,
     client: ManagedClient,
     scripts: Arc<Mutex<Vec<Script>>>,
+    handoffs: Handoffs,
     decisions: Decisions,
     submissions: Submissions,
 }
 
 impl ServingServer {
     pub async fn start(channel: &str) -> Self {
+        Self::starting(channel, false).await
+    }
+
+    /// A Server whose Provider offers one Model, so that a Session its
+    /// Sidekick begins through the Broker has an Agent to begin with.
+    pub async fn start_offering_a_model(channel: &str) -> Self {
+        Self::starting(channel, true).await
+    }
+
+    async fn starting(channel: &str, offers_a_model: bool) -> Self {
         let state = tempfile::tempdir().expect("create the Server's state directory");
         let config_root = tempfile::tempdir().expect("create the Server's config root");
         let config = ServerConfig::new(state.path(), channel)
@@ -111,8 +123,12 @@ impl ServingServer {
             shutdown_grace: Duration::from_millis(5),
             ..ServerTimings::default()
         };
-        let provider = Arc::new(TestProvider::default());
+        let provider = Arc::new(TestProvider {
+            offers_a_model,
+            ..TestProvider::default()
+        });
         let scripts = provider.scripts.clone();
+        let handoffs = provider.handoffs.clone();
         let decisions = provider.decisions.clone();
         let submissions = provider.submissions.clone();
         let server = server::spawn_with_provider_and_timings(config.clone(), provider, timings)
@@ -142,9 +158,59 @@ impl ServingServer {
             server,
             client,
             scripts,
+            handoffs,
             decisions,
             submissions,
         }
+    }
+
+    /// The directory a Session in this Server's Sidekick Workspace works in,
+    /// made as it is first asked for. A Session begun there is a Sidekick's,
+    /// and starts at once, as one begun in a directory named [`SCRIPTED`]
+    /// does.
+    pub async fn sidekick_directory(&self) -> std::path::PathBuf {
+        self.client
+            .sidekick_workspace()
+            .await
+            .expect("resolve the Sidekick Workspace")
+            .execution_directory
+            .expect("a Session can work in the Sidekick Workspace")
+            .path
+    }
+
+    /// The Broker as the Agent of the scripted Session this Server started
+    /// last reaches it, ready to call its Tools.
+    pub async fn broker(&self) -> Broker {
+        let handoff = timeout(PROGRESS_DEADLINE, async {
+            loop {
+                if let Some(handoff) = self.handoffs.lock().unwrap().last().cloned() {
+                    return handoff;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("a scripted Session was handed the Broker");
+        Broker::handed(&handoff).await
+    }
+
+    /// Pairs this Server with `other`, as a Peer of it that knows it as
+    /// `name`.
+    pub async fn pair_with(&self, other: &ServingServer, name: &str) {
+        let invite = other
+            .invite(vec![Way::Direct(other.serving_address())])
+            .await;
+        let remote = self
+            .client
+            .redeem_invite(RedeemInviteRequest {
+                invite: invite.into(),
+                name: Some(name.to_owned()),
+                ways: Vec::new(),
+                pair_back: false,
+            })
+            .await
+            .expect("pair with the other Server");
+        assert_eq!(remote.name, name);
     }
 
     /// Every Questionnaire submission a scripted Session's Provider has been
@@ -1031,6 +1097,10 @@ pub const SCRIPTED: &str = "scripted";
 /// What a scripted Session's Provider sends, where the test scripts it.
 pub type Script = mpsc::UnboundedSender<Result<AttributedProviderEvent, ProviderError>>;
 
+/// The Broker handoff each scripted Session's start carried, the latest
+/// started last.
+type Handoffs = Arc<Mutex<Vec<BrokerHandoff>>>;
+
 /// The Decisions every scripted Session's Provider was delivered.
 type Decisions = Arc<Mutex<Vec<(ApprovalId, Decision)>>>;
 
@@ -1050,8 +1120,11 @@ struct Submitted {
 struct TestProvider {
     /// What each scripted Session's Provider sends, the latest started last.
     scripts: Arc<Mutex<Vec<Script>>>,
+    handoffs: Handoffs,
     decisions: Decisions,
     submissions: Submissions,
+    /// Whether it offers its one Model, rather than discovering none.
+    offers_a_model: bool,
 }
 
 impl ProviderRuntime for TestProvider {
@@ -1064,7 +1137,22 @@ impl ProviderRuntime for TestProvider {
     }
 
     fn list_models(&self) -> ProviderFuture<'_, ProviderModelDiscovery> {
-        Box::pin(async { Err(ProviderError::new("Model discovery is unavailable.")) })
+        let offers = self.offers_a_model;
+        Box::pin(async move {
+            if !offers {
+                return Err(ProviderError::new("Model discovery is unavailable."));
+            }
+            Ok(ProviderModelDiscovery::new(vec![ModelDescriptor {
+                provider: ProviderId::new("none"),
+                id: ModelId::new("scripted"),
+                display_name: "Scripted".to_owned(),
+                description: String::new(),
+                is_default: true,
+                availability: ModelAvailability::Available,
+                options: Vec::new(),
+                details: ModelDetails::default(),
+            }]))
+        })
     }
 
     fn skill_catalog(&self, _workspace: &std::path::Path) -> ProviderFuture<'_, SkillCatalog> {
@@ -1081,8 +1169,13 @@ impl ProviderRuntime for TestProvider {
                 .file_name()
                 .is_some_and(|named| named == name)
         };
-        let (working, scripted) = (named(WORKING), named(SCRIPTED));
+        // A Sidekick's Session works in the Sidekick Workspace, and is
+        // scripted as any other.
+        let (working, scripted) = (named(WORKING), named(SCRIPTED) || named("sidekick"));
         let scripts = self.scripts.clone();
+        if scripted && let Some(handoff) = &request.broker {
+            self.handoffs.lock().unwrap().push(handoff.clone());
+        }
         let decisions = self.decisions.clone();
         let submissions = self.submissions.clone();
         Box::pin(async move {
@@ -1213,5 +1306,109 @@ impl ProviderSession for ScriptedSession {
 
     fn shutdown(&self) -> ProviderFuture<'_, ()> {
         Box::pin(async { Ok(()) })
+    }
+}
+
+/// The Broker as a Session's Agent reaches it: JSON-RPC posted to its MCP
+/// endpoint under the bearer token the Session's start carried.
+pub struct Broker {
+    http: reqwest::Client,
+    endpoint: String,
+    authorization: String,
+    next_id: u64,
+}
+
+impl Broker {
+    /// The Broker `handoff` hands, the MCP session opened.
+    async fn handed(handoff: &BrokerHandoff) -> Self {
+        let mut broker = Self {
+            http: reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("build the Broker's client"),
+            endpoint: handoff.endpoint().as_str().to_owned(),
+            authorization: handoff.token().bearer(),
+            next_id: 0,
+        };
+        broker
+            .request(
+                "initialize",
+                serde_json::json!({
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": { "name": "shaman-thin-client-test", "version": "0" },
+                }),
+            )
+            .await;
+        broker
+            .post(&serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }))
+            .await;
+        broker
+    }
+
+    async fn post(&self, message: &serde_json::Value) -> reqwest::Response {
+        self.http
+            .post(&self.endpoint)
+            .header("content-type", "application/json")
+            .header("accept", "application/json, text/event-stream")
+            .header("mcp-protocol-version", "2025-06-18")
+            .header("authorization", &self.authorization)
+            .json(message)
+            .send()
+            .await
+            .expect("reach the Broker")
+    }
+
+    async fn request(&mut self, method: &str, params: serde_json::Value) -> serde_json::Value {
+        self.next_id += 1;
+        let id = self.next_id;
+        let response = self
+            .post(&serde_json::json!({
+                "jsonrpc": "2.0", "id": id, "method": method, "params": params,
+            }))
+            .await;
+        let streamed = response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("text/event-stream"));
+        let body = response.text().await.expect("read the Broker's answer");
+        let answer = if streamed {
+            body.split("\n\n")
+                .filter_map(|event| {
+                    let data = event
+                        .lines()
+                        .filter_map(|line| line.strip_prefix("data:"))
+                        .map(str::trim_start)
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    serde_json::from_str::<serde_json::Value>(&data).ok()
+                })
+                .find(|message| message["id"] == serde_json::json!(id))
+                .unwrap_or_else(|| panic!("the stream answers {method}: {body}"))
+        } else {
+            serde_json::from_str(&body).unwrap_or_else(|_| panic!("{method} answers JSON: {body}"))
+        };
+        answer
+            .get("result")
+            .cloned()
+            .unwrap_or_else(|| panic!("{method} was answered with an error: {answer}"))
+    }
+
+    /// Calls the Tool `tool` with `arguments`, answering what it answered
+    /// with, having checked it refused nothing.
+    pub async fn call(&mut self, tool: &str, arguments: serde_json::Value) -> serde_json::Value {
+        let result = self
+            .request(
+                "tools/call",
+                serde_json::json!({ "name": tool, "arguments": arguments }),
+            )
+            .await;
+        assert_ne!(
+            result["isError"],
+            serde_json::json!(true),
+            "{tool} answers: {result}"
+        );
+        result["structuredContent"].clone()
     }
 }

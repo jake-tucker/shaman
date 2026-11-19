@@ -57,5 +57,7 @@ shaman-pairing = { path = "../shaman-pairing", features = ["test-support"] }
 shaman-client = { path = "../shaman-client", features = ["test-support"] }
 # `Session::for_tests`, which the listing's tests build what a Remote answers from.
 shaman-protocol = { path = "../shaman-protocol", features = ["test-support"] }
+# What a test's Sidekick calls the Broker's Tools by, as an Agent's harness does.
+reqwest = { version = "0.12.23", default-features = false, features = ["json"] }
 tempfile = "3.21.0"
 tokio = { version = "1.47.1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "test-util", "time"] }

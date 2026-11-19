@@ -54,7 +54,7 @@ use crate::{
     frame::{self, GONE_REMOTE, Local, Outgoing, SessionFrame, frame_of},
     intervention::{self, DecisionKind, GivenAnswer, InterventionId},
     listing::{Listed, Listings},
-    tree::{self, InTree, Known, Lease, SubagentTree, TreeState, Trees},
+    tree::{self, InTree, Known, Lease, Pairings, SubagentTree, TreeState, Trees},
     watching,
     work::{self, ActivityDetail, TurnWork},
 };
@@ -93,6 +93,9 @@ pub struct OpenSession {
     attached: Arc<Attachments>,
     /// The tree it belongs to, as it sees it, for as long as it is open.
     tree: watch::Receiver<TreeState>,
+    /// The Remotes this phone holds a Pairing with, which the tree's entries
+    /// on other Servers are opened through.
+    pairings: watch::Receiver<Pairings>,
     /// The Remote it is on, by its key, and its identity there, where its
     /// reference names them.
     named: Option<(String, SessionId)>,
@@ -178,12 +181,29 @@ impl OpenSession {
                 reading: tree::Reading::Gone,
                 known: HashMap::new(),
             };
-            listener.changed(tree::sheet(&none, "", SessionId::new()));
+            listener.changed(tree::sheet(
+                &none,
+                "",
+                SessionId::new(),
+                &Pairings::default(),
+            ));
             return Subscription::of(self.runtime.spawn(async {}));
         };
-        watching(&self.runtime, self.tree.clone(), move |state| {
-            listener.changed(tree::sheet(&state, &remote, open));
-        })
+        let (mut tree, mut pairings) = (self.tree.clone(), self.pairings.clone());
+        // Told again as the tree moves, and as the phone's Pairings do, which
+        // say which of the tree's entries on other Servers it opens.
+        let task = self.runtime.spawn(async move {
+            loop {
+                let state = tree.borrow_and_update().clone();
+                let paired = pairings.borrow_and_update().clone();
+                listener.changed(tree::sheet(&state, &remote, open, &paired));
+                tokio::select! {
+                    changed = tree.changed() => if changed.is_err() { break },
+                    changed = pairings.changed() => if changed.is_err() { break },
+                }
+            }
+        });
+        Subscription::of(task)
     }
 
     /// The Session, as the core is handed it back: its Origin's key and its
@@ -467,10 +487,16 @@ enum Filled {
 
 impl Target {
     /// What it is filled with from `snapshot`, of a Session on the Remote
-    /// `remote` names.
-    fn fill(&self, snapshot: Option<&SessionSnapshot>, remote: &str) -> Filled {
+    /// `remote` names, a Session it names on another Server opened through
+    /// `pairings`.
+    fn fill(
+        &self,
+        snapshot: Option<&SessionSnapshot>,
+        remote: &str,
+        pairings: &Pairings,
+    ) -> Filled {
         match self {
-            Self::Work(turn) => Filled::Work(work::turn_work(snapshot, turn, remote)),
+            Self::Work(turn) => Filled::Work(work::turn_work(snapshot, turn, remote, pairings)),
             Self::Detail(activity) => Filled::Detail(work::activity_detail(snapshot, activity)),
         }
     }
@@ -532,9 +558,9 @@ impl Attachments {
 
     /// Fills every attachment from `snapshot`, of a Session on the Remote
     /// `remote` names, telling only those it changes.
-    fn fill(&self, snapshot: Option<&SessionSnapshot>, remote: &str) {
+    fn fill(&self, snapshot: Option<&SessionSnapshot>, remote: &str, pairings: &Pairings) {
         for (target, filling) in self.held().filling.values() {
-            let filled = target.fill(snapshot, remote);
+            let filled = target.fill(snapshot, remote, pairings);
             filling.send_if_modified(|current| {
                 let changed = current.as_ref() != Some(&filled);
                 if changed {
@@ -741,6 +767,7 @@ fn opened(
             drafts: asked.drafts.clone(),
             reading: reading.clone(),
             listings: listings.clone(),
+            pairings: listings.pairings(),
             reference: reference.to_owned(),
             session_id: opening.session_id,
             commands: opening.commands,
@@ -772,6 +799,7 @@ fn opened(
         },
         attached,
         tree: tree_seen,
+        pairings: listings.pairings(),
         named,
     })
 }
@@ -1288,6 +1316,9 @@ struct Reader {
     /// Whether the Session's stream is still read.
     reading: Arc<AtomicBool>,
     listings: Listings,
+    /// The Remotes this phone holds a Pairing with, which a row among a
+    /// Turn's work naming a Session on another Server opens it through.
+    pairings: watch::Receiver<Pairings>,
     reference: String,
     session_id: SessionId,
     commands: SessionCommands,
@@ -1492,6 +1523,7 @@ impl Reader {
                 attached = &mut reading => return attached,
                 Ok(()) = local.changed() => self.show(),
                 Ok(()) = attaching.changed() => self.fill_attached(),
+                Ok(()) = self.pairings.changed() => self.fill_attached(),
                 Ok(()) = self.tree_seen.changed() => self.show_frame(),
             }
         }
@@ -1523,6 +1555,7 @@ impl Reader {
                 // A Prompt sent meanwhile stands as it is being sent.
                 Ok(()) = local.changed() => self.show(),
                 Ok(()) = attaching.changed() => self.fill_attached(),
+                Ok(()) = self.pairings.changed() => self.fill_attached(),
                 Ok(()) = self.unreachable.changed() => self.show_frame(),
                 Ok(()) = self.tree_seen.changed() => self.show_frame(),
             }
@@ -1564,6 +1597,7 @@ impl Reader {
                 }
                 Ok(()) = local.changed() => self.show(),
                 Ok(()) = attaching.changed() => self.fill_attached(),
+                Ok(()) = self.pairings.changed() => self.fill_attached(),
                 Ok(()) = self.unreachable.changed() => self.show_frame(),
                 Ok(()) = self.tree_seen.changed() => self.show_frame(),
             }
@@ -1664,7 +1698,9 @@ impl Reader {
     /// Fills what screens pushed from the Session have attached, from what
     /// it last read.
     fn fill_attached(&self) {
-        self.attached.fill(self.snapshot.as_ref(), &self.remote);
+        let pairings = self.pairings.borrow().clone();
+        self.attached
+            .fill(self.snapshot.as_ref(), &self.remote, &pairings);
     }
 
     fn show_frame(&self) {
@@ -1776,6 +1812,7 @@ mod tests {
             drafts: Drafts::default(),
             reading: Arc::new(AtomicBool::new(true)),
             listings: listings.clone(),
+            pairings: listings.pairings(),
             reference: reference.to_owned(),
             session_id: opening.session_id,
             commands: SessionCommands::new(

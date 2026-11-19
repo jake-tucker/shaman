@@ -149,9 +149,55 @@ fn waiting_beneath(row: WorkRow, activity: &Activity, snapshot: &SessionSnapshot
     }
 }
 
+/// `row`, of `activity` on the Remote `remote` names, opening the Subsession
+/// it stands for where it is one: as the top-level Session it is, on that
+/// Server, or on another the Server names that this phone holds a Pairing
+/// with, which the row names as the phone does. One on a Server the phone
+/// holds none with is named as the Transcript's Server names it, opens only
+/// its detail, and says why it opens no more.
+fn subsession_opened(
+    row: WorkRow,
+    activity: &Activity,
+    remote: &str,
+    pairings: &crate::tree::Pairings,
+) -> WorkRow {
+    let Activity::Subsession {
+        session_id,
+        origin,
+        origin_fingerprint,
+        ..
+    } = activity
+    else {
+        return row;
+    };
+    match pairings.reach(
+        remote,
+        origin.as_deref(),
+        origin_fingerprint.as_deref(),
+        *session_id,
+    ) {
+        crate::tree::Reached::Opens { reference, on } => WorkRow {
+            trailing: on.as_deref().map(one_line),
+            tap: Tap::Session { session: reference },
+            ..row
+        },
+        crate::tree::Reached::Closed { on, why } => WorkRow {
+            line: Some(why),
+            trailing: Some(one_line(&on)),
+            ..row
+        },
+    }
+}
+
 /// The work of the Turn `turn` names, as `snapshot` of a Session on the Remote
-/// `remote` names holds it, or none read yet.
-pub(crate) fn turn_work(snapshot: Option<&SessionSnapshot>, turn: &str, remote: &str) -> TurnWork {
+/// `remote` names holds it, or none read yet, a Session it names on another
+/// Server opened through `pairings`.
+pub(crate) fn turn_work(
+    snapshot: Option<&SessionSnapshot>,
+    turn: &str,
+    remote: &str,
+    pairings: &crate::tree::Pairings,
+) -> TurnWork {
     let Some(snapshot) = snapshot else {
         return TurnWork {
             title: String::new(),
@@ -176,10 +222,15 @@ pub(crate) fn turn_work(snapshot: Option<&SessionSnapshot>, turn: &str, remote: 
             Entry::Activity(activity) => Some(WorkItem {
                 id: format!("activity:{}", activity.id()),
                 kind: WorkKind::Row {
-                    row: waiting_beneath(
-                        row(activity, read.directory(), remote),
+                    row: subsession_opened(
+                        waiting_beneath(
+                            row(activity, read.directory(), remote),
+                            activity,
+                            snapshot,
+                        ),
                         activity,
-                        snapshot,
+                        remote,
+                        pairings,
                     ),
                 },
             }),
