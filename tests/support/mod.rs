@@ -9,6 +9,7 @@ pub mod failing_provider;
 pub mod managed_worktree;
 pub mod observed_tcp_proxy;
 pub mod provider;
+pub mod qr_code;
 pub mod relay_voice;
 #[cfg(unix)]
 pub mod scripted_binary;

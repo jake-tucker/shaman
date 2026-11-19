@@ -615,8 +615,8 @@ fn command_for_insights_wheel(
 /// Relay an Invite cannot offer, Space takes `action`, which puts it right, and
 /// `a` adds a Relay: what either opens stands over the picker with keys of its
 /// own, as [`command_for_relay_overlay_event`] takes them. With a Peer's removal
-/// armed `n` only puts that down, as any other key does, rather than replace the
-/// code as well. `q` draws the Invite shown as a QR code in place of the overlay,
+/// armed `n` and `q` only put that down, as any other key does, rather than
+/// replace the code or draw it as well. `q` draws the Invite shown as a QR code in place of the overlay,
 /// and while it is drawn `q` or Esc goes back to the overlay and nothing else
 /// acts.
 pub(super) fn command_for_serve_overlay_event(
@@ -656,7 +656,9 @@ pub(super) fn command_for_serve_overlay_event(
             SemanticCommandId::ServeNewShortCode
         }
         (KeyCode::Char('x'), KeyModifiers::NONE) => SemanticCommandId::ServeRemovePeer,
-        (KeyCode::Char('q'), KeyModifiers::NONE) => SemanticCommandId::ServeShowQrCode,
+        (KeyCode::Char('q'), KeyModifiers::NONE) if !removal_armed => {
+            SemanticCommandId::ServeShowQrCode
+        }
         (KeyCode::Esc, KeyModifiers::NONE) => SemanticCommandId::ServeClose,
         _ => return None,
     };

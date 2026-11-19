@@ -2,6 +2,7 @@
 
 use std::net::{Ipv4Addr, SocketAddr};
 
+use crate::support::qr_code::{LONG_INVITE, read_back};
 use crate::tui_rendering::support::{
     buffer_rows, deliver_listener, deliver_settings, open_at, ready_health,
     rendered_application_buffer, rendered_application_rows, rendered_application_rows_at,
@@ -346,6 +347,11 @@ fn showing_a_code(code: &str, serial: u64) -> Application {
 
 /// The same, with `peers` enrolled.
 fn showing_a_code_beside(code: &str, serial: u64, peers: Vec<Peer>) -> Application {
+    showing_a_code_with("shaman-v1-long-string", code, serial, peers)
+}
+
+/// The same, the code beside `invite`.
+fn showing_a_code_with(invite: &str, code: &str, serial: u64, peers: Vec<Peer>) -> Application {
     let mut application = Application::default();
     let mut settings = EffectiveSettings::default();
     settings.serving.enabled = true;
@@ -377,7 +383,7 @@ fn showing_a_code_beside(code: &str, serial: u64, peers: Vec<Peer>) -> Applicati
         .handle_event(ApplicationEvent::InviteIssued {
             request,
             invite: IssuedInvite {
-                invite: "shaman-v1-long-string".into(),
+                invite: invite.into(),
                 serial: 1,
                 ways: vec![Way::Relay("https://relay.example.com".to_owned())],
                 short_code: Some(IssuedShortCode {
@@ -963,13 +969,6 @@ fn a_peer_refused_as_too_old_is_listed_as_the_side_to_update() {
     assert!(!rows.join("\n").to_lowercase().contains("version"));
 }
 
-/// An Invite shaped as `/serve` issues one offering one LAN address.
-const LONG_INVITE: &str = "shaman-v1-eyJ3IjpbeyJkaXJlY3QiOiIxOTIuMTY4LjEuMjA6Nzc3NyJ9XSwiayI6IkFBRUNBd1FGQm\
-     djSUNRb0xEQTBPRHhBUkVoTVVGUllYR0JrYUd4d2RIaDhnSVNJakpDVW1KeWdwS2lzc0xTNHZNREV5TX\
-     pRMU5qYzRPVG83UEQwLVAwQkJRa05FUlVaSFNFbEtTMHhOVGs5UVVWSlRWRlZXVjFoWldnIiwidCI6Il\
-     pHVm1aMmhwYW10c2JXNXZjSEZ5YzNSMWRuZDRlWHA3ZkgxLWY0Q0Jnb00iLCJoIjoid29ya3N0YXRpb2\
-     4ifQ";
-
 /// The ink and ground a QR code is drawn in, the colour cube's black and white.
 const DARK: Color = Color::Indexed(16);
 const LIGHT: Color = Color::Indexed(231);
@@ -1050,29 +1049,6 @@ fn drawn_code(buffer: &Buffer) -> Vec<String> {
         })
         .filter(|row| !row.is_empty())
         .collect()
-}
-
-/// Reads drawn half-blocks back to the text they hold, as a phone's scanner
-/// would, with only the code's own margin around them.
-fn read_back(lines: &[String]) -> Option<String> {
-    const SCALE: usize = 4;
-    let cells = lines
-        .iter()
-        .map(|line| line.chars().collect::<Vec<_>>())
-        .collect::<Vec<_>>();
-    let columns = cells.iter().map(Vec::len).max()?;
-    let dark = |x: usize, y: usize| {
-        let (column, module_row) = (x / SCALE, y / SCALE);
-        let cell = cells[module_row / 2].get(column).copied().unwrap_or(' ');
-        matches!((cell, module_row % 2), ('█', _) | ('▀', 0) | ('▄', 1))
-    };
-    let mut image = rqrr::PreparedImage::prepare_from_greyscale(
-        columns * SCALE,
-        cells.len() * 2 * SCALE,
-        |x, y| if dark(x, y) { 0 } else { 255 },
-    );
-    let grids = image.detect_grids();
-    grids.first()?.decode().ok().map(|(_, text)| text)
 }
 
 /// The columns and rows the QR code of [`LONG_INVITE`] takes, its caption's row
@@ -1256,4 +1232,102 @@ fn an_invite_expired_or_superseded_takes_the_code_down_saying_so() {
         assert!(text.contains("This invite no longer works"), "{text}");
         assert!(text.contains("Enrolled peers"), "{text}");
     }
+}
+
+/// Every key the overlay offers is shown whole, however many Rows the keys wrap
+/// across: the Peers take what is left above them.
+#[test]
+fn every_key_is_shown_beside_a_live_code_and_peers_at_any_size() {
+    let hints = [
+        "Ctrl+C copy invite",
+        "q QR code",
+        "c copy code",
+        "n new code",
+        "↑↓ choose peer",
+        "x remove",
+        "Esc close",
+    ];
+    let peers = |count: usize| {
+        (0..count)
+            .map(|index| peer(&format!("machine-{index}")))
+            .collect::<Vec<_>>()
+    };
+    for (invite, peers, (width, height)) in [
+        ("shaman-v1-long-string", peers(1), (80, 24)),
+        (LONG_INVITE, peers(1), (80, 24)),
+        (LONG_INVITE, peers(4), (80, 24)),
+        (LONG_INVITE, peers(3), (140, 40)),
+        (LONG_INVITE, peers(6), (200, 60)),
+    ] {
+        let application = showing_a_code_with(invite, "K7QF-2MXP", 1, peers);
+        let rows = rendered_application_rows_at(&application, width, height);
+        let text = rows.join("\n");
+        for hint in hints {
+            assert!(
+                rows.iter().any(|row| row.contains(hint)),
+                "{hint} at {width}x{height}: {text}"
+            );
+        }
+        assert!(text.contains("K7QF-2MXP"), "{text}");
+        assert!(
+            text.contains("› machine-0"),
+            "the peer the keys are on: {text}"
+        );
+    }
+}
+
+/// A peer that paired and was then removed is no longer said to have paired.
+#[test]
+fn a_peer_removed_after_it_paired_is_no_longer_said_to_have() {
+    let mut application = showing_a_long_invite(None);
+    application
+        .handle_event(ApplicationEvent::Managed(ManagedEvent::InviteStanding(
+            InviteStanding {
+                serial: 7,
+                state: InviteState::Spent,
+                redeemed_by: Some(peer("phone")),
+            },
+        )))
+        .expect("take how the invite stands");
+    let text = rendered_application_rows_at(&application, 120, 60).join("\n");
+    assert!(text.contains("Paired with phone"), "{text}");
+    assert_eq!(
+        press(&mut application, KeyCode::Char('x')),
+        ApplicationTransition::Continue
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Char('x')),
+        ApplicationTransition::RemovePeer("peer-phone".to_owned())
+    );
+    application
+        .handle_event(ApplicationEvent::PeerRemoved("peer-phone".to_owned()))
+        .expect("remove the peer");
+    let text = rendered_application_rows_at(&application, 120, 60).join("\n");
+    assert!(!text.contains("Paired with phone"), "{text}");
+    assert!(!text.contains("phone-fingerprint"), "{text}");
+    assert!(text.contains("This invite no longer works"), "{text}");
+}
+
+/// With a removal armed, `q` only puts it down, as any other key does, rather
+/// than draw the code as well.
+#[test]
+fn q_with_a_removal_armed_only_cancels_the_removal() {
+    let mut application = showing_a_long_invite(None);
+    press(&mut application, KeyCode::Char('x'));
+    assert!(
+        rendered_application_rows_at(&application, 120, 60)
+            .join("\n")
+            .contains("x confirm removal")
+    );
+    assert_eq!(
+        press(&mut application, KeyCode::Char('q')),
+        ApplicationTransition::Continue
+    );
+    let frame = rendered_application_buffer(&application, 120, 60);
+    assert!(drawn_code(&frame).is_empty(), "no code drawn");
+    let text = buffer_rows(&frame).join("\n");
+    assert!(!text.contains("x confirm removal"), "{text}");
+    assert!(text.contains("Fresh invite"), "{text}");
+    press(&mut application, KeyCode::Char('q'));
+    assert!(!drawn_code(&rendered_application_buffer(&application, 120, 60)).is_empty());
 }

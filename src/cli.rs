@@ -6,8 +6,8 @@
 //! What a command was asked for goes to standard output, and only that, so a
 //! script can capture it. Everything else goes to standard error, and neither
 //! carries colour but an Invite's QR code, drawn dark on light. An Invite and its
-//! short code reach no Log (ADR-0008) and are never taken as arguments. How each command exits is [`EXIT_STATUSES`], which
-//! `docs/relay/README.md` repeats.
+//! short code reach no Log (ADR-0008) and are never taken as arguments. How each
+//! command exits is [`EXIT_STATUSES`], which `docs/relay/README.md` repeats.
 
 use std::io::{IsTerminal as _, Write};
 
@@ -800,9 +800,16 @@ impl StandardError {
             colour: terminal && draws_colour(),
             size: terminal
                 .then(crossterm::terminal::size)
-                .and_then(Result::ok),
+                .and_then(Result::ok)
+                .and_then(told_size),
         }
     }
+}
+
+/// A terminal's size where it tells one: a pseudo-terminal nobody sized says it
+/// is 0 by 0, which says nothing of how much it shows.
+fn told_size((columns, rows): (u16, u16)) -> Option<(u16, u16)> {
+    (columns > 0 && rows > 0).then_some((columns, rows))
 }
 
 /// Whether the console draws the escapes a QR code is coloured by. Windows draws
@@ -925,7 +932,7 @@ fn draw_qr_code(invite: &str, standard_error: StandardError, err: &mut dyn Write
     let code = match InviteQrCode::of(invite) {
         Ok(code) => code,
         Err(why) => {
-            say(err, &format!("Error: {why}"));
+            say(err, &format!("Its QR code is left out, as {why}"));
             return;
         }
     };
@@ -956,8 +963,9 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::protocol::{
-        IssuedInvite, IssuedShortCode, RelayAccount, RelayUnreachable, ShortCode,
+    use crate::{
+        invite_qr::reading::LONG_INVITE,
+        protocol::{IssuedInvite, IssuedShortCode, RelayAccount, RelayUnreachable, ShortCode},
     };
 
     fn relay(address: &str) -> Relay {
@@ -1201,14 +1209,6 @@ mod tests {
         assert!(!said(&err).contains("shaman-v1-secret"));
     }
 
-    /// An Invite shaped as a Server issues one offering one address, so its
-    /// code is the smallest a real one has.
-    const LONG_INVITE: &str = "shaman-v1-eyJ3IjpbeyJkaXJlY3QiOiIxOTIuMTY4LjEuMjA6Nzc3NyJ9XSwiayI6IkFBRUNBd1FGQm\
-         djSUNRb0xEQTBPRHhBUkVoTVVGUllYR0JrYUd4d2RIaDhnSVNJakpDVW1KeWdwS2lzc0xTNHZNREV5TX\
-         pRMU5qYzRPVG83UEQwLVAwQkJRa05FUlVaSFNFbEtTMHhOVGs5UVVWSlRWRlZXVjFoWldnIiwidCI6Il\
-         pHVm1aMmhwYW10c2JXNXZjSEZ5YzNSMWRuZDRlWHA3ZkgxLWY0Q0Jnb00iLCJoIjoid29ya3N0YXRpb2\
-         4ifQ";
-
     fn offered_long() -> OfferedInvite {
         let mut offered = offered(Some(a_short_code()));
         offered.issued.invite = LONG_INVITE.into();
@@ -1257,7 +1257,7 @@ mod tests {
         let expected = InviteQrCode::of(LONG_INVITE).unwrap();
         assert_eq!(code, expected.lines(), "drawn once, whole: {err}");
         assert_eq!(
-            crate::invite_qr::read_back(&code).as_deref(),
+            crate::invite_qr::reading::read_back(&code).as_deref(),
             Some(LONG_INVITE)
         );
         assert!(err.contains("Scan its QR code"), "{err}");
@@ -1345,6 +1345,31 @@ mod tests {
             assert!(!err.contains('\x1b'), "{err}");
             assert!(err.contains(why), "{err}");
         }
+    }
+
+    /// A pseudo-terminal nobody sized says it is 0 by 0, which is no size to
+    /// refuse by: the code is drawn, as it is where no size can be told.
+    #[test]
+    fn a_terminal_that_tells_no_size_is_drawn_on_all_the_same() {
+        assert_eq!(told_size((0, 0)), None);
+        assert_eq!(told_size((80, 0)), None);
+        assert_eq!(told_size((0, 24)), None);
+        assert_eq!(told_size((80, 24)), Some((80, 24)));
+    }
+
+    #[test]
+    fn an_invite_no_code_could_hold_is_noted_and_the_invite_still_stands() {
+        let mut offered = offered_long();
+        offered.issued.invite = "x".repeat(4000).into();
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let status = print_invite(&offered, QR, a_terminal(None), &mut out, &mut err);
+        assert_eq!(status, SUCCESS);
+        let err = said(&err);
+        assert!(
+            err.contains("Its QR code is left out, as the invite cannot be drawn"),
+            "{err}"
+        );
+        assert!(!err.contains("Error"), "{err}");
     }
 
     #[test]

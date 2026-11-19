@@ -2016,12 +2016,39 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
             ));
         }
         lines.extend(invite_lines);
+        // The keys wrap across as many Rows as the box is narrow, and the Peers
+        // take what is left above them.
+        let keys = if state.serve_overlay.removal_armed() {
+            vec!["x confirm removal", "any other key cancels"]
+        } else {
+            let live = invite_ended.is_none();
+            let copy_code = shown_code
+                .as_ref()
+                .is_some_and(|shown_code| shown_code.code.is_some());
+            let new_code = shown_code
+                .as_ref()
+                .is_some_and(|shown_code| shown_code.renewable);
+            [
+                (live, "Ctrl+C copy invite"),
+                (live, "q QR code"),
+                (copy_code, "c copy code"),
+                (new_code, "n new code"),
+                (true, "↑↓ choose peer"),
+                (true, "x remove"),
+                (true, "Esc close"),
+            ]
+            .into_iter()
+            .filter_map(|(offered, key)| offered.then_some(key))
+            .collect()
+        };
+        let key_lines = key_lines(&keys, content_width, theme.text.subdued);
         lines.push(Line::styled("Enrolled peers", theme.text.primary));
         if state.serve_overlay.peers().is_empty() {
             lines.push(Line::styled("No peers enrolled", theme.text.subdued));
         } else {
             let error_rows = usize::from(state.serve_overlay.error().is_some());
-            let peer_capacity = content_height.saturating_sub(lines.len() + error_rows + 1);
+            let peer_capacity =
+                content_height.saturating_sub(lines.len() + error_rows + key_lines.len());
             let peer_groups = state
                 .serve_overlay
                 .peers()
@@ -2059,30 +2086,7 @@ fn render_serve_overlay(frame: &mut Frame<'_>, state: &TuiState, main: Rect, the
         if let Some(error) = state.serve_overlay.error() {
             lines.push(Line::styled(error.to_owned(), theme.feedback.error));
         }
-        let keys = if state.serve_overlay.removal_armed() {
-            vec!["x confirm removal", "any other key cancels"]
-        } else {
-            let live = invite_ended.is_none();
-            let copy_code = shown_code
-                .as_ref()
-                .is_some_and(|shown_code| shown_code.code.is_some());
-            let new_code = shown_code
-                .as_ref()
-                .is_some_and(|shown_code| shown_code.renewable);
-            [
-                (live, "Ctrl+C copy invite"),
-                (live, "q QR code"),
-                (copy_code, "c copy code"),
-                (new_code, "n new code"),
-                (true, "↑↓ choose peer"),
-                (true, "x remove"),
-                (true, "Esc close"),
-            ]
-            .into_iter()
-            .filter_map(|(offered, key)| offered.then_some(key))
-            .collect()
-        };
-        lines.extend(key_lines(&keys, content_width, theme.text.subdued));
+        lines.extend(key_lines);
         render_overlay_box(
             frame,
             state,
@@ -2122,8 +2126,6 @@ fn render_invite_qr_code(
         Block::default().style(theme.surface.base.patch(theme.text.primary)),
         area,
     );
-    // The view takes every click, and has nothing a selection could copy.
-    state.selection_overlay_area.set(Some(area));
     const BACK: &str = "q or Esc back";
     let said = |frame: &mut Frame<'_>, heading: Option<&str>, text: &str| {
         let width = area.width.saturating_sub(4).min(72);
@@ -2143,7 +2145,9 @@ fn render_invite_qr_code(
     };
     let code = match view {
         QrCodeView::Code(code) => code,
-        QrCodeView::Undrawable(why) => return said(frame, None, why),
+        QrCodeView::Undrawable(why) => {
+            return said(frame, None, &format!("No QR code is drawn, as {why}"));
+        }
         QrCodeView::Ended(ended) => {
             return said(
                 frame,

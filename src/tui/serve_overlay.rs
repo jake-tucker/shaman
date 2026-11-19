@@ -1303,16 +1303,22 @@ impl ServeOverlay {
         matches!(self.state, ServeOverlayState::Managing { armed: true, .. })
     }
 
+    /// A Peer that paired by the Invite shown and has since been removed is no
+    /// longer said to have paired.
     pub(super) fn peer_removed(&mut self, peer_id: &str) {
         let ServeOverlayState::Managing {
             peers,
             selected,
             removing,
+            paired,
             ..
         } = &mut self.state
         else {
             return;
         };
+        if paired.as_ref().is_some_and(|peer| peer.id == peer_id) {
+            *paired = None;
+        }
         peers.retain(|peer| peer.id != peer_id);
         *selected = (*selected).min(peers.len().saturating_sub(1));
         *removing = None;
