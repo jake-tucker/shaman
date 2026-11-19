@@ -223,7 +223,9 @@
         title: "New session",
         place: ((named ? [remote] : []) + [workspace].compactMap { $0 }).joined(separator: " · "),
         workspace: workspace.map {
-          LandingWorkspace(glyph: listed?.glyph, name: $0, origin: remote, description: listed?.description)
+          LandingWorkspace(
+            id: FakeWorkspace.reference(remote, $0), glyph: listed?.glyph, name: $0, origin: remote,
+            description: listed?.description)
         },
         asks: workspace == nil ? "Choose a workspace\(named ? " on \(remote)" : "") to begin in." : nil,
         elsewhere: "Begin somewhere else",

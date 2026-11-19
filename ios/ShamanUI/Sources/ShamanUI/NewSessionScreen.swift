@@ -304,9 +304,9 @@ final class NewSessionModel {
     }
   }
 
-  /// Whether `was` and `now` begin in the same Workspace of the same Remote.
+  /// Whether `was` and `now` begin in the same Workspace, as the core tells one from another.
   private static func sameWorkspace(_ was: Landing?, _ now: Landing) -> Bool {
-    was?.workspace?.name == now.workspace?.name && was?.workspace?.origin == now.workspace?.origin
+    was?.workspace?.id == now.workspace?.id
   }
 
   /// The Workspace Picker "Begin somewhere else" pushes.

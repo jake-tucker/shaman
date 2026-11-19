@@ -96,8 +96,8 @@ private struct SectionHeader: View {
   }
 }
 
-/// One Workspace: its Icon, name and Description, ticked where the Outlook stands in it, dimmed with the reason where
-/// its Server cannot read it.
+/// One Workspace: its Icon, name and Description, ticked where the Outlook stands in it; where its Server cannot read
+/// it, its Icon and name dimmed and the reason in their place.
 private struct WorkspaceRowView: View {
   let row: WorkspaceRow
   /// What the core refused of choosing it, shown beside it.
@@ -105,53 +105,65 @@ private struct WorkspaceRowView: View {
   let choose: () -> Void
 
   var body: some View {
-    Button(action: choose) {
-      HStack(spacing: 12) {
-        Group {
-          if let glyph = row.glyph {
-            Glyph(glyph: glyph, style: .title3)
-          } else {
-            Image(systemName: "folder")
-              .font(.title3)
-          }
-        }
-        .frame(width: 28)
-        .foregroundStyle(.secondary)
-        .accessibilityHidden(true)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(verbatim: row.name)
-            .foregroundStyle(row.unavailable == nil ? .primary : .secondary)
-          if let unavailable = row.unavailable {
-            Text(verbatim: unavailable)
-              .font(.caption)
-              .foregroundStyle(.orange.opacity(0.7))
-          } else if let description = row.description {
-            Text(verbatim: description)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .lineLimit(1)
-          }
-          if let invalid {
-            Text(verbatim: invalid)
-              .font(.caption)
-              .foregroundStyle(.red)
-          }
-        }
-        Spacer(minLength: 0)
-        if row.chosen {
-          Image(systemName: "checkmark")
-            .foregroundStyle(.tint)
-            .accessibilityHidden(true)
+    if row.unavailable == nil {
+      Button(action: choose) { content }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(row.chosen ? .isSelected : [])
+        .accessibilityIdentifier(row.workspace)
+    } else {
+      // No choice at all, rather than a disabled one, which would dim the reason with the rest.
+      content
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(row.workspace)
+    }
+  }
+
+  private var content: some View {
+    HStack(spacing: 12) {
+      Group {
+        if let glyph = row.glyph {
+          Glyph(glyph: glyph, style: .title3)
+        } else {
+          Image(systemName: "folder")
+            .font(.title3)
         }
       }
-      .contentShape(Rectangle())
+      .frame(width: 28)
+      .foregroundStyle(row.unavailable == nil ? .secondary : .tertiary)
+      .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(verbatim: row.name)
+          .foregroundStyle(row.unavailable == nil ? .primary : .tertiary)
+        if let unavailable = row.unavailable {
+          HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .foregroundStyle(.orange)
+              .accessibilityHidden(true)
+            Text(verbatim: unavailable)
+              .foregroundStyle(.secondary)
+          }
+          .font(.caption)
+        } else if let description = row.description {
+          Text(verbatim: description)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+        if let invalid {
+          Text(verbatim: invalid)
+            .font(.caption)
+            .foregroundStyle(.red)
+        }
+      }
+      Spacer(minLength: 0)
+      if row.chosen {
+        Image(systemName: "checkmark")
+          .foregroundStyle(.tint)
+          .accessibilityHidden(true)
+      }
     }
-    .buttonStyle(.plain)
-    .disabled(row.unavailable != nil)
-    .opacity(row.unavailable == nil ? 1 : 0.6)
-    .accessibilityElement(children: .combine)
-    .accessibilityAddTraits(row.chosen ? .isSelected : [])
-    .accessibilityIdentifier(row.workspace)
+    .contentShape(Rectangle())
   }
 }
 

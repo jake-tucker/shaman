@@ -1339,4 +1339,16 @@ private final class HeldTime: BackgroundTasks {
     #expect(model.picker?.empty == "No workspaces found")
   }
 
+  @Test func aSearchSaysWhichRemotesHaveYetToListTheirsAndNeverThatItFoundNothing() async throws {
+    let model = WorkspacePickerModel(core: FakeCore(.reaching))
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.picker != nil }
+    model.search("kernel")
+    try await until(model) { $0.picker?.sections.count == 1 }
+    #expect(model.picker?.empty == nil, "the home lab may yet list one")
+    #expect(model.picker?.sections.first?.header == "homelab")
+    #expect(model.picker?.sections.first?.line == "Loading workspaces…")
+  }
+
 }

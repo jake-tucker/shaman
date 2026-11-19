@@ -92,9 +92,12 @@ final class WorkspacePickerTests: XCTestCase {
     XCTAssertTrue(row("workstation", "shaman", in: app).exists)
     XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Sidekick")).firstMatch.exists)
     XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Browse")).firstMatch.exists)
-    let archive = row("workstation", "photo-archive", in: app)
-    XCTAssertFalse(archive.isEnabled, "one its Server cannot read cannot be chosen")
+    let archive = element("workspace/workstation/photo-archive", in: app)
+    XCTAssertTrue(archive.exists)
     XCTAssertTrue(archive.label.contains("Unavailable: its directory is gone"), archive.label)
+    XCTAssertFalse(row("workstation", "photo-archive", in: app).exists, "one its Server cannot read is no choice")
+    archive.tap()
+    XCTAssertTrue(app.navigationBars["Begin in"].exists, "and a tap on it chooses nothing")
     attach(app, "Every remote's workspaces")
 
     // The home lab's stand below the fold.

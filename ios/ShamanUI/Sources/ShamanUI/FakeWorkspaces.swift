@@ -103,7 +103,8 @@
                 workspace: $0.reference, glyph: $0.glyph, name: $0.name, description: $0.description,
                 chosen: chosen?.remote == remote && chosen?.name == $0.name, unavailable: $0.unavailable)
             }
-        if !query.isEmpty && rows.isEmpty {
+        // A search goes on saying which Remotes have yet to list theirs.
+        if !query.isEmpty && rows.isEmpty && !unanswered.contains(remote) {
           return nil
         }
         return WorkspaceSection(
