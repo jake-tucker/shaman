@@ -4,6 +4,10 @@
 //! and then into the Session its Server made, under an identity the core
 //! chose; a refusal standing where the work would be, asked again or
 //! replaced, and kept as the Landing's draft when it is left.
+//!
+//! Each Server stops before its phone, answering whatever the phone asked of
+//! it as a Landing opened, rather than waiting on what a phone gone left
+//! unread.
 
 mod support;
 
@@ -198,8 +202,8 @@ async fn a_first_prompt_turns_the_landing_into_the_session_it_begins_where_the_o
         .listing_until(|listing| listing.active.iter().any(|row| row.session == reference))
         .await;
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -242,8 +246,8 @@ async fn leaving_the_screen_before_its_server_answers_stops_nothing() {
         canonical(&holder.path().join(WORKING))
     );
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 /// A phone paired with `desk`, remembering its Workspace [`WORKING`], whose
@@ -298,8 +302,8 @@ async fn a_refusal_stands_where_the_work_would_be_and_trying_again_begins_the_sa
     let held = desk.read(session_id(&reading.session.reference())).await;
     assert_eq!(held.prompts[0].text, "Tidy the build", "the same Prompt");
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -340,8 +344,8 @@ async fn a_prompt_written_instead_of_a_refused_one_replaces_it() {
         ["Trim the shell"]
     );
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -360,8 +364,8 @@ async fn leaving_a_refused_beginning_discards_it_and_keeps_its_text_as_the_landi
     assert_eq!(draft.text, "Tidy the build");
     assert_eq!(draft.version, 1, "given back, as Swift is told");
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -395,8 +399,8 @@ async fn on_an_unreachable_remote_the_landing_takes_a_draft_and_offers_no_send()
     phone.core.came_to_front();
     phone.landing_until(ready).await;
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -424,8 +428,8 @@ async fn where_no_workspace_is_remembered_the_landing_asks_for_one_and_nothing_b
         panic!("began with nothing written");
     };
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 fn may_have_begun(items: &[ConversationItem]) -> bool {
@@ -528,8 +532,8 @@ async fn a_beginning_whose_answer_was_lost_may_have_begun_and_turns_into_the_ses
         "one Session"
     );
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -559,8 +563,8 @@ async fn a_beginning_left_while_it_may_have_begun_keeps_its_text_and_the_landing
     phone.landing_until(|landing| landing.note.is_none()).await;
     drop(again);
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -590,8 +594,8 @@ async fn a_refusal_arriving_once_the_screen_has_gone_gives_its_text_back_to_the_
         "refused, it did not begin"
     );
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -648,8 +652,8 @@ async fn where_the_server_holds_the_session_already_the_screen_turns_into_it() {
         ["Map the workspace first"]
     );
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 fn working_frame(frame: &shaman_thin_client::SessionFrame) -> bool {
@@ -693,8 +697,8 @@ async fn a_prompt_written_instead_once_the_first_began_the_session_goes_back_as_
         "one Session, begun with the first"
     );
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -711,6 +715,6 @@ async fn the_landing_shows_the_agent_its_server_says_a_new_session_would_get() {
     assert_eq!(landing.agent.as_deref(), Some("Agent unavailable"));
     assert!(landing.can_send, "the Server's refusal says the rest");
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }

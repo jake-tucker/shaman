@@ -96,6 +96,7 @@ pub struct ServingServer {
     _config_root: tempfile::TempDir,
     server: server::RunningServer,
     client: ManagedClient,
+    refusing_skills: Arc<std::sync::atomic::AtomicBool>,
     scripts: Arc<Mutex<Vec<Script>>>,
     handoffs: Handoffs,
     decisions: Decisions,
@@ -129,6 +130,7 @@ impl ServingServer {
             offers_a_model,
             ..TestProvider::default()
         });
+        let refusing_skills = provider.refusing_skills.clone();
         let scripts = provider.scripts.clone();
         let handoffs = provider.handoffs.clone();
         let decisions = provider.decisions.clone();
@@ -159,6 +161,7 @@ impl ServingServer {
             _config_root: config_root,
             server,
             client,
+            refusing_skills,
             scripts,
             handoffs,
             decisions,
@@ -317,6 +320,12 @@ impl ServingServer {
             .expect("begin a Session")
             .session
             .id
+    }
+
+    /// Has its Provider refuse its Skills while `refusing`, so a Worktree
+    /// prepared meanwhile is made and kept, not ready, to be resumed.
+    pub fn refuse_skills(&self, refusing: bool) {
+        self.refusing_skills.store(refusing, Ordering::Release);
     }
 
     /// Names `roots` this Server's Workspace Roots, so the Repositories
@@ -1195,6 +1204,9 @@ struct Submitted {
 /// a directory named [`WORKING`] waits on it for ever, and any other fails.
 #[derive(Default)]
 struct TestProvider {
+    /// Whether it refuses its Skills for now, so a Worktree prepared for it
+    /// is made and not ready, and kept to be resumed.
+    refusing_skills: Arc<std::sync::atomic::AtomicBool>,
     /// What each scripted Session's Provider sends, the latest started last.
     scripts: Arc<Mutex<Vec<Script>>>,
     handoffs: Handoffs,
@@ -1236,8 +1248,9 @@ impl ProviderRuntime for TestProvider {
 
     fn skill_catalog(&self, workspace: &std::path::Path) -> ProviderFuture<'_, SkillCatalog> {
         let (offers, workspace) = (self.offers_a_model, workspace.to_owned());
+        let refusing = self.refusing_skills.load(Ordering::Acquire);
         Box::pin(async move {
-            if !offers {
+            if !offers || refusing {
                 return Err(ProviderError::new("No Skills are offered."));
             }
             Ok(SkillCatalog {

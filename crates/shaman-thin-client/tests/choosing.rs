@@ -3,14 +3,21 @@
 //! turning the Outlook and leaving the listing's scope, the Worktree choice
 //! the Landing offers by what the Workspace is, and a Session begun in a new
 //! Worktree its Server prepares first.
+//!
+//! Each Server stops before its phone, answering whatever the phone asked of
+//! it as a Landing opened, rather than waiting on what a phone gone left
+//! unread.
 
 mod support;
 
 use std::path::{Path, PathBuf};
 
 use shaman::protocol::Way;
+use std::sync::{Arc, Mutex};
+
 use shaman_thin_client::{
-    ActError, ItemKind, Landing, PairingOutcome, WorkspacePicker, WorkspaceRow,
+    ActError, FrameListener, ItemKind, Landing, PairingOutcome, SessionFrame, WorkspacePicker,
+    WorkspaceRow,
 };
 use support::{Phone, ServingServer, WORKING};
 
@@ -236,9 +243,9 @@ async fn the_picker_lists_every_remotes_workspaces_and_choosing_one_turns_the_ou
     assert_eq!(nothing.empty.as_deref(), Some("No workspaces found"));
     assert!(nothing.sections.is_empty());
 
-    phone.shutdown();
     desk.shutdown().await;
     lab.shutdown().await;
+    phone.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -284,8 +291,8 @@ async fn a_workspace_whose_server_cannot_read_it_is_dimmed_and_cannot_be_chosen(
         }
     );
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -345,8 +352,8 @@ async fn the_worktree_choice_names_the_main_worktree_and_a_workspace_outside_one
         }
     );
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 fn refused(items: &[shaman_thin_client::ConversationItem]) -> Option<String> {
@@ -386,6 +393,8 @@ async fn a_session_begun_in_a_new_worktree_has_it_prepared_first() {
     // seen as it stands.
     gate.shut_now();
     let reading = phone.begin_in_new_worktree("Tidy the build");
+    let bars = Bars::default();
+    let _told = reading.session.watch_frame(Arc::new(bars.clone()));
     let frame = reading.frame().await;
     let bar = frame.bar.expect("a bar");
     assert_eq!(
@@ -397,6 +406,11 @@ async fn a_session_begun_in_a_new_worktree_has_it_prepared_first() {
         .frame_until(|frame| frame.bar.as_ref().is_some_and(|bar| bar.since.is_some()))
         .await;
     assert_eq!(frame.bar.expect("a bar").words, "Working");
+    assert_eq!(
+        bars.read(),
+        ["Creating worktree", "Starting", "Working"],
+        "made first, then started"
+    );
 
     let held = desk.read(session_id(&reading.session.reference())).await;
     let directory = canonical(&held.session.execution_directory.path);
@@ -415,8 +429,8 @@ async fn a_session_begun_in_a_new_worktree_has_it_prepared_first() {
         })
         .await;
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -442,6 +456,122 @@ async fn a_new_worktree_where_the_server_names_no_agent_is_refused_and_nothing_b
     );
     phone.acts_until(false).await;
 
-    phone.shutdown();
     desk.shutdown().await;
+    phone.shutdown();
+}
+
+/// Every bar a Session's frame read, in order, each once however often it was
+/// told again.
+#[derive(Clone, Default)]
+struct Bars(Arc<Mutex<Vec<String>>>);
+
+impl Bars {
+    fn read(&self) -> Vec<String> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+impl FrameListener for Bars {
+    fn changed(&self, frame: SessionFrame) {
+        let Some(bar) = frame.bar else { return };
+        let mut read = self.0.lock().unwrap();
+        if read.last() != Some(&bar.words) {
+            read.push(bar.words);
+        }
+    }
+}
+
+/// How many Worktrees the Repository at `main` has besides its main one.
+fn linked_worktrees(main: &Path) -> usize {
+    let listed = std::process::Command::new("git")
+        .arg("-C")
+        .arg(main)
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        .expect("list the Worktrees");
+    String::from_utf8_lossy(&listed.stdout)
+        .lines()
+        .filter(|line| line.starts_with("worktree "))
+        .count()
+        - 1
+}
+
+/// A phone standing in a Repository of `desk`'s, whose Worktree preparation
+/// is refused as not ready once, the Worktree made and kept.
+async fn refused_preparation(desk: &ServingServer, phone: &Phone) -> (tempfile::TempDir, PathBuf) {
+    pair(phone, desk, "desk").await;
+    let (holder, root) = roots();
+    let main = repository(&root, WORKING, "main");
+    desk.set_workspace_roots(&[&root]).await;
+    choose(phone, None, WORKING).await;
+    phone
+        .landing_until(|landing| landing.worktree.is_some() && landing.agent.is_some())
+        .await;
+    desk.refuse_skills(true);
+    (holder, main)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_preparation_refused_is_resumed_when_tried_again_and_makes_one_worktree() {
+    let desk = ServingServer::start_offering_a_model("thin-choose-resume").await;
+    let phone = Phone::new();
+    let (_holder, main) = refused_preparation(&desk, &phone).await;
+
+    let reading = phone.begin_in_new_worktree("Tidy the build");
+    let conversation = reading
+        .conversation_until(|items| refused(items).is_some())
+        .await;
+    let why = refused(&conversation.items).unwrap();
+    assert!(
+        why.starts_with("Could not create session: ") && why.contains("retained for retry"),
+        "{why}"
+    );
+    assert_eq!(linked_worktrees(&main), 1, "made, and kept");
+
+    desk.refuse_skills(false);
+    reading.session.try_again().await.expect("asked again");
+    reading
+        .frame_until(|frame| frame.bar.as_ref().is_some_and(|bar| bar.since.is_some()))
+        .await;
+    assert_eq!(linked_worktrees(&main), 1, "the same Worktree, resumed");
+    let held = desk.read(session_id(&reading.session.reference())).await;
+    assert_ne!(
+        canonical(&held.session.execution_directory.path),
+        canonical(&main)
+    );
+    assert_eq!(held.prompts[0].text, "Tidy the build");
+
+    desk.shutdown().await;
+    phone.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_prompt_written_instead_of_a_refused_preparation_resumes_it_too() {
+    let desk = ServingServer::start_offering_a_model("thin-choose-resume-instead").await;
+    let phone = Phone::new();
+    let (_holder, main) = refused_preparation(&desk, &phone).await;
+
+    let reading = phone.begin_in_new_worktree("Tidy the build");
+    reading
+        .conversation_until(|items| refused(items).is_some())
+        .await;
+    desk.refuse_skills(false);
+    reading
+        .session
+        .send("Trim the shell".to_owned())
+        .await
+        .expect("sent in its place");
+    reading
+        .frame_until(|frame| frame.bar.as_ref().is_some_and(|bar| bar.since.is_some()))
+        .await;
+    assert_eq!(
+        linked_worktrees(&main),
+        1,
+        "one Worktree, whatever the Prompt"
+    );
+    let held = desk.read(session_id(&reading.session.reference())).await;
+    assert_eq!(held.prompts[0].text, "Trim the shell");
+
+    desk.shutdown().await;
+    phone.shutdown();
 }
