@@ -131,6 +131,40 @@ final class LivePairingTests: XCTestCase {
     app = keptADraft(app, run)
 
     try unreachableAndBack(app, signals: environment["SHAMAN_LIVE_SIGNALS"])
+    renameAndRemove(app)
+  }
+
+  /// The scratch Server renamed from its row keeps its Pairing, the Outlook going with the name; removed by a swipe, it
+  /// is asked to forget this phone, which the script checks after, and the phone, holding no Remote, offers pairing
+  /// alone.
+  @MainActor
+  private func renameAndRemove(_ app: XCUIApplication) {
+    app.buttons["home.servers"].tap()
+    let field = app.textFields.matching(NSPredicate(format: "identifier BEGINSWITH 'server.'")).firstMatch
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    let name = field.value as? String ?? ""
+    field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: name.count) + "renamed\n")
+    let renamed = app.textFields["server.renamed"]
+    XCTAssertTrue(renamed.waitForExistence(timeout: 10), "renamed from its row")
+    let way = app.descendants(matching: .any)["server.renamed.way.0"]
+    expectation(for: NSPredicate(format: "label ENDSWITH ', answering'"), evaluatedWith: way)
+    waitForExpectations(timeout: 15)
+    attach(app, "The scratch Server renamed, still answering")
+    app.navigationBars["Servers & device"].swipeDown(velocity: .fast)
+    let beginsIn = app.descendants(matching: .any)["home.beginsIn"]
+    XCTAssertTrue(beginsIn.waitForExistence(timeout: 10))
+    XCTAssertEqual(beginsIn.label, "New sessions begin in renamed · workspace", "the Outlook goes with the name")
+
+    app.buttons["home.servers"].tap()
+    XCTAssertTrue(renamed.waitForExistence(timeout: 10))
+    renamed.swipeLeft()
+    app.buttons["server.renamed.remove"].tap()
+    let confirm = app.buttons["server.remove.confirm"].firstMatch
+    XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+    confirm.tap()
+    XCTAssertTrue(app.buttons["pairing.paste"].waitForExistence(timeout: 15), "holding no Remote, pairing alone")
+    attach(app, "The scratch Server removed")
   }
 
   /// What the new-session screen's composer held as the app left the front is in it once iOS has ended the app and it

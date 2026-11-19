@@ -114,6 +114,14 @@ if [ "$mode" = --test ]; then
   summary=$(xcrun xcresulttool get test-results summary --path "$result")
   echo "$summary"
   [ "$(jq -r .result <<< "$summary")" = Passed ]
+  # The test ends by removing the scratch Server, which is asked to forget the phone: it lists no Peer after.
+  peers=$(curl --fail --silent --show-error -H "Authorization: Bearer $(jq -r .token "$runtime")" \
+    "$(jq -r .base_url "$runtime")/v1/pairing/peers")
+  if [ "$(jq length <<< "$peers")" != 0 ]; then
+    echo "The scratch Server still lists the phone's Peer after the app removed it: $peers" >&2
+    exit 1
+  fi
+  echo "The scratch Server lists no Peer: the app's removal withdrew it" >&2
   exit
 fi
 

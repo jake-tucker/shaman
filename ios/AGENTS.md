@@ -207,9 +207,10 @@ which pairs, checks where the app lands and what it lists, opens a Session the s
 sends a Prompt to it, reads its title's menu and its search, reads the Workspace Picker and chooses its Workspace,
 begins a Session of its own where the Outlook stands and finds it listed, checks that the Pairing survives a relaunch
 and that what the new-session screen's composer held is in it after the app is ended, has the script stop the Server and
-sees it read Unreachable, has it started again and sees it answer, and stops the Server. That Session runs on whichever
-Agent the scratch Server would give it, asked for one word; where that Agent is not signed in its Turn fails, which
-reads as well. `--stop` stops it otherwise. Run it before merging a change to pairing or transport; never in CI, where
+sees it read Unreachable, has it started again and sees it answer, renames the Server from its row and removes it,
+which leaves pairing alone and the Server listing no Peer, and stops the Server. That Session runs on whichever Agent
+the scratch Server would give it, asked for one word; where that Agent is not signed in its Turn fails, which reads as
+well. `--stop` stops it otherwise. Run it before merging a change to pairing or transport; never in CI, where
 `LivePairingTests` skips. By hand, `--stop` while the app runs has the Remote read Unreachable within a few seconds, and
 `--resume` starts the Server again with its records kept.
 
