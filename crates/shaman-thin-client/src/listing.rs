@@ -254,8 +254,10 @@ impl Scope {
     /// The scope as it stands among `remotes`: Everywhere where it names a
     /// Remote not held, or the one Remote held whole, which is everywhere;
     /// and the whole of its Remote where it names a Workspace that Remote
-    /// does not offer, once it has said what it offers.
-    fn within(&self, remotes: &[Answered]) -> Self {
+    /// does not offer, but for one handed back after a cold start and still
+    /// `unjudged`, which stands while its Remote has yet to say what it
+    /// offers.
+    fn within(&self, remotes: &[Answered], unjudged: bool) -> Self {
         let Some(remote) = self.remote(remotes) else {
             return Self::Everywhere;
         };
@@ -271,7 +273,7 @@ impl Scope {
         match self {
             Self::Everywhere | Self::Remote { .. } => whole(),
             Self::Workspace { workspace, .. } => {
-                if !remote.offers_known() || remote.offers(workspace) {
+                if (unjudged && !remote.offers_known()) || remote.offers(workspace) {
                     self.clone()
                 } else {
                     whole()
@@ -551,7 +553,7 @@ pub(crate) fn present(
 ) -> (Listing, Option<SessionTimestamp>) {
     let idle = u64::try_from(settle_after.as_millis()).unwrap_or(u64::MAX);
     let origin_named = remotes.len() > 1;
-    let scope = narrowing.scope.within(remotes);
+    let scope = narrowing.scope.within(remotes, narrowing.unjudged);
     let mut active = Vec::new();
     let mut settled = Vec::new();
     let mut next_settling: Option<SessionTimestamp> = None;
@@ -1261,7 +1263,7 @@ impl Listings {
                 .map(|followed| &followed.answered)
                 .cloned()
                 .collect::<Vec<_>>();
-            let scope = Scope::of(reference).within(&answered);
+            let scope = Scope::of(reference).within(&answered, false);
             let turn = scope.remote(&answered).map(|remote| Turn {
                 remote: remote.name.clone(),
                 workspace: match &scope {

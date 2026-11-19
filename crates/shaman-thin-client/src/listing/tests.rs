@@ -1357,6 +1357,25 @@ fn a_scope_handed_back_is_held_until_its_remote_says_what_it_offers() {
 }
 
 #[test]
+fn a_workspace_narrowed_to_while_its_remote_has_yet_to_answer_is_not_held() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let (listings, _directory) = listings(&runtime);
+    let [desk, lab] = desk_and_lab();
+    listings.hold(unanswered(&desk));
+    listings.hold(lab);
+    let dotfiles = Scope::Workspace {
+        fingerprint: "desk-key".to_owned(),
+        workspace: workspace_id("dotfiles"),
+    };
+
+    // Only a scope handed back after a cold start waits on its Remote.
+    listings.narrow(&dotfiles.reference());
+    let narrowed = listings.listing().borrow().clone();
+    assert_eq!(narrowed.scope, "remote/desk-key");
+    assert_eq!(narrowed.title, "desk");
+}
+
+#[test]
 fn a_scope_handed_back_that_is_gone_is_everywhere_and_turns_nothing() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let (listings, _directory) = listings(&runtime);
