@@ -210,6 +210,9 @@ pub struct Redeemer {
     /// removed, or rolled back — so what follows a Remote under one Pairing
     /// hears at once that it may no longer stand.
     pairing_changes: Arc<watch::Sender<u64>>,
+    /// Moves on each time what a Remote told of the Relays it Serves through
+    /// changes its ways, so what shows them shows them anew.
+    told_changes: Arc<watch::Sender<u64>>,
     /// How many Pairings were made since the redeemer started: the last one
     /// made's generation.
     pairings_made: Arc<AtomicU64>,
@@ -253,6 +256,7 @@ impl Redeemer {
             timings,
             remotes: Arc::new(RwLock::new(remotes)),
             pairing_changes: Arc::new(watch::channel(0).0),
+            told_changes: Arc::new(watch::channel(0).0),
             pairings_made: Arc::default(),
             remote_clients: Arc::default(),
             remote_tls: Arc::default(),
@@ -849,6 +853,13 @@ impl Redeemer {
         self.pairing_changes.subscribe()
     }
 
+    /// What moves on each time what a Remote told of the Relays it Serves
+    /// through changes its ways: held at once, as [`Self::records`] then
+    /// reads them, and stored soon after.
+    pub fn told_changes(&self) -> watch::Receiver<u64> {
+        self.told_changes.subscribe()
+    }
+
     /// This Server's own key fingerprint: what a Remote it is paired with
     /// knows it by as a Peer, and names its Sidekicks' acts by. It is known
     /// without asking the store the key is kept in, so while that store does
@@ -1145,6 +1156,8 @@ impl Redeemer {
         remotes[index].answered.retain(|way| ways.contains(way));
         remotes[index].remote.ways = ways;
         drop((remotes, clients));
+        self.told_changes
+            .send_modify(|changes| *changes = changes.wrapping_add(1));
         self.store_told_soon();
         true
     }
