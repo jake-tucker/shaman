@@ -1484,6 +1484,9 @@ enum Relisted {
     Gone,
     /// What the listing knows of it changed.
     Changed,
+    /// Its Remote was renamed, so it is asked under the new name from now
+    /// on, and read again so.
+    Renamed,
     /// Nothing of it changed.
     Same,
 }
@@ -1494,12 +1497,20 @@ enum Relisted {
 /// being too old for the other is not gone: the Pairing stands, so the
 /// Session holds what it showed and is read again, as its stream dropping
 /// is, until that side is updated.
-fn refusal(refused: &SessionStreamError) -> Ended {
+///
+/// Refused for the Pairing's keys, it is gone where `ended` says its Server
+/// refused this phone's key, removing it, which the phone forgets it for;
+/// and otherwise its Server answered with a key other than the one it was
+/// paired under, which ends no Pairing, and `other_key` says so.
+fn refusal(refused: &SessionStreamError, ended: bool, other_key: impl FnOnce() -> String) -> Ended {
     if refused.deleted_session().is_some() {
         Ended::Gone(GONE_SESSION.to_owned())
     } else if refused.remote_status() == Some(shaman_protocol::RemoteStatus::Revoked) {
-        // Its Server removed this phone, which forgets it for that.
-        Ended::Gone(GONE_REMOTE.to_owned())
+        Ended::Gone(if ended {
+            GONE_REMOTE.to_owned()
+        } else {
+            other_key()
+        })
     } else if refused
         .remote_status()
         .and_then(Behind::of_status)
@@ -1549,15 +1560,29 @@ impl Reader {
                         .await
                 }
                 Err(error) => match error.downcast_ref::<SessionStreamError>() {
-                    // A refusal no reopening gets past ends the reading in its
-                    // words, as one that comes mid-stream does.
                     // Refused for the Remote being held no more, as one
-                    // forgotten as the reading opened is.
-                    Some(_) if self.relist() == Relisted::Gone => {
-                        Ended::Gone(GONE_REMOTE.to_owned())
-                    }
-                    Some(refused) if !refused.is_recoverable() => refusal(refused),
-                    _ => {
+                    // forgotten as the reading opened is; or under the name
+                    // it was renamed from, when it is read again under its
+                    // new one.
+                    Some(refused) => match self.relist() {
+                        Relisted::Gone => Ended::Gone(GONE_REMOTE.to_owned()),
+                        Relisted::Renamed => Ended::Dropped,
+                        // Forgotten or renamed by the redeemer ahead of the
+                        // listing, which follows it a moment later.
+                        Relisted::Changed | Relisted::Same => match self.held_as() {
+                            None => Ended::Gone(GONE_REMOTE.to_owned()),
+                            Some(name) if name != self.listed.remote => Ended::Dropped,
+                            // A refusal no reopening gets past ends the
+                            // reading in its words, as one that comes
+                            // mid-stream does.
+                            Some(_) if !refused.is_recoverable() => self.refusal(refused),
+                            Some(_) => {
+                                tracing::debug!("the session was not read: {error:#}");
+                                Ended::Dropped
+                            }
+                        },
+                    },
+                    None => {
                         tracing::debug!("the session was not read: {error:#}");
                         Ended::Dropped
                     }
@@ -1717,7 +1742,7 @@ impl Reader {
                 Ok(()) = listing.changed() => match self.relist() {
                     Relisted::Gone => return Err(GONE_REMOTE.to_owned()),
                     // What moved is this Session's, so it is read again now.
-                    Relisted::Changed => return Ok(()),
+                    Relisted::Changed | Relisted::Renamed => return Ok(()),
                     // Another Session moved: the wait goes on.
                     Relisted::Same => {}
                 },
@@ -1767,11 +1792,13 @@ impl Reader {
                     }
                     self.show();
                 }
-                Ok(()) = listing.changed() => {
-                    if self.relist() == Relisted::Gone {
-                        return Ended::Gone(GONE_REMOTE.to_owned());
-                    }
-                }
+                Ok(()) = listing.changed() => match self.relist() {
+                    Relisted::Gone => return Ended::Gone(GONE_REMOTE.to_owned()),
+                    // What it is read over asks under the old name: it is
+                    // read again under the new.
+                    Relisted::Renamed => return Ended::Dropped,
+                    Relisted::Changed | Relisted::Same => {}
+                },
                 Ok(()) = local.changed() => self.show(),
                 Ok(()) = attaching.changed() => self.fill_attached(),
                 Ok(()) = self.pairings.changed() => self.fill_attached(),
@@ -1808,13 +1835,41 @@ impl Reader {
                 None
             }
             Err(error) if error.deleted_session().is_some() || error.remote_status().is_some() => {
-                Some(refusal(&error))
+                Some(self.refusal(&error))
             }
             Err(error) => {
                 tracing::debug!("the session's stream ended: {error}");
                 Some(Ended::Dropped)
             }
         }
+    }
+
+    /// The fingerprint of the key of the Session's Remote.
+    fn fingerprint(&self) -> &str {
+        self.reference
+            .split_once('/')
+            .map_or(self.reference.as_str(), |(fingerprint, _)| fingerprint)
+    }
+
+    /// The name the Session's Remote is held under now, as the redeemer
+    /// holds it; none where it is held no more.
+    fn held_as(&self) -> Option<String> {
+        self.listings.held_as(self.fingerprint())
+    }
+
+    /// How reading the Session ends on `refused`, as [`refusal`] says.
+    fn refusal(&self, refused: &SessionStreamError) -> Ended {
+        refusal(
+            refused,
+            self.listings.pairing_ended(self.fingerprint()),
+            || {
+                let named = self.listed.origin.as_deref().unwrap_or("The server");
+                format!(
+                    "{named} answered with a key other than the one this phone was paired with, so \
+                 nothing is read from it"
+                )
+            },
+        )
     }
 
     /// Reads again what the listing knows of the Session, showing the frame
@@ -1827,9 +1882,22 @@ impl Reader {
         if opening.listed == self.listed {
             return Relisted::Same;
         }
+        let renamed = opening.listed.remote != self.listed.remote;
+        if renamed {
+            // The Remote is asked, and read Unreachable or behind, under the
+            // name it goes by now.
+            self.commands = opening.commands;
+            self.try_now = opening.try_now;
+            self.unreachable = opening.unreachable;
+            self.behind = opening.behind;
+        }
         self.listed = opening.listed;
         self.show_frame();
-        Relisted::Changed
+        if renamed {
+            Relisted::Renamed
+        } else {
+            Relisted::Changed
+        }
     }
 
     fn show(&self) {
@@ -2062,12 +2130,18 @@ mod tests {
         })
     }
 
-    #[test]
-    fn a_refusal_no_reopening_gets_past_on_the_first_attach_ends_the_reading_in_its_words() {
+    /// Reads the Session `reference` of `desk` over a transport refusing
+    /// its first attach for the Pairing's keys, where `ended` says whether
+    /// its Server refused this phone's key: what the frame says as it goes.
+    fn refused_for_its_keys(ended: bool) -> String {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let (listings, _directory) = listings(&runtime);
         let (desk, reference) = listed_on("desk", "Map the workspace");
         listings.hold(desk);
+        if ended {
+            let (fingerprint, _) = reference.split_once('/').unwrap();
+            listings.downgrade().pairing_ended(fingerprint);
+        }
         let revoked = SessionError {
             code: SessionErrorCode::PairingAuthenticationFailed,
             message: "unknown peer".to_owned(),
@@ -2084,13 +2158,25 @@ mod tests {
             Duration::from_millis(1),
             Arc::default(),
         );
-        assert_eq!(
-            gone_within(&runtime, &mut frame),
-            GONE_REMOTE,
-            "in the words a refusal mid-stream is said in: its Server removed this phone"
-        );
+        let gone = gone_within(&runtime, &mut frame);
         runtime.block_on(reader).unwrap();
         assert_eq!(transport.asked(), 1, "and it is asked no more");
+        gone
+    }
+
+    #[test]
+    fn a_refusal_no_reopening_gets_past_on_the_first_attach_ends_the_reading_in_its_words() {
+        assert_eq!(
+            refused_for_its_keys(true),
+            GONE_REMOTE,
+            "its Server removed this phone, which forgets it"
+        );
+        assert_eq!(
+            refused_for_its_keys(false),
+            "The server answered with a key other than the one this phone was paired with, so \
+             nothing is read from it",
+            "a key other than the Pairing's ends no Pairing"
+        );
     }
 
     #[test]

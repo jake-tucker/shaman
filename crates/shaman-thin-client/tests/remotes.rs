@@ -11,7 +11,7 @@ mod support;
 use std::time::Duration;
 
 use shaman::protocol::Way;
-use shaman_thin_client::{ActError, Listing, Outlook, PairingOutcome};
+use shaman_thin_client::{ActError, Listing, Outlook, PairingOutcome, WayState};
 
 use support::{Gate, Phone, ServingServer};
 
@@ -99,8 +99,9 @@ fn places(listing: &Listing) -> Vec<(&str, &str)> {
 async fn a_remote_renamed_keeps_its_pairing_and_what_was_remembered_for_it() {
     let desk = ServingServer::start("thin-rename-desk").await;
     let lab = ServingServer::start("thin-rename-lab").await;
+    let gate = Gate::open(desk.serving_address()).await;
     let phone = Phone::new();
-    pair(&phone, &desk, "desk").await;
+    pair_by(&phone, &desk, Way::Direct(gate.address()), "desk").await;
     pair(&phone, &lab, "lab").await;
     let holder = tempfile::tempdir().expect("make the Workspaces' directory");
     desk.begin(&workspace(&holder, "shaman"), "Map the workspace")
@@ -115,6 +116,15 @@ async fn a_remote_renamed_keeps_its_pairing_and_what_was_remembered_for_it() {
         .outlook_until(|outlook| standing(outlook) == Some(("desk", "desk · shaman")))
         .await;
     let peers = desk.peers().await;
+    phone
+        .servers_until(|servers| {
+            servers
+                .remotes
+                .iter()
+                .all(|row| row.ways.iter().all(|way| way.state == WayState::Answering))
+        })
+        .await;
+    let (dialled, signed) = (gate.dialled(), phone.signed());
 
     let desk_key = reference(&phone, "desk").await;
     phone
@@ -159,6 +169,16 @@ async fn a_remote_renamed_keeps_its_pairing_and_what_was_remembered_for_it() {
     desk.begin(&workspace(&holder, "shaman"), "Tidy the build")
         .await;
     row(&phone, "Tidy the build").await;
+    assert_eq!(
+        (gate.dialled(), phone.signed()),
+        (dialled, signed),
+        "asked over what it was asked over before, dialling and signing nothing more"
+    );
+    assert_eq!(
+        phone.servers().await.remotes[0].ways[0].state,
+        WayState::Answering,
+        "its ways read as they stood"
+    );
     let phone = phone.relaunched();
     assert_eq!(listed(&phone).await, ["study", "lab"]);
     assert_eq!(
@@ -247,6 +267,12 @@ async fn removing_a_remote_withdraws_its_peer_and_forgets_it_with_its_drafts_and
         .outlook_until(|outlook| standing(outlook) == Some(("desk", "desk · shaman")))
         .await;
     assert_eq!(desk.peers().await.len(), 1);
+    // The new-session screen's draft is written for desk, where the Outlook
+    // stands.
+    let landing = phone.landing_until(|_| true).await.draft;
+    phone
+        .core
+        .set_draft(landing.clone(), "Begin on the desk".to_owned(), 0);
 
     let removal = &phone
         .servers()
@@ -289,6 +315,11 @@ async fn removing_a_remote_withdraws_its_peer_and_forgets_it_with_its_drafts_and
     );
     assert_eq!(phone.core.draft(on_desk.clone()).text, "", "its draft goes");
     assert_eq!(phone.core.draft(on_lab).text, "another", "another's stays");
+    assert_eq!(
+        phone.core.draft(landing).text,
+        "",
+        "the new-session screen's, written for it, goes too"
+    );
 
     // Paired again, nothing remembered of it comes back.
     let phone = phone.relaunched();
@@ -426,4 +457,43 @@ async fn a_phone_whose_one_server_ended_its_pairing_offers_pairing_alone() {
 
     desk.shutdown().await;
     phone.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_read_across_a_rename_is_read_on_under_the_new_name() {
+    let desk = ServingServer::start("thin-rename-reading").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let session = desk
+        .begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+    let reference = row(&phone, "Map the workspace").await;
+    let reading = phone.open(&reference);
+    reading.conversation_until(|items| !items.is_empty()).await;
+
+    phone
+        .core
+        .rename_remote(reference_of(&phone).await, "study".to_owned())
+        .await
+        .expect("renamed");
+    // A moment for it to be read again under the new name.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(reading.frame().await.gone, None, "still read");
+
+    desk.delete(session).await;
+    let frame = reading.frame_until(|frame| frame.gone.is_some()).await;
+    assert_eq!(
+        frame.gone.as_deref(),
+        Some("This session no longer exists"),
+        "heard from its Server under the new name"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+/// The reference the Servers section hands back for the one Remote held.
+async fn reference_of(phone: &Phone) -> String {
+    phone.servers().await.remotes[0].remote.clone()
 }

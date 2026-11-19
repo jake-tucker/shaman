@@ -400,6 +400,21 @@ impl Remotes {
             .map(|stored| stored.generation)
     }
 
+    /// Shows how the ways of the Remote once called `from` stood under the
+    /// name `to` it goes by now: the one Pairing, asked nothing anew.
+    pub fn renamed(&self, from: &str, to: &str) {
+        {
+            let mut shown = self
+                .standings
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            if let Some(asked) = shown.remove(from) {
+                shown.insert(to.to_owned(), asked);
+            }
+        }
+        self.refresh();
+    }
+
     /// Forgets how the ways of the Remote `name` stood, so they read as
     /// being asked again: what an asking begun before finds is not shown.
     pub fn forget_ways(&self, name: &str) {
@@ -474,11 +489,17 @@ impl Ending {
 /// Pairing's generation.
 pub(crate) struct Endings {
     ended: tokio::sync::mpsc::UnboundedSender<(String, u64)>,
+    /// Told at once, so a Session read on the Remote says why before the
+    /// Remote is forgotten.
+    listings: crate::listing::WeakListings,
 }
 
 impl Endings {
-    pub fn new(ended: tokio::sync::mpsc::UnboundedSender<(String, u64)>) -> Self {
-        Self { ended }
+    pub fn new(
+        ended: tokio::sync::mpsc::UnboundedSender<(String, u64)>,
+        listings: crate::listing::WeakListings,
+    ) -> Self {
+        Self { ended, listings }
     }
 }
 
@@ -488,9 +509,10 @@ impl shaman_pairing::RedeemerHooks for Endings {
         _redeemer: &Redeemer,
         _server_key: &[u8],
     ) -> Result<shaman_pairing::StoredMadeOffer, shaman_pairing::PairingFailure> {
+        // As a redeemer with no hooks attached answers.
         Err(shaman_pairing::PairingFailure::new(
-            shaman_protocol::SessionErrorCode::PairingConnectionFailed,
-            "A phone makes no offer to pair back",
+            shaman_protocol::SessionErrorCode::PairBackNotOfferable,
+            "This machine does not offer to be reached",
         ))
     }
 
@@ -513,6 +535,7 @@ impl shaman_pairing::RedeemerHooks for Endings {
             .into_iter()
             .find(|stored| stored.public_key == key && !stored.uncommitted);
         if let Some(stored) = refused {
+            self.listings.pairing_ended(&stored.remote.fingerprint);
             let _ = self.ended.send((stored.remote.name, stored.generation));
         }
     }
@@ -563,8 +586,8 @@ fn row(remote: &Remote, standings: Option<&Standings>, relays: &Relays) -> Serve
         fingerprint: remote.fingerprint.clone(),
         ways,
         removal: format!(
-            "This phone forgets {name}, with what it was writing there, and asks {name} to \
-             forget this phone. Seeing it again takes a new invite.",
+            "This phone removes {name}, with what it was writing there, and asks {name} to \
+             remove this phone too. Seeing it again takes a new invite.",
             name = remote.name
         ),
     }

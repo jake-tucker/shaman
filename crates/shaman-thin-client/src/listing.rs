@@ -1200,7 +1200,29 @@ pub(crate) struct Listings {
     shared: Arc<Shared>,
 }
 
+/// The listing as what outlives it holds it: told of a Pairing ended
+/// without holding the listing up.
+#[derive(Clone)]
+pub(crate) struct WeakListings(std::sync::Weak<Shared>);
+
+impl WeakListings {
+    /// The Remote whose key's fingerprint is `fingerprint` refused this
+    /// phone's key, ending its Pairing.
+    pub fn pairing_ended(&self, fingerprint: &str) {
+        if let Some(shared) = self.0.upgrade() {
+            shared
+                .ended
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .insert(fingerprint.to_owned());
+        }
+    }
+}
+
 struct Shared {
+    /// The Remotes, by their keys' fingerprints, that refused this phone's
+    /// key, ending their Pairings: what a Session read on one says.
+    ended: Mutex<std::collections::HashSet<String>>,
     runtime: Handle,
     redeemer: Redeemer,
     /// The Relays this phone stands at, as its Remotes' Relay ways are
@@ -1321,6 +1343,7 @@ impl Listings {
             settling: Notify::new(),
             landings: AtomicUsize::new(0),
             drafts,
+            ended: Mutex::default(),
         });
         runtime.spawn(settle_when_left_alone(shared.clone()));
         Self { shared }
@@ -1338,6 +1361,35 @@ impl Listings {
     /// What says a Remote is newer than this build, once for each.
     pub fn notices(&self) -> Notices {
         self.shared.notices.clone()
+    }
+
+    /// The listing, held without holding it up.
+    pub fn downgrade(&self) -> WeakListings {
+        WeakListings(Arc::downgrade(&self.shared))
+    }
+
+    /// Whether the Remote whose key's fingerprint is `fingerprint` refused
+    /// this phone's key, ending its Pairing, rather than refusing it some
+    /// other way, as by presenting a key other than the one it was paired
+    /// under.
+    pub fn pairing_ended(&self, fingerprint: &str) -> bool {
+        self.shared
+            .ended
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .contains(fingerprint)
+    }
+
+    /// The name the Remote whose key's fingerprint is `fingerprint` is held
+    /// under now, as the redeemer holds it, ahead of the listing following
+    /// it so; none where it is held no more.
+    pub fn held_as(&self, fingerprint: &str) -> Option<String> {
+        self.shared
+            .redeemer
+            .records()
+            .into_iter()
+            .find(|stored| !stored.uncommitted && stored.remote.fingerprint == fingerprint)
+            .map(|stored| stored.remote.name)
     }
 
     /// Follows every Remote the redeemer holds and no other: a Remote
@@ -1922,6 +1974,28 @@ impl Listings {
     /// Holds `answered` as a Remote the listing follows, its Sessions asked
     /// and acted on over `over`.
     pub(crate) fn hold_over(&self, answered: Answered, over: Arc<dyn shaman_client::Transport>) {
+        // The redeemer holds it too, as it holds every Remote followed.
+        let stored = StoredRemote {
+            remote: shaman_protocol::Remote {
+                name: answered.name.clone(),
+                fingerprint: answered.fingerprint.clone(),
+                ways: Vec::new(),
+                status: shaman_protocol::RemoteStatus::Available,
+                icon: None,
+            },
+            public_key: answered.fingerprint.as_bytes().to_vec(),
+            answered: Vec::new(),
+            generation: 0,
+            offer: None,
+            uncommitted: false,
+        };
+        self.shared
+            .redeemer
+            .change_remotes(|remotes| {
+                remotes.push(stored);
+                Ok(())
+            })
+            .unwrap_or_else(|failure| panic!("{}", failure.message));
         let transport = Arc::new(PairingTransport::new(
             self.shared.redeemer.clone(),
             answered.name.clone(),

@@ -292,16 +292,6 @@ impl Drafts {
         self.changed();
     }
 
-    /// Drops the draft of every Session on the Remote whose key is
-    /// `fingerprint`, which this phone holds no more.
-    pub fn forget_remote(&self, fingerprint: &str) {
-        let prefix = format!("{fingerprint}/");
-        self.held
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .retain(|key, _| !key.starts_with(&prefix));
-    }
-
     /// Gives `text`, which a send took from the composer `key` names, back
     /// to it, ahead of anything written there since, and tells Swift.
     pub fn give_back(&self, key: &str, text: &str) {

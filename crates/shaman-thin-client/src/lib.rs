@@ -857,9 +857,10 @@ impl ThinClient {
         // A Remote that refuses this phone's key has ended the Pairing on its
         // side, and is forgotten here too.
         let (ended, mut endings) = tokio::sync::mpsc::unbounded_channel();
-        inner
-            .redeemer
-            .attach(Arc::new(remotes::Endings::new(ended)));
+        inner.redeemer.attach(Arc::new(remotes::Endings::new(
+            ended,
+            inner.listing.downgrade(),
+        )));
         let forgetting = Arc::downgrade(&inner);
         runtime.spawn(async move {
             while let Some((name, generation)) = endings.recv().await {
@@ -1114,12 +1115,16 @@ impl Inner {
         if let Err(error) = shown {
             tracing::warn!("a Remote was renamed but this phone's records were not kept: {error}");
         }
+        // Held a moment, so what reads the Remote again under its new name
+        // goes on over the connections it was read over, dialling nothing.
+        let client = self.redeemer.client_of(name);
+        let held_for = self.timings.check_deadline;
+        tokio::spawn(async move {
+            tokio::time::sleep(held_for).await;
+            drop(client);
+        });
         self.listing.follow(&self.remotes.held());
-        self.remotes.forget_ways(&was);
-        // Its ways are asked again under its new name, which the rename
-        // does not wait on.
-        let (remotes, name) = (self.remotes.clone(), name.to_owned());
-        tokio::spawn(async move { remotes.ask_ways_again(&name).await });
+        self.remotes.renamed(&was, name);
         Ok(())
     }
 
@@ -1192,7 +1197,8 @@ impl Inner {
         if let Err(error) = shown {
             tracing::warn!("{name} was forgotten but this phone's records were not kept: {error}");
         }
-        self.drafts.forget_remote(&stored.remote.fingerprint);
+        // Following the Remotes held drops its drafts, the Landing's among
+        // them where it was written for it.
         self.listing.follow(&self.remotes.held());
         self.remotes.forget_ways(&name);
         let turned = match &*self.remotes.outlook().borrow() {
