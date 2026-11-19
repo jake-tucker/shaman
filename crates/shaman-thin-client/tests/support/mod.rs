@@ -111,7 +111,7 @@ pub struct ServingServer {
 
 impl ServingServer {
     pub async fn start(channel: &str) -> Self {
-        Self::starting(channel, false).await
+        Self::starting(channel, false, None).await
     }
 
     /// A Server whose Provider offers one Model, so that a Session its
@@ -119,18 +119,25 @@ impl ServingServer {
     /// Session begun with no Agent Selection would get it, as its health
     /// says; and Skills, so a new Worktree can be prepared for it.
     pub async fn start_offering_a_model(channel: &str) -> Self {
-        Self::starting(channel, true).await
+        Self::starting(channel, true, None).await
     }
 
-    async fn starting(channel: &str, offers_a_model: bool) -> Self {
+    /// [`Self::start`], each Invite it issues living for `ttl`.
+    pub async fn start_with_invites_living(channel: &str, ttl: Duration) -> Self {
+        Self::starting(channel, false, Some(ttl)).await
+    }
+
+    async fn starting(channel: &str, offers_a_model: bool, invite_ttl: Option<Duration>) -> Self {
         let state = tempfile::tempdir().expect("create the Server's state directory");
         let config_root = tempfile::tempdir().expect("create the Server's config root");
         let config = ServerConfig::new(state.path(), channel)
             .expect("configure the Server")
             .with_config_dir(config_root.path());
+        let defaults = ServerTimings::default();
         let timings = ServerTimings {
             shutdown_grace: Duration::from_millis(5),
-            ..ServerTimings::default()
+            invite_ttl: invite_ttl.unwrap_or(defaults.invite_ttl),
+            ..defaults
         }
         .with_relay_retry_backoff(Duration::from_millis(5), Duration::from_millis(25));
         let provider = Arc::new(TestProvider {
@@ -448,6 +455,14 @@ impl ServingServer {
             .set_relay_serve_through(&relay.address(), true)
             .await
             .expect("Serve through the Relay");
+    }
+
+    /// Has this Server stop Serving through `relay`, staying logged in there.
+    pub async fn stop_serving_through(&self, relay: &relay::TestRelay) {
+        self.client
+            .set_relay_serve_through(&relay.address(), false)
+            .await
+            .expect("stop Serving through the Relay");
     }
 
     /// The machines `relay` lists under this Server's Account there: each by

@@ -304,11 +304,22 @@ impl Remotes {
     /// how each stands once all have said, where the Pairing asked still
     /// stands then.
     pub async fn ask_ways(&self, name: &str) {
+        if self.generation_of(name).is_none() {
+            return;
+        }
+        self.forget_ways(name);
+        self.refresh();
+        self.ask_ways_again(name).await;
+    }
+
+    /// Asks each way of the Remote `name` alone whether it answers, as
+    /// [`Self::ask_ways`] does, but showing how each stood when last asked
+    /// until all have said: a way it has just told of reads as being asked
+    /// meanwhile.
+    pub async fn ask_ways_again(&self, name: &str) {
         let Some(generation) = self.generation_of(name) else {
             return;
         };
-        self.forget_ways(name);
-        self.refresh();
         let Ok(standings) = self.redeemer.probe_ways(name).await else {
             // Gone meanwhile: nothing of it is shown.
             return;

@@ -14,7 +14,7 @@ use shaman::protocol::Way;
 use shaman_pairing::RedeemerTimings;
 use shaman_thin_client::{
     CoreTimings, DeviceLogin, InviteReading, ItemKind, Listing, LoginOffer, PairingOutcome,
-    RelayRowState, Servers, UnreachableHint, WayState,
+    RelayRowState, Servers, TryInstead, UnreachableHint, WayState,
 };
 
 use support::{Cut, Gate, Phone, ServingServer, WORKING, relay::TestRelay};
@@ -317,6 +317,49 @@ async fn pairing_through_a_relay_alone_asks_for_the_login_and_goes_on_once_it_is
     phone
         .listing_until(|listing| listed(listing, "Map the workspace"))
         .await;
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+/// A pairing that waits on a login waits only while its Invite lives: a
+/// login done after it has died leaves only a new Invite to pair by.
+#[tokio::test(flavor = "multi_thread")]
+async fn pairing_waits_on_a_login_only_while_its_invite_lives() {
+    let relay = TestRelay::start().await;
+    let life = Duration::from_secs(2);
+    let desk = ServingServer::start_with_invites_living("thin-relay-life", life).await;
+    desk.log_in_at(&relay, "octocat").await;
+    desk.serve_through(&relay).await;
+    let phone = Phone::new();
+    let invite = desk.invite(vec![Way::Relay(relay.address())]).await;
+    let issued = tokio::time::Instant::now();
+    let _read = phone.core.read_invite(invite.clone());
+    assert!(matches!(
+        phone
+            .core
+            .confirm_pairing(invite.clone(), "desk".to_owned(), "Pocket".to_owned())
+            .await,
+        PairingOutcome::LoginNeeded { .. }
+    ));
+
+    tokio::time::sleep_until(issued + life).await;
+    phone.logged_in(&relay, "octocat").await;
+    let outcome = phone
+        .core
+        .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
+        .await;
+    assert!(
+        matches!(
+            outcome,
+            PairingOutcome::Failed {
+                again: TryInstead::ScanAgain,
+                ..
+            }
+        ),
+        "{outcome:?}"
+    );
+    assert!(phone.servers().await.remotes.is_empty(), "nothing is kept");
 
     phone.shutdown();
     desk.shutdown().await;
@@ -795,6 +838,336 @@ async fn a_login_that_lapses_is_learned_from_a_refused_join() {
     phone
         .listing_until(|listing| listed(listing, "Map the workspace"))
         .await;
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+/// The ways of the one Remote held, as the Servers section reads them.
+fn ways(servers: &Servers) -> Vec<(String, WayState)> {
+    servers
+        .remotes
+        .first()
+        .map(|remote| {
+            remote
+                .ways
+                .iter()
+                .map(|way| (way.address.clone(), way.state))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// How many joins `phone` has asked of `relay`.
+fn joins(relay: &TestRelay, phone: &Phone) -> usize {
+    relay
+        .carried_for(&phone.fingerprint())
+        .iter()
+        .filter(|carried| carried.joins())
+        .count()
+}
+
+/// Waits until `phone` has kept what its Remote told of the Relays it Serves
+/// through, so a relaunch dials what it told.
+async fn kept(phone: &Phone, kept: impl Fn(&str) -> bool) {
+    let remotes = phone.directory().join("remotes.json");
+    tokio::time::timeout(support::PROGRESS_DEADLINE, async {
+        while !std::fs::read_to_string(&remotes).is_ok_and(|stored| kept(&stored)) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the told Relays are kept");
+}
+
+/// A Relay a Remote paired by its direct way turns on later appears beside
+/// it as "login needed", and is reached through once the phone logs in
+/// there; once it is turned off it goes, and is dialled no more.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_relay_turned_on_after_pairing_reads_login_needed_and_one_turned_off_stops_being_dialled()
+{
+    let relay = TestRelay::start().await;
+    let desk = ServingServer::start("thin-relay-told").await;
+    desk.log_in_at(&relay, "octocat").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let phone = Phone::with(timings());
+    assert_eq!(
+        pair(&phone, &desk, vec![Way::Direct(gate.address())]).await,
+        paired()
+    );
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder), "Map the workspace").await;
+    phone
+        .listing_until(|listing| listed(listing, "Map the workspace"))
+        .await;
+    assert_eq!(phone.servers().await.remotes[0].ways.len(), 1);
+
+    desk.serve_through(&relay).await;
+    let servers = phone
+        .servers_until(|servers| relay_way(servers).is_some())
+        .await;
+    assert_eq!(
+        relay_way(&servers),
+        Some((
+            WayState::LoginNeeded,
+            Some(LoginOffer {
+                relay: relay.address(),
+                words: "Log in".to_owned(),
+            })
+        ))
+    );
+    assert_eq!(servers.remotes[0].ways[1].words, "login needed");
+    assert!(servers.relays.is_empty(), "no Relay entry is made unasked");
+
+    // The Relay it was told of is one the phone may log in at, and reach
+    // the desk through once it has.
+    phone.logged_in(&relay, "octocat").await;
+    phone
+        .servers_until(|servers| {
+            relay_way(servers).is_some_and(|(state, _)| state == WayState::Answering)
+        })
+        .await;
+    gate.cut(Cut::Refusing);
+    phone.core.came_to_front();
+    desk.begin(&workspace(&holder), "Write the tests").await;
+    phone
+        .listing_until(|listing| listed(listing, "Write the tests"))
+        .await;
+
+    // Reached directly again, the desk stops Serving through the Relay.
+    gate.mend();
+    desk.stop_serving_through(&relay).await;
+    let servers = phone
+        .servers_until(|servers| ways(servers).len() == 1)
+        .await;
+    assert_eq!(
+        ways(&servers),
+        [(gate.address().to_string(), WayState::Answering)]
+    );
+    assert_eq!(
+        servers.relays.first().map(|row| row.state),
+        Some(RelayRowState::LoggedIn),
+        "the phone's Login there stands"
+    );
+    kept(&phone, |stored| !stored.contains(&relay.address())).await;
+
+    // Out of reach directly, the Relay is not dialled.
+    let joined = joins(&relay, &phone);
+    gate.cut(Cut::Refusing);
+    let phone = phone.relaunched();
+    let listing = phone
+        .listing_until(|listing| !listing.unreachable.is_empty())
+        .await;
+    assert_ne!(
+        listing.unreachable[0].sheet.hint,
+        UnreachableHint::LoginNeeded
+    );
+    assert_eq!(listing.unreachable[0].sheet.login, None);
+    assert_eq!(
+        joins(&relay, &phone),
+        joined,
+        "the Relay is dialled no more"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+/// A Remote paired through a Relay alone keeps up, through it, with the
+/// Relays it Serves through: one it turns on later reads "login needed";
+/// with the first turned off, the phone's way to it is through the second
+/// alone, which its sheet leads to logging in at; and the first is dialled
+/// no more.
+#[tokio::test(flavor = "multi_thread")]
+async fn pairing_through_a_relay_alone_follows_a_relay_turned_on_later() {
+    let first = TestRelay::start().await;
+    let second = TestRelay::start().await;
+    let (desk, _gate) = serving_through("thin-relay-follows", &first).await;
+    desk.log_in_at(&second, "octocat").await;
+    let phone = Phone::with(timings());
+    let invite = desk.invite(vec![Way::Relay(first.address())]).await;
+    let _read = phone.core.read_invite(invite.clone());
+    phone.logged_in(&first, "octocat").await;
+    assert_eq!(
+        phone
+            .core
+            .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
+            .await,
+        paired()
+    );
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder), "Map the workspace").await;
+    phone
+        .listing_until(|listing| listed(listing, "Map the workspace"))
+        .await;
+
+    desk.serve_through(&second).await;
+    let servers = phone
+        .servers_until(|servers| ways(servers).len() == 2)
+        .await;
+    assert_eq!(
+        ways(&servers)[1],
+        (
+            Way::Relay(second.address()).to_string(),
+            WayState::LoginNeeded
+        ),
+        "the Relay turned on later follows the first"
+    );
+    assert_eq!(
+        servers.remotes[0].ways[1].login,
+        Some(LoginOffer {
+            relay: second.address(),
+            words: "Log in".to_owned(),
+        })
+    );
+    assert_eq!(
+        servers
+            .relays
+            .iter()
+            .map(|row| row.relay.clone())
+            .collect::<Vec<_>>(),
+        [first.address()],
+        "no entry is made at the second unasked"
+    );
+
+    // The first turned off, it goes, though what it joins stands: the
+    // phone's way to the desk is through the second alone.
+    desk.stop_serving_through(&first).await;
+    let servers = phone
+        .servers_until(|servers| ways(servers).len() == 1)
+        .await;
+    assert_eq!(
+        ways(&servers),
+        [(
+            Way::Relay(second.address()).to_string(),
+            WayState::LoginNeeded
+        )]
+    );
+    kept(&phone, |stored| !stored.contains(&first.address())).await;
+
+    // Dialled afresh, the desk is out of reach until the phone logs in at
+    // the second, which its sheet leads to, and the first is dialled no
+    // more.
+    let joined = joins(&first, &phone);
+    let phone = phone.relaunched();
+    let listing = phone
+        .listing_until(|listing| {
+            listing
+                .unreachable
+                .first()
+                .is_some_and(|row| row.sheet.hint == UnreachableHint::LoginNeeded)
+        })
+        .await;
+    assert_eq!(
+        listing.unreachable[0]
+            .sheet
+            .login
+            .as_ref()
+            .map(|login| login.relay.clone()),
+        Some(second.address())
+    );
+    phone.logged_in(&second, "octocat").await;
+    desk.begin(&workspace(&holder), "Write the tests").await;
+    phone
+        .listing_until(|listing| listed(listing, "Write the tests"))
+        .await;
+    let servers = phone
+        .servers_until(|servers| {
+            ways(servers)
+                .first()
+                .is_some_and(|(_, state)| *state == WayState::Answering)
+        })
+        .await;
+    assert_eq!(
+        ways(&servers),
+        [(
+            Way::Relay(second.address()).to_string(),
+            WayState::Answering
+        )]
+    );
+    assert_eq!(
+        joins(&first, &phone),
+        joined,
+        "the first is dialled no more"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+}
+
+/// Over a login, a pairing through the Relay, reading through it and by a
+/// direct way, the phone asks a Relay for nothing but to prove its key, log
+/// in and join it to its Remote: it never waits there, as a Serving Server
+/// does, nor asks for its Account's Logins; and once the desk answers
+/// directly, nothing of the phone's stands at the Relay but what it joined.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_phone_keeps_no_connection_to_a_relay_and_asks_none_for_the_accounts_logins() {
+    let relay = TestRelay::start().await;
+    let (desk, gate) = serving_through("thin-relay-asks", &relay).await;
+    let phone = Phone::with(timings());
+    gate.cut(Cut::Refusing);
+    let invite = desk
+        .invite(vec![
+            Way::Direct(gate.address()),
+            Way::Relay(relay.address()),
+        ])
+        .await;
+    let _read = phone.core.read_invite(invite.clone());
+    phone.logged_in(&relay, "octocat").await;
+    assert_eq!(
+        phone
+            .core
+            .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
+            .await,
+        paired()
+    );
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder), "Map the workspace").await;
+    phone
+        .listing_until(|listing| listed(listing, "Map the workspace"))
+        .await;
+    assert!(joins(&relay, &phone) > 0, "the desk is reached through it");
+
+    gate.mend();
+    let phone = phone.relaunched();
+    desk.begin(&workspace(&holder), "Write the tests").await;
+    phone
+        .listing_until(|listing| listed(listing, "Write the tests"))
+        .await;
+    phone
+        .servers_until(|servers| {
+            servers.remotes.first().is_some_and(|remote| {
+                remote
+                    .ways
+                    .iter()
+                    .all(|way| way.state == WayState::Answering)
+            })
+        })
+        .await;
+
+    let carried = relay.carried_for(&phone.fingerprint());
+    let asked = carried
+        .iter()
+        .flat_map(|carried| carried.asked.iter().cloned())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(
+        asked
+            .iter()
+            .all(|asked| ["hello", "proof", "begin_login", "join"].contains(&asked.as_str())),
+        "{asked:?}"
+    );
+    assert!(asked.contains("begin_login") && asked.contains("join"));
+    tokio::time::timeout(support::PROGRESS_DEADLINE, async {
+        while relay
+            .carried_for(&phone.fingerprint())
+            .iter()
+            .any(|carried| carried.open && !carried.joins())
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("nothing of the phone's stands at the Relay but what it joined");
 
     phone.shutdown();
     desk.shutdown().await;

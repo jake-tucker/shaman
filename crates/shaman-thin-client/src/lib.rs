@@ -13,6 +13,7 @@
 //! compatibility promise: the app and its core are always built together.
 
 use std::{
+    collections::HashMap,
     fmt,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -773,6 +774,31 @@ impl ThinClient {
                 inner.listing.relays_changed();
             }
         });
+        // Whatever shows a Remote's ways shows them again as what it tells of
+        // the Relays it Serves through changes them: one turned on reads as
+        // this phone stands there, and is asked whether it answers; one
+        // turned off goes, and is dialled no more.
+        let mut told = inner.redeemer.told_changes();
+        let mut seen = told_ways(&inner.remotes.held());
+        let shown = Arc::downgrade(&inner);
+        runtime.spawn(async move {
+            while told.changed().await.is_ok() {
+                let Some(inner) = shown.upgrade() else {
+                    return;
+                };
+                let now = told_ways(&inner.remotes.held());
+                inner.remotes.refresh();
+                inner.listing.relays_changed();
+                for (name, ways) in &now {
+                    if seen.get(name) != Some(ways) {
+                        let inner = inner.clone();
+                        let name = name.clone();
+                        tokio::spawn(async move { inner.remotes.ask_ways_again(&name).await });
+                    }
+                }
+                seen = now;
+            }
+        });
         Ok(Arc::new(Self {
             runtime: Some(runtime),
             inner,
@@ -899,6 +925,13 @@ impl Drop for ThinClient {
             runtime.shutdown_background();
         }
     }
+}
+
+/// The ways of each Remote of `held`, by its name.
+fn told_ways(held: &[shaman_pairing::StoredRemote]) -> HashMap<String, Vec<shaman_protocol::Way>> {
+    held.iter()
+        .map(|stored| (stored.remote.name.clone(), stored.remote.ways.clone()))
+        .collect()
 }
 
 impl Inner {
