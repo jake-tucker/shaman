@@ -85,7 +85,7 @@ fn bare(root: &Path, name: &str) -> PathBuf {
 /// what the Server lists reads as what the test made.
 fn roots() -> (tempfile::TempDir, PathBuf) {
     let holder = tempfile::tempdir().expect("make the Workspace Root");
-    let root = canonical(holder.path());
+    let root = shaman::paths::canonical(holder.path()).expect("the Workspace Root stands");
     (holder, root)
 }
 
