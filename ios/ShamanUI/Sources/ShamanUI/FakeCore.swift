@@ -188,7 +188,7 @@
       guard let remote = currentRemote() else {
         return Landing(
           title: "New session", place: "", workspace: nil, asks: "Pair with a server to begin a session there",
-          unreachable: nil, note: note, placeholder: "Message", canSend: false,
+          agent: nil, unreachable: nil, note: note, placeholder: "Message", canSend: false,
           draft: FakeOpenedSession.landingDraft)
       }
       let named = held.withLock { $0.count > 1 }
@@ -204,6 +204,7 @@
         asks: workspace == nil
           ? "Choose a workspace\(named ? " on \(remote)" : "") to begin in: narrow the listing to one, or open a "
             + "session there." : nil,
+        agent: Self.agents[remote],
         unreachable: cut
           ? "\(named ? remote : "The server") is unreachable. Nothing begins there until it answers." : nil,
         note: note, placeholder: "Message", canSend: workspace != nil && !cut,
@@ -214,6 +215,10 @@
     private static let workspaceGlyphs = [
       "shaman": "\u{f0238}", "dotfiles": "\u{f018d}", "home-assistant": "\u{f07d0}", "billing-api": "\u{f0070}",
     ]
+
+    /// The Agent each of the fake's Remotes says a new Session would get: the home lab's has no Provider able to
+    /// serve, and the laptop is too old to say.
+    private static let agents = ["workstation": "Claude · Fable 5.2 · high", "homelab": "Agent unavailable"]
 
     /// The Descriptions of the fake's Workspaces.
     private static let descriptions = [

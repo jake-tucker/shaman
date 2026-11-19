@@ -144,8 +144,10 @@ final class LivePairingTests: XCTestCase {
     let workspace = app.descendants(matching: .any)["landing.workspace"]
     XCTAssertTrue(workspace.waitForExistence(timeout: 10), "the Landing names where it begins")
     XCTAssertEqual(workspace.label, "workspace")
-    XCTAssertTrue(app.descendants(matching: .any)["landing.place"].label.hasSuffix(" · workspace"))
+    XCTAssertEqual(app.descendants(matching: .any)["landing.place"].label, "workspace", "with one Remote no Origin")
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the keyboard is up on arrival")
+    let agent = app.descendants(matching: .any)["landing.agent"]
+    XCTAssertTrue(agent.waitForExistence(timeout: 15), "the scratch Server says what a new Session would get")
     attach(app, "The new-session screen on the scratch Server")
     let prompt = "Reply with the single word begun, and nothing else. Use no tools."
     app.descendants(matching: .any)["landing.composer"].typeText(prompt)

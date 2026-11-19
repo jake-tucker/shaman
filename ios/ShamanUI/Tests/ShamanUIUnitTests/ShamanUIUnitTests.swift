@@ -1123,6 +1123,7 @@ private final class HeldTime: BackgroundTasks {
     defer { following.cancel() }
     try await until(model) { $0.landing != nil }
     #expect(model.landing?.place == "shaman", "with one Remote no Origin is named")
+    #expect(model.landing?.agent == "Claude · Fable 5.2 · high")
     #expect(model.text == "half a thought")
     model.text = "half a thought, finished"
     #expect(core.draft(for: FakeOpenedSession.landingDraft).text == "half a thought, finished")

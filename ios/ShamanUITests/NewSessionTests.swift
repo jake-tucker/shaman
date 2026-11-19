@@ -63,6 +63,7 @@ final class NewSessionTests: XCTestCase {
     XCTAssertEqual(element("landing.workspace", in: app).label, "shaman")
     XCTAssertEqual(element("landing.origin", in: app).label, "workstation")
     XCTAssertTrue(element("landing.description", in: app).label.hasPrefix("A terminal client for coding agents"))
+    XCTAssertEqual(element("landing.agent", in: app).label, "Claude · Fable 5.2 · high", "the Agent it will get")
     XCTAssertFalse(app.buttons["landing.send"].isEnabled, "nothing written yet")
     attach(app, "The new-session screen where the Outlook stands")
 
@@ -217,6 +218,8 @@ final class NewSessionTests: XCTestCase {
     let line = element("landing.unreachable", in: app)
     XCTAssertTrue(line.exists)
     XCTAssertEqual(line.label, "homelab is unreachable. Nothing begins there until it answers.")
+    XCTAssertEqual(
+      element("landing.agent", in: app).label, "Agent unavailable", "where its Server says none would serve")
     write("Upgrade the add-ons", in: app)
     XCTAssertEqual(element("landing.composer", in: app).value as? String, "Upgrade the add-ons", "it takes a draft")
     XCTAssertFalse(app.buttons["landing.send"].isEnabled)

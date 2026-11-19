@@ -76,8 +76,9 @@ private struct LandingView: View {
   }
 }
 
-/// The middle of the Landing: the Workspace the Session will begin in, by its Icon, name, Origin and Description; or,
-/// where none is remembered for the Outlook's Remote, the line asking for one.
+/// The middle of the Landing: the Workspace the Session will begin in, by its Icon, name, Origin and Description, or,
+/// where none is remembered for the Outlook's Remote, the line asking for one; and the Agent a Session begun here would
+/// get, where its Server says.
 private struct LandingMiddle: View {
   let landing: Landing
 
@@ -114,6 +115,19 @@ private struct LandingMiddle: View {
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("landing.description")
         }
+      }
+      // Shown, not chosen: what the Server says a Session begun here would get.
+      if let agent = landing.agent {
+        Label {
+          Text(verbatim: agent)
+        } icon: {
+          Image(systemName: "sparkle")
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .padding(.top, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("landing.agent")
       }
       if let asks = landing.asks {
         Image(systemName: "questionmark.folder")

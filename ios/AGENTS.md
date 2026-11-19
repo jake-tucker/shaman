@@ -110,6 +110,8 @@ Session the fake began, which the listing then carries; a Prompt holding "refuse
 and one holding "unanswered" is never answered, so it may have begun, which the Landing says once it is left; each begins
 when tried again. In `paired` no Workspace is remembered, so the screen asks for one and send is disabled;
 in `unreachable`, opening `homelab-key/2` turns the Outlook toward the home lab, where nothing begins until it answers.
+The workstation says a new Session would get "Claude · Fable 5.2 · high", the home lab that none would serve, and the
+laptop says nothing, as a Server too old to say does.
 
 ```sh
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake composing --compose
