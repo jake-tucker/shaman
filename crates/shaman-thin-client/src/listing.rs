@@ -69,6 +69,10 @@ pub struct Listing {
     /// What the screen is titled: the scope it lists, which begins as every
     /// Remote's Sessions, or with one Remote every Workspace's.
     pub title: String,
+    /// The scope it is narrowed to now, as the core is handed it back: the
+    /// plain string Swift keeps in scene state, to hand back after a cold
+    /// start.
+    pub scope: String,
     /// The menu the title opens, which narrows the listing, in sections.
     pub scopes: Vec<ScopeSection>,
     /// What the search field beneath the title says while it is empty.
@@ -250,7 +254,7 @@ impl Scope {
     /// The scope as it stands among `remotes`: Everywhere where it names a
     /// Remote not held, or the one Remote held whole, which is everywhere;
     /// and the whole of its Remote where it names a Workspace that Remote
-    /// does not offer.
+    /// does not offer, once it has said what it offers.
     fn within(&self, remotes: &[Answered]) -> Self {
         let Some(remote) = self.remote(remotes) else {
             return Self::Everywhere;
@@ -267,16 +271,32 @@ impl Scope {
         match self {
             Self::Everywhere | Self::Remote { .. } => whole(),
             Self::Workspace { workspace, .. } => {
-                if remote
-                    .offered_workspaces()
-                    .iter()
-                    .any(|offered| offered.id == *workspace)
-                {
+                if !remote.offers_known() || remote.offers(workspace) {
                     self.clone()
                 } else {
                     whole()
                 }
             }
+        }
+    }
+
+    /// The scope handed back after a cold start as it stands among
+    /// `remotes`: itself, but Everywhere where it is gone, as where it names
+    /// a Remote not held, or a Workspace its Remote no longer offers once it
+    /// has said what it offers; or none while that Remote has yet to say.
+    fn restored(&self, remotes: &[Answered]) -> Option<Self> {
+        let Some(remote) = self.remote(remotes) else {
+            return Some(Self::Everywhere);
+        };
+        match self {
+            Self::Everywhere | Self::Remote { .. } => Some(self.clone()),
+            Self::Workspace { workspace, .. } => remote.offers_known().then(|| {
+                if remote.offers(workspace) {
+                    self.clone()
+                } else {
+                    Self::Everywhere
+                }
+            }),
         }
     }
 
@@ -314,6 +334,23 @@ impl Scope {
 pub(crate) struct Narrowing {
     pub scope: Scope,
     pub query: String,
+    /// Whether `scope` was handed back after a cold start and its Remote has
+    /// yet to say whether it still offers what it names.
+    pub unjudged: bool,
+}
+
+impl Narrowing {
+    /// Judges a scope handed back after a cold start among `remotes`, once
+    /// they can say whether it is gone.
+    fn judge(&mut self, remotes: &[Answered]) {
+        if !self.unjudged {
+            return;
+        }
+        if let Some(scope) = self.scope.restored(remotes) {
+            self.scope = scope;
+            self.unjudged = false;
+        }
+    }
 }
 
 /// What narrowing the listing turns the Outlook toward: a Remote, and the
@@ -464,6 +501,20 @@ impl Answered {
         self.workspaces = Some(listing.workspaces);
     }
 
+    /// Whether it has said which Workspaces it offers: both those its
+    /// Server lists and those its Sessions are in, each of which is read
+    /// apart.
+    fn offers_known(&self) -> bool {
+        self.workspaces.is_some() && self.sessions.is_some()
+    }
+
+    /// Whether the menu offers its Workspace `workspace`.
+    fn offers(&self, workspace: &WorkspaceId) -> bool {
+        self.offered_workspaces()
+            .iter()
+            .any(|offered| offered.id == *workspace)
+    }
+
     /// The Workspaces the menu offers of this Remote: those its Server lists,
     /// then any other a Session of it is in, but never its Sidekick
     /// Workspace, in which nothing a phone begins begins.
@@ -594,6 +645,7 @@ pub(crate) fn present(
         waiting: (!unanswered.is_empty()).then(|| reaching(&unanswered, origin_named)),
         unreachable,
         title: scope_title(remotes, &scope, origin_named),
+        scope: scope.reference(),
         scopes: menu(remotes, &scope, origin_named),
         search_prompt: "Search by title".to_owned(),
         empty,
@@ -636,13 +688,17 @@ fn scope_title(remotes: &[Answered], scope: &Scope, origin_named: bool) -> Strin
     let Scope::Workspace { workspace, .. } = scope else {
         return remote.name.clone();
     };
-    // A scope stands at a Workspace only where its Remote offers it.
-    let name = remote
+    // A scope stands at a Workspace only where its Remote offers it, or,
+    // handed back after a cold start, while its Remote has yet to say what it
+    // offers, when it is titled by its Remote.
+    let Some(name) = remote
         .offered_workspaces()
         .into_iter()
         .find(|offered| offered.id == *workspace)
         .map(|offered| remote.paths.workspace_name(offered))
-        .unwrap_or_default();
+    else {
+        return remote.name.clone();
+    };
     if origin_named {
         format!("{} · {name}", remote.name)
     } else {
@@ -1221,10 +1277,24 @@ impl Listings {
                 },
             });
             state.narrowing.scope = scope;
+            state.narrowing.unjudged = false;
             turn
         };
         self.shared.render();
         turn
+    }
+
+    /// Narrows the listing to the scope `reference` names, as Swift kept it
+    /// and hands it back after a cold start, turning nothing: held as it is
+    /// while its Remote has yet to say what it offers, and Everywhere where
+    /// it is gone.
+    pub fn restore(&self, reference: &str) {
+        {
+            let mut state = self.shared.lock();
+            state.narrowing.scope = Scope::of(reference);
+            state.narrowing.unjudged = true;
+        }
+        self.shared.render();
     }
 
     /// Searches the listing by Title for `query`, until the core is opened
@@ -1935,6 +2005,7 @@ impl Shared {
                 .iter()
                 .map(|followed| followed.answered.clone())
                 .collect::<Vec<_>>();
+            state.narrowing.judge(&answered);
             let (listing, next) = present(
                 &answered,
                 SessionTimestamp::now(),

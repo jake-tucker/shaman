@@ -62,6 +62,11 @@ public protocol Core: AnyObject, Sendable {
   /// Outlook toward it; Everywhere turns nothing.
   func narrowListing(_ scope: String) async throws(ActError)
 
+  /// Narrows the listing to the scope a listing said it stood at, as the scene kept it and hands it back after a cold
+  /// start, turning nothing. A scope that is gone, as one naming a Remote no longer held or a Workspace its Remote no
+  /// longer offers, narrows it to Everywhere.
+  func restoreListing(_ scope: String)
+
   /// Searches the listing by Title; an empty text searches for nothing.
   func searchListing(_ text: String)
 

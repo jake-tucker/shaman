@@ -69,6 +69,7 @@
       let hidden = settled.count - min(onShow, settled.count)
       return Listing(
         title: scope.title(originNamed: originNamed),
+        scope: scope.reference,
         scopes: menu(on: remotes, sessions: sessions, chosen: scope, originNamed: originNamed),
         searchPrompt: "Search by title",
         active: found == nil ? active : [],
@@ -335,6 +336,19 @@
       case .workspace(_, let workspace):
         return FakeSession.workspaces(on: remote, sessions: sessions).contains(workspace) ? self : whole
       }
+    }
+
+    /// The scope handed back after a cold start as it stands among the Remotes `remotes`: itself, but Everywhere where
+    /// it is gone, as where it names a Remote not held or a Workspace its Remote does not offer. The fake's Remotes have
+    /// always said what they offer.
+    func restored(_ remotes: [String], sessions: [FakeSession]) -> FakeScope {
+      guard let remote, remotes.contains(remote) else { return .everywhere }
+      if case .workspace(_, let workspace) = self,
+        !FakeSession.workspaces(on: remote, sessions: sessions).contains(workspace)
+      {
+        return .everywhere
+      }
+      return self
     }
 
     func holds(_ session: FakeSession) -> Bool {

@@ -650,6 +650,58 @@ async fn a_session_its_server_no_longer_holds_says_it_is_gone() {
     desk.shutdown().await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_handed_back_after_a_cold_start_is_read_afresh_or_says_it_is_gone() {
+    let desk = ServingServer::start("thin-open-restored").await;
+    let elsewhere = ServingServer::start("thin-open-restored-elsewhere").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+    let kept = row(&phone, "Map the workspace").await.session;
+    let deleted = desk
+        .begin(&workspace(&holder, "shaman"), "Tidy the build")
+        .await;
+    let deleted = format!("{}/{deleted}", desk.fingerprint());
+    row(&phone, "Tidy the build").await;
+
+    // Handed back at once, before desk has answered the phone launched
+    // again, the reference Swift kept is read afresh.
+    let phone = phone.relaunched();
+    let reading = phone.open(&kept);
+    let frame = reading
+        .frame_until(|frame| frame.title == "Map the workspace")
+        .await;
+    assert_eq!(frame.gone, None);
+    let conversation = reading
+        .conversation_until(|items| loaded(items) && failed_turn(items))
+        .await;
+    assert!(!conversation.items.is_empty());
+
+    // A Session its Server no longer holds says so.
+    desk.delete(session_id(&deleted)).await;
+    let reading = phone.open(&deleted);
+    let frame = reading.frame_until(|frame| frame.gone.is_some()).await;
+    assert_eq!(frame.gone.as_deref(), Some("This session no longer exists"));
+
+    // One on a Remote the phone no longer holds says so at once.
+    let reading = phone.open(&format!(
+        "{}/{}",
+        elsewhere.fingerprint(),
+        session_id(&kept)
+    ));
+    assert_eq!(
+        reading.frame().await.gone.as_deref(),
+        Some("This phone is no longer paired with the server this session is on")
+    );
+    assert!(!reading.session.is_reading());
+
+    phone.shutdown();
+    desk.shutdown().await;
+    elsewhere.shutdown().await;
+}
+
 /// The text of every Prompt the Server holds of the Session `session`, as
 /// it was delivered.
 async fn prompts(server: &ServingServer, session: SessionId) -> Vec<(String, PromptDelivery)> {

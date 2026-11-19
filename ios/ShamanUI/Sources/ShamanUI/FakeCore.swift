@@ -381,6 +381,12 @@
       listingListeners.tell(currentListing())
     }
 
+    public func restoreListing(_ reference: String) {
+      let remotes = held.withLock { $0.map(\.name) }
+      scope.withLock { $0 = FakeScope(reference).restored(remotes, sessions: sessions.withLock { $0 }) }
+      listingListeners.tell(currentListing())
+    }
+
     public func searchListing(_ text: String) {
       query.withLock { $0 = text }
       listingListeners.tell(currentListing())

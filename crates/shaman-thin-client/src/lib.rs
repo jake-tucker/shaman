@@ -501,6 +501,15 @@ impl ThinClient {
         .await?
     }
 
+    /// Narrows the listing to the scope `scope` names, as Swift kept it from
+    /// a listing in scene state and hands it back after a cold start, and
+    /// turns nothing. A scope that is gone narrows it to Everywhere: one
+    /// naming a Remote not held, or a Workspace its Remote no longer offers
+    /// once it has said what it offers; until then it stands as handed back.
+    pub fn restore_listing(&self, scope: String) {
+        self.inner.listing.restore(&scope);
+    }
+
     /// Searches the listing by Title for `text`, until the core is opened
     /// again; an empty one searches for nothing.
     pub fn search_listing(&self, text: String) {

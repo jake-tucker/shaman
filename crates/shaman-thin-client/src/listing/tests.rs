@@ -860,14 +860,14 @@ fn choice<'a>(listing: &'a Listing, words: &str) -> &'a ScopeChoice {
 fn scoped(scope: Scope) -> Narrowing {
     Narrowing {
         scope,
-        query: String::new(),
+        ..Narrowing::default()
     }
 }
 
 fn searched(query: &str) -> Narrowing {
     Narrowing {
-        scope: Scope::Everywhere,
         query: query.to_owned(),
+        ..Narrowing::default()
     }
 }
 
@@ -1133,6 +1133,7 @@ fn a_search_answers_within_the_scope() {
                 fingerprint: "lab-key".to_owned(),
             },
             query: "t".to_owned(),
+            ..Narrowing::default()
         },
     );
     let found = listing.found.expect("found");
@@ -1303,6 +1304,91 @@ fn narrowing_to_a_workspace_no_longer_offered_turns_the_outlook_toward_its_remot
         })
     );
     assert_eq!(listings.listing().borrow().title, "desk");
+}
+
+/// `answered` as a Remote held that has yet to answer.
+fn unanswered(answered: &Answered) -> Answered {
+    Answered {
+        sessions: None,
+        workspaces: None,
+        ..answered.clone()
+    }
+}
+
+/// Has the Remote `name` the listings hold answer as `answered` says.
+fn answer(listings: &Listings, answered: Answered) {
+    let generation = listings
+        .shared
+        .lock()
+        .remotes
+        .iter()
+        .find(|followed| followed.answered.name == answered.name)
+        .map(|followed| followed.generation)
+        .expect("held");
+    let name = answered.name.clone();
+    listings
+        .shared
+        .change(&name, generation, |held| *held = answered);
+}
+
+#[test]
+fn a_scope_handed_back_is_held_until_its_remote_says_what_it_offers() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let (listings, _directory) = listings(&runtime);
+    let [desk, lab] = desk_and_lab();
+    listings.hold(unanswered(&desk));
+    listings.hold(lab);
+    let dotfiles = Scope::Workspace {
+        fingerprint: "desk-key".to_owned(),
+        workspace: workspace_id("dotfiles"),
+    };
+
+    listings.restore(&dotfiles.reference());
+    let held = listings.listing().borrow().clone();
+    assert_eq!(held.scope, dotfiles.reference(), "held as handed back");
+    assert_eq!(held.title, "desk", "titled by its Remote until it answers");
+    assert_eq!(held.waiting.as_deref(), Some("Reaching desk…"));
+
+    answer(&listings, desk);
+    let restored = listings.listing().borrow().clone();
+    assert_eq!(restored.scope, dotfiles.reference());
+    assert_eq!(restored.title, "desk · dotfiles");
+    assert_eq!(titles(&restored.active), ["Tidy zsh"]);
+}
+
+#[test]
+fn a_scope_handed_back_that_is_gone_is_everywhere_and_turns_nothing() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let (listings, _directory) = listings(&runtime);
+    let [desk, lab] = desk_and_lab();
+    listings.hold(unanswered(&desk));
+    listings.hold(lab);
+
+    // A Remote not held is gone at once.
+    for gone in ["remote/gone-key", "workspace/gone-key/shaman", "nowhere"] {
+        listings.restore(gone);
+        assert_eq!(listings.listing().borrow().scope, "everywhere", "{gone}");
+    }
+
+    // A Workspace no longer offered is gone once its Remote answers, and
+    // the listing then stands everywhere, not at the whole of its Remote,
+    // as a scope narrowed to while the core runs does.
+    let gone = Scope::Workspace {
+        fingerprint: "desk-key".to_owned(),
+        workspace: workspace_id("gone"),
+    };
+    listings.restore(&gone.reference());
+    assert_eq!(listings.listing().borrow().scope, gone.reference());
+    answer(&listings, desk.clone());
+    let fallen = listings.listing().borrow().clone();
+    assert_eq!(fallen.scope, "everywhere");
+    assert_eq!(fallen.title, "Everywhere");
+    assert_eq!(fallen.active.len(), 3);
+
+    // Judged once: the Workspace offered again later finds the listing
+    // everywhere still.
+    answer(&listings, with_workspaces(desk, &["shaman", "gone"]));
+    assert_eq!(listings.listing().borrow().scope, "everywhere");
 }
 
 /// The Remote `name` reading Unreachable as `why` says, its last answer

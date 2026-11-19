@@ -389,6 +389,137 @@ async fn narrowing_turns_the_outlook_which_is_kept_and_the_scope_is_not() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_scope_handed_back_after_a_cold_start_narrows_the_listing_again_and_turns_nothing() {
+    let desk = ServingServer::start("thin-list-restore-desk").await;
+    let lab = ServingServer::start("thin-list-restore-lab").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    pair(&phone, &lab, "lab").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+    desk.begin(&workspace(&holder, "dotfiles"), "Tidy zsh")
+        .await;
+    lab.begin(&workspace(&holder, WORKING), "Upgrade the lab")
+        .await;
+    let listing = phone
+        .listing_until(|listing| choice(listing, "dotfiles").is_some())
+        .await;
+    assert_eq!(listing.scope, "everywhere", "the listing begins everywhere");
+
+    // What the listing says it is narrowed to is what Swift keeps.
+    let dotfiles = choice(&listing, "dotfiles").expect("offered");
+    phone
+        .core
+        .narrow_listing(dotfiles.scope.clone())
+        .await
+        .expect("narrowed");
+    let kept = phone
+        .listing_until(|listing| listing.title == "desk · dotfiles")
+        .await
+        .scope;
+    assert_eq!(kept, dotfiles.scope);
+    phone
+        .core
+        .narrow_listing(choice(&listing, "All of lab").expect("offered").scope)
+        .await
+        .expect("narrowed");
+    assert_eq!(phone.outlook().await, outlook("lab", None));
+
+    // Handed back at once, before desk has answered the phone launched
+    // again, the scope stands as it was kept until desk says what it offers.
+    let phone = phone.relaunched();
+    phone.core.restore_listing(kept.clone());
+    assert_eq!(phone.listing_until(|_| true).await.scope, kept);
+    let restored = phone
+        .listing_until(|listing| listing.title == "desk · dotfiles" && !listing.active.is_empty())
+        .await;
+    assert_eq!(titles(&restored), ["Tidy zsh"]);
+    assert_eq!(restored.scope, kept);
+    assert!(
+        choice(&restored, "dotfiles").is_some_and(|choice| choice.chosen),
+        "{:?}",
+        restored.scopes
+    );
+    assert_eq!(
+        phone.outlook().await,
+        outlook("lab", None),
+        "restoring a scope turns nothing"
+    );
+
+    // A Remote's whole is handed back as it was kept.
+    phone
+        .core
+        .restore_listing(choice(&restored, "All of desk").expect("offered").scope);
+    let whole = phone.listing_until(|listing| listing.title == "desk").await;
+    assert_eq!(titles(&whole), ["Tidy zsh", "Map the workspace"]);
+
+    phone.shutdown();
+    desk.shutdown().await;
+    lab.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_scope_handed_back_that_is_gone_narrows_the_listing_to_everywhere() {
+    let desk = ServingServer::start("thin-list-restore-gone-desk").await;
+    let lab = ServingServer::start("thin-list-restore-gone-lab").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    pair(&phone, &lab, "lab").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+    lab.begin(&workspace(&holder, WORKING), "Upgrade the lab")
+        .await;
+    let listing = phone
+        .listing_until(|listing| choice(listing, "shaman").is_some())
+        .await;
+    let shaman = choice(&listing, "shaman").expect("offered").scope;
+    let phone = phone.relaunched();
+
+    // A Remote this phone no longer holds is gone at once.
+    phone
+        .core
+        .restore_listing("remote/a-server-never-paired".to_owned());
+    let everywhere = phone.listing_until(|_| true).await;
+    assert_eq!(everywhere.scope, "everywhere");
+    assert_eq!(everywhere.title, "Everywhere");
+    phone
+        .core
+        .restore_listing("workspace/a-server-never-paired/1".to_owned());
+    assert_eq!(phone.listing_until(|_| true).await.scope, "everywhere");
+
+    // A Workspace its Remote no longer offers is gone once the Remote has
+    // said what it offers, and then the listing stands everywhere, not at
+    // the whole of that Remote.
+    let elsewhere = shaman.replace(
+        shaman.rsplit('/').next().expect("a Workspace named"),
+        "a-workspace-gone",
+    );
+    phone.core.restore_listing(elsewhere);
+    let fallen = phone
+        .listing_until(|listing| listing.scope == "everywhere" && listing.active.len() == 2)
+        .await;
+    assert_eq!(fallen.title, "Everywhere");
+    assert!(
+        phone
+            .listing_until(|listing| listing.active.len() == 2)
+            .await
+            .scope
+            == "everywhere",
+        "it stays everywhere"
+    );
+
+    // Anything that is no scope at all is Everywhere too.
+    phone.core.restore_listing("not a scope".to_owned());
+    assert_eq!(phone.listing_until(|_| true).await.scope, "everywhere");
+
+    phone.shutdown();
+    desk.shutdown().await;
+    lab.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_remote_paired_again_under_a_new_name_keeps_the_workspace_remembered_for_it() {
     let desk = ServingServer::start("thin-list-renamed").await;
     let phone = Phone::new();

@@ -87,6 +87,10 @@ public final class LiveCore: Core {
     try await acted { try await client.narrowListing(scope: scope) }
   }
 
+  public func restoreListing(_ scope: String) {
+    client.restoreListing(scope: scope)
+  }
+
   public func searchListing(_ text: String) {
     client.searchListing(text: text)
   }
