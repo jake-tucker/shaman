@@ -244,6 +244,7 @@ impl OpenSession {
         });
         if let Some((text, may_have_begun, sent)) = discarded {
             self.acting.left(&text, may_have_begun, sent);
+            self.acting.discarded(may_have_begun);
         }
         if let Some(reader) = self
             .reader
@@ -735,6 +736,12 @@ fn opened(
     });
     let held = Local {
         provisional,
+        // What the composer holds that may have been sent says so, in this
+        // run as in the last.
+        note: asked
+            .drafts
+            .maybe_sent(reference)
+            .then(|| frame::MAY_HAVE_BEEN_SENT.to_owned()),
         ..Local::default()
     };
     let (frame, frame_seen) = watch::channel(frame_of(
@@ -1068,6 +1075,7 @@ impl Acting {
     fn stand(&self, answered: Result<SessionSnapshot, Progress>) {
         let mut left = None;
         let mut begun = None;
+        let mut discarded = None;
         self.local.send_modify(|local| {
             let closed = local.closed;
             let Some(provisional) = local.provisional.as_mut() else {
@@ -1084,11 +1092,13 @@ impl Acting {
                     provisional.created = Some(Box::new(created));
                 }
                 Err(standing) if closed => {
+                    let may_have_begun = standing == Progress::MayHaveBegun;
                     left = Some((
                         provisional.prompt.text.clone(),
-                        standing == Progress::MayHaveBegun,
+                        may_have_begun,
                         provisional.sent,
                     ));
+                    discarded = Some(may_have_begun);
                     local.provisional = None;
                 }
                 Err(standing) => provisional.progress = standing,
@@ -1100,6 +1110,17 @@ impl Acting {
         }
         if let Some((text, may_have_begun, sent)) = left {
             self.left(&text, may_have_begun, sent);
+        }
+        if let Some(may_have_begun) = discarded {
+            self.discarded(may_have_begun);
+        }
+    }
+
+    /// The Session being begun was discarded: where it surely was not
+    /// begun, nothing opens it again, and its own composer's draft goes.
+    fn discarded(&self, may_have_begun: bool) {
+        if !may_have_begun {
+            self.drafts.abandoned(&self.reference);
         }
     }
 
@@ -1129,9 +1150,10 @@ impl Acting {
     /// `sent` from the Landing, as what that Prompt on its way became.
     fn left(&self, text: &str, may_have_begun: bool, sent: Option<drafts::Sent>) {
         match sent {
-            Some(sent) => self
-                .drafts
-                .give_back_sent(beginning::LANDING_DRAFT, sent, text),
+            Some(sent) => {
+                self.drafts
+                    .give_back_sent(beginning::LANDING_DRAFT, sent, text, may_have_begun);
+            }
             None => self.drafts.give_back(beginning::LANDING_DRAFT, text),
         }
         if may_have_begun {
@@ -1157,7 +1179,7 @@ impl Acting {
         let mut opening = self.opening()?;
         // Kept in the composer's draft until its Server answers, so it is
         // there the next run should the app end first.
-        let sent = self.drafts.sending(&self.reference, &text);
+        let sent = self.drafts.sending(&self.reference, &text, None);
         let id = PromptId::new();
         self.local.send_modify(|local| {
             local.note = None;
@@ -1202,7 +1224,8 @@ impl Acting {
                         local.note = Some(frame::MAY_HAVE_BEEN_SENT.to_owned());
                     }
                 });
-                self.drafts.give_back_sent(&self.reference, sent, &text);
+                self.drafts
+                    .give_back_sent(&self.reference, sent, &text, maybe_sent);
                 Err(said(unanswered, "The server did not answer"))
             }
         }

@@ -269,7 +269,13 @@ impl ThinClient {
     /// draft's listeners are told. It is written to the directory a moment
     /// after the last change, and as the app leaves the front.
     pub fn set_draft(&self, session: String, text: String, version: u64) {
-        self.inner.drafts.set(&session, text, version);
+        // The Landing's is written for the Remote the Outlook stands at, and
+        // dropped with it.
+        let remote = (session == beginning::LANDING_DRAFT)
+            .then(|| self.inner.remotes.standing())
+            .flatten()
+            .and_then(|(remote, _)| self.inner.listing.fingerprint(&remote));
+        self.inner.drafts.set_for(&session, text, version, remote);
     }
 
     /// Tells `listener` the draft of the composer of the Session `session`
@@ -463,7 +469,13 @@ impl ThinClient {
         }
         // Kept in the Landing's draft until its Server answers with the
         // Session, so it is there the next run should the app end first.
-        let sent = self.inner.drafts.sending(beginning::LANDING_DRAFT, &text);
+        let sent =
+            self.inner
+                .drafts
+                .sending(beginning::LANDING_DRAFT, &text, Some(fingerprint.clone()));
+        // Its own composer's draft is not dropped by a listing that does not
+        // hold it yet.
+        self.inner.drafts.beginning(&reference);
         let provisional =
             beginning::Provisional::new(session_id, workspace.path.clone(), text, place)
                 .sent_from_landing(sent);
@@ -789,6 +801,11 @@ impl ThinClient {
         );
         listing.follow(&remotes.held());
         let trees = tree::Trees::new(runtime.handle().clone(), listing.notices());
+        // A beginning whose answer never came, as the app was last ended, may
+        // have begun.
+        let landing_note = drafts
+            .maybe_sent(beginning::LANDING_DRAFT)
+            .then(|| beginning::MAYBE_BEGUN_LEFT.to_owned());
         let inner = Arc::new(Inner {
             records,
             record: AsyncMutex::new(record),
@@ -800,10 +817,13 @@ impl ThinClient {
             remotes,
             listing,
             pairing: AsyncMutex::new(()),
+            acts: {
+                let drafts = drafts.clone();
+                acts::Acts::settling_with(move || drafts.write_now())
+            },
             drafts,
-            acts: acts::Acts::default(),
             trees,
-            landing_note: Arc::new(watch::Sender::new(None)),
+            landing_note: Arc::new(watch::Sender::new(landing_note)),
             workspace_query: watch::Sender::new(String::new()),
             timings,
         });
@@ -1812,24 +1832,58 @@ mod tests {
     }
 
     #[test]
-    fn a_draft_of_a_session_on_a_remote_not_held_is_dropped_as_the_core_opens() {
+    fn a_draft_written_for_a_remote_not_held_is_dropped_as_the_core_opens() {
         let directory = tempfile::tempdir().unwrap();
         let key = TestKey::new();
         let session = format!("desk-key/{}", shaman_protocol::SessionId::new());
         drop(opened(directory.path(), &key));
-        std::fs::write(
-            directory.path().join(drafts::DRAFTS_FILE),
-            serde_json::to_vec(&serde_json::json!({
-                session.clone(): "half a thought",
-                landing(): "a new one",
-            }))
-            .unwrap(),
-        )
-        .unwrap();
+        let keep = |landing_for: serde_json::Value| {
+            std::fs::write(
+                directory.path().join(drafts::DRAFTS_FILE),
+                serde_json::to_vec(&serde_json::json!({
+                    session.clone(): {"text": "half a thought"},
+                    landing(): landing_for,
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        };
 
+        keep(serde_json::json!({"text": "a new one", "remote": "desk-key"}));
         let core = opened(directory.path(), &key);
-        assert_eq!(core.draft(session), Draft::default());
-        assert_eq!(core.draft(landing()).text, "a new one");
+        assert_eq!(core.draft(session.clone()), Draft::default());
+        assert_eq!(
+            core.draft(landing()),
+            Draft::default(),
+            "the Landing's, written where the Outlook stood at a Remote not held"
+        );
+        drop(core);
+
+        keep(serde_json::json!({"text": "a new one"}));
+        let core = opened(directory.path(), &key);
+        assert_eq!(
+            core.draft(landing()).text,
+            "a new one",
+            "written for no Remote"
+        );
+    }
+
+    #[test]
+    fn a_draft_kept_under_a_lost_key_is_not_there_under_the_new_one() {
+        let directory = tempfile::tempdir().unwrap();
+        let (lost, new) = (TestKey::new(), TestKey::new());
+        let core = opened(directory.path(), &lost);
+        core.set_draft(landing(), "half a thought".to_owned(), 0);
+        core.left_front();
+        drop(core);
+        assert_eq!(
+            opened(directory.path(), &lost).draft(landing()).text,
+            "half a thought"
+        );
+
+        let core = opened(directory.path(), &new);
+        assert_eq!(core.draft(landing()), Draft::default());
+        assert!(!directory.path().join(drafts::DRAFTS_FILE).exists());
     }
 
     #[test]

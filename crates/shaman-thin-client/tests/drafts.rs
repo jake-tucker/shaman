@@ -2,8 +2,11 @@
 //! Serving Server in process: there after the app is ended, a Prompt on its
 //! way kept in its draft until its Server answers, and a draft dropped as its
 //! Prompt is answered, as its Session is absent from a listing its Remote
-//! answered with, and as its Remote is no longer held; while a Remote that
-//! does not answer drops nothing, and nothing dropped is pushed into a field.
+//! answered with, and as its Remote is no longer held, the Landing's with the
+//! Remote it was written for; while a Remote that does not answer drops
+//! nothing, a Session being begun keeps its draft until a listing holds it,
+//! what may have been sent says so the next run, and nothing dropped is pushed
+//! into a field.
 
 mod support;
 
@@ -70,9 +73,12 @@ fn on_disk(directory: &Path) -> serde_json::Map<String, serde_json::Value> {
 
 /// The text the file of drafts in `directory` keeps under `key`.
 fn kept(directory: &Path, key: &str) -> Option<String> {
-    on_disk(directory)
-        .get(key)
-        .map(|text| text.as_str().expect("kept as text alone").to_owned())
+    on_disk(directory).get(key).map(|kept| {
+        kept["text"]
+            .as_str()
+            .expect("kept with its text")
+            .to_owned()
+    })
 }
 
 /// Every draft a composer's listener is told, in the order told.
@@ -366,6 +372,23 @@ async fn the_drafts_of_a_remote_no_longer_held_are_dropped_and_no_others() {
     phone
         .core
         .set_draft(in_lab.clone(), "for the lab".to_owned(), 0);
+    // The Landing's is written where the Outlook stands, at the lab, paired
+    // last; the Outlook turning toward the desk drops nothing.
+    let landing = phone.landing_until(|_| true).await.draft;
+    phone
+        .outlook_until(|outlook| matches!(outlook, Outlook::Remote { name, .. } if name == "lab"))
+        .await;
+    phone
+        .core
+        .set_draft(landing.clone(), "to begin in the lab".to_owned(), 0);
+    drop(phone.open(&on_desk));
+    phone
+        .outlook_until(|outlook| matches!(outlook, Outlook::Remote { name, .. } if name == "desk"))
+        .await;
+    assert_eq!(
+        phone.core.draft(landing.clone()).text,
+        "to begin in the lab"
+    );
     phone.core.left_front();
 
     // The lab is no longer held, as once it is removed.
@@ -380,11 +403,177 @@ async fn the_drafts_of_a_remote_no_longer_held_are_dropped_and_no_others() {
         std::fs::write(&path, serde_json::to_vec(&held).unwrap()).unwrap();
     });
     assert_eq!(phone.core.draft(in_lab.clone()), Draft::default());
+    assert_eq!(
+        phone.core.draft(landing.clone()),
+        Draft::default(),
+        "the Landing's, written for the lab"
+    );
     assert_eq!(phone.core.draft(on_desk.clone()).text, "for the desk");
     phone.core.left_front();
     assert_eq!(kept(phone.directory(), &in_lab), None);
+    assert_eq!(kept(phone.directory(), &landing), None);
 
     desk.shutdown().await;
     lab.shutdown().await;
+    phone.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_prompt_answered_after_the_app_left_the_front_is_not_in_its_composer_the_next_run() {
+    let desk = ServingServer::start("thin-drafts-answered-away").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let phone = Phone::new();
+    pair_through(&phone, &desk, &gate, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, WORKING), "Tidy the build")
+        .await;
+    let reference = listed(&phone, "Tidy the build").await;
+    let reading = phone.open(&reference);
+    reading.frame_until(|frame| frame.bar.is_some()).await;
+
+    gate.shut_now();
+    reading
+        .frame_until(|frame| {
+            frame
+                .composer
+                .as_ref()
+                .is_some_and(|composer| composer.unreachable.is_some())
+        })
+        .await;
+    emptied(&phone, &reference);
+    let session = reading.session.clone();
+    let sending = tokio::spawn(async move { session.send("and the docs".to_owned()).await });
+    reading
+        .conversation_until(|items| {
+            items.iter().any(|item| {
+                matches!(&item.kind, ItemKind::UserMessage { text, sending: true, .. }
+                    if text == "and the docs")
+            })
+        })
+        .await;
+    // The app leaves the front with it on its way, and it is answered in the
+    // background time held for it; then iOS suspends the app and ends it,
+    // with no moment waited.
+    phone.core.left_front();
+    assert_eq!(
+        kept(phone.directory(), &reference).as_deref(),
+        Some("and the docs")
+    );
+    gate.open_now();
+    sending
+        .await
+        .expect("the send ends")
+        .expect("sent and answered");
+    phone.acts_until(false).await;
+    drop(reading);
+    let phone = phone.relaunched();
+    assert_eq!(phone.core.draft(reference.clone()), Draft::default());
+
+    desk.shutdown().await;
+    phone.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_draft_written_in_a_session_being_begun_is_not_dropped_by_a_listing_that_does_not_hold_it_yet()
+ {
+    let desk = ServingServer::start("thin-drafts-provisional").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let phone = Phone::new();
+    pair_through(&phone, &desk, &gate, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let working = workspace(&holder, WORKING);
+    desk.begin(&working, "Map the workspace").await;
+    drop(phone.open(&listed(&phone, "Map the workspace").await));
+    phone.landing_until(|landing| landing.can_send).await;
+    // Its Workspace's directory goes, so the Session begun there is refused,
+    // and stands where it is being begun.
+    std::fs::remove_dir_all(&working).expect("take the Workspace's directory away");
+    let reading = phone.begin("Tidy the build");
+    let provisional = reading.session.reference();
+    reading
+        .conversation_until(|items| {
+            items
+                .iter()
+                .any(|item| matches!(item.kind, ItemKind::Refused { .. }))
+        })
+        .await;
+    phone
+        .core
+        .set_draft(provisional.clone(), "Tidy the whole build".to_owned(), 0);
+
+    // The Remote answers with a listing asked since, which does not hold it.
+    desk.begin(&workspace(&holder, "shaman"), "Asked meanwhile")
+        .await;
+    listed(&phone, "Asked meanwhile").await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(
+        phone.core.draft(provisional.clone()).text,
+        "Tidy the whole build"
+    );
+
+    // Left, it is discarded unmade, and its own composer's draft with it.
+    reading.session.close();
+    assert_eq!(phone.core.draft(provisional), Draft::default());
+
+    drop(reading);
+    desk.shutdown().await;
+    phone.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_prompt_that_may_have_been_sent_says_so_the_next_run_until_it_is_sent_again() {
+    let desk = ServingServer::start("thin-drafts-maybe-sent").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let phone = Phone::new();
+    pair_through(&phone, &desk, &gate, "desk").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+    let reference = listed(&phone, "Map the workspace").await;
+    let reading = phone.open(&reference);
+    reading.conversation_until(|items| items.len() > 1).await;
+
+    // What the phone says reaches the Server, and nothing comes back.
+    gate.mute_now();
+    emptied(&phone, &reference);
+    reading
+        .session
+        .send("One more thing".to_owned())
+        .await
+        .expect_err("its answer was lost");
+    drop(reading);
+    let phone = phone.relaunched();
+    gate.unmute_now();
+
+    let note = |frame: &shaman_thin_client::SessionFrame| {
+        frame
+            .composer
+            .as_ref()
+            .and_then(|composer| composer.note.clone())
+    };
+    let reading = phone.open(&reference);
+    let frame = reading.frame_until(|frame| frame.composer.is_some()).await;
+    assert_eq!(
+        note(&frame).as_deref(),
+        Some("The server did not answer, so this prompt may have been sent")
+    );
+    assert_eq!(phone.core.draft(reference.clone()).text, "One more thing");
+
+    reading.frame_until(|frame| frame.bar.is_none()).await;
+    emptied(&phone, &reference);
+    reading
+        .session
+        .send("One more thing".to_owned())
+        .await
+        .expect("sent again, and answered");
+    reading.frame_until(|frame| note(frame).is_none()).await;
+    drop(reading);
+    let phone = phone.relaunched();
+    let reading = phone.open(&reference);
+    let frame = reading.frame_until(|frame| frame.composer.is_some()).await;
+    assert_eq!(note(&frame), None, "nothing it holds may have been sent");
+
+    drop(reading);
+    desk.shutdown().await;
     phone.shutdown();
 }

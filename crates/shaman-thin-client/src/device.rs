@@ -147,11 +147,33 @@ pub(crate) struct Records {
 }
 
 impl Records {
-    /// The records in `directory`, made where it is absent.
+    /// The records in `directory`, made where it is absent, with any
+    /// replacement a write left as the app was ended midway removed.
     pub fn open(directory: PathBuf) -> Result<Self> {
         std::fs::create_dir_all(&directory)
             .with_context(|| format!("make the directory {}", directory.display()))?;
-        Ok(Self { directory })
+        let records = Self { directory };
+        records.remove_stale_replacements();
+        Ok(records)
+    }
+
+    /// Removes every file a write made to replace a record by rename and
+    /// left behind, as the app being ended before the rename leaves one.
+    /// Nothing writes while the core opens, so none is under way.
+    fn remove_stale_replacements(&self) {
+        let Ok(entries) = std::fs::read_dir(&self.directory) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with(".replacing-")
+                && name.ends_with(".tmp")
+                && let Err(error) = std::fs::remove_file(entry.path())
+            {
+                tracing::warn!("a replacement left behind was not removed: {error}");
+            }
+        }
     }
 
     pub fn directory(&self) -> &Path {
@@ -183,6 +205,25 @@ mod tests {
             path: PathBuf::from(name),
             name: name.to_owned(),
         }
+    }
+
+    #[test]
+    fn a_replacement_a_write_left_behind_is_removed_as_the_records_open() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join(".replacing-a1b2c3.tmp"),
+            b"{\"name\":",
+        )
+        .unwrap();
+        std::fs::write(directory.path().join(RECORD_FILE), b"{}").unwrap();
+
+        Records::open(directory.path().to_owned()).unwrap();
+        let mut held = std::fs::read_dir(directory.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        held.sort();
+        assert_eq!(held, [RECORD_FILE]);
     }
 
     #[test]

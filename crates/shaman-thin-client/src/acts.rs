@@ -26,6 +26,9 @@ use crate::ActError;
 pub(crate) struct Acts {
     under_way: Arc<Mutex<usize>>,
     busy: watch::Sender<bool>,
+    /// Done as the last act under way ends, before Swift is told none is,
+    /// so what the acts changed is kept before iOS may suspend the app.
+    settled: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl Default for Acts {
@@ -33,11 +36,21 @@ impl Default for Acts {
         Self {
             under_way: Arc::default(),
             busy: watch::Sender::new(false),
+            settled: None,
         }
     }
 }
 
 impl Acts {
+    /// Acts that do `settled` as the last under way ends, before Swift is
+    /// told none is.
+    pub fn settling_with(settled: impl Fn() + Send + Sync + 'static) -> Self {
+        Self {
+            settled: Some(Arc::new(settled)),
+            ..Self::default()
+        }
+    }
+
     /// Whether any act is under way, now and on every change.
     pub fn busy(&self) -> watch::Receiver<bool> {
         self.busy.subscribe()
@@ -56,6 +69,12 @@ impl Acts {
             .unwrap_or_else(|poison| poison.into_inner());
         change(&mut under_way);
         let busy = *under_way > 0;
+        if !busy
+            && *self.busy.borrow()
+            && let Some(settled) = &self.settled
+        {
+            settled();
+        }
         self.busy.send_if_modified(|was| {
             let changed = *was != busy;
             *was = busy;
@@ -284,6 +303,33 @@ mod tests {
 
     fn interrupted() -> shaman_client::TransportResponse {
         http::Response::new(shaman_client::full_body(Vec::new()))
+    }
+
+    #[test]
+    fn what_is_kept_as_the_last_act_ends_is_done_before_swift_is_told_none_is_under_way() {
+        let busy = Arc::new(std::sync::OnceLock::<watch::Receiver<bool>>::new());
+        let told_then = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let acts = {
+            let (busy, told_then) = (busy.clone(), told_then.clone());
+            Acts::settling_with(move || {
+                let told = busy.get().map(|busy| *busy.borrow());
+                told_then.lock().unwrap().push(told);
+            })
+        };
+        busy.set(acts.busy()).unwrap();
+        let (first, second) = (acts.begin(), acts.begin());
+        drop(first);
+        assert!(
+            told_then.lock().unwrap().is_empty(),
+            "one is still under way"
+        );
+        drop(second);
+        assert_eq!(
+            *told_then.lock().unwrap(),
+            [Some(true)],
+            "done once, as the last ends, while Swift still holds one under way"
+        );
+        assert!(!*acts.busy().borrow());
     }
 
     #[tokio::test]
