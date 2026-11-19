@@ -65,11 +65,13 @@ pub(crate) fn remote(name: &str, sessions: Vec<SessionSummary>) -> Answered {
         paths: WorkspacePaths::default(),
         paths_heard: true,
         sessions: Some(sessions.into_iter().map(listed).collect()),
+        workspace_revision: None,
         workspaces: None,
         unreached: None,
         local_only: false,
         agent: None,
         models: None,
+        resolved: None,
     }
 }
 
@@ -1442,7 +1444,7 @@ async fn what_a_new_session_would_get_is_asked_each_time_it_is_wanted_and_again_
     let asked = Arc::new(AtomicU64::new(0));
     let (told, mut heard) = tokio::sync::mpsc::unbounded_channel();
     let counting = asked.clone();
-    let asker = tokio::spawn(ask_for_agent(
+    let asker = tokio::spawn(ask_when_wanted(
         wanted.clone(),
         TryNow::never(),
         SessionCommandTimings {

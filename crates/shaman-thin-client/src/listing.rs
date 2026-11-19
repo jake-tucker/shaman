@@ -23,7 +23,7 @@
 
 use std::{
     collections::HashMap,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex, Weak,
         atomic::{AtomicU64, Ordering},
@@ -38,8 +38,9 @@ use shaman_client::{
 use shaman_pairing::{Redeemer, StoredRemote};
 use shaman_protocol::{
     Author, CheckoutKind, CheckoutRevision, CheckoutSummary, ModelCatalog, NewSessionAgent,
-    SessionError, SessionErrorCode, SessionId, SessionListItem, SessionStanding, SessionSummary,
-    SessionTimestamp, SourceControlAvailability, StandingReading, Workspace, WorkspaceId,
+    ResolveWorkspaceRequest, ResolvedWorkspace, SessionError, SessionErrorCode, SessionId,
+    SessionListItem, SessionStanding, SessionSummary, SessionTimestamp, SourceControlAvailability,
+    StandingReading, Workspace, WorkspaceId, WorkspaceListing, WorkspaceListingRevision,
     WorkspacePaths,
 };
 use tokio::{runtime::Handle, sync::Notify, sync::watch, task::JoinHandle};
@@ -422,6 +423,8 @@ pub(crate) struct Answered {
     pub paths_heard: bool,
     /// Its Sessions, or none before it has first answered.
     pub sessions: Option<Vec<SessionListItem>>,
+    /// Where the Workspace listing it last gave stands among its listings.
+    pub workspace_revision: Option<WorkspaceListingRevision>,
     /// The Workspaces its Workspace Registry holds, or none before its
     /// Session catalog has first listed them.
     pub workspaces: Option<Vec<Workspace>>,
@@ -436,13 +439,31 @@ pub(crate) struct Answered {
     /// Its Model Catalog, which names that Agent, or none before its Session
     /// catalog has first carried one.
     pub models: Option<ModelCatalog>,
+    /// The Workspace at the path the Landing last asked to have resolved, as
+    /// the Remote resolved it: its Worktrees and whether a Session may begin
+    /// on its main one.
+    pub resolved: Option<(PathBuf, ResolvedWorkspace)>,
 }
 
 impl Answered {
+    /// Takes `listing` as the Workspaces it lists, unless it is older than
+    /// the listing held: given during the same run, before as many changes.
+    fn take_workspaces(&mut self, listing: WorkspaceListing) {
+        if self.workspace_revision.as_ref().is_some_and(|held| {
+            held.run == listing.revision.run && !listing.revision.is_no_older_than(held)
+        }) {
+            return;
+        }
+        self.workspace_revision = Some(listing.revision);
+        self.paths = listing.workspace_paths;
+        self.paths_heard = true;
+        self.workspaces = Some(listing.workspaces);
+    }
+
     /// The Workspaces the menu offers of this Remote: those its Server lists,
     /// then any other a Session of it is in, but never its Sidekick
     /// Workspace, in which nothing a phone begins begins.
-    fn offered_workspaces(&self) -> Vec<&Workspace> {
+    pub(crate) fn offered_workspaces(&self) -> Vec<&Workspace> {
         let mut offered: Vec<&Workspace> = Vec::new();
         let listed = self.workspaces.iter().flatten();
         let worked_in = self
@@ -979,7 +1000,7 @@ fn checkout_state(reading: &CheckoutSummary) -> Option<CheckoutLine> {
 }
 
 /// The glyph of the Icon `name` names, where this build's Catalog knows it.
-fn icon_glyph(name: Option<&str>) -> Option<String> {
+pub(crate) fn icon_glyph(name: Option<&str>) -> Option<String> {
     name.and_then(shaman_icons::glyph).map(String::from)
 }
 
@@ -1063,6 +1084,10 @@ struct Followed {
     commands: SessionCommands,
     /// Told to ask the Remote again which Agent a new Session would get.
     agent_wanted: Arc<Notify>,
+    /// The Workspace the Landing would begin in on this Remote, by its path,
+    /// and what tells the Remote to resolve it again.
+    landing_path: Arc<Mutex<Option<PathBuf>>>,
+    resolve_wanted: Arc<Notify>,
     /// Its catalog's reader and its listing's asker, which go with it.
     _readers: Readers,
 }
@@ -1354,6 +1379,126 @@ impl Listings {
         }
     }
 
+    /// Asks every Remote followed for its Workspaces afresh, as the
+    /// Workspace Picker opens: it shows what each last listed until each
+    /// answers.
+    pub fn ask_for_workspaces(&self) {
+        let asked = self
+            .shared
+            .lock()
+            .remotes
+            .iter()
+            .map(|followed| {
+                (
+                    followed.answered.name.clone(),
+                    followed.generation,
+                    followed.commands.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        for (name, generation, commands) in asked {
+            let shared = Arc::downgrade(&self.shared);
+            self.shared.runtime.spawn(async move {
+                match commands.list_workspaces().await {
+                    Ok(listing) => {
+                        if let Some(shared) = shared.upgrade() {
+                            shared.change(&name, generation, |answered| {
+                                answered.take_workspaces(listing);
+                            });
+                        }
+                    }
+                    Err(error) => {
+                        tracing::debug!("the workspaces of {name} were not listed: {error:#}");
+                    }
+                }
+            });
+        }
+    }
+
+    /// Has the Remote `name` resolve its Workspace at `path`, as the Landing
+    /// would begin a Session there: as the Landing opens, as it turns to
+    /// that Workspace, and again as the Remote comes back.
+    pub fn resolve_for_landing(&self, name: &str, path: &Path) {
+        if let Some(followed) = self
+            .shared
+            .lock()
+            .remotes
+            .iter()
+            .find(|followed| followed.answered.name == name)
+        {
+            *followed
+                .landing_path
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner()) = Some(path.to_owned());
+            followed.resolve_wanted.notify_one();
+        }
+    }
+
+    /// The Workspace Picker over every Remote followed, the Outlook standing
+    /// as `standing` says, searched for `query`.
+    pub fn workspaces(
+        &self,
+        standing: Option<(&str, &Path)>,
+        query: &str,
+    ) -> crate::picker::WorkspacePicker {
+        let state = self.shared.lock();
+        let answered = state
+            .remotes
+            .iter()
+            .map(|followed| followed.answered.clone())
+            .collect::<Vec<_>>();
+        drop(state);
+        crate::picker::present(&answered, standing, query)
+    }
+
+    /// What choosing the Workspace a row of the picker hands back as
+    /// `reference` turns the Outlook toward; refused where its Server cannot
+    /// read it, and gone where its Remote, or the Workspace, is no longer
+    /// offered.
+    pub fn choosing(&self, reference: &str) -> Result<Turn, ActError> {
+        let Scope::Workspace {
+            fingerprint,
+            workspace,
+        } = Scope::of(reference)
+        else {
+            return Err(ActError::Invalid {
+                message: "That is not a workspace".to_owned(),
+            });
+        };
+        let state = self.shared.lock();
+        let Some(remote) = state
+            .remotes
+            .iter()
+            .map(|followed| &followed.answered)
+            .find(|answered| answered.fingerprint == fingerprint)
+        else {
+            return Err(ActError::Gone {
+                message: crate::frame::GONE_REMOTE.to_owned(),
+            });
+        };
+        let Some(offered) = remote
+            .offered_workspaces()
+            .into_iter()
+            .find(|offered| offered.id == workspace)
+        else {
+            return Err(ActError::Gone {
+                message: "That workspace is no longer listed".to_owned(),
+            });
+        };
+        if let Some(why) = offered.unavailable {
+            return Err(ActError::Invalid {
+                message: format!("Unavailable: {}", why.reason()),
+            });
+        }
+        Ok(Turn {
+            remote: remote.name.clone(),
+            workspace: Some(RememberedWorkspace {
+                path: offered.path.clone(),
+                name: remote.paths.workspace_name(offered),
+            }),
+        })
+    }
+
     /// What the listing knows of the Workspace at `workspace` on the Remote
     /// `name`, as the Landing names it.
     pub fn landing(&self, name: &str, workspace: Option<&Path>) -> crate::beginning::Known {
@@ -1387,6 +1532,14 @@ impl Listings {
                 .agent
                 .as_ref()
                 .and_then(|agent| crate::beginning::agent_words(agent, remote.models.as_ref())),
+            worktrees: crate::beginning::worktrees(
+                listed,
+                remote
+                    .resolved
+                    .as_ref()
+                    .filter(|(path, _)| Some(path.as_path()) == workspace)
+                    .map(|(_, resolved)| resolved),
+            ),
         }
     }
 
@@ -1496,6 +1649,8 @@ impl Listings {
             reach,
             commands: SessionCommands::new(reaching, self.shared.timings),
             agent_wanted: Arc::new(Notify::new()),
+            landing_path: Arc::default(),
+            resolve_wanted: Arc::new(Notify::new()),
             _readers: Readers(Vec::new()),
         });
         self.shared.render();
@@ -1568,6 +1723,8 @@ impl Shared {
         let commands = SessionCommands::new(reaching, self.timings);
         let wanted = Arc::new(Notify::new());
         let agent_wanted = Arc::new(Notify::new());
+        let resolve_wanted = Arc::new(Notify::new());
+        let landing_path: Arc<Mutex<Option<PathBuf>>> = Arc::default();
         let generation = stored.generation;
         reach.settle();
         let reading = self.runtime.spawn(follow_reach(
@@ -1582,13 +1739,16 @@ impl Shared {
             reach.clone(),
             name.clone(),
             generation,
-            wanted.clone(),
-            agent_wanted.clone(),
+            Wanted {
+                listing: wanted.clone(),
+                agent: agent_wanted.clone(),
+                resolution: resolve_wanted.clone(),
+            },
         ));
         let shared = Arc::downgrade(self);
         let agent_taker = name.clone();
         let health = commands.clone();
-        let agent_asker = self.runtime.spawn(ask_for_agent(
+        let agent_asker = self.runtime.spawn(ask_when_wanted(
             agent_wanted.clone(),
             transport.try_now(),
             self.timings,
@@ -1608,6 +1768,48 @@ impl Shared {
                 shared.change(&agent_taker, generation, |answered| {
                     answered.agent = Some(agent);
                 });
+                true
+            },
+        ));
+        let shared = Arc::downgrade(self);
+        let resolution_taker = name.clone();
+        let resolving = commands.clone();
+        let resolved_path = landing_path.clone();
+        let resolver = self.runtime.spawn(ask_when_wanted(
+            resolve_wanted.clone(),
+            transport.try_now(),
+            self.timings,
+            move || {
+                let commands = resolving.clone();
+                let path = resolved_path
+                    .lock()
+                    .unwrap_or_else(|poison| poison.into_inner())
+                    .clone();
+                async move {
+                    let Some(path) = path else {
+                        return Ok(None);
+                    };
+                    let resolved = commands
+                        .resolve_workspace(ResolveWorkspaceRequest {
+                            checkout_id: None,
+                            remembered_execution_directory: None,
+                            workspace_id: None,
+                            base: None,
+                            path: path.clone(),
+                        })
+                        .await?;
+                    Ok(Some((path, resolved)))
+                }
+            },
+            move |resolved| {
+                let Some(shared) = shared.upgrade() else {
+                    return false;
+                };
+                if let Some(resolved) = resolved {
+                    shared.change(&resolution_taker, generation, |answered| {
+                        answered.resolved = Some(resolved);
+                    });
+                }
                 true
             },
         ));
@@ -1635,18 +1837,22 @@ impl Shared {
                 paths: WorkspacePaths::default(),
                 paths_heard: false,
                 sessions: None,
+                workspace_revision: None,
                 workspaces: None,
                 unreached: None,
                 local_only: false,
                 agent: None,
                 models: None,
+                resolved: None,
             },
             generation,
             transport,
             reach,
             commands,
             agent_wanted,
-            _readers: Readers(vec![reading, reader, asker, agent_asker]),
+            landing_path,
+            resolve_wanted,
+            _readers: Readers(vec![reading, reader, asker, agent_asker, resolver]),
         }
     }
 
@@ -1771,6 +1977,15 @@ async fn follow_reach(
     }
 }
 
+/// What a Remote's catalog reader tells to ask the Remote again: for its
+/// listing, for the Agent a new Session would get, and to resolve the
+/// Landing's Workspace.
+struct Wanted {
+    listing: Arc<Notify>,
+    agent: Arc<Notify>,
+    resolution: Arc<Notify>,
+}
+
 /// Reads the Remote `name`'s Session catalog, asking for its listing again
 /// through `wanted` whenever anything it lists moves, and reaching the
 /// Remote anew, through `reach`, whenever the stream drops.
@@ -1780,18 +1995,23 @@ async fn follow_catalog(
     reach: Reach,
     name: String,
     generation: u64,
-    wanted: Arc<Notify>,
-    agent_wanted: Arc<Notify>,
+    wanted: Wanted,
 ) {
+    let Wanted {
+        listing: wanted,
+        agent: agent_wanted,
+        resolution: resolve_wanted,
+    } = wanted;
     let mut catalog = commands.subscribe_catalog();
     while let Some(event) = catalog.next().await {
-        let (paths, workspaces) = match event {
+        let paths = match event {
             // Reached, anew or for the first time: what a new Session would
             // get is asked again too.
             SessionCatalogEvent::SessionCatalogReconciled(snapshot) => {
                 wanted.notify_one();
                 agent_wanted.notify_one();
-                (Some(snapshot.workspace_paths), None)
+                resolve_wanted.notify_one();
+                Some(snapshot.workspace_paths)
             }
             // The Models moved, and with them what a new Session would get:
             // a cold catalog gives none.
@@ -1803,26 +2023,37 @@ async fn follow_catalog(
                     answered.models = Some(models);
                 });
                 agent_wanted.notify_one();
-                (None, None)
+                None
             }
             SessionCatalogEvent::WorkspaceListing(listing) => {
-                (Some(listing.workspace_paths), Some(listing.workspaces))
+                let Some(shared) = shared.upgrade() else {
+                    return;
+                };
+                shared.change(&name, generation, |answered| {
+                    answered.take_workspaces(listing);
+                });
+                None
             }
             // The stream dropped: the Remote holds what it read while it is
             // reached anew.
             SessionCatalogEvent::Recovering(_) => {
                 reach.settle();
-                (None, None)
+                None
             }
             // Nothing a row shows moves with these.
             SessionCatalogEvent::SkillCatalogUpdated(_)
             | SessionCatalogEvent::SessionUsageChanged(_)
             | SessionCatalogEvent::RemoteRecovered
             | SessionCatalogEvent::RemoteFailed { .. }
-            | SessionCatalogEvent::ChangeSkipped => (None, None),
+            | SessionCatalogEvent::ChangeSkipped => None,
+            // A Worktree moved, which may be the main one the Landing names.
+            SessionCatalogEvent::CheckoutStateChanged(_) => {
+                wanted.notify_one();
+                resolve_wanted.notify_one();
+                None
+            }
             SessionCatalogEvent::SessionCreated(_)
             | SessionCatalogEvent::SessionCatalogInvalidated { .. }
-            | SessionCatalogEvent::CheckoutStateChanged(_)
             | SessionCatalogEvent::SessionDeleted(_)
             | SessionCatalogEvent::SessionTitleChanged(_)
             | SessionCatalogEvent::SessionSettlementChanged(_)
@@ -1833,39 +2064,35 @@ async fn follow_catalog(
             | SessionCatalogEvent::WorkspaceDescriptionChanged(_)
             | SessionCatalogEvent::SessionRemoteSubsessionsChanged(_) => {
                 wanted.notify_one();
-                (None, None)
+                None
             }
         };
-        if paths.is_some() || workspaces.is_some() {
+        if let Some(paths) = paths {
             let Some(shared) = shared.upgrade() else {
                 return;
             };
             shared.change(&name, generation, |answered| {
-                if let Some(paths) = paths {
-                    answered.paths = paths;
-                    answered.paths_heard = true;
-                }
-                if let Some(workspaces) = workspaces {
-                    answered.workspaces = Some(workspaces);
-                }
+                answered.paths = paths;
+                answered.paths_heard = true;
             });
         }
     }
 }
 
-/// Asks a Remote which Agent a Session begun there with none would get, by
-/// `ask`, each time `wanted` says, handing each answer to `take` until it
-/// says nothing is left to take them. One not answered is asked again on the
-/// readers' backoff, at once when the transport says to try now, or when
-/// it is wanted again.
-async fn ask_for_agent<F>(
+/// Asks a Remote something the Landing shows by `ask` — which Agent a
+/// Session begun there with none would get, or how the Workspace it would
+/// begin in resolves — each time `wanted` says, handing each answer to
+/// `take` until it says nothing is left to take them. One not answered is
+/// asked again on the readers' backoff, at once when the transport says to
+/// try now, or when it is wanted again.
+async fn ask_when_wanted<T, F>(
     wanted: Arc<Notify>,
     mut try_now: TryNow,
     timings: SessionCommandTimings,
     mut ask: impl FnMut() -> F,
-    take: impl Fn(NewSessionAgent) -> bool,
+    take: impl Fn(T) -> bool,
 ) where
-    F: Future<Output = anyhow::Result<NewSessionAgent>>,
+    F: Future<Output = anyhow::Result<T>>,
 {
     let mut backoff = RecoveryBackoff::new(
         timings.initial_recovery_backoff,
@@ -1883,7 +2110,7 @@ async fn ask_for_agent<F>(
                     break;
                 }
                 Err(error) => {
-                    tracing::debug!("what a new session would get was not answered: {error:#}");
+                    tracing::debug!("what the landing shows was not answered: {error:#}");
                     let retry_in = backoff.next();
                     tokio::select! {
                         () = wanted.notified() => {}

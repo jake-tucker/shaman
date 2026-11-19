@@ -37,13 +37,14 @@ mod identity;
 mod intervention;
 mod listing;
 mod pairing;
+mod picker;
 mod reach;
 mod remotes;
 mod session;
 mod tree;
 mod work;
 
-pub use beginning::{Landing, LandingWorkspace};
+pub use beginning::{Landing, LandingWorkspace, WorktreeChoice};
 pub use conversation::{ConversationItem, ItemKind, Tone, TurnCard, TurnOutcome};
 pub use device::ThisDevice;
 use device::{DeviceRecord, Records};
@@ -60,6 +61,7 @@ pub use listing::{
     Slot, Standing, UnreachableHint, UnreachableRow, UnreachableSheet,
 };
 pub use pairing::{InviteReading, OfferedWay, PairingOutcome, ReadInvite, TryInstead};
+pub use picker::{WorkspacePicker, WorkspaceRow, WorkspaceSection};
 use remotes::Remotes;
 pub use remotes::{BeginsIn, Outlook, ServerRow, Servers, WayRow, WayState};
 pub use session::{
@@ -158,6 +160,8 @@ pub(crate) struct Inner {
     /// What the Landing says of a Session begun from it and left before its
     /// Server was seen holding it.
     landing_note: Arc<watch::Sender<Option<String>>>,
+    /// What the Workspace Picker is searched for, until it is opened again.
+    workspace_query: watch::Sender<String>,
     timings: CoreTimings,
 }
 
@@ -248,19 +252,32 @@ impl ThinClient {
     /// cancelled.
     pub fn watch_landing(&self, listener: Arc<dyn LandingListener>) -> Arc<Subscription> {
         let inner = self.inner.clone();
-        // What a new Session would get is read again as the screen opens.
-        if let Some((remote, _)) = inner.remotes.standing() {
-            inner.listing.ask_for_agent(&remote);
-        }
         let mut outlook = inner.remotes.outlook();
         let mut moved = inner.listing.moved();
         let mut noted = inner.landing_note.subscribe();
         let task = self.runtime().spawn(async move {
             let mut told = None;
+            let mut asked = None;
             loop {
                 outlook.borrow_and_update();
                 moved.borrow_and_update();
                 noted.borrow_and_update();
+                // What a new Session would get, and what its Workspace may
+                // begin on, are read again as the screen opens and as it
+                // turns elsewhere; and as the Remote comes back, by its
+                // reader.
+                let standing = inner.remotes.standing();
+                if standing != asked {
+                    if let Some((remote, workspace)) = &standing {
+                        if asked.as_ref().is_none_or(|(was, _)| was != remote) {
+                            inner.listing.ask_for_agent(remote);
+                        }
+                        if let Some(workspace) = workspace {
+                            inner.listing.resolve_for_landing(remote, &workspace.path);
+                        }
+                    }
+                    asked = standing;
+                }
                 let landing = inner.landing();
                 if told.as_ref() != Some(&landing) {
                     listener.changed(landing.clone());
@@ -276,15 +293,83 @@ impl ThinClient {
         Subscription::of(task)
     }
 
+    /// Tells `listener` what the Workspace Picker shows now, searched for
+    /// nothing, and again on every change, until the subscription is
+    /// cancelled: every Remote's Workspaces, the Outlook's ticked.
+    pub fn watch_workspaces(&self, listener: Arc<dyn WorkspacesListener>) -> Arc<Subscription> {
+        let inner = self.inner.clone();
+        // Each time the picker opens, it opens unsearched, and asks every
+        // Remote for its Workspaces afresh.
+        inner.workspace_query.send_replace(String::new());
+        inner.listing.ask_for_workspaces();
+        let mut outlook = inner.remotes.outlook();
+        let mut moved = inner.listing.moved();
+        let mut query = inner.workspace_query.subscribe();
+        let task = self.runtime().spawn(async move {
+            let mut told = None;
+            loop {
+                outlook.borrow_and_update();
+                moved.borrow_and_update();
+                let searched = query.borrow_and_update().clone();
+                let standing = inner.remotes.standing();
+                let picker = inner.listing.workspaces(
+                    standing.as_ref().and_then(|(remote, workspace)| {
+                        workspace
+                            .as_ref()
+                            .map(|workspace| (remote.as_str(), workspace.path.as_path()))
+                    }),
+                    &searched,
+                );
+                if told.as_ref() != Some(&picker) {
+                    listener.changed(picker.clone());
+                    told = Some(picker);
+                }
+                tokio::select! {
+                    changed = outlook.changed() => if changed.is_err() { break },
+                    changed = moved.changed() => if changed.is_err() { break },
+                    changed = query.changed() => if changed.is_err() { break },
+                }
+            }
+        });
+        Subscription::of(task)
+    }
+
+    /// Searches the Workspace Picker by name for `text`, until it is opened
+    /// again; an empty one searches for nothing.
+    pub fn search_workspaces(&self, text: String) {
+        self.inner.workspace_query.send_replace(text);
+    }
+
+    /// Turns the Outlook toward the Workspace a row of the Workspace Picker
+    /// hands back, so the next Session begins there, leaving the listing's
+    /// scope where it was. Refused where its Server cannot read it.
+    pub async fn choose_workspace(&self, workspace: String) -> Result<(), ActError> {
+        let turn = self.inner.listing.choosing(&workspace)?;
+        let inner = self.inner.clone();
+        self.run(async move {
+            inner
+                .change_record_shown(move |record| record.turn(&turn.remote, turn.workspace))
+                .await
+        })
+        .await?
+    }
+
     /// Begins a Session with the Prompt `text` where the Outlook stands, on
-    /// its Workspace's main Worktree, under an identity the core chooses,
-    /// and opens it at once as the Provisional Session for the Landing's
-    /// screen to turn into: until its Server answers with the Session it
-    /// made, which replaces it in place, or refuses it, which stands in its
+    /// its Workspace's main Worktree or, where `new_worktree`, in a new one
+    /// its Server prepares first, under an identity the core chooses, and
+    /// opens it at once as the Provisional Session for the Landing's screen
+    /// to turn into: until its Server answers with the Session it made,
+    /// which replaces it in place, or refuses it, which stands in its
     /// conversation. The beginning goes on whatever becomes of the screen,
-    /// as an act under way. Refused at once where nothing is written, or
-    /// where no Workspace is remembered for the Outlook's Remote.
-    pub fn begin_session(&self, text: String) -> Result<Arc<OpenSession>, ActError> {
+    /// as an act under way. Refused at once where nothing is written, where
+    /// no Workspace is remembered for the Outlook's Remote, where it is a
+    /// bare Repository, or where a new Worktree is asked of a Workspace the
+    /// Landing offers none in.
+    pub fn begin_session(
+        &self,
+        text: String,
+        new_worktree: bool,
+    ) -> Result<Arc<OpenSession>, ActError> {
         let text = text.trim().to_owned();
         if text.is_empty() {
             return Err(ActError::Invalid {
@@ -319,8 +404,24 @@ impl ThinClient {
             .chain([workspace.name.clone()])
             .collect::<Vec<_>>()
             .join(" · ");
+        let landing = self.inner.landing();
+        if let Some(working_copy) = landing.working_copy {
+            return Err(ActError::Invalid {
+                message: working_copy,
+            });
+        }
+        if new_worktree && landing.worktree.is_none() {
+            return Err(ActError::Invalid {
+                message: "No new worktree can be made in this workspace".to_owned(),
+            });
+        }
         let provisional =
             beginning::Provisional::new(session_id, workspace.path.clone(), text, place);
+        let provisional = if new_worktree {
+            provisional.in_new_worktree()
+        } else {
+            provisional
+        };
         // A Session begun anew says nothing more of one left before.
         self.inner.landing_note.send_replace(None);
         Ok(session::begin(
@@ -544,6 +645,7 @@ impl ThinClient {
             acts: acts::Acts::default(),
             trees: tree::Trees::new(runtime.handle().clone()),
             landing_note: Arc::new(watch::Sender::new(None)),
+            workspace_query: watch::Sender::new(String::new()),
             timings,
         });
         for name in inner.remotes.names() {
@@ -772,6 +874,12 @@ pub trait OutlookListener: Send + Sync {
 #[uniffi::export(with_foreign)]
 pub trait LandingListener: Send + Sync {
     fn changed(&self, landing: Landing);
+}
+
+/// Hears what the Workspace Picker shows, at once and on every change.
+#[uniffi::export(with_foreign)]
+pub trait WorkspacesListener: Send + Sync {
+    fn changed(&self, picker: WorkspacePicker);
 }
 
 /// Hears a composer's draft, at once and each time the core changes it on its

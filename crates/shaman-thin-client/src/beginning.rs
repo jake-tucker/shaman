@@ -32,8 +32,11 @@
 use std::path::PathBuf;
 
 use shaman_protocol::{
-    AgentSelection, CreateSessionRequest, ExecutionDirectory, InitialPrompt, ModelCatalog,
-    ModelOptionKind, ModelOptionValue, NewSessionAgent, SessionId, SessionSnapshot,
+    AgentSelection, CheckoutKind, CheckoutRevision, CheckoutSummary, CreateSessionRequest,
+    ExecutionDirectory, ExecutionDirectoryStatus, InitialPrompt, ModelCatalog, ModelOptionKind,
+    ModelOptionValue, NewSessionAgent, PreparationId, PreparationPrompt, PrepareCheckoutRequest,
+    ProviderId, RepositoryLocation, ResolvedWorkspace, SessionId, SessionSnapshot,
+    SourceControlAvailability, SourceControlCapability, Workspace,
 };
 
 use crate::device::RememberedWorkspace;
@@ -64,6 +67,16 @@ pub struct Landing {
     /// Said where no Workspace is remembered for the Outlook's Remote,
     /// asking for one.
     pub asks: Option<String>,
+    /// The offer to begin in another Workspace, of any Remote, which pushes
+    /// the Workspace Picker; none while the phone holds no Remote.
+    pub elsewhere: Option<String>,
+    /// The Worktree it will begin on, where its Workspace is a Repository
+    /// a new Worktree can be made in: the main one, or a new one. Not kept;
+    /// the screen starts on the main one every time.
+    pub worktree: Option<WorktreeChoice>,
+    /// Said where its Workspace is a bare Repository, which has no main
+    /// Worktree to begin on: send is not offered.
+    pub working_copy: Option<String>,
     /// The Agent a Session begun here would get, shown and not chosen, as its
     /// Server's health last said: "Agent unavailable" where it says none,
     /// and none where it has yet to say, or is too old to.
@@ -82,6 +95,17 @@ pub struct Landing {
     /// The key the composer's draft is kept under, as Swift hands it back to
     /// read and write the draft.
     pub draft: String,
+}
+
+/// The two Worktrees a Session begun from the Landing may begin on, as the
+/// screen offers them, the first chosen as it opens.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct WorktreeChoice {
+    /// The main Worktree, by its Checkout State: "On main", "On detached
+    /// 1a2b3c4d".
+    pub main: String,
+    /// "In a new worktree", which the Server makes before the Session begins.
+    pub new: String,
 }
 
 /// The Workspace a Session begun from the Landing begins in, as the middle
@@ -111,7 +135,103 @@ pub(crate) struct Known {
     pub origin_named: bool,
     /// The Agent a Session begun there would get, in words.
     pub agent: Option<String>,
+    /// What it may begin on there.
+    pub worktrees: Worktrees,
 }
+
+/// What a Session begun in a Workspace may begin on, as its Server says.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Worktrees {
+    /// Outside source control, or not yet known: its directory alone, and no
+    /// choice.
+    #[default]
+    Directory,
+    /// A Repository with a main Worktree, standing on the Checkout State
+    /// `main` names where it is known, in which a new Worktree can be made.
+    Repository { main: Option<String> },
+    /// A bare Repository, which has no main Worktree to begin on.
+    Bare,
+}
+
+/// What a Session begun in `listed` may begin on, by what its Remote lists
+/// of it, and by `resolved`, how it last resolved it, where it has.
+pub(crate) fn worktrees(
+    listed: Option<&Workspace>,
+    resolved: Option<&ResolvedWorkspace>,
+) -> Worktrees {
+    let workspace = resolved.map(|resolved| &resolved.workspace).or(listed);
+    let Some(repository) = workspace.and_then(|workspace| workspace.repository.as_deref()) else {
+        return Worktrees::Directory;
+    };
+    let bare = match resolved {
+        Some(resolved) => {
+            resolved.execution_status == ExecutionDirectoryStatus::RequiresWorkingCopy
+        }
+        None => matches!(repository.location, RepositoryLocation::Bare { .. }),
+    };
+    if bare {
+        return Worktrees::Bare;
+    }
+    let available = matches!(
+        repository.availability,
+        SourceControlAvailability::Available
+    ) && matches!(
+        repository.capabilities.create_checkout,
+        SourceControlCapability::Available
+    ) && resolved.is_none_or(|resolved| {
+        matches!(
+            resolved.execution_status,
+            ExecutionDirectoryStatus::Available
+        )
+    });
+    if !available {
+        return Worktrees::Directory;
+    }
+    let main = resolved.and_then(|resolved| {
+        resolved
+            .checkouts
+            .iter()
+            .find(|checkout| checkout.association.kind == CheckoutKind::Main)
+            .and_then(checkout_state)
+    });
+    Worktrees::Repository { main }
+}
+
+/// The main Worktree's Checkout State as the Worktree Selector labels it,
+/// where it was read.
+fn checkout_state(checkout: &CheckoutSummary) -> Option<String> {
+    if checkout.availability != SourceControlAvailability::Available {
+        return None;
+    }
+    match checkout.revision.as_ref()? {
+        CheckoutRevision::Branch { name, commit: None } => Some(format!("{name} (unborn)")),
+        CheckoutRevision::Branch { name, .. } => Some(name.clone()),
+        CheckoutRevision::Detached { commit } => Some(format!(
+            "detached {}",
+            commit.chars().take(8).collect::<String>()
+        )),
+        CheckoutRevision::Unknown => None,
+    }
+}
+
+/// What the Worktree choice offers first: the main Worktree, by its Checkout
+/// State where it is known.
+fn on_main(main: Option<&str>) -> String {
+    main.map_or_else(
+        || "On the main worktree".to_owned(),
+        |main| format!("On {main}"),
+    )
+}
+
+/// What the Worktree choice offers second.
+const NEW_WORKTREE: &str = "In a new worktree";
+
+/// What the Landing offers to begin elsewhere by.
+const ELSEWHERE: &str = "Begin somewhere else";
+
+/// What the Landing says where its Workspace is a bare Repository.
+pub(crate) const WORKING_COPY: &str = "This workspace is a bare repository. A session needs a \
+     working copy of it to begin in, which this phone cannot choose yet.";
 
 /// The Landing where the Outlook stands at the Remote `remote`, in the
 /// Workspace `workspace` remembered for it, as the listing knows it, saying
@@ -127,6 +247,9 @@ pub(crate) fn landing(
             place: String::new(),
             workspace: None,
             asks: Some("Pair with a server to begin a session there".to_owned()),
+            elsewhere: None,
+            worktree: None,
+            working_copy: None,
             agent: None,
             unreachable: None,
             note,
@@ -151,6 +274,17 @@ pub(crate) fn landing(
     let unreachable = known
         .unreachable
         .then(|| format!("{named} is unreachable. Nothing begins there until it answers."));
+    let (worktree, working_copy) = match (workspace, &known.worktrees) {
+        (None, _) | (_, Worktrees::Directory) => (None, None),
+        (Some(_), Worktrees::Repository { main }) => (
+            Some(WorktreeChoice {
+                main: on_main(main.as_deref()),
+                new: NEW_WORKTREE.to_owned(),
+            }),
+            None,
+        ),
+        (Some(_), Worktrees::Bare) => (None, Some(WORKING_COPY.to_owned())),
+    };
     Landing {
         title: TITLE.to_owned(),
         place,
@@ -163,8 +297,11 @@ pub(crate) fn landing(
         asks: workspace
             .is_none()
             .then(|| asks(known.origin_named.then_some(remote))),
+        elsewhere: Some(ELSEWHERE.to_owned()),
         agent: known.agent.clone(),
-        can_send: workspace.is_some() && unreachable.is_none(),
+        can_send: workspace.is_some() && unreachable.is_none() && working_copy.is_none(),
+        worktree,
+        working_copy,
         unreachable,
         note,
         placeholder: PLACEHOLDER.to_owned(),
@@ -179,9 +316,7 @@ pub(crate) fn asks(named: Option<&str>) -> String {
     let on = named
         .map(|remote| format!(" on {remote}"))
         .unwrap_or_default();
-    format!(
-        "Choose a workspace{on} to begin in: narrow the listing to one, or open a session there."
-    )
+    format!("Choose a workspace{on} to begin in.")
 }
 
 /// Said where a Server says a Session begun now would get no Agent: no
@@ -270,13 +405,26 @@ pub(crate) struct Provisional {
     /// Where it stands, beneath its Title, as its frame names it.
     pub place: String,
     pub progress: Progress,
+    /// The new Worktree it begins in, where one was chosen.
+    pub worktree: Option<NewWorktree>,
     /// The Session its Server holds, once it is seen, which replaces it.
     pub created: Option<Box<SessionSnapshot>>,
 }
 
+/// A new Worktree a Session being begun is to begin in, which its Server
+/// prepares first.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct NewWorktree {
+    /// The identity of its preparation, the same however often it is asked,
+    /// so a preparation the Server made already resumes.
+    pub preparation: PreparationId,
+    /// Where the Server made it, once it answered that it stands ready.
+    pub prepared: Option<PathBuf>,
+}
+
 impl Provisional {
     /// The Session `session_id` begun at `directory` with the Prompt `text`,
-    /// standing at `place`.
+    /// standing at `place`, on the Workspace's main Worktree.
     pub fn new(session_id: SessionId, directory: PathBuf, text: String, place: String) -> Self {
         Self {
             session_id,
@@ -284,22 +432,87 @@ impl Provisional {
             prompt: prompt(text),
             place,
             progress: Progress::Starting,
+            worktree: None,
             created: None,
         }
     }
 
-    /// The request that begins it. Its Session id and its Prompt id make it
-    /// the same creation however often it is asked.
+    /// The same, in a new Worktree of the Repository at `directory`.
+    pub fn in_new_worktree(mut self) -> Self {
+        self.worktree = Some(NewWorktree {
+            preparation: PreparationId::default(),
+            prepared: None,
+        });
+        self
+    }
+
+    /// The request that prepares its new Worktree, for the Provider
+    /// `provider` the Session will run on, where one is to be prepared yet.
+    /// Its preparation id makes it the same preparation however often it is
+    /// asked.
+    pub fn preparation(&self, provider: ProviderId) -> Option<PrepareCheckoutRequest> {
+        let worktree = self.worktree.as_ref()?;
+        if worktree.prepared.is_some() {
+            return None;
+        }
+        Some(PrepareCheckoutRequest {
+            id: worktree.preparation,
+            source: ExecutionDirectory {
+                path: self.directory.clone(),
+            },
+            prompt: PreparationPrompt {
+                text: self.prompt.text.clone(),
+                skill_invocations: Vec::new(),
+                attachments: Vec::new(),
+            },
+            provider,
+            intended_session: Some(self.session_id),
+        })
+    }
+
+    /// Whether a new Worktree is still to be prepared for it.
+    pub fn preparing(&self) -> bool {
+        self.worktree
+            .as_ref()
+            .is_some_and(|worktree| worktree.prepared.is_none())
+    }
+
+    /// Takes the new Worktree as prepared at `destination`.
+    pub fn prepared(&mut self, destination: PathBuf) {
+        if let Some(worktree) = self.worktree.as_mut() {
+            worktree.prepared = Some(destination);
+        }
+    }
+
+    /// The request that begins it, in the new Worktree once it is prepared.
+    /// Its Session id and its Prompt id make it the same creation however
+    /// often it is asked.
     pub fn request(&self) -> CreateSessionRequest {
+        let prepared = self.worktree.as_ref().and_then(|worktree| {
+            worktree
+                .prepared
+                .as_ref()
+                .map(|destination| (worktree.preparation, destination))
+        });
         CreateSessionRequest {
-            preparation_id: None,
+            preparation_id: prepared.map(|(preparation, _)| preparation),
             // The Server's own Agent Selection: a phone chooses none.
             agent_selection: None,
             execution_directory: ExecutionDirectory {
-                path: self.directory.clone(),
+                path: prepared.map_or_else(|| self.directory.clone(), |(_, at)| at.clone()),
             },
             prompt: self.prompt.clone(),
             session_id: Some(self.session_id),
+        }
+    }
+
+    /// What its bar reads while its Server has yet to answer: "Creating
+    /// worktree" while a new one is prepared, and "Starting" after.
+    pub fn bar_words(&self) -> &'static str {
+        if self.preparing() {
+            CREATING_WORKTREE
+        } else {
+            crate::frame::STARTING
         }
     }
 
@@ -343,6 +556,20 @@ fn prompt(text: String) -> InitialPrompt {
     }
 }
 
+/// What the bar of a Session being begun reads while its new Worktree is
+/// prepared.
+pub(crate) const CREATING_WORKTREE: &str = "Creating worktree";
+
+/// Why a beginning in a new Worktree is refused where its Server names no
+/// Agent a Session would get, whose Provider the Worktree is prepared for.
+pub(crate) const NO_AGENT_FOR_WORKTREE: &str =
+    "the server names no agent to prepare a new worktree for";
+
+/// Why a beginning in a new Worktree stands refused where the preparation's
+/// answer never came: nothing was begun, and trying again resumes it.
+pub(crate) const PREPARATION_UNANSWERED: &str =
+    "the server did not answer while the worktree was being prepared";
+
 /// What the row a refusal stands as says: why, after the words the TUI
 /// leads its row with.
 pub(crate) fn refused_words(why: &str) -> String {
@@ -382,6 +609,7 @@ mod tests {
             unreachable: false,
             origin_named: true,
             agent: None,
+            worktrees: Worktrees::Directory,
         };
         let landing = landing(Some(("desk", Some(&workspace))), &known, None);
         assert_eq!(landing.title, "New session");
@@ -573,5 +801,197 @@ mod tests {
         assert_ne!(provisional.prompt.id, first.prompt.id);
         assert_eq!(provisional.session_id, first.session_id.unwrap());
         assert!(provisional.starting());
+    }
+
+    fn repository(location: RepositoryLocation) -> Workspace {
+        serde_json::from_value(serde_json::json!({
+            "id": "git:shaman",
+            "path": "shaman",
+            "repository": {
+                "id": "git:shaman",
+                "system": "git",
+                "metadata_directory": ".git",
+                "location": location,
+                "availability": {"status": "available"},
+                "capabilities": {
+                    "list_checkouts": {"status": "available"},
+                    "create_checkout": {"status": "available"},
+                    "recover_checkout": {"status": "available"},
+                    "remove_checkout": {"status": "available"},
+                },
+            },
+            "source_control": {"status": "available"},
+            "icon": null,
+            "description": null,
+        }))
+        .expect("a Workspace")
+    }
+
+    fn resolved(
+        workspace: Workspace,
+        status: &str,
+        revision: serde_json::Value,
+    ) -> ResolvedWorkspace {
+        serde_json::from_value(serde_json::json!({
+            "execution_status": {"status": status},
+            "workspace": workspace,
+            "execution_directory": {"path": "shaman"},
+            "checkout": null,
+            "checkouts": [{
+                "association": {
+                    "recovery_revision": null,
+                    "reclaim": null,
+                    "id": "main",
+                    "repository": "git:shaman",
+                    "root": "shaman",
+                    "kind": "main",
+                },
+                "revision": revision,
+                "availability": {"status": "available"},
+            }],
+        }))
+        .expect("a resolved Workspace")
+    }
+
+    fn main_root() -> RepositoryLocation {
+        RepositoryLocation::Main {
+            root: PathBuf::from("shaman"),
+        }
+    }
+
+    #[test]
+    fn a_repository_offers_its_main_worktree_by_its_checkout_state_or_a_new_one() {
+        let listed = repository(main_root());
+        assert_eq!(
+            worktrees(Some(&listed), None),
+            Worktrees::Repository { main: None },
+            "offered as listed, before it resolves"
+        );
+        let branch =
+            serde_json::json!({"kind": "branch", "name": "develop", "commit": "1a2b3c4d5e"});
+        assert_eq!(
+            worktrees(
+                Some(&listed),
+                Some(&resolved(listed.clone(), "available", branch))
+            ),
+            Worktrees::Repository {
+                main: Some("develop".to_owned())
+            }
+        );
+        let detached = serde_json::json!({"kind": "detached", "commit": "1a2b3c4d5e6f"});
+        assert_eq!(
+            worktrees(None, Some(&resolved(listed.clone(), "available", detached))),
+            Worktrees::Repository {
+                main: Some("detached 1a2b3c4d".to_owned())
+            }
+        );
+        let unborn = serde_json::json!({"kind": "branch", "name": "main", "commit": null});
+        assert_eq!(
+            worktrees(None, Some(&resolved(listed, "available", unborn))),
+            Worktrees::Repository {
+                main: Some("main (unborn)".to_owned())
+            }
+        );
+
+        let workspace = remembered("shaman");
+        let at = |worktrees| {
+            landing(
+                Some(("desk", Some(&workspace))),
+                &Known {
+                    worktrees,
+                    ..Known::default()
+                },
+                None,
+            )
+        };
+        let offered = at(Worktrees::Repository {
+            main: Some("develop".to_owned()),
+        });
+        assert_eq!(
+            offered.worktree,
+            Some(WorktreeChoice {
+                main: "On develop".to_owned(),
+                new: "In a new worktree".to_owned(),
+            })
+        );
+        assert!(offered.can_send);
+        assert_eq!(
+            at(Worktrees::Repository { main: None })
+                .worktree
+                .map(|choice| choice.main),
+            Some("On the main worktree".to_owned())
+        );
+        let outside = at(Worktrees::Directory);
+        assert_eq!(outside.worktree, None, "outside source control");
+        assert!(outside.can_send);
+    }
+
+    #[test]
+    fn a_bare_repository_offers_no_worktree_and_no_send() {
+        let bare = repository(RepositoryLocation::Bare {
+            root: PathBuf::from("mirror.git"),
+        });
+        assert_eq!(worktrees(Some(&bare), None), Worktrees::Bare);
+        let branch = serde_json::json!({"kind": "branch", "name": "main", "commit": "1a2b"});
+        assert_eq!(
+            worktrees(
+                Some(&bare),
+                Some(&resolved(bare.clone(), "requires_working_copy", branch))
+            ),
+            Worktrees::Bare
+        );
+        let workspace = remembered("mirror.git");
+        let landing = landing(
+            Some(("desk", Some(&workspace))),
+            &Known {
+                worktrees: Worktrees::Bare,
+                ..Known::default()
+            },
+            None,
+        );
+        assert_eq!(landing.worktree, None);
+        assert_eq!(landing.working_copy.as_deref(), Some(WORKING_COPY));
+        assert!(!landing.can_send, "a working copy must be chosen");
+        assert_eq!(
+            worktrees(Some(&Workspace::directory(PathBuf::from("notes"))), None),
+            Worktrees::Directory
+        );
+    }
+
+    #[test]
+    fn a_session_begun_in_a_new_worktree_prepares_it_first_and_begins_there() {
+        let mut provisional = Provisional::new(
+            SessionId::new(),
+            PathBuf::from("shaman"),
+            "Tidy the build".to_owned(),
+            "shaman".to_owned(),
+        )
+        .in_new_worktree();
+        assert_eq!(provisional.bar_words(), "Creating worktree");
+        let preparation = provisional
+            .preparation(ProviderId::new("claude"))
+            .expect("a preparation to ask");
+        assert_eq!(preparation.source.path, PathBuf::from("shaman"));
+        assert_eq!(preparation.prompt.text, "Tidy the build");
+        assert_eq!(preparation.intended_session, Some(provisional.session_id));
+        assert_eq!(
+            provisional
+                .preparation(ProviderId::new("claude"))
+                .unwrap()
+                .id,
+            preparation.id,
+            "the same preparation however often it is asked"
+        );
+
+        provisional.prepared(PathBuf::from("shaman/.worktrees/tidy"));
+        assert_eq!(provisional.bar_words(), "Starting");
+        assert_eq!(provisional.preparation(ProviderId::new("claude")), None);
+        let request = provisional.request();
+        assert_eq!(request.preparation_id, Some(preparation.id));
+        assert_eq!(
+            request.execution_directory.path,
+            PathBuf::from("shaman/.worktrees/tidy")
+        );
+        assert_eq!(request.agent_selection, None, "a phone names no Agent");
     }
 }

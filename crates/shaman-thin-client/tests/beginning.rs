@@ -411,7 +411,8 @@ async fn where_no_workspace_is_remembered_the_landing_asks_for_one_and_nothing_b
     let asks = landing.asks.expect("it asks for a Workspace");
     assert!(asks.starts_with("Choose a workspace to begin in"), "{asks}");
     assert!(!landing.can_send);
-    let Err(ActError::Invalid { message }) = phone.core.begin_session("Tidy the build".to_owned())
+    let Err(ActError::Invalid { message }) =
+        phone.core.begin_session("Tidy the build".to_owned(), false)
     else {
         panic!("began with nowhere to begin");
     };
@@ -419,7 +420,7 @@ async fn where_no_workspace_is_remembered_the_landing_asks_for_one_and_nothing_b
 
     let holder = tempfile::tempdir().expect("make the Workspaces' directory");
     remember(&phone, &desk, &workspace(&holder, WORKING), WORKING).await;
-    let Err(ActError::Invalid { .. }) = phone.core.begin_session("  \n ".to_owned()) else {
+    let Err(ActError::Invalid { .. }) = phone.core.begin_session("  \n ".to_owned(), false) else {
         panic!("began with nothing written");
     };
 

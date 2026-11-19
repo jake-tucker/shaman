@@ -393,8 +393,9 @@ pub(crate) fn frame_of(
 }
 
 /// What frames a Session being begun, until its Server is seen holding it:
-/// its Prompt's first line as the Title, and a bar reading "Starting", with
-/// no elapsed time and no Stop, while it waits; once refused, or unanswered
+/// its Prompt's first line as the Title, and a bar reading "Creating
+/// worktree" while a new Worktree is prepared and "Starting" after, with no
+/// elapsed time and no Stop, while it waits; once refused, or unanswered
 /// so that it may have begun, no bar, its row standing in the conversation,
 /// and a composer whose Prompt is written instead.
 fn provisional_frame(
@@ -410,7 +411,7 @@ fn provisional_frame(
         gone: None,
         bar: starting.then(|| Bar {
             kind: BarKind::Working,
-            words: STARTING.to_owned(),
+            words: provisional.bar_words().to_owned(),
             since: None,
             watching: None,
             stop: None,

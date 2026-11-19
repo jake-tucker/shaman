@@ -40,7 +40,7 @@ use shaman_client::{
     RecoveryBackoff, SessionCommands, SessionEvent, SessionStreamError, SessionSubscription, TryNow,
 };
 use shaman_protocol::{
-    AdmitPromptRequest, InitialPrompt, InterruptOutcome, PromptDelivery, PromptId,
+    AdmitPromptRequest, InitialPrompt, InterruptOutcome, NewSessionAgent, PromptDelivery, PromptId,
     QuestionnaireSubmission, SessionId, SessionSnapshot,
 };
 use tokio::{runtime::Handle, sync::watch, task::JoinHandle};
@@ -926,12 +926,12 @@ impl Acting {
     /// begun. Where the screen has gone by then, its Prompt's text is kept as
     /// the Landing's draft.
     async fn create(&self) {
-        let Some((request, session_id)) = self
+        let Some(session_id) = self
             .local
             .borrow()
             .provisional
             .as_ref()
-            .map(|provisional| (provisional.request(), provisional.session_id))
+            .map(|provisional| provisional.session_id)
         else {
             return;
         };
@@ -940,6 +940,19 @@ impl Acting {
             Ok(opening) => {
                 let commands = opening.commands;
                 let mut try_now = opening.try_now;
+                if let Err(refused) = self.prepare(&commands, &mut try_now).await {
+                    self.stand(Err(refused));
+                    return;
+                }
+                let Some(request) = self
+                    .local
+                    .borrow()
+                    .provisional
+                    .as_ref()
+                    .map(Provisional::request)
+                else {
+                    return;
+                };
                 let created = acts::deliver_again(self.asking, &mut try_now, || {
                     let (commands, request) = (commands.clone(), request.clone());
                     async move { commands.create_session(request).await }
@@ -969,6 +982,88 @@ impl Acting {
                 }
             }
         };
+        self.stand(answered);
+    }
+
+    /// Prepares the new Worktree the Session being begun is to begin in,
+    /// where it has one yet to be prepared, for the Provider of the Agent its
+    /// Server says a Session would get: until the Server answers or the
+    /// act's bound passes, a preparation that resumes however often it is
+    /// asked. Once it stands ready the Session is begun there, its bar
+    /// reading "Starting"; otherwise the beginning stands refused, why in
+    /// the Server's words, nothing having begun.
+    async fn prepare(
+        &self,
+        commands: &SessionCommands,
+        try_now: &mut TryNow,
+    ) -> Result<(), Progress> {
+        if !self
+            .local
+            .borrow()
+            .provisional
+            .as_ref()
+            .is_some_and(Provisional::preparing)
+        {
+            return Ok(());
+        }
+        let health = acts::deliver_again(self.asking, try_now, || {
+            let commands = commands.clone();
+            async move { commands.health().await }
+        })
+        .await
+        .map_err(|unanswered| match unanswered {
+            Unanswered::NotDone(refused) => Progress::Refused(refused.to_string()),
+            Unanswered::MaybeDone => {
+                Progress::Refused(beginning::PREPARATION_UNANSWERED.to_owned())
+            }
+        })?;
+        // A Server too old to say what a new Session would get says what its
+        // Landing would begin one with.
+        let provider = match health.new_session_agent() {
+            NewSessionAgent::Agent(selection) => Some(selection.provider),
+            NewSessionAgent::NoAgent => None,
+            NewSessionAgent::NotSaid => health
+                .landing_agent_selection
+                .map(|selection| selection.provider),
+        }
+        .ok_or_else(|| Progress::Refused(beginning::NO_AGENT_FOR_WORKTREE.to_owned()))?;
+        let Some(request) = self
+            .local
+            .borrow()
+            .provisional
+            .as_ref()
+            .and_then(|provisional| provisional.preparation(provider))
+        else {
+            return Ok(());
+        };
+        let prepared = acts::deliver_again(self.asking, try_now, || {
+            let (commands, request) = (commands.clone(), request.clone());
+            async move { commands.prepare_checkout(request).await }
+        })
+        .await
+        .map_err(|unanswered| match unanswered {
+            Unanswered::NotDone(refused) => Progress::Refused(refused.to_string()),
+            Unanswered::MaybeDone => {
+                Progress::Refused(beginning::PREPARATION_UNANSWERED.to_owned())
+            }
+        })?;
+        if let Some(error) = prepared.error {
+            return Err(Progress::Refused(error));
+        }
+        let destination = prepared.preparation.destination.path;
+        self.local.send_modify(|local| {
+            if let Some(provisional) = local.provisional.as_mut() {
+                provisional.prepared(destination);
+            }
+        });
+        Ok(())
+    }
+
+    /// Stands the Session being begun as `answered` says: turning into the
+    /// Session its Server made, or standing refused, or as having maybe
+    /// begun. Where the screen has gone by then, its Prompt's text is kept as
+    /// the Landing's draft.
+    fn stand(&self, answered: Result<SessionSnapshot, Progress>) {
         let mut left = None;
         self.local.send_modify(|local| {
             let closed = local.closed;

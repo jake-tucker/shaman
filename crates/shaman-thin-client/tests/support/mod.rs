@@ -19,7 +19,7 @@ use shaman::{
         Decision, ExecutionDirectory, InitialPrompt, IssueInviteRequest, ModelAvailability,
         ModelDescriptor, ModelDetails, ModelId, Peer, PromptId, ProviderId, QuestionnaireId,
         QuestionnaireSubmission, RedeemInviteRequest, SessionId, SettingMutation, SkillCatalog,
-        Way,
+        SkillCatalogCapabilities, SkillCatalogStatus, Way,
     },
     provider::{
         AttributedProviderEvent, BrokerHandoff, ErrandFuture, ProviderDecisionDelivery,
@@ -40,7 +40,7 @@ use shaman_thin_client::{
     CoreTimings, DetailListener, DeviceListener, FrameListener, KeySigner, Landing,
     LandingListener, Listing, ListingListener, OpenSession, Outlook, OutlookListener, Servers,
     ServersListener, SessionFrame, SignError, SubagentTree, Subscription, ThinClient, ThisDevice,
-    TreeListener, TurnWork, WorkListener,
+    TreeListener, TurnWork, WorkListener, WorkspacePicker, WorkspacesListener,
 };
 use tokio::{
     net::TcpListener,
@@ -108,7 +108,9 @@ impl ServingServer {
     }
 
     /// A Server whose Provider offers one Model, so that a Session its
-    /// Sidekick begins through the Broker has an Agent to begin with.
+    /// Sidekick begins through the Broker has an Agent to begin with, and a
+    /// Session begun with no Agent Selection would get it, as its health
+    /// says; and Skills, so a new Worktree can be prepared for it.
     pub async fn start_offering_a_model(channel: &str) -> Self {
         Self::starting(channel, true).await
     }
@@ -315,6 +317,22 @@ impl ServingServer {
             .expect("begin a Session")
             .session
             .id
+    }
+
+    /// Names `roots` this Server's Workspace Roots, so the Repositories
+    /// directly within each are among its Workspaces.
+    pub async fn set_workspace_roots(&self, roots: &[&std::path::Path]) {
+        self.client
+            .mutate_setting(SettingMutation::WorkspaceRoots {
+                value: Some(
+                    roots
+                        .iter()
+                        .map(|root| root.to_string_lossy().into_owned())
+                        .collect(),
+                ),
+            })
+            .await
+            .expect("name the Workspace Roots");
     }
 
     /// Interrupts the Session `session`, as the Server's own user would.
@@ -800,12 +818,65 @@ impl Phone {
         }
     }
 
+    /// What the Workspace Picker shows once it shows what `shown` looks for,
+    /// searched for `query`.
+    pub async fn workspaces_until(
+        &self,
+        query: &str,
+        shown: impl Fn(&WorkspacePicker) -> bool,
+    ) -> WorkspacePicker {
+        let (sender, mut heard) = watch::channel(None);
+        let _subscription = self.core.watch_workspaces(Arc::new(Heard(sender)));
+        self.core.search_workspaces(query.to_owned());
+        let found = timeout(
+            PROGRESS_DEADLINE,
+            heard.wait_for(|picker| picker.as_ref().is_some_and(&shown)),
+        )
+        .await
+        .map(|found| found.map(|picker| picker.clone()));
+        match found {
+            Ok(Ok(picker)) => picker.expect("heard"),
+            _ => panic!(
+                "the Workspace Picker never showed what was looked for: {:#?}",
+                *heard.borrow()
+            ),
+        }
+    }
+
+    /// What the Workspace Picker, opened afresh, shows within `within`, where
+    /// it shows what `shown` looks for by then.
+    pub async fn workspaces_within(
+        &self,
+        within: Duration,
+        shown: impl Fn(&WorkspacePicker) -> bool,
+    ) -> Option<WorkspacePicker> {
+        let (sender, mut heard) = watch::channel(None);
+        let _subscription = self.core.watch_workspaces(Arc::new(Heard(sender)));
+        timeout(
+            within,
+            heard.wait_for(|picker| picker.as_ref().is_some_and(&shown)),
+        )
+        .await
+        .ok()
+        .and_then(|found| found.ok().and_then(|picker| picker.clone()))
+    }
+
     /// Begins a Session with the Prompt `text` where the Outlook stands, as
     /// the Landing's send does, and reads it as its screen turns into it.
     pub fn begin(&self, text: &str) -> Reading {
         let session = self
             .core
-            .begin_session(text.to_owned())
+            .begin_session(text.to_owned(), false)
+            .expect("a Session begun");
+        Self::reading(session)
+    }
+
+    /// Begins a Session with the Prompt `text` where the Outlook stands, in
+    /// a new Worktree, as the Landing's send does with that chosen.
+    pub fn begin_in_new_worktree(&self, text: &str) -> Reading {
+        let session = self
+            .core
+            .begin_session(text.to_owned(), true)
             .expect("a Session begun");
         Self::reading(session)
     }
@@ -1081,6 +1152,12 @@ impl LandingListener for Heard<Landing> {
     }
 }
 
+impl WorkspacesListener for Heard<WorkspacePicker> {
+    fn changed(&self, picker: WorkspacePicker) {
+        self.0.send_replace(Some(picker));
+    }
+}
+
 impl OutlookListener for Heard<Outlook> {
     fn changed(&self, outlook: Outlook) {
         self.0.send_replace(Some(outlook));
@@ -1123,7 +1200,9 @@ struct TestProvider {
     handoffs: Handoffs,
     decisions: Decisions,
     submissions: Submissions,
-    /// Whether it offers its one Model, rather than discovering none.
+    /// Whether it offers its one Model, rather than discovering none, and
+    /// Skills, so its Server names an Agent a new Session would get and can
+    /// prepare a Worktree for it.
     offers_a_model: bool,
 }
 
@@ -1155,8 +1234,23 @@ impl ProviderRuntime for TestProvider {
         })
     }
 
-    fn skill_catalog(&self, _workspace: &std::path::Path) -> ProviderFuture<'_, SkillCatalog> {
-        Box::pin(async { Err(ProviderError::new("No Skills are offered.")) })
+    fn skill_catalog(&self, workspace: &std::path::Path) -> ProviderFuture<'_, SkillCatalog> {
+        let (offers, workspace) = (self.offers_a_model, workspace.to_owned());
+        Box::pin(async move {
+            if !offers {
+                return Err(ProviderError::new("No Skills are offered."));
+            }
+            Ok(SkillCatalog {
+                provider: ProviderId::new("none"),
+                execution_directory: ExecutionDirectory { path: workspace },
+                skills: Vec::new(),
+                capabilities: SkillCatalogCapabilities {
+                    max_distinct_invocations: None,
+                    supported_deliveries: Vec::new(),
+                },
+                status: SkillCatalogStatus::Fresh { warning: None },
+            })
+        })
     }
 
     fn start_session(
