@@ -1652,13 +1652,12 @@ async fn a_questionnaire_presents_itself_is_dismissed_reviewed_and_answered_agai
     let token = &sheet.questions[1];
     assert!(token.field.as_ref().is_some_and(|field| field.secure));
     assert_eq!(token.skip.as_deref(), Some("Skip"));
-    assert_eq!(
-        cards(&reading.conversation_now().items)
-            .last()
-            .map(|card| card.line.clone()),
-        Some("Waiting on you".to_owned()),
-        "the live Turn's card says it waits on the reader"
-    );
+    // The frame is told before the conversation, so the card is waited for.
+    reading
+        .conversation_until(|items| {
+            cards(items).last().map(|card| card.line.as_str()) == Some("Waiting on you")
+        })
+        .await;
 
     // Swiped away, it waits behind the orange bar, and Review brings it back.
     reading.session.dismiss();
