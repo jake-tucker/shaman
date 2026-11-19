@@ -258,14 +258,14 @@ final class RelayLoginTests: XCTestCase {
 
   @MainActor
   func testARelayTheServerTurnsOnAfterPairingAppearsAsLoginNeededAndLogsIn() {
-    let app = launched("relayTurnedOn", ["--servers-and-device", "--relay-told-after", "4"], confirmsAfter: 3)
+    let app = launched("relayTurnedOn", ["--servers-and-device", "--relay-told-after", "10"], confirmsAfter: 3)
     let direct = element("server.workstation.way.1", in: app)
     XCTAssertTrue(direct.waitForExistence(timeout: 10))
     let relayed = element("server.workstation.way.2", in: app)
     XCTAssertFalse(relayed.exists, "no relay way before the server turns one on")
     attach(app, "Before the server turns a relay on")
 
-    XCTAssertTrue(relayed.waitForExistence(timeout: 15), "the relay turned on appears beside the direct ways")
+    XCTAssertTrue(relayed.waitForExistence(timeout: 25), "the relay turned on appears beside the direct ways")
     XCTAssertTrue(relayed.label.contains("login needed"), relayed.label)
     XCTAssertFalse(element("relay.relay.example.com", in: app).exists, "no relay is held before a login")
     attach(app, "A relay turned on after pairing, needing a login")
@@ -278,13 +278,13 @@ final class RelayLoginTests: XCTestCase {
 
   @MainActor
   func testARelayTheServerTurnsOffGoesWhileTheLoginThereStaysListed() {
-    let app = launched("relayTurnedOff", ["--servers-and-device", "--relay-told-after", "4"])
+    let app = launched("relayTurnedOff", ["--servers-and-device", "--relay-told-after", "10"])
     let relayed = element("server.workstation.way.2", in: app)
     XCTAssertTrue(relayed.waitForExistence(timeout: 10))
     XCTAssertTrue(relayed.label.contains("answering"), relayed.label)
     attach(app, "Before the server turns its relay off")
 
-    XCTAssertTrue(gone(relayed), "the relay turned off goes from the server's ways")
+    XCTAssertTrue(gone(relayed, within: 25), "the relay turned off goes from the server's ways")
     XCTAssertTrue(element("server.workstation.way.1", in: app).exists, "the direct ways stay")
     let relay = element("relay.relay.example.com", in: app)
     XCTAssertTrue(relay.exists, "the login there stays")
