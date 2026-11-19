@@ -558,20 +558,16 @@ private final class RefusingSigner: KeySigner {
 }
 
 @Suite @MainActor struct SidekickTreeTests {
-  @Test func aSidekicksSheetHandsBackEachEntryOnTheServerItOpensOnAndNoneWhereThePhoneIsNotPaired() async throws {
-    let core = FakeCore(.sidekick)
-    let model = SessionModel(core: core, session: "workstation-key/20")
-    var sheets = model.tree().makeAsyncIterator()
-    let sheet = try #require(await sheets.next())
-    #expect(sheet.title == "Sessions")
-    let row = { (title: String) in sheet.rows.first { $0.title == title } }
-    #expect(row("Tidy the docs")?.session == "workstation-key/21")
-    #expect(row("Write the parser")?.session == "laptop-key/22")
-    #expect(row("Write the parser")?.place == "laptop · billing-api")
-    #expect(row("Fix the lights")?.session == nil)
-    #expect(row("Fix the lights")?.note == "This phone is not paired with attic")
-    #expect(row("Back up the photos")?.dimmed == true)
-    model.close()
+  @Test func theSidekickChosenFromASessionOnAnotherServerOpenedOverItIsPoppedBackTo() {
+    let stack = SessionStack(core: FakeCore(.sidekick))
+    let sidekick = SessionRoute(session: "workstation-key/20")
+    let parser = SessionRoute(session: "laptop-key/22")
+    stack.path = [.session(sidekick), .session(parser)]
+    // Each Session is known by its own Server's key, so one of the laptop's names no Session of the workstation's.
+    stack.show("workstation-key/22", over: parser)
+    #expect(stack.path.count == 3, "a Session of the same identity on another Server is another Session")
+    stack.show("workstation-key/20", over: parser)
+    #expect(stack.path == [.session(sidekick)])
   }
 
   @Test func anEntryOnAnotherServerChosenInTheTreeIsPushedAsItsOwnSession() {

@@ -60,10 +60,22 @@
     }
 
     /// The button the tree is opened by.
-    static let button = TreeButton(working: "1", label: "7 sessions, 1 working")
+    static let button = TreeButton(working: "1", label: "8 sessions, 1 working")
 
     /// The glyph of a folder, which a Workspace with no Icon of its own is led by.
     private static let folder = "\u{ea83}"
+
+    /// The glyph of a monitor, which a Remote is led by.
+    private static let monitor = "\u{f0379}"
+
+    /// Where a Session works, as the core says it: `place` is the Remote, where it lives on another Server, then the
+    /// Workspace, separated as a reader sees them.
+    private static func place(_ place: String) -> Place {
+      let parts = place.components(separatedBy: " · ")
+      let remote = parts.count > 1 ? parts[0] : nil
+      return Place(
+        remote: remote, remoteGlyph: remote.map { _ in monitor }, workspace: parts.last, workspaceGlyph: folder)
+    }
 
     /// One entry of the sheet.
     private static func entry(
@@ -71,16 +83,16 @@
       trailing: String? = nil, since: Date? = nil, note: String? = nil, dimmed: Bool = false, open: String
     ) -> TreeRow {
       TreeRow(
-        id: id, session: session, depth: 1, marker: marker, title: title, place: place, placeGlyph: folder,
-        line: line, note: note, dimmed: dimmed, trailing: trailing, needsYou: false, since: since,
-        open: session == open, stop: nil)
+        id: id, session: session, depth: 1, marker: marker, title: title, place: Self.place(place), line: line,
+        note: note, dimmed: dimmed, trailing: trailing, needsYou: false, since: since, open: session == open,
+        stop: nil)
     }
 
     /// The sheet over `open`, as of `now`.
     static func sheet(for open: String, now: Date = Date()) -> SubagentTree {
       let rows = [
         TreeRow(
-          id: top, session: top, depth: 0, marker: .running, title: title, place: "Sidekick", placeGlyph: folder,
+          id: top, session: top, depth: 0, marker: .running, title: title, place: place("Sidekick"),
           line: "Claude · opus", note: nil, dimmed: false, trailing: nil, needsYou: false,
           since: now.addingTimeInterval(-95), open: open == top, stop: nil),
         entry(
@@ -104,8 +116,13 @@
         entry(
           "32@nas", nil, title: "Back up the photos", place: "nas · photos", line: "not answering", marker: nil,
           note: "This phone is not paired with nas", dimmed: true, open: open),
+        // The workstation names a Remote whose key it is too old to give, so no Pairing of the phone's is known to
+        // open it.
+        entry(
+          "33@mail", nil, title: "Sort the inbox", place: "mail · inbox-rules", line: "Claude · haiku",
+          marker: .succeeded, trailing: "1m 2s", note: "Update workstation to open this here", open: open),
       ]
-      return SubagentTree(title: "Sessions", count: "7 · 1 working", loading: nil, failed: nil, rows: rows)
+      return SubagentTree(title: "Sessions", count: "8 · 1 working", loading: nil, failed: nil, rows: rows)
     }
 
     /// The conversation of the Sidekick's Session.

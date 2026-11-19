@@ -95,14 +95,14 @@ Explorer alone waits, on an Approval, under a name longer than any bar has room 
 also lists a Sidekick's Session, `workstation-key/20`, whose tree, headed "Sessions", stands its Subsessions and the
 Sessions it acted on across Servers: `/21` on the workstation, `laptop-key/22` and `/24` on the laptop (which the
 workstation calls "build"), `homelab-key/23` on the home lab, which reads Unreachable to the phone, and entries on
-"attic" and "nas", which the phone is not paired with and so cannot open; its card's rows open its Subsessions by the
-same rule. A card pushes its Turn's work
-from `FakeWork`, and a row its Activity's whole: in `/7` the work holds a settled Approval, File Changes and the
-placeholder for a kind a newer Server sent, and in `/1` the running command's output grows a line at a time while its
-screen is up. Every act a fake Session is asked is answered as the core would answer it, after a moment: a Prompt
-holding "fail" is refused, one holding "gone" finds the Session gone, which pops its screen, and one holding
-"unanswered" is never answered, so its text stays in the composer with the line saying it may have been sent; answers
-to a Questionnaire holding "fail" are refused.
+"attic" and "nas", which the phone is not paired with and so cannot open, and one on "mail", which the workstation names
+without its key, saying the workstation is to be updated; its card's rows open its Subsessions by the same rule. A card
+pushes its Turn's work from `FakeWork`, and a row its Activity's whole: in `/7` the work holds a settled Approval, File
+Changes and the placeholder for a kind a newer Server sent, and in `/1` the running command's output grows a line at a
+time while its screen is up. Every act a fake Session is asked is answered as the core would answer it, after a moment:
+a Prompt holding "fail" is refused, one holding "gone" finds the Session gone, which pops its screen, and one holding
+"unanswered" is never answered, so its text stays in the composer with the line saying it may have been sent; answers to
+a Questionnaire holding "fail" are refused.
 
 ```sh
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake paired --open workstation-key/1

@@ -66,7 +66,7 @@ final class SidekickTests: XCTestCase {
     titled("Plan the week", in: app)
     openTree(in: app)
     XCTAssertTrue(app.staticTexts["Sessions"].exists, "a Sidekick's tree is headed Sessions")
-    XCTAssertEqual(app.staticTexts["tree.count"].label, "7 · 1 working")
+    XCTAssertEqual(app.staticTexts["tree.count"].label, "8 · 1 working")
     // Drawn up to its full height, every entry stands on screen.
     element("tree.row", holding: "Plan the week", in: app).swipeUp()
     XCTAssertTrue(element("tree.row", holding: "Back up the photos", in: app).waitForExistence(timeout: 10))
@@ -81,14 +81,24 @@ final class SidekickTests: XCTestCase {
 
     // One on a Server the phone is not paired with is named as the workstation names it and opens nothing.
     let lights = element("tree.row", holding: "Fix the lights", in: app)
-    XCTAssertTrue(lights.label.contains("attic · home-assistant"), lights.label)
+    XCTAssertTrue(lights.label.contains("attic"), lights.label)
+    XCTAssertTrue(lights.label.contains("home-assistant"), lights.label)
     XCTAssertTrue(lights.label.contains("This phone is not paired with attic"), lights.label)
-    XCTAssertFalse(lights.isEnabled, "it does not open")
+    XCTAssertFalse(app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "Fix the lights")).firstMatch.exists)
     attach(app, "A sidekick's tree across servers")
+    lights.tap()
+    XCTAssertTrue(app.otherElements["tree.sheet"].exists, "it opens nothing")
+
+    // One a Server too old to give its Remote's key names says which Server to update.
+    element("tree.row", holding: "Back up the photos", in: app).swipeUp()
+    let inbox = element("tree.row", holding: "Sort the inbox", in: app)
+    XCTAssertTrue(inbox.waitForExistence(timeout: 10))
+    XCTAssertTrue(inbox.label.contains("Update workstation to open this here"), inbox.label)
 
     // One on another Server the phone is paired with is named as the phone names it, and opens there.
     let parser = element("tree.row", holding: "Write the parser", in: app)
-    XCTAssertTrue(parser.label.contains("laptop · billing-api"), parser.label)
+    XCTAssertTrue(parser.label.contains("laptop"), parser.label)
+    XCTAssertTrue(parser.label.contains("billing-api"), parser.label)
     parser.tap()
     titled("Write the parser", in: app)
     XCTAssertTrue(app.staticTexts["session.place"].label.hasPrefix("laptop"), app.staticTexts["session.place"].label)

@@ -352,7 +352,7 @@
       let topNeeds = needs(Self.top).map { "Needs \($0)" }
       let top = TreeRow(
         id: Self.top, session: Self.top, depth: 0, marker: topStopped ? .stopped : .running, title: Self.title,
-        place: nil, placeGlyph: nil, line: topStopped ? "Claude · opus · Stopped" : "Claude · opus", note: nil,
+        place: nil, line: topStopped ? "Claude · opus · Stopped" : "Claude · opus", note: nil,
         dimmed: false,
         trailing: topNeeds ?? (topStopped ? "3m 10s" : nil), needsYou: topNeeds != nil,
         since: topStopped || topNeeds != nil ? nil : opened.addingTimeInterval(-190), open: open == Self.top, stop: nil)
@@ -368,7 +368,7 @@
         let needs = needs(member.session).map { "Needs \($0)" }
         return TreeRow(
           id: member.session, session: member.session, depth: member.depth, marker: marker, title: member.title,
-          place: nil, placeGlyph: nil,
+          place: nil,
           line: ([name(member), member.model] + [outcome].compactMap { $0 }).joined(separator: " · "), note: nil,
           dimmed: false,
           trailing: needs ?? (working ? nil : member.monitoring ? "monitoring" : worked), needsYou: needs != nil,

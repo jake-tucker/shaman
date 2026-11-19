@@ -24,9 +24,10 @@ struct TreeButtonView: View {
 
 /// The tree an open Session belongs to, as a sheet: its top-level Session first, then every Subagent beneath the one
 /// that spawned it — and beneath a Sidekick's, the Sessions it has a hand in, on whichever Server — in the order the
-/// core gives, the open Session highlighted. Choosing an entry hands its Session to `choose`, and one the core gives
-/// none for, on a Server this phone cannot open it on, is not chosen; a working Subagent that can be stopped alone is stopped by a swipe, which asks nothing first. It crosses
-/// from the core only while it is up.
+/// core gives, the open Session highlighted. Choosing an entry hands its Session to `choose`; one the core gives none
+/// for, on a Server this phone cannot open it on, takes no tap, and is greyed only where the core says nothing of its
+/// work is current. A working Subagent that can be stopped alone is stopped by a swipe, which asks nothing first. It
+/// crosses from the core only while it is up.
 struct TreeSheet: View {
   let model: SessionModel
   let choose: (String) -> Void
@@ -36,15 +37,18 @@ struct TreeSheet: View {
     NavigationStack {
       List {
         ForEach(tree?.rows ?? [], id: \.id) { row in
-          Button {
+          Group {
             if let session = row.session {
-              choose(session)
+              Button {
+                choose(session)
+              } label: {
+                TreeRowView(row: row)
+              }
+              .buttonStyle(.plain)
+            } else {
+              TreeRowView(row: row)
             }
-          } label: {
-            TreeRowView(row: row)
           }
-          .buttonStyle(.plain)
-          .disabled(row.session == nil)
           .listRowBackground(row.open ? Color.accentColor.opacity(0.14) : nil)
           .accessibilityAddTraits(row.open ? .isSelected : [])
           .accessibilityIdentifier("tree.row")
@@ -139,18 +143,7 @@ private struct TreeRowView: View {
           .foregroundStyle(row.open ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
           .lineLimit(2)
         if let place = row.place {
-          HStack(spacing: 4) {
-            if let glyph = row.placeGlyph {
-              Glyph(glyph: glyph, style: .caption)
-                .foregroundStyle(.secondary)
-            }
-            Text(verbatim: place)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .lineLimit(1)
-          }
-          .accessibilityElement(children: .combine)
-          .accessibilityIdentifier("tree.place")
+          PlaceLine(place: place)
         }
         if let line = row.line {
           Text(verbatim: line)
@@ -185,6 +178,37 @@ private struct TreeRowView: View {
     .opacity(row.dimmed ? 0.55 : 1)
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
+  }
+}
+
+/// Where a Session a Sidekick has a hand in works: its Remote, where it lives on another Server, and its Workspace,
+/// each led by its own glyph.
+private struct PlaceLine: View {
+  let place: Place
+
+  var body: some View {
+    HStack(spacing: 4) {
+      if let remote = place.remote {
+        if let glyph = place.remoteGlyph {
+          Glyph(glyph: glyph, style: .caption)
+        }
+        Text(verbatim: remote)
+        if place.workspace != nil {
+          Text(verbatim: "·")
+        }
+      }
+      if let workspace = place.workspace {
+        if let glyph = place.workspaceGlyph {
+          Glyph(glyph: glyph, style: .caption)
+        }
+        Text(verbatim: workspace)
+      }
+    }
+    .font(.caption)
+    .foregroundStyle(.secondary)
+    .lineLimit(1)
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("tree.place")
   }
 }
 
