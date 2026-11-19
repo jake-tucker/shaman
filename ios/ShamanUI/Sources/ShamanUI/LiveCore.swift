@@ -138,6 +138,14 @@ public final class LiveCore: Core {
   public func confirmPairing(invite: String, remoteName: String, deviceName: String) async -> PairingOutcome {
     await client.confirmPairing(invite: invite, remoteName: remoteName, deviceName: deviceName)
   }
+
+  public func logIn(at relay: String) -> AsyncStream<DeviceLogin> {
+    listened { send in client.logInAtRelay(relay: relay, listener: Forwarder(send)) }
+  }
+
+  public func removeRelay(_ relay: String) async throws(ActError) {
+    try await acted { try await client.removeRelay(relay: relay) }
+  }
 }
 
 /// A Session the core holds open.

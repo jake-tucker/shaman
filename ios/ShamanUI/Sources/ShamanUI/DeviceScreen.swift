@@ -25,6 +25,7 @@ public struct DeviceScreen: View {
             self.pairAgain(pairAgain)
           }
           servers(model.servers?.remotes ?? [])
+          relays(model.servers?.relays ?? [])
           thisDevice(device)
         } else {
           ProgressView()
@@ -51,6 +52,15 @@ public struct DeviceScreen: View {
     }
     .task { await model.follow() }
     .task { await model.followServers() }
+    .relayLogin($model.loggingIn, core: core) { _ in }
+    .confirmationDialog(
+      "Remove relay", isPresented: model.removingShown, titleVisibility: .visible, presenting: model.removing
+    ) { row in
+      Button("Remove", role: .destructive) { Task { await model.remove(row) } }
+        .accessibilityIdentifier("relay.remove.confirm")
+    } message: { row in
+      Text(verbatim: row.removal)
+    }
   }
 
   /// Each Remote with its ways, and the offer to pair another server.
@@ -77,6 +87,13 @@ public struct DeviceScreen: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("server.\(remote.name).way.\(index)")
+            if let login = way.login {
+              Button(login.words) { model.loggingIn = LoginAsk(relay: login.relay) }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .accessibilityIdentifier("server.\(remote.name).way.\(index).login")
+            }
           }
         }
       }
@@ -84,6 +101,44 @@ public struct DeviceScreen: View {
         Label("Pair another server", systemImage: "plus")
       }
       .accessibilityIdentifier("servers.pairAnother")
+    }
+  }
+
+  /// Each Relay this phone holds a Login at with its Account and how it stands, removed by a swipe.
+  @ViewBuilder
+  private func relays(_ relays: [RelayRow]) -> some View {
+    if !relays.isEmpty {
+      Section("Relays") {
+        ForEach(relays, id: \.relay) { relay in
+          VStack(alignment: .leading, spacing: 4) {
+            HStack {
+              Text(verbatim: relay.address)
+                .font(.callout.monospaced())
+              Spacer()
+              Text(relay.words)
+                .font(.footnote)
+                .foregroundStyle(relay.state == .loggedIn ? .green : .secondary)
+            }
+            if let account = relay.account {
+              Text(verbatim: account)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+            if let login = relay.login {
+              Button(login.words) { model.loggingIn = LoginAsk(relay: login.relay) }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityIdentifier("relay.\(relay.address).login")
+            }
+          }
+          .accessibilityElement(children: relay.login == nil ? .combine : .contain)
+          .accessibilityIdentifier("relay.\(relay.address)")
+          .swipeActions {
+            Button("Remove", role: .destructive) { model.removing = relay }
+              .accessibilityIdentifier("relay.\(relay.address).remove")
+          }
+        }
+      }
     }
   }
 
@@ -163,6 +218,19 @@ final class DeviceModel {
   /// Why the last act failed otherwise, shown in a banner over the screen.
   private(set) var failure: String?
   private(set) var renaming = false
+  /// The login at a Relay the sheet's own sheet is carrying out, while it is up.
+  var loggingIn: LoginAsk?
+  /// The Relay entry whose removal is being confirmed, while it is.
+  var removing: RelayRow?
+
+  /// Whether the removal of a Relay entry is being confirmed.
+  var removingShown: Binding<Bool> {
+    Binding {
+      self.removing != nil
+    } set: {
+      if !$0 { self.removing = nil }
+    }
+  }
 
   init(core: any Core) {
     self.core = core
@@ -180,6 +248,17 @@ final class DeviceModel {
   func followServers() async {
     for await servers in core.servers() {
       self.servers = servers
+    }
+  }
+
+  /// Removes the Relay entry `row`, giving up this phone's Login there.
+  func remove(_ row: RelayRow) async {
+    removing = nil
+    do {
+      try await core.removeRelay(row.relay)
+      failure = nil
+    } catch {
+      failure = error.message
     }
   }
 

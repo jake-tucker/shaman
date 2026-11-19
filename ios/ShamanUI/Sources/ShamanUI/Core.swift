@@ -107,8 +107,18 @@ public protocol Core: AnyObject, Sendable {
 
   /// Pairs with the Server `invite` is from, naming it `remoteName` and this phone `deviceName`, replacing any Pairing
   /// with that Server, and turns the Outlook toward it. It keeps dialling for a few seconds while no way answers, and
-  /// keeps nothing where it fails.
+  /// keeps nothing where it fails. Where no way answered but a Relay way at a Relay this phone needs to log in at, it
+  /// says so and offers the login, after which the same Invite pairs.
   func confirmPairing(invite: String, remoteName: String, deviceName: String) async -> PairingOutcome
+
+  /// Logs in at the Relay a login offer hands back, which a Remote of this phone's or the Invite last read offers: how
+  /// the login stands, now and on every change, from asking for a code to done or failed. The stream ending before the
+  /// Relay confirms the login gives it up, as the app leaving the front does; once it confirms, every Remote is tried
+  /// again.
+  func logIn(at relay: String) -> AsyncStream<DeviceLogin>
+
+  /// Removes the Relay entry a row of the Relays section hands back, giving up this phone's Login there.
+  func removeRelay(_ relay: String) async throws(ActError)
 }
 
 /// One Session open on a pushed screen, read live until it is closed.

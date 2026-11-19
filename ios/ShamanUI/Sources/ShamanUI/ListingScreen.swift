@@ -376,6 +376,8 @@ struct UnreachableSheetView: View {
   /// Closes the sheet, once the Remote answers.
   let answered: () -> Void
   @Environment(\.openURL) private var openURL
+  /// The login at a Relay the sheet's own sheet is carrying out, while it is up.
+  @State private var loggingIn: LoginAsk?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -393,6 +395,11 @@ struct UnreachableSheetView: View {
         .accessibilityIdentifier("unreachable.explanation")
       Spacer(minLength: 0)
       Button {
+        // Where a login at a Relay leads past what is in the way, trying again leads to it, and follows it.
+        if let login = row.sheet.login {
+          loggingIn = LoginAsk(relay: login.relay)
+          return
+        }
         Task {
           if await model.tryAgain() {
             answered()
@@ -400,7 +407,7 @@ struct UnreachableSheetView: View {
         }
       } label: {
         ZStack {
-          Text(verbatim: row.sheet.tryAgain).opacity(model.trying ? 0 : 1)
+          Text(verbatim: row.sheet.login?.words ?? row.sheet.tryAgain).opacity(model.trying ? 0 : 1)
           if model.trying {
             ProgressView()
           }
@@ -435,13 +442,20 @@ struct UnreachableSheetView: View {
       }
     }
     .presentationDetents([.medium])
+    .relayLogin($loggingIn, core: model.core) { _ in
+      Task {
+        if await model.tryAgain() {
+          answered()
+        }
+      }
+    }
   }
 }
 
 /// Trying an Unreachable Remote again, from its sheet.
 @MainActor @Observable
 final class TryAgainModel {
-  private let core: any Core
+  let core: any Core
   private let remote: String
   /// Whether the core is trying it now, during which the sheet takes no second try.
   private(set) var trying = false
@@ -482,6 +496,8 @@ extension UnreachableHint {
     case .plain: "exclamationmark.icloud"
     case .localNetwork: "wifi.exclamationmark"
     case .noNetwork: "wifi.slash"
+    case .loginNeeded: "person.badge.key"
+    case .otherAccount: "person.2.slash"
     }
   }
 }

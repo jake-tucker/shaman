@@ -128,6 +128,13 @@ struct ConfirmationScreen: View {
     }
     .navigationTitle("Pair")
     .navigationBarTitleDisplayMode(.inline)
+    .relayLogin($model.loggingIn, core: model.core) { _ in
+      Task {
+        if await model.loggedIn() {
+          paired()
+        }
+      }
+    }
   }
 
   @ViewBuilder
@@ -157,17 +164,27 @@ struct ConfirmationScreen: View {
     }
     Section("Ways") {
       ForEach(Array(invite.ways.enumerated()), id: \.offset) { index, way in
-        VStack(alignment: .leading, spacing: 2) {
-          Text(verbatim: way.address)
-            .font(.callout.monospaced())
-          if let note = way.note {
-            Text(note)
-              .font(.footnote)
-              .foregroundStyle(.secondary)
+        HStack {
+          VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: way.address)
+              .font(.callout.monospaced())
+            if let note = way.note {
+              Text(note)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+          }
+          .accessibilityElement(children: .combine)
+          .accessibilityIdentifier("confirm.way.\(index)")
+          if let login = way.login {
+            Spacer()
+            Button(login.words) { model.logIn(login) }
+              .buttonStyle(.bordered)
+              .controlSize(.small)
+              .disabled(model.pairing)
+              .accessibilityIdentifier("confirm.way.\(index).login")
           }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("confirm.way.\(index)")
       }
     }
     Section("Names") {
@@ -188,6 +205,10 @@ struct ConfirmationScreen: View {
         .accessibilityIdentifier("confirm.pairing")
       } else {
         switch model.failure?.again {
+        case .logIn(let login):
+          Button(login.words) { model.logIn(login) }
+            .bold()
+            .accessibilityIdentifier("confirm.login")
         case .scanAgain:
           Button("Scan again", action: scanAgain)
             .accessibilityIdentifier("confirm.scanAgain")
@@ -232,21 +253,33 @@ struct ConfirmationScreen: View {
 /// What the confirmation screen holds while it is up.
 @MainActor @Observable
 final class ConfirmationModel {
-  private let core: any Core
+  let core: any Core
   private let invite: String
-  let reading: InviteReading
+  /// What the Invite reads as, read again once a login it offers is done.
+  private(set) var reading: InviteReading
   var remoteName: String
   var deviceName: String
   private(set) var pairing = false
   /// Why the last pairing failed, and what it offers next.
-  private(set) var failure: (message: String, again: TryInstead)?
+  private(set) var failure: (message: String, again: Again)?
+  /// The login at a Relay the screen's sheet is carrying out, while it is up.
+  var loggingIn: LoginAsk?
+
+  /// What a failed pairing offers next.
+  enum Again {
+    case scanAgain
+    case tryAgain
+    /// A login at a Relay, after which the pairing goes on by itself.
+    case logIn(LoginOffer)
+  }
   private(set) var remoteRefusal: String?
   private(set) var deviceRefusal: String?
 
   init(core: any Core, invite: String) {
     self.core = core
     self.invite = invite
-    reading = core.readInvite(invite)
+    let reading = core.readInvite(invite)
+    self.reading = reading
     if case .readable(let read) = reading {
       remoteName = read.remoteName
       deviceName = read.deviceName
@@ -267,13 +300,28 @@ final class ConfirmationModel {
     case .paired:
       return true
     case .failed(let message, let again):
-      failure = (message, again)
+      failure = (message, again == .scanAgain ? .scanAgain : .tryAgain)
+    case .loginNeeded(let message, let login):
+      failure = (message, .logIn(login))
     case .remoteNameRefused(let message):
       remoteRefusal = message
     case .deviceNameRefused(let message):
       deviceRefusal = message
     }
     return false
+  }
+
+  /// Opens the sheet a login at the Relay `login` offers is carried out in.
+  func logIn(_ login: LoginOffer) {
+    loggingIn = LoginAsk(relay: login.relay)
+  }
+
+  /// A login done, what the Invite offers is read again, and where pairing waited on that login it goes on by itself:
+  /// answers whether the Remote is paired.
+  func loggedIn() async -> Bool {
+    reading = core.readInvite(invite)
+    guard case .logIn = failure?.again else { return false }
+    return await pair()
   }
 }
 

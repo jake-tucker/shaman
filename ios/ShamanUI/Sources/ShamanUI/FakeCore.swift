@@ -47,10 +47,26 @@
       case sidekick
       /// A named phone paired with a scratch Server alone, which holds no Sessions and lists no Workspaces.
       case emptyServer
+      /// The `paired` phone whose workstation is also reached through `relay.example.com`, where the phone holds no
+      /// login, so that way reads "login needed" and offers "Log in".
+      case relayLogin
+      /// The `relayLogin` phone logged in at the relay as octocat, which the Relays section lists.
+      case relayed
+      /// The `relayLogin` phone where the workstation answers by no direct way, so it reads Unreachable and its sheet
+      /// leads to the login, after which it answers through the relay.
+      case loginNeeded
+      /// The `relayed` phone logged in at the relay as hubot, under another account than the workstation's, so the
+      /// workstation reads Unreachable and the login is offered again.
+      case otherAccount
     }
 
+    /// The relay the fake's workstation is reached through in the relay scenarios, and its Invite offers.
+    public static let relay = "https://relay.example.com"
+
     /// The Invite the fake reads as the workstation's. One holding "dead" reads as the workstation's too, and fails to
-    /// pair as an expired one does; one holding "unanswered" fails as one no way answered does.
+    /// pair as an expired one does; one holding "unanswered" fails as one no way answered does; one holding "relay"
+    /// offers `relay` after the direct ways, and pairs by them with no login; and one holding "relayonly" offers the
+    /// relay alone, and pairs only once the phone is logged in there.
     public static let invite = "shaman-v1-fake-workstation"
 
     private let device: Mutex<ThisDevice>
@@ -80,8 +96,39 @@
     /// Whether the phone holds the Sidekick's Session `FakeSidekick` makes the tree of.
     private let sidekick: Bool
 
-    public init(_ scenario: Scenario) {
+    /// How this phone stands at each relay it is logged in at, by its address.
+    private let relayStandings: Mutex<[String: FakeRelayStanding]>
+    /// The Remotes, by name, also reached through `relay`.
+    private let relayed: Mutex<Set<String>>
+    /// The logins under way, each given up as the app leaves the front.
+    private let loggingIn = Mutex<[Int: FakeLogin]>([:])
+    private let nextLogin = Atomic<Int>(0)
+    /// How long a login waits before the fake's relay confirms it: `--login-confirms-after <seconds>` makes it as long
+    /// as a UI test needs.
+    private let loginConfirms: Duration
+
+    /// The fake beginning as `scenario` says, its relay confirming a login after `loginConfirmsAfter` where given.
+    public init(_ scenario: Scenario, loginConfirmsAfter: Duration? = nil) {
       device = Mutex(Self.device(in: scenario))
+      let relayScenarios: [Scenario] = [.relayLogin, .relayed, .loginNeeded, .otherAccount]
+      relayed = Mutex(relayScenarios.contains(scenario) ? ["workstation"] : [])
+      let standings: [String: FakeRelayStanding] =
+        switch scenario {
+        case .relayed: [Self.relay: .loggedIn("octocat (github)")]
+        case .otherAccount: [Self.relay: .otherAccount("hubot (github)")]
+        default: [:]
+        }
+      relayStandings = Mutex(standings)
+      let arguments = ProcessInfo.processInfo.arguments
+      if let loginConfirmsAfter {
+        loginConfirms = loginConfirmsAfter
+      } else if let flag = arguments.firstIndex(of: "--login-confirms-after"), arguments.indices.contains(flag + 1),
+        let seconds = Double(arguments[flag + 1])
+      {
+        loginConfirms = .seconds(seconds)
+      } else {
+        loginConfirms = .seconds(3)
+      }
       let waits: FakeTree.Waits =
         switch scenario {
         case .subagentWaits: .one
@@ -95,7 +142,7 @@
         switch scenario {
         case .fresh, .named, .pairAgain: []
         case .paired, .offline, .unreadTree, .unreadableTree, .subagentWaits, .subagentsWait, .longSubagentName,
-          .composing:
+          .composing, .relayLogin, .relayed, .loginNeeded, .otherAccount:
           [Self.workstation(named: "workstation")]
         case .several, .reaching, .unreachable, .sidekick:
           [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
@@ -108,6 +155,8 @@
         switch scenario {
         case .unreachable, .sidekick: ["homelab": .localNetwork]
         case .offline: ["workstation": .noNetwork]
+        case .loginNeeded: ["workstation": .loginNeeded]
+        case .otherAccount: ["workstation": .otherAccount]
         default: [:]
         }
       self.unreachable = Mutex(unreachable)
@@ -399,13 +448,18 @@
       guard let name = names.first else {
         throw .Gone(message: "This phone is no longer paired with that server")
       }
-      let stillUnreachable = unreachable.withLock { unreachable in
-        if unreachable[name] == .noNetwork { return true }
+      let loggedIn = relayStandings.withLock { $0[Self.relay] }.map { if case .loggedIn = $0 { true } else { false } }
+      let stillUnreachable = unreachable.withLock { unreachable -> String? in
+        switch unreachable[name] {
+        case .noNetwork: return "This phone has no network connection"
+        case .loginNeeded, .otherAccount: if loggedIn != true { return "No way to the server answered" }
+        default: break
+        }
         unreachable[name] = nil
-        return false
+        return nil
       }
-      if stillUnreachable {
-        throw .Unreachable(message: "This phone has no network connection")
+      if let stillUnreachable {
+        throw .Unreachable(message: stillUnreachable)
       }
       listingListeners.tell(currentListing())
       landingListeners.tell(currentLanding())
@@ -414,7 +468,24 @@
 
     public func cameToFront() {}
 
-    public func leftFront() {}
+    /// Every login under way is given up, as the core gives them up.
+    public func leftFront() {
+      let given = loggingIn.withLock { logins in
+        defer { logins.removeAll() }
+        return Array(logins.values)
+      }
+      for login in given {
+        login.task.cancel()
+        login.continuation.yield(
+          .failed(
+            title: login.title,
+            message: "The login was given up as Shaman left the screen. Log in again for a new code.",
+            again: "Try again"))
+      }
+      if !given.isEmpty {
+        tellServers()
+      }
+    }
 
     /// The fake's network never changes: its scenario says which Remotes read Unreachable.
     public func pathChanged(hasPath: Bool) {}
@@ -453,7 +524,123 @@
     }
 
     public func servers() -> AsyncStream<Servers> {
-      serversListeners.stream(now: Servers(remotes: held.withLock { $0 }))
+      serversListeners.stream(now: currentServers())
+    }
+
+    /// The Servers and Relays sections as the core would show them: a Remote reached through the relay with that way
+    /// as this phone stands there.
+    private func currentServers() -> Servers {
+      let standings = relayStandings.withLock { $0 }
+      let relayed = relayed.withLock { $0 }
+      let remotes = held.withLock { $0 }.map { row in
+        guard relayed.contains(row.name) else { return row }
+        var row = row
+        row.ways.append(Self.relayWay(standings[Self.relay]))
+        return row
+      }
+      let underWay = !loggingIn.withLock { $0.isEmpty }
+      var relays = standings.sorted { $0.key < $1.key }.map { relay, standing in
+        Self.relayRow(relay, standing: underWay ? .loggingIn(standing.account) : standing)
+      }
+      if underWay && standings[Self.relay] == nil {
+        relays.append(Self.relayRow(Self.relay, standing: .loggingIn(nil)))
+      }
+      return Servers(remotes: remotes, relays: relays)
+    }
+
+    private func tellServers() {
+      serversListeners.tell(currentServers())
+    }
+
+    private static func relayWay(_ standing: FakeRelayStanding?) -> WayRow {
+      let address = "Relay \(relay)"
+      return switch standing {
+      case nil, .loggingIn:
+        WayRow(
+          address: address, state: .loginNeeded, words: "login needed",
+          login: LoginOffer(relay: relay, words: "Log in"))
+      case .loggedIn: WayRow(address: address, state: .answering, words: "answering", login: nil)
+      case .otherAccount:
+        WayRow(
+          address: address, state: .otherAccount, words: "under another account",
+          login: LoginOffer(relay: relay, words: "Log in again"))
+      }
+    }
+
+    private static func relayRow(_ relay: String, standing: FakeRelayStanding) -> RelayRow {
+      let shown = relay.replacingOccurrences(of: "https://", with: "")
+      let (state, words, login): (RelayRowState, String, LoginOffer?) =
+        switch standing {
+        case .loggedIn: (.loggedIn, "logged in", nil)
+        case .loggingIn: (.loggingIn, "logging in", nil)
+        case .otherAccount:
+          (.otherAccount, "under another account than a server", LoginOffer(relay: relay, words: "Log in again"))
+        }
+      return RelayRow(
+        relay: relay, address: shown, account: standing.account, state: state, words: words, login: login,
+        removal:
+          "This phone gives up its login at \(shown). A server it reaches only through this relay reads unreachable "
+          + "until this phone logs in there again.")
+    }
+
+    public func logIn(at relay: String) -> AsyncStream<DeviceLogin> {
+      let shown = relay.replacingOccurrences(of: "https://", with: "")
+      let title = "Log in at \(shown)"
+      let id = nextLogin.add(1, ordering: .relaxed).oldValue
+      return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+        continuation.yield(.starting(title: title, words: "Asking the relay at \(shown) for a code…"))
+        let confirms = loginConfirms
+        let task = Task { [weak self] in
+          try? await Task.sleep(for: .milliseconds(400))
+          guard !Task.isCancelled else { return }
+          let address = "https://github.com/login/device"
+          continuation.yield(
+            .waiting(
+              title: title, code: "WDJB-MJHT", address: address,
+              words:
+                "Paste this code at \(address), which opens here, or enter it there from another device. This "
+                + "phone logs in at \(shown) as soon as the code is approved.",
+              copy: "Copy code", open: "Open github.com"))
+          try? await Task.sleep(for: confirms)
+          guard !Task.isCancelled, let self else { return }
+          self.loggingIn.withLock { _ = $0.removeValue(forKey: id) }
+          self.loggedIn(at: relay)
+          continuation.yield(
+            .done(title: title, words: "This phone is logged in at \(shown) as octocat (github)."))
+        }
+        loggingIn.withLock { $0[id] = FakeLogin(title: title, continuation: continuation, task: task) }
+        tellServers()
+        continuation.onTermination = { [weak self] _ in
+          task.cancel()
+          guard let self else { return }
+          if self.loggingIn.withLock({ $0.removeValue(forKey: id) }) != nil {
+            self.tellServers()
+          }
+        }
+      }
+    }
+
+    /// The fake's relay confirmed a login at `relay` as octocat: every Remote reached through it that was out of reach
+    /// for want of it answers again.
+    private func loggedIn(at relay: String) {
+      relayStandings.withLock { $0[relay] = .loggedIn("octocat (github)") }
+      let relayed = relayed.withLock { $0 }
+      unreachable.withLock { unreachable in
+        for name in relayed where unreachable[name] == .loginNeeded || unreachable[name] == .otherAccount {
+          unreachable[name] = nil
+        }
+      }
+      tellServers()
+      listingListeners.tell(currentListing())
+      landingListeners.tell(currentLanding())
+    }
+
+    public func removeRelay(_ relay: String) async throws(ActError) {
+      try? await Task.sleep(for: .milliseconds(200))
+      guard relayStandings.withLock({ $0.removeValue(forKey: relay) }) != nil else {
+        throw .Gone(message: "This phone no longer holds that relay")
+      }
+      tellServers()
     }
 
     public func renameDevice(_ name: String) async throws(ActError) {
@@ -477,14 +664,20 @@
         return .unreadable(message: "Invite is malformed")
       }
       let heldAs = held.withLock { $0.first { $0.fingerprint == Self.fingerprint }?.name }
+      let loggedIn = relayStandings.withLock { $0[Self.relay] }.map { if case .loggedIn = $0 { true } else { false } }
+      let relayWay = OfferedWay(
+        address: "Relay \(Self.relay)", note: loggedIn == true ? nil : "login needed",
+        login: loggedIn == true ? nil : LoginOffer(relay: Self.relay, words: "Log in"))
+      let direct = [
+        OfferedWay(address: "192.168.1.20:7791", note: nil, login: nil),
+        OfferedWay(address: "100.64.0.7:7791", note: nil, login: nil),
+        OfferedWay(address: "[fe80::1c2b:3a4d:5e6f:7a8b%7]:7791", note: "not dialled from a phone", login: nil),
+      ]
       return .readable(
         invite: ReadInvite(
           hostname: "workstation", fingerprint: Self.fingerprint,
-          ways: [
-            OfferedWay(address: "192.168.1.20:7791", note: nil),
-            OfferedWay(address: "100.64.0.7:7791", note: nil),
-            OfferedWay(address: "[fe80::1c2b:3a4d:5e6f:7a8b%7]:7791", note: "not dialled from a phone"),
-          ],
+          ways: invite.contains("relayonly")
+            ? [relayWay] : invite.contains("relay") ? direct + [relayWay] : direct,
           remoteName: heldAs ?? "workstation",
           held: heldAs.map {
             "This phone is already paired with this server as \($0). Pairing again replaces that pairing."
@@ -496,6 +689,14 @@
       try? await Task.sleep(for: .milliseconds(300))
       if invite.contains("dead") {
         return .failed(message: "Invite has expired", again: .scanAgain)
+      }
+      let loggedIn = relayStandings.withLock { $0[Self.relay] }.map { if case .loggedIn = $0 { true } else { false } }
+      if invite.contains("relayonly") && loggedIn != true {
+        return .loginNeeded(
+          message:
+            "No way this invite offers answered, but it offers the relay at relay.example.com, where this phone "
+            + "needs to log in. Log in there, and pairing goes on by itself.",
+          login: LoginOffer(relay: Self.relay, words: "Log in"))
       }
       if invite.contains("unanswered") {
         return .failed(
@@ -512,14 +713,14 @@
         return .remoteNameRefused(
           message: "A remote's name must contain non-whitespace characters without outer whitespace")
       }
-      let remotes = held.withLock { held in
+      held.withLock { held in
         held.removeAll { $0.fingerprint == Self.fingerprint }
         held.append(Self.workstation(named: remoteName))
-        return held
       }
+      relayed.withLock { $0 = invite.contains("relay") ? [remoteName] : [] }
       turned.withLock { $0 = remoteName }
       change { $0.name = deviceName }
-      serversListeners.tell(Servers(remotes: remotes))
+      tellServers()
       turnedOutlook()
       listingListeners.tell(currentListing())
       return .paired(name: remoteName)
@@ -567,23 +768,23 @@
       ServerRow(
         name: name, fingerprint: fingerprint,
         ways: [
-          WayRow(address: "192.168.1.20:7791", state: .answering, words: "answering"),
-          WayRow(address: "100.64.0.7:7791", state: .notAnswering, words: "not answering"),
+          WayRow(address: "192.168.1.20:7791", state: .answering, words: "answering", login: nil),
+          WayRow(address: "100.64.0.7:7791", state: .notAnswering, words: "not answering", login: nil),
         ])
     }
 
     /// The scratch Server of `emptyServer`, which holds nothing.
     private static let scratch = ServerRow(
       name: "scratch", fingerprint: "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9",
-      ways: [WayRow(address: "192.168.1.50:7791", state: .answering, words: "answering")])
+      ways: [WayRow(address: "192.168.1.50:7791", state: .answering, words: "answering", login: nil)])
 
     private static let laptop = ServerRow(
       name: "laptop", fingerprint: "5d1e8f0a2c4b6d8e0f1a3c5e7b9d2f4a6c8e0b1d3f5a7c9e2b4d6f8a0c1e3b5d",
-      ways: [WayRow(address: "100.84.12.7:7791", state: .answering, words: "answering")])
+      ways: [WayRow(address: "100.84.12.7:7791", state: .answering, words: "answering", login: nil)])
 
     private static let homelab = ServerRow(
       name: "homelab", fingerprint: "e2b4d6f8a0c1e3b55d1e8f0a2c4b6d8e0f1a3c5e7b9d2f4a6c8e0b1d3f5a7c9a",
-      ways: [WayRow(address: "192.168.1.40:7791", state: .answering, words: "answering")])
+      ways: [WayRow(address: "192.168.1.40:7791", state: .answering, words: "answering", login: nil)])
 
     private static func device(in scenario: Scenario) -> ThisDevice {
       let note =
@@ -596,6 +797,28 @@
         name: name, nameNote: note, fingerprint: fingerprint, pairAgain: scenario == .pairAgain ? pairAgain : nil,
         protocolVersion: 116)
     }
+  }
+
+  /// How the fake's phone stands at a relay.
+  enum FakeRelayStanding: Sendable {
+    case loggedIn(String)
+    case otherAccount(String)
+    /// A login is under way there, where the phone stood logged in under the account given, if any, before.
+    case loggingIn(String?)
+
+    var account: String? {
+      switch self {
+      case .loggedIn(let account), .otherAccount(let account): account
+      case .loggingIn(let account): account
+      }
+    }
+  }
+
+  /// A login the fake has under way.
+  struct FakeLogin: Sendable {
+    let title: String
+    let continuation: AsyncStream<DeviceLogin>.Continuation
+    let task: Task<Void, Never>
   }
 
   /// The streams a fake model is followed by, each told the model whole on every change.

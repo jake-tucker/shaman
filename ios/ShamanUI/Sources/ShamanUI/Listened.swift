@@ -102,3 +102,9 @@ extension Forwarder: DraftListener where Model == Draft {
     send(draft)
   }
 }
+
+extension Forwarder: DeviceLoginListener where Model == DeviceLogin {
+  func changed(login: DeviceLogin) {
+    send(login)
+  }
+}

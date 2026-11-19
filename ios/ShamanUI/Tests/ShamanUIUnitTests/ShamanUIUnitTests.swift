@@ -1517,3 +1517,97 @@ private final class HeldTime: BackgroundTasks {
     }
   }
 }
+
+/// A browser that records what it was asked to open and close.
+@MainActor
+private final class RecordingBrowser: LoginBrowser {
+  private(set) var opened: [URL] = []
+  private(set) var closed = 0
+
+  func open(_ url: URL) {
+    opened.append(url)
+  }
+
+  func close() {
+    closed += 1
+  }
+}
+
+@Suite @MainActor struct RelayLoginModelTests {
+  @Test func theFirstCodeIsCopiedAndItsAddressOpenedAndBothCloseOnceTheRelayConfirms() async {
+    let core = FakeCore(.relayLogin, loginConfirmsAfter: .milliseconds(300))
+    let browser = RecordingBrowser()
+    var copied: [String] = []
+    let model = RelayLoginModel(core: core, relay: FakeCore.relay, browser: browser) { copied.append($0) }
+
+    let confirmed = await model.follow()
+
+    #expect(confirmed)
+    #expect(copied == ["WDJB-MJHT"])
+    #expect(browser.opened == [URL(string: "https://github.com/login/device")!])
+    #expect(browser.closed >= 1, "the authentication sheet is cancelled once the relay confirms")
+    #expect(model.title == "Log in at relay.example.com")
+    guard case .done = model.login else {
+      Issue.record("the login is done: \(String(describing: model.login))")
+      return
+    }
+  }
+
+  @Test func leavingTheFrontGivesTheLoginUpAndClosesTheSheet() async throws {
+    let core = FakeCore(.relayLogin, loginConfirmsAfter: .seconds(60))
+    let browser = RecordingBrowser()
+    let model = RelayLoginModel(core: core, relay: FakeCore.relay, browser: browser) { _ in }
+    let following = Task { await model.follow() }
+    while browser.opened.isEmpty {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+
+    core.leftFront()
+
+    #expect(await following.value == false)
+    #expect(browser.closed >= 1)
+    guard case .failed(_, let message, _) = model.login else {
+      Issue.record("the login failed: \(String(describing: model.login))")
+      return
+    }
+    #expect(message.contains("left the screen"))
+  }
+
+  @Test func cancellingWhatFollowsTheLoginGivesItUpAndKeepsNothing() async throws {
+    let core = FakeCore(.relayLogin, loginConfirmsAfter: .seconds(60))
+    let browser = RecordingBrowser()
+    let model = RelayLoginModel(core: core, relay: FakeCore.relay, browser: browser) { _ in }
+    let following = Task { await model.follow() }
+    while browser.opened.isEmpty {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    var servers = core.servers().makeAsyncIterator()
+    #expect(await servers.next()?.relays.first?.state == .loggingIn)
+
+    following.cancel()
+
+    #expect(await following.value == false)
+    #expect(browser.closed >= 1)
+    var after = core.servers().makeAsyncIterator()
+    #expect(await after.next()?.relays.isEmpty == true, "nothing is kept of a login given up")
+  }
+
+  @Test func copyingAndOpeningAgainUseTheCodeShown() async throws {
+    let core = FakeCore(.relayLogin, loginConfirmsAfter: .seconds(60))
+    let browser = RecordingBrowser()
+    var copied: [String] = []
+    let model = RelayLoginModel(core: core, relay: FakeCore.relay, browser: browser) { copied.append($0) }
+    let following = Task { await model.follow() }
+    while browser.opened.isEmpty {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+
+    model.copyAgain()
+    model.openAgain()
+
+    #expect(copied == ["WDJB-MJHT", "WDJB-MJHT"])
+    #expect(browser.opened.count == 2)
+    following.cancel()
+    _ = await following.value
+  }
+}

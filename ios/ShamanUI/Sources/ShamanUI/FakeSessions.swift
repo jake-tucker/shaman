@@ -135,13 +135,26 @@
           "Every way to \(named) is on the local network, and local network access may be off for Shaman. Turn it "
             + "on in Settings, then try again."
         case .plain: "No way to \(named) answered. Shaman keeps trying while it is open."
+        case .loginNeeded:
+          "No way to \(named) answered, and it is reached from anywhere through the relay at relay.example.com, where "
+            + "this phone needs to log in. Log in there, then try again."
+        case .otherAccount:
+          "This phone is logged in at the relay at relay.example.com as hubot (github), and \(named) under another "
+            + "account. The relay joins only those logged in under the same account, so log this phone in there as "
+            + "the user \(named) is logged in as."
+        }
+      let login: LoginOffer? =
+        switch hint {
+        case .loginNeeded: LoginOffer(relay: FakeCore.relay, words: "Log in")
+        case .otherAccount: LoginOffer(relay: FakeCore.relay, words: "Log in again")
+        default: nil
         }
       return UnreachableRow(
         remote: FakeCore.fingerprint(of: remote), words: originNamed ? "\(remote) unreachable" : "Server unreachable",
         tryAgain: "Try again",
         sheet: UnreachableSheet(
           title: originNamed ? "\(remote) is unreachable" : "The server is unreachable", explanation: explanation,
-          hint: hint, openSettings: hint == .localNetwork ? "Open Settings" : nil, tryAgain: "Try again"))
+          hint: hint, openSettings: hint == .localNetwork ? "Open Settings" : nil, login: login, tryAgain: "Try again"))
     }
 
     /// What the core says while the Remotes `unanswered` have yet to answer.

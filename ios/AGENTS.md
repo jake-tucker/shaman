@@ -159,7 +159,22 @@ will not take in the named item before the app looks for its key. To read what t
 debug build launched with `--servers-and-device`, which shows the sheet of Servers, Relays and This device by itself.
 In a debug build an Invite can arrive by the launch environment's `SHAMAN_INVITE`, and the app opens on its
 confirmation screen. Over the fake, `FakeCore.invite` reads as the workstation's; one holding "dead" or "unanswered"
-fails as a dead Invite or one no way answered does.
+fails as a dead Invite or one no way answered does. One holding "relay" also offers `relay.example.com`, where the phone
+needs to log in, and pairs by its direct ways with no login; one holding "relayonly" offers the relay alone, so Pair
+asks for the login and pairs by itself once it is done.
+
+**Relays.** A login at a Relay opens GitHub in the system's authentication sheet (`ASWebAuthenticationSession`), which
+the app cancels once the core says the Relay confirmed the login; a real GitHub login is a person's to do. Over the
+fake the relay confirms a login a few seconds after its code shows, or after `--login-confirms-after <seconds>`, and
+the code is always `WDJB-MJHT`. In `relayLogin` the `paired` phone's workstation is also reached through
+`relay.example.com`, where the phone holds no login, so that way reads "login needed" with "Log in"; in `relayed` the
+phone is logged in there as octocat, which the Relays section lists and a swipe removes; in `loginNeeded` the
+workstation answers by no direct way, so it reads Unreachable and its sheet's offer leads to the login; and in
+`otherAccount` the phone is logged in there as hubot, under another account than the workstation's.
+
+```sh
+xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake relayLogin --servers-and-device
+```
 
 **A real Server.** `../scripts/ios-pair-scratch-server.sh` builds Shaman, starts a scratch Server of this checkout's own
 from an empty database, Serving on the Mac's addresses, makes an Invite and launches the built app with it, in a core
