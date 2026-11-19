@@ -62,7 +62,12 @@ fn headers(wire: &mut WireSchema) {
         .header::<SessionErrorCode>(SESSION_ERROR_CODE_HEADER, Text, Answer, false)
         .header::<Author>(AUTHOR_HEADER, Base64UrlJson, Request, false)
         .header::<ActId>(ACT_HEADER, Text, Request, false)
-        .header::<PromptAdmission>(PROMPT_ADMISSION_HEADER, Text, Answer, false);
+        .header::<PromptAdmission>(PROMPT_ADMISSION_HEADER, Text, Answer, false)
+        // A Peer may ask for what the Session API answers gzipped, and is
+        // answered so where it is JSON or an event stream; one that does not
+        // ask, or a Serving Server that does not heed it, speaks plain.
+        .header::<String>("accept-encoding", Text, Request, false)
+        .header::<String>("content-encoding", Text, Answer, false);
 }
 
 /// The Serving listener's own routes: the ceremony that forms a Pairing, and

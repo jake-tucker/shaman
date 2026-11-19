@@ -42,6 +42,7 @@ use super::{
         PinnedTls, RequestBody, StrongClient, Unanswered, WayAttempt, WayDialer, dial_enrollment,
         first_answer,
     },
+    compression::{self, Gunzipped},
     fingerprint, internal_pairing_failure, machine_hostname, parse_invite, passed_on, read_records,
     remove_hop_by_hop_headers, small_answer, stated_version, undelivered_or_lost,
     validate_remote_name, write_private_json,
@@ -231,6 +232,8 @@ pub struct Redeemer {
     awaited_body_bytes: usize,
     /// Which proxy, if any, each direct way of a Remote is dialled through.
     direct_proxies: DirectProxies,
+    /// Whether what it carries to a Remote asks for its answer gzipped.
+    asks_gzip: bool,
     /// The Relays a Relay way of a Remote is reached through, once given.
     relays: GivenRelays,
     /// How what Remotes tell of the Relays they Serve through is stored.
@@ -264,6 +267,7 @@ impl Redeemer {
             awaited_at_once: AWAITED_AT_ONCE,
             awaited_body_bytes: AWAITED_BODY_BYTES,
             direct_proxies: DirectProxies::from_environment(),
+            asks_gzip: true,
             relays: GivenRelays::default(),
             told: Arc::new(ToldStore::every(timings.told_relays_store_interval)),
             hooks: Arc::default(),
@@ -282,6 +286,15 @@ impl Redeemer {
     /// through.
     pub fn with_direct_proxies(mut self, proxies: DirectProxies) -> Self {
         self.direct_proxies = proxies;
+        self
+    }
+
+    /// This redeemer as a Peer from before a Pairing was compressed, which
+    /// asks for nothing of the kind and is answered plain: what a test
+    /// stands such a Peer in with.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn asking_plain(mut self) -> Self {
+        self.asks_gzip = false;
         self
     }
 
@@ -619,6 +632,15 @@ impl Redeemer {
         headers.remove(FORWARDED_AUTHOR_PROOF_HEADER);
         remove_hop_by_hop_headers(headers);
         let mut added = self.protocol.stated();
+        // What crosses the Pairing is asked for gzipped, whatever the request
+        // asked, and read back plain before anyone sees it (see
+        // `compression`): the coding is the Pairing's, not its caller's.
+        if self.asks_gzip {
+            added.insert(
+                http::header::ACCEPT_ENCODING,
+                http::HeaderValue::from_static(compression::GZIP),
+            );
+        }
         if let Some(author) = author {
             added.insert(AUTHOR_HEADER, author_header(author));
         }
@@ -2086,14 +2108,14 @@ pub struct RemoteBody(RemoteBodyKind);
 
 enum RemoteBodyKind {
     Coming {
-        body: AnswerBody,
+        body: Gunzipped<AnswerBody>,
         interest: Option<StrongClient>,
     },
     Whole(Full<Bytes>),
 }
 
 impl RemoteBody {
-    fn coming(body: AnswerBody, interest: StrongClient) -> Self {
+    fn coming(body: Gunzipped<AnswerBody>, interest: StrongClient) -> Self {
         Self(RemoteBodyKind::Coming {
             body,
             interest: Some(interest),
@@ -2119,7 +2141,7 @@ impl http_body::Body for RemoteBody {
                 if frame.is_none() {
                     interest.take();
                 }
-                std::task::Poll::Ready(frame.map(|frame| frame.map_err(Into::into)))
+                std::task::Poll::Ready(frame)
             }
             RemoteBodyKind::Whole(body) => std::pin::Pin::new(body)
                 .poll_frame(context)
@@ -2162,10 +2184,11 @@ pub fn judge_carried(
 }
 
 /// What the Remote answered a request carried on to it through `client`,
-/// passed back as it came, hop-by-hop headers aside: the answer holds
-/// `client` as its interest lease until its body ends.
+/// passed back as it came, hop-by-hop headers aside and read plain where it
+/// came gzipped: the answer holds `client` as its interest lease until its
+/// body ends.
 fn remote_answer(response: Answer, client: StrongClient) -> http::Response<RemoteBody> {
-    let (mut parts, body) = response.into_parts();
+    let (mut parts, body) = compression::decoded(response).into_parts();
     remove_hop_by_hop_headers(&mut parts.headers);
     http::Response::from_parts(parts, RemoteBody::coming(body, client))
 }
@@ -2174,7 +2197,7 @@ fn remote_answer(response: Answer, client: StrongClient) -> http::Response<Remot
 mod tests {
     use std::net::SocketAddr;
 
-    use futures_util::stream;
+    use futures_util::{TryStreamExt as _, stream};
 
     use super::{
         super::{GivenIdentity, PAIRING_PROTOCOL_HEADER, client::paired_http_client},
@@ -2806,6 +2829,274 @@ mod tests {
             SessionErrorCode::PairingOutcomeUnknown,
             "the Remote answered, so what it was asked may have been done"
         );
+    }
+
+    /// How a stand-in Serving Server answers a Peer's `Accept-Encoding`.
+    #[derive(Clone, Copy)]
+    enum Encoding {
+        /// Gzips what it answers where asked, as the Serving listener does.
+        Gzipping,
+        /// Answers plain whatever was asked, as one older than gzip does.
+        Ignoring,
+    }
+
+    /// The JSON a stand-in Serving Server answers a listing with.
+    fn listing() -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "sessions": vec![serde_json::json!({"title": "Map the workspace"}); 200]
+        }))
+        .unwrap()
+    }
+
+    /// A stand-in Serving Server holding `identity`, at a direct way of its
+    /// own, answering its Session API as `encoding` says and telling what
+    /// each request it was carried asked of `Accept-Encoding`: a listing on
+    /// `/v1/sessions`, a refusal of the Peer as behind on `/v1/behind`, and
+    /// an image's bytes on anything else.
+    async fn serving_api(
+        identity: &IdentityMaterial,
+        encoding: Encoding,
+    ) -> (Way, tokio::sync::mpsc::UnboundedReceiver<Vec<String>>) {
+        let mut tls = rustls::ServerConfig::builder_with_provider(super::super::crypto_provider())
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .unwrap()
+            .with_no_client_auth()
+            .with_cert_resolver(Arc::new(rustls::sign::SingleCertAndKey::from(
+                identity
+                    .signer
+                    .tls_identity(identity.certificate.clone())
+                    .unwrap(),
+            )));
+        tls.alpn_protocols = vec![super::super::MULTIPLEXED.to_vec()];
+        let tls = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let (seen, asked) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let tls = tls.clone();
+                let seen = seen.clone();
+                tokio::spawn(async move {
+                    let Ok(accepted) = tls.accept(stream).await else {
+                        return;
+                    };
+                    let answering = hyper::service::service_fn(
+                        move |request: http::Request<hyper::body::Incoming>| {
+                            let seen = seen.clone();
+                            async move {
+                                let path = request.uri().path().to_owned();
+                                let mut answer = http::Response::builder().header(
+                                    PAIRING_PROTOCOL_HEADER,
+                                    PairingProtocol::CURRENT.header_value(),
+                                );
+                                if !path.starts_with(PEER_API_PREFIX) {
+                                    let answer = answer
+                                        .status(StatusCode::NOT_FOUND)
+                                        .body(Full::<Bytes>::default());
+                                    return Ok::<_, std::convert::Infallible>(answer.unwrap().map(
+                                        |body| {
+                                            body.map_err(|never| -> BoxError { match never {} })
+                                                .boxed_unsync()
+                                        },
+                                    ));
+                                }
+                                let accepted = request
+                                    .headers()
+                                    .get_all(http::header::ACCEPT_ENCODING)
+                                    .iter()
+                                    .map(|value| value.to_str().unwrap().to_owned())
+                                    .collect::<Vec<_>>();
+                                let gzip = matches!(encoding, Encoding::Gzipping)
+                                    && compression::asks_for_gzip(request.headers());
+                                let _ = seen.send(accepted);
+                                let (status, content_type, body) =
+                                    match path.strip_prefix(PEER_API_PREFIX).unwrap() {
+                                        "/v1/sessions" => {
+                                            (StatusCode::OK, "application/json", listing())
+                                        }
+                                        "/v1/behind" => (
+                                            StatusCode::CONFLICT,
+                                            "application/json",
+                                            serde_json::to_vec(&SessionError {
+                                                code: SessionErrorCode::PairingServerBehind,
+                                                message: "Update Shaman on this Server".to_owned(),
+                                                unreachable: None,
+                                            })
+                                            .unwrap(),
+                                        ),
+                                        _ => (StatusCode::OK, "image/png", b"\x89PNG".repeat(64)),
+                                    };
+                                answer = answer
+                                    .status(status)
+                                    .header(http::header::CONTENT_TYPE, content_type)
+                                    .header(http::header::CONTENT_LENGTH, body.len());
+                                let mut headers = answer.headers_ref().unwrap().clone();
+                                let body = Bytes::from(body);
+                                let compressing =
+                                    compression::compressing(&http::Method::GET, status, &headers)
+                                        .filter(|_| gzip);
+                                let body = match compressing {
+                                    Some(compressing) => {
+                                        let gzipped = compression::compressed(
+                                            compressing,
+                                            &mut headers,
+                                            stream::iter([Ok::<_, BoxError>(body)]),
+                                        );
+                                        http_body_util::StreamBody::new(
+                                            gzipped.map_ok(http_body::Frame::data),
+                                        )
+                                        .boxed_unsync()
+                                    }
+                                    None => Full::new(body)
+                                        .map_err(|never| match never {})
+                                        .boxed_unsync(),
+                                };
+                                let mut answer = answer.body(body).unwrap();
+                                *answer.headers_mut() = headers;
+                                Ok(answer)
+                            }
+                        },
+                    );
+                    let _ = hyper::server::conn::http2::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(hyper_util::rt::TokioIo::new(accepted), answering)
+                    .await;
+                });
+            }
+        });
+        (Way::Direct(address), asked)
+    }
+
+    /// `redeemer` holding the Remote "workstation", proving `serving`'s key
+    /// at `way`.
+    fn holding(redeemer: Redeemer, serving: &IdentityMaterial, way: Way) -> Redeemer {
+        let redeemer = redeemer.with_direct_proxies(DirectProxies::given("", ""));
+        let key = serving.public_key().to_vec();
+        redeemer
+            .change_remotes(|remotes| {
+                remotes.push(StoredRemote {
+                    remote: Remote {
+                        name: "workstation".to_owned(),
+                        fingerprint: fingerprint(&key),
+                        ways: vec![way],
+                        status: RemoteStatus::Available,
+                        icon: None,
+                    },
+                    public_key: key,
+                    answered: Vec::new(),
+                    generation: 0,
+                    offer: None,
+                    uncommitted: false,
+                });
+                Ok(())
+            })
+            .unwrap_or_else(|failure| panic!("{}", failure.message));
+        redeemer
+    }
+
+    /// What the Remote answers `path`, carried with `accept_encoding` as the
+    /// caller's own: its headers and its body as read.
+    async fn asked(
+        redeemer: &Redeemer,
+        path: &str,
+        accept_encoding: Option<&str>,
+    ) -> (http::HeaderMap, Bytes) {
+        let mut request = Request::get(path);
+        if let Some(accept_encoding) = accept_encoding {
+            request = request.header(http::header::ACCEPT_ENCODING, accept_encoding);
+        }
+        let Ok(Carried::Answered(answer)) = redeemer
+            .ask_remote(
+                "workstation",
+                request.body(Full::<Bytes>::default()).unwrap(),
+                None,
+                1024,
+            )
+            .await
+        else {
+            panic!("the Remote answers {path}");
+        };
+        let (parts, body) = answer.into_parts();
+        (parts.headers, body.collect().await.unwrap().to_bytes())
+    }
+
+    /// A redeemer asks for gzip in place of whatever its caller asked, and
+    /// reads what came gzipped plain, before even a refusal is judged: so a
+    /// reader over it, and a Client of the Server it serves, never learn of
+    /// the coding. An Attachment's bytes come as they are.
+    #[tokio::test]
+    async fn a_remote_is_asked_for_gzip_and_what_it_gzips_is_read_plain() {
+        let data = tempfile::tempdir().unwrap();
+        let serving = IdentityMaterial::fresh();
+        let (way, mut seen) = serving_api(&serving, Encoding::Gzipping).await;
+        let redeemer = holding(redeemer(&data), &serving, way);
+
+        let (headers, body) = asked(&redeemer, "/v1/sessions", Some("br")).await;
+        assert_eq!(
+            seen.recv().await.unwrap(),
+            ["gzip"],
+            "the redeemer's ask alone"
+        );
+        assert_eq!(body, listing());
+        assert!(!headers.contains_key(http::header::CONTENT_ENCODING));
+        assert!(!headers.contains_key(http::header::CONTENT_LENGTH));
+
+        let (headers, body) = asked(&redeemer, "/v1/attachments/a", None).await;
+        assert_eq!(seen.recv().await.unwrap(), ["gzip"]);
+        assert_eq!(
+            body,
+            b"\x89PNG".repeat(64),
+            "an image's bytes come as they are"
+        );
+        assert_eq!(headers[http::header::CONTENT_LENGTH], "256");
+
+        let (_, body) = asked(&redeemer, "/v1/behind", None).await;
+        assert_eq!(
+            serde_json::from_slice::<SessionError>(&body).unwrap().code,
+            SessionErrorCode::PairingServerBehind
+        );
+        assert_eq!(
+            redeemer.list_remotes()[0].status,
+            RemoteStatus::Behind,
+            "a gzipped refusal is judged as one sent plain"
+        );
+        redeemer.shutdown().await;
+    }
+
+    /// A Peer that does not ask is answered plain, and a Serving Server that
+    /// ignores the ask is read as it answered.
+    #[tokio::test]
+    async fn a_peer_that_does_not_ask_and_a_server_that_ignores_the_ask_speak_plain() {
+        let data = tempfile::tempdir().unwrap();
+        let serving = IdentityMaterial::fresh();
+        let (way, mut seen) = serving_api(&serving, Encoding::Gzipping).await;
+        let plain = holding(redeemer(&data).asking_plain(), &serving, way);
+
+        let (headers, body) = asked(&plain, "/v1/sessions", None).await;
+        assert!(seen.recv().await.unwrap().is_empty(), "nothing is asked");
+        assert_eq!(body, listing());
+        assert_eq!(
+            headers[http::header::CONTENT_LENGTH],
+            listing().len().to_string()
+        );
+        plain.shutdown().await;
+
+        let data = tempfile::tempdir().unwrap();
+        let older = IdentityMaterial::fresh();
+        let (way, mut seen) = serving_api(&older, Encoding::Ignoring).await;
+        let asking = holding(redeemer(&data), &older, way);
+
+        let (headers, body) = asked(&asking, "/v1/sessions", None).await;
+        assert_eq!(seen.recv().await.unwrap(), ["gzip"]);
+        assert_eq!(body, listing());
+        assert_eq!(
+            headers[http::header::CONTENT_LENGTH],
+            listing().len().to_string()
+        );
+        asking.shutdown().await;
     }
 
     /// A redeemer is bounded by the timings it is given, not a Server's: a

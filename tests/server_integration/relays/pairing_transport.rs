@@ -83,6 +83,16 @@ impl NoServer {
 
     /// A Client speaking `protocol` across its Pairings.
     fn speaking(protocol: PairingProtocol) -> Self {
+        Self::built(protocol, false)
+    }
+
+    /// A Client from before a Pairing was compressed, which never asks for
+    /// its answers gzipped.
+    fn asking_plain() -> Self {
+        Self::built(PairingProtocol::CURRENT, true)
+    }
+
+    fn built(protocol: PairingProtocol, plain: bool) -> Self {
         let directory = tempfile::tempdir().expect("create the Client's directory");
         let key = rcgen::KeyPair::generate().expect("make the identity key");
         let signer = SoftwareSigner::from_pkcs8(&key.serialize_der()).expect("take up the key");
@@ -99,8 +109,11 @@ impl NoServer {
             Unattached,
         )
         .expect("open the Relay entries");
-        let redeemer = Redeemer::new(directory.path(), protocol, identity, client_timings())
+        let mut redeemer = Redeemer::new(directory.path(), protocol, identity, client_timings())
             .expect("open the Remotes' records");
+        if plain {
+            redeemer = redeemer.asking_plain();
+        }
         redeemer.reach_relays_through(Arc::new(relays.joiner()));
         Self {
             directory,
@@ -488,6 +501,85 @@ async fn a_client_with_no_server_redeems_reads_and_acts_on_a_remote_through_a_re
     read_and_act(&commands, &mut provider).await;
 
     client.shutdown().await;
+    workstation.shutdown().await;
+}
+
+/// A Session read live over a Pairing whose Client asks for its answers
+/// gzipped, and over one whose Client does not: each reads the same
+/// snapshot, and a Prompt sent lands on the live stream with nothing sent
+/// after it, while the gzipped Pairing carries a fraction of the plain one's
+/// bytes.
+#[tokio::test]
+async fn a_session_is_read_live_over_a_pairing_with_compression_on_and_off() {
+    let (workstation, mut provider) = driven_serving_server("thin-pairing-gzip").await;
+    let workspace = tempfile::tempdir().expect("create a Workspace on the Serving Server");
+    let mut read_bytes = Vec::new();
+    let mut session = None;
+    let long = "Map the workspace, then every crate in it. ".repeat(1000);
+    for client in [NoServer::new(), NoServer::asking_plain()] {
+        let route = ObservedTcpProxy::start(workstation.serving_address()).await;
+        client
+            .redeem(workstation.invite(vec![Way::Direct(route.address)]).await)
+            .await;
+        let commands = commands_over(client.transport(), QUICK);
+        let session_id = match session {
+            Some(session_id) => session_id,
+            None => {
+                let created = commands
+                    .create_session(new_session(workspace.path(), &long))
+                    .await
+                    .expect("begin a Session on the Remote");
+                begin_turn(&mut provider).await;
+                *session.insert(created.session.id)
+            }
+        };
+
+        let before = route.answered_bytes();
+        let mut stream = commands
+            .attach_session(session_id)
+            .await
+            .expect("read the Session live");
+        let snapshot = snapshot_until(&mut stream).await;
+        read_bytes.push(route.answered_bytes() - before);
+        assert_eq!(snapshot.session.id, session_id);
+        assert!(
+            serde_json::to_string(&snapshot)
+                .expect("encode the snapshot")
+                .contains(&long),
+            "the snapshot holds the Prompt the Session began with"
+        );
+
+        let admitted: Prompt = commands
+            .admit_prompt(
+                session_id,
+                AdmitPromptRequest {
+                    prompt: InitialPrompt {
+                        id: PromptId::new(),
+                        text: "Then the tests".to_owned(),
+                        skill_invocations: Vec::new(),
+                        attachments: Vec::new(),
+                    },
+                    delivery: PromptDelivery::Queue,
+                },
+            )
+            .await
+            .expect("send a Prompt");
+        change_until(&mut stream, "the Prompt was added", |change| {
+            matches!(change, SessionChange::PromptAdded { prompt } if prompt.id == admitted.id)
+        })
+        .await;
+
+        drop(stream);
+        client.shutdown().await;
+    }
+
+    let [gzipped, plain] = read_bytes[..] else {
+        panic!("one reading over each Pairing");
+    };
+    assert!(
+        gzipped * 4 < plain,
+        "the snapshot crossed gzipped in {gzipped} bytes, and plain in {plain}"
+    );
     workstation.shutdown().await;
 }
 

@@ -88,7 +88,7 @@ pub use workspace_paths::{MANAGED_WORKTREE_DIRECTORY, PathStyle, WorkspacePaths}
 /// The protocol version this build speaks: stated on every request a Peer
 /// makes of a Serving Server and on every answer that Server gives, and
 /// moved with every change to the wire (ADR-0078).
-pub const PROTOCOL_VERSION: u32 = 119;
+pub const PROTOCOL_VERSION: u32 = 120;
 
 /// The oldest protocol version this build still speaks with across a
 /// Pairing: a Peer or a Serving Server stating one at or above it is

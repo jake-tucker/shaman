@@ -1,7 +1,27 @@
 {
-  "protocol_version": 119,
+  "protocol_version": 120,
   "protocol_floor": 117,
   "headers": {
+    "accept-encoding": {
+      "encoding": "text",
+      "sent": [
+        "request"
+      ],
+      "required": false,
+      "value": {
+        "type": "string"
+      }
+    },
+    "content-encoding": {
+      "encoding": "text",
+      "sent": [
+        "answer"
+      ],
+      "required": false,
+      "value": {
+        "type": "string"
+      }
+    },
     "x-shaman-act": {
       "encoding": "text",
       "sent": [

@@ -74,10 +74,10 @@ use crate::{
         OFFERED_RELAYS_PATH, OfferedRelays, PAIRING_ANSWER_BUDGET, PAIRING_PROTOCOL_HEADER,
         PAIRING_WITHDRAWAL_PATH, PEER_API_PREFIX, PairingFailure, PairingHealth, PairingProtocol,
         ParsedInvite, Preface, Redeemer, RelayWays, STREAM_WINDOW, STREAMS_IN_ALL, Wanted,
-        author_header, crypto_provider, decode_token, fingerprint, internal_pairing_failure,
-        machine_hostname, new_token, parse_invite, passed_on, public_key_from_certificate,
-        read_records, relay_refusal, remove_hop_by_hop_headers, shown_peer_name,
-        undelivered_or_lost, ways_are_unique_and_nonempty, write_private_json,
+        author_header, compression, crypto_provider, decode_token, fingerprint,
+        internal_pairing_failure, machine_hostname, new_token, parse_invite, passed_on,
+        public_key_from_certificate, read_records, relay_refusal, remove_hop_by_hop_headers,
+        shown_peer_name, undelivered_or_lost, ways_are_unique_and_nonempty, write_private_json,
     },
     protocol::{
         ACT_HEADER, AUTHOR_HEADER, ActId, Author, DeliveredInvite, FetchShortInviteRequest,
@@ -1964,6 +1964,9 @@ async fn forward_peer_api(
     // Peer's, so nothing it sent can remove or shadow them.
     let takes_an_author = takes_an_author(request.method(), &canonical_path);
     let headers = request.headers_mut();
+    // The coding the Peer asks for is the listener's to answer, not this
+    // Server's own API's: it goes no further (see `passed_on`).
+    let gzip = compression::asks_for_gzip(headers);
     let claimed = headers.remove(AUTHOR_HEADER);
     // The act the Peer names is believed of nothing but that the Peer chose
     // to call it so, which is all it is for: telling its acts apart.
@@ -2004,7 +2007,7 @@ async fn forward_peer_api(
                 .expect("a base64 proof is a valid header value"),
         );
     }
-    match forward_to_local_api(&state.controller.local_api, request, vouched).await {
+    match forward_to_local_api(&state.controller.local_api, request, vouched, gzip).await {
         Ok(response) => response,
         Err(error) => failure_response(error),
     }
@@ -2157,11 +2160,13 @@ fn listener_routes() -> Routes<ServingState> {
 }
 
 /// Carries a Peer's `request` on to this Server's own Session API, with
-/// `added` set after all it carries.
+/// `added` set after all it carries, and passes back what it answers:
+/// gzipped where `gzip` holds and the answer is JSON or an event stream.
 async fn forward_to_local_api(
     api: &LocalApi,
     request: Request<Body>,
     added: HeaderMap,
+    gzip: bool,
 ) -> std::result::Result<Response, PairingFailure> {
     let (parts, body) = passed_on(request, added).into_parts();
     let target = format!(
@@ -2169,6 +2174,7 @@ async fn forward_to_local_api(
         api.base_url,
         parts.uri.path_and_query().map_or("/", PathAndQuery::as_str)
     );
+    let method = parts.method.clone();
     let response = api
         .http
         .request(parts.method, target)
@@ -2178,8 +2184,20 @@ async fn forward_to_local_api(
         .await
         .map_err(|error| undelivered_or_lost(error.is_connect()))?;
     let status = response.status();
-    let headers = response.headers().clone();
-    Ok(passed_back(status, headers, response.bytes_stream()))
+    let mut headers = response.headers().clone();
+    let compressing = if gzip {
+        compression::compressing(&method, status, &headers)
+    } else {
+        None
+    };
+    let body = response.bytes_stream();
+    Ok(match compressing {
+        Some(compressing) => {
+            let body = compression::compressed(compressing, &mut headers, body);
+            passed_back(status, headers, body)
+        }
+        None => passed_back(status, headers, body),
+    })
 }
 
 /// The answer to a carried request, passed back as it came, hop-by-hop
@@ -3788,6 +3806,198 @@ mod tests {
             let _ = axum::serve(listener, app).await;
         });
         (format!("http://{address}"), arrived)
+    }
+
+    /// What a Session API standing in for this Server's own answers a
+    /// listing with.
+    fn local_listing() -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "sessions": vec![serde_json::json!({"title": "Map the workspace"}); 200]
+        }))
+        .expect("encode a listing")
+    }
+
+    /// A Session API standing in for this Server's own, telling the headers
+    /// of each request it is carried: a listing on `/v1/sessions`, an image's
+    /// bytes on an Attachment, and on a Session's events an event stream of
+    /// whatever pieces the test sends it.
+    async fn answering_local_api() -> (
+        String,
+        tokio::sync::mpsc::UnboundedReceiver<HeaderMap>,
+        tokio::sync::mpsc::UnboundedSender<Bytes>,
+    ) {
+        let (seen, arrived) = tokio::sync::mpsc::unbounded_channel();
+        let (events, pieces) = tokio::sync::mpsc::unbounded_channel::<Bytes>();
+        let pieces = Arc::new(StdMutex::new(Some(pieces)));
+        let app = axum::Router::new().fallback(move |request: Request<Body>| {
+            let seen = seen.clone();
+            let pieces = pieces.clone();
+            async move {
+                let _ = seen.send(request.headers().clone());
+                let path = request.uri().path();
+                if path == "/v1/sessions" {
+                    (
+                        [(header::CONTENT_TYPE, "application/json")],
+                        local_listing(),
+                    )
+                        .into_response()
+                } else if path.starts_with("/v1/attachments/") {
+                    ([(header::CONTENT_TYPE, "image/png")], b"\x89PNG".repeat(64)).into_response()
+                } else {
+                    let pieces = pieces
+                        .lock()
+                        .expect("the pieces lock is not poisoned")
+                        .take()
+                        .expect("one event stream is asked for");
+                    let stream = stream::unfold(pieces, |mut pieces| async move {
+                        let piece = pieces.recv().await?;
+                        Some((Ok::<_, std::convert::Infallible>(piece), pieces))
+                    });
+                    (
+                        [(header::CONTENT_TYPE, "text/event-stream")],
+                        Body::from_stream(stream),
+                    )
+                        .into_response()
+                }
+            }
+        });
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind the local API");
+        let address = listener.local_addr().expect("read the local API's address");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        (format!("http://{address}"), arrived, events)
+    }
+
+    /// The listener gzips what this Server's own API answers a Peer that asks
+    /// — every JSON answer, and an event stream flushed after every piece,
+    /// keep-alives included, so each arrives with nothing sent after it — and
+    /// answers a Peer that does not ask, or an Attachment's bytes, as they
+    /// came. The coding asked for is the listener's own: this Server's API
+    /// never hears of it.
+    #[tokio::test]
+    async fn the_listener_gzips_what_a_peer_asks_for_and_takes_the_ask_for_itself() {
+        let data = tempfile::tempdir().expect("create a data directory");
+        let (base_url, mut arrived, events) = answering_local_api().await;
+        let controller =
+            ServingController::for_tests(data.path(), IdentityKey::new(data.path()), base_url);
+        let public_key = b"the peer's public key".to_vec();
+        controller.peers.write().push(StoredPeer {
+            id: "ab12cd34ef567890".to_owned(),
+            public_key: public_key.clone(),
+            name: "laptop".to_owned(),
+            offer: None,
+        });
+        let state = ServingState {
+            controller,
+            hostname: "workstation".to_owned(),
+            protocol: PairingProtocol::CURRENT,
+        };
+        let ask = |path: &str, accept_encoding: Option<&str>| {
+            let mut request = Request::builder()
+                .method(Method::GET)
+                .uri(format!("{PEER_API_PREFIX}{path}"))
+                .header(PAIRING_PROTOCOL_HEADER, crate::protocol::PROTOCOL_VERSION);
+            if let Some(accept_encoding) = accept_encoding {
+                request = request.header(header::ACCEPT_ENCODING, accept_encoding);
+            }
+            forward_peer_api(
+                State(state.clone()),
+                ConnectInfo(ServingConnectionInfo {
+                    peer_key: Some(public_key.clone()),
+                }),
+                AxumPath(path.to_owned()),
+                request.body(Body::empty()).expect("a Peer's request"),
+            )
+        };
+        let gunzipped = |body: &[u8]| {
+            let mut plain = Vec::new();
+            std::io::Read::read_to_end(&mut flate2::read::GzDecoder::new(body), &mut plain)
+                .expect("one whole gzip member");
+            plain
+        };
+        let read = |response: Response| async move {
+            axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("read the answer")
+        };
+
+        let listed = ask("/v1/sessions", Some("gzip, br")).await;
+        assert!(
+            !arrived
+                .recv()
+                .await
+                .expect("the listing is asked of the Session API")
+                .contains_key(header::ACCEPT_ENCODING),
+            "the ask goes no further than the listener"
+        );
+        assert_eq!(listed.status(), StatusCode::OK);
+        assert_eq!(listed.headers()[header::CONTENT_ENCODING], "gzip");
+        assert!(!listed.headers().contains_key(header::CONTENT_LENGTH));
+        let body = read(listed).await;
+        assert!(
+            body.len() < local_listing().len() / 10,
+            "{} bytes",
+            body.len()
+        );
+        assert_eq!(gunzipped(&body), local_listing());
+
+        let listed = ask("/v1/sessions", None).await;
+        assert!(
+            !arrived
+                .recv()
+                .await
+                .expect("the listing is asked")
+                .contains_key(header::ACCEPT_ENCODING)
+        );
+        assert!(!listed.headers().contains_key(header::CONTENT_ENCODING));
+        assert_eq!(
+            read(listed).await,
+            local_listing(),
+            "a Peer that does not ask"
+        );
+
+        let image = ask(
+            "/v1/attachments/0198b27e-26ec-7c4c-a83b-a83a4787453f",
+            Some("gzip"),
+        )
+        .await;
+        arrived.recv().await.expect("the image is asked");
+        assert!(!image.headers().contains_key(header::CONTENT_ENCODING));
+        assert_eq!(read(image).await, b"\x89PNG".repeat(64), "an image's bytes");
+
+        let stream = ask(
+            "/v1/sessions/0198b27e-26ec-7c4c-a83b-a83a4787453f/events",
+            Some("gzip"),
+        )
+        .await;
+        arrived.recv().await.expect("the events are asked");
+        assert_eq!(stream.headers()[header::CONTENT_ENCODING], "gzip");
+        let mut stream = compression::decoded(stream).into_body();
+        for piece in [
+            &b"event: snapshot\ndata: {\"session\":{}}\n\n"[..],
+            b":\n\n",
+            b"event: updated\ndata: {\"changes\":[]}\n\n",
+        ] {
+            events
+                .send(Bytes::from_static(piece))
+                .expect("the stream is open");
+            let mut read = Vec::new();
+            while read.len() < piece.len() {
+                let frame = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    http_body_util::BodyExt::frame(&mut stream),
+                )
+                .await
+                .expect("what was sent arrives with nothing sent after it")
+                .expect("the stream goes on")
+                .expect("the stream reads");
+                read.extend_from_slice(&frame.into_data().expect("a piece of the stream"));
+            }
+            assert_eq!(read, piece);
+        }
     }
 
     /// A Peer noted behind is behind no longer once it is removed, withdraws

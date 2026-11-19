@@ -53,6 +53,7 @@ use crate::{
 };
 
 mod client;
+pub mod compression;
 mod peer_name;
 mod redeemer;
 pub mod relay;
@@ -890,8 +891,10 @@ impl Preface {
 }
 
 /// `request` made safe to carry on: rid of every hop-by-hop header, and of
-/// the host, credentials and Pairing protocol version and floor it came
-/// with, and with `added` set after all it carries.
+/// the host, credentials, Pairing protocol version and floor and the codings
+/// it asked for that it came with, and with `added` set after all it
+/// carries. A Pairing's coding is its own (see [`compression`]): whichever
+/// side carries a request on asks for one itself, or for none.
 pub fn passed_on<B>(request: Request<B>, added: HeaderMap) -> Request<B> {
     let (mut parts, body) = request.into_parts();
     remove_hop_by_hop_headers(&mut parts.headers);
@@ -899,6 +902,7 @@ pub fn passed_on<B>(request: Request<B>, added: HeaderMap) -> Request<B> {
     parts.headers.remove(header::AUTHORIZATION);
     parts.headers.remove(PAIRING_PROTOCOL_HEADER);
     parts.headers.remove(PAIRING_FLOOR_HEADER);
+    parts.headers.remove(header::ACCEPT_ENCODING);
     parts.headers.extend(added);
     Request::from_parts(parts, body)
 }

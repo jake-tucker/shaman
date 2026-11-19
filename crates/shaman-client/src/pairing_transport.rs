@@ -7,7 +7,9 @@
 //! beneath, the choice of way, the connection kept up over it — and this
 //! hands it each request a reader sends and passes back what the Remote
 //! answered. A failure to reach the Remote comes back as the wire's own
-//! error, as the local Server's proxy answers it to a Client.
+//! error, as the local Server's proxy answers it to a Client. What crosses
+//! the Pairing is asked for gzipped and read back plain beneath it, in
+//! `shaman_pairing::compression`, so no reader above it learns of the coding.
 //!
 //! It pins no Server instance: nothing on a Pairing tells one start of the
 //! Serving Server from the next, so a stream over it outlives a restart

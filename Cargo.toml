@@ -151,6 +151,8 @@ shaman-client = { path = "crates/shaman-client", features = ["test-support"] }
 shaman-pairing = { path = "crates/shaman-pairing", features = ["test-support"] }
 # The Pairing wire's schema, whose routes the Serving side's tests hold to what a Peer may ask.
 shaman-pairing-wire = { path = "crates/shaman-pairing-wire" }
+# Reads what the Serving listener gzips as any gzip reader would, apart from the redeemer's own decoder.
+flate2 = "1.1.9"
 # Holds SPAKE2's randomness still, to show a short Invite's exchange differs by a code nowhere it should not.
 rand_core = "0.6.4"
 # A real Relay in-process, which the Relay tests drive a Server against.

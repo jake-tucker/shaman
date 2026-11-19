@@ -24,6 +24,9 @@ anyhow = "1.0.99"
 base64 = "0.22.1"
 blake3 = "1.8.2"
 bytes = "1.12.1"
+# gzip on a Pairing's wire: the Serving listener's encoder and the redeemer's decoder. Pure Rust (miniz_oxide), so it
+# builds for iOS with nothing to cross-compile.
+flate2 = "1.1.9"
 futures-util = "0.3.31"
 hostname = "0.4.1"
 http = "1.5.0"
