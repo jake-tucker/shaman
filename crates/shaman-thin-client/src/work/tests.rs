@@ -1030,7 +1030,7 @@ fn a_subsessions_row_opens_it_where_this_phone_holds_its_server_and_says_why_not
     let pairings = crate::tree::Pairings(vec![crate::tree::Paired {
         fingerprint: "lab-key".to_owned(),
         name: "lab".to_owned(),
-        paths: shaman_protocol::WorkspacePaths::default(),
+        paths: Some(shaman_protocol::WorkspacePaths::default()),
     }]);
     let work = turn_work(Some(&built.snapshot), &turn.to_string(), REMOTE, &pairings);
     let row = |title: &str| {

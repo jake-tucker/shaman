@@ -471,11 +471,21 @@ impl Drop for Open {
 
 impl Remote {
     fn new(answered: SubagentTreeSnapshot) -> Self {
+        Self::answering(move |_| answered.clone())
+    }
+
+    /// A Remote answering the tree asked for through each Session as
+    /// `answer` says.
+    fn answering(
+        answer: impl Fn(SessionId) -> SubagentTreeSnapshot + Send + Sync + 'static,
+    ) -> Self {
+        let answer = Arc::new(answer);
         let asked = Arc::new(AtomicUsize::new(0));
         let open = Arc::new(AtomicUsize::new(0));
         let changes = Arc::new(Mutex::new(Vec::new()));
         let transport = {
             let (asked, open, changes) = (asked.clone(), open.clone(), changes.clone());
+            let answer = answer.clone();
             shaman_client::testing::Answering::new(move |request| {
                 assert!(request.uri().path().ends_with("/subagent-tree"));
                 asked.fetch_add(1, Ordering::AcqRel);
@@ -483,9 +493,19 @@ impl Remote {
                 let held = Open(open.clone());
                 let (more, rest) = tokio::sync::mpsc::unbounded_channel();
                 changes.lock().unwrap().push(more);
+                let through = request
+                    .uri()
+                    .path()
+                    .trim_end_matches("/subagent-tree")
+                    .rsplit('/')
+                    .next()
+                    .and_then(|id| {
+                        serde_json::from_value(serde_json::Value::String(id.to_owned())).ok()
+                    })
+                    .expect("a tree is asked for through a Session");
                 let first = bytes::Bytes::from(format!(
                     "event: {SUBAGENT_TREE_SNAPSHOT_EVENT}\nid: 1\ndata: {}\n\n",
-                    serde_json::to_string(&answered).unwrap()
+                    serde_json::to_string(&answer(through)).unwrap()
                 ));
                 let rest = futures_util::stream::unfold((rest, held), |(mut rest, held)| async {
                     rest.recv().await.map(|chunk| (chunk, (rest, held)))
@@ -699,13 +719,15 @@ fn pairings() -> Pairings {
         Paired {
             fingerprint: REMOTE.to_owned(),
             name: "desk".to_owned(),
-            paths: WorkspacePaths::default()
-                .with_sidekick_workspace(std::path::Path::new("/data/sidekick")),
+            paths: Some(
+                WorkspacePaths::default()
+                    .with_sidekick_workspace(std::path::Path::new("/data/sidekick")),
+            ),
         },
         Paired {
             fingerprint: LAB.to_owned(),
             name: "lab".to_owned(),
-            paths: WorkspacePaths::default(),
+            paths: Some(WorkspacePaths::default()),
         },
     ])
 }
@@ -753,6 +775,20 @@ fn sidekicks(
     tree
 }
 
+/// Where an entry says its Session works, as one line.
+fn placed(row: &TreeRow) -> Option<String> {
+    let place = row.place.as_ref()?;
+    Some(
+        place
+            .remote
+            .iter()
+            .chain(&place.workspace)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" · "),
+    )
+}
+
 fn row<'a>(sheet: &'a SubagentTree, title: &str) -> &'a TreeRow {
     sheet
         .rows
@@ -798,7 +834,7 @@ fn a_sidekicks_tree_is_headed_sessions_and_stands_its_own_subagents_then_the_ses
          most recently"
     );
     assert_eq!(
-        sheet.rows[0].place.as_deref(),
+        placed(&sheet.rows[0]).as_deref(),
         Some("Sidekick"),
         "the Sidekick's Session names where it works"
     );
@@ -809,8 +845,13 @@ fn a_sidekicks_tree_is_headed_sessions_and_stands_its_own_subagents_then_the_ses
         docs.session.as_deref(),
         Some(format!("{REMOTE}/{}", older.session_id).as_str())
     );
-    assert_eq!(docs.place.as_deref(), Some("parser"));
-    assert!(docs.place_glyph.is_some());
+    assert_eq!(placed(docs).as_deref(), Some("parser"));
+    let place = docs.place.as_ref().expect("where it works");
+    assert!(place.workspace_glyph.is_some());
+    assert_eq!(
+        place.remote_glyph, None,
+        "it lives on the tree's own Server"
+    );
     assert_eq!(docs.line.as_deref(), Some("Codex · gpt-5"));
     assert_eq!(docs.trailing.as_deref(), Some("30s"));
     assert_eq!(docs.note, None);
@@ -826,7 +867,7 @@ fn a_sidekicks_tree_is_headed_sessions_and_stands_its_own_subagents_then_the_ses
         parser.session.as_deref(),
         Some(format!("{LAB}/{}", working.session_id).as_str())
     );
-    assert_eq!(parser.place.as_deref(), Some("lab · parser"));
+    assert_eq!(placed(parser).as_deref(), Some("lab · parser"));
     assert_eq!(parser.marker, Some(Tone::Running));
     assert!(parser.since.is_some(), "its time counts");
     assert_eq!(
@@ -846,7 +887,7 @@ fn a_sidekicks_tree_is_headed_sessions_and_stands_its_own_subagents_then_the_ses
     // Server names it, opens nothing, and says why.
     let lights = row(&sheet, "Fix the lights");
     assert_eq!(lights.session, None);
-    assert_eq!(lights.place.as_deref(), Some("attic · parser"));
+    assert_eq!(placed(lights).as_deref(), Some("attic · parser"));
     assert_eq!(
         lights.note.as_deref(),
         Some("This phone is not paired with attic")
@@ -904,10 +945,10 @@ fn a_sessions_entry_reads_not_answering_not_confirmed_and_open_for_all_subagents
         silent.session.is_some(),
         "it still opens, as any Session of its Remote does"
     );
-    assert_eq!(silent.place.as_deref(), Some("lab · parser"));
+    assert_eq!(placed(silent).as_deref(), Some("lab · parser"));
     let untitled = row(&sheet, "not answering");
     assert_eq!(
-        untitled.place.as_deref(),
+        placed(untitled).as_deref(),
         Some("lab"),
         "it says which Remote, and no more"
     );
@@ -949,7 +990,7 @@ fn a_remote_session_named_without_its_key_says_which_server_to_update() {
     let sheet = sheet(&state, REMOTE, top, &pairings());
     let parser = row(&sheet, "Write the parser");
     assert_eq!(parser.session, None);
-    assert_eq!(parser.place.as_deref(), Some("build · parser"));
+    assert_eq!(placed(parser).as_deref(), Some("build · parser"));
     assert_eq!(
         parser.note.as_deref(),
         Some("Update desk to open this here")
@@ -1040,5 +1081,100 @@ fn a_session_is_reached_through_the_pairing_its_key_names() {
             why: "This phone is not paired with lab".to_owned()
         },
         "a name the phone knows another Server by means nothing: only the key does"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_subsession_open_here_reads_the_tree_it_heads_once_its_sidekicks_session_is_deleted() {
+    let top = SessionId::new();
+    let docs = hand_in("Tidy the docs", None, true, 1_000);
+    let reader = entry("Reader", docs.session_id, 0, ActivityStatus::Active);
+    let sidekicks_tree = sidekicks(top, vec![reader.clone()], vec![docs.clone()]);
+    // Once the Sidekick's Session is gone, the Subsession heads its own tree.
+    let mut own_tree = tree(docs.session_id, vec![reader.clone()]);
+    own_tree.top_level.title = "Tidy the docs".to_owned();
+    let deleted = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let remote = {
+        let deleted = deleted.clone();
+        Remote::answering(move |_| {
+            if deleted.load(Ordering::Acquire) {
+                own_tree.clone()
+            } else {
+                sidekicks_tree.clone()
+            }
+        })
+    };
+    let trees = Trees::new(Handle::current());
+    let sidekick = trees.hold(REMOTE, top, &remote.commands);
+    seen_until(&sidekick, is_read).await;
+    let subsession = trees.hold(REMOTE, docs.session_id, &remote.commands);
+    let beneath = trees.hold(REMOTE, reader.session_id, &remote.commands);
+    assert_eq!(trees.read(), 1, "a Subsession's tree is its Sidekick's");
+
+    deleted.store(true, Ordering::Release);
+    remote.change(2, SubagentTreeChange::TreeDeleted);
+    seen_until(&sidekick, |state| state.reading == Reading::Gone).await;
+    for lease in [&subsession, &beneath] {
+        let state = seen_until(lease, |state| {
+            matches!(&state.reading, Reading::Read(tree) if tree.top_level.session_id == docs.session_id)
+        })
+        .await;
+        let framed = in_tree(&state, reader.session_id, None);
+        assert!(framed.subagent, "the Subagent beneath it is still one");
+        assert_eq!(framed.named.as_deref(), Some("Reader"));
+        assert!(framed.button.is_some(), "the button stands");
+    }
+    until("the Subsession's tree is read once", || trees.read() <= 2).await;
+    let sheet = sheet(
+        &subsession.seen().borrow(),
+        REMOTE,
+        docs.session_id,
+        &pairings(),
+    );
+    assert_eq!(sheet.rows[0].title, "Tidy the docs");
+    assert!(sheet.rows[0].open);
+}
+
+#[test]
+fn a_subagent_beneath_a_session_a_sidekick_has_a_hand_in_is_stopped_alone_where_that_sessions_provider_can()
+ {
+    let top = SessionId::new();
+    let mut docs = hand_in("Tidy the docs", None, true, 1_000);
+    docs.provider = Some(ProviderId::new("claude"));
+    let mut build = hand_in("Fix the build", None, false, 2_000);
+    build.provider = Some(ProviderId::new("copilot"));
+    let reader = entry("Reader", docs.session_id, 0, ActivityStatus::Active);
+    let writer = entry("Writer", build.session_id, 0, ActivityStatus::Active);
+    let mut tree = sidekicks(top, vec![reader, writer], vec![docs, build]);
+    // The Sidekick's own Provider stops nothing alone, so only the Session
+    // above each says.
+    tree.top_level.provider = Some(ProviderId::new("copilot"));
+    let sheet = sheet(&read(tree), REMOTE, top, &pairings());
+    assert_eq!(row(&sheet, "Reader's task").stop.as_deref(), Some("Stop"));
+    assert_eq!(row(&sheet, "Writer's task").stop, None);
+}
+
+#[test]
+fn a_remote_sessions_workspace_is_named_by_its_last_part_before_its_server_has_said_how_it_spells_paths()
+ {
+    let top = SessionId::new();
+    let mut session = hand_in("Write the parser", Some(("build", LAB)), false, 1_000);
+    session.workspace_path = std::path::PathBuf::from(r"C:\work\parser");
+    let state = read(sidekicks(top, Vec::new(), vec![session]));
+    let mut unheard = pairings();
+    unheard.0[1].paths = None;
+    let sheet = sheet(&state, REMOTE, top, &unheard);
+    let parser = row(&sheet, "Write the parser");
+    assert_eq!(placed(parser).as_deref(), Some("lab · parser"));
+    let place = parser.place.as_ref().expect("where it works");
+    assert_eq!(
+        place.remote_glyph.as_deref(),
+        Some(shaman_icons::MONITOR.to_string().as_str()),
+        "the Remote is led by its own glyph"
+    );
+    assert_eq!(
+        place.workspace_glyph.as_deref(),
+        Some(shaman_icons::FOLDER.to_string().as_str()),
+        "and the Workspace by its"
     );
 }

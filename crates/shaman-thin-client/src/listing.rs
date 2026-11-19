@@ -417,6 +417,9 @@ pub(crate) struct Answered {
     pub fingerprint: String,
     /// How it spells and names its paths.
     pub paths: WorkspacePaths,
+    /// Whether its Session catalog has said how it spells its paths yet,
+    /// before which `paths` are a guess.
+    pub paths_heard: bool,
     /// Its Sessions, or none before it has first answered.
     pub sessions: Option<Vec<SessionListItem>>,
     /// The Workspaces its Workspace Registry holds, or none before its
@@ -1630,6 +1633,7 @@ impl Shared {
                 name,
                 fingerprint: stored.remote.fingerprint.clone(),
                 paths: WorkspacePaths::default(),
+                paths_heard: false,
                 sessions: None,
                 workspaces: None,
                 unreached: None,
@@ -1697,7 +1701,7 @@ impl Shared {
                     .map(|remote| Paired {
                         fingerprint: remote.fingerprint.clone(),
                         name: remote.name.clone(),
-                        paths: remote.paths.clone(),
+                        paths: remote.paths_heard.then(|| remote.paths.clone()),
                     })
                     .collect(),
             );
@@ -1839,6 +1843,7 @@ async fn follow_catalog(
             shared.change(&name, generation, |answered| {
                 if let Some(paths) = paths {
                     answered.paths = paths;
+                    answered.paths_heard = true;
                 }
                 if let Some(workspaces) = workspaces {
                     answered.workspaces = Some(workspaces);

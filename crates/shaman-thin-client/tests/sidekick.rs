@@ -47,6 +47,20 @@ async fn row(phone: &Phone, title: &str) -> ActiveRow {
         .expect("listed")
 }
 
+/// Where an entry says its Session works, as one line.
+fn placed(row: &TreeRow) -> Option<String> {
+    let place = row.place.as_ref()?;
+    Some(
+        place
+            .remote
+            .iter()
+            .chain(&place.workspace)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" · "),
+    )
+}
+
 fn entry<'a>(sheet: &'a SubagentTree, title: &str) -> Option<&'a TreeRow> {
     sheet.rows.iter().find(|row| row.title == title)
 }
@@ -116,7 +130,7 @@ async fn a_sidekicks_tree_opens_its_sessions_here_and_on_other_servers_through_t
         .expect("its entry")
         .clone();
     assert_eq!(parser.session, None);
-    assert_eq!(parser.place.as_deref(), Some("build · working"));
+    assert_eq!(placed(&parser).as_deref(), Some("build · working"));
     assert_eq!(
         parser.note.as_deref(),
         Some("This phone is not paired with build")
@@ -184,7 +198,7 @@ async fn a_sidekicks_tree_opens_its_sessions_here_and_on_other_servers_through_t
         parser_session.starts_with(&format!("{}/", lab.fingerprint())),
         "matched by the lab's key: {parser_session}"
     );
-    assert_eq!(parser.place.as_deref(), Some("lab · working"));
+    assert_eq!(placed(parser).as_deref(), Some("lab · working"));
     assert_eq!(parser.note, None);
     let opens = work
         .until(|work| {

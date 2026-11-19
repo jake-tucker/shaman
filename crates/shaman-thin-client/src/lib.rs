@@ -66,7 +66,7 @@ pub use session::{
     ConversationChange, ConversationListener, DetailListener, FrameListener, OpenSession,
     TreeListener, WorkListener,
 };
-pub use tree::{SubagentTree, TreeButton, TreeRow};
+pub use tree::{Place, SubagentTree, TreeButton, TreeRow};
 pub use work::{
     ActivityDetail, BodyStyle, DetailSection, Fact, Tap, TurnWork, WorkItem, WorkKind, WorkRow,
 };

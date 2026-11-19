@@ -63,6 +63,7 @@ pub(crate) fn remote(name: &str, sessions: Vec<SessionSummary>) -> Answered {
         name: name.to_owned(),
         fingerprint: format!("{name}-key"),
         paths: WorkspacePaths::default(),
+        paths_heard: true,
         sessions: Some(sessions.into_iter().map(listed).collect()),
         workspaces: None,
         unreached: None,
