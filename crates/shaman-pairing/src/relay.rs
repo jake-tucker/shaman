@@ -44,8 +44,8 @@ use crate::{
     ByteStream, Identity, MAX_TOLD_RELAY_LEN, PairingFailure, RelayJoin, RelayRefusal, RelayWays,
     Wanted, machine_hostname, no_longer_wanted,
     protocol::{
-        RelayAccount, RelayLogin, RelayLoginOutcome, RelayLoginRefusal, RelayRemoval, RelayState,
-        RelayUnreachable, SessionErrorCode, UnreachableReason,
+        RelayAccount, RelayLogin, RelayLoginOutcome, RelayLoginRefusal, RelayRemoval, RelaySide,
+        RelayState, RelayUnreachable, SessionErrorCode, UnreachableReason,
     },
     read_records, write_private_json,
 };
@@ -138,6 +138,13 @@ pub trait RelayHooks: Send + Sync + Sized + 'static {
     fn in_place_of(&self, _removed: &HeldRelay<Self>) -> Option<HeldRelay<Self>> {
         None
     }
+
+    /// The name the holder reports as it begins a login, for the Relay to
+    /// label the Login with: a Server's is its machine's hostname, and a thin
+    /// Client's the name it keeps for itself.
+    fn reported_name(&self) -> String {
+        machine_hostname()
+    }
 }
 
 /// What another stores on an entry, kept unread by a holder that stores
@@ -210,7 +217,29 @@ struct HeldLogin {
     task: Option<JoinHandle<()>>,
     /// Has the login given up: its conversation ended, and the Relay heard
     /// out until it lets it go.
-    give_up: Arc<Notify>,
+    give_up: Arc<GivingUp>,
+}
+
+/// What has a login under way given up, and why it was.
+#[derive(Default)]
+struct GivingUp {
+    notify: Notify,
+    why: StdMutex<String>,
+}
+
+impl GivingUp {
+    /// Gives the login up, saying `why`.
+    fn give_up(&self, why: &str) {
+        why.clone_into(&mut self.why.lock().unwrap_or_else(|poison| poison.into_inner()));
+        self.notify.notify_one();
+    }
+
+    fn why(&self) -> String {
+        self.why
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .clone()
+    }
 }
 
 impl<H: RelayHooks> HeldRelay<H> {
@@ -298,6 +327,9 @@ pub enum Observed {
 pub struct RelayFailure {
     pub code: SessionErrorCode,
     pub message: String,
+    /// The side to upgrade, where the Relay and its holder share no version
+    /// of the Relay protocol.
+    pub behind: Option<RelaySide>,
 }
 
 impl RelayFailure {
@@ -305,6 +337,7 @@ impl RelayFailure {
         Self {
             code,
             message: message.into(),
+            behind: None,
         }
     }
 }
@@ -685,7 +718,7 @@ impl<H: RelayHooks> RelayClient<H> {
     }
 
     /// Begins a login at the Relay at `address`, proving the key and
-    /// reporting this machine's hostname there, and answers where its user
+    /// reporting the name the hooks give there, and answers where its user
     /// goes to log in and what they enter. The caller holds the entry's
     /// `operations`, and found none under way, so this ends no login.
     async fn begin_login(
@@ -700,7 +733,7 @@ impl<H: RelayHooks> RelayClient<H> {
             .map_err(DialFailure::into_failure)?;
         conversation
             .say(&ServerMessage::BeginLogin {
-                hostname: machine_hostname(),
+                hostname: self.hooks.reported_name(),
             })
             .await
             .map_err(|_| stopped_answering())?;
@@ -733,7 +766,7 @@ impl<H: RelayHooks> RelayClient<H> {
         };
         let budget = expires_in.saturating_add(answer_timeout);
         let progress = watch::Sender::new(login.clone());
-        let give_up = Arc::new(Notify::new());
+        let give_up = Arc::new(GivingUp::default());
         let mut relays = self.lock();
         let Some(held) = owning(&mut relays, address, operations) else {
             return Err(relay_not_found());
@@ -816,7 +849,7 @@ impl<H: RelayHooks> RelayClient<H> {
             (login, held_login)
         };
         if let Some((give_up, task)) = login {
-            give_up.notify_one();
+            give_up.give_up("the login was given up as its Relay was being removed");
             let _ = task.await;
         }
         if let Some(held) = owning(&mut self.lock(), &address, &operations) {
@@ -866,6 +899,32 @@ impl<H: RelayHooks> RelayClient<H> {
         })
     }
 
+    /// Gives up the login under way at the Relay at `address`, where one is,
+    /// saying `why`, and hears the Relay out until it lets it go: the entry
+    /// stays, with whatever Login it held before. Done with the entry's
+    /// `operations` held, so no login is begun there meanwhile.
+    pub async fn give_up_login(
+        &self,
+        address: &str,
+        why: &str,
+    ) -> std::result::Result<(), RelayFailure> {
+        let address = relay_address(address)?;
+        let operations = self.operations(&address)?;
+        let _serialised = operations.lock().await;
+        let login = {
+            let mut relays = self.lock();
+            let held = owning(&mut relays, &address, &operations).ok_or_else(relay_not_found)?;
+            held.login
+                .as_mut()
+                .and_then(|login| Some((login.give_up.clone(), login.task.take()?)))
+        };
+        if let Some((give_up, task)) = login {
+            give_up.give_up(why);
+            let _ = task.await;
+        }
+        Ok(())
+    }
+
     async fn ask_to_forget(&self, address: &str) -> bool {
         let Ok((mut conversation, _)) = self.dial(address).await else {
             return false;
@@ -883,13 +942,13 @@ impl<H: RelayHooks> RelayClient<H> {
         mut conversation: Conversation,
         progress: watch::Sender<RelayLogin>,
         budget: Duration,
-        give_up: Arc<Notify>,
+        give_up: Arc<GivingUp>,
     ) {
         let heard = tokio::select! {
             heard = tokio::time::timeout(budget, conversation.hear()) => heard,
-            () = give_up.notified() => {
+            () = give_up.notify.notified() => {
                 conversation.end(self.joiner.timings.answer_timeout).await;
-                settle_abandoned(&progress, "the login was given up as its Relay was being removed");
+                settle_abandoned(&progress, &give_up.why());
                 self.hooks.changed(&self.lock());
                 return;
             }
@@ -1469,6 +1528,104 @@ mod tests {
         assert_eq!(stored(phone_data.path()), serde_json::json!([]));
         let (_, login) = phone.dial(&relay.address).await.ok().unwrap();
         assert!(login.is_none(), "the Relay forgot the Login");
+    }
+
+    /// A login given up leaves its entry as it was and settles as
+    /// interrupted, saying why; the Relay lets the login go, so approving
+    /// its code then forms no Login.
+    #[tokio::test]
+    async fn a_login_given_up_ends_and_leaves_its_entry() {
+        let relay = TestRelay::start().await;
+        let directory = tempfile::tempdir().unwrap();
+        let phone = client(directory.path());
+        phone.add(&relay.address, |_| ()).unwrap();
+        let lead = phone.log_in(&relay.address, false, |_| ()).await.unwrap();
+        let LoginStanding::Begun(login) = lead.standing else {
+            panic!("a login is begun where none stands");
+        };
+        let mut progress = phone.follow_login(&relay.address).unwrap();
+
+        phone
+            .give_up_login(&relay.address, "the login was given up as the app left")
+            .await
+            .unwrap();
+        let ended = tokio::time::timeout(
+            STALLED,
+            progress.wait_for(|login| login.outcome.is_settled()),
+        )
+        .await
+        .expect("the login ends")
+        .expect("the login is followed")
+        .outcome
+        .clone();
+        assert_eq!(
+            ended,
+            RelayLoginOutcome::Refused {
+                reason: RelayLoginRefusal::Interrupted,
+                message: "the login was given up as the app left".to_owned(),
+            }
+        );
+        let approved_late = relay.provider.approve(
+            &login.user_code,
+            shaman_relay::Identity {
+                subject: "subject-octocat".to_owned(),
+                username: "octocat".to_owned(),
+            },
+        );
+        {
+            let relays = phone.lock();
+            assert_eq!(relays.len(), 1, "the entry stays");
+            assert_eq!(relays[0].state(), RelayState::LoginNeeded);
+            assert!(!relays[0].stored().logged_in());
+        }
+        if approved_late {
+            let (_, login) = phone.dial(&relay.address).await.ok().unwrap();
+            assert!(login.is_none(), "a login given up forms no Login");
+        }
+    }
+
+    /// What reports a name of its own as it begins a login.
+    struct Named;
+
+    impl RelayHooks for Named {
+        type Stored = Extension;
+        type Beside = ();
+
+        fn beside(&self, _stored: &StoredRelay<Extension>) {}
+
+        fn reported_name(&self) -> String {
+            "Pocket".to_owned()
+        }
+    }
+
+    /// A login reports the name its holder's hooks give, not the machine's
+    /// hostname, as a thin Client reports the name it keeps for itself.
+    #[tokio::test]
+    async fn a_login_reports_the_name_its_hooks_give() {
+        let directory = tempfile::tempdir().unwrap();
+        let relays = RelayClient::new(
+            directory.path(),
+            Arc::new(GivenIdentity(IdentityMaterial::fresh())),
+            RelayClientTimings {
+                answer_timeout: Duration::from_millis(200),
+            },
+            Named,
+        )
+        .unwrap();
+        let mut relay = proving_relay().await;
+        relays.add(&relay.address, |_| ()).unwrap();
+        relay.release.notify_one();
+        // The stand-in never answers the login, which fails once the answer
+        // timeout is out; what it heard is all this asks.
+        let _ = relays.log_in(&relay.address, false, |_| ()).await;
+        let heard = tokio::time::timeout(STALLED, relay.heard.recv())
+            .await
+            .expect("the stand-in proved the client")
+            .expect("the stand-in is still listening");
+        assert!(
+            matches!(&heard, Some(ServerMessage::BeginLogin { hostname }) if hostname == "Pocket"),
+            "{heard:?}"
+        );
     }
 
     /// What a Server's Serving layer stores on an entry survives every write

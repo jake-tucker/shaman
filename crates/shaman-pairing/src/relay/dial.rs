@@ -75,9 +75,13 @@ impl DialFailure {
             Self::Unreachable(message) => {
                 RelayFailure::new(SessionErrorCode::RelayUnreachable, message)
             }
-            Self::Mismatch { message, .. } => {
-                RelayFailure::new(SessionErrorCode::RelayProtocolMismatch, message)
-            }
+            Self::Mismatch { behind, message } => RelayFailure {
+                behind: Some(match behind {
+                    Side::Server => RelaySide::Server,
+                    Side::Relay => RelaySide::Relay,
+                }),
+                ..RelayFailure::new(SessionErrorCode::RelayProtocolMismatch, message)
+            },
             Self::Refused(message) => RelayFailure::new(SessionErrorCode::RelayRefused, message),
         }
     }
