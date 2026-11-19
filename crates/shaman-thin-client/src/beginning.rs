@@ -33,10 +33,10 @@ use std::path::PathBuf;
 
 use shaman_protocol::{
     AgentSelection, CheckoutKind, CheckoutRevision, CheckoutSummary, CreateSessionRequest,
-    ExecutionDirectory, ExecutionDirectoryStatus, InitialPrompt, ModelCatalog, ModelOptionKind,
-    ModelOptionValue, NewSessionAgent, PreparationId, PreparationPrompt, PrepareCheckoutRequest,
-    ProviderId, RepositoryLocation, ResolvedWorkspace, SessionId, SessionSnapshot,
-    SourceControlAvailability, SourceControlCapability, Workspace,
+    ExecutionDirectory, ExecutionDirectoryStatus, Health, InitialPrompt, ModelCatalog,
+    ModelOptionKind, ModelOptionValue, NewSessionAgent, PreparationId, PreparationPrompt,
+    PrepareCheckoutRequest, ProviderId, RepositoryLocation, ResolvedWorkspace, SessionId,
+    SessionSnapshot, SourceControlAvailability, SourceControlCapability, Workspace,
 };
 
 use crate::device::RememberedWorkspace;
@@ -112,6 +112,9 @@ pub struct WorktreeChoice {
 /// of the screen names it.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct LandingWorkspace {
+    /// Which Workspace it is, by its Remote and its path there, so Swift
+    /// tells one from another however they are named.
+    pub id: String,
     /// The glyph of its Icon, where it has one this build knows.
     pub glyph: Option<String>,
     pub name: String,
@@ -289,6 +292,7 @@ pub(crate) fn landing(
         title: TITLE.to_owned(),
         place,
         workspace: workspace.map(|workspace| LandingWorkspace {
+            id: format!("{remote}/{}", workspace.path.display()),
             glyph: known.glyph.clone(),
             name: workspace.name.clone(),
             origin: remote.to_owned(),
@@ -556,6 +560,21 @@ fn prompt(text: String) -> InitialPrompt {
     }
 }
 
+/// The Provider a new Worktree is prepared for, as `health` says it: that of
+/// the Agent a Session begun with none would get, or, from a Server too old
+/// to say, that of the Agent Selection its Landing has stored; none where the
+/// Server names no Agent.
+pub(crate) fn worktree_provider(health: &Health) -> Option<ProviderId> {
+    match health.new_session_agent() {
+        NewSessionAgent::Agent(selection) => Some(selection.provider),
+        NewSessionAgent::NoAgent => None,
+        NewSessionAgent::NotSaid => health
+            .landing_agent_selection
+            .as_ref()
+            .map(|selection| selection.provider.clone()),
+    }
+}
+
 /// What the bar of a Session being begun reads while its new Worktree is
 /// prepared.
 pub(crate) const CREATING_WORKTREE: &str = "Creating worktree";
@@ -617,6 +636,7 @@ mod tests {
         assert_eq!(
             landing.workspace,
             Some(LandingWorkspace {
+                id: "desk/shaman".to_owned(),
                 glyph: Some("\u{e7a8}".to_owned()),
                 name: "shaman".to_owned(),
                 origin: "desk".to_owned(),
@@ -993,5 +1013,44 @@ mod tests {
             PathBuf::from("shaman/.worktrees/tidy")
         );
         assert_eq!(request.agent_selection, None, "a phone names no Agent");
+    }
+
+    fn health(protocol_version: u32) -> Health {
+        Health::new(
+            shaman_protocol::ServerIdentity {
+                instance_id: Default::default(),
+                pid: 1,
+                protocol_version,
+                build_identity: String::new(),
+            },
+            shaman_protocol::LifecycleState::Ready,
+        )
+    }
+
+    #[test]
+    fn a_new_worktree_is_prepared_for_the_provider_of_the_agent_a_session_would_get() {
+        let current = shaman_protocol::PROTOCOL_VERSION;
+        assert_eq!(
+            worktree_provider(
+                &health(current)
+                    .with_new_session_agent_selection(Some(fable("high")))
+                    .with_landing_agent_selection(Some(AgentSelection {
+                        provider: ProviderId::new("codex"),
+                        ..fable("high")
+                    }))
+            ),
+            Some(ProviderId::new("claude"))
+        );
+        assert_eq!(
+            worktree_provider(&health(current).with_landing_agent_selection(Some(fable("high")))),
+            None,
+            "a Server that says none would serve names no Provider"
+        );
+        assert_eq!(
+            worktree_provider(&health(0).with_landing_agent_selection(Some(fable("high")))),
+            Some(ProviderId::new("claude")),
+            "a Server too old to say gives what its Landing has stored"
+        );
+        assert_eq!(worktree_provider(&health(0)), None);
     }
 }

@@ -256,6 +256,9 @@ impl ThinClient {
         let mut moved = inner.listing.moved();
         let mut noted = inner.landing_note.subscribe();
         let task = self.runtime().spawn(async move {
+            // Held for as long as the Landing is answered, so a Workspace is
+            // resolved for it only while it is up.
+            let _up = inner.listing.landing_up();
             let mut told = None;
             let mut asked = None;
             loop {
@@ -268,14 +271,18 @@ impl ThinClient {
                 // reader.
                 let standing = inner.remotes.standing();
                 if standing != asked {
-                    if let Some((remote, workspace)) = &standing {
-                        if asked.as_ref().is_none_or(|(was, _)| was != remote) {
-                            inner.listing.ask_for_agent(remote);
-                        }
-                        if let Some(workspace) = workspace {
-                            inner.listing.resolve_for_landing(remote, &workspace.path);
-                        }
+                    if let Some((remote, _)) = &standing
+                        && asked.as_ref().is_none_or(|(was, _)| was != remote)
+                    {
+                        inner.listing.ask_for_agent(remote);
                     }
+                    inner
+                        .listing
+                        .aim_landing(standing.as_ref().and_then(|(remote, workspace)| {
+                            workspace
+                                .as_ref()
+                                .map(|workspace| (remote.as_str(), workspace.path.as_path()))
+                        }));
                     asked = standing;
                 }
                 let landing = inner.landing();

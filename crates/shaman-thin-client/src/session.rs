@@ -40,7 +40,7 @@ use shaman_client::{
     RecoveryBackoff, SessionCommands, SessionEvent, SessionStreamError, SessionSubscription, TryNow,
 };
 use shaman_protocol::{
-    AdmitPromptRequest, InitialPrompt, InterruptOutcome, NewSessionAgent, PromptDelivery, PromptId,
+    AdmitPromptRequest, InitialPrompt, InterruptOutcome, PromptDelivery, PromptId,
     QuestionnaireSubmission, SessionId, SessionSnapshot,
 };
 use tokio::{runtime::Handle, sync::watch, task::JoinHandle};
@@ -1017,16 +1017,8 @@ impl Acting {
                 Progress::Refused(beginning::PREPARATION_UNANSWERED.to_owned())
             }
         })?;
-        // A Server too old to say what a new Session would get says what its
-        // Landing would begin one with.
-        let provider = match health.new_session_agent() {
-            NewSessionAgent::Agent(selection) => Some(selection.provider),
-            NewSessionAgent::NoAgent => None,
-            NewSessionAgent::NotSaid => health
-                .landing_agent_selection
-                .map(|selection| selection.provider),
-        }
-        .ok_or_else(|| Progress::Refused(beginning::NO_AGENT_FOR_WORKTREE.to_owned()))?;
+        let provider = beginning::worktree_provider(&health)
+            .ok_or_else(|| Progress::Refused(beginning::NO_AGENT_FOR_WORKTREE.to_owned()))?;
         let Some(request) = self
             .local
             .borrow()

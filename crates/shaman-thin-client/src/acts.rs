@@ -127,6 +127,12 @@ fn reached(error: &anyhow::Error) -> Reached {
     }
 }
 
+/// Whether `error` is a Server's refusal, in its own words: an answer, which
+/// asking again would only have refused again.
+pub(crate) fn refused(error: &anyhow::Error) -> bool {
+    matches!(reached(error), Reached::Refused)
+}
+
 /// What a request said no Server reached, as the banner says it.
 const NOT_IN_TIME: &str = "The server did not answer in time";
 

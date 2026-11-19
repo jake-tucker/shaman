@@ -26,7 +26,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, Weak,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -46,7 +46,7 @@ use shaman_protocol::{
 use tokio::{runtime::Handle, sync::Notify, sync::watch, task::JoinHandle};
 
 use crate::{
-    ActError,
+    ActError, acts,
     device::RememberedWorkspace,
     reach::{self, Network, Reach, Reaching, Reading, Unreached},
     tree::{Paired, Pairings},
@@ -446,12 +446,16 @@ pub(crate) struct Answered {
 }
 
 impl Answered {
-    /// Takes `listing` as the Workspaces it lists, unless it is older than
-    /// the listing held: given during the same run, before as many changes.
-    fn take_workspaces(&mut self, listing: WorkspaceListing) {
-        if self.workspace_revision.as_ref().is_some_and(|held| {
-            held.run == listing.revision.run && !listing.revision.is_no_older_than(held)
-        }) {
+    /// Takes `listing` as the Workspaces it lists, where it is no older than
+    /// the listing held: of the run held, and as new or newer. Between runs
+    /// the count says nothing, so only one `pushed` on the Session catalog
+    /// stream, which speaks for the run its Server is in now, replaces one
+    /// of another run; one asked for is let go then.
+    fn take_workspaces(&mut self, listing: WorkspaceListing, pushed: bool) {
+        let newer = self.workspace_revision.as_ref().is_none_or(|held| {
+            (pushed && held.run != listing.revision.run) || listing.revision.is_no_older_than(held)
+        });
+        if !newer {
             return;
         }
         self.workspace_revision = Some(listing.revision);
@@ -1060,6 +1064,8 @@ struct Shared {
     /// Told whenever the next moment a Session settles by being left alone
     /// may have moved.
     settling: Notify,
+    /// How many Landings are up.
+    landings: AtomicUsize,
 }
 
 #[derive(Default)]
@@ -1138,6 +1144,7 @@ impl Listings {
                 ..State::default()
             }),
             settling: Notify::new(),
+            landings: AtomicUsize::new(0),
         });
         runtime.spawn(settle_when_left_alone(shared.clone()));
         Self { shared }
@@ -1403,7 +1410,7 @@ impl Listings {
                     Ok(listing) => {
                         if let Some(shared) = shared.upgrade() {
                             shared.change(&name, generation, |answered| {
-                                answered.take_workspaces(listing);
+                                answered.take_workspaces(listing, false);
                             });
                         }
                     }
@@ -1416,21 +1423,32 @@ impl Listings {
     }
 
     /// Has the Remote `name` resolve its Workspace at `path`, as the Landing
-    /// would begin a Session there: as the Landing opens, as it turns to
-    /// that Workspace, and again as the Remote comes back.
-    pub fn resolve_for_landing(&self, name: &str, path: &Path) {
-        if let Some(followed) = self
-            .shared
-            .lock()
-            .remotes
-            .iter()
-            .find(|followed| followed.answered.name == name)
-        {
+    /// would begin a Session there — as it opens, as it turns to that
+    /// Workspace, and again as the Remote comes back — and every other Remote
+    /// resolve nothing more; or, given none, has no Remote resolve anything,
+    /// as where the Landing stands in no Workspace or none is up.
+    pub fn aim_landing(&self, at: Option<(&str, &Path)>) {
+        for followed in &self.shared.lock().remotes {
+            let wanted = at
+                .filter(|(name, _)| *name == followed.answered.name)
+                .map(|(_, path)| path.to_owned());
+            let asked = wanted.is_some();
             *followed
                 .landing_path
                 .lock()
-                .unwrap_or_else(|poison| poison.into_inner()) = Some(path.to_owned());
-            followed.resolve_wanted.notify_one();
+                .unwrap_or_else(|poison| poison.into_inner()) = wanted;
+            if asked {
+                followed.resolve_wanted.notify_one();
+            }
+        }
+    }
+
+    /// Holds that a Landing is up, until what it answers goes: once none is,
+    /// no Remote resolves a Workspace for one any more.
+    pub fn landing_up(&self) -> LandingUp {
+        self.shared.landings.fetch_add(1, Ordering::AcqRel);
+        LandingUp {
+            listings: self.clone(),
         }
     }
 
@@ -1582,6 +1600,19 @@ impl Listings {
                     .map(|line| line.words),
             },
         })
+    }
+}
+
+/// That a Landing is up, held for as long as it is.
+pub(crate) struct LandingUp {
+    listings: Listings,
+}
+
+impl Drop for LandingUp {
+    fn drop(&mut self) {
+        if self.listings.shared.landings.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.listings.aim_landing(None);
+        }
     }
 }
 
@@ -1786,6 +1817,7 @@ impl Shared {
                     .unwrap_or_else(|poison| poison.into_inner())
                     .clone();
                 async move {
+                    // No Landing wants it any more: nothing is asked.
                     let Some(path) = path else {
                         return Ok(None);
                     };
@@ -1797,17 +1829,26 @@ impl Shared {
                             base: None,
                             path: path.clone(),
                         })
-                        .await?;
-                    Ok(Some((path, resolved)))
+                        .await;
+                    match resolved {
+                        Ok(resolved) => Ok(Some((path, Some(resolved)))),
+                        // Refused, as a directory gone is: the Landing names
+                        // what the listing says of it, and nothing more.
+                        Err(error) if acts::refused(&error) => {
+                            tracing::debug!("{} was not resolved: {error:#}", path.display());
+                            Ok(Some((path, None)))
+                        }
+                        Err(error) => Err(error),
+                    }
                 }
             },
             move |resolved| {
                 let Some(shared) = shared.upgrade() else {
                     return false;
                 };
-                if let Some(resolved) = resolved {
+                if let Some((path, resolved)) = resolved {
                     shared.change(&resolution_taker, generation, |answered| {
-                        answered.resolved = Some(resolved);
+                        answered.resolved = resolved.map(|resolved| (path, resolved));
                     });
                 }
                 true
@@ -2030,7 +2071,7 @@ async fn follow_catalog(
                     return;
                 };
                 shared.change(&name, generation, |answered| {
-                    answered.take_workspaces(listing);
+                    answered.take_workspaces(listing, true);
                 });
                 None
             }
@@ -2082,9 +2123,11 @@ async fn follow_catalog(
 /// Asks a Remote something the Landing shows by `ask` — which Agent a
 /// Session begun there with none would get, or how the Workspace it would
 /// begin in resolves — each time `wanted` says, handing each answer to
-/// `take` until it says nothing is left to take them. One not answered is
-/// asked again on the readers' backoff, at once when the transport says to
-/// try now, or when it is wanted again.
+/// `take` until it says nothing is left to take them. One that went
+/// undelivered, or whose answer was lost, is asked again on the readers'
+/// backoff, at once when the transport says to try now, or when it is wanted
+/// again; one the Server refused is answered, and asked again only once it
+/// is wanted again.
 async fn ask_when_wanted<T, F>(
     wanted: Arc<Notify>,
     mut try_now: TryNow,
@@ -2107,6 +2150,11 @@ async fn ask_when_wanted<T, F>(
                     if !take(agent) {
                         return;
                     }
+                    break;
+                }
+                Err(error) if acts::refused(&error) => {
+                    tracing::debug!("what the landing shows was refused: {error:#}");
+                    backoff.reset();
                     break;
                 }
                 Err(error) => {

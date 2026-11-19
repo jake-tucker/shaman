@@ -1474,3 +1474,143 @@ async fn what_a_new_session_would_get_is_asked_each_time_it_is_wanted_and_again_
     assert_eq!(heard.recv().await, Some(NewSessionAgent::NotSaid));
     asker.abort();
 }
+
+/// A Server's refusal, in its own words.
+fn refusal(message: &str) -> anyhow::Error {
+    anyhow::Error::new(SessionError {
+        code: SessionErrorCode::InvalidWorkspace,
+        message: message.to_owned(),
+        unreachable: None,
+    })
+}
+
+#[tokio::test]
+async fn what_the_landing_shows_is_not_asked_again_once_refused_until_it_is_wanted_again() {
+    let wanted = Arc::new(Notify::new());
+    let asked = Arc::new(AtomicU64::new(0));
+    let (told, mut heard) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let counting = asked.clone();
+    let asker = tokio::spawn(ask_when_wanted(
+        wanted.clone(),
+        TryNow::never(),
+        SessionCommandTimings {
+            initial_recovery_backoff: Duration::from_millis(1),
+            max_recovery_backoff: Duration::from_millis(1),
+            attachment_fetch_timeout: Duration::from_secs(5),
+        },
+        move || {
+            let asked = counting.fetch_add(1, Ordering::AcqRel);
+            async move {
+                match asked {
+                    // Lost, and so asked again; then refused, which answers.
+                    0 => Err(anyhow::anyhow!("an answer that could not be read")),
+                    1 => Err(refusal("No directory there")),
+                    _ => Ok(()),
+                }
+            }
+        },
+        move |()| told.send(()).is_ok(),
+    ));
+    wanted.notify_one();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        asked.load(Ordering::Acquire),
+        2,
+        "asked again once lost, and not again once refused, however long"
+    );
+    assert!(heard.try_recv().is_err(), "a refusal hands nothing on");
+
+    wanted.notify_one();
+    assert_eq!(
+        heard.recv().await,
+        Some(()),
+        "asked again once wanted again"
+    );
+    assert_eq!(asked.load(Ordering::Acquire), 3);
+    asker.abort();
+}
+
+/// The path the Remote `name` resolves for a Landing, where it resolves one.
+fn landing_path(listings: &Listings, name: &str) -> Option<PathBuf> {
+    listings
+        .shared
+        .lock()
+        .remotes
+        .iter()
+        .find(|followed| followed.answered.name == name)
+        .and_then(|followed| followed.landing_path.lock().unwrap().clone())
+}
+
+#[test]
+fn a_workspace_is_resolved_only_on_the_remote_the_landing_stands_at_and_only_while_it_is_up() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let (listings, _directory) = listings(&runtime);
+    listings.hold(remote("desk", Vec::new()));
+    listings.hold(remote("lab", Vec::new()));
+    let shaman = root().join("work").join("shaman");
+    let assistant = root().join("work").join("home-assistant");
+
+    let up = listings.landing_up();
+    listings.aim_landing(Some(("desk", &shaman)));
+    assert_eq!(landing_path(&listings, "desk"), Some(shaman.clone()));
+    assert_eq!(landing_path(&listings, "lab"), None);
+
+    // The Outlook turns to the lab: the desk resolves nothing more.
+    listings.aim_landing(Some(("lab", &assistant)));
+    assert_eq!(landing_path(&listings, "desk"), None);
+    assert_eq!(landing_path(&listings, "lab"), Some(assistant.clone()));
+
+    // A second Landing goes; the first is still up.
+    drop(listings.landing_up());
+    assert_eq!(landing_path(&listings, "lab"), Some(assistant));
+
+    drop(up);
+    assert_eq!(landing_path(&listings, "lab"), None, "no Landing is up");
+}
+
+fn workspace_listing(run: u128, changes: u64, names: &[&str]) -> WorkspaceListing {
+    WorkspaceListing {
+        revision: serde_json::from_value(serde_json::json!({
+            "run": format!("00000000-0000-0000-0000-{run:012}"),
+            "changes": changes,
+        }))
+        .expect("a revision"),
+        workspace_paths: WorkspacePaths::default(),
+        workspaces: names
+            .iter()
+            .map(|name| Workspace::directory(root().join("work").join(name)))
+            .collect(),
+    }
+}
+
+fn workspace_names(answered: &Answered) -> Vec<String> {
+    answered
+        .workspaces
+        .iter()
+        .flatten()
+        .map(|workspace| answered.paths.workspace_name(workspace))
+        .collect()
+}
+
+#[test]
+fn a_workspace_listing_older_than_the_one_held_never_replaces_it() {
+    let mut desk = remote("desk", Vec::new());
+    desk.take_workspaces(workspace_listing(1, 4, &["shaman"]), true);
+    desk.take_workspaces(workspace_listing(1, 3, &["dotfiles"]), false);
+    assert_eq!(workspace_names(&desk), ["shaman"], "asked for, and older");
+    desk.take_workspaces(workspace_listing(1, 2, &["dotfiles"]), true);
+    assert_eq!(workspace_names(&desk), ["shaman"], "pushed, and older");
+    desk.take_workspaces(workspace_listing(1, 4, &["notes"]), false);
+    assert_eq!(workspace_names(&desk), ["notes"], "as new");
+
+    // Between runs the count says nothing: only the stream speaks for the
+    // run the Server is in now.
+    desk.take_workspaces(workspace_listing(2, 9, &["stale"]), false);
+    assert_eq!(
+        workspace_names(&desk),
+        ["notes"],
+        "asked for, of another run"
+    );
+    desk.take_workspaces(workspace_listing(2, 0, &["fresh"]), true);
+    assert_eq!(workspace_names(&desk), ["fresh"], "pushed, of the run now");
+}

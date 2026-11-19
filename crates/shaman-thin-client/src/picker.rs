@@ -35,9 +35,11 @@ pub struct WorkspacePicker {
     pub title: String,
     pub search_prompt: String,
     /// Each Remote's Workspaces, in the order the Remotes were paired; while a
-    /// search is typed, only those it finds, and only the Remotes they are on.
+    /// search is typed, only those it finds, and only the Remotes they are on
+    /// or that have yet to list theirs.
     pub sections: Vec<WorkspaceSection>,
-    /// Said in place of every section where a search finds nothing.
+    /// Said in place of every section where a search finds nothing, once
+    /// every Remote has listed its Workspaces.
     pub empty: Option<String>,
 }
 
@@ -116,17 +118,17 @@ pub(crate) fn present(
                         .map(|why| format!("Unavailable: {}", why.reason())),
                 })
                 .collect::<Vec<_>>();
-            if searching && rows.is_empty() {
+            // A search goes on saying which Remotes have yet to list theirs,
+            // so it says it found nothing only once every one has.
+            let loading = remote.workspaces.is_none();
+            if searching && rows.is_empty() && !loading {
                 return None;
             }
-            let line = rows.is_empty().then(|| {
-                if remote.workspaces.is_none() {
-                    LOADING
-                } else {
-                    NONE
-                }
-                .to_owned()
-            });
+            let line = if loading && (rows.is_empty() || searching) {
+                Some(LOADING.to_owned())
+            } else {
+                rows.is_empty().then(|| NONE.to_owned())
+            };
             Some(WorkspaceSection {
                 header: origin_named.then(|| remote.name.clone()),
                 unreachable: remote.unreached.is_some().then(|| {
@@ -295,7 +297,6 @@ mod tests {
         let remotes = [
             listing("desk", vec![listed("shaman"), listed("dotfiles")]),
             listing("lab", vec![listed("home-assistant")]),
-            remote("laptop", Vec::new()),
         ];
         let picker = present(&remotes, None, " DOT ");
         assert_eq!(picker.sections.len(), 1, "only where it finds any");
@@ -305,5 +306,27 @@ mod tests {
         let nothing = present(&remotes, None, "kernel");
         assert!(nothing.sections.is_empty());
         assert_eq!(nothing.empty.as_deref(), Some("No workspaces found"));
+    }
+
+    #[test]
+    fn a_search_says_which_remotes_have_yet_to_list_theirs_and_never_that_it_found_nothing() {
+        let remotes = [
+            listing("desk", vec![listed("shaman"), listed("dotfiles")]),
+            remote("laptop", Vec::new()),
+        ];
+        let picker = present(&remotes, None, "kernel");
+        assert_eq!(picker.empty, None, "the laptop may yet list one");
+        let [laptop] = picker.sections.as_slice() else {
+            panic!("the laptop stands, loading: {picker:?}");
+        };
+        assert_eq!(laptop.header.as_deref(), Some("laptop"));
+        assert_eq!(laptop.line.as_deref(), Some("Loading workspaces…"));
+
+        let found = present(&remotes, None, "dot");
+        assert_eq!(names(&found.sections[0]), ["dotfiles"]);
+        assert_eq!(
+            found.sections[1].line.as_deref(),
+            Some("Loading workspaces…")
+        );
     }
 }
