@@ -49,6 +49,7 @@ use crate::{
     ActError, acts,
     device::RememberedWorkspace,
     reach::{self, Network, Reach, Reaching, Reading, Unreached},
+    relays::{self, LoginOffer, RelayHint, Relays},
     tree::{Paired, Pairings},
 };
 
@@ -128,6 +129,9 @@ pub struct UnreachableSheet {
     /// The way to the app's page in iOS Settings, where local network access
     /// may be off for it.
     pub open_settings: Option<String>,
+    /// The offer to log in at a Relay, which leads past what is in the way:
+    /// offered in place of trying again, which follows the login by itself.
+    pub login: Option<LoginOffer>,
     pub try_again: String,
 }
 
@@ -141,6 +145,12 @@ pub enum UnreachableHint {
     LocalNetwork,
     /// This phone has no network connection at all.
     NoNetwork,
+    /// The Remote is reached from anywhere through a Relay where this phone
+    /// needs to log in.
+    LoginNeeded,
+    /// This phone's Login at a Relay the Remote is reached through stands
+    /// under another Account than the Remote's.
+    OtherAccount,
 }
 
 /// One row a search found, in the shape its shelf gives it.
@@ -472,6 +482,9 @@ pub(crate) struct Answered {
     /// Whether every way it is dialled by is an address on the local
     /// network.
     pub local_only: bool,
+    /// Why a Relay it is offered through may keep it out of reach, where
+    /// one may.
+    pub relay_hint: Option<RelayHint>,
     /// The Agent a Session begun there with none would get, as its health
     /// last said, or none before it has been asked.
     pub agent: Option<NewSessionAgent>,
@@ -792,11 +805,19 @@ fn unreachable_row(remote: &Answered, why: Unreached, origin_named: bool) -> Unr
             "the server".to_owned(),
         )
     };
-    let hint = match why {
-        Unreached::NoNetwork => UnreachableHint::NoNetwork,
-        Unreached::NoWay if remote.local_only => UnreachableHint::LocalNetwork,
-        Unreached::NoWay => UnreachableHint::Plain,
+    let hint = match (why, &remote.relay_hint) {
+        (Unreached::NoNetwork, _) => UnreachableHint::NoNetwork,
+        (Unreached::NoWay, Some(RelayHint::LoginNeeded { .. })) => UnreachableHint::LoginNeeded,
+        (Unreached::NoWay, Some(RelayHint::OtherAccount { .. })) => UnreachableHint::OtherAccount,
+        (Unreached::NoWay, None) if remote.local_only => UnreachableHint::LocalNetwork,
+        (Unreached::NoWay, None) => UnreachableHint::Plain,
     };
+    let relay_hint = remote.relay_hint.as_ref().filter(|_| {
+        matches!(
+            hint,
+            UnreachableHint::LoginNeeded | UnreachableHint::OtherAccount
+        )
+    });
     let explanation = match hint {
         UnreachableHint::NoNetwork => {
             "This phone has no network connection. Shaman tries again as soon as it has one."
@@ -809,6 +830,9 @@ fn unreachable_row(remote: &Answered, why: Unreached, origin_named: bool) -> Unr
         UnreachableHint::Plain => {
             format!("No way to {named} answered. Shaman keeps trying while it is open.")
         }
+        UnreachableHint::LoginNeeded | UnreachableHint::OtherAccount => relay_hint
+            .map(|relay_hint| relays::hint_words(relay_hint, &named))
+            .unwrap_or_default(),
     };
     UnreachableRow {
         remote: remote.fingerprint.clone(),
@@ -819,6 +843,7 @@ fn unreachable_row(remote: &Answered, why: Unreached, origin_named: bool) -> Unr
             explanation,
             open_settings: (hint == UnreachableHint::LocalNetwork)
                 .then(|| "Open Settings".to_owned()),
+            login: relay_hint.map(RelayHint::offer),
             hint,
             try_again,
         },
@@ -1100,6 +1125,9 @@ pub(crate) struct Listings {
 struct Shared {
     runtime: Handle,
     redeemer: Redeemer,
+    /// The Relays this phone stands at, as its Remotes' Relay ways are
+    /// dialled through them.
+    relays: Relays,
     timings: SessionCommandTimings,
     /// Whether the phone has a network path at all.
     network: Network,
@@ -1175,6 +1203,7 @@ impl Listings {
     pub fn new(
         runtime: Handle,
         redeemer: Redeemer,
+        relays: Relays,
         timings: SessionCommandTimings,
         settle_after: Duration,
         hold: Duration,
@@ -1189,6 +1218,7 @@ impl Listings {
         let shared = Arc::new(Shared {
             runtime: runtime.clone(),
             redeemer,
+            relays,
             timings,
             network: Network::default(),
             hold,
@@ -1328,6 +1358,25 @@ impl Listings {
             for (_, _, reach) in self.shared.reached() {
                 reach.unreached(Unreached::NoNetwork);
             }
+        }
+    }
+
+    /// Shows every Remote followed again as this phone now stands at the
+    /// Relays it is offered through.
+    pub fn relays_changed(&self) {
+        let followed = self
+            .shared
+            .lock()
+            .remotes
+            .iter()
+            .map(|followed| (followed.answered.name.clone(), followed.generation))
+            .collect::<Vec<_>>();
+        for (name, generation) in followed {
+            let (local_only, relay_hint) = self.shared.ways_reading(&name);
+            self.shared.change(&name, generation, |answered| {
+                answered.local_only = local_only;
+                answered.relay_hint = relay_hint;
+            });
         }
     }
 
@@ -1802,14 +1851,20 @@ impl Shared {
     }
 
     /// Whether every way the Remote `name` is dialled by is an address on
-    /// the local network, as its record stands now.
-    fn local_only(&self, name: &str) -> bool {
+    /// the local network, and why a Relay it is offered through may keep it
+    /// out of reach, as its record and this phone's Relays stand now.
+    fn ways_reading(&self, name: &str) -> (bool, Option<RelayHint>) {
         let relays = self.redeemer.relays();
-        self.redeemer.stored_remote(name).is_ok_and(|stored| {
-            reach::only_local(&stored.remote.ways, |relay| {
-                relays.get().is_some_and(|relays| relays.chosen(relay))
+        self.redeemer
+            .stored_remote(name)
+            .map_or((false, None), |stored| {
+                (
+                    reach::only_local(&stored.remote.ways, |relay| {
+                        relays.get().is_some_and(|relays| relays.chosen(relay))
+                    }),
+                    self.relays.hint(&stored.remote.ways),
+                )
             })
-        })
     }
 
     /// Begins reading the Remote `stored`, which is reached anew as it is.
@@ -1954,6 +2009,7 @@ impl Shared {
                 workspaces: None,
                 unreached: None,
                 local_only: false,
+                relay_hint: None,
                 agent: None,
                 models: None,
                 resolved: None,
@@ -2079,10 +2135,11 @@ async fn follow_reach(
         let Some(shared) = shared.upgrade() else {
             return;
         };
-        let local_only = shared.local_only(&name);
+        let (local_only, relay_hint) = shared.ways_reading(&name);
         shared.change(&name, generation, |answered| {
             answered.unreached = unreached;
             answered.local_only = local_only;
+            answered.relay_hint = relay_hint;
         });
         drop(shared);
         if reading.changed().await.is_err() {

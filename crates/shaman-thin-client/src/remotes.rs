@@ -15,13 +15,20 @@ use shaman_pairing::{Redeemer, StoredRemote, WayStanding};
 use shaman_protocol::{Remote, Way};
 use tokio::sync::watch;
 
-use crate::device::RememberedWorkspace;
+use crate::{
+    device::RememberedWorkspace,
+    relays::{self, LoginOffer, RelayRow, Relays, Standing},
+};
 
-/// The Servers section of the sheet of Servers, Relays and This device.
+/// The Servers and Relays sections of the sheet of Servers, Relays and This
+/// device.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct Servers {
     /// Each Remote, in the order it was paired.
     pub remotes: Vec<ServerRow>,
+    /// Each Relay this phone holds a Login at, or is logging in at, in the
+    /// order it was first logged in at.
+    pub relays: Vec<RelayRow>,
 }
 
 /// One Remote, as the sheet lists it.
@@ -43,6 +50,9 @@ pub struct WayRow {
     pub state: WayState,
     /// The state in words; none while it is being asked.
     pub words: String,
+    /// The offer to log in at a Relay way's Relay, where this phone's Login
+    /// there needs one.
+    pub login: Option<LoginOffer>,
 }
 
 /// How a way of a Remote stood when it was last asked.
@@ -52,9 +62,12 @@ pub enum WayState {
     Checking,
     Answering,
     NotAnswering,
-    /// A Relay way at a Relay this phone holds no Login at, which it does
-    /// not dial.
+    /// A Relay way at a Relay this phone holds no Login at that stands,
+    /// which it does not dial.
     LoginNeeded,
+    /// A Relay way at a Relay where this phone's Login stands under another
+    /// Account than the Remote's, so the Relay will not join the two.
+    OtherAccount,
 }
 
 impl WayState {
@@ -64,6 +77,7 @@ impl WayState {
             Self::Answering => "answering",
             Self::NotAnswering => "not answering",
             Self::LoginNeeded => "login needed",
+            Self::OtherAccount => "under another account",
         }
     }
 }
@@ -133,6 +147,7 @@ type Standings = Vec<(Way, WayStanding)>;
 #[derive(Clone)]
 pub(crate) struct Remotes {
     redeemer: Redeemer,
+    relays: Relays,
     servers: watch::Sender<Servers>,
     outlook: watch::Sender<Outlook>,
     /// How each Remote's ways stood when last asked, by the Remote's name,
@@ -149,13 +164,16 @@ impl Remotes {
     /// `turned` it holds, in the Workspace `workspaces` remembers for it.
     pub fn new(
         redeemer: Redeemer,
+        relays: Relays,
         turned: &[String],
         workspaces: &BTreeMap<String, RememberedWorkspace>,
     ) -> Self {
         let remotes = Self {
             redeemer,
+            relays,
             servers: watch::Sender::new(Servers {
                 remotes: Vec::new(),
+                relays: Vec::new(),
             }),
             outlook: watch::Sender::new(Outlook::Nowhere),
             standings: Arc::default(),
@@ -265,9 +283,10 @@ impl Remotes {
                         .get(&stored.remote.name)
                         .filter(|(generation, _)| *generation == stored.generation)
                         .map(|(_, standings)| standings);
-                    row(&stored.remote, asked)
+                    row(&stored.remote, asked, &self.relays)
                 })
                 .collect(),
+            relays: self.relays.rows(),
         };
         self.servers.send_if_modified(|shown| {
             let changed = *shown != servers;
@@ -328,19 +347,35 @@ impl Remotes {
 }
 
 /// `remote` as the sheet lists it, its ways standing as `standings` last
-/// said.
-fn row(remote: &Remote, standings: Option<&Standings>) -> ServerRow {
+/// said, and a Relay way as this phone stands at its Relay now.
+fn row(remote: &Remote, standings: Option<&Standings>, relays: &Relays) -> ServerRow {
     let ways = remote
         .ways
         .iter()
         .map(|way| {
-            let state = standings
+            let asked = standings
                 .and_then(|standings| standings.iter().find(|(asked, _)| asked == way))
                 .map_or(WayState::Checking, |(_, standing)| (*standing).into());
+            let (state, login) = match way {
+                Way::Relay(relay) => match relays.standing(relay) {
+                    Standing::NoLogin => (WayState::LoginNeeded, Some(relays::login_offer(relay))),
+                    Standing::OtherAccount(_) => {
+                        (WayState::OtherAccount, Some(relays::log_in_again(relay)))
+                    }
+                    // A Login that stands was not dialled when last asked
+                    // only where it was not formed yet: it is asked anew.
+                    Standing::Stands if asked == WayState::LoginNeeded => {
+                        (WayState::Checking, None)
+                    }
+                    Standing::Stands => (asked, None),
+                },
+                _ => (asked, None),
+            };
             WayRow {
                 address: way.to_string(),
                 state,
                 words: state.words().to_owned(),
+                login,
             }
         })
         .collect();

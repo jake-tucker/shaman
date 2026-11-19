@@ -69,6 +69,7 @@ pub(crate) fn remote(name: &str, sessions: Vec<SessionSummary>) -> Answered {
         workspaces: None,
         unreached: None,
         local_only: false,
+        relay_hint: None,
         agent: None,
         models: None,
         resolved: None,
@@ -656,9 +657,11 @@ pub(crate) fn listings(runtime: &tokio::runtime::Runtime) -> (Listings, tempfile
         max_recovery_backoff: Duration::from_millis(1),
         attachment_fetch_timeout: Duration::from_secs(1),
     };
+    let relays = crate::relays::Relays::for_tests(directory.path(), runtime.handle());
     let listings = Listings::new(
         runtime.handle().clone(),
         redeemer,
+        relays,
         timings,
         SETTLE_AFTER,
         Duration::from_secs(3),
@@ -709,9 +712,11 @@ fn a_session_left_alone_settles_onto_the_shelf_as_it_comes_to_be() {
         max_recovery_backoff: Duration::from_millis(1),
         attachment_fetch_timeout: Duration::from_secs(1),
     };
+    let relays = crate::relays::Relays::for_tests(directory.path(), runtime.handle());
     let listings = Listings::new(
         runtime.handle().clone(),
         redeemer,
+        relays,
         timings,
         Duration::from_millis(100),
         Duration::from_secs(3),

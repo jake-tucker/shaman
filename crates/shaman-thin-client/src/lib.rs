@@ -39,6 +39,7 @@ mod listing;
 mod pairing;
 mod picker;
 mod reach;
+mod relays;
 mod remotes;
 mod session;
 mod tree;
@@ -62,6 +63,8 @@ pub use listing::{
 };
 pub use pairing::{InviteReading, OfferedWay, PairingOutcome, ReadInvite, TryInstead};
 pub use picker::{WorkspacePicker, WorkspaceRow, WorkspaceSection};
+use relays::Relays;
+pub use relays::{DeviceLogin, LoginOffer, RelayRow, RelayRowState};
 use remotes::Remotes;
 pub use remotes::{BeginsIn, Outlook, ServerRow, Servers, WayRow, WayState};
 pub use session::{
@@ -146,6 +149,12 @@ pub(crate) struct Inner {
     device: watch::Sender<ThisDevice>,
     /// Redeems Invites and holds the Remotes they form, in `remotes.json`.
     redeemer: Redeemer,
+    /// The Relays this phone stands at, in `relays.json`, which the
+    /// redeemer dials Relay ways through.
+    relays: Relays,
+    /// The Relays the Invite last read offers, at which a login may be asked
+    /// for before its Server is a Remote.
+    invited_relays: Mutex<Vec<String>>,
     remotes: Remotes,
     /// Every Remote's Sessions, merged into the one listing.
     listing: Listings,
@@ -527,8 +536,61 @@ impl ThinClient {
 
     /// Hears that the app has left the front. Nothing is done to its
     /// connections: a short switch away comes back to live streams, and the
-    /// check on return finds whatever did not last.
-    pub fn left_front(&self) {}
+    /// check on return finds whatever did not last. Every login under way is
+    /// given up, as the connection it waits on cannot outlast the app being
+    /// suspended.
+    pub fn left_front(&self) {
+        self.inner.relays.leave();
+    }
+
+    /// Logs in at the Relay `relay` names, which a Remote of this phone's,
+    /// or the Invite last read, offers: tells `listener` how the login stands
+    /// until it ends — the code and the address to open, then done or
+    /// failed. Cancelling the subscription first gives the login up, as
+    /// leaving the front does. Once the Relay confirms it, every Remote is
+    /// tried again at once.
+    pub fn log_in_at_relay(
+        &self,
+        relay: String,
+        listener: Arc<dyn DeviceLoginListener>,
+    ) -> Arc<Subscription> {
+        let offered = shaman_pairing::relay::holdable_address(&relay)
+            .is_some_and(|address| self.inner.offers_relay(&address));
+        if !offered {
+            listener.changed(DeviceLogin::Failed {
+                title: format!("Log in at {}", relays::shown(&relay)),
+                message: "This phone logs in only at a relay one of its servers offers".to_owned(),
+                again: "Try again".to_owned(),
+            });
+            return Subscription::of(self.runtime().spawn(async {}));
+        }
+        let inner = self.inner.clone();
+        let tell = listener.clone();
+        self.inner.relays.log_in(
+            self.runtime().handle(),
+            relay,
+            move |login| tell.changed(login),
+            move || {
+                let asked = inner.clone();
+                tokio::spawn(async move {
+                    for name in asked.remotes.names() {
+                        let asking = asked.clone();
+                        tokio::spawn(async move { asking.remotes.ask_ways(&name).await });
+                    }
+                    asked.listing.check(asked.timings.check_deadline).await;
+                });
+            },
+        )
+    }
+
+    /// Removes the Relay entry a row of the Relays section hands back,
+    /// giving up this phone's Login there: the Relay is asked to forget it,
+    /// and one that does not answer is forgotten here all the same.
+    pub async fn remove_relay(&self, relay: String) -> Result<(), ActError> {
+        let inner = self.inner.clone();
+        self.run(async move { inner.relays.remove(&relay).await })
+            .await?
+    }
 
     /// Hears that the network path changed, and whether there is one at
     /// all: with none nothing is dialled and every Remote reads Unreachable;
@@ -635,25 +697,41 @@ impl ThinClient {
             timings.redeemer,
         )
         .map_err(OpenError::from)?;
+        let (device, _) = watch::channel(ThisDevice::of(&record));
+        let relays = Relays::open(
+            records.directory(),
+            Arc::new(GivenIdentity(identity.clone())),
+            device.subscribe(),
+            runtime.handle(),
+        )
+        .map_err(OpenError::from)?;
+        redeemer.reach_relays_through(relays.ways());
         // A pairing the app was ended in the middle of keeps nothing, kept
         // so or not.
         redeemer.drop_uncommitted();
-        let remotes = Remotes::new(redeemer.clone(), &record.turned, &record.workspaces);
+        let remotes = Remotes::new(
+            redeemer.clone(),
+            relays.clone(),
+            &record.turned,
+            &record.workspaces,
+        );
         let listing = Listings::new(
             runtime.handle().clone(),
             redeemer.clone(),
+            relays.clone(),
             timings.readers,
             timings.settle_after,
             timings.unreachable_after,
         );
         listing.follow(&remotes.held());
-        let (device, _) = watch::channel(ThisDevice::of(&record));
         let inner = Arc::new(Inner {
             records,
             record: AsyncMutex::new(record),
             identity,
             device,
             redeemer,
+            relays,
+            invited_relays: Mutex::default(),
             remotes,
             listing,
             pairing: AsyncMutex::new(()),
@@ -668,6 +746,19 @@ impl ThinClient {
             let inner = inner.clone();
             runtime.spawn(async move { inner.remotes.ask_ways(&name).await });
         }
+        // Whatever shows how this phone stands at a Relay shows it again as
+        // that changes: a login done, a Login refused, an entry removed.
+        let mut relays_changed = inner.relays.changes();
+        let shown = Arc::downgrade(&inner);
+        runtime.spawn(async move {
+            while relays_changed.changed().await.is_ok() {
+                let Some(inner) = shown.upgrade() else {
+                    return;
+                };
+                inner.remotes.refresh();
+                inner.listing.relays_changed();
+            }
+        });
         Ok(Arc::new(Self {
             runtime: Some(runtime),
             inner,
@@ -789,6 +880,7 @@ pub(crate) fn watching<T: Clone + Send + Sync + 'static>(
 
 impl Drop for ThinClient {
     fn drop(&mut self) {
+        self.inner.relays.shutdown();
         if let Some(runtime) = self.runtime.take() {
             runtime.shutdown_background();
         }
@@ -796,6 +888,22 @@ impl Drop for ThinClient {
 }
 
 impl Inner {
+    /// Whether a login may be asked for at the Relay at `address`: one a
+    /// Remote held offers, or the Invite last read.
+    fn offers_relay(&self, address: &str) -> bool {
+        let offered = |way: &shaman_protocol::Way| matches!(way, shaman_protocol::Way::Relay(relay) if relay == address);
+        self.remotes
+            .held()
+            .iter()
+            .any(|stored| stored.remote.ways.iter().any(offered))
+            || self
+                .invited_relays
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .iter()
+                .any(|relay| relay == address)
+    }
+
     /// The Landing where the Outlook stands now.
     fn landing(&self) -> Landing {
         let standing = self.remotes.standing();
@@ -903,6 +1011,12 @@ pub trait WorkspacesListener: Send + Sync {
 #[uniffi::export(with_foreign)]
 pub trait DraftListener: Send + Sync {
     fn changed(&self, draft: Draft);
+}
+
+/// Hears how a login at a Relay stands, at once and on every change.
+#[uniffi::export(with_foreign)]
+pub trait DeviceLoginListener: Send + Sync {
+    fn changed(&self, login: DeviceLogin);
 }
 
 /// Hears whether any act is under way, at once and each time that changes.

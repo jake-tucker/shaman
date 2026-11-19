@@ -3,6 +3,8 @@
 
 #![allow(dead_code)]
 
+pub mod relay;
+
 use std::{
     net::{Ipv4Addr, SocketAddr},
     sync::{
@@ -37,10 +39,11 @@ use shaman_pairing::{
 };
 use shaman_thin_client::{
     ActivityDetail, ActsListener, ConversationChange, ConversationItem, ConversationListener,
-    CoreTimings, DetailListener, DeviceListener, FrameListener, KeySigner, Landing,
-    LandingListener, Listing, ListingListener, OpenSession, Outlook, OutlookListener, Servers,
-    ServersListener, SessionFrame, SignError, SubagentTree, Subscription, ThinClient, ThisDevice,
-    TreeListener, TurnWork, WorkListener, WorkspacePicker, WorkspacesListener,
+    CoreTimings, DetailListener, DeviceListener, DeviceLogin, DeviceLoginListener, FrameListener,
+    KeySigner, Landing, LandingListener, Listing, ListingListener, OpenSession, Outlook,
+    OutlookListener, Servers, ServersListener, SessionFrame, SignError, SubagentTree, Subscription,
+    ThinClient, ThisDevice, TreeListener, TurnWork, WorkListener, WorkspacePicker,
+    WorkspacesListener,
 };
 use tokio::{
     net::TcpListener,
@@ -125,7 +128,8 @@ impl ServingServer {
         let timings = ServerTimings {
             shutdown_grace: Duration::from_millis(5),
             ..ServerTimings::default()
-        };
+        }
+        .with_relay_retry_backoff(Duration::from_millis(5), Duration::from_millis(25));
         let provider = Arc::new(TestProvider {
             offers_a_model,
             ..TestProvider::default()
@@ -405,6 +409,59 @@ impl ServingServer {
             .expect("read the Server's identity key");
         let key = rcgen_key(&key);
         shaman_pairing::fingerprint(&key)
+    }
+
+    /// Logs this Server in at `relay` as the user `username`, as its own
+    /// user would by `/relay`.
+    pub async fn log_in_at(&self, relay: &relay::TestRelay, username: &str) {
+        let address = relay.address();
+        self.client
+            .add_relay(address.clone())
+            .await
+            .expect("add the Relay");
+        let login = self
+            .client
+            .begin_relay_login(&address)
+            .await
+            .expect("begin a login at the Relay");
+        assert!(relay.approve(&login.user_code, username));
+        let done = self
+            .client
+            .follow_relay_login(&address)
+            .await
+            .expect("follow the login to its end");
+        assert!(
+            matches!(
+                done.outcome,
+                shaman::protocol::RelayLoginOutcome::Done { .. }
+            ),
+            "the Server logs in at the Relay: {done:?}"
+        );
+    }
+
+    /// Has this Server Serve through `relay`, where it is logged in.
+    pub async fn serve_through(&self, relay: &relay::TestRelay) {
+        self.client
+            .set_relay_serve_through(&relay.address(), true)
+            .await
+            .expect("Serve through the Relay");
+    }
+
+    /// The machines `relay` lists under this Server's Account there: each by
+    /// its fingerprint, with the hostname it reported.
+    pub async fn machines_at(&self, relay: &relay::TestRelay) -> Vec<(String, String)> {
+        let listed = self
+            .client
+            .list_relay_machines(&relay.address())
+            .await
+            .expect("ask the Relay for the machines logged in there");
+        match listed.answer {
+            shaman::protocol::RelayMachinesAnswer::Listed { machines, .. } => machines
+                .into_iter()
+                .map(|machine| (machine.fingerprint, machine.hostname))
+                .collect(),
+            answer => panic!("the Relay lists the Account's machines: {answer:?}"),
+        }
     }
 
     /// The hostname this Server gives itself in its Invites.
@@ -784,6 +841,30 @@ impl Phone {
         }
     }
 
+    /// Logs in at the Relay at `relay` through the core, followed until the
+    /// login is dropped.
+    pub fn log_in(&self, relay: &str) -> Login {
+        let (sender, heard) = watch::channel(None);
+        let subscription = self
+            .core
+            .log_in_at_relay(relay.to_owned(), Arc::new(Heard(sender)));
+        Login {
+            subscription,
+            heard,
+        }
+    }
+
+    /// Logs in at `relay` as the user `username`, approving the code the
+    /// core shows, and waits for the Relay to confirm it.
+    pub async fn logged_in(&self, relay: &relay::TestRelay, username: &str) -> DeviceLogin {
+        let login = self.log_in(&relay.address());
+        let code = login.code().await;
+        assert!(relay.approve(&code, username), "a login waits under {code}");
+        login
+            .until(|login| matches!(login, DeviceLogin::Done { .. }))
+            .await
+    }
+
     /// What the listing shows once it shows what `shown` looks for.
     pub async fn listing_until(&self, shown: impl Fn(&Listing) -> bool) -> Listing {
         let (sender, mut heard) = watch::channel(None);
@@ -916,6 +997,54 @@ impl Phone {
 }
 
 /// An open Session, and what its listeners have heard of it.
+/// A login at a Relay, followed through the core until it is dropped, which
+/// gives it up where it is still under way.
+pub struct Login {
+    pub subscription: Arc<Subscription>,
+    heard: watch::Receiver<Option<DeviceLogin>>,
+}
+
+impl Login {
+    /// How the login stands once it stands as `shown` looks for.
+    pub async fn until(&self, shown: impl Fn(&DeviceLogin) -> bool) -> DeviceLogin {
+        let mut heard = self.heard.clone();
+        let found = timeout(
+            PROGRESS_DEADLINE,
+            heard.wait_for(|login| login.as_ref().is_some_and(&shown)),
+        )
+        .await;
+        match found {
+            Ok(Ok(login)) => login.clone().expect("heard"),
+            _ => panic!(
+                "the login never stood as looked for; it stands {:?}",
+                self.heard.borrow()
+            ),
+        }
+    }
+
+    /// The code the core shows, once it shows one.
+    pub async fn code(&self) -> String {
+        match self
+            .until(|login| {
+                matches!(
+                    login,
+                    DeviceLogin::Waiting { .. } | DeviceLogin::Failed { .. }
+                )
+            })
+            .await
+        {
+            DeviceLogin::Waiting { code, .. } => code,
+            failed => panic!("the login shows a code: {failed:?}"),
+        }
+    }
+}
+
+impl DeviceLoginListener for Heard<DeviceLogin> {
+    fn changed(&self, login: DeviceLogin) {
+        self.0.send_replace(Some(login));
+    }
+}
+
 pub struct Reading {
     pub session: Arc<OpenSession>,
     frame: watch::Receiver<Option<SessionFrame>>,

@@ -3903,6 +3903,7 @@ dependencies = [
  "shaman-icons",
  "shaman-pairing",
  "shaman-protocol",
+ "shaman-relay",
  "shaman-text",
  "tempfile",
  "tokio",

@@ -12,9 +12,12 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use shaman_pairing::{PairingFailure, ParsedInvite, Redemption};
-use shaman_protocol::{RedeemInviteRequest, SessionErrorCode, Way};
+use shaman_protocol::{RedeemInviteRequest, SessionErrorCode, UnreachableReason, Way};
 
-use crate::Inner;
+use crate::{
+    Inner,
+    relays::{self, LoginOffer, RelayHint},
+};
 
 /// What the confirmation screen shows of an Invite, read without dialling
 /// anything.
@@ -54,8 +57,11 @@ pub struct ReadInvite {
 pub struct OfferedWay {
     /// The way as it reads: a direct way's address, or a Relay's.
     pub address: String,
-    /// Said of a way the phone will not dial.
+    /// Said of a way the phone will not dial, or not until it logs in.
     pub note: Option<String>,
+    /// The offer to log in at a Relay way's Relay, where this phone's Login
+    /// there needs one: pairing needs it only where no other way answers.
+    pub login: Option<LoginOffer>,
 }
 
 /// What came of confirming a pairing.
@@ -70,6 +76,10 @@ pub enum PairingOutcome {
     RemoteNameRefused { message: String },
     /// The phone's name is not one the Server would keep, said beside it.
     DeviceNameRefused { message: String },
+    /// No way answered but a Relay way at a Relay where this phone needs to
+    /// log in, as `message` says: pairing goes on by itself once the login
+    /// `login` offers is done, while the Invite lives.
+    LoginNeeded { message: String, login: LoginOffer },
 }
 
 /// What a failed pairing offers next.
@@ -97,15 +107,38 @@ pub(crate) fn read(inner: &Inner, text: &str) -> InviteReading {
         }
     };
     let held = held_as(inner, &invite);
+    // A login may be asked for at a Relay the Invite offers before its
+    // Server is a Remote.
+    *inner
+        .invited_relays
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner()) = invite
+        .ways
+        .iter()
+        .filter_map(|way| match way {
+            Way::Relay(relay) => Some(relay.clone()),
+            _ => None,
+        })
+        .collect();
     InviteReading::Readable {
         invite: ReadInvite {
             fingerprint: shaman_pairing::fingerprint(&invite.server_key),
             ways: invite
                 .ways
                 .iter()
-                .map(|way| OfferedWay {
-                    address: way.to_string(),
-                    note: (!dialled(way)).then(|| "not dialled from a phone".to_owned()),
+                .map(|way| {
+                    let hint = inner.relays.hint(std::slice::from_ref(way));
+                    OfferedWay {
+                        address: way.to_string(),
+                        note: match &hint {
+                            Some(RelayHint::LoginNeeded { .. }) => Some("login needed".to_owned()),
+                            Some(RelayHint::OtherAccount { .. }) => {
+                                Some("logged in under another account".to_owned())
+                            }
+                            None => (!dialled(way)).then(|| "not dialled from a phone".to_owned()),
+                        },
+                        login: hint.as_ref().map(RelayHint::offer),
+                    }
                 })
                 .collect(),
             remote_name: held.clone().unwrap_or_else(|| invite.hostname.clone()),
@@ -177,12 +210,27 @@ pub(crate) async fn confirm(
     // One pairing at a time, so two never replace one another's Remote.
     let _pairing = inner.pairing.lock().await;
     let replaced = held_as(inner, &invite);
+    let relay_hint = inner.relays.hint(&invite.ways);
     let remote = match keep_dialling(inner, invite, &remote_name, &device_name).await {
         Ok(remote) => remote,
         Err(failure) => {
             // Whatever was shown of it while it was under way goes.
             inner.remotes.refresh();
-            return failed(failure);
+            return match relay_hint {
+                // No way answered, or the one a Relay way's join was asked
+                // at refused it for want of the login.
+                Some(hint)
+                    if matches!(
+                        failure.code,
+                        SessionErrorCode::PairingConnectionFailed
+                            | SessionErrorCode::RelayLoginNeeded
+                            | SessionErrorCode::RelayDifferentAccounts
+                    ) =>
+                {
+                    login_needed(&hint)
+                }
+                _ => failed(failure),
+            };
         }
     };
     let name = remote.name.clone();
@@ -250,6 +298,24 @@ async fn keep_dialling(
     }
 }
 
+/// A pairing no way answered but a Relay way past `hint`, which a login
+/// leads past.
+fn login_needed(hint: &RelayHint) -> PairingOutcome {
+    let message = match hint {
+        RelayHint::LoginNeeded { relay } => format!(
+            "No way this invite offers answered, but it offers the relay at {}, where this phone              needs to log in. Log in there, and pairing goes on by itself.",
+            relays::shown(relay)
+        ),
+        RelayHint::OtherAccount { relay, account } => {
+            relays::different_accounts(relay, account, "the server")
+        }
+    };
+    PairingOutcome::LoginNeeded {
+        message,
+        login: hint.offer(),
+    }
+}
+
 /// A pairing that failed with `failure`, in the words the confirmation
 /// screen shows.
 fn failed(failure: PairingFailure) -> PairingOutcome {
@@ -265,12 +331,24 @@ fn failed(failure: PairingFailure) -> PairingOutcome {
                 message: failure.message,
             }
         }
-        SessionErrorCode::RelayCapReached
-        | SessionErrorCode::RemoteBusy
-        | SessionErrorCode::PairingOutcomeUnknown => PairingOutcome::Failed {
-            message: failure.message,
+        // Said in the phone's words: the Relay's own speak of a Server.
+        SessionErrorCode::RelayCapReached => PairingOutcome::Failed {
+            message: match failure.unreachable {
+                Some(UnreachableReason::RelayCapReached { relay, limit }) => format!(
+                    "The relay at {} joins at most {limit} connections at once for one account,                      and yours has as many. Try again once one ends.",
+                    relays::shown(&relay)
+                ),
+                _ => "The relay joins no more connections for this account just now. Try again                       once one ends."
+                    .to_owned(),
+            },
             again: TryInstead::TryAgain,
         },
+        SessionErrorCode::RemoteBusy | SessionErrorCode::PairingOutcomeUnknown => {
+            PairingOutcome::Failed {
+                message: failure.message,
+                again: TryInstead::TryAgain,
+            }
+        }
         _ => PairingOutcome::Failed {
             message: failure.message,
             again: TryInstead::ScanAgain,

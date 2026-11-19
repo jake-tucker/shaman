@@ -53,6 +53,8 @@ shaman = { path = "../.." }
 shaman-build-id = { path = "../shaman-build-id" }
 # A signer whose key the test holds apart from it, as the app holds a phone's.
 shaman-pairing = { path = "../shaman-pairing", features = ["test-support"] }
+# A real Relay in process, which a phone and a Serving Server log in at and are joined through.
+shaman-relay = { path = "../shaman-relay" }
 # `testing::ScriptedTransport`, which a listing is asked for over where no Server answers.
 shaman-client = { path = "../shaman-client", features = ["test-support"] }
 # `Session::for_tests`, which the listing's tests build what a Remote answers from.
