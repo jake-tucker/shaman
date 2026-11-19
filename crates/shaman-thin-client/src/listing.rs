@@ -55,6 +55,7 @@ use crate::{
     ActError, acts,
     behind::Behind,
     device::RememberedWorkspace,
+    drafts::Drafts,
     notices::Notices,
     reach::{self, Network, Reach, Reaching, Reading, Unreached},
     relays::{self, LoginOffer, RelayHint, Relays},
@@ -1186,7 +1187,7 @@ fn reference(fingerprint: &str, session: SessionId) -> String {
 
 /// The Origin's key and the Session's identity `reference` names, where it
 /// names them.
-fn referenced(reference: &str) -> Option<(&str, SessionId)> {
+pub(crate) fn referenced(reference: &str) -> Option<(&str, SessionId)> {
     let (fingerprint, session) = reference.split_once('/')?;
     let session = serde_json::from_value(serde_json::Value::String(session.to_owned())).ok()?;
     Some((fingerprint, session))
@@ -1231,6 +1232,9 @@ struct Shared {
     settling: Notify,
     /// How many Landings are up.
     landings: AtomicUsize,
+    /// Each composer's draft, which a Session absent from a listing its
+    /// Remote answered with, or a Remote no longer followed, drops.
+    drafts: Drafts,
 }
 
 #[derive(Default)]
@@ -1286,6 +1290,7 @@ impl Listings {
         timings: SessionCommandTimings,
         settle_after: Duration,
         hold: Duration,
+        drafts: Drafts,
     ) -> Self {
         let (listing, _) = present(
             &[],
@@ -1315,6 +1320,7 @@ impl Listings {
             }),
             settling: Notify::new(),
             landings: AtomicUsize::new(0),
+            drafts,
         });
         runtime.spawn(settle_when_left_alone(shared.clone()));
         Self { shared }
@@ -1336,9 +1342,15 @@ impl Listings {
 
     /// Follows every Remote the redeemer holds and no other: a Remote
     /// paired again under a new Pairing is read afresh, and one gone is read
-    /// no more.
+    /// no more, and its drafts are dropped.
     pub fn follow(&self, held: &[StoredRemote]) {
         let shared = &self.shared;
+        shared.drafts.keep_remotes(
+            &held
+                .iter()
+                .map(|stored| stored.remote.fingerprint.clone())
+                .collect::<Vec<_>>(),
+        );
         {
             let mut state = shared.lock();
             let followed = std::mem::take(&mut state.remotes);
@@ -2098,15 +2110,22 @@ impl Shared {
         ));
         let shared = Arc::downgrade(self);
         let taker = name.clone();
+        let fingerprint = stored.remote.fingerprint.clone();
         let asker = self.runtime.spawn(ask_for_listings(
             commands.clone(),
             try_now,
             wanted,
             name.clone(),
-            move |sessions| {
+            move |sessions, asked| {
                 let Some(shared) = shared.upgrade() else {
                     return false;
                 };
+                // A Session it no longer holds keeps no draft.
+                shared.drafts.listed(
+                    &fingerprint,
+                    |session| sessions.iter().any(|listed| listed.id() == session),
+                    asked,
+                );
                 shared.change(&taker, generation, |answered| {
                     answered.sessions = Some(sessions);
                 });
@@ -2466,7 +2485,8 @@ async fn ask_when_wanted<T, F>(
 }
 
 /// Asks the Remote `name` for its listing each time `wanted` says, handing
-/// each answer whole to `take`, until it says nothing is left to take them.
+/// each answer whole to `take`, with when it was asked, until it says
+/// nothing is left to take them.
 /// Asked again while an ask is under way, it asks once more after it; an ask
 /// that is not answered is made again on the readers' backoff, or at once
 /// when the transport says to try now or something more moves.
@@ -2475,17 +2495,18 @@ async fn ask_for_listings(
     mut try_now: TryNow,
     wanted: Arc<Notify>,
     name: String,
-    take: impl Fn(Vec<SessionListItem>) -> bool,
+    take: impl Fn(Vec<SessionListItem>, std::time::Instant) -> bool,
 ) {
     let (initial, max) = commands.recovery_backoff();
     let mut backoff = RecoveryBackoff::new(initial, max);
     loop {
         wanted.notified().await;
         loop {
+            let asked = std::time::Instant::now();
             match commands.list_sessions(None).await {
                 Ok(sessions) => {
                     backoff.reset();
-                    if !take(sessions) {
+                    if !take(sessions, asked) {
                         return;
                     }
                     break;

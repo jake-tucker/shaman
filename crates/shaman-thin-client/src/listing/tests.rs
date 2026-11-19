@@ -666,6 +666,7 @@ pub(crate) fn listings(runtime: &tokio::runtime::Runtime) -> (Listings, tempfile
         timings,
         SETTLE_AFTER,
         Duration::from_secs(3),
+        crate::drafts::Drafts::default(),
     );
     (listings, directory)
 }
@@ -721,6 +722,7 @@ fn a_session_left_alone_settles_onto_the_shelf_as_it_comes_to_be() {
         timings,
         Duration::from_millis(100),
         Duration::from_secs(3),
+        crate::drafts::Drafts::default(),
     );
     let now = SessionTimestamp::now();
     listings.hold(remote("desk", vec![session("Quiet", "shaman", 1, now.0)]));
@@ -769,7 +771,7 @@ fn asking(
         transport.try_now(),
         wanted.clone(),
         "desk".to_owned(),
-        move |sessions| taken.send(sessions).is_ok(),
+        move |sessions, _| taken.send(sessions).is_ok(),
     ));
     (wanted, heard)
 }

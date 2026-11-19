@@ -51,7 +51,7 @@ use crate::{
     beginning::{self, Progress, Provisional},
     behind::Behind,
     conversation::{self, ConversationItem},
-    drafts::Drafts,
+    drafts::{self, Drafts},
     frame::{self, Cut, GONE_REMOTE, Local, Outgoing, SessionFrame, frame_of},
     intervention::{self, DecisionKind, GivenAnswer, InterventionId},
     listing::{Listed, Listings},
@@ -238,12 +238,12 @@ impl OpenSession {
             {
                 discarded = local.provisional.take().map(|provisional| {
                     let maybe = provisional.progress == Progress::MayHaveBegun;
-                    (provisional.prompt.text, maybe)
+                    (provisional.prompt.text, maybe, provisional.sent)
                 });
             }
         });
-        if let Some((text, may_have_begun)) = discarded {
-            self.acting.left(&text, may_have_begun);
+        if let Some((text, may_have_begun, sent)) = discarded {
+            self.acting.left(&text, may_have_begun, sent);
         }
         if let Some(reader) = self
             .reader
@@ -901,7 +901,12 @@ impl Acting {
                 return;
             };
             match text.clone() {
-                Some(text) => provisional.replace(text),
+                Some(text) => {
+                    if let Some(sent) = provisional.sent {
+                        self.drafts.resending(beginning::LANDING_DRAFT, sent, &text);
+                    }
+                    provisional.replace(text);
+                }
                 None => provisional.ask_again(),
             }
             local.note = None;
@@ -1062,6 +1067,7 @@ impl Acting {
     /// the Landing's draft.
     fn stand(&self, answered: Result<SessionSnapshot, Progress>) {
         let mut left = None;
+        let mut begun = None;
         self.local.send_modify(|local| {
             let closed = local.closed;
             let Some(provisional) = local.provisional.as_mut() else {
@@ -1071,7 +1077,9 @@ impl Acting {
                 Ok(created) => {
                     if closed && !holds(&created, provisional) {
                         // Begun with an earlier Prompt: this one was not sent.
-                        left = Some((provisional.prompt.text.clone(), false));
+                        left = Some((provisional.prompt.text.clone(), false, provisional.sent));
+                    } else {
+                        begun = provisional.sent;
                     }
                     provisional.created = Some(Box::new(created));
                 }
@@ -1079,14 +1087,19 @@ impl Acting {
                     left = Some((
                         provisional.prompt.text.clone(),
                         standing == Progress::MayHaveBegun,
+                        provisional.sent,
                     ));
                     local.provisional = None;
                 }
                 Err(standing) => provisional.progress = standing,
             }
         });
-        if let Some((text, may_have_begun)) = left {
-            self.left(&text, may_have_begun);
+        // Answered: the Landing's draft keeps its Prompt no more.
+        if let Some(sent) = begun {
+            self.drafts.answered(beginning::LANDING_DRAFT, sent);
+        }
+        if let Some((text, may_have_begun, sent)) = left {
+            self.left(&text, may_have_begun, sent);
         }
     }
 
@@ -1112,9 +1125,15 @@ impl Acting {
     }
 
     /// Keeps the text of a beginning whose screen has gone as the Landing's
-    /// draft, the Landing saying so where it `may_have_begun`.
-    fn left(&self, text: &str, may_have_begun: bool) {
-        self.drafts.give_back(beginning::LANDING_DRAFT, text);
+    /// draft, the Landing saying so where it `may_have_begun`: where it was
+    /// `sent` from the Landing, as what that Prompt on its way became.
+    fn left(&self, text: &str, may_have_begun: bool, sent: Option<drafts::Sent>) {
+        match sent {
+            Some(sent) => self
+                .drafts
+                .give_back_sent(beginning::LANDING_DRAFT, sent, text),
+            None => self.drafts.give_back(beginning::LANDING_DRAFT, text),
+        }
         if may_have_begun {
             self.landing_note
                 .send_replace(Some(beginning::MAYBE_BEGUN_LEFT.to_owned()));
@@ -1136,6 +1155,9 @@ impl Acting {
             return self.begin_again(Some(text)).await;
         }
         let mut opening = self.opening()?;
+        // Kept in the composer's draft until its Server answers, so it is
+        // there the next run should the app end first.
+        let sent = self.drafts.sending(&self.reference, &text);
         let id = PromptId::new();
         self.local.send_modify(|local| {
             local.note = None;
@@ -1163,6 +1185,7 @@ impl Acting {
             .await;
         match admitted {
             Ok(_) => {
+                self.drafts.answered(&self.reference, sent);
                 // It stands as sent until the Server is seen holding it.
                 self.local.send_modify(|local| {
                     if let Some(outgoing) = local.outgoing.iter_mut().find(|sent| sent.id == id) {
@@ -1179,7 +1202,7 @@ impl Acting {
                         local.note = Some(frame::MAY_HAVE_BEEN_SENT.to_owned());
                     }
                 });
-                self.drafts.give_back(&self.reference, &text);
+                self.drafts.give_back_sent(&self.reference, sent, &text);
                 Err(said(unanswered, "The server did not answer"))
             }
         }
@@ -1551,6 +1574,10 @@ impl Reader {
                             local.note = Some(beginning::BEGUN_WITH_THE_FIRST.to_owned());
                         }
                     });
+                }
+                // Answered: the Landing's draft keeps its Prompt no more.
+                if let Some(sent) = provisional.sent {
+                    self.drafts.answered(beginning::LANDING_DRAFT, sent);
                 }
                 if superseded {
                     self.drafts

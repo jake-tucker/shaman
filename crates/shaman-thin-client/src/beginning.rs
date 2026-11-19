@@ -421,6 +421,9 @@ pub(crate) struct Provisional {
     pub worktree: Option<NewWorktree>,
     /// The Session its Server holds, once it is seen, which replaces it.
     pub created: Option<Box<SessionSnapshot>>,
+    /// Its Prompt as the Landing's draft keeps it on its way, where it was
+    /// sent from the Landing: until its Server answers with the Session.
+    pub sent: Option<crate::drafts::Sent>,
 }
 
 /// A new Worktree a Session being begun is to begin in, which its Server
@@ -446,6 +449,16 @@ impl Provisional {
             progress: Progress::Starting,
             worktree: None,
             created: None,
+            sent: None,
+        }
+    }
+
+    /// The same, its Prompt kept on its way in the Landing's draft as
+    /// `sent`.
+    pub fn sent_from_landing(self, sent: crate::drafts::Sent) -> Self {
+        Self {
+            sent: Some(sent),
+            ..self
         }
     }
 

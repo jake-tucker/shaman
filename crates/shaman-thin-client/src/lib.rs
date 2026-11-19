@@ -115,6 +115,9 @@ pub struct CoreTimings {
     /// answer before it reads Unreachable, where every way has not failed
     /// sooner.
     pub unreachable_after: Duration,
+    /// How long a draft waits after its last change before it is written to
+    /// the core's directory: a moment after typing stops.
+    pub draft_written_after: Duration,
 }
 
 impl Default for CoreTimings {
@@ -133,6 +136,7 @@ impl Default for CoreTimings {
             settle_after: listing::SETTLE_AFTER,
             check_deadline: Duration::from_secs(2),
             unreachable_after: Duration::from_secs(3),
+            draft_written_after: Duration::from_secs(1),
         }
     }
 }
@@ -168,7 +172,7 @@ pub(crate) struct Inner {
     listing: Listings,
     /// Held through each pairing, so one pairing at a time is made.
     pairing: AsyncMutex<()>,
-    /// Each composer's unsent text.
+    /// Each composer's unsent text, kept in the directory.
     drafts: drafts::Drafts,
     /// The acts under way, which Swift holds background time for.
     acts: acts::Acts,
@@ -251,9 +255,10 @@ impl ThinClient {
         })
     }
 
-    /// The unsent text of the composer of the Session `session` names,
-    /// asked for when its screen appears, with the version of it Swift hands
-    /// back with each change.
+    /// The unsent text of the composer of the Session `session` names, or of
+    /// the Landing's under the key it names, asked for when its screen
+    /// appears, with the version of it Swift hands back with each change:
+    /// kept from one run to the next.
     pub fn draft(&self, session: String) -> Draft {
         self.inner.drafts.get(&session)
     }
@@ -261,7 +266,8 @@ impl ThinClient {
     /// Holds `text`, written over the version `version` of the draft, as the
     /// unsent text of the composer of the Session `session` names. Text the
     /// core gave back since that version stands ahead of it, and the
-    /// draft's listeners are told.
+    /// draft's listeners are told. It is written to the directory a moment
+    /// after the last change, and as the app leaves the front.
     pub fn set_draft(&self, session: String, text: String, version: u64) {
         self.inner.drafts.set(&session, text, version);
     }
@@ -455,8 +461,12 @@ impl ThinClient {
                 message: "No new worktree can be made in this workspace".to_owned(),
             });
         }
+        // Kept in the Landing's draft until its Server answers with the
+        // Session, so it is there the next run should the app end first.
+        let sent = self.inner.drafts.sending(beginning::LANDING_DRAFT, &text);
         let provisional =
-            beginning::Provisional::new(session_id, workspace.path.clone(), text, place);
+            beginning::Provisional::new(session_id, workspace.path.clone(), text, place)
+                .sent_from_landing(sent);
         let provisional = if new_worktree {
             provisional.in_new_worktree()
         } else {
@@ -562,8 +572,10 @@ impl ThinClient {
     /// connections: a short switch away comes back to live streams, and the
     /// check on return finds whatever did not last. Every login under way is
     /// given up, as the connection it waits on cannot outlast the app being
-    /// suspended.
+    /// suspended. Every draft is written before it returns, so it is there
+    /// however iOS ends the app.
     pub fn left_front(&self) {
+        self.inner.drafts.write_now();
         self.inner.relays.leave();
     }
 
@@ -755,6 +767,11 @@ impl ThinClient {
         // A pairing the app was ended in the middle of keeps nothing, kept
         // so or not.
         redeemer.drop_uncommitted();
+        let drafts = drafts::Drafts::open(
+            records.directory(),
+            timings.draft_written_after,
+            runtime.handle(),
+        );
         let remotes = Remotes::new(
             redeemer.clone(),
             relays.clone(),
@@ -768,6 +785,7 @@ impl ThinClient {
             timings.readers,
             timings.settle_after,
             timings.unreachable_after,
+            drafts.clone(),
         );
         listing.follow(&remotes.held());
         let trees = tree::Trees::new(runtime.handle().clone(), listing.notices());
@@ -782,7 +800,7 @@ impl ThinClient {
             remotes,
             listing,
             pairing: AsyncMutex::new(()),
-            drafts: drafts::Drafts::default(),
+            drafts,
             acts: acts::Acts::default(),
             trees,
             landing_note: Arc::new(watch::Sender::new(None)),
@@ -1714,6 +1732,104 @@ mod tests {
             }
         );
         assert_eq!(act(core.act(async { Ok(()) })), Ok(()));
+    }
+
+    /// The core kept in `directory`, writing a draft `after` its last
+    /// change.
+    fn writing_drafts_after(
+        directory: &std::path::Path,
+        key: &Arc<TestKey>,
+        after: Duration,
+    ) -> Arc<ThinClient> {
+        ThinClient::open_with(
+            directory.to_string_lossy().into_owned(),
+            key.clone(),
+            CoreTimings {
+                draft_written_after: after,
+                ..CoreTimings::default()
+            },
+        )
+        .expect("open the core")
+    }
+
+    /// Ends the core as iOS ends the app, with nothing more done.
+    fn ended(core: Arc<ThinClient>) {
+        drop(core);
+    }
+
+    /// The Landing's key, which a draft is kept under whatever Remotes the
+    /// phone holds.
+    fn landing() -> String {
+        beginning::LANDING_DRAFT.to_owned()
+    }
+
+    #[test]
+    fn a_draft_is_there_after_the_app_is_ended_a_moment_after_typing_stops() {
+        let directory = tempfile::tempdir().unwrap();
+        let key = TestKey::new();
+        let core = writing_drafts_after(directory.path(), &key, Duration::from_millis(20));
+        core.set_draft(landing(), "Tidy".to_owned(), 0);
+        core.set_draft(landing(), "Tidy the build".to_owned(), 0);
+        let drafts = directory.path().join(drafts::DRAFTS_FILE);
+        let deadline = std::time::Instant::now() + HEARD_WITHIN;
+        while !drafts.exists() {
+            assert!(std::time::Instant::now() < deadline, "never written");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        ended(core);
+
+        let core = opened(directory.path(), &key);
+        assert_eq!(
+            core.draft(landing()),
+            Draft {
+                text: "Tidy the build".to_owned(),
+                version: 0
+            }
+        );
+    }
+
+    #[test]
+    fn a_draft_is_written_as_the_app_leaves_the_front_and_not_before_typing_stops() {
+        let directory = tempfile::tempdir().unwrap();
+        let key = TestKey::new();
+        let core = writing_drafts_after(directory.path(), &key, Duration::from_secs(3_600));
+        core.set_draft(landing(), "still typing".to_owned(), 0);
+        ended(core);
+        let core = writing_drafts_after(directory.path(), &key, Duration::from_secs(3_600));
+        assert_eq!(
+            core.draft(landing()).text,
+            "",
+            "ended before a moment passed"
+        );
+
+        core.set_draft(landing(), "Tidy the build".to_owned(), 0);
+        core.left_front();
+        ended(core);
+        assert_eq!(
+            opened(directory.path(), &key).draft(landing()).text,
+            "Tidy the build"
+        );
+    }
+
+    #[test]
+    fn a_draft_of_a_session_on_a_remote_not_held_is_dropped_as_the_core_opens() {
+        let directory = tempfile::tempdir().unwrap();
+        let key = TestKey::new();
+        let session = format!("desk-key/{}", shaman_protocol::SessionId::new());
+        drop(opened(directory.path(), &key));
+        std::fs::write(
+            directory.path().join(drafts::DRAFTS_FILE),
+            serde_json::to_vec(&serde_json::json!({
+                session.clone(): "half a thought",
+                landing(): "a new one",
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let core = opened(directory.path(), &key);
+        assert_eq!(core.draft(session), Draft::default());
+        assert_eq!(core.draft(landing()).text, "a new one");
     }
 
     #[test]
