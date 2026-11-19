@@ -68,6 +68,7 @@ pub(crate) fn remote(name: &str, sessions: Vec<SessionSummary>) -> Answered {
         workspace_revision: None,
         workspaces: None,
         unreached: None,
+        behind: None,
         local_only: false,
         relay_hint: None,
         agent: None,
@@ -1723,4 +1724,105 @@ fn a_workspace_listing_older_than_the_one_held_never_replaces_it() {
     );
     desk.take_workspaces(workspace_listing(2, 0, &["fresh"]), true);
     assert_eq!(workspace_names(&desk), ["fresh"], "pushed, of the run now");
+}
+
+#[test]
+fn an_act_a_server_too_old_answers_with_a_bare_not_found_is_refused_as_it_being_too_old() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let (listings, _directory) = listings(&runtime);
+    let desk = remote("desk", vec![session("Mine", "shaman", 1, NOW.0)]);
+    let reference = reference(&desk.fingerprint, desk.sessions.as_ref().unwrap()[0].id());
+    let mut not_found = http::Response::new(shaman_client::full_body(Vec::new()));
+    *not_found.status_mut() = http::StatusCode::NOT_FOUND;
+    listings.hold_over(
+        desk,
+        Arc::new(shaman_client::testing::ScriptedTransport::new(vec![Ok(
+            not_found,
+        )])),
+    );
+
+    let refused = runtime.block_on(listings.settle(&reference, true));
+
+    assert_eq!(
+        refused,
+        Err(ActError::Refused {
+            message: "That server is too old for this; update Shaman there".to_owned()
+        })
+    );
+}
+
+#[test]
+fn a_change_a_newer_servers_catalog_sent_is_passed_over_and_the_remote_said_newer_once() {
+    use shaman_protocol::{
+        SESSION_CATALOG_SNAPSHOT_EVENT, SESSION_CATALOG_UPDATED_EVENT, SessionCatalogRevision,
+        SessionCatalogSnapshot,
+    };
+
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let (listings, _directory) = listings(&runtime);
+    listings.hold(remote("desk", Vec::new()));
+    let snapshot = SessionCatalogSnapshot {
+        workspace_paths: Default::default(),
+        revision: SessionCatalogRevision(2),
+        session_ids: Vec::new(),
+        checkout_states: Vec::new(),
+    };
+    let skipping = |revision: u64| {
+        serde_json::json!({
+            "revision": revision,
+            "change": { "type": "session_mood_changed", "session_id": SessionId::new() },
+        })
+        .to_string()
+    };
+    let transport = Arc::new(shaman_client::testing::ScriptedTransport::new(vec![Ok(
+        shaman_client::testing::open_stream_of(&[
+            (
+                SESSION_CATALOG_SNAPSHOT_EVENT,
+                Some(2),
+                serde_json::to_string(&snapshot).unwrap(),
+            ),
+            (SESSION_CATALOG_UPDATED_EVENT, Some(3), skipping(3)),
+            (SESSION_CATALOG_UPDATED_EVENT, Some(4), skipping(4)),
+        ]),
+    )]));
+    let commands = SessionCommands::new(transport.clone(), listings.shared.timings);
+    let reach = Reach::new(
+        runtime.handle().clone(),
+        Duration::from_secs(3),
+        Network::default(),
+    );
+    let reader = runtime.spawn(follow_catalog(
+        Arc::downgrade(&listings.shared),
+        commands,
+        reach,
+        TryNow::never(),
+        Remote {
+            name: "desk".to_owned(),
+            fingerprint: "desk-key".to_owned(),
+            generation: 0,
+        },
+        Wanted {
+            listing: Arc::new(Notify::new()),
+            agent: Arc::new(Notify::new()),
+            resolution: Arc::new(Notify::new()),
+        },
+    ));
+
+    let mut notices = listings.notices().shown();
+    let said = runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(5), notices.wait_for(Option::is_some))
+            .await
+            .expect("said in time")
+            .expect("the notices stand")
+            .clone()
+            .unwrap()
+    });
+    assert_eq!(
+        said.words,
+        "The server runs a newer Shaman; some things may not show"
+    );
+    listings.notices().seen(said.id);
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(*notices.borrow(), None, "said once, for both");
+    reader.abort();
 }

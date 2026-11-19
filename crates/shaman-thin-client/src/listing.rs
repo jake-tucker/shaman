@@ -15,7 +15,13 @@
 //!
 //! A Remote that reads Unreachable keeps the rows it last gave, dimmed, and
 //! stands as a slim row of its own at the foot of the active ones, offering
-//! to try it again; the rows it gives once it answers take their place.
+//! to try it again; the rows it gives once it answers take their place. One
+//! that answers, but that the phone and it can no longer work together
+//! across, stands so too, its row naming the side to update, and is read
+//! again whenever it is told to try now, so updating that side heals it.
+//!
+//! A change a Remote's catalog sends of a kind this build does not know is
+//! passed over, and the Remote said once to be newer.
 //!
 //! Fixed here from the schema's defaults, since a phone has no Settings:
 //! Sessions settle after three idle days, and a Sidekick's Subsessions are
@@ -47,7 +53,9 @@ use tokio::{runtime::Handle, sync::Notify, sync::watch, task::JoinHandle};
 
 use crate::{
     ActError, acts,
+    behind::Behind,
     device::RememberedWorkspace,
+    notices::Notices,
     reach::{self, Network, Reach, Reaching, Reading, Unreached},
     relays::{self, LoginOffer, RelayHint, Relays},
     tree::{Paired, Pairings},
@@ -104,7 +112,9 @@ pub struct Listing {
     pub empty: Option<String>,
 }
 
-/// The slim row an Unreachable Remote stands as, offering to try it again.
+/// The slim row an Unreachable Remote stands as, offering to try it again;
+/// and that a Remote stands as in its place where it answers but the phone
+/// and it can no longer work together across, naming the side to update.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct UnreachableRow {
     /// The Remote, as the core is handed it back to try it again.
@@ -135,7 +145,8 @@ pub struct UnreachableSheet {
     pub try_again: String,
 }
 
-/// What may keep an Unreachable Remote from answering.
+/// What may keep an Unreachable Remote from answering, or which side keeps
+/// one that answers from working with the phone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum UnreachableHint {
     /// Nothing the phone can tell: no way to it answered.
@@ -151,6 +162,12 @@ pub enum UnreachableHint {
     /// This phone's Login at a Relay the Remote is reached through stands
     /// under another Account than the Remote's.
     OtherAccount,
+    /// It answers, but no longer works with an app as old as this one: the
+    /// app is to be updated. The Pairing stands.
+    UpdateApp,
+    /// It answers, but its Shaman is too old for the app to work with: it is
+    /// to be updated. The Pairing stands.
+    UpdateServer,
 }
 
 /// One row a search found, in the shape its shelf gives it.
@@ -479,6 +496,9 @@ pub(crate) struct Answered {
     pub workspaces: Option<Vec<Workspace>>,
     /// Why it reads Unreachable, where it does.
     pub unreached: Option<Unreached>,
+    /// The side too old for the other, where it last answered that the phone
+    /// and it can no longer work together across.
+    pub behind: Option<Behind>,
     /// Whether every way it is dialled by is an address on the local
     /// network.
     pub local_only: bool,
@@ -514,6 +534,13 @@ impl Answered {
         self.paths = listing.workspace_paths;
         self.paths_heard = true;
         self.workspaces = Some(listing.workspaces);
+    }
+
+    /// Whether what it last gave is drawn dimmed: it reads Unreachable, or
+    /// the phone and it no longer work together, so nothing it gives now
+    /// stands in its place.
+    fn stale(&self) -> bool {
+        self.unreached.is_some() || self.behind.is_some()
     }
 
     /// Whether it has said which Workspaces it offers: both those its
@@ -599,16 +626,17 @@ pub(crate) fn present(
     let in_scope = || remotes.iter().filter(|remote| scope.reaches(remote));
     let answered = in_scope().all(|remote| remote.sessions.is_some());
     // An Unreachable Remote stands as its own row, rather than as one still
-    // being reached.
+    // being reached, as does one the phone and it no longer work together
+    // across.
     let unanswered = in_scope()
-        .filter(|remote| remote.sessions.is_none() && remote.unreached.is_none())
+        .filter(|remote| remote.sessions.is_none() && !remote.stale())
         .map(|remote| remote.name.as_str())
         .collect::<Vec<_>>();
     let unreachable = in_scope()
-        .filter_map(|remote| {
-            remote
-                .unreached
-                .map(|why| unreachable_row(remote, why, origin_named))
+        .filter_map(|remote| match (remote.unreached, remote.behind) {
+            (Some(why), _) => Some(unreachable_row(remote, why, origin_named)),
+            (None, Some(behind)) => Some(behind_row(remote, behind, origin_named)),
+            (None, None) => None,
         })
         .collect::<Vec<_>>();
     let active = active
@@ -623,7 +651,7 @@ pub(crate) fn present(
             title: title(row.session),
             ended: instant(ended),
             unsettle: "Unsettle".to_owned(),
-            dimmed: remote.unreached.is_some(),
+            dimmed: remote.stale(),
         })
         .collect::<Vec<_>>();
     let query = narrowing.query.as_str();
@@ -833,6 +861,9 @@ fn unreachable_row(remote: &Answered, why: Unreached, origin_named: bool) -> Unr
         UnreachableHint::LoginNeeded | UnreachableHint::OtherAccount => relay_hint
             .map(|relay_hint| relays::hint_words(relay_hint, &named))
             .unwrap_or_default(),
+        // Never a reason a Remote reads Unreachable: one that answers stands
+        // as `behind_row` makes it.
+        UnreachableHint::UpdateApp | UnreachableHint::UpdateServer => String::new(),
     };
     UnreachableRow {
         remote: remote.fingerprint.clone(),
@@ -845,6 +876,52 @@ fn unreachable_row(remote: &Answered, why: Unreached, origin_named: bool) -> Unr
                 .then(|| "Open Settings".to_owned()),
             login: relay_hint.map(RelayHint::offer),
             hint,
+            try_again,
+        },
+    }
+}
+
+/// The slim row the Remote `remote` stands as where it answers but `behind`
+/// is too old for the other, naming the side to update, and it only where
+/// the phone names Origins at all. The Pairing stands, and is tried again
+/// once that side is updated.
+fn behind_row(remote: &Answered, behind: Behind, origin_named: bool) -> UnreachableRow {
+    let (named, sentence) = if origin_named {
+        (remote.name.clone(), remote.name.clone())
+    } else {
+        ("the server".to_owned(), "The server".to_owned())
+    };
+    let (words, title, explanation, hint) = match behind {
+        Behind::App => (
+            format!("Update the app to reach {named}"),
+            "Update the app".to_owned(),
+            format!(
+                "{sentence} no longer works with an app as old as this one. Update the app, and \
+                 it works again: nothing needs pairing again."
+            ),
+            UnreachableHint::UpdateApp,
+        ),
+        Behind::Server => (
+            format!("Update Shaman on {named}"),
+            format!("Update Shaman on {named}"),
+            format!(
+                "{sentence} runs a Shaman too old to work with this app. Update Shaman there, \
+                 and it works again: nothing needs pairing again."
+            ),
+            UnreachableHint::UpdateServer,
+        ),
+    };
+    let try_again = "Try again".to_owned();
+    UnreachableRow {
+        remote: remote.fingerprint.clone(),
+        words,
+        try_again: try_again.clone(),
+        sheet: UnreachableSheet {
+            title,
+            explanation,
+            hint,
+            open_settings: None,
+            login: None,
             try_again,
         },
     }
@@ -978,7 +1055,7 @@ fn active_row(remote: &Answered, row: &Row<'_>, origin_named: bool) -> ActiveRow
         standing: standing.map(Standing::from),
         slot: slot(row, standing),
         settle: summary.map(|_| "Settle".to_owned()),
-        dimmed: remote.unreached.is_some(),
+        dimmed: remote.stale(),
     }
 }
 
@@ -1143,6 +1220,8 @@ struct Shared {
     /// The Remotes followed, by key, name and paths: what a Session one
     /// Server names on another is opened through.
     pairings: watch::Sender<Pairings>,
+    /// What says a Remote is newer than this build, once for each.
+    notices: Notices,
     /// How many times the listing has been made, for a test to see it is
     /// made no more often than something changes.
     renders: AtomicU64,
@@ -1215,6 +1294,8 @@ impl Listings {
             settle_after,
             &Narrowing::default(),
         );
+        let pairings = watch::Sender::new(Pairings::default());
+        let notices = Notices::new(pairings.subscribe());
         let shared = Arc::new(Shared {
             runtime: runtime.clone(),
             redeemer,
@@ -1226,7 +1307,8 @@ impl Listings {
             renders: AtomicU64::new(0),
             shown: watch::Sender::new(listing),
             moved: watch::Sender::new(0),
-            pairings: watch::Sender::new(Pairings::default()),
+            pairings,
+            notices,
             state: Mutex::new(State {
                 on_show: SHELF_OPENING,
                 ..State::default()
@@ -1245,6 +1327,11 @@ impl Listings {
     /// The Remotes this phone holds a Pairing with, now and on every change.
     pub fn pairings(&self) -> watch::Receiver<Pairings> {
         self.shared.pairings.subscribe()
+    }
+
+    /// What says a Remote is newer than this build, once for each.
+    pub fn notices(&self) -> Notices {
+        self.shared.notices.clone()
     }
 
     /// Follows every Remote the redeemer holds and no other: a Remote
@@ -1382,7 +1469,9 @@ impl Listings {
 
     /// Tries the Remote `fingerprint` names again, as its slim row offers:
     /// checked as on a return to the front, answering once that has ended,
-    /// with success where it answered and why where it did not.
+    /// with success where it answered and why where it did not. One the
+    /// phone and it could no longer work together across is asked something
+    /// cheap besides, failing as it is refused while that still holds.
     pub async fn try_again(&self, fingerprint: &str, deadline: Duration) -> Result<(), ActError> {
         let (origin_named, held) = {
             let state = self.shared.lock();
@@ -1395,13 +1484,20 @@ impl Listings {
                         followed.answered.name.clone(),
                         followed.transport.clone(),
                         followed.reach.clone(),
+                        followed.answered.behind.map(|_| followed.commands.clone()),
                     )
                 });
             (state.remotes.len() > 1, held)
         };
-        let (name, transport, reach) = held.ok_or_else(|| ActError::Gone {
+        let (name, transport, reach, behind) = held.ok_or_else(|| ActError::Gone {
             message: "This phone is no longer paired with that server".to_owned(),
         })?;
+        if let Some(commands) = behind {
+            // Told to try now, its catalog is read afresh, and stands as the
+            // Remote answers it.
+            transport.say_try_now();
+            return commands.health().await.map(|_| ()).map_err(failed);
+        }
         if !self.shared.network.has_path() {
             reach.unreached(Unreached::NoNetwork);
             return Err(ActError::Unreachable {
@@ -1895,8 +1991,12 @@ impl Shared {
             Arc::downgrade(self),
             commands.clone(),
             reach.clone(),
-            name.clone(),
-            generation,
+            transport.try_now(),
+            Remote {
+                name: name.clone(),
+                fingerprint: stored.remote.fingerprint.clone(),
+                generation,
+            },
             Wanted {
                 listing: wanted.clone(),
                 agent: agent_wanted.clone(),
@@ -2008,6 +2108,7 @@ impl Shared {
                 workspace_revision: None,
                 workspaces: None,
                 unreached: None,
+                behind: None,
                 local_only: false,
                 relay_hint: None,
                 agent: None,
@@ -2157,96 +2258,145 @@ struct Wanted {
     resolution: Arc<Notify>,
 }
 
-/// Reads the Remote `name`'s Session catalog, asking for its listing again
+/// The Remote a reader reads: by the name this phone knows it by, the key
+/// it is known by, and the Pairing it is read under.
+struct Remote {
+    name: String,
+    fingerprint: String,
+    generation: u64,
+}
+
+/// Reads the Remote `remote`'s Session catalog, asking for its listing again
 /// through `wanted` whenever anything it lists moves, and reaching the
-/// Remote anew, through `reach`, whenever the stream drops.
+/// Remote anew, through `reach`, whenever the stream drops. Where the Remote
+/// refuses it as behind, or it refuses the Remote so, that stands in the
+/// listing until the stream, opened again each time `try_now` says, is read
+/// afresh; a change of a kind this build does not know is passed over, and
+/// the Remote said to be newer.
 async fn follow_catalog(
     shared: Weak<Shared>,
     commands: SessionCommands,
     reach: Reach,
-    name: String,
-    generation: u64,
+    mut try_now: TryNow,
+    remote: Remote,
     wanted: Wanted,
 ) {
+    let Remote {
+        name,
+        fingerprint,
+        generation,
+    } = remote;
     let Wanted {
         listing: wanted,
         agent: agent_wanted,
         resolution: resolve_wanted,
     } = wanted;
-    let mut catalog = commands.subscribe_catalog();
-    while let Some(event) = catalog.next().await {
-        let paths = match event {
-            // Reached, anew or for the first time: what a new Session would
-            // get is asked again too.
-            SessionCatalogEvent::SessionCatalogReconciled(snapshot) => {
-                wanted.notify_one();
-                agent_wanted.notify_one();
-                resolve_wanted.notify_one();
-                Some(snapshot.workspace_paths)
-            }
-            // The Models moved, and with them what a new Session would get:
-            // a cold catalog gives none.
-            SessionCatalogEvent::ModelCatalog(models) => {
-                let Some(shared) = shared.upgrade() else {
-                    return;
-                };
-                shared.change(&name, generation, |answered| {
-                    answered.models = Some(models);
-                });
-                agent_wanted.notify_one();
-                None
-            }
-            SessionCatalogEvent::WorkspaceListing(listing) => {
-                let Some(shared) = shared.upgrade() else {
-                    return;
-                };
-                shared.change(&name, generation, |answered| {
-                    answered.take_workspaces(listing, true);
-                });
-                None
-            }
-            // The stream dropped: the Remote holds what it read while it is
-            // reached anew.
-            SessionCatalogEvent::Recovering(_) => {
-                reach.settle();
-                None
-            }
-            // Nothing a row shows moves with these.
-            SessionCatalogEvent::SkillCatalogUpdated(_)
-            | SessionCatalogEvent::SessionUsageChanged(_)
-            | SessionCatalogEvent::RemoteRecovered
-            | SessionCatalogEvent::RemoteFailed { .. }
-            | SessionCatalogEvent::ChangeSkipped => None,
-            // A Worktree moved, which may be the main one the Landing names.
-            SessionCatalogEvent::CheckoutStateChanged(_) => {
-                wanted.notify_one();
-                resolve_wanted.notify_one();
-                None
-            }
-            SessionCatalogEvent::SessionCreated(_)
-            | SessionCatalogEvent::SessionCatalogInvalidated { .. }
-            | SessionCatalogEvent::SessionDeleted(_)
-            | SessionCatalogEvent::SessionTitleChanged(_)
-            | SessionCatalogEvent::SessionSettlementChanged(_)
-            | SessionCatalogEvent::SessionWorkingChanged(_)
-            | SessionCatalogEvent::SessionMonitoringChanged(_)
-            | SessionCatalogEvent::SessionStandingInputsChanged(_)
-            | SessionCatalogEvent::WorkspaceIconChanged(_)
-            | SessionCatalogEvent::WorkspaceDescriptionChanged(_)
-            | SessionCatalogEvent::SessionRemoteSubsessionsChanged(_) => {
-                wanted.notify_one();
-                None
-            }
-        };
-        if let Some(paths) = paths {
-            let Some(shared) = shared.upgrade() else {
-                return;
+    loop {
+        let mut catalog = commands.subscribe_catalog();
+        let mut refused = None;
+        while let Some(event) = catalog.next().await {
+            let paths = match event {
+                // Reached, anew or for the first time: what a new Session
+                // would get is asked again too, and the Remote works with
+                // the phone, whatever it said before.
+                SessionCatalogEvent::SessionCatalogReconciled(snapshot) => {
+                    wanted.notify_one();
+                    agent_wanted.notify_one();
+                    resolve_wanted.notify_one();
+                    Some(snapshot.workspace_paths)
+                }
+                // The Models moved, and with them what a new Session would
+                // get: a cold catalog gives none.
+                SessionCatalogEvent::ModelCatalog(models) => {
+                    let Some(shared) = shared.upgrade() else {
+                        return;
+                    };
+                    shared.change(&name, generation, |answered| {
+                        answered.models = Some(models);
+                    });
+                    agent_wanted.notify_one();
+                    None
+                }
+                SessionCatalogEvent::WorkspaceListing(listing) => {
+                    let Some(shared) = shared.upgrade() else {
+                        return;
+                    };
+                    shared.change(&name, generation, |answered| {
+                        answered.take_workspaces(listing, true);
+                    });
+                    None
+                }
+                // The stream dropped: the Remote holds what it read while it
+                // is reached anew.
+                SessionCatalogEvent::Recovering(_) => {
+                    reach.settle();
+                    None
+                }
+                // The stream ended for good, which, for a side too old for
+                // the other, is until that side is updated.
+                SessionCatalogEvent::RemoteFailed { status, .. } => {
+                    refused = Behind::of_status(status);
+                    if let Some(behind) = refused {
+                        let Some(shared) = shared.upgrade() else {
+                            return;
+                        };
+                        shared.change(&name, generation, |answered| {
+                            answered.behind = Some(behind);
+                        });
+                    }
+                    None
+                }
+                // Something a newer Server sends: said once.
+                SessionCatalogEvent::ChangeSkipped => {
+                    let Some(shared) = shared.upgrade() else {
+                        return;
+                    };
+                    shared.notices.newer(&fingerprint);
+                    None
+                }
+                // Nothing a row shows moves with these.
+                SessionCatalogEvent::SkillCatalogUpdated(_)
+                | SessionCatalogEvent::SessionUsageChanged(_)
+                | SessionCatalogEvent::RemoteRecovered => None,
+                // A Worktree moved, which may be the main one the Landing
+                // names.
+                SessionCatalogEvent::CheckoutStateChanged(_) => {
+                    wanted.notify_one();
+                    resolve_wanted.notify_one();
+                    None
+                }
+                SessionCatalogEvent::SessionCreated(_)
+                | SessionCatalogEvent::SessionCatalogInvalidated { .. }
+                | SessionCatalogEvent::SessionDeleted(_)
+                | SessionCatalogEvent::SessionTitleChanged(_)
+                | SessionCatalogEvent::SessionSettlementChanged(_)
+                | SessionCatalogEvent::SessionWorkingChanged(_)
+                | SessionCatalogEvent::SessionMonitoringChanged(_)
+                | SessionCatalogEvent::SessionStandingInputsChanged(_)
+                | SessionCatalogEvent::WorkspaceIconChanged(_)
+                | SessionCatalogEvent::WorkspaceDescriptionChanged(_)
+                | SessionCatalogEvent::SessionRemoteSubsessionsChanged(_) => {
+                    wanted.notify_one();
+                    None
+                }
             };
-            shared.change(&name, generation, |answered| {
-                answered.paths = paths;
-                answered.paths_heard = true;
-            });
+            if let Some(paths) = paths {
+                let Some(shared) = shared.upgrade() else {
+                    return;
+                };
+                shared.change(&name, generation, |answered| {
+                    answered.paths = paths;
+                    answered.paths_heard = true;
+                    answered.behind = None;
+                });
+            }
         }
+        // Refused for anything else, the Pairing has ended, or the reading
+        // was let go.
+        if refused.is_none() {
+            return;
+        }
+        try_now.heard().await;
     }
 }
 
@@ -2351,6 +2501,11 @@ pub(crate) fn failed(error: anyhow::Error) -> ActError {
         };
     };
     let message = refusal.message.clone();
+    if let Some(behind) = Behind::of_code(refusal.code) {
+        return ActError::Refused {
+            message: behind.refusal(),
+        };
+    }
     match refusal.code {
         SessionErrorCode::PairingConnectionFailed | SessionErrorCode::ServerUnreachable => {
             ActError::Unreachable { message }

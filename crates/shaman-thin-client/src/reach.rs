@@ -34,6 +34,8 @@ use tokio::{
     task::JoinHandle,
 };
 
+use crate::behind::Behind;
+
 /// Why a Remote reads Unreachable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Unreached {
@@ -290,6 +292,9 @@ impl Transport for Reaching {
             {
                 self.reach.unreached(self.network.unreached());
             }
+            // Refused as too old for this phone, or too old for it: the
+            // Remote answered, however little it will do.
+            Err(failure) if Behind::of_code(failure.code).is_some() => self.reach.answered(),
             // Refused for its Pairing, or for being busy: either way it was
             // no answer about the ways.
             Err(_) => {}

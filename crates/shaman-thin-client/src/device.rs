@@ -31,12 +31,13 @@ pub struct ThisDevice {
     /// Said where the phone has a new key and so must pair again with every
     /// Server it had, until it is dismissed.
     pub pair_again: Option<String>,
-    /// The version of the protocol the core speaks to a Server.
+    /// The version of the protocol the core states to every Server.
     pub protocol_version: u32,
 }
 
 impl ThisDevice {
-    pub(crate) fn of(record: &DeviceRecord) -> Self {
+    /// What "This device" shows of `record`, on a phone speaking `protocol`.
+    pub(crate) fn of(record: &DeviceRecord, protocol: shaman_pairing::PairingProtocol) -> Self {
         Self {
             name: record.name.clone(),
             name_note: "Servers paired from now on know this phone by this name. Those already \
@@ -52,7 +53,7 @@ impl ThisDevice {
                  any more. Pair with each of them again."
                     .to_owned()
             }),
-            protocol_version: shaman_protocol::PROTOCOL_VERSION,
+            protocol_version: protocol.version,
         }
     }
 }

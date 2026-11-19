@@ -21,7 +21,7 @@ use std::{
 };
 
 use shaman_client::SessionCommandTimings;
-use shaman_pairing::{GivenIdentity, IdentityMaterial, Redeemer, RedeemerTimings};
+use shaman_pairing::{GivenIdentity, IdentityMaterial, PairingProtocol, Redeemer, RedeemerTimings};
 use tokio::{
     runtime::Runtime,
     sync::{Mutex as AsyncMutex, watch},
@@ -30,6 +30,7 @@ use tokio::{
 
 mod acts;
 mod beginning;
+mod behind;
 mod conversation;
 mod device;
 mod drafts;
@@ -37,6 +38,7 @@ mod frame;
 mod identity;
 mod intervention;
 mod listing;
+mod notices;
 mod pairing;
 mod picker;
 mod reach;
@@ -62,6 +64,7 @@ pub use listing::{
     ActiveRow, CheckoutLine, FoundRow, Listing, ScopeChoice, ScopeKind, ScopeSection, SettledRow,
     Slot, Standing, UnreachableHint, UnreachableRow, UnreachableSheet,
 };
+pub use notices::Notice;
 pub use pairing::{InviteReading, OfferedWay, PairingOutcome, ReadInvite, TryInstead};
 pub use picker::{WorkspacePicker, WorkspaceRow, WorkspaceSection};
 use relays::Relays;
@@ -221,6 +224,22 @@ impl ThinClient {
         self.watch(self.inner.listing.listing(), move |listing| {
             listener.changed(listing);
         })
+    }
+
+    /// Tells `listener` what the core says of its own accord now, beside what
+    /// an act's failure says, and again on every change, until the
+    /// subscription is cancelled: shown in the banner an act's failure is,
+    /// until Swift says, by [`Self::notice_seen`], that it was seen.
+    pub fn watch_notices(&self, listener: Arc<dyn NoticeListener>) -> Arc<Subscription> {
+        self.watch(self.inner.listing.notices().shown(), move |notice| {
+            listener.changed(notice);
+        })
+    }
+
+    /// Hears that the notice `id` names has been seen, so the next is shown.
+    /// It is never said again.
+    pub fn notice_seen(&self, id: u64) {
+        self.inner.listing.notices().seen(id);
     }
 
     /// Tells `listener` whether any act is under way now, and again each
@@ -695,6 +714,18 @@ impl ThinClient {
         signer: Arc<dyn KeySigner>,
         timings: CoreTimings,
     ) -> Result<Arc<Self>, OpenError> {
+        Self::open_speaking(directory, signer, timings, PairingProtocol::CURRENT)
+    }
+
+    /// [`Self::open_with`], speaking `protocol` to every Server: stating its
+    /// version, and working with one at or above its floor. Injectable, so a
+    /// test can stand the phone at any release.
+    pub fn open_speaking(
+        directory: String,
+        signer: Arc<dyn KeySigner>,
+        timings: CoreTimings,
+        protocol: PairingProtocol,
+    ) -> Result<Arc<Self>, OpenError> {
         let signer = identity::taken_up(signer).map_err(OpenError::unusable_key)?;
         let records = Records::open(PathBuf::from(directory)).map_err(OpenError::from)?;
         let identity::Reconciled { record, identity } = identity::reconcile(&records, signer)?;
@@ -706,12 +737,12 @@ impl ThinClient {
             .map_err(|error| OpenError::from(anyhow::Error::from(error)))?;
         let redeemer = Redeemer::new(
             records.directory(),
-            shaman_pairing::PairingProtocol::CURRENT,
+            protocol,
             Arc::new(GivenIdentity(identity.clone())),
             timings.redeemer,
         )
         .map_err(OpenError::from)?;
-        let (device, _) = watch::channel(ThisDevice::of(&record));
+        let (device, _) = watch::channel(ThisDevice::of(&record, protocol));
         let relays = Relays::open(
             records.directory(),
             Arc::new(GivenIdentity(identity.clone())),
@@ -739,6 +770,7 @@ impl ThinClient {
             timings.unreachable_after,
         );
         listing.follow(&remotes.held());
+        let trees = tree::Trees::new(runtime.handle().clone(), listing.notices());
         let inner = Arc::new(Inner {
             records,
             record: AsyncMutex::new(record),
@@ -752,7 +784,7 @@ impl ThinClient {
             pairing: AsyncMutex::new(()),
             drafts: drafts::Drafts::default(),
             acts: acts::Acts::default(),
-            trees: tree::Trees::new(runtime.handle().clone()),
+            trees,
             landing_note: Arc::new(watch::Sender::new(None)),
             workspace_query: watch::Sender::new(String::new()),
             timings,
@@ -1008,7 +1040,8 @@ impl Inner {
             .map_err(|error| ActError::failed(anyhow::Error::from(error)))
             .and_then(|kept| kept.map_err(ActError::failed));
         if kept.is_ok() || shown_unkept {
-            self.device.send_replace(ThisDevice::of(&changed));
+            self.device
+                .send_replace(ThisDevice::of(&changed, self.redeemer.protocol()));
             self.remotes.show(&changed.turned, &changed.workspaces);
             *held = changed;
         }
@@ -1067,6 +1100,11 @@ pub trait DeviceLoginListener: Send + Sync {
 }
 
 /// Hears whether any act is under way, at once and each time that changes.
+#[uniffi::export(with_foreign)]
+pub trait NoticeListener: Send + Sync {
+    fn changed(&self, notice: Option<Notice>);
+}
+
 #[uniffi::export(with_foreign)]
 pub trait ActsListener: Send + Sync {
     fn changed(&self, under_way: bool);

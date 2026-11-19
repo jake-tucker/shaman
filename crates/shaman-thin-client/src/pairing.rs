@@ -16,6 +16,7 @@ use shaman_protocol::{RedeemInviteRequest, SessionErrorCode, UnreachableReason, 
 
 use crate::{
     Inner,
+    behind::Behind,
     relays::{self, LoginOffer, RelayHint},
 };
 
@@ -344,6 +345,14 @@ fn refused_at(failure: &PairingFailure) -> Option<RelayHint> {
 /// A pairing that failed with `failure`, in the words the confirmation
 /// screen shows.
 fn failed(failure: PairingFailure) -> PairingOutcome {
+    // Refused across releases: in the phone's words, naming the side to
+    // update, after which a fresh Invite pairs.
+    if let Some(behind) = Behind::of_code(failure.code) {
+        return PairingOutcome::Failed {
+            message: behind.pairing_refused(),
+            again: TryInstead::ScanAgain,
+        };
+    }
     match failure.code {
         SessionErrorCode::PairingConnectionFailed => PairingOutcome::Failed {
             message: "No way this invite offers answered. Check that the server is serving and \

@@ -40,6 +40,7 @@ use tokio::{runtime::Handle, sync::watch, task::JoinHandle};
 use crate::{
     conversation::{Tone, humanized_duration},
     intervention::{self, Owed},
+    notices::Notices,
 };
 
 /// The button an open Session's navigation bar offers its tree by, where the
@@ -330,6 +331,8 @@ pub(crate) struct Trees {
 struct Shared {
     runtime: Handle,
     held: Mutex<Held>,
+    /// Told of a Remote whose tree sent a change this build does not know.
+    notices: Notices,
 }
 
 #[derive(Default)]
@@ -391,11 +394,14 @@ impl Tree {
 }
 
 impl Trees {
-    pub fn new(runtime: Handle) -> Self {
+    /// The trees read on `runtime`, telling `notices` of a Remote newer
+    /// than this build.
+    pub fn new(runtime: Handle, notices: Notices) -> Self {
         Self {
             shared: Arc::new(Shared {
                 runtime,
                 held: Mutex::default(),
+                notices,
             }),
         }
     }
@@ -542,7 +548,11 @@ impl Trees {
             }
             SubagentTreeEvent::Deleted => Reading::Gone,
             SubagentTreeEvent::Failed(message) => Reading::Failed(message),
-            SubagentTreeEvent::ChangeSkipped => return true,
+            // Passed over, as of a newer Server, which is said once.
+            SubagentTreeEvent::ChangeSkipped => {
+                self.shared.notices.newer(&tree.remote);
+                return true;
+            }
         };
         let ended = matches!(reading, Reading::Gone | Reading::Failed(_));
         let top_level = match &reading {

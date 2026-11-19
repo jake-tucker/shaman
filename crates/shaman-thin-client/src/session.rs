@@ -49,6 +49,7 @@ use crate::{
     ActError, Subscription,
     acts::{self, Acts, Asking, Unanswered},
     beginning::{self, Progress, Provisional},
+    behind::Behind,
     conversation::{self, ConversationItem},
     drafts::Drafts,
     frame::{self, GONE_REMOTE, Local, Outgoing, SessionFrame, frame_of},
@@ -1436,10 +1437,19 @@ enum Relisted {
 
 /// How reading a Session ends on a refusal its Server gave that no reopening
 /// gets past: that the Session is gone, or the Server's own words for why
-/// this phone may read it no more.
+/// this phone may read it no more. One refused as the phone or its Server
+/// being too old for the other is not gone: the Pairing stands, so the
+/// Session holds what it showed and is read again, as its stream dropping
+/// is, until that side is updated.
 fn refusal(refused: &SessionStreamError) -> Ended {
     if refused.deleted_session().is_some() {
         Ended::Gone(GONE_SESSION.to_owned())
+    } else if refused
+        .remote_status()
+        .and_then(Behind::of_status)
+        .is_some()
+    {
+        Ended::Dropped
     } else {
         Ended::Gone(refused.to_string())
     }
@@ -1700,6 +1710,11 @@ impl Reader {
                 None
             }
             Ok(SessionEvent::Updated(update)) => {
+                // Passed over, as of a newer Server, which is said once,
+                // whatever becomes of the rest.
+                if update.skips_a_change() {
+                    self.listings.notices().newer(&self.remote);
+                }
                 let snapshot = self.snapshot.as_mut()?;
                 if let Err(error) =
                     shaman_protocol::session_projection::apply_update(snapshot, &update)
@@ -1892,7 +1907,7 @@ mod tests {
             tree: None,
             tree_seen: watch::channel(TreeState::default()).1,
             beginning: None,
-            trees: Trees::new(runtime.handle().clone()),
+            trees: Trees::new(runtime.handle().clone(), listings.notices()),
             remote: reference.split_once('/').unwrap().0.to_owned(),
             attached,
             gone: None,
@@ -1977,6 +1992,150 @@ mod tests {
         );
         runtime.block_on(reader).unwrap();
         assert_eq!(transport.asked(), 1, "and it is asked no more");
+    }
+
+    #[test]
+    fn a_refusal_as_either_side_being_behind_keeps_the_session_and_reads_it_again() {
+        for code in [
+            SessionErrorCode::PairingPeerBehind,
+            SessionErrorCode::PairingServerBehind,
+        ] {
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            let (listings, _directory) = listings(&runtime);
+            let (desk, reference) = listed_on("desk", "Map the workspace");
+            listings.hold(desk);
+            let behind = SessionError {
+                code,
+                message: "update Shaman somewhere".to_owned(),
+                unreachable: None,
+            };
+            let transport = Arc::new(ScriptedTransport::new(vec![
+                Ok(shaman_client::testing::refusal(
+                    http::StatusCode::CONFLICT,
+                    &behind,
+                )),
+                Ok(shaman_client::testing::refusal(
+                    http::StatusCode::CONFLICT,
+                    &behind,
+                )),
+            ]));
+            let (_reader, frame) = reading(
+                &runtime,
+                &listings,
+                &reference,
+                transport.clone(),
+                Duration::from_millis(1),
+                Arc::default(),
+            );
+            runtime.block_on(async {
+                tokio::time::timeout(SHOWN_WITHIN, async {
+                    while transport.asked() < 3 {
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                    }
+                })
+                .await
+                .expect("asked again");
+            });
+            assert_eq!(frame.borrow().gone, None, "{code:?} keeps the Session");
+        }
+    }
+
+    #[test]
+    fn a_change_or_activity_a_newer_server_sent_holds_its_place_and_is_said_once() {
+        use shaman_protocol::{
+            Activity, ActivityId, SESSION_SNAPSHOT_EVENT, SESSION_UPDATED_EVENT, TranscriptItem,
+            Turn, TurnStatus,
+        };
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (listings, _directory) = listings(&runtime);
+        let (desk, reference) = listed_on("desk", "Map the workspace");
+        listings.hold(desk);
+        let session_id = listings.opening(&reference).unwrap().session_id;
+        let mut snapshot = shaman_client::testing::session_snapshot(session_id, 3);
+        let mut turn = Turn::unprompted(None);
+        turn.status = TurnStatus::Completed;
+        let turn_id = turn.id;
+        snapshot.turns.push(turn);
+        let placeholder = ActivityId::new();
+        snapshot.activities.push(Activity::Unknown {
+            id: placeholder,
+            turn_id: Some(turn_id),
+            kind: "deploy_preview".to_owned(),
+        });
+        snapshot.transcript.push(TranscriptItem::Activity {
+            activity_id: placeholder,
+        });
+        let skipping = |revision: u64| {
+            serde_json::json!({
+                "session_id": session_id,
+                "revision": revision,
+                "changes": [{ "type": "session_mood_changed", "mood": "sunny" }],
+            })
+            .to_string()
+        };
+        let transport = Arc::new(ScriptedTransport::new(vec![Ok(
+            shaman_client::testing::open_stream_of(&[
+                (
+                    SESSION_SNAPSHOT_EVENT,
+                    Some(3),
+                    serde_json::to_string(&snapshot).unwrap(),
+                ),
+                (SESSION_UPDATED_EVENT, Some(4), skipping(4)),
+                (SESSION_UPDATED_EVENT, Some(5), skipping(5)),
+            ]),
+        )]));
+        let attached = Arc::new(Attachments::default());
+        let (_, mut filled) = attached.attach(Target::Work(turn_id.to_string()));
+        let _reader = reading(
+            &runtime,
+            &listings,
+            &reference,
+            transport,
+            Duration::from_secs(60),
+            attached,
+        );
+
+        let mut notices = listings.notices().shown();
+        let said = runtime.block_on(async {
+            tokio::time::timeout(SHOWN_WITHIN, notices.wait_for(Option::is_some))
+                .await
+                .expect("said in time")
+                .expect("the notices stand")
+                .clone()
+                .unwrap()
+        });
+        assert_eq!(
+            said.words,
+            "The server runs a newer Shaman; some things may not show"
+        );
+        listings.notices().seen(said.id);
+        assert_eq!(*notices.borrow(), None, "said once, for both changes");
+
+        let work = runtime.block_on(async {
+            tokio::time::timeout(
+                SHOWN_WITHIN,
+                filled.wait_for(
+                    |work| matches!(work, Some(Filled::Work(work)) if !work.items.is_empty()),
+                ),
+            )
+            .await
+            .expect("filled in time")
+            .expect("the attachment stands")
+            .clone()
+        });
+        let Some(Filled::Work(work)) = work else {
+            panic!("a Turn's work");
+        };
+        let rows = work
+            .items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                work::WorkKind::Row { row } => Some(row.title.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(rows, ["Not shown: deploy preview, from a newer Shaman"]);
     }
 
     #[test]
@@ -2193,7 +2352,7 @@ mod tests {
                     bound: SHOWN_WITHIN,
                     dialling: Duration::from_millis(50),
                 },
-                trees: Trees::new(runtime.handle().clone()),
+                trees: Trees::new(runtime.handle().clone(), listings.notices()),
                 landing_note: Arc::new(watch::Sender::new(None)),
             },
         );
@@ -2360,7 +2519,7 @@ mod tests {
                     bound: SHOWN_WITHIN,
                     dialling: Duration::from_millis(50),
                 },
-                trees: Trees::new(runtime.handle().clone()),
+                trees: Trees::new(runtime.handle().clone(), listings.notices()),
                 landing_note: Arc::new(watch::Sender::new(None)),
             },
         );
@@ -2454,7 +2613,7 @@ mod tests {
                     bound: SHOWN_WITHIN,
                     dialling: Duration::from_millis(50),
                 },
-                trees: Trees::new(runtime.handle().clone()),
+                trees: Trees::new(runtime.handle().clone(), listings.notices()),
                 landing_note: Arc::new(watch::Sender::new(None)),
             },
         );
@@ -2507,7 +2666,7 @@ mod tests {
                     bound: SHOWN_WITHIN,
                     dialling: Duration::from_millis(50),
                 },
-                trees: Trees::new(runtime.handle().clone()),
+                trees: Trees::new(runtime.handle().clone(), listings.notices()),
                 landing_note: Arc::new(watch::Sender::new(None)),
             },
         );
@@ -2586,7 +2745,7 @@ mod tests {
                     bound: SHOWN_WITHIN,
                     dialling: Duration::from_millis(50),
                 },
-                trees: Trees::new(runtime.handle().clone()),
+                trees: Trees::new(runtime.handle().clone(), listings.notices()),
                 landing_note: Arc::new(watch::Sender::new(None)),
             },
         );

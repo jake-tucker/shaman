@@ -550,6 +550,52 @@ impl Remote {
     }
 }
 
+impl Remote {
+    /// Sends, down every stream still open, a change of a kind only a newer
+    /// Server knows.
+    fn change_unknown(&self, revision: u64) {
+        let data = serde_json::json!({
+            "revision": revision,
+            "change": { "type": "subagent_mood_changed", "mood": "sunny" },
+        });
+        for more in self.changes.lock().unwrap().iter() {
+            let _ = more.send(bytes::Bytes::from(format!(
+                "event: {SUBAGENT_TREE_UPDATED_EVENT}\nid: {revision}\ndata: {data}\n\n"
+            )));
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_change_a_newer_server_sent_on_a_tree_is_passed_over_and_its_remote_said_newer() {
+    let top = SessionId::new();
+    let child = entry("Explorer", top, 0, ActivityStatus::Active);
+    let remote = Remote::new(tree(top, vec![child]));
+    let notices = Notices::default();
+    let trees = Trees::new(Handle::current(), notices.clone());
+    let mut shown = notices.shown();
+
+    let held = trees.hold(REMOTE, top, &remote.commands);
+    seen_until(&held, is_read).await;
+    remote.change_unknown(2);
+    remote.change_unknown(3);
+
+    let said = tokio::time::timeout(WITHIN, shown.wait_for(Option::is_some))
+        .await
+        .expect("said in time")
+        .expect("the notices stand")
+        .clone()
+        .unwrap();
+    assert_eq!(
+        said.words,
+        "The server runs a newer Shaman; some things may not show"
+    );
+    notices.seen(said.id);
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert_eq!(*shown.borrow(), None, "said once, for both");
+    assert!(is_read(&held.seen().borrow()), "the tree reads on");
+}
+
 const WITHIN: Duration = Duration::from_secs(5);
 
 async fn until(what: &str, done: impl Fn() -> bool) {
@@ -580,7 +626,7 @@ async fn a_tree_is_read_once_for_as_long_as_any_session_of_it_is_open() {
     let top = SessionId::new();
     let child = entry("Explorer", top, 0, ActivityStatus::Active);
     let remote = Remote::new(tree(top, vec![child.clone()]));
-    let trees = Trees::new(Handle::current());
+    let trees = Trees::new(Handle::current(), Notices::default());
 
     let parent = trees.hold(REMOTE, top, &remote.commands);
     seen_until(&parent, is_read).await;
@@ -625,7 +671,7 @@ async fn two_sessions_of_one_tree_opened_before_it_is_read_are_made_one_tree() {
     let top = SessionId::new();
     let child = entry("Explorer", top, 0, ActivityStatus::Active);
     let remote = Remote::new(tree(top, vec![child.clone()]));
-    let trees = Trees::new(Handle::current());
+    let trees = Trees::new(Handle::current(), Notices::default());
 
     let (parent, subagent) = {
         // Held together, before either stream has answered.
@@ -682,7 +728,7 @@ async fn a_session_whose_tree_could_not_be_read_joins_it_once_another_reads_it()
         },
     );
     let remote = Remote::new(tree(top, vec![child.clone()]));
-    let trees = Trees::new(Handle::current());
+    let trees = Trees::new(Handle::current(), Notices::default());
 
     let first = trees.hold(REMOTE, child.session_id, &refusing);
     let failed = seen_until(&first, |state| matches!(state.reading, Reading::Failed(_))).await;
@@ -1104,7 +1150,7 @@ async fn a_subsession_open_here_reads_the_tree_it_heads_once_its_sidekicks_sessi
             }
         })
     };
-    let trees = Trees::new(Handle::current());
+    let trees = Trees::new(Handle::current(), Notices::default());
     let sidekick = trees.hold(REMOTE, top, &remote.commands);
     seen_until(&sidekick, is_read).await;
     let subsession = trees.hold(REMOTE, docs.session_id, &remote.commands);

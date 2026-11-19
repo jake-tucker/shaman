@@ -34,16 +34,16 @@ use shaman::{
 };
 use shaman_client::SessionCommandTimings;
 use shaman_pairing::{
-    Keepalive, RedeemerTimings,
+    Keepalive, PairingProtocol, RedeemerTimings,
     signer::{Signer as _, testing::CallbackSigner},
 };
 use shaman_thin_client::{
     ActivityDetail, ActsListener, ConversationChange, ConversationItem, ConversationListener,
     CoreTimings, DetailListener, DeviceListener, DeviceLogin, DeviceLoginListener, FrameListener,
-    KeySigner, Landing, LandingListener, Listing, ListingListener, OpenSession, Outlook,
-    OutlookListener, Servers, ServersListener, SessionFrame, SignError, SubagentTree, Subscription,
-    ThinClient, ThisDevice, TreeListener, TurnWork, WorkListener, WorkspacePicker,
-    WorkspacesListener,
+    KeySigner, Landing, LandingListener, Listing, ListingListener, Notice, NoticeListener,
+    OpenSession, Outlook, OutlookListener, Servers, ServersListener, SessionFrame, SignError,
+    SubagentTree, Subscription, ThinClient, ThisDevice, TreeListener, TurnWork, WorkListener,
+    WorkspacePicker, WorkspacesListener,
 };
 use tokio::{
     net::TcpListener,
@@ -97,10 +97,12 @@ pub fn timings() -> CoreTimings {
 /// Working, as its Provider never answers, and any other fails its first
 /// Turn.
 pub struct ServingServer {
-    _state: tempfile::TempDir,
+    state: tempfile::TempDir,
+    channel: String,
     config: ServerConfig,
     _config_root: tempfile::TempDir,
     server: server::RunningServer,
+    provider: Arc<TestProvider>,
     client: ManagedClient,
     refusing_skills: Arc<std::sync::atomic::AtomicBool>,
     scripts: Arc<Mutex<Vec<Script>>>,
@@ -145,6 +147,7 @@ impl ServingServer {
             ..TestProvider::default()
         });
         let refusing_skills = provider.refusing_skills.clone();
+        let kept = provider.clone();
         let scripts = provider.scripts.clone();
         let handoffs = provider.handoffs.clone();
         let decisions = provider.decisions.clone();
@@ -152,11 +155,7 @@ impl ServingServer {
         let server = server::spawn_with_provider_and_timings(config.clone(), provider, timings)
             .await
             .expect("spawn the Server");
-        let client = ManagedClient::connect(
-            ManagedClientConfig::new(state.path(), channel).expect("configure the Client"),
-        )
-        .await
-        .expect("attach the Client");
+        let client = attach(&state, channel).await;
         for mutation in [
             SettingMutation::ServingPort { value: Some(0) },
             SettingMutation::ServingBindAddress {
@@ -170,10 +169,12 @@ impl ServingServer {
                 .expect("turn Serving on");
         }
         Self {
-            _state: state,
+            state,
+            channel: channel.to_owned(),
             config,
             _config_root: config_root,
             server,
+            provider: kept,
             client,
             refusing_skills,
             scripts,
@@ -490,6 +491,74 @@ impl ServingServer {
     pub async fn shutdown(self) {
         self.server.shutdown().await.expect("stop the Server");
     }
+
+    /// This Server stopped and started again on the address it Serves on,
+    /// keeping its records and so every Pairing, speaking `protocol` to its
+    /// Peers: as it would after an update to another release.
+    pub async fn restarted_speaking(self, protocol: server::PairingProtocol) -> Self {
+        let address = self.serving_address();
+        self.client
+            .mutate_setting(SettingMutation::ServingPort {
+                value: Some(address.port()),
+            })
+            .await
+            .expect("keep the Serving port across the restart");
+        let Self {
+            state,
+            channel,
+            config,
+            _config_root,
+            server,
+            provider,
+            client,
+            refusing_skills,
+            scripts,
+            handoffs,
+            decisions,
+            submissions,
+        } = self;
+        drop(client);
+        server.shutdown().await.expect("stop the Server");
+        let timings = ServerTimings {
+            shutdown_grace: Duration::from_millis(5),
+            pairing_protocol: protocol,
+            ..ServerTimings::default()
+        };
+        let server =
+            server::spawn_with_provider_and_timings(config.clone(), provider.clone(), timings)
+                .await
+                .expect("start the Server again");
+        let client = attach(&state, &channel).await;
+        let restarted = Self {
+            state,
+            channel,
+            config,
+            _config_root,
+            server,
+            provider,
+            client,
+            refusing_skills,
+            scripts,
+            handoffs,
+            decisions,
+            submissions,
+        };
+        assert_eq!(
+            restarted.serving_address(),
+            address,
+            "Serving again where the phone dials it"
+        );
+        restarted
+    }
+}
+
+/// A Client of the Server whose state is in `state`, on `channel`.
+async fn attach(state: &tempfile::TempDir, channel: &str) -> ManagedClient {
+    ManagedClient::connect(
+        ManagedClientConfig::new(state.path(), channel).expect("configure the Client"),
+    )
+    .await
+    .expect("attach the Client")
 }
 
 /// The public key of the PKCS #8 key `pkcs8`, as a Pairing pins it.
@@ -749,6 +818,7 @@ pub struct Phone {
     directory: tempfile::TempDir,
     key: Arc<TestKey>,
     timings: CoreTimings,
+    protocol: PairingProtocol,
     pub core: Arc<ThinClient>,
 }
 
@@ -759,13 +829,20 @@ impl Phone {
 
     /// A phone whose core waits as `timings` say.
     pub fn with(timings: CoreTimings) -> Self {
+        Self::speaking(timings, PairingProtocol::CURRENT)
+    }
+
+    /// A phone whose core waits as `timings` say, speaking `protocol` to
+    /// every Server: an app of another release.
+    pub fn speaking(timings: CoreTimings, protocol: PairingProtocol) -> Self {
         let directory = tempfile::tempdir().expect("create the phone's directory");
         let key = TestKey::new();
-        let core = open(&directory, &key, timings);
+        let core = open(&directory, &key, timings, protocol);
         Self {
             directory,
             key,
             timings,
+            protocol,
             core,
         }
     }
@@ -787,16 +864,34 @@ impl Phone {
             directory,
             key,
             timings,
+            protocol,
             core,
         } = self;
         drop(core);
         change(directory.path());
-        let core = open(&directory, &key, timings);
+        let core = open(&directory, &key, timings, protocol);
         Self {
             directory,
             key,
             timings,
+            protocol,
             core,
+        }
+    }
+
+    /// What the core says of its own accord once it says what `shown` looks
+    /// for.
+    pub async fn notice_until(&self, shown: impl Fn(&Option<Notice>) -> bool) -> Option<Notice> {
+        let (sender, mut heard) = watch::channel(None);
+        let _subscription = self.core.watch_notices(Arc::new(Heard(sender)));
+        let heard = timeout(
+            PROGRESS_DEADLINE,
+            heard.wait_for(|notice| notice.as_ref().is_some_and(&shown)),
+        )
+        .await;
+        match heard {
+            Ok(Ok(notice)) => notice.clone().expect("heard"),
+            _ => panic!("the core never said what was looked for"),
         }
     }
 
@@ -1255,11 +1350,13 @@ fn open(
     directory: &tempfile::TempDir,
     key: &Arc<TestKey>,
     timings: CoreTimings,
+    protocol: PairingProtocol,
 ) -> Arc<ThinClient> {
-    ThinClient::open_with(
+    ThinClient::open_speaking(
         directory.path().to_string_lossy().into_owned(),
         key.clone(),
         timings,
+        protocol,
     )
     .expect("open the core")
 }
@@ -1327,6 +1424,12 @@ impl ListingListener for Heard<Listing> {
 impl FrameListener for Heard<SessionFrame> {
     fn changed(&self, frame: SessionFrame) {
         self.0.send_replace(Some(frame));
+    }
+}
+
+impl NoticeListener for Heard<Option<Notice>> {
+    fn changed(&self, notice: Option<Notice>) {
+        self.0.send_replace(Some(notice));
     }
 }
 
