@@ -148,9 +148,24 @@ final class LivePairingTests: XCTestCase {
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the keyboard is up on arrival")
     let agent = app.descendants(matching: .any)["landing.agent"]
     XCTAssertTrue(agent.waitForExistence(timeout: 15), "the scratch Server says what a new Session would get")
+    XCTAssertFalse(app.segmentedControls["landing.worktree"].exists, "its Workspace is outside source control")
     attach(app, "The new-session screen on the scratch Server")
+
+    // The Workspace Picker lists the scratch Server's Workspaces through the live core, the Outlook's ticked.
+    app.buttons["landing.elsewhere"].tap()
+    XCTAssertTrue(app.navigationBars["Begin in"].waitForExistence(timeout: 10))
+    let ticked = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "workspace")).firstMatch
+    XCTAssertTrue(ticked.waitForExistence(timeout: 15), "the picker lists the Workspace")
+    XCTAssertTrue(ticked.isSelected, "the Outlook's Workspace is ticked")
+    attach(app, "The workspace picker on the scratch Server")
+    ticked.tap()
+    XCTAssertTrue(workspace.waitForExistence(timeout: 10), "chosen, back on the new-session screen")
+    XCTAssertEqual(workspace.label, "workspace")
+
     let prompt = "Reply with the single word begun, and nothing else. Use no tools."
-    app.descendants(matching: .any)["landing.composer"].typeText(prompt)
+    let field = app.descendants(matching: .any)["landing.composer"]
+    field.tap()
+    field.typeText(prompt)
     app.buttons["landing.send"].tap()
 
     XCTAssertTrue(app.descendants(matching: .any)["session.title"].waitForExistence(timeout: 10), "the screen turned")

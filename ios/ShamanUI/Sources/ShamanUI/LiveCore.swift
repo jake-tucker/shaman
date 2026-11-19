@@ -61,14 +61,26 @@ public final class LiveCore: Core {
     listened { send in client.watchLanding(listener: Forwarder(send)) }
   }
 
-  public func beginSession(_ text: String) throws(ActError) -> any OpenedSession {
+  public func beginSession(_ text: String, newWorktree: Bool) throws(ActError) -> any OpenedSession {
     do {
-      return LiveOpenedSession(try client.beginSession(text: text))
+      return LiveOpenedSession(try client.beginSession(text: text, newWorktree: newWorktree))
     } catch let error as ActError {
       throw error
     } catch {
       throw .Refused(message: "This phone could not do that: \(error)")
     }
+  }
+
+  public func workspaces() -> AsyncStream<WorkspacePicker> {
+    listened { send in client.watchWorkspaces(listener: Forwarder(send)) }
+  }
+
+  public func searchWorkspaces(_ text: String) {
+    client.searchWorkspaces(text: text)
+  }
+
+  public func chooseWorkspace(_ workspace: String) async throws(ActError) {
+    try await acted { try await client.chooseWorkspace(workspace: workspace) }
   }
 
   public func narrowListing(_ scope: String) async throws(ActError) {

@@ -45,6 +45,8 @@
       /// stands its Subsessions and the Sessions it acted on across Servers, the phone not paired with some of them;
       /// the home lab reads Unreachable here, though the workstation still reaches it.
       case sidekick
+      /// A named phone paired with a scratch Server alone, which holds no Sessions and lists no Workspaces.
+      case emptyServer
     }
 
     /// The Invite the fake reads as the workstation's. One holding "dead" reads as the workstation's too, and fails to
@@ -97,6 +99,7 @@
           [Self.workstation(named: "workstation")]
         case .several, .reaching, .unreachable, .sidekick:
           [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
+        case .emptyServer: [Self.scratch]
         }
       sidekick = scenario == .sidekick
       held = Mutex(remotes)
@@ -151,12 +154,18 @@
       landingListeners.stream(now: currentLanding())
     }
 
-    public func beginSession(_ text: String) throws(ActError) -> any OpenedSession {
+    public func beginSession(_ text: String, newWorktree: Bool) throws(ActError) -> any OpenedSession {
       let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !text.isEmpty else { throw .Invalid(message: "Write something to send") }
       let landing = currentLanding()
       guard let remote = currentRemote(), let workspace = landing.workspace else {
         throw .Invalid(message: landing.asks ?? "Pair with a server to begin a session there")
+      }
+      if let workingCopy = landing.workingCopy {
+        throw .Invalid(message: workingCopy)
+      }
+      if newWorktree && landing.worktree == nil {
+        throw .Invalid(message: "No new worktree can be made in this workspace")
       }
       let number = begunCount.add(1, ordering: .relaxed).newValue
       let session = "\(remote)-key/begun-\(number)"
@@ -164,7 +173,9 @@
       // A Session begun anew says nothing more of one left before.
       landingNote.withLock { $0 = nil }
       landingListeners.tell(currentLanding())
-      let opened = FakeOpenedSession(beginning: session, text: text, place: place, acts: acts) { [weak self] told in
+      let opened = FakeOpenedSession(
+        beginning: session, text: text, place: place, newWorktree: newWorktree, acts: acts
+      ) { [weak self] told in
         guard let self else { return }
         switch told {
         case .began(let text): list(session, begunWith: text, on: remote, in: workspace.name)
@@ -199,49 +210,81 @@
       guard let remote = currentRemote() else {
         return Landing(
           title: "New session", place: "", workspace: nil, asks: "Pair with a server to begin a session there",
-          agent: nil, unreachable: nil, note: note, placeholder: "Message", canSend: false,
+          elsewhere: nil, worktree: nil, workingCopy: nil, agent: nil, unreachable: nil, note: note,
+          placeholder: "Message", canSend: false,
           draft: FakeOpenedSession.landingDraft)
       }
       let named = held.withLock { $0.count > 1 }
       let workspace = turnedWorkspace.withLock { $0[remote] }
+      let listed = workspace.flatMap { FakeWorkspace.find(remote, $0) }
       let cut = unreachable.withLock { $0[remote] != nil }
+      let workingCopy = workspace != nil && listed.map({ if case .bare = $0.source { true } else { false } }) == true
       return Landing(
         title: "New session",
         place: ((named ? [remote] : []) + [workspace].compactMap { $0 }).joined(separator: " · "),
         workspace: workspace.map {
-          LandingWorkspace(
-            glyph: Self.workspaceGlyphs[$0], name: $0, origin: remote, description: Self.descriptions[$0])
+          LandingWorkspace(glyph: listed?.glyph, name: $0, origin: remote, description: listed?.description)
         },
-        asks: workspace == nil
-          ? "Choose a workspace\(named ? " on \(remote)" : "") to begin in: narrow the listing to one, or open a "
-            + "session there." : nil,
+        asks: workspace == nil ? "Choose a workspace\(named ? " on \(remote)" : "") to begin in." : nil,
+        elsewhere: "Begin somewhere else",
+        worktree: workspace == nil ? nil : listed?.worktree,
+        workingCopy: workingCopy ? FakeWorkspace.workingCopy : nil,
         agent: Self.agents[remote],
         unreachable: cut
           ? "\(named ? remote : "The server") is unreachable. Nothing begins there until it answers." : nil,
-        note: note, placeholder: "Message", canSend: workspace != nil && !cut,
+        note: note, placeholder: "Message", canSend: workspace != nil && !cut && !workingCopy,
         draft: FakeOpenedSession.landingDraft)
     }
 
-    /// The Icons of the fake's Workspaces, as the core resolves them from the Catalog.
-    private static let workspaceGlyphs = [
-      "shaman": "\u{f0238}", "dotfiles": "\u{f018d}", "home-assistant": "\u{f07d0}", "billing-api": "\u{f0070}",
-    ]
+    private let workspacesListeners = Listeners<WorkspacePicker>()
+    /// What the Workspace Picker is searched for, until it is opened again.
+    private let workspaceQuery = Mutex("")
+
+    public func workspaces() -> AsyncStream<WorkspacePicker> {
+      workspaceQuery.withLock { $0 = "" }
+      return workspacesListeners.stream(now: currentWorkspaces())
+    }
+
+    public func searchWorkspaces(_ text: String) {
+      workspaceQuery.withLock { $0 = text }
+      workspacesListeners.tell(currentWorkspaces())
+    }
+
+    /// Turns the Outlook toward the Workspace a picker row carries, after a moment, leaving the listing's scope.
+    public func chooseWorkspace(_ workspace: String) async throws(ActError) {
+      try? await Task.sleep(for: .milliseconds(150))
+      guard let (remote, name) = FakeWorkspace.named(by: workspace), let listed = FakeWorkspace.find(remote, name),
+        held.withLock({ $0.contains { $0.name == remote } })
+      else {
+        throw .Gone(message: "That workspace is no longer listed")
+      }
+      if let unavailable = listed.unavailable {
+        throw .Invalid(message: unavailable)
+      }
+      turned.withLock { $0 = remote }
+      turnedWorkspace.withLock { $0[remote] = name }
+      turnedOutlook()
+    }
+
+    /// The Workspace Picker as the core would show it now.
+    private func currentWorkspaces() -> WorkspacePicker {
+      let remote = currentRemote()
+      return FakeWorkspace.picker(
+        on: held.withLock { $0.map(\.name) }, unanswered: unanswered,
+        unreachable: Set(unreachable.withLock { $0.keys }),
+        chosen: remote.flatMap { remote in turnedWorkspace.withLock { $0[remote] }.map { (remote, $0) } },
+        query: workspaceQuery.withLock { $0 })
+    }
 
     /// The Agent each of the fake's Remotes says a new Session would get: the home lab's has no Provider able to
     /// serve, and the laptop is too old to say.
     private static let agents = ["workstation": "Claude · Fable 5.2 · high", "homelab": "Agent unavailable"]
 
-    /// The Descriptions of the fake's Workspaces.
-    private static let descriptions = [
-      "shaman": "A terminal client for coding agents across Codex, Copilot and Claude.",
-      "dotfiles": "Shell, editor and terminal configuration.",
-      "home-assistant": "The house's automations and dashboards.",
-    ]
-
-    /// Tells the Outlook's and the Landing's listeners where the Outlook stands now.
+    /// Tells the Outlook's, the Landing's and the Workspace Picker's listeners where the Outlook stands now.
     private func turnedOutlook() {
       outlookListeners.tell(currentOutlook())
       landingListeners.tell(currentLanding())
+      workspacesListeners.tell(currentWorkspaces())
     }
 
     public func openSession(_ session: String) -> any OpenedSession {
@@ -358,6 +401,7 @@
       }
       listingListeners.tell(currentListing())
       landingListeners.tell(currentLanding())
+      workspacesListeners.tell(currentWorkspaces())
     }
 
     public func cameToFront() {}
@@ -519,6 +563,11 @@
           WayRow(address: "100.64.0.7:7791", state: .notAnswering, words: "not answering"),
         ])
     }
+
+    /// The scratch Server of `emptyServer`, which holds nothing.
+    private static let scratch = ServerRow(
+      name: "scratch", fingerprint: "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9",
+      ways: [WayRow(address: "192.168.1.50:7791", state: .answering, words: "answering")])
 
     private static let laptop = ServerRow(
       name: "laptop", fingerprint: "5d1e8f0a2c4b6d8e0f1a3c5e7b9d2f4a6c8e0b1d3f5a7c9e2b4d6f8a0c1e3b5d",

@@ -116,7 +116,12 @@ and one holding "unanswered" is never answered, so it may have begun, which the 
 when tried again. In `paired` no Workspace is remembered, so the screen asks for one and send is disabled;
 in `unreachable`, opening `homelab-key/2` turns the Outlook toward the home lab, where nothing begins until it answers.
 The workstation says a new Session would get "Claude · Fable 5.2 · high", the home lab that none would serve, and the
-laptop says nothing, as a Server too old to say does.
+laptop says nothing, as a Server too old to say does. "Begin somewhere else" pushes the Workspace Picker over
+`FakeWorkspace.canned`: the workstation's `shaman` and `dotfiles` are Repositories offering the main Worktree or a new
+one, which a Prompt sent there has made, its bar reading "Creating worktree", before "Starting"; `notes` is outside
+source control, `mirror.git` a bare Repository, which offers no send, and `photo-archive` cannot be read. In `reaching`
+the home lab's Workspaces are "Loading workspaces…", in `unreachable` its header says it is Unreachable, and
+`emptyServer` is a phone paired with a scratch Server alone, which holds no Sessions and lists "No workspaces".
 
 ```sh
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake composing --compose
@@ -149,8 +154,8 @@ fails as a dead Invite or one no way answered does.
 from an empty database, Serving on the Mac's addresses, makes an Invite and launches the built app with it, in a core
 directory and under a key of its own, for a person to press Pair; with `--test` it runs `LivePairingTests` instead,
 which pairs, checks where the app lands and what it lists, opens a Session the script began there and reads it live,
-sends a Prompt to it, reads its title's menu and its search, begins a Session of its own where the Outlook stands and
-finds it listed, checks that the Pairing survives a relaunch, has the script
+sends a Prompt to it, reads its title's menu and its search, reads the Workspace Picker and chooses its Workspace,
+begins a Session of its own where the Outlook stands and finds it listed, checks that the Pairing survives a relaunch, has the script
 stop the Server and sees it read Unreachable, has it started again and sees it answer, and stops the Server. That Session runs on whichever Agent the scratch Server would give it, asked for one word; where that Agent is
 not signed in its Turn fails, which reads as well. `--stop` stops it otherwise. Run it before merging a change to
 pairing or transport; never in CI, where `LivePairingTests` skips. By hand, `--stop` while the app runs has the Remote

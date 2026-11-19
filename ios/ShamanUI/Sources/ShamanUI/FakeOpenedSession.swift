@@ -189,16 +189,19 @@
     private let place: String
     /// Told what becomes of a Session being begun that the fake core keeps.
     private let told: (@Sendable (Told) -> Void)?
+    /// Whether a Session being begun waits on a new Worktree its Server has yet to make.
+    private let preparing = Atomic<Bool>(false)
 
     /// The key the Landing's draft is kept under, as the core names it.
     static let landingDraft = "new-session"
 
     /// A Session being begun as `session` with the Prompt `text` in the Workspace `place` names: the Provisional
     /// Session at once, and a moment later the Session the fake's Server made, which `began` is told of so it is
-    /// listed. A Prompt holding "refuse" is refused the first time it is asked, and one holding "unanswered" is never
-    /// answered, so it may have begun; each begins when asked again.
+    /// listed. In a `newWorktree` the bar reads "Creating worktree" a moment first. A Prompt holding "refuse" is
+    /// refused the first time it is asked, and one holding "unanswered" is never answered, so it may have begun; each
+    /// begins when asked again.
     init(
-      beginning session: String, text: String, place: String, acts: FakeActs,
+      beginning session: String, text: String, place: String, newWorktree: Bool = false, acts: FakeActs,
       told: @escaping @Sendable (Told) -> Void
     ) {
       self.session = session
@@ -209,8 +212,9 @@
       self.acts = acts
       self.place = place
       self.told = told
+      preparing.store(newWorktree, ordering: .relaxed)
       var beginning = State(
-        frame: Self.provisionalFrame(text, place: place, answered: false),
+        frame: Self.provisionalFrame(text, place: place, answered: false, preparing: newWorktree),
         items: Self.provisionalItems(Provisional(text: text)))
       beginning.provisional = Provisional(text: text)
       state = Mutex(beginning)
@@ -318,11 +322,18 @@
     /// Asks the fake's Server to begin the Session with the Prompt `text`, `again` where it was refused or unanswered
     /// before, answering once it has.
     private func asking(_ text: String, again: Bool) async {
+      let preparing = preparing.load(ordering: .relaxed)
       changeState { state in
         state.provisional = Provisional(text: text)
-        state.frame = Self.provisionalFrame(text, place: place, answered: false)
+        state.frame = Self.provisionalFrame(text, place: place, answered: false, preparing: preparing)
       }
       change { $0 = Self.provisionalItems(Provisional(text: text)) }
+      if preparing {
+        // The new Worktree is made first, which takes a moment of its own.
+        try? await Task.sleep(for: .milliseconds(2_000))
+        self.preparing.store(false, ordering: .relaxed)
+        changeFrame { $0 = Self.provisionalFrame(text, place: place, answered: false, preparing: false) }
+      }
       // As long as a send to a fake Session takes, so a test sees it starting.
       try? await Task.sleep(for: .milliseconds(2_500))
       let lowered = text.lowercased()
@@ -342,7 +353,7 @@
           self.left(text, outcome)
           return
         }
-        changeFrame { $0 = Self.provisionalFrame(text, place: place, answered: true) }
+        changeFrame { $0 = Self.provisionalFrame(text, place: place, answered: true, preparing: false) }
         change { $0 = Self.provisionalItems(Provisional(text: text, outcome: outcome)) }
         return
       }
@@ -363,15 +374,21 @@
       }
     }
 
-    /// What frames a Session being begun with the Prompt `text`: its first line as the Title, and "Starting" with no
-    /// time and no Stop until it is begun or, `answered` otherwise, a composer whose Prompt is written instead.
-    private static func provisionalFrame(_ text: String, place: String, answered: Bool) -> SessionFrame {
+    /// What frames a Session being begun with the Prompt `text`: its first line as the Title, and "Creating worktree"
+    /// while `preparing` one and "Starting" after, with no time and no Stop, until it is begun or, `answered`
+    /// otherwise, a composer whose Prompt is written instead.
+    private static func provisionalFrame(_ text: String, place: String, answered: Bool, preparing: Bool)
+      -> SessionFrame
+    {
       let title =
         text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
       return SessionFrame(
         title: title, place: place, gone: nil,
         bar: answered
-          ? nil : Bar(kind: .working, words: "Starting", since: nil, watching: nil, stop: nil, review: nil),
+          ? nil
+          : Bar(
+            kind: .working, words: preparing ? "Creating worktree" : "Starting", since: nil, watching: nil, stop: nil,
+            review: nil),
         composer: Composer(
           placeholder: answered ? "Write a new prompt instead" : "Message", queue: nil, unreachable: nil, note: nil,
           canSend: answered),

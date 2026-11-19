@@ -40,12 +40,23 @@ public protocol Core: AnyObject, Sendable {
   /// What the Landing shows, where the Outlook stands, now and on every change: the screen a Session is begun from.
   func landing() -> AsyncStream<Landing>
 
-  /// Begins a Session with the Prompt `text` where the Outlook stands, on its Workspace's main Worktree, under an
-  /// identity the core chooses, and opens it at once as the Provisional Session the Landing's screen turns into: its
-  /// Server's answer, the Session made or why it was refused, arrives by the frame and the conversation. The beginning
-  /// goes on whatever becomes of the screen. Refused at once, in the core's words, where nothing is written or there
-  /// is nowhere to begin.
-  func beginSession(_ text: String) throws(ActError) -> any OpenedSession
+  /// Begins a Session with the Prompt `text` where the Outlook stands, on its Workspace's main Worktree or, where
+  /// `newWorktree`, in a new one its Server makes first, under an identity the core chooses, and opens it at once as the
+  /// Provisional Session the Landing's screen turns into: its Server's answer, the Session made or why it was refused,
+  /// arrives by the frame and the conversation. The beginning goes on whatever becomes of the screen. Refused at once,
+  /// in the core's words, where nothing is written or there is nowhere to begin.
+  func beginSession(_ text: String, newWorktree: Bool) throws(ActError) -> any OpenedSession
+
+  /// What the Workspace Picker shows, opened unsearched, now and on every change: every Remote's Workspaces, the
+  /// Outlook's ticked.
+  func workspaces() -> AsyncStream<WorkspacePicker>
+
+  /// Searches the Workspace Picker by name; an empty text searches for nothing.
+  func searchWorkspaces(_ text: String)
+
+  /// Turns the Outlook toward the Workspace a row of the Workspace Picker carries, so the next Session begins there,
+  /// leaving the listing's scope where it was. Refused where its Server cannot read it.
+  func chooseWorkspace(_ workspace: String) async throws(ActError)
 
   /// Narrows the listing to the scope a choice of its title's menu carries. A Remote or a Workspace chosen turns the
   /// Outlook toward it; Everywhere turns nothing.

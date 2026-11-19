@@ -1226,4 +1226,117 @@ private final class HeldTime: BackgroundTasks {
     begun.close()
     #expect(core.draft(for: FakeOpenedSession.landingDraft).text == "Refuse this one")
   }
+
+  @Test func aNewWorktreeChosenIsMadeBeforeTheSessionStarts() async throws {
+    let core = FakeCore(.composing)
+    let model = NewSessionModel(core: core)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.landing?.worktree != nil }
+    #expect(model.landing?.worktree?.main == "On main")
+    #expect(model.landing?.worktree?.new == "In a new worktree")
+    #expect(!model.newWorktree, "the main Worktree as the screen opens")
+    model.newWorktree = true
+    model.text = "Trim the quiet zone"
+    model.send()
+    let begun = try #require(model.begun)
+    let frames = Task { await begun.follow() }
+    defer { frames.cancel() }
+    for _ in 0..<200 where begun.frame == nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(begun.frame?.bar?.words == "Creating worktree")
+  }
+
+  @Test func turningToAnotherWorkspaceStartsTheWorktreeChoiceOnTheMainOneAgain() async throws {
+    let core = FakeCore(.composing)
+    let model = NewSessionModel(core: core)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.landing?.worktree != nil }
+    model.newWorktree = true
+    let picker = model.picker()
+    #expect(
+      await picker.choose(
+        WorkspaceRow(
+          workspace: "workspace/workstation/dotfiles", glyph: nil, name: "dotfiles", description: nil, chosen: false,
+          unavailable: nil)))
+    try await until(model) { $0.landing?.workspace?.name == "dotfiles" }
+    #expect(!model.newWorktree)
+  }
+
+  @Test func aBareRepositoryOffersNoWorktreeAndNoSend() async throws {
+    let core = FakeCore(.composing)
+    let model = NewSessionModel(core: core)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.landing != nil }
+    try await core.chooseWorkspace("workspace/workstation/mirror.git")
+    try await until(model) { $0.landing?.workingCopy != nil }
+    #expect(model.landing?.worktree == nil)
+    #expect(model.landing?.canSend == false)
+    model.text = "Mirror the tags"
+    model.send()
+    #expect(model.begun == nil)
+  }
+}
+
+@Suite @MainActor struct WorkspacePickerModelTests {
+  private func until(_ model: WorkspacePickerModel, _ shown: @MainActor (WorkspacePickerModel) -> Bool) async throws {
+    for _ in 0..<200 where !shown(model) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(shown(model))
+  }
+
+  private func row(_ model: WorkspacePickerModel, _ workspace: String) throws -> WorkspaceRow {
+    try #require(model.picker?.sections.flatMap(\.rows).first { $0.workspace == workspace })
+  }
+
+  @Test func everyRemotesWorkspacesStandUnderItsHeaderAndChoosingOneTicksIt() async throws {
+    let core = FakeCore(.several)
+    let model = WorkspacePickerModel(core: core)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.picker != nil }
+    #expect(model.picker?.title == "Begin in")
+    #expect(model.picker?.sections.map(\.header) == ["workstation", "laptop", "homelab"])
+    let billing = try row(model, "workspace/laptop/billing-api")
+    #expect(!billing.chosen)
+    #expect(await model.choose(billing))
+    try await until(model) { (try? self.row($0, "workspace/laptop/billing-api"))?.chosen == true }
+    var outlooks = core.outlook().makeAsyncIterator()
+    let outlook = await outlooks.next()
+    guard case .remote(let name, let beginsIn) = outlook else {
+      Issue.record("the Outlook stands nowhere")
+      return
+    }
+    #expect(name == "laptop")
+    #expect(beginsIn.place == "laptop · billing-api")
+  }
+
+  @Test func aWorkspaceItsServerCannotReadIsNotChosen() async throws {
+    let model = WorkspacePickerModel(core: FakeCore(.paired))
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.picker != nil }
+    let archive = try row(model, "workspace/workstation/photo-archive")
+    #expect(archive.unavailable == "Unavailable: its directory is gone")
+    #expect(await model.choose(archive) == false)
+    #expect(model.banner == nil)
+  }
+
+  @Test func aSearchIsHandedToTheCoreWhichSaysWhereItFindsNothing() async throws {
+    let model = WorkspacePickerModel(core: FakeCore(.several))
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.picker != nil }
+    model.search("relay")
+    try await until(model) { $0.picker?.sections.count == 1 }
+    #expect(model.picker?.sections.first?.rows.map(\.name) == ["relay-infra"])
+    model.search("kernel")
+    try await until(model) { $0.picker?.empty != nil }
+    #expect(model.picker?.empty == "No workspaces found")
+  }
+
 }

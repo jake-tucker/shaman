@@ -5,8 +5,10 @@ import SwiftUI
 /// The navigation bar reads "New session" over where it will begin, the middle names the Workspace, and the composer
 /// at its foot is up with the keyboard on arrival. A first Prompt turns this same screen into the Session: the
 /// Provisional Session at once, and the real one in its place once its Server answers, back still leading to the
-/// listing. Where nothing can begin, as on an Unreachable Remote or where no Workspace is remembered, the composer
-/// takes a draft and send is disabled.
+/// listing. "Begin somewhere else" pushes the Workspace Picker over it, and where the Workspace is a Repository the
+/// Worktree choice offers its main Worktree, chosen as the screen opens, or a new one. Where nothing can begin, as on
+/// an Unreachable Remote, a bare Repository or where no Workspace is remembered, the composer takes a draft and send
+/// is disabled.
 struct NewSessionScreen: View {
   let model: NewSessionModel
   let stack: SessionStack
@@ -24,11 +26,13 @@ struct NewSessionScreen: View {
 private struct LandingView: View {
   @Bindable var model: NewSessionModel
   @FocusState private var writing: Bool
+  /// Whether the Workspace Picker is pushed over the screen.
+  @State private var picking = false
 
   var body: some View {
     ScrollView {
       if let landing = model.landing {
-        LandingMiddle(landing: landing)
+        LandingMiddle(landing: landing, model: model) { picking = true }
           .padding(.horizontal, 24)
           .padding(.vertical, 28)
           .frame(maxWidth: .infinity)
@@ -70,6 +74,9 @@ private struct LandingView: View {
         .accessibilityElement(children: .contain)
       }
     }
+    .navigationDestination(isPresented: $picking) {
+      WorkspacePickerScreen(model: model.picker())
+    }
     .task { await model.follow() }
     // The keyboard is up on arrival: beginning is writing.
     .onAppear { writing = true }
@@ -77,10 +84,13 @@ private struct LandingView: View {
 }
 
 /// The middle of the Landing: the Workspace the Session will begin in, by its Icon, name, Origin and Description, or,
-/// where none is remembered for the Outlook's Remote, the line asking for one; and the Agent a Session begun here would
-/// get, where its Server says.
+/// where none is remembered for the Outlook's Remote, the line asking for one; the offer to begin somewhere else; the
+/// Worktree choice, or why a bare Repository offers none; and the Agent a Session begun here would get, where its
+/// Server says.
 private struct LandingMiddle: View {
   let landing: Landing
+  @Bindable var model: NewSessionModel
+  let elsewhere: () -> Void
 
   var body: some View {
     VStack(spacing: 10) {
@@ -116,6 +126,56 @@ private struct LandingMiddle: View {
             .accessibilityIdentifier("landing.description")
         }
       }
+      if let asks = landing.asks {
+        Image(systemName: "questionmark.folder")
+          .font(.largeTitle)
+          .foregroundStyle(.secondary)
+          .accessibilityHidden(true)
+        Text(verbatim: asks)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+          .accessibilityIdentifier("landing.asks")
+      }
+      if let offer = landing.elsewhere {
+        Button(action: elsewhere) {
+          Text(verbatim: offer)
+            .font(.callout)
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .padding(.top, 4)
+        .accessibilityIdentifier("landing.elsewhere")
+      }
+      if let worktree = landing.worktree {
+        Picker(selection: $model.newWorktree) {
+          Text(verbatim: worktree.main)
+            .tag(false)
+            .accessibilityIdentifier("landing.worktree.main")
+          Text(verbatim: worktree.new)
+            .tag(true)
+            .accessibilityIdentifier("landing.worktree.new")
+        } label: {
+          Text("Worktree")
+        }
+        .pickerStyle(.segmented)
+        .padding(.top, 8)
+        .accessibilityIdentifier("landing.worktree")
+      }
+      if let workingCopy = landing.workingCopy {
+        Label {
+          Text(verbatim: workingCopy)
+        } icon: {
+          Image(systemName: "exclamationmark.triangle")
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.top, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("landing.workingCopy")
+      }
       // Shown, not chosen: what the Server says a Session begun here would get.
       if let agent = landing.agent {
         Label {
@@ -128,18 +188,6 @@ private struct LandingMiddle: View {
         .padding(.top, 8)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("landing.agent")
-      }
-      if let asks = landing.asks {
-        Image(systemName: "questionmark.folder")
-          .font(.largeTitle)
-          .foregroundStyle(.secondary)
-          .accessibilityHidden(true)
-        Text(verbatim: asks)
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true)
-          .accessibilityIdentifier("landing.asks")
       }
     }
   }
@@ -224,6 +272,9 @@ final class NewSessionModel {
     }
   }
   @ObservationIgnored private var draftVersion: UInt64 = 0
+  /// Whether the Session is to begin in a new Worktree rather than on the main one: the main one each time the screen
+  /// opens, and again each time it turns to another Workspace.
+  var newWorktree = false
   /// What the core refused of the input, shown beside it.
   private(set) var invalid: String?
   /// Why beginning failed otherwise, in the core's words, shown over the screen.
@@ -241,6 +292,9 @@ final class NewSessionModel {
     defer { drafts?.cancel() }
     for await landing in core.landing() {
       let first = self.landing == nil
+      if !Self.sameWorkspace(self.landing, landing) || landing.worktree == nil {
+        newWorktree = false
+      }
       self.landing = landing
       if first {
         take(core.draft(for: landing.draft))
@@ -248,6 +302,16 @@ final class NewSessionModel {
         drafts = Task { [weak self] in await self?.followDraft(key) }
       }
     }
+  }
+
+  /// Whether `was` and `now` begin in the same Workspace of the same Remote.
+  private static func sameWorkspace(_ was: Landing?, _ now: Landing) -> Bool {
+    was?.workspace?.name == now.workspace?.name && was?.workspace?.origin == now.workspace?.origin
+  }
+
+  /// The Workspace Picker "Begin somewhere else" pushes.
+  func picker() -> WorkspacePickerModel {
+    WorkspacePickerModel(core: core)
   }
 
   private func followDraft(_ key: String) async {
@@ -270,7 +334,7 @@ final class NewSessionModel {
     let sent = text
     guard !sent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
     do {
-      let opened = try core.beginSession(sent)
+      let opened = try core.beginSession(sent, newWorktree: newWorktree && landing.worktree != nil)
       text = ""
       let model = SessionModel(core: core, route: SessionRoute(session: opened.reference), opened: opened)
       adopted?(model)

@@ -49,6 +49,12 @@ extension Forwarder: LandingListener where Model == Landing {
   }
 }
 
+extension Forwarder: WorkspacesListener where Model == WorkspacePicker {
+  func changed(picker: WorkspacePicker) {
+    send(picker)
+  }
+}
+
 extension Forwarder: ListingListener where Model == Listing {
   func changed(listing: Listing) {
     send(listing)
