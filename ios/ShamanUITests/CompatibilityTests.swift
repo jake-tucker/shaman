@@ -132,20 +132,24 @@ final class CompatibilityTests: XCTestCase {
   @MainActor
   func testANoticeOutlastsASheetOverItAndGoesOnceItHasStoodOnScreen() {
     let app = XCUIApplication()
-    app.launchArguments = ["--fake", "releases", "--forget-scene", "--notice-stands", "5"]
+    app.launchArguments = ["--fake", "releases", "--forget-scene", "--notice-stands", "12"]
     app.launch()
-    let servers = app.buttons["home.servers"]
-    XCTAssertTrue(servers.waitForExistence(timeout: 10))
-    servers.tap()
-    XCTAssertTrue(app.navigationBars["Servers & device"].waitForExistence(timeout: 10))
-    // Longer than it stands, beneath the sheet.
-    sleep(7)
-    app.swipeDown(velocity: .fast)
     XCTAssertTrue(app.navigationBars["Everywhere"].waitForExistence(timeout: 10))
+    // The slim row's sheet shows no notice of its own, so it hides the listing's.
+    scrolled(to: slim("Update Shaman on homelab", in: app), in: app).tap()
+    let explanation = app.staticTexts["unreachable.explanation"]
+    XCTAssertTrue(explanation.waitForExistence(timeout: 10))
+    // Longer than it stands, beneath the sheet.
+    sleep(14)
+    // Dragged down from its top, the half-height sheet goes.
+    let top = explanation.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
+      .withOffset(CGVector(dx: 0, dy: -80))
+    top.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+    XCTAssertTrue(explanation.waitForNonExistence(timeout: 10), "the sheet went")
     let banner = notice(app)
     XCTAssertTrue(banner.exists, "not seen while the sheet hid it")
     attach(app, "The notice still standing once the sheet goes")
-    XCTAssertTrue(banner.waitForNonExistence(timeout: 10), "and gone once it has stood on screen")
+    XCTAssertTrue(banner.waitForNonExistence(timeout: 20), "and gone once it has stood on screen")
   }
 
   @MainActor

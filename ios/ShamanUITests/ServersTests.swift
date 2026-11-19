@@ -155,7 +155,7 @@ final class ServersTests: XCTestCase {
 
   @MainActor
   func testAServerThatRemovesThisPhoneTurnsTheOutlookToTheRemoteTurnedTowardBefore() {
-    let app = launched("removedThere", ["--removed-after", "4"])
+    let app = launched("removedThere", ["--removed-after", "8"])
     let beginsIn = element("home.beginsIn", in: app)
     XCTAssertTrue(beginsIn.waitForExistence(timeout: 10))
     XCTAssertEqual(beginsIn.label, "New sessions begin in workstation")
@@ -170,7 +170,7 @@ final class ServersTests: XCTestCase {
 
   @MainActor
   func testAPhoneWhoseOneServerRemovesItOffersPairingAloneSayingWhy() {
-    let app = launched("lastRemovedThere", ["--removed-after", "3"])
+    let app = launched("lastRemovedThere", ["--removed-after", "8"])
     XCTAssertTrue(app.buttons["home.servers"].waitForExistence(timeout: 10))
 
     XCTAssertTrue(app.buttons["pairing.paste"].waitForExistence(timeout: 15))
