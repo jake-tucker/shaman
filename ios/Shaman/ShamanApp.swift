@@ -16,7 +16,8 @@ struct ShamanApp: App {
           } else {
             RootScreen(
               core: core, appVersion: Self.version, invite: Launch.invite, opening: Launch.opening,
-              composing: Launch.composing, forgetting: Launch.forgettingScene
+              composing: Launch.composing, forgetting: Launch.forgettingScene,
+              noticeStands: Launch.noticeStands ?? .seconds(8)
             )
             .environment(\.interventionArming, Launch.arming ?? EnvironmentValues().interventionArming)
           }
@@ -68,6 +69,16 @@ struct ShamanApp: App {
     static var arming: Duration? {
       let arguments = ProcessInfo.processInfo.arguments
       guard let flag = arguments.firstIndex(of: "--arming-moment"), arguments.indices.contains(flag + 1),
+        let seconds = Double(arguments[flag + 1]), (0...3_600).contains(seconds)
+      else { return nil }
+      return .milliseconds(Int(seconds * 1_000))
+    }
+
+    /// How long `--notice-stands <seconds>` asks a notice to stand on screen before it goes by itself, so a UI test
+    /// can see it outlast a sheet over it and then go: up to an hour, and the usual while for anything else.
+    static var noticeStands: Duration? {
+      let arguments = ProcessInfo.processInfo.arguments
+      guard let flag = arguments.firstIndex(of: "--notice-stands"), arguments.indices.contains(flag + 1),
         let seconds = Double(arguments[flag + 1]), (0...3_600).contains(seconds)
       else { return nil }
       return .milliseconds(Int(seconds * 1_000))

@@ -61,6 +61,7 @@ struct SessionScreen: View {
           .accessibilityHint("Dismisses this")
       }
     }
+    .noticeBanner(covered: model.presented != nil || showingTree)
     .onChange(of: model.popped) {
       if model.popped {
         dismiss()
@@ -364,6 +365,19 @@ private struct ItemView: View {
 
   var body: some View {
     switch item.kind {
+    case .unread(let words):
+      // Centred in what the conversation will fill, once it can be read.
+      VStack(spacing: 12) {
+        Image(systemName: "arrow.down.app")
+          .font(.largeTitle)
+          .accessibilityHidden(true)
+        Text(verbatim: words)
+          .multilineTextAlignment(.center)
+          .accessibilityIdentifier("session.unread")
+      }
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 32)
+      .containerRelativeFrame([.horizontal, .vertical])
     case .loading(let words):
       // Centred in what the conversation will fill.
       ProgressView()
@@ -570,11 +584,12 @@ private struct SessionFoot: View {
   var body: some View {
     if let frame = model.frame, frame.bar != nil || frame.composer != nil {
       VStack(spacing: 8) {
+        // Unreachable, or across a gap only updating one side bridges: the core's words say which.
         if let line = frame.composer?.unreachable {
           Label {
             Text(verbatim: line)
           } icon: {
-            Image(systemName: "wifi.slash")
+            Image(systemName: "exclamationmark.circle")
           }
           .font(.caption)
           .foregroundStyle(.secondary)
@@ -885,11 +900,15 @@ struct Conversation: Equatable {
     order.compactMap { items[$0] }
   }
 
-  /// Whether the Session has been read: it holds items, and no loading mark stands among them.
+  /// Whether the Session has been read: it holds items, and no loading mark, nor why it cannot be read, stands among
+  /// them.
   var read: Bool {
     !order.isEmpty
       && !shown.contains {
-        if case .loading = $0.kind { true } else { false }
+        switch $0.kind {
+        case .loading, .unread: true
+        default: false
+        }
       }
   }
 

@@ -49,6 +49,11 @@ final class CompatibilityTests: XCTestCase {
   func testRemotesTooFarApartStandWhereUnreachableRowsWouldNamingTheSideToUpdateAndTryingAgainSaysSo() {
     let app = launched("releases")
     XCTAssertTrue(app.navigationBars["Everywhere"].waitForExistence(timeout: 10))
+    // The note that the workstation is newer, tapped away so the listing holds still beneath it.
+    let said = notice(app)
+    XCTAssertTrue(said.waitForExistence(timeout: 10))
+    said.tap()
+    XCTAssertTrue(said.waitForNonExistence(timeout: 10))
     let laptop = app.descendants(matching: .any).matching(identifier: "listing.active")
       .matching(NSPredicate(format: "label CONTAINS %@", "laptop · ")).firstMatch
     XCTAssertTrue(laptop.waitForExistence(timeout: 10), "its rows stay")
@@ -84,15 +89,23 @@ final class CompatibilityTests: XCTestCase {
     attach(app, "The home lab's sheet saying to update Shaman there")
   }
 
+  /// What the core says of its own accord, wherever it stands.
   @MainActor
-  func testAServerNewerThanTheAppIsSaidOnceInTheBanner() {
+  private func notice(_ app: XCUIApplication) -> XCUIElement {
+    app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "runs a newer Shaman")).firstMatch
+  }
+
+  @MainActor
+  func testAServerNewerThanTheAppIsSaidOnceInABannerBeneathTheBar() {
     let app = launched("releases")
     XCTAssertTrue(app.navigationBars["Everywhere"].waitForExistence(timeout: 10))
-    let banner = app.descendants(matching: .any).matching(identifier: "banner")
-      .matching(NSPredicate(format: "label CONTAINS %@", "runs a newer Shaman")).firstMatch
+    let banner = notice(app)
     XCTAssertTrue(banner.waitForExistence(timeout: 10))
     XCTAssertEqual(banner.label, "workstation runs a newer Shaman; some things may not show")
-    attach(app, "The workstation said once to be newer")
+    let title = app.buttons["listing.scope"]
+    XCTAssertTrue(title.isHittable, "the title's menu stands clear of it")
+    XCTAssertGreaterThanOrEqual(banner.frame.minY, app.navigationBars.firstMatch.frame.maxY - 1, "beneath the bar")
+    attach(app, "The workstation said once to be newer, beneath the bar")
 
     banner.tap()
     XCTAssertTrue(banner.waitForNonExistence(timeout: 10), "tapped away")
@@ -104,5 +117,41 @@ final class CompatibilityTests: XCTestCase {
     app.navigationBars.buttons.firstMatch.tap()
     XCTAssertTrue(app.navigationBars["Everywhere"].waitForExistence(timeout: 10))
     XCTAssertFalse(banner.exists, "never said again")
+  }
+
+  @MainActor
+  func testANoticeOutlastsASheetOverItAndGoesOnceItHasStoodOnScreen() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--fake", "releases", "--forget-scene", "--notice-stands", "5"]
+    app.launch()
+    let servers = app.buttons["home.servers"]
+    XCTAssertTrue(servers.waitForExistence(timeout: 10))
+    servers.tap()
+    XCTAssertTrue(app.navigationBars["Servers & device"].waitForExistence(timeout: 10))
+    // Longer than it stands, beneath the sheet.
+    sleep(7)
+    app.swipeDown(velocity: .fast)
+    XCTAssertTrue(app.navigationBars["Everywhere"].waitForExistence(timeout: 10))
+    let banner = notice(app)
+    XCTAssertTrue(banner.exists, "not seen while the sheet hid it")
+    attach(app, "The notice still standing once the sheet goes")
+    XCTAssertTrue(banner.waitForNonExistence(timeout: 10), "and gone once it has stood on screen")
+  }
+
+  @MainActor
+  func testASessionAcrossTheGapSaysWhyItCannotBeReadAndTakesNothing() {
+    let app = launched("releases")
+    XCTAssertTrue(app.navigationBars["Everywhere"].waitForExistence(timeout: 10))
+    let laptop = app.descendants(matching: .any).matching(identifier: "listing.active")
+      .matching(NSPredicate(format: "label CONTAINS %@", "laptop · design-system")).firstMatch
+    XCTAssertTrue(laptop.waitForExistence(timeout: 10))
+    laptop.tap()
+    let unread = app.staticTexts["session.unread"]
+    XCTAssertTrue(unread.waitForExistence(timeout: 10))
+    XCTAssertTrue(unread.label.contains("laptop no longer works with an app as old as this one"), unread.label)
+    let line = app.descendants(matching: .any)["session.unreachable"]
+    XCTAssertTrue(line.waitForExistence(timeout: 10))
+    XCTAssertTrue(line.label.contains("update the app. Nothing sent goes anywhere until then"), line.label)
+    attach(app, "A session on the laptop, which cannot be read until the app is updated")
   }
 }

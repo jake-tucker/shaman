@@ -76,6 +76,7 @@ private struct LandingView: View {
     }
     .navigationDestination(isPresented: $picking) {
       WorkspacePickerScreen(model: model.picker())
+        .noticeBanner()
     }
     .task { await model.follow() }
     // The keyboard is up on arrival: beginning is writing.

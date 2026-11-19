@@ -83,6 +83,7 @@ struct ListingScreen: View {
             .accessibilityHint("Dismisses this")
         }
       }
+      .noticeBanner(covered: sheet != nil)
       .toolbar {
         ToolbarItem(placement: .principal) {
           if let listing = model.listing {
@@ -97,10 +98,13 @@ struct ListingScreen: View {
           SessionScreen(model: stack.model(for: route), stack: stack)
         case .work(let route, let turn):
           TurnWorkScreen(session: stack.model(for: route), turn: turn)
+            .noticeBanner()
         case .detail(let route, let activity):
           ActivityDetailScreen(session: stack.model(for: route), activity: activity)
+            .noticeBanner()
         case .landing(let route):
           NewSessionScreen(model: stack.landing(for: route), stack: stack)
+            .noticeBanner()
         }
       }
     }

@@ -90,7 +90,10 @@ often it is tried; and in `unreadTree` and `unreadableTree` the `paired` phone's
 `/12`'s sheet stands at "Loading" or says why. In `releases` the `several` phone pairs across releases: the laptop no
 longer works with an app as old as this one and the home lab's Shaman is too old for the app, so each stands at the
 listing's foot where an Unreachable row would, naming the side to update, and trying either again is refused saying so;
-and the workstation is newer, which a quiet banner says once, at launch, until it is tapped away or has stood a while.
+a Session on either opens unread, saying why where its conversation would be, its composer taking nothing; and the
+workstation is newer, which a quiet banner beneath the bar says once, at launch, until it is tapped away or has stood
+on screen a while, a sheet over it stopping that while; `--notice-stands <seconds>` makes the while as long as a UI test
+needs.
 In `subagentWaits` `/12` waits on an Approval of its own, its sheet
 presenting itself, and Explorer, `/12.1`, on another, which marks `/12`'s bar once its own is swiped away and whose
 "Review" pushes `/12.1`, where its sheet presents itself; in `subagentsWait` Explorer waits on an Approval and Grepper,

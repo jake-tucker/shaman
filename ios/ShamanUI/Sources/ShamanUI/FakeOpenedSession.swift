@@ -236,7 +236,7 @@
 
     init(
       session: String, frame: SessionFrame, scenario: FakeConversation.Scenario?, unreachable: Bool = false,
-      acts: FakeActs, tree: FakeTree? = nil, sidekick: Bool = false
+      acts: FakeActs, tree: FakeTree? = nil, sidekick: Bool = false, unread: String? = nil
     ) {
       self.session = session
       self.scenario = scenario
@@ -247,7 +247,12 @@
       place = ""
       told = nil
       state = Mutex(
-        State(frame: frame, items: [ConversationItem(id: "loading", kind: .loading(words: "Loading the conversation"))])
+        State(
+          frame: frame,
+          items: [
+            ConversationItem(
+              id: "loading", kind: unread.map { .unread(words: $0) } ?? .loading(words: "Loading the conversation"))
+          ])
       )
       guard let scenario else { return }
       if let tree {

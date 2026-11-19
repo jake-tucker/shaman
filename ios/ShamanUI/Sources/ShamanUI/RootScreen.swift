@@ -17,7 +17,7 @@ public struct RootScreen: View {
   /// the phone has held no Remote, nor where a debug build is asked to forget it.
   @State private var restoring: Bool
   @State private var outlook: Outlook?
-  /// What the core says of its own accord, in the banner an act's failure is shown in.
+  /// What the core says of its own accord, in the banner an act's failure is shown in, beneath each screen's bar.
   @State private var notices: NoticeModel
   @Environment(\.scenePhase) private var scenePhase
   /// What the scene keeps of the listing and what is pushed over it, which iOS restores after it ends the app: a
@@ -56,16 +56,8 @@ public struct RootScreen: View {
           composing: composing)
       }
     }
-    .overlay(alignment: .top) {
-      if let notice = notices.notice {
-        Banner(text: notice.words, quiet: true)
-          .onTapGesture { notices.dismiss() }
-          .accessibilityAddTraits(.isButton)
-          .accessibilityHint("Dismisses this")
-          .transition(.move(edge: .top).combined(with: .opacity))
-      }
-    }
-    .animation(.default, value: notices.notice?.id)
+    // Each screen shows it beneath its own bar, by `noticeBanner`.
+    .environment(notices)
     .task { await notices.follow() }
     .task {
       // Held while an act is under way, whatever screen asked it.
@@ -102,52 +94,6 @@ public struct RootScreen: View {
       case .background: core.leftFront()
       default: break
       }
-    }
-  }
-}
-
-/// What the core says of its own accord, as the banner over every screen shows it: each notice until it is tapped away
-/// or has stood a while, when the core is told it was seen, so it shows the next and never says that one again.
-@MainActor @Observable
-final class NoticeModel {
-  private let core: any Core
-  private(set) var notice: Notice?
-  /// How long a notice stands before it goes by itself.
-  private let stands: Duration
-  /// What takes the notice away once it has stood its while.
-  private var clearing: Task<Void, Never>?
-
-  init(core: any Core, stands: Duration = .seconds(8)) {
-    self.core = core
-    self.stands = stands
-  }
-
-  /// Follows what the core says until the screen goes.
-  func follow() async {
-    for await notice in core.notices() {
-      show(notice)
-    }
-  }
-
-  /// Takes the notice away, telling the core it was seen.
-  func dismiss() {
-    clearing?.cancel()
-    clearing = nil
-    guard let notice else { return }
-    self.notice = nil
-    core.noticeSeen(notice.id)
-  }
-
-  private func show(_ next: Notice?) {
-    guard next?.id != notice?.id else { return }
-    clearing?.cancel()
-    notice = next
-    guard let next else { return }
-    let stands = stands
-    clearing = Task { [weak self] in
-      try? await Task.sleep(for: stands)
-      guard !Task.isCancelled, let self, self.notice?.id == next.id else { return }
-      self.dismiss()
     }
   }
 }

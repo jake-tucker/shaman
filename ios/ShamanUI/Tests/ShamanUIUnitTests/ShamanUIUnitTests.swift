@@ -403,12 +403,34 @@ private final class RefusingSigner: KeySigner {
     #expect(again.notice == nil)
   }
 
-  @Test func aNoticeGoesByItselfOnceItHasStoodAWhile() async throws {
+  @Test func aNoticeGoesByItselfOnceItHasStoodAWhileOnScreen() async throws {
     let model = NoticeModel(core: FakeCore(.releases), stands: .milliseconds(50))
     let following = Task { await model.follow() }
     defer { following.cancel() }
     _ = try await notice(of: model) { $0 != nil }
+    model.appeared()
     _ = try await notice(of: model) { $0 == nil }
+  }
+
+  @Test func aNoticeNoBannerShowsIsNeverSeenForItAndItsWhileRunsOnlyOnScreen() async throws {
+    let core = FakeCore(.releases)
+    let model = NoticeModel(core: core, stands: .milliseconds(300))
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    _ = try await notice(of: model) { $0 != nil }
+    // Beneath a sheet, no banner shows it, however long it waits.
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(model.notice != nil)
+    // Shown a while, then covered: the while it stood is kept, and runs on only once it shows again.
+    model.appeared()
+    try await Task.sleep(for: .milliseconds(150))
+    model.disappeared()
+    try await Task.sleep(for: .milliseconds(400))
+    #expect(model.notice != nil, "not seen while covered")
+    model.appeared()
+    _ = try await notice(of: model) { $0 == nil }
+    var heard = core.notices().makeAsyncIterator()
+    #expect(await heard.next() == .some(nil), "and seen once it had stood its while on screen")
   }
 
   @Test func theLiveCoreSaysNothingOfItsOwnAccordAsItOpens() async throws {

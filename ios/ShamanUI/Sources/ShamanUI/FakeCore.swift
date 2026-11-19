@@ -336,8 +336,17 @@
         workingCopy: workingCopy ? FakeWorkspace.workingCopy : nil,
         agent: Self.agents[remote],
         unreachable: cut
-          ? "\(named ? remote : "The server") is unreachable. Nothing begins there until it answers." : nil,
-        note: note, placeholder: "Message", canSend: workspace != nil && !cut && !workingCopy,
+          ? "\(named ? remote : "The server") is unreachable. Nothing begins there until it answers."
+          : behind[remote].map { apart in
+            let named = named ? remote : "The server"
+            return apart == .updateApp
+              ? "\(named) no longer works with an app as old as this one: update the app. Nothing begins there until "
+                + "then."
+              : "\(named) runs a Shaman too old to work with this app: update Shaman there. Nothing begins there "
+                + "until then."
+          },
+        note: note, placeholder: "Message",
+        canSend: workspace != nil && !cut && !workingCopy && behind[remote] == nil,
         draft: FakeOpenedSession.landingDraft)
     }
 
@@ -436,6 +445,24 @@
         ?? (delegated ? .delegating : handIn != nil ? .settled : nil)
       if FakeTree.holds(session) && read != nil {
         tree.opening()
+      }
+      // A Session on a Remote across the gap is never read: why stands where its conversation would, and its
+      // composer takes nothing.
+      if let found, let apart = behind[found.remote] {
+        let named = remotes.count > 1 ? found.remote : "The server"
+        let why =
+          apart == .updateApp
+          ? "\(named) no longer works with an app as old as this one: update the app"
+          : "\(named) runs a Shaman too old to work with this app: update Shaman there"
+        var cut = frame
+        cut.composer?.unreachable = "\(why). Nothing sent goes anywhere until then."
+        cut.composer?.canSend = false
+        cut.bar = nil
+        let opened = FakeOpenedSession(
+          session: session, frame: cut, scenario: nil, acts: acts,
+          unread: "This session cannot be read yet. \(why), and it is read as soon as it can be.")
+        self.opened.withLock { $0.append(opened) }
+        return opened
       }
       let opened = FakeOpenedSession(
         session: session, frame: frame, scenario: read, unreachable: cut || (handIn != nil && unlistedCut),
