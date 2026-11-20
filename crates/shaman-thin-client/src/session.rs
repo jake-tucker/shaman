@@ -237,7 +237,7 @@ impl OpenSession {
                 .is_some_and(|provisional| !provisional.starting())
             {
                 discarded = local.provisional.take().map(|provisional| {
-                    let maybe = provisional.progress == Progress::MayHaveBegun;
+                    let maybe = provisional.may_have_begun();
                     (provisional.prompt.text, maybe, provisional.sent)
                 });
             }
@@ -1092,7 +1092,8 @@ impl Acting {
                     provisional.created = Some(Box::new(created));
                 }
                 Err(standing) if closed => {
-                    let may_have_begun = standing == Progress::MayHaveBegun;
+                    provisional.progress = standing;
+                    let may_have_begun = provisional.may_have_begun();
                     left = Some((
                         provisional.prompt.text.clone(),
                         may_have_begun,
@@ -1102,15 +1103,19 @@ impl Acting {
                     local.provisional = None;
                 }
                 Err(standing) => {
-                    if matches!(standing, Progress::Refused(_)) {
-                        refused = provisional.sent;
+                    match standing {
+                        Progress::MayHaveBegun => provisional.may_have_reached = true,
+                        Progress::Refused(_) if !provisional.may_have_reached => {
+                            refused = provisional.sent;
+                        }
+                        _ => {}
                     }
                     provisional.progress = standing;
                 }
             }
         });
-        // Refused while it stands: kept, and surely not sent, however the app
-        // ends.
+        // Refused while it stands, and no asking may have reached its Server:
+        // kept, and surely not sent, however the app ends.
         if let Some(sent) = refused {
             self.drafts.refused(beginning::LANDING_DRAFT, sent);
         }

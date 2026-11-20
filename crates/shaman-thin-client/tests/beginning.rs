@@ -595,6 +595,72 @@ async fn an_app_ended_while_a_refusal_stands_keeps_its_text_and_never_says_it_ma
     phone.shutdown();
 }
 
+/// A beginning on `phone` whose answer was lost, so that it may have begun,
+/// asked again with no network path, so that it stands refused.
+async fn maybe_begun_then_refused(phone: &Phone, gate: &Gate) -> support::Reading {
+    gate.mute_now();
+    let reading = phone.begin("Tidy the build");
+    reading.conversation_until(may_have_begun).await;
+    phone.core.path_changed(false);
+    let _ = reading.session.try_again().await;
+    let conversation = reading
+        .conversation_until(|items| refused(items) && !may_have_begun(items))
+        .await;
+    assert!(
+        read_as(&conversation.items)
+            .iter()
+            .any(|said| said.starts_with("refused: ")),
+        "{:?}",
+        read_as(&conversation.items)
+    );
+    reading
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_beginning_that_may_have_begun_still_may_have_once_a_later_asking_is_refused() {
+    let desk = ServingServer::start("thin-begin-lost-refused").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let phone = hurried(&desk, &gate, &holder).await;
+
+    let reading = maybe_begun_then_refused(&phone, &gate).await;
+    // iOS ends the app while the refusal stands.
+    phone.core.left_front();
+    let phone = phone.relaunched();
+    let landing = phone.landing_until(|_| true).await;
+    assert_eq!(
+        phone.core.draft(landing.draft.clone()).text,
+        "Tidy the build"
+    );
+    let note = landing.note.expect("a note");
+    assert!(note.contains("may have begun"), "{note}");
+
+    drop(reading);
+    desk.shutdown().await;
+    phone.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn leaving_a_beginning_refused_after_it_may_have_begun_says_it_may_have() {
+    let desk = ServingServer::start("thin-begin-lost-refused-left").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let phone = hurried(&desk, &gate, &holder).await;
+
+    let reading = maybe_begun_then_refused(&phone, &gate).await;
+    drop(reading);
+    let landing = phone.landing_until(|landing| landing.note.is_some()).await;
+    let note = landing.note.expect("a note");
+    assert!(note.contains("may have begun"), "{note}");
+    assert_eq!(
+        phone.core.draft(landing.draft.clone()).text,
+        "Tidy the build"
+    );
+
+    desk.shutdown().await;
+    phone.shutdown();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_refusal_arriving_once_the_screen_has_gone_gives_its_text_back_to_the_landing() {
     let desk = ServingServer::start("thin-begin-refused-left").await;

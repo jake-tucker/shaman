@@ -424,6 +424,9 @@ pub(crate) struct Provisional {
     /// Its Prompt as the Landing's draft keeps it on its way, where it was
     /// sent from the Landing: until its Server answers with the Session.
     pub sent: Option<crate::drafts::Sent>,
+    /// Whether any asking to begin it may have reached its Server, so that it
+    /// may have begun however a later asking is refused: once so, for good.
+    pub may_have_reached: bool,
 }
 
 /// A new Worktree a Session being begun is to begin in, which its Server
@@ -450,6 +453,7 @@ impl Provisional {
             worktree: None,
             created: None,
             sent: None,
+            may_have_reached: false,
         }
     }
 
@@ -555,6 +559,13 @@ impl Provisional {
     /// Whether its Server has yet to answer.
     pub fn starting(&self) -> bool {
         self.progress == Progress::Starting
+    }
+
+    /// Whether, standing unanswered or refused, it may have begun all the
+    /// same: its last asking went unanswered, or an earlier one may have
+    /// reached its Server.
+    pub fn may_have_begun(&self) -> bool {
+        self.progress == Progress::MayHaveBegun || self.may_have_reached
     }
 
     /// Asks again, as "Try again" does: the same creation.
