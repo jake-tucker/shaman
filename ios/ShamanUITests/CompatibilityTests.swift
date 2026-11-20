@@ -132,19 +132,21 @@ final class CompatibilityTests: XCTestCase {
   @MainActor
   func testANoticeOutlastsASheetOverItAndGoesOnceItHasStoodOnScreen() {
     let app = XCUIApplication()
-    // Long enough to outlast reaching the slim row's sheet and leaving it again, and no longer.
-    let stands: TimeInterval = 15
+    // Long enough that reaching the slim row's sheet and leaving it again take a part of it alone.
+    let stands: TimeInterval = 30
     app.launchArguments = ["--fake", "releases", "--forget-scene", "--notice-stands", "\(Int(stands))"]
+    // Its while begins no sooner than the app launches, and no later than it is first seen.
+    let launched = Date()
     app.launch()
     XCTAssertTrue(app.navigationBars["Everywhere"].waitForExistence(timeout: 10))
     XCTAssertTrue(notice(app).waitForExistence(timeout: 10))
-    // Its while began no later than it was first seen.
     let outstood = Date().addingTimeInterval(stands + 1)
     // The slim row's sheet shows no notice of its own, so it hides the listing's.
     scrolled(to: slim("Update Shaman on homelab", in: app), in: app).tap()
     let explanation = app.staticTexts["unreachable.explanation"]
     XCTAssertTrue(explanation.waitForExistence(timeout: 10))
-    XCTAssertLessThan(Date(), outstood.addingTimeInterval(-6), "the sheet hid it with time to spare in its while")
+    XCTAssertLessThan(
+      Date(), launched.addingTimeInterval(stands - 10), "the sheet hid it with time to spare in its while")
     // Until it would have outstood its while on screen, beneath the sheet.
     let outlasted = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in Date() >= outstood }, object: nil)
@@ -157,7 +159,7 @@ final class CompatibilityTests: XCTestCase {
     let banner = notice(app)
     XCTAssertTrue(banner.exists, "not seen while the sheet hid it")
     attach(app, "The notice still standing once the sheet goes")
-    XCTAssertTrue(banner.waitForNonExistence(timeout: 20), "and gone once it has stood on screen")
+    XCTAssertTrue(banner.waitForNonExistence(timeout: stands + 5), "and gone once it has stood on screen")
   }
 
   @MainActor
