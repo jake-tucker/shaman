@@ -285,24 +285,28 @@ pub fn direct_dialer() -> HttpConnector {
 
 /// Asks the Serving Server whose identity key is `server_key` for
 /// `enrollment` by `ways`, dialled as `dialer` dials them and as every new
-/// dial is ([`PairingHttpClient::carrier`]), until one answers. Where none
-/// does, a way that presented another key is said first, and then the first
-/// Relay way refused for a reason the user can act on.
+/// dial is ([`PairingHttpClient::carrier`]), until one answers, stating
+/// `protocol` as everything a Peer asks does. Where none does, a way that
+/// presented another key is said first, and then the first Relay way refused
+/// for a reason the user can act on.
 pub async fn dial_enrollment(
     ways: &[Way],
     server_key: &[u8],
     identity: &IdentityMaterial,
     dialer: WayDialer,
+    protocol: crate::PairingProtocol,
     enrollment: &EnrollmentRequest,
 ) -> std::result::Result<EnrollmentResponse, PairingFailure> {
     let client = paired_http_client(server_key, identity, Some(&enrollment.token), dialer)
         .map_err(internal_pairing_failure)?;
     let enrollment = serde_json::to_vec(enrollment).expect("an enrollment request always encodes");
     let asking = || {
-        Request::post("/v1/pairing/enroll")
+        let mut request = Request::post("/v1/pairing/enroll")
             .header(header::CONTENT_TYPE, "application/json")
             .body(RequestBody::from(enrollment.clone()))
-            .expect("an enrollment request is well formed")
+            .expect("an enrollment request is well formed");
+        request.headers_mut().extend(protocol.stated());
+        request
     };
     let enrolled = first_answer(&client, ways, asking, |answer| async move {
         match answer {

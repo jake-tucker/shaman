@@ -403,6 +403,7 @@ impl Redeemer {
             &invite.server_key,
             &identity,
             self.way_dialer(&invite.server_key),
+            self.protocol,
             &prepare,
         )
         .await?;
@@ -439,6 +440,7 @@ impl Redeemer {
             &invite.server_key,
             &identity,
             self.way_dialer(&invite.server_key),
+            self.protocol,
             &commit,
         )
         .await
@@ -2849,14 +2851,15 @@ mod tests {
     }
 
     /// A stand-in Serving Server holding `identity`, at a direct way of its
-    /// own, answering its Session API as `encoding` says and telling what
-    /// each request it was carried asked of `Accept-Encoding`: a listing on
-    /// `/v1/sessions`, a refusal of the Peer as behind on `/v1/behind`, and
-    /// an image's bytes on anything else.
+    /// own, answering its Session API as `encoding` says and telling the
+    /// headers of each request it was carried: a listing on `/v1/sessions`,
+    /// a refusal of the Peer as behind on `/v1/behind`, and an image's bytes
+    /// on anything else. What is asked of it outside its Session API is told
+    /// too, and answered as not found.
     async fn serving_api(
         identity: &IdentityMaterial,
         encoding: Encoding,
-    ) -> (Way, tokio::sync::mpsc::UnboundedReceiver<Vec<String>>) {
+    ) -> (Way, tokio::sync::mpsc::UnboundedReceiver<http::HeaderMap>) {
         let mut tls = rustls::ServerConfig::builder_with_provider(super::super::crypto_provider())
             .with_protocol_versions(&[&rustls::version::TLS13])
             .unwrap()
@@ -2891,6 +2894,7 @@ mod tests {
                                     PAIRING_PROTOCOL_HEADER,
                                     PairingProtocol::CURRENT.header_value(),
                                 );
+                                let _ = seen.send(request.headers().clone());
                                 if !path.starts_with(PEER_API_PREFIX) {
                                     let answer = answer
                                         .status(StatusCode::NOT_FOUND)
@@ -2902,15 +2906,8 @@ mod tests {
                                         },
                                     ));
                                 }
-                                let accepted = request
-                                    .headers()
-                                    .get_all(http::header::ACCEPT_ENCODING)
-                                    .iter()
-                                    .map(|value| value.to_str().unwrap().to_owned())
-                                    .collect::<Vec<_>>();
                                 let gzip = matches!(encoding, Encoding::Gzipping)
                                     && compression::asks_for_gzip(request.headers());
-                                let _ = seen.send(accepted);
                                 let (status, content_type, body) =
                                     match path.strip_prefix(PEER_API_PREFIX).unwrap() {
                                         "/v1/sessions" => {
@@ -2968,6 +2965,55 @@ mod tests {
             }
         });
         (Way::Direct(address), asked)
+    }
+
+    /// What a request carrying `headers` asked of `Accept-Encoding`.
+    fn accepted(headers: &http::HeaderMap) -> Vec<String> {
+        headers
+            .get_all(http::header::ACCEPT_ENCODING)
+            .iter()
+            .map(|value| value.to_str().unwrap().to_owned())
+            .collect()
+    }
+
+    /// Enrolling states what the Peer speaks, as everything else it asks a
+    /// Serving Server does.
+    #[tokio::test]
+    async fn an_enrollment_states_the_protocol_the_peer_speaks() {
+        let serving = IdentityMaterial::fresh();
+        let (way, mut seen) = serving_api(&serving, Encoding::Gzipping).await;
+        let older = PairingProtocol {
+            version: PairingProtocol::CURRENT.floor,
+            floor: PairingProtocol::CURRENT.floor,
+        };
+        let data = tempfile::tempdir().unwrap();
+        let dialer = redeemer(&data)
+            .with_direct_proxies(DirectProxies::given("", ""))
+            .way_dialer(serving.public_key());
+        let _ = dial_enrollment(
+            &[way],
+            serving.public_key(),
+            &IdentityMaterial::fresh(),
+            dialer,
+            older,
+            &EnrollmentRequest {
+                token: "token".to_owned(),
+                protocol_version: older.version,
+                phase: EnrollmentPhase::Prepare,
+                hostname: None,
+                offer: None,
+            },
+        )
+        .await;
+        let headers = seen.recv().await.unwrap();
+        assert_eq!(
+            crate::speaking::stated_version(&headers),
+            Some(older.version)
+        );
+        assert_eq!(
+            headers[crate::PAIRING_FLOOR_HEADER],
+            older.floor.to_string()
+        );
     }
 
     /// `redeemer` holding the Remote "workstation", proving `serving`'s key
@@ -3036,7 +3082,7 @@ mod tests {
 
         let (headers, body) = asked(&redeemer, "/v1/sessions", Some("br")).await;
         assert_eq!(
-            seen.recv().await.unwrap(),
+            accepted(&seen.recv().await.unwrap()),
             ["gzip"],
             "the redeemer's ask alone"
         );
@@ -3045,7 +3091,7 @@ mod tests {
         assert!(!headers.contains_key(http::header::CONTENT_LENGTH));
 
         let (headers, body) = asked(&redeemer, "/v1/attachments/a", None).await;
-        assert_eq!(seen.recv().await.unwrap(), ["gzip"]);
+        assert_eq!(accepted(&seen.recv().await.unwrap()), ["gzip"]);
         assert_eq!(
             body,
             b"\x89PNG".repeat(64),
@@ -3076,7 +3122,10 @@ mod tests {
         let plain = holding(redeemer(&data).asking_plain(), &serving, way);
 
         let (headers, body) = asked(&plain, "/v1/sessions", None).await;
-        assert!(seen.recv().await.unwrap().is_empty(), "nothing is asked");
+        assert!(
+            accepted(&seen.recv().await.unwrap()).is_empty(),
+            "nothing is asked"
+        );
         assert_eq!(body, listing());
         assert_eq!(
             headers[http::header::CONTENT_LENGTH],
@@ -3090,7 +3139,7 @@ mod tests {
         let asking = holding(redeemer(&data), &older, way);
 
         let (headers, body) = asked(&asking, "/v1/sessions", None).await;
-        assert_eq!(seen.recv().await.unwrap(), ["gzip"]);
+        assert_eq!(accepted(&seen.recv().await.unwrap()), ["gzip"]);
         assert_eq!(body, listing());
         assert_eq!(
             headers[http::header::CONTENT_LENGTH],
