@@ -1319,11 +1319,16 @@ final class SessionStack {
   }
 
   /// Shows the Session `session` names, chosen in the tree of the Session pushed as `route`: nothing more where it is
-  /// that one, popping back to it where it is on the path already, and pushing it over the path where it is not.
+  /// that one, popping back to it where it is on the path already, as its own screen or as the new-session screen it
+  /// was begun from, and pushing it over the path where it is not.
   func show(_ session: String, over route: SessionRoute) {
     guard route.session != session else { return }
     let pushed = path.lastIndex {
-      if case .session(let pushed) = $0 { pushed.session == session } else { false }
+      switch $0 {
+      case .session(let pushed): pushed.session == session
+      case .landing(let landing): landings[landing]?.begun?.session == session
+      case .work, .detail: false
+      }
     }
     if let pushed {
       path.removeSubrange(path.index(after: pushed)...)

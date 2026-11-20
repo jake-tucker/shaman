@@ -1355,6 +1355,25 @@ private final class HeldTime: BackgroundTasks {
     #expect(session.isClosed, "popped to the listing, so closed")
   }
 
+  @Test func theSessionBegunChosenInTheTreeOfOnePushedOverItIsPoppedBackTo() async throws {
+    let core = FakeCore(.composing)
+    let stack = SessionStack(core: core)
+    let route = LandingRoute()
+    stack.path = [.landing(route)]
+    let model = stack.landing(for: route)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.landing != nil }
+    model.text = "Tidy the build"
+    model.send()
+    let begun = try #require(model.begun)
+    let subagent = SessionRoute(session: "\(begun.session).1")
+    stack.path.append(.session(subagent))
+
+    stack.show(begun.session, over: subagent)
+    #expect(stack.path == [.landing(route)], "it stands on the path as the screen it was begun from")
+  }
+
   @Test func aRefusedBeginningLeftIsTheLandingsDraftAgain() async throws {
     let core = FakeCore(.composing)
     let model = NewSessionModel(core: core)
