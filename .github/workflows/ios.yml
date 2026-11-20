@@ -1,8 +1,9 @@
 name: iOS
 
-# Builds the iOS app over its core and tests both in the simulator, the app signed ad hoc, and lints the Swift. It runs only where
-# the app or its core can have changed; a change to a crate the core shares with the Server is checked for iOS by
-# build.yml, and shows here on the next change to the app. ios/AGENTS.md holds the same loop for a Mac.
+# Builds the iOS app over its core and tests both in the simulator, the app signed ad hoc, builds it as the phone runs
+# it, and lints the Swift. It runs only where the app or its core can have changed; a change to a crate the core shares
+# with the Server is checked for iOS by build.yml, and shows here on the next change to the app. ios/AGENTS.md holds
+# the same loop for a Mac.
 
 on:
   pull_request:
@@ -106,6 +107,27 @@ jobs:
           if [ -n "$written" ]; then
             echo "::error::The app wrote to UserDefaults:"
             echo "$written"
+            exit 1
+          fi
+
+      - name: Build the core for the phone
+        # After the tests, as the core's package holds one slice or the other and they ran on the simulator's.
+        run: scripts/build-ios-core.sh device
+
+      - name: Build the app for the phone
+        working-directory: ios
+        run: |
+          # As ios/AGENTS.md builds it for the phone, optimised and without the fake, but unsigned: the optimiser warns
+          # of what a debug build does not, and every warning is an error.
+          xcodebuild build -project Shaman.xcodeproj -scheme Shaman -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO -quiet
+
+      - name: Check the phone's build holds no fake
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          if strings -a build/device/Build/Products/Release-iphoneos/Shaman.app/Shaman | grep -E 'FakeCore|--fake'; then
+            echo "::error::The fake and every debug-only path stay behind #if DEBUG."
             exit 1
           fi
 

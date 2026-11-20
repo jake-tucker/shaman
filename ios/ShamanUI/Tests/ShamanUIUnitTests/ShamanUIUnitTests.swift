@@ -869,11 +869,14 @@ private final class RefusingSigner: KeySigner {
 @MainActor
 private final class HeldTime: BackgroundTasks {
   private(set) var held: [String] = []
+  /// What each time begun asked to be called should iOS take it back first, in the order it was begun.
+  private(set) var expiries: [@MainActor @Sendable () -> Void] = []
   private var next = 1
 
   func begin(expired: @escaping @MainActor @Sendable () -> Void) -> UIBackgroundTaskIdentifier {
     defer { next += 1 }
     held.append("begin \(next)")
+    expiries.append(expired)
     return UIBackgroundTaskIdentifier(rawValue: next)
   }
 
@@ -892,6 +895,22 @@ private final class HeldTime: BackgroundTasks {
     telling.finish()
     await BackgroundTime(tasks: tasks).follow(underWay)
     #expect(tasks.held == ["begin 1", "end 1", "begin 2", "end 2"], "and let go as the stream ends")
+  }
+
+  @Test func timeIOSTakesBackIsEndedAndHeldAfreshByTheNextAct() async {
+    let tasks = HeldTime()
+    let time = BackgroundTime(tasks: tasks)
+    let (underWay, telling) = AsyncStream<Bool>.makeStream()
+    let following = Task { await time.follow(underWay) }
+    telling.yield(true)
+    while tasks.held.isEmpty { await Task.yield() }
+    tasks.expiries[0]()
+    #expect(tasks.held == ["begin 1", "end 1"], "ended as iOS takes it back")
+    telling.yield(false)
+    telling.yield(true)
+    telling.finish()
+    await following.value
+    #expect(tasks.held == ["begin 1", "end 1", "begin 2", "end 2"], "never ended twice")
   }
 
   @Test func theFakeSaysAnActIsUnderWayWhileOneRuns() async {

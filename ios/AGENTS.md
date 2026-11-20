@@ -258,8 +258,9 @@ every platform, so keep anything iOS-only out of the crate.
 
 **CI** (`.github/workflows/ios.yml`) runs the script, tests the package unsigned (`CODE_SIGNING_ALLOWED=NO`), builds
 and tests the app signed ad hoc under no team (`CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=`), since
-an unsigned app cannot reach the Keychain, lints, and checks nothing reached `UserDefaults`, on the `xcode-27`
-runner. Run the same commands to reproduce a failure.
+an unsigned app cannot reach the Keychain, lints, checks nothing reached `UserDefaults`, and then builds the phone's
+core and the app for the phone in Release, unsigned (`CODE_SIGNING_ALLOWED=NO`), and checks it holds no fake, on the
+`xcode-27` runner: the optimiser warns of what a debug build does not, and every warning is an error. Run the same commands to reproduce a failure.
 
 ## On the phone
 

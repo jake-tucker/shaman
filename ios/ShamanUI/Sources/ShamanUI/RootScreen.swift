@@ -19,6 +19,9 @@ public struct RootScreen: View {
   @State private var outlook: Outlook?
   /// What the core says of its own accord, in the banner an act's failure is shown in, beneath each screen's bar.
   @State private var notices: NoticeModel
+  /// What holds iOS background time while an act is under way, kept for as long as the app is, so the time iOS takes
+  /// back is let go of.
+  @State private var backgroundTime = BackgroundTime(tasks: UIApplication.shared)
   @Environment(\.scenePhase) private var scenePhase
   /// What the scene keeps of the listing and what is pushed over it, which iOS restores after it ends the app: a
   /// `KeptScene`, as its plain string.
@@ -61,7 +64,7 @@ public struct RootScreen: View {
     .task { await notices.follow() }
     .task {
       // Held while an act is under way, whatever screen asked it.
-      await BackgroundTime(tasks: UIApplication.shared).follow(core.actsUnderWay())
+      await backgroundTime.follow(core.actsUnderWay())
     }
     .task {
       for await outlook in core.outlook() {
