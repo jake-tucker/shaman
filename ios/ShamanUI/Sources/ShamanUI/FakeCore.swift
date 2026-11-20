@@ -76,6 +76,9 @@
       /// The `paired` phone whose one server, the workstation, removes this phone a moment after the app opens, so it
       /// offers pairing alone, saying why.
       case lastRemovedThere
+      /// The `paired` phone whose listing also carries two long Sessions, `FakeLong`'s, of hundreds of items of very
+      /// uneven height: `workstation-key/30`, settled, and `/31`, whose last answer still streams.
+      case longSession
     }
 
     /// The relay the fake's workstation is reached through in the relay scenarios, and its Invite offers.
@@ -180,7 +183,7 @@
         case .fresh, .named, .pairAgain: []
         case .paired, .offline, .unreadTree, .unreadableTree, .subagentStopRefused, .subagentWaits, .subagentsWait,
           .longSubagentName, .composing, .relayLogin, .relayed, .loginNeeded, .otherAccount, .relayTurnedOn,
-          .relayTurnedOff, .lastRemovedThere:
+          .relayTurnedOff, .lastRemovedThere, .longSession:
           [Self.workstation(named: "workstation")]
         case .several, .reaching, .unreachable, .sidekick, .releases, .removedThere:
           [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]
@@ -230,6 +233,9 @@
       }
       if sidekick {
         sessions.withLock { $0 = FakeSidekick.listed + $0 }
+      }
+      if scenario == .longSession {
+        sessions.withLock { $0 = FakeLong.listed + $0 }
       }
       if scenario == .relayTurnedOn || scenario == .relayTurnedOff {
         let after = relayToldAfter

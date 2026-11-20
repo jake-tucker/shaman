@@ -31,6 +31,10 @@
       /// The Turn waits on a Questionnaire of three Questions: one choice with a note beside it, required; several
       /// choices or a written answer instead, which may be skipped; and a secret, which may be skipped.
       case questionnaire
+      /// A long Session of hundreds of items of very uneven height, `FakeLong`'s, settled.
+      case long
+      /// The `long` Session, its last answer still streaming in.
+      case longWorking
     }
 
     /// How the conversation stands of the Session whose last Turn stands as `scenario`.
@@ -79,6 +83,10 @@
       case .questionnaire:
         return [user("open", "Run the relay's tests before the release, wherever suits")]
           + [card("work", .waiting, "Waiting on you", "2 tools · 1 command")]
+      case .long:
+        return FakeLong.items(streaming: false)
+      case .longWorking:
+        return FakeLong.items(streaming: true)
       }
     }
 
@@ -157,7 +165,8 @@
                 style: .monospace)
             ]),
         ]
-      case .working, .settled, .stopped, .failed, .undelivered, .monitoring, .delegating, .questionnaire:
+      case .working, .settled, .stopped, .failed, .undelivered, .monitoring, .delegating, .questionnaire, .long,
+        .longWorking:
         return []
       }
     }
@@ -183,6 +192,16 @@
 
     /// What the Session Working only for a Prompt not yet delivered was asked.
     static let undeliveredPrompt = "Note the floor in the pairing docs"
+
+    /// What the answer, id `answer`, of the Session whose last Turn stands as `scenario` grows to after it first
+    /// stands, a moment apart each time.
+    static func growing(_ scenario: Scenario?) -> [String] {
+      switch scenario {
+      case .working: Array(streamed.dropFirst())
+      case .longWorking: (1...FakeLong.growths).map(FakeLong.streamed)
+      default: []
+      }
+    }
 
     /// The streamed answer of the working Turn, as it grows.
     static let streamed = [

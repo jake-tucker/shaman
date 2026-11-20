@@ -104,7 +104,11 @@ also lists a Sidekick's Session, `workstation-key/20`, whose tree, headed "Sessi
 Sessions it acted on across Servers: `/21` on the workstation, `laptop-key/22` and `/24` on the laptop (which the
 workstation calls "build"), `homelab-key/23` on the home lab, which reads Unreachable to the phone, and entries on
 "attic" and "nas", which the phone is not paired with and so cannot open, and one on "mail", which the workstation names
-without its key, saying the workstation is to be updated; its card's rows open its Subsessions by the same rule. A card
+without its key, saying the workstation is to be updated; its card's rows open its Subsessions by the same rule. In
+`longSession` the `paired` phone also lists two long Sessions, `FakeLong`'s, of some 330 items of very uneven height,
+short bubbles among long Markdown answers with code blocks and tables, Turn cards and Compactions, each item's words
+numbered so that one can be told from another: `workstation-key/30` has settled, its last item the line "That's
+everything", and in `/31` the last answer streams on for half a minute. A card
 pushes its Turn's work from `FakeWork`, and a row its Activity's whole: in `/7` the work holds a settled Approval, File
 Changes and the placeholder for a kind a newer Server sent, and in `/1` the running command's output grows a line at a
 time while its screen is up. Every act a fake Session is asked is answered as the core would answer it, after a moment:

@@ -324,8 +324,7 @@
           state.pending = tree?.interventions(of: session) ?? FakeConversation.interventions(scenario)
           state.beneath = tree?.waitingBeneath(session)
         }
-        guard scenario == .working else { return }
-        for text in FakeConversation.streamed.dropFirst() {
+        for text in FakeConversation.growing(scenario) {
           try? await Task.sleep(for: .milliseconds(700))
           guard !Task.isCancelled else { return }
           self?.change { items in
