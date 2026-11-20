@@ -97,7 +97,8 @@ impl Transport for Recorder {
 /// [`Recorder`], and has `judge` judge what each asked under its name. A
 /// command added to [`SessionCommands`] is added here, so the walk judges
 /// every route the shared commands send: the Serving side's tests judge them
-/// by its own route check, which this crate does not hold.
+/// by its own route check, which this crate does not hold. This crate's own
+/// test fails while one is missing.
 #[allow(clippy::too_many_lines)]
 pub async fn walk_every_command(judge: impl Fn(&'static str, Vec<(Method, http::Uri)>)) {
     let recorder = Recorder::new();
@@ -215,6 +216,7 @@ pub async fn walk_every_command(judge: impl Fn(&'static str, Vec<(Method, http::
         "sidekick_workspace" => commands.sidekick_workspace().await,
         "list_skills" => commands.list_skills(skills.clone()).await,
         "refresh_skills" => commands.refresh_skills(skills).await,
+        "health" => commands.health().await,
         "list_models" => commands.list_models().await,
         "refresh_models" => commands.refresh_models().await,
         "warm_models" => commands.warm_models().await,
@@ -298,4 +300,63 @@ pub async fn walk_every_command(judge: impl Fn(&'static str, Vec<(Method, http::
         "list_sessions" => commands.list_sessions(Some(&root)).await,
         "list_workspaces" => commands.list_workspaces().await,
     ];
+}
+
+/// What [`SessionCommands`] offers that asks its Server nothing, and so is
+/// not walked.
+#[cfg(test)]
+const ASKING_NOTHING: &[&str] = &["new", "recovery_backoff"];
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    /// The name of each `pub fn` declared in `impl SessionCommands`, as its
+    /// source declares it.
+    fn declared() -> BTreeSet<String> {
+        let source = include_str!("../session_commands.rs");
+        let (_, body) = source
+            .split_once("\nimpl SessionCommands {\n")
+            .expect("the commands are declared");
+        let (body, _) = body.split_once("\n}\n").expect("the declaration ends");
+        body.lines()
+            .filter_map(|line| {
+                let line = line.strip_prefix("    pub ")?;
+                let line = line.strip_prefix("async ").unwrap_or(line);
+                let name = line.strip_prefix("fn ")?;
+                let end = name.find(['(', '<'])?;
+                Some(name[..end].to_owned())
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn every_command_that_asks_its_server_is_walked() {
+        let walked = std::sync::Mutex::new(BTreeSet::new());
+        super::walk_every_command(|name, _| {
+            assert!(
+                walked
+                    .lock()
+                    .expect("the walked lock")
+                    .insert(name.to_owned()),
+                "{name} is walked twice"
+            );
+        })
+        .await;
+        let walked = walked.into_inner().expect("the walked lock");
+        let declared = declared();
+        assert!(declared.contains("list_workspaces"), "{declared:?}");
+        let unwalked = declared
+            .iter()
+            .filter(|name| {
+                !walked.contains(*name) && !super::ASKING_NOTHING.contains(&name.as_str())
+            })
+            .collect::<Vec<_>>();
+        assert!(unwalked.is_empty(), "not walked: {unwalked:?}");
+        let undeclared = walked.difference(&declared).collect::<Vec<_>>();
+        assert!(
+            undeclared.is_empty(),
+            "walked, and no command: {undeclared:?}"
+        );
+    }
 }
