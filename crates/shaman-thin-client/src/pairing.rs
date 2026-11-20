@@ -100,7 +100,8 @@ pub enum TryInstead {
 }
 
 /// What the screen where pairing begins says to do.
-pub(crate) const PROMPT: &str = "On the server, run /serve in Shaman or `shaman serve invite`, copy the invite, and paste it here.";
+pub(crate) const PROMPT: &str = "On the server, run /serve in Shaman and press q, or run `shaman serve invite --qr`, \
+                                 then scan the code it draws or paste the invite here.";
 
 /// Reads `text` as an Invite for the confirmation screen, dialling nothing.
 pub(crate) fn read(inner: &Inner, text: &str) -> InviteReading {

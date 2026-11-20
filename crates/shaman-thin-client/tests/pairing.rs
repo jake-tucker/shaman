@@ -75,6 +75,48 @@ fn a_malformed_invite_reads_as_its_parse_error() {
     phone.shutdown();
 }
 
+/// A scanner stops at the first code that is an Invite, a malformed one or
+/// one from a newer Shaman included, so that the confirmation screen says
+/// what is wrong with it, and passes over anything else it reads.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_scanned_code_is_an_invite_by_its_form() {
+    let server = ServingServer::start("thin-scan").await;
+    let invite = server
+        .invite(vec![Way::Direct("192.0.2.7:7791".parse().unwrap())])
+        .await;
+    let phone = Phone::new();
+    for scanned in [
+        invite.clone(),
+        format!("{invite}\n"),
+        "shaman-v1-@@@".to_owned(),
+        "shaman-v2-eyJ3IjpbXX0".to_owned(),
+    ] {
+        assert!(phone.core.is_invite(scanned.clone()), "{scanned:?}");
+    }
+    for scanned in [
+        "https://example.com".to_owned(),
+        format!("https://example.com/?invite={invite}"),
+        "WIFI:S:home;T:WPA;P:secret;;".to_owned(),
+        "shaman".to_owned(),
+        String::new(),
+    ] {
+        assert!(!phone.core.is_invite(scanned.clone()), "{scanned:?}");
+    }
+    phone.shutdown();
+    server.shutdown().await;
+}
+
+#[test]
+fn where_pairing_begins_says_to_scan_the_servers_code_or_paste_its_invite() {
+    let phone = Phone::new();
+    assert_eq!(
+        phone.core.pairing_prompt(),
+        "On the server, run /serve in Shaman and press q, or run `shaman serve invite --qr`, \
+         then scan the code it draws or paste the invite here."
+    );
+    phone.shutdown();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn pairing_names_both_sides_turns_the_outlook_and_survives_a_relaunch() {
     let server = ServingServer::start("thin-pair").await;

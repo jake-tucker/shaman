@@ -723,6 +723,14 @@ impl ThinClient {
         pairing::PROMPT.to_owned()
     }
 
+    /// Whether `text`, as a scanner read it, is an Invite, by its form alone:
+    /// the scanner stops at the first that is and goes on to the
+    /// confirmation screen, which says what is wrong with a malformed one or
+    /// one from a newer Shaman, and passes over anything else.
+    pub fn is_invite(&self, text: String) -> bool {
+        shaman_pairing::has_invite_form(&text)
+    }
+
     /// Reads `invite` for the confirmation screen, dialling nothing.
     pub fn read_invite(&self, invite: String) -> InviteReading {
         pairing::read(&self.inner, &invite)

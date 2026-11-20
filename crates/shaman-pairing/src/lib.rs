@@ -953,8 +953,25 @@ pub fn crypto_provider() -> Arc<rustls::crypto::CryptoProvider> {
     Arc::new(rustls::crypto::ring::default_provider())
 }
 
+/// How every Invite's text begins, before its version.
+const INVITE_PREFIX: &str = "shaman-";
+
+/// Whether `text` has an Invite's form, `shaman-v<n>-…`, around which only
+/// whitespace stands, whether or not its payload reads: what a scanner stops
+/// at, so that a malformed Invite or one from a newer Shaman is shown for what
+/// it is, while anything else it reads is passed over.
+pub fn has_invite_form(text: &str) -> bool {
+    text.trim()
+        .strip_prefix(INVITE_PREFIX)
+        .and_then(|rest| rest.strip_prefix('v'))
+        .and_then(|rest| rest.split_once('-'))
+        .is_some_and(|(version, _)| {
+            !version.is_empty() && version.bytes().all(|byte| byte.is_ascii_digit())
+        })
+}
+
 pub fn parse_invite(invite: &str) -> std::result::Result<ParsedInvite, PairingFailure> {
-    let Some(rest) = invite.strip_prefix("shaman-") else {
+    let Some(rest) = invite.strip_prefix(INVITE_PREFIX) else {
         return Err(PairingFailure::new(
             SessionErrorCode::InvalidInvite,
             "Invite must start with `shaman-`; was all of it copied?",
@@ -1177,6 +1194,33 @@ mod tests {
         assert_eq!(short_hostname("build-7.ci.example.com"), "build-7");
         for nameless in ["", "  ", ".local", " .example.com"] {
             assert_eq!(short_hostname(nameless), "remote", "{nameless:?}");
+        }
+    }
+
+    /// What has an Invite's form, `shaman-v<n>-…`, is one, however its
+    /// payload reads; anything else, as a scanner may read, is not.
+    #[test]
+    fn an_invite_is_told_by_its_form_alone() {
+        for invite in [
+            "shaman-v1-eyJ3IjpbXX0",
+            "shaman-v1-@@@",
+            "shaman-v1-",
+            "shaman-v12-eyJ3IjpbXX0",
+            "  shaman-v1-eyJ3IjpbXX0\n",
+        ] {
+            assert!(has_invite_form(invite), "{invite:?}");
+        }
+        for other in [
+            "",
+            "eyJ3IjpbXX0",
+            "https://example.com/shaman-v1-eyJ3IjpbXX0",
+            "shaman-",
+            "shaman-v-eyJ3IjpbXX0",
+            "shaman-vx-eyJ3IjpbXX0",
+            "shaman-is-cool",
+            "WIFI:S:home;T:WPA;P:secret;;",
+        ] {
+            assert!(!has_invite_form(other), "{other:?}");
         }
     }
 
