@@ -270,10 +270,7 @@ async fn consume_once(
     session_id: SessionId,
     events: mpsc::Sender<Result<SessionEvent, SessionStreamError>>,
 ) {
-    let mut last_revision = None;
-    if let StreamOutcome::Failed { error, .. } =
-        consume(response, session_id, &events, &mut last_revision).await
-    {
+    if let StreamOutcome::Failed { error, .. } = consume(response, session_id, &events).await {
         let _ = events.send(Err(error)).await;
     }
 }
@@ -287,7 +284,6 @@ async fn run_attached(
     mut backoff: RecoveryBackoff,
 ) {
     let mut response = Some(initial_response);
-    let mut last_revision = None;
     loop {
         let next_response = match response.take() {
             Some(response) => Ok(response),
@@ -307,7 +303,7 @@ async fn run_attached(
                 continue;
             }
         };
-        let hydrated = match consume(next_response, session_id, &events, &mut last_revision).await {
+        let hydrated = match consume(next_response, session_id, &events).await {
             StreamOutcome::Disconnected { hydrated } => hydrated,
             StreamOutcome::ReceiverClosed => return,
             StreamOutcome::Failed { error, hydrated } if error.is_recoverable() => hydrated,
@@ -323,26 +319,32 @@ async fn run_attached(
     }
 }
 
+/// Passes on what one opening of the Session's stream carries. Each opening
+/// begins with a snapshot, which is taken as the Session stands, whatever
+/// an earlier opening said: a Server stopped before it saved what it streamed
+/// starts again behind it, and goes on from where it stands.
 async fn consume(
     response: TransportResponse,
     session_id: SessionId,
     events: &mpsc::Sender<Result<SessionEvent, SessionStreamError>>,
-    last_revision: &mut Option<crate::protocol::SessionRevision>,
 ) -> StreamOutcome {
     let mut stream = response.into_body().into_data_stream().eventsource();
     let mut saw_snapshot = false;
+    let mut last_revision = None;
     while let Some(next) = stream.next().await {
         let event = match next {
-            Ok(event) => match decode_event(event, session_id, &mut saw_snapshot, last_revision) {
-                Ok(Some(event)) => event,
-                Ok(None) => continue,
-                Err(error) => {
-                    return StreamOutcome::Failed {
-                        error: SessionStreamError::protocol(error),
-                        hydrated: saw_snapshot,
-                    };
+            Ok(event) => {
+                match decode_event(event, session_id, &mut saw_snapshot, &mut last_revision) {
+                    Ok(Some(event)) => event,
+                    Ok(None) => continue,
+                    Err(error) => {
+                        return StreamOutcome::Failed {
+                            error: SessionStreamError::protocol(error),
+                            hydrated: saw_snapshot,
+                        };
+                    }
                 }
-            },
+            }
             Err(error) => {
                 return StreamOutcome::Failed {
                     error: SessionStreamError::event_source(error),
@@ -387,9 +389,6 @@ fn decode_event(
             }
             if snapshot.revision.0 != event_revision {
                 bail!("Session snapshot revision does not match its SSE ID");
-            }
-            if last_revision.is_some_and(|previous| snapshot.revision < previous) {
-                bail!("Session snapshot revision is not monotonic across recovery");
             }
             *saw_snapshot = true;
             *last_revision = Some(snapshot.revision);
@@ -467,7 +466,7 @@ mod tests {
         ]);
         let (events, mut received) = mpsc::channel(SESSION_EVENT_CAPACITY);
 
-        let outcome = consume(response, session_id, &events, &mut None).await;
+        let outcome = consume(response, session_id, &events).await;
 
         assert!(
             matches!(outcome, StreamOutcome::Disconnected { hydrated: true }),
@@ -517,7 +516,7 @@ mod tests {
         ]);
         let (events, mut received) = mpsc::channel(SESSION_EVENT_CAPACITY);
 
-        let outcome = consume(response, session_id, &events, &mut None).await;
+        let outcome = consume(response, session_id, &events).await;
 
         assert!(
             matches!(outcome, StreamOutcome::Disconnected { hydrated: true }),
@@ -712,5 +711,61 @@ mod tests {
         assert!(!error.is_recoverable());
         assert_eq!(next_event(&mut subscription).await, None);
         assert_eq!(transport.asked(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_server_restarted_behind_what_it_streamed_is_read_afresh_from_where_it_stands() {
+        let session_id = SessionId::new();
+        let retitled = |revision| SessionUpdate {
+            session_id,
+            revision: SessionRevision(revision),
+            changes: vec![SessionChange::TitleChanged {
+                title: "Map the seams".to_owned(),
+                icon: None,
+            }],
+        };
+        let encoded = |update: &SessionUpdate| serde_json::to_string(update).expect("encode");
+        // It streamed up to revision 6 and was stopped before saving past 3,
+        // so, started again, it stands at 3 and goes on from there.
+        let transport = Arc::new(ScriptedTransport::new(vec![
+            Ok(stream_of(&[
+                (
+                    SESSION_SNAPSHOT_EVENT,
+                    Some(5),
+                    serde_json::to_string(&snapshot(session_id, 5)).expect("encode"),
+                ),
+                (SESSION_UPDATED_EVENT, Some(6), encoded(&retitled(6))),
+            ])),
+            Ok(stream_of(&[
+                (
+                    SESSION_SNAPSHOT_EVENT,
+                    Some(3),
+                    serde_json::to_string(&snapshot(session_id, 3)).expect("encode"),
+                ),
+                (SESSION_UPDATED_EVENT, Some(4), encoded(&retitled(4))),
+            ])),
+        ]));
+        let backoff = Duration::from_millis(1);
+        let mut subscription =
+            SessionSubscription::open_attached(transport, session_id, backoff, backoff)
+                .await
+                .expect("the stream opens");
+
+        assert!(matches!(
+            next_event(&mut subscription).await,
+            Some(Ok(SessionEvent::Snapshot(_)))
+        ));
+        assert!(matches!(
+            next_event(&mut subscription).await,
+            Some(Ok(SessionEvent::Updated(_)))
+        ));
+        let Some(Ok(SessionEvent::Snapshot(reopened))) = next_event(&mut subscription).await else {
+            panic!("the Session is read afresh where its Server stands now");
+        };
+        assert_eq!(reopened.revision, SessionRevision(3));
+        let Some(Ok(SessionEvent::Updated(update))) = next_event(&mut subscription).await else {
+            panic!("what follows where it stands now is passed on");
+        };
+        assert_eq!(update.revision, SessionRevision(4));
     }
 }
