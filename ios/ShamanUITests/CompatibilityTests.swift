@@ -132,15 +132,23 @@ final class CompatibilityTests: XCTestCase {
   @MainActor
   func testANoticeOutlastsASheetOverItAndGoesOnceItHasStoodOnScreen() {
     let app = XCUIApplication()
-    app.launchArguments = ["--fake", "releases", "--forget-scene", "--notice-stands", "12"]
+    // Long enough to outlast reaching the slim row's sheet and leaving it again, and no longer.
+    let stands: TimeInterval = 15
+    app.launchArguments = ["--fake", "releases", "--forget-scene", "--notice-stands", "\(Int(stands))"]
     app.launch()
     XCTAssertTrue(app.navigationBars["Everywhere"].waitForExistence(timeout: 10))
+    XCTAssertTrue(notice(app).waitForExistence(timeout: 10))
+    // Its while began no later than it was first seen.
+    let outstood = Date().addingTimeInterval(stands + 1)
     // The slim row's sheet shows no notice of its own, so it hides the listing's.
     scrolled(to: slim("Update Shaman on homelab", in: app), in: app).tap()
     let explanation = app.staticTexts["unreachable.explanation"]
     XCTAssertTrue(explanation.waitForExistence(timeout: 10))
-    // Longer than it stands, beneath the sheet.
-    sleep(14)
+    XCTAssertLessThan(Date(), outstood.addingTimeInterval(-6), "the sheet hid it with time to spare in its while")
+    // Until it would have outstood its while on screen, beneath the sheet.
+    let outlasted = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in Date() >= outstood }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [outlasted], timeout: stands + 2), .completed)
     // Dragged down from its top, the half-height sheet goes.
     let top = explanation.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
       .withOffset(CGVector(dx: 0, dy: -80))

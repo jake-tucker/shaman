@@ -174,7 +174,8 @@ In a debug build an Invite can arrive by the launch environment's `SHAMAN_INVITE
 confirmation screen. Over the fake, `FakeCore.invite` reads as the workstation's; one holding "dead" or "unanswered"
 fails as a dead Invite or one no way answered does. One holding "relay" also offers `relay.example.com`, where the phone
 needs to log in, and pairs by its direct ways with no login; one holding "relayonly" offers the relay alone, so Pair
-asks for the login and pairs by itself once it is done.
+asks for the login and pairs by itself once it is done. In `pairAgain` the phone's records were of a key it no longer
+has, so no Server knows it, which the pairing screen says until it is dismissed.
 
 **Scanning.** Scan asks for the camera the first time it is pressed, never at launch, and opens the scanner, VisionKit's
 data scanner behind `CodeScanner`, a seam that tells of each code that comes into sight and leaves, and of the camera
