@@ -9,7 +9,7 @@ use shaman_thin_client::{
     ActError, BeginsIn, FoundRow, Listing, Outlook, PairingOutcome, ScopeChoice, Slot, Standing,
 };
 
-use support::{Phone, ServingServer, WORKING};
+use support::{Gate, PROGRESS_DEADLINE, Phone, ServingServer, WORKING};
 
 /// Longer than the millisecond a Server stamps a Session's beginning to.
 const STAMPED_APART: std::time::Duration = std::time::Duration::from_millis(2);
@@ -548,4 +548,70 @@ async fn a_remote_paired_again_under_a_new_name_keeps_the_workspace_remembered_f
 
     phone.shutdown();
     desk.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn another_server_answering_at_a_remotes_address_ends_nothing_and_its_listing_moves_again_once_it_is_back()
+ {
+    let desk = ServingServer::start("thin-list-swapped-desk").await;
+    let lab = ServingServer::start("thin-list-swapped-lab").await;
+    let address = Gate::open(desk.serving_address()).await;
+    let phone = Phone::new();
+    let invite = desk.invite(vec![Way::Direct(address.address())]).await;
+    let paired = phone
+        .core
+        .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
+        .await;
+    assert_eq!(
+        paired,
+        PairingOutcome::Paired {
+            name: "desk".to_owned()
+        }
+    );
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, WORKING), "Map the workspace")
+        .await;
+    phone
+        .listing_until(|listing| titles(listing).contains(&"Map the workspace"))
+        .await;
+
+    // The desk slept, and its address was given to the lab, which answers
+    // there under its own key, again and again.
+    address.shut_now();
+    address.point_at(lab.serving_address());
+    let dialled = address.dialled();
+    address.open_now();
+    tokio::time::timeout(PROGRESS_DEADLINE, async {
+        while address.dialled() < dialled + 3 {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the desk is asked for again where the lab answers");
+
+    // The desk woke, at its address again: what moves there is listed.
+    address.shut_now();
+    address.point_at(desk.serving_address());
+    address.open_now();
+    // What was asked while it slept may be answered once it is back; what
+    // moves after only the desk's catalog, followed again, tells of.
+    desk.begin(&workspace(&holder, WORKING), "Write the tests")
+        .await;
+    phone
+        .listing_until(|listing| titles(listing).contains(&"Write the tests"))
+        .await;
+    desk.begin(&workspace(&holder, WORKING), "Tidy the build")
+        .await;
+    let listing = phone
+        .listing_until(|listing| titles(listing).contains(&"Tidy the build"))
+        .await;
+    assert!(
+        titles(&listing).contains(&"Map the workspace"),
+        "{listing:?}"
+    );
+    assert_eq!(phone.servers().await.remotes.len(), 1, "the pairing stands");
+
+    phone.shutdown();
+    desk.shutdown().await;
+    lab.shutdown().await;
 }

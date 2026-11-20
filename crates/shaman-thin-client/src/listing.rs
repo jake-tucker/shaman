@@ -2407,8 +2407,11 @@ struct Remote {
 /// Remote anew, through `reach`, whenever the stream drops. Where the Remote
 /// refuses it as behind, or it refuses the Remote so, that stands in the
 /// listing until the stream, opened again each time `try_now` says, is read
-/// afresh; a change of a kind this build does not know is passed over, and
-/// the Remote said to be newer.
+/// afresh. Where something at its address answers with a key other than the
+/// one it was paired under, which ends no Pairing, the stream is opened again
+/// on the readers' backoff, or at once when `try_now` says, until the Remote
+/// answers there again. A change of a kind this build does not know is
+/// passed over, and the Remote said to be newer.
 async fn follow_catalog(
     shared: Weak<Shared>,
     commands: SessionCommands,
@@ -2427,6 +2430,8 @@ async fn follow_catalog(
         agent: agent_wanted,
         resolution: resolve_wanted,
     } = wanted;
+    let (initial, max) = commands.recovery_backoff();
+    let mut backoff = RecoveryBackoff::new(initial, max);
     loop {
         let mut catalog = commands.subscribe_catalog();
         let mut refused = None;
@@ -2436,6 +2441,7 @@ async fn follow_catalog(
                 // would get is asked again too, and the Remote works with
                 // the phone, whatever it said before.
                 SessionCatalogEvent::SessionCatalogReconciled(snapshot) => {
+                    backoff.reset();
                     wanted.notify_one();
                     agent_wanted.notify_one();
                     resolve_wanted.notify_one();
@@ -2471,8 +2477,26 @@ async fn follow_catalog(
                 // The stream ended for good, which, for a side too old for
                 // the other, is until that side is updated. What the refusal
                 // says of the side is shown from what the transport found.
+                // Refused for the Pairing's keys where the Remote did not
+                // refuse this phone's, it was something else answering at
+                // its address, which it may answer at again.
                 SessionCatalogEvent::RemoteFailed { status, .. } => {
-                    refused = Behind::of_status(status);
+                    let Some(shared) = shared.upgrade() else {
+                        return;
+                    };
+                    refused = match Behind::of_status(status) {
+                        Some(_) => Some(Refused::Behind),
+                        None if status == shaman_protocol::RemoteStatus::Revoked
+                            && !shared
+                                .ended
+                                .lock()
+                                .unwrap_or_else(|poison| poison.into_inner())
+                                .contains(&fingerprint) =>
+                        {
+                            Some(Refused::OtherKey)
+                        }
+                        None => None,
+                    };
                     None
                 }
                 // Something a newer Server sends: said once.
@@ -2521,11 +2545,23 @@ async fn follow_catalog(
         }
         // Refused for anything else, the Pairing has ended, or the reading
         // was let go.
-        if refused.is_none() {
-            return;
+        match refused {
+            None => return,
+            Some(Refused::Behind) => try_now.heard().await,
+            Some(Refused::OtherKey) => {
+                try_now.or_after(backoff.next()).await;
+            }
         }
-        try_now.heard().await;
     }
+}
+
+/// Why a Remote's catalog stream was refused in a way it is opened again
+/// after.
+enum Refused {
+    /// One side is too old for the other, until it is updated.
+    Behind,
+    /// Something other than the Remote answered at its address.
+    OtherKey,
 }
 
 /// Asks a Remote something the Landing shows by `ask` — which Agent a

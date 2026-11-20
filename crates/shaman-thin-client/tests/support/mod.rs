@@ -596,6 +596,8 @@ pub struct Gate {
     carrying: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
     /// Whether what the Server says back is dropped.
     muted: watch::Sender<bool>,
+    /// Where each connection it carries from now on is carried.
+    target: Arc<Mutex<SocketAddr>>,
 }
 
 /// How a way stands for what is dialled to it.
@@ -651,6 +653,8 @@ impl Gate {
         let attempted = Arc::new(AtomicU64::new(0));
         let attempts = attempted.clone();
         let cuts = cut.clone();
+        let target = Arc::new(Mutex::new(target));
+        let pointed = target.clone();
         tokio::spawn(async move {
             // Until it opens, nothing is accepted: a dial connects, and its
             // handshake hears nothing.
@@ -675,6 +679,7 @@ impl Gate {
                 }
                 let (muted, mut cut, frozen) =
                     (muting.subscribe(), cuts.subscribe(), holding.clone());
+                let target = *pointed.lock().unwrap();
                 let proxy = tokio::spawn(async move {
                     let Ok(outbound) = tokio::net::TcpStream::connect(target).await else {
                         return;
@@ -710,6 +715,7 @@ impl Gate {
             dialled,
             attempted,
             carrying,
+            target,
         }
     }
 
@@ -740,6 +746,13 @@ impl Gate {
         for proxy in self.carrying.lock().unwrap().drain(..) {
             proxy.abort();
         }
+    }
+
+    /// Carries each connection dialled from now on to `target`, as an
+    /// address given to another machine while the one it named slept: what
+    /// it carries already is left as it is.
+    pub fn point_at(&self, target: SocketAddr) {
+        *self.target.lock().unwrap() = target;
     }
 
     /// Cuts the way: what it carries goes silent, and what is dialled after
