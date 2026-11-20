@@ -13,7 +13,9 @@ use std::{
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use shaman::protocol::Way;
-use shaman_thin_client::{BeginsIn, InviteReading, Outlook, PairingOutcome, TryInstead, WayState};
+use shaman_thin_client::{
+    BeginsIn, InviteReading, Outlook, PairingOutcome, ScanWords, TryInstead, WayState,
+};
 
 use support::{Gate, Phone, ServingServer};
 
@@ -113,6 +115,25 @@ fn where_pairing_begins_says_to_scan_the_servers_code_or_paste_its_invite() {
         phone.core.pairing_prompt(),
         "On the server, run /serve in Shaman and press q, or run `shaman serve invite --qr`, \
          then scan the code it draws or paste the invite here."
+    );
+    phone.shutdown();
+}
+
+#[test]
+fn the_scanner_says_what_it_looks_for_and_why_it_cannot_scan() {
+    let phone = Phone::new();
+    assert_eq!(
+        phone.core.scan_words(),
+        ScanWords {
+            looking: "Looking for a Shaman invite".to_owned(),
+            passed_over: "That code is not a Shaman invite".to_owned(),
+            camera_refused: "Shaman may not use the camera. Allow it in the Settings app to scan, \
+                             or paste the invite."
+                .to_owned(),
+            no_camera: "This phone has no camera that can scan. Paste the invite instead."
+                .to_owned(),
+            camera_failed: "The camera stopped scanning. Paste the invite instead.".to_owned(),
+        }
     );
     phone.shutdown();
 }

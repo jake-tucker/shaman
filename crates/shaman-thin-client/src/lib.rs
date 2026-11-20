@@ -65,7 +65,7 @@ pub use listing::{
     Slot, Standing, UnreachableHint, UnreachableRow, UnreachableSheet,
 };
 pub use notices::Notice;
-pub use pairing::{InviteReading, OfferedWay, PairingOutcome, ReadInvite, TryInstead};
+pub use pairing::{InviteReading, OfferedWay, PairingOutcome, ReadInvite, ScanWords, TryInstead};
 pub use picker::{WorkspacePicker, WorkspaceRow, WorkspaceSection};
 use relays::Relays;
 pub use relays::{DeviceLogin, LoginOffer, RelayRow, RelayRowState};
@@ -721,6 +721,12 @@ impl ThinClient {
     /// What the screen where pairing begins says to do.
     pub fn pairing_prompt(&self) -> String {
         pairing::PROMPT.to_owned()
+    }
+
+    /// What the scanner's screen and the offer to scan say, of which the app
+    /// shows whichever the camera calls for.
+    pub fn scan_words(&self) -> ScanWords {
+        pairing::ScanWords::new()
     }
 
     /// Whether `text`, as a scanner read it, is an Invite, by its form alone:

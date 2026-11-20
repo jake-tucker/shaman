@@ -99,6 +99,40 @@ pub enum TryInstead {
     TryAgain,
 }
 
+/// What the scanner's screen, and the offer to scan where pairing begins, say:
+/// the app shows whichever the camera calls for, which the core never sees.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct ScanWords {
+    /// Said while the scanner scans.
+    pub looking: String,
+    /// Said of a code the scanner passed over, not being an Invite, while it
+    /// stays in sight.
+    pub passed_over: String,
+    /// Said where Shaman may not use the camera, beside the way to the
+    /// Settings app.
+    pub camera_refused: String,
+    /// Said where this phone has no camera that scans, as the simulator has
+    /// none.
+    pub no_camera: String,
+    /// Said where the camera stopped as it scanned.
+    pub camera_failed: String,
+}
+
+impl ScanWords {
+    pub(crate) fn new() -> Self {
+        Self {
+            looking: "Looking for a Shaman invite".to_owned(),
+            passed_over: "That code is not a Shaman invite".to_owned(),
+            camera_refused: "Shaman may not use the camera. Allow it in the Settings app to scan, \
+                             or paste the invite."
+                .to_owned(),
+            no_camera: "This phone has no camera that can scan. Paste the invite instead."
+                .to_owned(),
+            camera_failed: "The camera stopped scanning. Paste the invite instead.".to_owned(),
+        }
+    }
+}
+
 /// What the screen where pairing begins says to do.
 pub(crate) const PROMPT: &str = "On the server, run /serve in Shaman and press q, or run `shaman serve invite --qr`, \
                                  then scan the code it draws or paste the invite here.";
