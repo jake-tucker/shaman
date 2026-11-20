@@ -2155,7 +2155,7 @@ mod tests {
         listings.hold(desk);
         if ended {
             let (fingerprint, _) = reference.split_once('/').unwrap();
-            listings.downgrade().pairing_ended(fingerprint);
+            listings.downgrade().pairing_ended(fingerprint, 0);
         }
         let revoked = SessionError {
             code: SessionErrorCode::PairingAuthenticationFailed,

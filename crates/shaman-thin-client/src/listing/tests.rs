@@ -1828,3 +1828,53 @@ fn a_change_a_newer_servers_catalog_sent_is_passed_over_and_the_remote_said_newe
     assert_eq!(*notices.borrow(), None, "said once, for both");
     reader.abort();
 }
+
+#[test]
+fn a_pairing_ended_is_ended_for_its_own_generation_alone() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let (listings, _directory) = listings(&runtime);
+    let held = |generation| {
+        listings
+            .shared
+            .redeemer
+            .change_remotes(|remotes| {
+                remotes.clear();
+                remotes.push(StoredRemote {
+                    remote: shaman_protocol::Remote {
+                        name: "desk".to_owned(),
+                        fingerprint: "desk-key".to_owned(),
+                        ways: Vec::new(),
+                        status: shaman_protocol::RemoteStatus::Available,
+                        icon: None,
+                    },
+                    public_key: b"desk-key".to_vec(),
+                    answered: Vec::new(),
+                    generation,
+                    offer: None,
+                    uncommitted: false,
+                });
+                Ok(())
+            })
+            .unwrap_or_else(|_| panic!("hold the desk"));
+    };
+    held(1);
+    assert!(!listings.pairing_ended("desk-key"), "nothing refused it");
+
+    listings.downgrade().pairing_ended("desk-key", 1);
+    assert!(listings.pairing_ended("desk-key"), "while it is held still");
+    held(2);
+    assert!(
+        !listings.pairing_ended("desk-key"),
+        "paired again under the same key, nothing ended the new Pairing"
+    );
+    listings
+        .shared
+        .redeemer
+        .change_remotes(|remotes| {
+            remotes.clear();
+            Ok(())
+        })
+        .unwrap_or_else(|_| panic!("forget the desk"));
+    listings.downgrade().pairing_ended("desk-key", 2);
+    assert!(listings.pairing_ended("desk-key"), "and forgotten since");
+}

@@ -1207,22 +1207,24 @@ pub(crate) struct WeakListings(std::sync::Weak<Shared>);
 
 impl WeakListings {
     /// The Remote whose key's fingerprint is `fingerprint` refused this
-    /// phone's key, ending its Pairing.
-    pub fn pairing_ended(&self, fingerprint: &str) {
+    /// phone's key, ending its Pairing of `generation`.
+    pub fn pairing_ended(&self, fingerprint: &str, generation: u64) {
         if let Some(shared) = self.0.upgrade() {
             shared
                 .ended
                 .lock()
                 .unwrap_or_else(|poison| poison.into_inner())
-                .insert(fingerprint.to_owned());
+                .insert(fingerprint.to_owned(), generation);
         }
     }
 }
 
 struct Shared {
     /// The Remotes, by their keys' fingerprints, that refused this phone's
-    /// key, ending their Pairings: what a Session read on one says.
-    ended: Mutex<std::collections::HashSet<String>>,
+    /// key, ending their Pairings, each with the generation of the Pairing
+    /// ended: what a Session read on one says. A Pairing made again with
+    /// the same key since is one of another generation, which nothing ended.
+    ended: Mutex<HashMap<String, u64>>,
     runtime: Handle,
     redeemer: Redeemer,
     /// The Relays this phone stands at, as its Remotes' Relay ways are
@@ -1373,11 +1375,16 @@ impl Listings {
     /// other way, as by presenting a key other than the one it was paired
     /// under.
     pub fn pairing_ended(&self, fingerprint: &str) -> bool {
+        let Some(generation) = self.shared.ended_generation(fingerprint) else {
+            return false;
+        };
+        // Ended, unless it was paired again since; forgotten, it is ended.
         self.shared
-            .ended
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .contains(fingerprint)
+            .redeemer
+            .records()
+            .into_iter()
+            .find(|stored| !stored.uncommitted && stored.remote.fingerprint == fingerprint)
+            .is_none_or(|stored| stored.generation == generation)
     }
 
     /// The name the Remote whose key's fingerprint is `fingerprint` is held
@@ -2045,6 +2052,16 @@ impl Listings {
 }
 
 impl Shared {
+    /// The generation of the Pairing with the Remote whose key's fingerprint
+    /// is `fingerprint` that it last ended by refusing this phone's key.
+    fn ended_generation(&self, fingerprint: &str) -> Option<u64> {
+        self.ended
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .get(fingerprint)
+            .copied()
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
         self.state
             .lock()
@@ -2487,11 +2504,7 @@ async fn follow_catalog(
                     refused = match Behind::of_status(status) {
                         Some(_) => Some(Refused::Behind),
                         None if status == shaman_protocol::RemoteStatus::Revoked
-                            && !shared
-                                .ended
-                                .lock()
-                                .unwrap_or_else(|poison| poison.into_inner())
-                                .contains(&fingerprint) =>
+                            && shared.ended_generation(&fingerprint) != Some(generation) =>
                         {
                             Some(Refused::OtherKey)
                         }

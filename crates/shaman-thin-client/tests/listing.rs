@@ -550,13 +550,8 @@ async fn a_remote_paired_again_under_a_new_name_keeps_the_workspace_remembered_f
     desk.shutdown().await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn another_server_answering_at_a_remotes_address_ends_nothing_and_its_listing_moves_again_once_it_is_back()
- {
-    let desk = ServingServer::start("thin-list-swapped-desk").await;
-    let lab = ServingServer::start("thin-list-swapped-lab").await;
-    let address = Gate::open(desk.serving_address()).await;
-    let phone = Phone::new();
+/// Pairs `phone` with `desk` through `address` alone, naming it "desk".
+async fn pair_through(phone: &Phone, desk: &ServingServer, address: &Gate) {
     let invite = desk.invite(vec![Way::Direct(address.address())]).await;
     let paired = phone
         .core
@@ -568,15 +563,19 @@ async fn another_server_answering_at_a_remotes_address_ends_nothing_and_its_list
             name: "desk".to_owned()
         }
     );
-    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
-    desk.begin(&workspace(&holder, WORKING), "Map the workspace")
-        .await;
-    phone
-        .listing_until(|listing| titles(listing).contains(&"Map the workspace"))
-        .await;
+}
 
-    // The desk slept, and its address was given to the lab, which answers
-    // there under its own key, again and again.
+/// The desk at `address` slept, and its address was given to `lab`, which
+/// answers there under its own key, again and again; then the desk woke, at
+/// its address again. What moves there after is listed, and the Pairing
+/// stands.
+async fn address_lent_and_given_back(
+    phone: &Phone,
+    desk: &ServingServer,
+    lab: &ServingServer,
+    address: &Gate,
+    holder: &tempfile::TempDir,
+) {
     address.shut_now();
     address.point_at(lab.serving_address());
     let dialled = address.dialled();
@@ -589,27 +588,77 @@ async fn another_server_answering_at_a_remotes_address_ends_nothing_and_its_list
     .await
     .expect("the desk is asked for again where the lab answers");
 
-    // The desk woke, at its address again: what moves there is listed.
     address.shut_now();
     address.point_at(desk.serving_address());
     address.open_now();
     // What was asked while it slept may be answered once it is back; what
     // moves after only the desk's catalog, followed again, tells of.
-    desk.begin(&workspace(&holder, WORKING), "Write the tests")
+    desk.begin(&workspace(holder, WORKING), "Write the tests")
         .await;
     phone
         .listing_until(|listing| titles(listing).contains(&"Write the tests"))
         .await;
-    desk.begin(&workspace(&holder, WORKING), "Tidy the build")
+    desk.begin(&workspace(holder, WORKING), "Tidy the build")
         .await;
-    let listing = phone
+    phone
         .listing_until(|listing| titles(listing).contains(&"Tidy the build"))
         .await;
-    assert!(
-        titles(&listing).contains(&"Map the workspace"),
-        "{listing:?}"
-    );
     assert_eq!(phone.servers().await.remotes.len(), 1, "the pairing stands");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn another_server_answering_at_a_remotes_address_ends_nothing_and_its_listing_moves_again_once_it_is_back()
+ {
+    let desk = ServingServer::start("thin-list-swapped-desk").await;
+    let lab = ServingServer::start("thin-list-swapped-lab").await;
+    let address = Gate::open(desk.serving_address()).await;
+    let phone = Phone::new();
+    pair_through(&phone, &desk, &address).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, WORKING), "Map the workspace")
+        .await;
+    phone
+        .listing_until(|listing| titles(listing).contains(&"Map the workspace"))
+        .await;
+
+    address_lent_and_given_back(&phone, &desk, &lab, &address, &holder).await;
+    assert!(
+        titles(&phone.listing_until(|_| true).await).contains(&"Map the workspace"),
+        "what it listed before stands"
+    );
+
+    phone.shutdown();
+    desk.shutdown().await;
+    lab.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_remote_that_removed_the_phone_and_was_paired_again_is_followed_past_another_key_at_its_address()
+ {
+    let desk = ServingServer::start("thin-list-repaired-desk").await;
+    let lab = ServingServer::start("thin-list-repaired-lab").await;
+    let address = Gate::open(desk.serving_address()).await;
+    let phone = Phone::new();
+    pair_through(&phone, &desk, &address).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, WORKING), "Map the workspace")
+        .await;
+    phone
+        .listing_until(|listing| titles(listing).contains(&"Map the workspace"))
+        .await;
+
+    // The desk removed the phone, ending the Pairing, and was paired again
+    // under the same key.
+    desk.remove_peer(&phone.fingerprint()).await;
+    phone
+        .servers_until(|servers| servers.remotes.is_empty())
+        .await;
+    pair_through(&phone, &desk, &address).await;
+    phone
+        .listing_until(|listing| titles(listing).contains(&"Map the workspace"))
+        .await;
+
+    address_lent_and_given_back(&phone, &desk, &lab, &address, &holder).await;
 
     phone.shutdown();
     desk.shutdown().await;

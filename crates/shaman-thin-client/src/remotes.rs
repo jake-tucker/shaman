@@ -535,7 +535,8 @@ impl shaman_pairing::RedeemerHooks for Endings {
             .into_iter()
             .find(|stored| stored.public_key == key && !stored.uncommitted);
         if let Some(stored) = refused {
-            self.listings.pairing_ended(&stored.remote.fingerprint);
+            self.listings
+                .pairing_ended(&stored.remote.fingerprint, stored.generation);
             let _ = self.ended.send((stored.remote.name, stored.generation));
         }
     }
