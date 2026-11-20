@@ -31,7 +31,8 @@ jobs:
     name: Build and test
     # The only image with Xcode 27, which the project's format needs.
     runs-on: xcode-27
-    timeout-minutes: 60
+    # The simulator's tests, then the phone's core, size-optimised with fat LTO, and the app built again in Release.
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
@@ -126,7 +127,12 @@ jobs:
         working-directory: ios
         run: |
           set -euo pipefail
-          if strings -a build/device/Build/Products/Release-iphoneos/Shaman.app/Shaman | grep -E 'FakeCore|--fake'; then
+          binary=build/device/Build/Products/Release-iphoneos/Shaman.app/Shaman
+          if [ ! -f "$binary" ]; then
+            echo "::error::The phone's build made no $binary to check."
+            exit 1
+          fi
+          if strings -a "$binary" | grep -E 'FakeCore|--fake'; then
             echo "::error::The fake and every debug-only path stay behind #if DEBUG."
             exit 1
           fi
