@@ -108,7 +108,8 @@ without its key, saying the workstation is to be updated; its card's rows open i
 `longSession` the `paired` phone also lists two long Sessions, `FakeLong`'s, of some 330 items of very uneven height,
 short bubbles among long Markdown answers with code blocks and tables, Turn cards and Compactions, each item's words
 numbered so that one can be told from another: `workstation-key/30` has settled, its last item the line "That's
-everything", and in `/31` the last answer streams on for half a minute. A card
+everything", and in `/31` the last answer streams on for half a minute. `LongSessionTests` reads them from screenshots
+alone, since asking for the accessibility tree lays the conversation out again as no reader's scrolling does. A card
 pushes its Turn's work from `FakeWork`, and a row its Activity's whole: in `/7` the work holds a settled Approval, File
 Changes and the placeholder for a kind a newer Server sent, and in `/1` the running command's output grows a line at a
 time while its screen is up. Every act a fake Session is asked is answered as the core would answer it, after a moment:

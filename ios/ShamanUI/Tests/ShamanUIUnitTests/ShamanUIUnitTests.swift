@@ -537,6 +537,92 @@ private final class RefusingSigner: KeySigner {
     conversation.take(.changed(items: [], order: ["b", "a"]))
     #expect(conversation.shown == [item("b", "two, longer")], "and stays gone")
   }
+
+  @Test func theLoadingMarkAndWhyItCannotBeReadStandOverTheConversationNotInIt() {
+    var conversation = Conversation()
+    let loading = ConversationItem(id: "loading", kind: .loading(words: "Loading"))
+    conversation.take(.whole(items: [loading]))
+    #expect(conversation.rows.isEmpty)
+    #expect(conversation.marks == [loading])
+    #expect(!conversation.read)
+
+    conversation.take(.whole(items: [item("a", "one"), item("b", "two")]))
+    #expect(conversation.rows == [item("a", "one"), item("b", "two")])
+    #expect(conversation.marks.isEmpty)
+    #expect(conversation.read)
+  }
+}
+
+@Suite struct ConversationGeometryTests {
+  private let spacing = ConversationGeometry.spacing
+  private let margin = ConversationGeometry.margin
+  private let guess = ConversationGeometry.guess
+
+  private func geometry(_ heights: [CGFloat]) -> ConversationGeometry {
+    var geometry = ConversationGeometry()
+    geometry.take(heights.indices.map { "row\($0)" })
+    for (index, height) in heights.enumerated() {
+      geometry.measured("row\(index)", at: height, foot: 0)
+    }
+    return geometry
+  }
+
+  @Test func rowsStandOneBelowAnotherAsTheyMeasuredAndAsGuessedWhereTheyHaveNot() {
+    var geometry = geometry([40, 300])
+    geometry.take(["row0", "row1", "row2"])
+    #expect(geometry.frame(of: 0, width: 100) == CGRect(x: 0, y: margin, width: 100, height: 40))
+    #expect(geometry.frame(of: 1, width: 100).minY == margin + 40 + spacing)
+    #expect(geometry.frame(of: 2, width: 100).height == guess, "not yet drawn, so guessed")
+    #expect(geometry.height == margin + 40 + spacing + 300 + spacing + guess + margin)
+    #expect(geometry.measured("row1") && !geometry.measured("row2"))
+  }
+
+  @Test func theRowsBetweenTwoDepthsAreThoseStandingAtLeastPartlyBetweenThem() {
+    let geometry = geometry([100, 100, 100, 100])
+    // Rows stand at 8, 120, 232 and 344, each 100 tall.
+    #expect(geometry.rows(between: 0, and: 50) == 0..<1)
+    #expect(geometry.rows(between: 150, and: 250) == 1..<3)
+    #expect(geometry.rows(between: 1000, and: 2000).isEmpty)
+  }
+
+  @Test func aRowEndingAboveWhatTheReaderSeesMovesItByAsMuchAsItChanged() {
+    var geometry = geometry([100, 100, 100])
+    // The reader sees from 300 down to 600: the first row ends at 108, above it.
+    #expect(geometry.measured("row0", at: 350, foot: 600) == 250)
+    #expect(geometry.frame(of: 2, width: 1).minY == margin + 350 + spacing + 100 + spacing)
+    #expect(geometry.measured("row0", at: 50, foot: 600) == -300, "shrinking moves it back as far")
+  }
+
+  @Test func aRowFirstDrawnAtTheTopOfWhatTheReaderSeesKeepsWhatStandsBelowItStill() {
+    var geometry = ConversationGeometry()
+    geometry.take(["new", "seen"])
+    geometry.measured("seen", at: 400, foot: 0)
+    // Scrolling up, the row not yet drawn comes into sight at the top, guessed, its foot at 128.
+    #expect(geometry.measured("new", at: 900, foot: 500) == 900 - guess)
+  }
+
+  @Test func aRowRunningOnPastWhatTheReaderSeesGrowsBeneathThemAndMovesNothing() {
+    var geometry = geometry([100, 2000])
+    // The reader is within the long last row, which streams on below the foot of what they see.
+    #expect(geometry.measured("row1", at: 2400, foot: 1200) == 0)
+    #expect(geometry.height == margin + 100 + spacing + 2400 + margin)
+  }
+
+  @Test func aRowBelowWhatTheReaderSeesMovesNothing() {
+    var geometry = geometry([100, 100])
+    #expect(geometry.measured("row1", at: 500, foot: 150) == 0)
+  }
+
+  @Test func whatWasMeasuredIsKeptForTheRowsStillHeldAndForgottenForTheRest() {
+    var geometry = geometry([100, 200])
+    geometry.take(["row1", "row2"])
+    #expect(geometry.frame(of: 0, width: 1).height == 200)
+    #expect(geometry.frame(of: 1, width: 1).height == guess)
+    geometry.take(["row0", "row1"])
+    #expect(!geometry.measured("row0"), "it left, so what it measured went with it")
+    geometry.forget()
+    #expect(!geometry.measured("row1"))
+  }
 }
 
 @Suite struct ListenedInOrderTests {
@@ -713,6 +799,20 @@ private final class RefusingSigner: KeySigner {
     await sending.value
     #expect(model.banner == nil)
     #expect(model.text == "")
+  }
+
+  @Test func eachSendOrQueueIsCountedSoThatTheConversationGoesBackToItsFoot() async {
+    let model = SessionModel(core: FakeCore(.paired), session: working, failureStands: .seconds(3600))
+    #expect(model.sent == 0)
+    model.text = "   "
+    await model.send()
+    #expect(model.sent == 0, "nothing to send, so nothing sent")
+    model.text = "Give it a quiet zone"
+    await model.send()
+    #expect(model.sent == 1)
+    model.text = "And after that, the docs"
+    await model.queue()
+    #expect(model.sent == 2)
   }
 
   @Test func aRefusedSendStandsInTheBannerAndItsTextIsBackInTheField() async {

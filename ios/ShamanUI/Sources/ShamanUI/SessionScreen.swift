@@ -24,22 +24,9 @@ struct SessionScreen: View {
   @State private var chosen: String?
 
   var body: some View {
-    ScrollView {
-      LazyVStack(alignment: .leading, spacing: 12) {
-        ForEach(model.conversation.shown, id: \.id) { item in
-          ItemView(item: item, route: model.route, model: model)
-        }
-        ForEach(model.frame?.queued ?? [], id: \.prompt) { queued in
-          QueuedBubble(queued: queued, model: model)
-        }
-      }
-      .padding(.horizontal, 14)
-      .padding(.vertical, 8)
+    ConversationView(model: model) { pushed in
+      stack?.path.append(pushed)
     }
-    .defaultScrollAnchor(.bottom)
-    .defaultScrollAnchor(.bottom, for: .sizeChanges)
-    .scrollDismissesKeyboard(.interactively)
-    .accessibilityIdentifier("session.conversation")
     .safeAreaInset(edge: .bottom, spacing: 0) {
       SessionFoot(model: model) { opens in
         if let stack {
@@ -125,6 +112,44 @@ struct SessionScreen: View {
       }
     )
     .task { await model.follow() }
+  }
+}
+
+/// The conversation, opening at its foot and following it as it grows while the reader stands there, in
+/// `ConversationList`, which says why it is not a SwiftUI stack. Until there are rows, the loading mark, or why the
+/// Session cannot be read, stands centred where they will be.
+private struct ConversationView: View {
+  let model: SessionModel
+  /// Pushes what a row leads to over the Session's screen.
+  let push: (Pushed) -> Void
+  @State private var heights = RowHeights()
+
+  var body: some View {
+    let rows =
+      model.conversation.rows.map(ConversationRow.item) + (model.frame?.queued ?? []).map(ConversationRow.queued)
+    // Read here, for the rows are drawn later, as the list draws each, where state is no longer to be read.
+    let heights = heights
+    let model = model
+    let push = push
+    ConversationList(rows: rows, sent: model.sent) { row in
+      Group {
+        switch row {
+        case .item(let item):
+          ItemView(item: item, route: model.route, model: model, push: push)
+        case .queued(let queued):
+          QueuedBubble(queued: queued, model: model)
+        }
+      }
+      .padding(.horizontal, 14)
+      .environment(\.rowHeights, heights)
+    }
+    // Beneath the navigation bar, which the list insets itself for; above the foot, which keeps the room it needs.
+    .ignoresSafeArea(.container, edges: .top)
+    .overlay {
+      ForEach(model.conversation.marks, id: \.id) { mark in
+        ItemView(item: mark, route: model.route, model: model, push: push)
+      }
+    }
   }
 }
 
@@ -356,17 +381,18 @@ private struct SessionHeader: View {
   }
 }
 
-/// One item of the conversation, drawn as what it is: a Turn's card and a Compaction with more behind it push what
+/// One item of the conversation, drawn as what it is: a Turn's card and a Compaction with more behind it `push` what
 /// they hold over the Session `route` pushed, and a refused beginning offers to ask again through `model`.
 private struct ItemView: View {
   let item: ConversationItem
   let route: SessionRoute
   let model: SessionModel
+  let push: (Pushed) -> Void
 
   var body: some View {
     switch item.kind {
     case .unread(let words):
-      // Centred in what the conversation will fill, once it can be read.
+      // Centred over what the conversation will fill, once it can be read.
       VStack(spacing: 12) {
         Image(systemName: "arrow.down.app")
           .font(.largeTitle)
@@ -377,12 +403,10 @@ private struct ItemView: View {
       }
       .foregroundStyle(.secondary)
       .padding(.horizontal, 32)
-      .containerRelativeFrame([.horizontal, .vertical])
     case .loading(let words):
-      // Centred in what the conversation will fill.
+      // Centred over what the conversation will fill.
       ProgressView()
         .controlSize(.regular)
-        .containerRelativeFrame([.horizontal, .vertical])
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: words))
         .accessibilityIdentifier("session.loading")
@@ -391,10 +415,12 @@ private struct ItemView: View {
     case .delegation(let text, let from):
       DelegationBubble(text: text, from: from)
     case .agentMessage(let markdown, let model, _):
-      AgentMessage(markdown: markdown, model: model)
+      AgentMessage(id: item.id, markdown: markdown, model: model)
     case .turn(let card):
       // The card pushes the Turn's work.
-      NavigationLink(value: Pushed.work(route, turn: card.work)) {
+      Button {
+        push(.work(route, turn: card.work))
+      } label: {
         TurnCardView(card: card)
       }
       .buttonStyle(.plain)
@@ -424,7 +450,9 @@ private struct ItemView: View {
       .foregroundStyle(.secondary)
       if let detail {
         // What it was asked to keep, and what it left, stand behind it.
-        NavigationLink(value: Pushed.detail(route, activity: detail)) {
+        Button {
+          push(.detail(route, activity: detail))
+        } label: {
           HStack {
             compaction
             Image(systemName: "chevron.right")
@@ -804,11 +832,23 @@ private struct DelegationBubble: View {
 
 /// What the Agent said, as Markdown across the width: code blocks and tables scroll sideways rather than wrap. Where
 /// another Model answered than the one selected, a subdued line above names both.
+///
+/// Textual draws Markdown empty at first and grows it into place over the next few passes, as it parses and lays out
+/// each block, and does so again now and then while it stands; and a list draws a row again each time it comes back
+/// into sight. So once a Message has settled at a height it stands that tall, kept by the Message and in
+/// `rowHeights` for the next time it is drawn, while what it draws grows into it.
 private struct AgentMessage: View {
+  let id: String
   let markdown: String
   let model: String?
+  @Environment(\.rowHeights) private var heights
+  @Environment(\.dynamicTypeSize) private var size
+  /// The tallest this Message has measured, and what it was drawn from.
+  @State private var settled: (drawn: RowHeights.Drawn, height: CGFloat)?
 
   var body: some View {
+    let drawn = RowHeights.Drawn(markdown: markdown, size: size)
+    let height = settled.flatMap { $0.drawn == drawn ? $0.height : nil } ?? heights?.height(of: id, drawn)
     VStack(alignment: .leading, spacing: 4) {
       if let model {
         Text(verbatim: model)
@@ -821,9 +861,55 @@ private struct AgentMessage: View {
         .textual.tableStyle(.overflow)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+    // Measured at its own height whatever the frame around it proposes, so what is kept is what it settled at.
+    .fixedSize(horizontal: false, vertical: true)
+    .onGeometryChange(for: CGFloat.self, of: \.size.height) { measured in
+      guard measured > (height ?? 0) else { return }
+      settled = (drawn, measured)
+      heights?.measured(id, drawn, measured)
+    }
+    .frame(height: height, alignment: .top)
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier("session.agentMessage")
   }
+}
+
+/// The heights the Agent's Messages of an open conversation settled at, by item, each for the Markdown it held at the
+/// Dynamic Type size it was drawn at. It is read as a row is drawn and written as it is measured, and observed by
+/// nothing, so keeping a height redraws nothing.
+@MainActor final class RowHeights {
+  /// What a row was drawn from, which its height holds for.
+  struct Drawn: Equatable {
+    let markdown: Int
+    let size: DynamicTypeSize
+
+    init(markdown: String, size: DynamicTypeSize) {
+      self.markdown = markdown.hashValue
+      self.size = size
+    }
+  }
+
+  private var settled: [String: (drawn: Drawn, height: CGFloat)] = [:]
+
+  /// How tall the row `id` settled at, drawn from `drawn`; nothing where it has yet to be measured so.
+  func height(of id: String, _ drawn: Drawn) -> CGFloat? {
+    settled[id].flatMap { $0.drawn == drawn ? $0.height : nil }
+  }
+
+  /// Keeps `height` as what the row `id`, drawn from `drawn`, measured: but where it measured taller before, it is
+  /// still growing into what it settled at, so that stays. The width a row is drawn across is the phone's, which
+  /// turns with nothing, so it is not asked.
+  func measured(_ id: String, _ drawn: Drawn, _ height: CGFloat) {
+    if let kept = settled[id], kept.drawn == drawn, kept.height >= height {
+      return
+    }
+    settled[id] = (drawn, height)
+  }
+}
+
+extension EnvironmentValues {
+  /// The heights the open conversation's Messages settled at.
+  @Entry var rowHeights: RowHeights?
 }
 
 /// The card a Turn's work stands behind: how it settled and how long it took, or what runs now, over its count.
@@ -900,16 +986,20 @@ struct Conversation: Equatable {
     order.compactMap { items[$0] }
   }
 
+  /// The items the conversation scrolls through, in the order they stand: all but a mark.
+  var rows: [ConversationItem] {
+    shown.filter { !$0.isMark }
+  }
+
+  /// The loading mark, or why the Session cannot be read, which stands over the conversation rather than in it.
+  var marks: [ConversationItem] {
+    shown.filter(\.isMark)
+  }
+
   /// Whether the Session has been read: it holds items, and no loading mark, nor why it cannot be read, stands among
   /// them.
   var read: Bool {
-    !order.isEmpty
-      && !shown.contains {
-        switch $0.kind {
-        case .loading, .unread: true
-        default: false
-        }
-      }
+    !order.isEmpty && !shown.contains(where: \.isMark)
   }
 
   /// Takes `change` in: the conversation whole, or the items that changed and the order every item stands in now.
@@ -925,6 +1015,16 @@ struct Conversation: Equatable {
       order = newOrder
       let standing = Set(newOrder)
       items = items.filter { standing.contains($0.key) }
+    }
+  }
+}
+
+extension ConversationItem {
+  /// Whether it is a mark standing in for the conversation: the loading mark, or why it cannot be read.
+  var isMark: Bool {
+    switch kind {
+    case .loading, .unread: true
+    default: false
     }
   }
 }
@@ -957,6 +1057,8 @@ final class SessionModel {
   private(set) var banner: String?
   /// What the core refused of the input, shown beside it.
   private(set) var invalid: String?
+  /// How many Prompts the composer has sent or queued, each of which takes the conversation back to its foot.
+  private(set) var sent = 0
   /// Whether the Session turned out gone, which pops its screen.
   private(set) var popped = false
   /// Whether a stop is under way, which dims Stop until it returns.
@@ -1019,11 +1121,12 @@ final class SessionModel {
   }
 
   private func prompting(_ act: (String) async throws(ActError) -> Void) async {
-    let sent = text
-    guard !sent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    let sending = text
+    guard !sending.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
     text = ""
+    sent += 1
     do {
-      try await act(sent)
+      try await act(sending)
     } catch {
       failed(error)
       take(core.draft(for: session))
