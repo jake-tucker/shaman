@@ -47,7 +47,10 @@ pub fn asks_for_gzip(headers: &HeaderMap) -> bool {
             let mut parameters = coding.split(';');
             let name = parameters.next().unwrap_or_default().trim();
             let weighted = parameters
-                .filter_map(|parameter| parameter.trim().strip_prefix("q="))
+                .filter_map(|parameter| {
+                    let (name, weight) = parameter.split_once('=')?;
+                    name.trim().eq_ignore_ascii_case("q").then_some(weight)
+                })
                 .next_back()
                 .is_none_or(|weight| {
                     weight
@@ -78,8 +81,9 @@ pub enum Compressing {
 
 /// How the Serving listener compresses the answer to `method`, of `status`
 /// with `headers`, for a Peer that asked for gzip: none where it passes as
-/// it is — an answer with no body, one already encoded, or one that is
-/// neither JSON nor an event stream, such as an Attachment's bytes.
+/// it is — an answer with no body, or one it says is empty, one already
+/// encoded, or one that is neither JSON nor an event stream, such as an
+/// Attachment's bytes.
 pub fn compressing(
     method: &Method,
     status: StatusCode,
@@ -90,6 +94,10 @@ pub fn compressing(
         || status == StatusCode::NO_CONTENT
         || status == StatusCode::NOT_MODIFIED
         || headers.contains_key(header::CONTENT_ENCODING)
+        || headers
+            .get(header::CONTENT_LENGTH)
+            .and_then(|length| length.to_str().ok())
+            .is_some_and(|length| length.trim() == "0")
     {
         return None;
     }
@@ -194,7 +202,13 @@ pub fn decoded<B>(response: http::Response<B>) -> http::Response<Gunzipped<B>> {
     let decoder = gzipped.then(|| {
         parts.headers.remove(header::CONTENT_ENCODING);
         parts.headers.remove(header::CONTENT_LENGTH);
-        Box::new(GzDecoder::new(Vec::new()))
+        Box::new(Gunzipping {
+            decoder: GzDecoder::new(Room(Vec::new())),
+            pending: Bytes::new(),
+            flushing: false,
+            body_ended: false,
+            finished: false,
+        })
     });
     http::Response::from_parts(
         parts,
@@ -206,14 +220,89 @@ pub fn decoded<B>(response: http::Response<B>) -> http::Response<Gunzipped<B>> {
     )
 }
 
+/// The most a decoded answer is handed on in at once. A gzip member may
+/// decode to a thousand times its size, so what a piece of it decodes to is
+/// handed on in pieces of no more than this, each once the reader asks for
+/// it, rather than held whole.
+pub const DECODED_PIECE: usize = 64 * 1024;
+
 /// An answer's body as it was before it was gzipped; see [`decoded`].
 pub struct Gunzipped<B> {
     body: B,
-    /// The decoder, where the answer came gzipped: held apart, since its
+    /// The decoding, where the answer came gzipped: held apart, since its
     /// state is many times the size of the body it reads.
-    decoder: Option<Box<GzDecoder<Vec<u8>>>>,
+    decoder: Option<Box<Gunzipping>>,
     /// Whether the decoded body has ended.
     ended: bool,
+}
+
+/// Where a gzipped answer's decoding stands.
+struct Gunzipping {
+    decoder: GzDecoder<Room>,
+    /// What came of the answer that the decoder has yet to take.
+    pending: Bytes,
+    /// Whether what the decoder took is still to be drawn out of it whole,
+    /// so a piece flushed to the wire is read as it lands.
+    flushing: bool,
+    /// Whether the answer's body has ended.
+    body_ended: bool,
+    /// Whether the member's end has been read and checked.
+    finished: bool,
+}
+
+/// What the decoder writes into: no more than [`DECODED_PIECE`] at once,
+/// refusing the rest as `WouldBlock` until what it holds is handed on. The
+/// decoder takes no more of the answer while it is refused.
+struct Room(Vec<u8>);
+
+impl std::io::Write for Room {
+    fn write(&mut self, decoded: &[u8]) -> std::io::Result<usize> {
+        let room = DECODED_PIECE - self.0.len();
+        if room == 0 {
+            return Err(std::io::ErrorKind::WouldBlock.into());
+        }
+        let taken = room.min(decoded.len());
+        self.0.extend_from_slice(&decoded[..taken]);
+        Ok(taken)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Gunzipping {
+    /// Takes the decoder a step on with what it holds, answering whether
+    /// it has more to do before the answer's body is read again.
+    fn step(&mut self) -> std::io::Result<bool> {
+        if !self.pending.is_empty() {
+            let taken = self.decoder.write(&self.pending)?;
+            if taken == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "an answer went on past the end of its gzip member",
+                ));
+            }
+            bytes::Buf::advance(&mut self.pending, taken);
+        } else if self.flushing {
+            self.decoder.flush()?;
+            self.flushing = false;
+        } else if self.body_ended && !self.finished {
+            // An answer broken off before its member's end is broken, not
+            // merely short.
+            self.decoder.try_finish()?;
+            self.finished = true;
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    /// What has been decoded and not yet handed on.
+    fn decoded(&mut self) -> Option<http_body::Frame<Bytes>> {
+        let decoded = std::mem::take(&mut self.decoder.get_mut().0);
+        (!decoded.is_empty()).then(|| http_body::Frame::data(Bytes::from(decoded)))
+    }
 }
 
 impl<B> http_body::Body for Gunzipped<B>
@@ -229,7 +318,7 @@ where
         context: &mut Context<'_>,
     ) -> Poll<Option<Result<http_body::Frame<Bytes>, BoxError>>> {
         let this = self.get_mut();
-        let Some(decoder) = this.decoder.as_mut() else {
+        let Some(decoding) = this.decoder.as_mut() else {
             return Pin::new(&mut this.body)
                 .poll_frame(context)
                 .map_err(Into::into);
@@ -238,40 +327,46 @@ where
             if this.ended {
                 return Poll::Ready(None);
             }
-            match ready!(Pin::new(&mut this.body).poll_frame(context)) {
-                Some(Ok(frame)) => {
-                    let piece = match frame.into_data() {
-                        Ok(piece) => piece,
-                        Err(frame) => return Poll::Ready(Some(Ok(frame))),
-                    };
-                    // Whatever the pieces that came decode to is handed on at
-                    // once, so an event flushed to the wire is read as it
-                    // lands.
-                    if let Err(error) = decoder.write_all(&piece).and_then(|()| decoder.flush()) {
-                        this.ended = true;
-                        return Poll::Ready(Some(Err(error.into())));
+            match decoding.step() {
+                Ok(true) => {
+                    if decoding.decoder.get_ref().0.len() >= DECODED_PIECE {
+                        return Poll::Ready(decoding.decoded().map(Ok));
                     }
-                    let read = std::mem::take(decoder.get_mut());
-                    if !read.is_empty() {
-                        return Poll::Ready(Some(Ok(http_body::Frame::data(Bytes::from(read)))));
-                    }
+                    continue;
                 }
+                Ok(false) => {}
+                // The decoded piece is full: it is handed on, and the
+                // decoder taken on once it has been.
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    return Poll::Ready(decoding.decoded().map(Ok));
+                }
+                Err(error) => {
+                    this.ended = true;
+                    return Poll::Ready(Some(Err(error.into())));
+                }
+            }
+            // The decoder has done all it can with what came: what it
+            // decoded is handed on at once, before the answer is read on.
+            if let Some(decoded) = decoding.decoded() {
+                return Poll::Ready(Some(Ok(decoded)));
+            }
+            if decoding.finished {
+                this.ended = true;
+                return Poll::Ready(None);
+            }
+            match ready!(Pin::new(&mut this.body).poll_frame(context)) {
+                Some(Ok(frame)) => match frame.into_data() {
+                    Ok(piece) => {
+                        decoding.pending = piece;
+                        decoding.flushing = true;
+                    }
+                    Err(frame) => return Poll::Ready(Some(Ok(frame))),
+                },
                 Some(Err(error)) => {
                     this.ended = true;
                     return Poll::Ready(Some(Err(error.into())));
                 }
-                None => {
-                    this.ended = true;
-                    // An answer broken off before its member's end is broken,
-                    // not merely short.
-                    if let Err(error) = decoder.try_finish() {
-                        return Poll::Ready(Some(Err(error.into())));
-                    }
-                    let read = std::mem::take(decoder.get_mut());
-                    if !read.is_empty() {
-                        return Poll::Ready(Some(Ok(http_body::Frame::data(Bytes::from(read)))));
-                    }
-                }
+                None => decoding.body_ended = true,
             }
         }
     }
@@ -340,6 +435,7 @@ mod tests {
             &["*"],
             &["br;q=1, *;q=0.1"],
             &["gzip; q=1.0"],
+            &["gzip;Q=0.5"],
         ] {
             assert!(asks_for_gzip(&asking(asks)), "{asks:?} asks for gzip");
         }
@@ -352,6 +448,8 @@ mod tests {
             &["*;q=0"],
             &["*, gzip;q=0"],
             &["gzipped"],
+            &["gzip;Q=0"],
+            &["gzip; Q = 0, *"],
         ] {
             assert!(
                 !asks_for_gzip(&asking(asks_not)),
@@ -396,6 +494,15 @@ mod tests {
         assert_eq!(compressing(&Method::HEAD, ok, &json), None);
         assert_eq!(compressing(&get, StatusCode::NO_CONTENT, &json), None);
         assert_eq!(compressing(&get, StatusCode::NOT_MODIFIED, &json), None);
+        let mut empty = json.clone();
+        empty.insert(header::CONTENT_LENGTH, HeaderValue::from(0));
+        assert_eq!(
+            compressing(&get, ok, &empty),
+            None,
+            "a JSON answer that says it is empty passes as it is"
+        );
+        empty.insert(header::CONTENT_LENGTH, HeaderValue::from(2));
+        assert_eq!(compressing(&get, ok, &empty), Some(Compressing::Whole));
         let mut encoded = json.clone();
         encoded.insert(header::CONTENT_ENCODING, HeaderValue::from_static("br"));
         assert_eq!(compressing(&get, ok, &encoded), None);
@@ -534,6 +641,61 @@ mod tests {
         assert_eq!(response.body().size_hint().exact(), Some(2));
         let body = response.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(body, "{}");
+    }
+
+    #[tokio::test]
+    async fn an_empty_answer_that_came_plain_is_read_empty() {
+        let response = decoded(
+            http::Response::builder()
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::CONTENT_LENGTH, 0)
+                .body(Full::new(Bytes::new()))
+                .unwrap(),
+        );
+
+        assert_eq!(response.headers()[header::CONTENT_LENGTH], "0");
+        assert!(response.body().is_end_stream());
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert!(body.is_empty());
+    }
+
+    /// What decodes to many times its size, as zeros do, is handed on in
+    /// pieces no larger than [`DECODED_PIECE`], not decoded whole at once.
+    #[tokio::test]
+    async fn what_a_piece_decodes_to_is_handed_on_in_bounded_pieces() {
+        let zeros = vec![0_u8; 16 * 1024 * 1024];
+        let gzipped = gzipped_whole(&zeros).await;
+        assert!(gzipped.len() < 64 * 1024, "{} bytes", gzipped.len());
+        let mut body = decoded(
+            http::Response::builder()
+                .header(header::CONTENT_ENCODING, "gzip")
+                .body(streamed(vec![Bytes::from(gzipped)]))
+                .unwrap(),
+        )
+        .into_body();
+
+        let mut read = 0;
+        while let Some(frame) = body.frame().await {
+            let piece = frame.unwrap().into_data().unwrap();
+            assert!(piece.len() <= DECODED_PIECE, "a piece of {}", piece.len());
+            assert!(piece.iter().all(|byte| *byte == 0));
+            read += piece.len();
+        }
+        assert_eq!(read, zeros.len());
+        assert!(body.is_end_stream());
+    }
+
+    #[tokio::test]
+    async fn an_answer_going_on_past_its_gzip_member_fails_to_read() {
+        let mut gzipped = gzipped_whole(br#"{"sessions":[]}"#).await;
+        gzipped.extend_from_slice(b"and more");
+        let response = decoded(
+            http::Response::builder()
+                .header(header::CONTENT_ENCODING, "gzip")
+                .body(streamed(vec![Bytes::from(gzipped)]))
+                .unwrap(),
+        );
+        assert!(response.into_body().collect().await.is_err());
     }
 
     #[tokio::test]
