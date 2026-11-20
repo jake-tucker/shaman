@@ -300,7 +300,7 @@ async fn removing_a_remote_withdraws_its_peer_and_forgets_it_with_its_drafts_and
         Some(("lab", "lab · notes")),
         "turned to the Remote turned toward before"
     );
-    let notice = phone.notice_until(|_| true).await.expect("said");
+    let notice = phone.notice_until(Option::is_some).await.expect("said");
     assert_eq!(
         notice.words,
         "desk was removed. New sessions begin in lab · notes"
@@ -356,7 +356,7 @@ async fn a_remote_that_does_not_answer_is_forgotten_all_the_same_saying_so() {
 
     assert!(listed(&phone).await.is_empty());
     assert_eq!(phone.outlook().await, Outlook::Nowhere, "pairing alone");
-    let notice = phone.notice_until(|_| true).await.expect("said");
+    let notice = phone.notice_until(Option::is_some).await.expect("said");
     assert_eq!(
         notice.words,
         "desk did not answer, so it may still list this phone until it is removed there"
@@ -420,7 +420,7 @@ async fn a_pairing_its_server_ends_turns_the_outlook_to_the_remote_turned_toward
         .outlook_until(|outlook| standing(outlook).is_some_and(|(name, _)| name == "lab"))
         .await;
     assert_eq!(standing(&outlook), Some(("lab", "lab")));
-    let notice = phone.notice_until(|_| true).await.expect("said");
+    let notice = phone.notice_until(Option::is_some).await.expect("said");
     assert_eq!(
         notice.words,
         "desk removed this phone; pair with it again to reach it. New sessions begin in lab"
@@ -448,7 +448,7 @@ async fn a_phone_whose_one_server_ended_its_pairing_offers_pairing_alone() {
     phone
         .outlook_until(|outlook| *outlook == Outlook::Nowhere)
         .await;
-    let notice = phone.notice_until(|_| true).await.expect("said");
+    let notice = phone.notice_until(Option::is_some).await.expect("said");
     assert_eq!(
         notice.words,
         "desk removed this phone; pair with it again to reach it"
