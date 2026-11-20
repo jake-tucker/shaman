@@ -35,7 +35,15 @@ enum IconFont {
     guard let name else {
       return .system(style)
     }
-    return .custom(name, size: UIFont.preferredFont(forTextStyle: style.uiKit).pointSize, relativeTo: style)
+    return .custom(name, size: baseSize(style), relativeTo: style)
+  }
+
+  /// The size of `style` at Dynamic Type's default, which `relativeTo` scales from: the size at the reader's own
+  /// would be scaled twice.
+  static func baseSize(_ style: Font.TextStyle) -> CGFloat {
+    UIFont.preferredFont(
+      forTextStyle: style.uiKit, compatibleWith: UITraitCollection(preferredContentSizeCategory: .large)
+    ).pointSize
   }
 }
 
