@@ -36,10 +36,17 @@ public struct DeviceScreen: View {
       .navigationDestination(for: DeviceRoute.self) { route in
         switch route {
         case .pairAnother:
-          PairingStart(core: core) { path.append(.confirm($0)) }
+          PairingStart(core: core) {
+            path.append(.scan)
+          } pasted: {
+            path.append(.confirm($0))
+          }
+        case .scan:
+          ScanScreen(core: core) { path.append(.confirm($0)) }
         case .confirm(let invite):
+          // Back to the scanner where it read the Invite, and otherwise to where pairing begins.
           ConfirmationScreen(core: core, invite: invite) {
-            path.removeAll { $0 != .pairAnother }
+            path.removeLast()
           } paired: {
             dismiss()
           }
@@ -243,9 +250,11 @@ public struct DeviceScreen: View {
 
 /// Where the sheet of Servers, Relays and This device leads.
 private enum DeviceRoute: Hashable {
-  /// Pairing with another server, by pasting its Invite.
+  /// Pairing with another server, by scanning its Invite or pasting it.
   case pairAnother
-  /// Confirming the Invite pasted.
+  /// Scanning an Invite.
+  case scan
+  /// Confirming the Invite scanned or pasted.
   case confirm(String)
 }
 

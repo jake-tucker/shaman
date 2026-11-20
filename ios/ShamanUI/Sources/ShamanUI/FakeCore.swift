@@ -798,7 +798,12 @@
     }
 
     public func pairingPrompt() -> String {
-      "On the server, run /serve in Shaman or `shaman serve invite`, copy the invite, and paste it here."
+      "On the server, run /serve in Shaman and press q, or run `shaman serve invite --qr`, then scan the code it "
+        + "draws or paste the invite here."
+    }
+
+    public func isInvite(_ text: String) -> Bool {
+      text.trimmingCharacters(in: .whitespacesAndNewlines).wholeMatch(of: /shaman-v[0-9]+-.*/) != nil
     }
 
     public func readInvite(_ invite: String) -> InviteReading {

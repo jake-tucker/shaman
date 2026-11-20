@@ -1,3 +1,4 @@
+import CoreImage
 import CoreText
 import CryptoKit
 import Foundation
@@ -1822,5 +1823,115 @@ private final class RecordingBrowser: LoginBrowser {
     let gone = ActError.Gone(message: "This phone is no longer paired with that server")
     await #expect(throws: gone) { try await core.renameRemote("not-a-remote", to: "study") }
     await #expect(throws: gone) { try await core.removeRemote("not-a-remote") }
+  }
+}
+
+/// A scanner that counts how often it was asked whether it may scan.
+@MainActor
+private final class CountedScanner {
+  private(set) var asked = 0
+  private let access: ScanAccess
+
+  init(_ access: ScanAccess) {
+    self.access = access
+  }
+
+  var scanner: CodeScanner {
+    CodeScanner(
+      access: { [self] in
+        asked += 1
+        return access
+      },
+      view: { _, _ in AnyView(EmptyView()) })
+  }
+}
+
+@Suite @MainActor struct ScanOfferTests {
+  @Test func theCameraIsAskedForOnlyOnceScanIsPressed() async {
+    let counted = CountedScanner(.granted)
+    let offer = ScanOffer()
+    #expect(counted.asked == 0)
+    #expect(offer.access == nil)
+    #expect(await offer.scan(with: counted.scanner))
+    #expect(counted.asked == 1)
+    #expect(offer.access == .granted)
+  }
+
+  @Test func aRefusedCameraOpensNoScannerAndSaysSo() async {
+    let counted = CountedScanner(.refused)
+    let offer = ScanOffer()
+    #expect(await offer.scan(with: counted.scanner) == false)
+    #expect(offer.access == .refused)
+    // Pressed again, as after allowing it in the Settings app, it asks again.
+    #expect(await offer.scan(with: counted.scanner) == false)
+    #expect(counted.asked == 2)
+  }
+
+  @Test func aPhoneWithNoCameraOpensNoScanner() async {
+    let offer = ScanOffer()
+    #expect(await offer.scan(with: CountedScanner(.unavailable).scanner) == false)
+    #expect(offer.access == .unavailable)
+  }
+}
+
+@Suite @MainActor struct ScanningModelTests {
+  @Test func whatIsNoInviteIsPassedOverAndTheFirstInviteStopsTheScanner() {
+    let model = ScanningModel(core: FakeCore(.fresh))
+    #expect(model.scanning)
+    for other in ["https://example.com", "WIFI:S:home;T:WPA;P:secret;;", "shaman"] {
+      #expect(model.read(other) == nil)
+      #expect(model.scanning, "it keeps scanning past \(other)")
+      #expect(model.passedOver)
+    }
+    #expect(model.read(FakeCore.invite) == FakeCore.invite)
+    #expect(model.scanning == false)
+    #expect(model.passedOver == false)
+    #expect(model.read("shaman-v1-fake-another") == nil, "only the first Invite is taken")
+  }
+
+  @Test func aMalformedInviteIsTakenSoItsConfirmationSaysWhatIsWrong() {
+    let model = ScanningModel(core: FakeCore(.fresh))
+    #expect(model.read("shaman-v2-from-a-newer-shaman") == "shaman-v2-from-a-newer-shaman")
+  }
+
+  @Test func returnedToItScansAfresh() {
+    let model = ScanningModel(core: FakeCore(.fresh))
+    #expect(model.read("https://example.com") == nil)
+    #expect(model.read(FakeCore.invite) == FakeCore.invite)
+    model.resume()
+    #expect(model.scanning)
+    #expect(model.passedOver == false)
+    #expect(model.read(FakeCore.invite) == FakeCore.invite)
+  }
+}
+
+@Suite struct QRCodeTests {
+  /// An Invite as long as the largest a Serving Server is estimated to issue: four addresses and a Relay.
+  private func largestInvite() throws -> String {
+    let base64URL = { (data: Data) in
+      data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+        .replacingOccurrences(of: "=", with: "")
+    }
+    let payload: [String: Any] = [
+      "ways": [
+        ["direct": "192.168.1.20:7791"], ["direct": "100.64.0.7:7791"], ["direct": "10.0.0.12:7791"],
+        ["direct": "[fd7a:115c:a1e0::7]:7791"], ["relay": "relay.example.com"],
+      ],
+      "server_key": base64URL(Data(repeating: 7, count: 91)),
+      "token": base64URL(Data(repeating: 1, count: 32)),
+      "hostname": "workstation",
+    ]
+    let json = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+    return "shaman-v1-" + base64URL(json)
+  }
+
+  /// Read back by Core Image's detector, as Vision's needs hardware the simulator lacks.
+  @Test func anInviteDrawnAsAServerDrawsItReadsBackWhole() throws {
+    let invite = try largestInvite()
+    let image = try #require(QRCode.image(of: invite)?.cgImage)
+    let detector = try #require(
+      CIDetector(ofType: CIDetectorTypeQRCode, context: nil, options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]))
+    let read = detector.features(in: CIImage(cgImage: image)).compactMap { ($0 as? CIQRCodeFeature)?.messageString }
+    #expect(read == [invite])
   }
 }

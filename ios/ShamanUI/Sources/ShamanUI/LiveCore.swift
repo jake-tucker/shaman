@@ -139,6 +139,10 @@ public final class LiveCore: Core {
     client.pairingPrompt()
   }
 
+  public func isInvite(_ text: String) -> Bool {
+    client.isInvite(text: text)
+  }
+
   public func readInvite(_ invite: String) -> InviteReading {
     client.readInvite(invite: invite)
   }

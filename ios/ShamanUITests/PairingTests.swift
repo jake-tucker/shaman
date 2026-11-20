@@ -1,6 +1,6 @@
 import XCTest
 
-/// Pairing by pasting an Invite, over the fake.
+/// Pairing by scanning an Invite or pasting it, over the fake.
 final class PairingTests: XCTestCase {
   /// The Invite the fake reads as the workstation's.
   private let invite = "shaman-v1-fake-workstation"
@@ -10,9 +10,9 @@ final class PairingTests: XCTestCase {
   }
 
   @MainActor
-  private func launched(_ scenario: String, invite: String? = nil) -> XCUIApplication {
+  private func launched(_ scenario: String, invite: String? = nil, arguments: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
-    app.launchArguments = ["--fake", scenario]
+    app.launchArguments = ["--fake", scenario] + arguments
     if let invite {
       app.launchEnvironment["SHAMAN_INVITE"] = invite
     }
@@ -167,6 +167,107 @@ final class PairingTests: XCTestCase {
     app.buttons["home.servers"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["server.studio"].waitForExistence(timeout: 10))
     XCTAssertFalse(app.descendants(matching: .any)["server.workstation"].exists, "one Remote for each Server")
+  }
+
+  /// The fake scanner's launch arguments, reading `codes` in turn.
+  private func scanning(_ codes: String...) -> [String] {
+    codes.flatMap { ["--scan", $0] }
+  }
+
+  @MainActor
+  func testTheScannerPassesOverWhatIsNoInviteAndTheFirstInviteGoesToItsConfirmation() {
+    let app = launched(
+      "fresh", arguments: scanning("https://example.com", invite, "shaman-v1-fake-another") + ["--scan-every", "3"])
+    let scan = app.buttons["pairing.scan"]
+    XCTAssertTrue(scan.waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["pairing.paste"].exists, "paste is offered beside scan")
+    attach(app, "Scan and paste")
+    scan.tap()
+
+    XCTAssertTrue(app.staticTexts["scan.looking"].waitForExistence(timeout: 10))
+    XCTAssertEqual(app.staticTexts["scan.looking"].label, "Looking for a Shaman invite")
+    let passedOver = app.staticTexts["scan.passedOver"]
+    XCTAssertTrue(passedOver.waitForExistence(timeout: 10), "what is no invite is passed over")
+    XCTAssertTrue(app.staticTexts["scan.looking"].exists, "and it keeps scanning")
+    attach(app, "Scanning past a code that is no invite")
+
+    XCTAssertEqual(hostname(in: app), "workstation", "the first invite read goes to its confirmation")
+    XCTAssertFalse(app.staticTexts["scan.looking"].exists, "the scanner stopped")
+    attach(app, "Confirming a scanned invite")
+    shown("confirm.pair", in: app).tap()
+    let beginsIn = app.descendants(matching: .any)["home.beginsIn"]
+    XCTAssertTrue(beginsIn.waitForExistence(timeout: 10))
+    XCTAssertEqual(beginsIn.label, "New sessions begin in workstation")
+  }
+
+  @MainActor
+  func testScanAgainAfterADeadScannedInviteReturnsToTheScanner() {
+    let app = launched("fresh", arguments: scanning("shaman-v1-dead", invite))
+    let scan = app.buttons["pairing.scan"]
+    XCTAssertTrue(scan.waitForExistence(timeout: 10))
+    scan.tap()
+    shown("confirm.pair", in: app).tap()
+    let failure = app.staticTexts["confirm.failure"]
+    XCTAssertTrue(failure.waitForExistence(timeout: 10))
+    XCTAssertEqual(failure.label, "Invite has expired")
+    shown("confirm.scanAgain", in: app).tap()
+
+    XCTAssertTrue(app.staticTexts["scan.looking"].waitForExistence(timeout: 10), "back at the scanner")
+    XCTAssertTrue(shown("confirm.pair", in: app).exists, "which read the next invite")
+    XCTAssertFalse(app.staticTexts["confirm.failure"].exists)
+    app.buttons["confirm.pair"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["home.beginsIn"].waitForExistence(timeout: 10))
+  }
+
+  @MainActor
+  func testARefusedCameraSaysSoAndPointsAtSettingsAndPasteStillWorks() {
+    let app = launched("fresh", arguments: ["--camera", "refused"])
+    let scan = app.buttons["pairing.scan"]
+    XCTAssertTrue(scan.waitForExistence(timeout: 10))
+    XCTAssertFalse(app.staticTexts["pairing.scan.refused"].exists, "nothing is said before scan is pressed")
+    scan.tap()
+    let refused = app.staticTexts["pairing.scan.refused"]
+    XCTAssertTrue(refused.waitForExistence(timeout: 10))
+    XCTAssertEqual(
+      refused.label, "Shaman may not use the camera. Allow it in the Settings app to scan, or paste the invite.")
+    XCTAssertTrue(app.buttons["pairing.openSettings"].exists)
+    XCTAssertFalse(app.staticTexts["scan.looking"].exists, "no scanner opened")
+    attach(app, "The camera refused")
+
+    paste(invite, in: app)
+    XCTAssertEqual(hostname(in: app), "workstation")
+  }
+
+  /// The simulator has no camera, so the camera's own scanner finds none, asking for nothing.
+  @MainActor
+  func testAPhoneWithNoCameraSaysSoAndPasteStillWorks() {
+    let app = launched("fresh")
+    let scan = app.buttons["pairing.scan"]
+    XCTAssertTrue(scan.waitForExistence(timeout: 10))
+    scan.tap()
+    let unavailable = app.staticTexts["pairing.scan.unavailable"]
+    XCTAssertTrue(unavailable.waitForExistence(timeout: 10))
+    XCTAssertEqual(unavailable.label, "This phone has no camera that can scan. Paste the invite instead.")
+    attach(app, "No camera to scan with")
+
+    paste(invite, in: app)
+    XCTAssertEqual(hostname(in: app), "workstation")
+  }
+
+  @MainActor
+  func testAnotherServerIsPairedByScanningFromTheServersSheet() {
+    let app = launched("paired", arguments: scanning(invite))
+    XCTAssertTrue(app.buttons["home.servers"].waitForExistence(timeout: 10))
+    app.buttons["home.servers"].tap()
+    let pairAnother = app.buttons["servers.pairAnother"]
+    XCTAssertTrue(pairAnother.waitForExistence(timeout: 10))
+    pairAnother.tap()
+    let scan = app.buttons["pairing.scan"]
+    XCTAssertTrue(scan.waitForExistence(timeout: 10))
+    scan.tap()
+    let held = app.descendants(matching: .any)["confirm.held"]
+    XCTAssertTrue(held.waitForExistence(timeout: 10))
+    XCTAssertTrue(held.label.contains("already paired with this server as workstation"), held.label)
   }
 
   @MainActor

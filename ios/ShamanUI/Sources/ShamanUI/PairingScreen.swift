@@ -1,41 +1,64 @@
 import ShamanCore
 import SwiftUI
+import UIKit
 
-/// What a phone holding no Remote offers, alone: pairing. Pasting an Invite pushes its confirmation screen.
+/// What a phone holding no Remote offers, alone: pairing. Scan pushes the scanner, and the Invite it reads its
+/// confirmation screen over it; pasting an Invite pushes its confirmation screen.
 public struct PairingScreen: View {
   private let core: any Core
-  @State private var path: [String]
+  @State private var path: [PairingRoute]
 
   /// The screen over `core`, already confirming `invite` where one is given, as one arriving by the launch environment
   /// in a debug build is.
   public init(core: any Core, invite: String? = nil) {
     self.core = core
-    _path = State(initialValue: invite.map { [$0] } ?? [])
+    _path = State(initialValue: invite.map { [.confirm($0)] } ?? [])
   }
 
   public var body: some View {
     NavigationStack(path: $path) {
-      PairingStart(core: core) { path.append($0) }
-        // Where a server ended this phone's last pairing, what the core says of it stands here.
-        .noticeBanner()
-        .navigationDestination(for: String.self) { invite in
+      PairingStart(core: core) {
+        path.append(.scan)
+      } pasted: {
+        path.append(.confirm($0))
+      }
+      // Where a server ended this phone's last pairing, what the core says of it stands here.
+      .noticeBanner()
+      .navigationDestination(for: PairingRoute.self) { route in
+        switch route {
+        case .scan:
+          ScanScreen(core: core) { path.append(.confirm($0)) }
+        case .confirm(let invite):
+          // Back to the scanner where it read the Invite, and otherwise to where pairing begins.
           ConfirmationScreen(core: core, invite: invite) {
-            path.removeAll()
+            path.removeLast()
           } paired: {
           }
         }
+      }
     }
   }
 }
 
-/// Where pairing begins: the offer to paste an Invite, and the word that this phone must pair again where it has a new
-/// key.
+/// Where pairing leads: the scanner, and the confirmation screen of an Invite scanned or pasted.
+enum PairingRoute: Hashable {
+  case scan
+  case confirm(String)
+}
+
+/// Where pairing begins: the offers to scan an Invite and to paste one, and the word that this phone must pair again
+/// where it has a new key.
 struct PairingStart: View {
   let core: any Core
+  /// Opens the scanner, once the camera may be used.
+  let scan: () -> Void
   /// Takes the Invite pasted.
   let pasted: (String) -> Void
   @State private var device: ThisDevice?
   @State private var failure: String?
+  @State private var offer = ScanOffer()
+  @Environment(\.codeScanner) private var scanner
+  @Environment(\.openURL) private var openURL
 
   /// What the core says to do, its commands drawn as code.
   private var prompt: AttributedString {
@@ -67,6 +90,39 @@ struct PairingStart: View {
             .foregroundStyle(.secondary)
         }
         .padding(.vertical, 8)
+        Button {
+          Task {
+            if await offer.scan(with: scanner) {
+              scan()
+            }
+          }
+        } label: {
+          Label("Scan", systemImage: "qrcode.viewfinder")
+        }
+        .disabled(offer.asking)
+        .accessibilityIdentifier("pairing.scan")
+        switch offer.access {
+        case .refused:
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Shaman may not use the camera. Allow it in the Settings app to scan, or paste the invite.")
+              .foregroundStyle(.secondary)
+              .accessibilityIdentifier("pairing.scan.refused")
+            Button("Open Settings") {
+              if let settings = URL(string: UIApplication.openSettingsURLString) {
+                openURL(settings)
+              }
+            }
+            // Only the button takes a tap, not the words beside it in the row.
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("pairing.openSettings")
+          }
+        case .unavailable:
+          Text("This phone has no camera that can scan. Paste the invite instead.")
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("pairing.scan.unavailable")
+        case .granted, nil:
+          EmptyView()
+        }
         PasteButton(payloadType: String.self) { strings in
           guard let invite = strings.first else { return }
           Task { @MainActor in pasted(invite) }
@@ -332,6 +388,16 @@ final class ConfirmationModel {
 #if DEBUG
   #Preview("Pairing") {
     PairingScreen(core: FakeCore(.fresh))
+  }
+
+  #Preview("Scanning") {
+    PairingScreen(core: FakeCore(.fresh))
+      .environment(\.codeScanner, .reading(["https://example.com", FakeCore.invite]))
+  }
+
+  #Preview("Camera refused") {
+    PairingScreen(core: FakeCore(.fresh))
+      .environment(\.codeScanner, .reading([], access: .refused))
   }
 
   #Preview("Confirming an Invite") {

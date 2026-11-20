@@ -11,16 +11,19 @@ struct ShamanApp: App {
       switch opened {
       case .core(let core):
         #if DEBUG
-          if Launch.serversAndDevice {
-            DeviceScreen(core: core, appVersion: Self.version)
-          } else {
-            RootScreen(
-              core: core, appVersion: Self.version, invite: Launch.invite, opening: Launch.opening,
-              composing: Launch.composing, forgetting: Launch.forgettingScene,
-              noticeStands: Launch.noticeStands ?? .seconds(8)
-            )
-            .environment(\.interventionArming, Launch.arming ?? EnvironmentValues().interventionArming)
+          Group {
+            if Launch.serversAndDevice {
+              DeviceScreen(core: core, appVersion: Self.version)
+            } else {
+              RootScreen(
+                core: core, appVersion: Self.version, invite: Launch.invite, opening: Launch.opening,
+                composing: Launch.composing, forgetting: Launch.forgettingScene,
+                noticeStands: Launch.noticeStands ?? .seconds(8)
+              )
+              .environment(\.interventionArming, Launch.arming ?? EnvironmentValues().interventionArming)
+            }
           }
+          .environment(\.codeScanner, Launch.scanner ?? .camera)
         #else
           RootScreen(core: core, appVersion: Self.version)
         #endif
@@ -94,6 +97,26 @@ struct ShamanApp: App {
     /// and the scene keeps afresh from there, as a UI test that left a Session open asks to leave nothing behind.
     static var forgettingScene: Bool {
       ProcessInfo.processInfo.arguments.contains("--forget-scene")
+    }
+
+    /// The fake scanner `--scan <code>`, given once for each code, and `--camera <granted|refused|unavailable>` ask
+    /// for in place of the camera, which the simulator has none of: one that finds the camera as `--camera` says,
+    /// granted where it says nothing, and reads each code in turn while it scans, a second apart, or as many seconds
+    /// as `--scan-every <seconds>` says, up to a minute, so a UI test can see what it shows between two.
+    static var scanner: CodeScanner? {
+      let arguments = ProcessInfo.processInfo.arguments
+      let codes = arguments.indices.dropLast().filter { arguments[$0] == "--scan" }.map { arguments[$0 + 1] }
+      let access: ScanAccess? =
+        switch arguments.firstIndex(of: "--camera").flatMap({ arguments.dropFirst($0 + 1).first }) {
+        case "granted": .granted
+        case "refused": .refused
+        case "unavailable": .unavailable
+        default: nil
+        }
+      guard !codes.isEmpty || access != nil else { return nil }
+      let every = arguments.firstIndex(of: "--scan-every").flatMap { arguments.dropFirst($0 + 1).first }
+        .flatMap(Double.init).flatMap { (0...60).contains($0) ? Duration.milliseconds(Int($0 * 1_000)) : nil }
+      return .reading(codes, access: access ?? .granted, every: every ?? .seconds(1))
     }
 
     /// Whether `--servers-and-device` asks for the sheet of Servers, Relays and This device alone, which a phone
