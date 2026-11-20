@@ -122,13 +122,11 @@ private struct ConversationView: View {
   let model: SessionModel
   /// Pushes what a row leads to over the Session's screen.
   let push: (Pushed) -> Void
-  @State private var heights = RowHeights()
 
   var body: some View {
     let rows =
       model.conversation.rows.map(ConversationRow.item) + (model.frame?.queued ?? []).map(ConversationRow.queued)
-    // Read here, for the rows are drawn later, as the list draws each, where state is no longer to be read.
-    let heights = heights
+    // Read here, for the rows are drawn later, as the list draws each.
     let model = model
     let push = push
     ConversationList(rows: rows, sent: model.sent) { row in
@@ -141,7 +139,6 @@ private struct ConversationView: View {
         }
       }
       .padding(.horizontal, 14)
-      .environment(\.rowHeights, heights)
     }
     // Beneath the navigation bar, which the list insets itself for; above the foot, which keeps the room it needs.
     .ignoresSafeArea(.container, edges: .top)
@@ -415,7 +412,7 @@ private struct ItemView: View {
     case .delegation(let text, let from):
       DelegationBubble(text: text, from: from)
     case .agentMessage(let markdown, let model, _):
-      AgentMessage(id: item.id, markdown: markdown, model: model)
+      AgentMessage(markdown: markdown, model: model)
     case .turn(let card):
       // The card pushes the Turn's work.
       Button {
@@ -832,23 +829,11 @@ private struct DelegationBubble: View {
 
 /// What the Agent said, as Markdown across the width: code blocks and tables scroll sideways rather than wrap. Where
 /// another Model answered than the one selected, a subdued line above names both.
-///
-/// Textual draws Markdown empty at first and grows it into place over the next few passes, as it parses and lays out
-/// each block, and does so again now and then while it stands; and a list draws a row again each time it comes back
-/// into sight. So once a Message has settled at a height it stands that tall, kept by the Message and in
-/// `rowHeights` for the next time it is drawn, while what it draws grows into it.
 private struct AgentMessage: View {
-  let id: String
   let markdown: String
   let model: String?
-  @Environment(\.rowHeights) private var heights
-  @Environment(\.dynamicTypeSize) private var size
-  /// The tallest this Message has measured, and what it was drawn from.
-  @State private var settled: (drawn: RowHeights.Drawn, height: CGFloat)?
 
   var body: some View {
-    let drawn = RowHeights.Drawn(markdown: markdown, size: size)
-    let height = settled.flatMap { $0.drawn == drawn ? $0.height : nil } ?? heights?.height(of: id, drawn)
     VStack(alignment: .leading, spacing: 4) {
       if let model {
         Text(verbatim: model)
@@ -861,55 +846,9 @@ private struct AgentMessage: View {
         .textual.tableStyle(.overflow)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-    // Measured at its own height whatever the frame around it proposes, so what is kept is what it settled at.
-    .fixedSize(horizontal: false, vertical: true)
-    .onGeometryChange(for: CGFloat.self, of: \.size.height) { measured in
-      guard measured > (height ?? 0) else { return }
-      settled = (drawn, measured)
-      heights?.measured(id, drawn, measured)
-    }
-    .frame(height: height, alignment: .top)
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier("session.agentMessage")
   }
-}
-
-/// The heights the Agent's Messages of an open conversation settled at, by item, each for the Markdown it held at the
-/// Dynamic Type size it was drawn at. It is read as a row is drawn and written as it is measured, and observed by
-/// nothing, so keeping a height redraws nothing.
-@MainActor final class RowHeights {
-  /// What a row was drawn from, which its height holds for.
-  struct Drawn: Equatable {
-    let markdown: Int
-    let size: DynamicTypeSize
-
-    init(markdown: String, size: DynamicTypeSize) {
-      self.markdown = markdown.hashValue
-      self.size = size
-    }
-  }
-
-  private var settled: [String: (drawn: Drawn, height: CGFloat)] = [:]
-
-  /// How tall the row `id` settled at, drawn from `drawn`; nothing where it has yet to be measured so.
-  func height(of id: String, _ drawn: Drawn) -> CGFloat? {
-    settled[id].flatMap { $0.drawn == drawn ? $0.height : nil }
-  }
-
-  /// Keeps `height` as what the row `id`, drawn from `drawn`, measured: but where it measured taller before, it is
-  /// still growing into what it settled at, so that stays. The width a row is drawn across is the phone's, which
-  /// turns with nothing, so it is not asked.
-  func measured(_ id: String, _ drawn: Drawn, _ height: CGFloat) {
-    if let kept = settled[id], kept.drawn == drawn, kept.height >= height {
-      return
-    }
-    settled[id] = (drawn, height)
-  }
-}
-
-extension EnvironmentValues {
-  /// The heights the open conversation's Messages settled at.
-  @Entry var rowHeights: RowHeights?
 }
 
 /// The card a Turn's work stands behind: how it settled and how long it took, or what runs now, over its count.

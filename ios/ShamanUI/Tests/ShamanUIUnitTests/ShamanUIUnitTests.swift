@@ -613,6 +613,45 @@ private final class RefusingSigner: KeySigner {
     #expect(geometry.measured("row1", at: 500, foot: 150) == 0)
   }
 
+  @Test func aRowNotYetMeasuredOrGrowingStandsAtWhatItMeasuresAtOnce() {
+    var geometry = ConversationGeometry()
+    geometry.take(["a"])
+    #expect(geometry.reported("a", 0, at: 0) == 0, "first measured empty, as Textual first draws")
+    geometry.measured("a", at: 0, foot: 0)
+    #expect(geometry.reported("a", 280, at: 0.01) == 280)
+    geometry.measured("a", at: 280, foot: 0)
+    #expect(geometry.reported("a", 280, at: 0.02) == nil, "as it stands")
+    #expect(geometry.reported("gone", 50, at: 0.02) == nil, "no such row")
+  }
+
+  @Test func aRowMeasuringShorterStandsAsItIsUntilItHasMeasuredSoAWhile() {
+    var geometry = geometry([400])
+    // Drawn again, Textual passes through empty and in between on its way back to 400: none of it stands.
+    #expect(geometry.reported("row0", 0, at: 10) == nil)
+    #expect(geometry.reported("row0", 280, at: 10.05) == nil)
+    #expect(geometry.reported("row0", 400, at: 10.1) == nil, "back as it was")
+    #expect(geometry.nextSettling == nil)
+    #expect(geometry.settled(at: 20).isEmpty)
+
+    // Its words replaced by fewer, it measures 150 and stays so: once it has for a while, it stands at 150.
+    #expect(geometry.reported("row0", 150, at: 30) == nil)
+    #expect(geometry.nextSettling == 30 + ConversationGeometry.settling)
+    #expect(geometry.settled(at: 30.1).isEmpty, "not yet")
+    #expect(geometry.reported("row0", 150, at: 30.2) == nil, "the same again starts no new while")
+    let settled = geometry.settled(at: 30 + ConversationGeometry.settling)
+    #expect(settled.map(\.id) == ["row0"] && settled.map(\.height) == [150])
+    #expect(geometry.nextSettling == nil)
+  }
+
+  @Test func aRowShorterThenTallerAgainBeforeItSettlesStandsTaller() {
+    var geometry = geometry([400])
+    #expect(geometry.reported("row0", 100, at: 0) == nil)
+    #expect(geometry.reported("row0", 120, at: 0.2) == nil, "shorter still, but other: its while begins again")
+    #expect(geometry.settled(at: 0.35).isEmpty)
+    #expect(geometry.reported("row0", 500, at: 0.4) == 500, "grown, at once")
+    #expect(geometry.settled(at: 5).isEmpty, "and nothing shorter waits")
+  }
+
   @Test func whatWasMeasuredIsKeptForTheRowsStillHeldAndForgottenForTheRest() {
     var geometry = geometry([100, 200])
     geometry.take(["row1", "row2"])
@@ -622,6 +661,82 @@ private final class RefusingSigner: KeySigner {
     #expect(!geometry.measured("row0"), "it left, so what it measured went with it")
     geometry.forget()
     #expect(!geometry.measured("row1"))
+  }
+}
+
+/// The conversation's collection view, 400 by 800, holding `count` rows of plain words each as tall as `height`,
+/// laid out and standing at its foot.
+@MainActor private func conversationList(rows count: Int, height: CGFloat = 60) -> (
+  view: FootCollectionView, follower: ConversationFollower
+) {
+  let follower = ConversationFollower()
+  follower.configuration = { _ in
+    UIHostingConfiguration { Color.clear.frame(height: height) }.margins(.all, 0)
+  }
+  let view = follower.makeView()
+  view.frame = CGRect(x: 0, y: 0, width: 400, height: 800)
+  follower.take(
+    (0..<count).map { .item(ConversationItem(id: "\($0)", kind: .error(text: "row \($0)"))) })
+  for _ in 0..<4 {
+    view.layoutIfNeeded()
+  }
+  return (view, follower)
+}
+
+@Suite @MainActor struct ConversationListTests {
+  @Test func itOpensAtItsFootAndFollowsWhatGrowsThere() {
+    let (view, follower) = conversationList(rows: 40)
+    #expect(follower.following)
+    #expect(view.distanceToFoot < 1, "at the foot")
+    follower.take(
+      (0..<45).map { .item(ConversationItem(id: "\($0)", kind: .error(text: "row \($0)"))) })
+    for _ in 0..<4 {
+      view.layoutIfNeeded()
+    }
+    #expect(follower.following)
+    #expect(view.distanceToFoot < 1, "still at the foot, below the rows that came")
+  }
+
+  @Test func aScrollAwayByAnyHandLeavesTheFoot() {
+    let (view, follower) = conversationList(rows: 40)
+    view.setContentOffset(CGPoint(x: 0, y: view.contentOffset.y - 500), animated: false)
+    view.layoutIfNeeded()
+    #expect(!follower.following, "the app or the system scrolled up")
+    #expect(view.distanceToFoot > 400, "and the list stays where it was taken")
+
+    let (other, otherFollower) = conversationList(rows: 40)
+    other.scrollToItem(at: IndexPath(item: 3, section: 0), at: .top, animated: false)
+    other.layoutIfNeeded()
+    #expect(!otherFollower.following, "a row scrolled to, as VoiceOver's focus moving brings it")
+    #expect(other.distanceToFoot > 400)
+  }
+
+  @Test func voiceOversPageScrollMovesAPageAndLeavesTheFootOrComesBackToIt() {
+    let (view, follower) = conversationList(rows: 40)
+    #expect(!view.accessibilityScroll(.up), "nothing below the foot")
+    #expect(view.accessibilityScroll(.down))
+    #expect(!follower.following)
+    #expect(view.distanceToFoot > 300)
+    // Paging down again comes to the foot, however the rows drawn on the way measured.
+    for _ in 0..<3 where !follower.following {
+      #expect(view.accessibilityScroll(.up))
+      view.layoutIfNeeded()
+    }
+    #expect(follower.following, "back at the foot")
+    #expect(view.distanceToFoot < 1)
+  }
+
+  @Test func comingToRestNearTheFootFollowsItAgain() {
+    let (view, follower) = conversationList(rows: 40)
+    follower.scrollViewWillBeginDragging(view)
+    view.contentOffset.y -= 30
+    follower.scrollViewDidEndDragging(view, willDecelerate: false)
+    #expect(follower.following, "within a few lines of the foot")
+
+    follower.scrollViewWillBeginDragging(view)
+    view.contentOffset.y -= 300
+    follower.scrollViewDidEndDragging(view, willDecelerate: false)
+    #expect(!follower.following, "a screen's worth above it")
   }
 }
 

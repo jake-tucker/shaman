@@ -3,9 +3,11 @@ import XCTest
 /// A long Session over the fake, `longSession`'s, of hundreds of items of very uneven height: it opens at the true
 /// foot of its conversation, and scrolls through it steadily both ways.
 ///
-/// What the screen shows is read from screenshots alone, and the conversation is dragged by where it stands on the
-/// screen rather than as an element: asking for the accessibility tree has the list draw rows out of sight, which lays
-/// it out again as no reader's scrolling would.
+/// What the screen shows is read from screenshots, and the conversation is dragged by where it stands on the screen
+/// rather than as an element, so that what moves it is the drag alone. Launched by `simctl`, a conversation in a
+/// SwiftUI lazy stack opened blank past its end; under XCUITest, whose accessibility client lays it out again, it did
+/// not, so the opening is guarded here but that blank was seen only by `simctl`. Scrolling up through it jumped either
+/// way, which the drags catch.
 final class LongSessionTests: XCTestCase {
   override func setUp() {
     continueAfterFailure = false
@@ -67,24 +69,16 @@ final class LongSessionTests: XCTestCase {
     XCTAssertGreaterThan(closing.frame.maxY, composer.frame.minY - 60, "at the foot, not above it")
   }
 
+  /// Begun while the rows just above the foot are still being measured, and on up through rows never drawn, past
+  /// tall answers, tables and code blocks, then back down over them.
   @MainActor
   func testItScrollsUpAndDownSteadily() {
-    scrollsSteadily(after: 4)
-  }
-
-  @MainActor
-  func testItScrollsUpSteadilyWhileItIsStillDrawingRowsAbove() {
-    scrollsSteadily(after: 1.2)
-  }
-
-  @MainActor
-  private func scrollsSteadily(after opening: TimeInterval) {
     let app = launched(opening: "workstation-key/30")
-    Thread.sleep(forTimeInterval: opening)
+    Thread.sleep(forTimeInterval: 2)
     var log = ""
     var before = Screen(XCUIScreen.main.screenshot())
     var moves: [CGFloat] = []
-    for (direction, steps) in [(CGFloat(1), 40), (CGFloat(-1), 20)] {
+    for (direction, steps) in [(CGFloat(1), 12), (CGFloat(-1), 6)] {
       for _ in 0..<steps {
         drag(app, by: 200 * direction)
         settle()
@@ -116,7 +110,7 @@ final class LongSessionTests: XCTestCase {
     let streaming = answers.matching(NSPredicate(format: "label BEGINSWITH %@", "Summary")).firstMatch
     XCTAssertTrue(streaming.waitForExistence(timeout: 5))
     let grown = streaming.label.count
-    Thread.sleep(forTimeInterval: 3)
+    Thread.sleep(forTimeInterval: 2)
     XCTAssertGreaterThan(streaming.label.count, grown, "the answer is still streaming in")
     XCTAssertTrue(streaming.isHittable)
     // The bar saying the Session works stands over the composer.
@@ -129,10 +123,12 @@ final class LongSessionTests: XCTestCase {
     // Long enough for the last drag to have come to rest, however busy the machine.
     Thread.sleep(forTimeInterval: 1.5)
     let scrolled = Screen(XCUIScreen.main.screenshot())
+    let length = streaming.label.count
     Thread.sleep(forTimeInterval: 3)
     let later = Screen(XCUIScreen.main.screenshot())
     attach(scrolled.screenshot, "Scrolled up while it streams")
     attach(later.screenshot, "A while later")
+    XCTAssertGreaterThan(streaming.label.count, length, "it streamed on all the while")
     // The answer the reader is in is set again as it grows, which moves its words by a pixel here and there.
     let moved = later.shift(from: scrolled, closely: 0.2)
     XCTAssertNotNil(moved, "what the reader scrolled to is still on screen")

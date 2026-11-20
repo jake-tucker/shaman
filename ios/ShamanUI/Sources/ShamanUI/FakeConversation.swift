@@ -35,6 +35,8 @@
       case long
       /// The `long` Session, its last answer still streaming in.
       case longWorking
+      /// A short Session whose answer is written again and again, long under the Model's name, then short without it.
+      case rewriting
     }
 
     /// How the conversation stands of the Session whose last Turn stands as `scenario`.
@@ -87,6 +89,12 @@
         return FakeLong.items(streaming: false)
       case .longWorking:
         return FakeLong.items(streaming: true)
+      case .rewriting:
+        return [
+          user("open", "Write the release notes"),
+          card("work", .worked, "Worked for 40s", "1 tool"),
+          agent("answer", FakeLong.rewritten(long: true), model: "auto · gpt-5.5"),
+        ]
       }
     }
 
@@ -166,7 +174,7 @@
             ]),
         ]
       case .working, .settled, .stopped, .failed, .undelivered, .monitoring, .delegating, .questionnaire, .long,
-        .longWorking:
+        .longWorking, .rewriting:
         return []
       }
     }
@@ -199,6 +207,8 @@
       switch scenario {
       case .working: Array(streamed.dropFirst())
       case .longWorking: (1...FakeLong.growths).map(FakeLong.streamed)
+      // Short four times, then long four times, and so on: each stands 2.8 seconds.
+      case .rewriting: (0..<FakeLong.growths).map { FakeLong.rewritten(long: $0 % 8 >= 4) }
       default: []
       }
     }

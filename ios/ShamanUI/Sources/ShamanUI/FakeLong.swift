@@ -5,12 +5,14 @@
   /// Two long Sessions on the workstation, as a real one of a long day reads: hundreds of items of very uneven
   /// height, short bubbles beside long Markdown answers with code blocks and tables, Turn cards and Compactions. One
   /// has settled; in the other the last answer is still streaming in, growing a paragraph or a few lines of code at a
-  /// time.
+  /// time, for minutes. And a short one whose answer is written again and again, long and short in turn.
   enum FakeLong {
     /// The settled one.
     static let settled = "workstation-key/30"
     /// The one whose last answer still streams.
     static let streaming = "workstation-key/31"
+    /// A short one whose answer is written again and again, long and short in turn.
+    static let rewriting = "workstation-key/32"
 
     /// The Turns before the last.
     static let turns = 80
@@ -25,6 +27,10 @@
         id: streaming, remote: "workstation", workspace: "shaman", title: "Profile the transcript on the phone",
         glyph: nil, checkout: CheckoutLine(glyph: nil, words: "feature/phone-transcript"), standing: .working,
         running: 600, moved: 2, settled: false, reads: .longWorking),
+      FakeSession(
+        id: rewriting, remote: "workstation", workspace: "shaman", title: "Write the release notes", glyph: nil,
+        checkout: CheckoutLine(glyph: nil, words: "main"), standing: .done, running: 0, moved: 4, settled: false,
+        reads: .rewriting),
     ]
 
     /// The conversation, the last answer streaming where `streaming`, standing as it does at first.
@@ -74,8 +80,17 @@
       return items
     }
 
-    /// How many times the streaming answer grows after it first stands.
-    static let growths = 40
+    /// The rewritten answer, long or short.
+    static func rewritten(long: Bool) -> String {
+      long
+        ? (0..<6).map { "Release note \($0 + 1): the transcript now stands steady on the phone, however long it runs." }
+          .joined(separator: "\n\n") + "\n\n```\nshaman serve --release\n```\n\nThe long notes end here."
+        : "The short notes end here."
+    }
+
+    /// How many times the streaming answer grows after it first stands, 0.7 seconds apart: for minutes, so that a test
+    /// finds it still streaming however slowly it runs.
+    static let growths = 400
 
     /// The streaming answer after it has grown `step` times: a paragraph, or a few lines of a code block, each time.
     static func streamed(_ step: Int) -> String {
