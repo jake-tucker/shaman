@@ -569,6 +569,33 @@ async fn a_beginning_left_while_it_may_have_begun_keeps_its_text_and_the_landing
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn an_app_ended_while_a_refusal_stands_keeps_its_text_and_never_says_it_may_have_begun() {
+    let desk = ServingServer::start("thin-begin-refused-ended").await;
+    let gate = Gate::open(desk.serving_address()).await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    let phone = refusing(&desk, &gate, &holder).await;
+
+    let reading = phone.begin("Tidy the build");
+    reading.conversation_until(refused).await;
+    // iOS ends the app while the refusal stands where the work would be:
+    // nothing more of it runs, the screen closing included.
+    phone.core.left_front();
+    let phone = phone.relaunched();
+
+    let landing = phone.landing_until(|_| true).await;
+    assert_eq!(
+        phone.core.draft(landing.draft.clone()).text,
+        "Tidy the build",
+        "kept"
+    );
+    assert_eq!(landing.note, None, "refused, it did not begin");
+
+    drop(reading);
+    desk.shutdown().await;
+    phone.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_refusal_arriving_once_the_screen_has_gone_gives_its_text_back_to_the_landing() {
     let desk = ServingServer::start("thin-begin-refused-left").await;
     let gate = Gate::open(desk.serving_address()).await;

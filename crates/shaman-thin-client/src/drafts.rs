@@ -78,6 +78,9 @@ struct OnItsWay {
     text: String,
     /// The Remote it went to, where the composer's key names none.
     remote: Option<String>,
+    /// Whether its Server refused it, so that it surely was not sent: kept
+    /// all the same while it stands refused, as it may be sent again.
+    refused: bool,
 }
 
 impl Held {
@@ -102,7 +105,7 @@ impl Held {
                 .remote
                 .clone()
                 .or_else(|| self.sending.iter().rev().find_map(|on| on.remote.clone())),
-            maybe_sent: self.maybe_sent || !self.sending.is_empty(),
+            maybe_sent: self.maybe_sent || self.sending.iter().any(|on| !on.refused),
         }
     }
 
@@ -311,6 +314,7 @@ impl Drafts {
                 sent,
                 text: text.to_owned(),
                 remote,
+                refused: false,
             });
             held.maybe_sent = false;
             false
@@ -319,16 +323,33 @@ impl Drafts {
         sent
     }
 
-    /// Has `text` take the place of the Prompt `sent` on its way from the
-    /// composer `key` names, as a Prompt written instead does.
-    pub fn resending(&self, key: &str, sent: Sent, text: &str) {
+    /// Has the Prompt `sent` on its way from the composer `key` names asked
+    /// for again, with `text` in its place where a Prompt is written
+    /// instead: it may be sent once more.
+    pub fn resending(&self, key: &str, sent: Sent, text: Option<&str>) {
         self.of(key).send_if_modified(|held| {
             if let Some(on) = held.sending.iter_mut().find(|on| on.sent == sent) {
-                text.clone_into(&mut on.text);
+                if let Some(text) = text {
+                    text.clone_into(&mut on.text);
+                }
+                on.refused = false;
             }
             false
         });
         self.changed();
+    }
+
+    /// The Prompt `sent` on its way from the composer `key` names was
+    /// refused, so it surely was not sent: it is kept in the draft, and a
+    /// later run says nothing of its having maybe been sent. Written at once.
+    pub fn refused(&self, key: &str, sent: Sent) {
+        self.of(key).send_if_modified(|held| {
+            if let Some(on) = held.sending.iter_mut().find(|on| on.sent == sent) {
+                on.refused = true;
+            }
+            false
+        });
+        self.write_now();
     }
 
     /// The Prompt `sent` from the composer `key` names was answered: the
@@ -834,7 +855,7 @@ mod tests {
         let drafts = Drafts::open(directory.path(), NEVER, &tokio::runtime::Handle::current());
         let landing = beginning_key();
         let sent = drafts.sending(landing, "Tidy the build", None);
-        drafts.resending(landing, sent, "Tidy the whole build");
+        drafts.resending(landing, sent, Some("Tidy the whole build"));
         drafts.write_now();
         assert_eq!(
             on_disk(directory.path()).get(landing).map(String::as_str),
@@ -979,6 +1000,32 @@ mod tests {
                 ..KeptDraft::default()
             }),
             "given back, at once, and no longer on its way"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_prompt_refused_on_its_way_is_kept_as_surely_unsent_until_it_is_asked_for_again() {
+        let directory = tempfile::tempdir().unwrap();
+        let drafts = Drafts::open(directory.path(), NEVER, &tokio::runtime::Handle::current());
+        let landing = beginning_key();
+        let sent = drafts.sending(landing, "Tidy the build", None);
+        drafts.refused(landing, sent);
+        assert_eq!(
+            kept_in(directory.path()).get(landing),
+            Some(&KeptDraft {
+                text: "Tidy the build".to_owned(),
+                ..KeptDraft::default()
+            }),
+            "kept at once, and not as maybe sent"
+        );
+
+        drafts.resending(landing, sent, None);
+        drafts.write_now();
+        assert!(
+            kept_in(directory.path())
+                .get(landing)
+                .is_some_and(|kept| kept.maybe_sent),
+            "on its way again"
         );
     }
 

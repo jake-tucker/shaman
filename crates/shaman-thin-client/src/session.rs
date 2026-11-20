@@ -907,13 +907,12 @@ impl Acting {
             else {
                 return;
             };
+            if let Some(sent) = provisional.sent {
+                self.drafts
+                    .resending(beginning::LANDING_DRAFT, sent, text.as_deref());
+            }
             match text.clone() {
-                Some(text) => {
-                    if let Some(sent) = provisional.sent {
-                        self.drafts.resending(beginning::LANDING_DRAFT, sent, &text);
-                    }
-                    provisional.replace(text);
-                }
+                Some(text) => provisional.replace(text),
                 None => provisional.ask_again(),
             }
             local.note = None;
@@ -1076,6 +1075,7 @@ impl Acting {
         let mut left = None;
         let mut begun = None;
         let mut discarded = None;
+        let mut refused = None;
         self.local.send_modify(|local| {
             let closed = local.closed;
             let Some(provisional) = local.provisional.as_mut() else {
@@ -1101,9 +1101,19 @@ impl Acting {
                     discarded = Some(may_have_begun);
                     local.provisional = None;
                 }
-                Err(standing) => provisional.progress = standing,
+                Err(standing) => {
+                    if matches!(standing, Progress::Refused(_)) {
+                        refused = provisional.sent;
+                    }
+                    provisional.progress = standing;
+                }
             }
         });
+        // Refused while it stands: kept, and surely not sent, however the app
+        // ends.
+        if let Some(sent) = refused {
+            self.drafts.refused(beginning::LANDING_DRAFT, sent);
+        }
         // Answered: the Landing's draft keeps its Prompt no more.
         if let Some(sent) = begun {
             self.drafts.answered(beginning::LANDING_DRAFT, sent);
