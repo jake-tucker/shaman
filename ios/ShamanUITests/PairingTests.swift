@@ -192,7 +192,7 @@ final class PairingTests: XCTestCase {
     attach(app, "Scanning past a code that is no invite")
 
     XCTAssertEqual(hostname(in: app), "workstation", "the first invite read goes to its confirmation")
-    XCTAssertFalse(app.staticTexts["scan.looking"].exists, "the scanner stopped")
+    XCTAssertTrue(app.staticTexts["scan.looking"].waitForNonExistence(timeout: 10), "the scanner is covered")
     attach(app, "Confirming a scanned invite")
     shown("confirm.pair", in: app).tap()
     let beginsIn = app.descendants(matching: .any)["home.beginsIn"]
@@ -217,6 +217,48 @@ final class PairingTests: XCTestCase {
     XCTAssertFalse(app.staticTexts["confirm.failure"].exists)
     app.buttons["confirm.pair"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["home.beginsIn"].waitForExistence(timeout: 10))
+  }
+
+  /// A back swipe begun from a scanned Invite's confirmation and given up shows the scanner for a moment beneath it,
+  /// while the confirmation stays pushed: the scanner, which would see another Invite were it scanning, takes nothing
+  /// then. Returned to, it scans again and takes that one.
+  @MainActor
+  func testABackSwipeGivenUpOverAScannedInvitePushesNoSecondConfirmation() {
+    let app = launched("fresh", arguments: scanning(invite, "shaman-v1-fake-another") + ["--scan-every", "1"])
+    let scan = app.buttons["pairing.scan"]
+    XCTAssertTrue(scan.waitForExistence(timeout: 10))
+    scan.tap()
+    XCTAssertEqual(hostname(in: app), "workstation")
+
+    let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+    edge.press(
+      forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)),
+      withVelocity: .slow, thenHoldForDuration: 2.5)
+    XCTAssertTrue(app.descendants(matching: .any)["confirm.hostname"].waitForExistence(timeout: 5), "swipe given up")
+    // The fake scanner, were it scanning while the swipe held, would have held up the next Invite a second after it
+    // saw this one again.
+
+    app.navigationBars.buttons.firstMatch.tap()
+    XCTAssertTrue(app.staticTexts["scan.looking"].waitForExistence(timeout: 10), "one back reaches the scanner")
+    XCTAssertFalse(app.descendants(matching: .any)["confirm.hostname"].exists, "no second confirmation was pushed")
+    XCTAssertEqual(hostname(in: app), "workstation", "the next Invite is taken")
+  }
+
+  @MainActor
+  func testACameraThatFailsSaysSoAndOffersPaste() {
+    let app = launched("fresh", arguments: ["--camera", "fails"])
+    let scan = app.buttons["pairing.scan"]
+    XCTAssertTrue(scan.waitForExistence(timeout: 10))
+    scan.tap()
+    let failed = app.staticTexts["scan.failed"]
+    XCTAssertTrue(failed.waitForExistence(timeout: 10))
+    XCTAssertEqual(failed.label, "The camera stopped scanning. Paste the invite instead.")
+    XCTAssertFalse(app.staticTexts["scan.looking"].exists)
+    attach(app, "The camera failed")
+
+    UIPasteboard.general.string = invite
+    app.buttons["scan.paste"].tap()
+    XCTAssertEqual(hostname(in: app), "workstation")
   }
 
   @MainActor

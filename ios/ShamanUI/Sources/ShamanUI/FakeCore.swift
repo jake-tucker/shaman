@@ -802,6 +802,14 @@
         + "draws or paste the invite here."
     }
 
+    public func scanWords() -> ScanWords {
+      ScanWords(
+        looking: "Looking for a Shaman invite", passedOver: "That code is not a Shaman invite",
+        cameraRefused: "Shaman may not use the camera. Allow it in the Settings app to scan, or paste the invite.",
+        noCamera: "This phone has no camera that can scan. Paste the invite instead.",
+        cameraFailed: "The camera stopped scanning. Paste the invite instead.")
+    }
+
     public func isInvite(_ text: String) -> Bool {
       text.trimmingCharacters(in: .whitespacesAndNewlines).wholeMatch(of: /shaman-v[0-9]+-.*/) != nil
     }

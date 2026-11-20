@@ -110,6 +110,9 @@ public protocol Core: AnyObject, Sendable {
   /// What the screen where pairing begins says to do.
   func pairingPrompt() -> String
 
+  /// What the scanner's screen and the offer to scan say, of which the app shows whichever the camera calls for.
+  func scanWords() -> ScanWords
+
   /// Whether `text`, as the scanner read it, is an Invite, by its form alone: the scanner stops at the first that is,
   /// a malformed one included, whose confirmation screen says what is wrong with it, and passes over anything else.
   func isInvite(_ text: String) -> Bool

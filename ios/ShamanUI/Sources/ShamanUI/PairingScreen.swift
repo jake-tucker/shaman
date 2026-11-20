@@ -7,12 +7,14 @@ import UIKit
 public struct PairingScreen: View {
   private let core: any Core
   @State private var path: [PairingRoute]
+  @State private var scanning: ScanningModel
 
   /// The screen over `core`, already confirming `invite` where one is given, as one arriving by the launch environment
   /// in a debug build is.
   public init(core: any Core, invite: String? = nil) {
     self.core = core
     _path = State(initialValue: invite.map { [.confirm($0)] } ?? [])
+    _scanning = State(initialValue: ScanningModel(core: core))
   }
 
   public var body: some View {
@@ -27,7 +29,7 @@ public struct PairingScreen: View {
       .navigationDestination(for: PairingRoute.self) { route in
         switch route {
         case .scan:
-          ScanScreen(core: core) { path.append(.confirm($0)) }
+          ScanScreen(model: scanning) { path.append(.confirm($0)) }
         case .confirm(let invite):
           // Back to the scanner where it read the Invite, and otherwise to where pairing begins.
           ConfirmationScreen(core: core, invite: invite) {
@@ -37,6 +39,8 @@ public struct PairingScreen: View {
         }
       }
     }
+    // The scanner scans only while it stands at the top of the path.
+    .onChange(of: path, initial: true) { scanning.stands(atTop: path.last == .scan) }
   }
 }
 
@@ -104,7 +108,7 @@ struct PairingStart: View {
         switch offer.access {
         case .refused:
           VStack(alignment: .leading, spacing: 8) {
-            Text("Shaman may not use the camera. Allow it in the Settings app to scan, or paste the invite.")
+            Text(core.scanWords().cameraRefused)
               .foregroundStyle(.secondary)
               .accessibilityIdentifier("pairing.scan.refused")
             Button("Open Settings") {
@@ -117,7 +121,7 @@ struct PairingStart: View {
             .accessibilityIdentifier("pairing.openSettings")
           }
         case .unavailable:
-          Text("This phone has no camera that can scan. Paste the invite instead.")
+          Text(core.scanWords().noCamera)
             .foregroundStyle(.secondary)
             .accessibilityIdentifier("pairing.scan.unavailable")
         case .granted, nil:

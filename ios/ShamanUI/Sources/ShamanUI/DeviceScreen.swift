@@ -6,6 +6,7 @@ import SwiftUI
 public struct DeviceScreen: View {
   @State private var model: DeviceModel
   @State private var path: [DeviceRoute] = []
+  @State private var scanning: ScanningModel
   /// The Remote whose name is being written, while one is.
   @FocusState private var naming: String?
   @Environment(\.dismiss) private var dismiss
@@ -15,6 +16,7 @@ public struct DeviceScreen: View {
   /// The screen over `core`, showing `appVersion` as the app's own version.
   public init(core: any Core, appVersion: String) {
     _model = State(initialValue: DeviceModel(core: core))
+    _scanning = State(initialValue: ScanningModel(core: core))
     self.core = core
     self.appVersion = appVersion
   }
@@ -42,7 +44,7 @@ public struct DeviceScreen: View {
             path.append(.confirm($0))
           }
         case .scan:
-          ScanScreen(core: core) { path.append(.confirm($0)) }
+          ScanScreen(model: scanning) { path.append(.confirm($0)) }
         case .confirm(let invite):
           // Back to the scanner where it read the Invite, and otherwise to where pairing begins.
           ConfirmationScreen(core: core, invite: invite) {
@@ -60,6 +62,8 @@ public struct DeviceScreen: View {
       }
       .noticeBanner(covered: model.loggingIn != nil)
     }
+    // The scanner scans only while it stands at the top of the path.
+    .onChange(of: path, initial: true) { scanning.stands(atTop: path.last == .scan) }
     .task { await model.follow() }
     .task { await model.followServers() }
     .onChange(of: naming) { was, _ in

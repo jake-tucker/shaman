@@ -176,12 +176,15 @@ needs to log in, and pairs by its direct ways with no login; one holding "relayo
 asks for the login and pairs by itself once it is done.
 
 **Scanning.** Scan asks for the camera the first time it is pressed, never at launch, and opens the scanner, VisionKit's
-data scanner behind `CodeScanner`, a seam that yields each code's text; the screens find it in the environment. The
+data scanner behind `CodeScanner`, a seam that tells of each code that comes into sight and leaves, and of the camera
+failing; the screens find it in the environment, and what they say is the core's `ScanWords`. The scanner scans only
+while it stands at the top of its stack, as the stack's path says, so a back swipe given up over a confirmation does
+not start it. Returned to by "Scan again", it passes over the Invite it took until that code leaves the frame. The
 simulator has no camera, so there Scan says so and Paste is the way in. A debug build launched with `--scan <code>`,
-given once for each code, runs over a fake scanner instead, which reads each code in turn a second apart while it scans,
-or `--scan-every <seconds>` apart, each once, so a scanner returned to by "Scan again" reads the next; it draws the code
-last read. `--camera refused` or `--camera unavailable` has it find the camera so, and `--camera granted` opens it with
-nothing to read.
+given once for each code, runs over a fake scanner instead, started and stopped as the camera is: as it starts it sees
+again the code last in front of it, then holds up each code in turn, a second apart, or `--scan-every <seconds>` apart,
+each once over its life, drawing the code in front of it. `--camera refused` or `--camera unavailable` has it find the
+camera so, `--camera fails` has the camera fail as it starts, and `--camera granted` opens it with nothing to read.
 
 ```sh
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake fresh \

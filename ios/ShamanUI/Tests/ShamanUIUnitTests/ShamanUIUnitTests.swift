@@ -1875,33 +1875,89 @@ private final class CountedScanner {
 }
 
 @Suite @MainActor struct ScanningModelTests {
-  @Test func whatIsNoInviteIsPassedOverAndTheFirstInviteStopsTheScanner() {
+  /// A model whose screen stands at the top of its stack, as one just pushed does.
+  private func atTop() -> ScanningModel {
     let model = ScanningModel(core: FakeCore(.fresh))
-    #expect(model.scanning)
-    for other in ["https://example.com", "WIFI:S:home;T:WPA;P:secret;;", "shaman"] {
-      #expect(model.read(other) == nil)
-      #expect(model.scanning, "it keeps scanning past \(other)")
-      #expect(model.passedOver)
-    }
-    #expect(model.read(FakeCore.invite) == FakeCore.invite)
+    model.stands(atTop: true)
+    return model
+  }
+
+  @Test func itScansOnlyOnceItStandsAtTheTop() {
+    let model = ScanningModel(core: FakeCore(.fresh))
     #expect(model.scanning == false)
-    #expect(model.passedOver == false)
-    #expect(model.read("shaman-v1-fake-another") == nil, "only the first Invite is taken")
+    #expect(model.heard(.read(FakeCore.invite)) == nil)
+    model.stands(atTop: true)
+    #expect(model.scanning)
+  }
+
+  @Test func whatIsNoInviteIsPassedOverAndTheFirstInviteStopsTheScanner() {
+    let model = atTop()
+    for other in ["https://example.com", "WIFI:S:home;T:WPA;P:secret;;", "shaman"] {
+      #expect(model.heard(.read(other)) == nil)
+      #expect(model.scanning, "it keeps scanning past \(other)")
+      #expect(model.passedOver == other)
+    }
+    #expect(model.heard(.read(FakeCore.invite)) == FakeCore.invite)
+    #expect(model.scanning == false)
+    #expect(model.passedOver == nil)
+    #expect(model.heard(.read("shaman-v1-fake-another")) == nil, "only the first Invite is taken")
+  }
+
+  @Test func thePassedOverNoteGoesOnceItsCodeLeavesTheFrame() {
+    let model = atTop()
+    #expect(model.heard(.read("https://example.com")) == nil)
+    #expect(model.heard(.left("https://elsewhere.example.com")) == nil)
+    #expect(model.passedOver == "https://example.com", "another code leaving leaves the note")
+    #expect(model.heard(.left("https://example.com")) == nil)
+    #expect(model.passedOver == nil)
   }
 
   @Test func aMalformedInviteIsTakenSoItsConfirmationSaysWhatIsWrong() {
-    let model = ScanningModel(core: FakeCore(.fresh))
-    #expect(model.read("shaman-v2-from-a-newer-shaman") == "shaman-v2-from-a-newer-shaman")
+    let model = atTop()
+    #expect(model.heard(.read("shaman-v2-from-a-newer-shaman")) == "shaman-v2-from-a-newer-shaman")
   }
 
-  @Test func returnedToItScansAfresh() {
-    let model = ScanningModel(core: FakeCore(.fresh))
-    #expect(model.read("https://example.com") == nil)
-    #expect(model.read(FakeCore.invite) == FakeCore.invite)
-    model.resume()
+  /// A back swipe begun from the confirmation and given up shows the scanner for a moment, and takes it off screen
+  /// again, while its path still ends at the confirmation: nothing it sees then is taken.
+  @Test func coveredOrOffScreenItTakesNothing() {
+    let model = atTop()
+    #expect(model.heard(.read(FakeCore.invite)) == FakeCore.invite)
+    model.stands(atTop: false)
+    #expect(model.scanning == false)
+    #expect(model.heard(.left(FakeCore.invite)) == nil)
+    #expect(model.heard(.read("shaman-v1-fake-another")) == nil)
+    model.stands(atTop: false)
+    #expect(model.heard(.read("shaman-v1-fake-another")) == nil)
+  }
+
+  @Test func returnedToItPassesOverTheInviteItTookUntilThatCodeLeavesTheFrame() {
+    let model = atTop()
+    #expect(model.heard(.read("shaman-v1-dead")) == "shaman-v1-dead")
+    model.stands(atTop: false)
+    model.stands(atTop: true)
     #expect(model.scanning)
-    #expect(model.passedOver == false)
-    #expect(model.read(FakeCore.invite) == FakeCore.invite)
+    #expect(model.heard(.read("shaman-v1-dead")) == nil, "the dead Invite still in front of the camera")
+    #expect(model.scanning)
+    #expect(model.passedOver == nil, "an Invite is not said to be no invite")
+    #expect(model.heard(.read(FakeCore.invite)) == FakeCore.invite, "another is taken")
+    model.stands(atTop: false)
+    model.stands(atTop: true)
+    #expect(model.heard(.left(FakeCore.invite)) == nil)
+    #expect(model.heard(.read(FakeCore.invite)) == FakeCore.invite, "once it left, it is read again")
+  }
+
+  @Test func aCameraThatFailsScansNoMore() {
+    let model = atTop()
+    #expect(model.heard(.failed) == nil)
+    #expect(model.failed)
+    #expect(model.scanning == false)
+    #expect(model.heard(.read(FakeCore.invite)) == nil)
+  }
+
+  @Test func itSaysWhatTheCoreWords() {
+    let model = ScanningModel(core: FakeCore(.fresh))
+    #expect(model.words == FakeCore(.fresh).scanWords())
+    #expect(model.words.looking == "Looking for a Shaman invite")
   }
 }
 
