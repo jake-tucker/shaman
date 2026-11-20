@@ -145,10 +145,14 @@
     private let state = Mutex(State())
     private let changes = Listeners<Void>()
 
-    init(opened: Date = Date(), reading: Reading = .lands, waits: Waits = .none) {
+    /// Whether a Subagent's stop is refused, as a Server that cannot stop it refuses it.
+    private let refusesStops: Bool
+
+    init(opened: Date = Date(), reading: Reading = .lands, waits: Waits = .none, refusesStops: Bool = false) {
       self.opened = opened
       self.reading = reading
       self.waits = waits
+      self.refusesStops = refusesStops
     }
 
     /// The name `member` goes by in this tree.
@@ -302,6 +306,9 @@
       if let session {
         guard let member = Self.member(session), working(member) else {
           throw .Refused(message: "That subagent is not working")
+        }
+        guard !refusesStops else {
+          throw .Refused(message: "Could not stop the subagent: The server refused to stop it")
         }
         stopping = [member] + member.spawned.compactMap(Self.member)
       } else {

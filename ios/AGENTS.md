@@ -86,8 +86,9 @@ Approvals, presented one by one; in `reaching`, `homelab-key/2` is never read, s
 `unreachable`, the home lab no longer answers, so `homelab-key/2` opens with its composer taking nothing and saying why.
 In `unreachable` the home lab, every way to which is on the local network, stands as a slim row at the foot of the
 listing and answers once tried again; in `offline` the phone has no network, so its one Remote reads Unreachable however
-often it is tried; and in `unreadTree` and `unreadableTree` the `paired` phone's trees are never read, or cannot be, so
-`/12`'s sheet stands at "Loading" or says why. In `releases` the `several` phone pairs across releases: the laptop no
+often it is tried; in `unreadTree` and `unreadableTree` the `paired` phone's trees are never read, or cannot be, so
+`/12`'s sheet stands at "Loading" or says why; and in `subagentStopRefused` every Subagent's stop is refused, which
+`/12`'s sheet says in its own banner. In `releases` the `several` phone pairs across releases: the laptop no
 longer works with an app as old as this one and the home lab's Shaman is too old for the app, so each stands at the
 listing's foot where an Unreachable row would, naming the side to update, and trying either again is refused saying so;
 a Session on either opens unread, saying why where its conversation would be, its composer taking nothing; and the

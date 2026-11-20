@@ -184,6 +184,20 @@ final class SubagentTests: XCTestCase {
   }
 
   @MainActor
+  func testAStopRefusedInTheTreeIsSaidOnceInTheSheetAndNotBeneathIt() {
+    let app = launched("subagentStopRefused", opening: delegating)
+    openTree(in: app)
+    cell(holding: "Run the lock's tests", in: app).swipeLeft()
+    XCTAssertTrue(app.buttons["tree.stop"].waitForExistence(timeout: 5))
+    app.buttons["tree.stop"].tap()
+    let banners = elements("banner", in: app)
+    XCTAssertTrue(banners.firstMatch.waitForExistence(timeout: 10), "the refusal is said")
+    XCTAssertTrue(banners.firstMatch.label.contains("Could not stop the subagent"), banners.firstMatch.label)
+    XCTAssertEqual(banners.count, 1, "in the sheet alone")
+    attach(app, "A stop refused in the tree")
+  }
+
+  @MainActor
   func testATreeNotInHandIsOfferedSayingLoadingAndOneThatCannotBeReadSaysWhy() {
     for (scenario, said, shown) in [
       ("unreadTree", "tree.loading", "A tree not yet in hand"),

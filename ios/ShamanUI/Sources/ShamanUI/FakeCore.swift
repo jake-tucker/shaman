@@ -29,6 +29,8 @@
       case unreadTree
       /// The `paired` phone whose Session trees cannot be read, so a tree's sheet says why.
       case unreadableTree
+      /// The `paired` phone whose Subagents' stops are all refused, so the tree's sheet says why.
+      case subagentStopRefused
       /// The `paired` phone where the Session heading the tree waits on an Approval of its own, and one of its
       /// Subagents, Explorer, on another.
       case subagentWaits
@@ -171,13 +173,14 @@
         default: .none
         }
       tree = FakeTree(
-        reading: scenario == .unreadTree ? .never : scenario == .unreadableTree ? .fails : .lands, waits: waits)
+        reading: scenario == .unreadTree ? .never : scenario == .unreadableTree ? .fails : .lands, waits: waits,
+        refusesStops: scenario == .subagentStopRefused)
       let remotes: [ServerRow] =
         switch scenario {
         case .fresh, .named, .pairAgain: []
-        case .paired, .offline, .unreadTree, .unreadableTree, .subagentWaits, .subagentsWait, .longSubagentName,
-          .composing, .relayLogin, .relayed, .loginNeeded, .otherAccount, .relayTurnedOn, .relayTurnedOff,
-          .lastRemovedThere:
+        case .paired, .offline, .unreadTree, .unreadableTree, .subagentStopRefused, .subagentWaits, .subagentsWait,
+          .longSubagentName, .composing, .relayLogin, .relayed, .loginNeeded, .otherAccount, .relayTurnedOn,
+          .relayTurnedOff, .lastRemovedThere:
           [Self.workstation(named: "workstation")]
         case .several, .reaching, .unreachable, .sidekick, .releases, .removedThere:
           [Self.workstation(named: "workstation"), Self.laptop, Self.homelab]

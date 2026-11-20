@@ -50,8 +50,8 @@ struct SessionScreen: View {
       }
     }
     .safeAreaInset(edge: .top) {
-      // While a sheet stands, its own banner says it.
-      if let banner = model.banner, model.presented == nil {
+      // While a sheet stands, its own banner says it: an Intervention's, or the tree's.
+      if let banner = model.banner, model.presented == nil, !showingTree {
         // On a ground of its own, so the conversation scrolling beneath does not show through.
         Banner(text: banner)
           .padding(.vertical, 4)
