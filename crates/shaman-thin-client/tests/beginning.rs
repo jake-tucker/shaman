@@ -596,35 +596,35 @@ async fn an_app_ended_while_a_refusal_stands_keeps_its_text_and_never_says_it_ma
 }
 
 /// A beginning on `phone` whose answer was lost, so that it may have begun,
-/// asked again with no network path, so that it stands refused.
-async fn maybe_begun_then_refused(phone: &Phone, gate: &Gate) -> support::Reading {
+/// asked again with no network path, so that the asking is carried nowhere:
+/// it still may have begun, and never reads refused.
+async fn maybe_begun_then_not_carried(phone: &Phone, gate: &Gate) -> support::Reading {
     gate.mute_now();
     let reading = phone.begin("Tidy the build");
     reading.conversation_until(may_have_begun).await;
     phone.core.path_changed(false);
     let _ = reading.session.try_again().await;
-    let conversation = reading
-        .conversation_until(|items| refused(items) && !may_have_begun(items))
-        .await;
-    assert!(
-        read_as(&conversation.items)
-            .iter()
-            .any(|said| said.starts_with("refused: ")),
-        "{:?}",
-        read_as(&conversation.items)
+    let conversation = reading.conversation_until(may_have_begun).await;
+    assert_eq!(
+        read_as(&conversation.items),
+        [
+            "user: Tidy the build",
+            "maybe: The server did not answer, so the session may have begun [Try again]"
+        ],
+        "never that it could not be created"
     );
     reading
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_beginning_that_may_have_begun_still_may_have_once_a_later_asking_is_refused() {
+async fn a_beginning_that_may_have_begun_still_may_have_once_a_later_asking_is_not_carried() {
     let desk = ServingServer::start("thin-begin-lost-refused").await;
     let gate = Gate::open(desk.serving_address()).await;
     let holder = tempfile::tempdir().expect("make the Workspaces' directory");
     let phone = hurried(&desk, &gate, &holder).await;
 
-    let reading = maybe_begun_then_refused(&phone, &gate).await;
-    // iOS ends the app while the refusal stands.
+    let reading = maybe_begun_then_not_carried(&phone, &gate).await;
+    // iOS ends the app while it stands so.
     phone.core.left_front();
     let phone = phone.relaunched();
     let landing = phone.landing_until(|_| true).await;
@@ -641,13 +641,13 @@ async fn a_beginning_that_may_have_begun_still_may_have_once_a_later_asking_is_r
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn leaving_a_beginning_refused_after_it_may_have_begun_says_it_may_have() {
+async fn leaving_a_beginning_not_carried_after_it_may_have_begun_says_it_may_have() {
     let desk = ServingServer::start("thin-begin-lost-refused-left").await;
     let gate = Gate::open(desk.serving_address()).await;
     let holder = tempfile::tempdir().expect("make the Workspaces' directory");
     let phone = hurried(&desk, &gate, &holder).await;
 
-    let reading = maybe_begun_then_refused(&phone, &gate).await;
+    let reading = maybe_begun_then_not_carried(&phone, &gate).await;
     drop(reading);
     let landing = phone.landing_until(|landing| landing.note.is_some()).await;
     let note = landing.note.expect("a note");

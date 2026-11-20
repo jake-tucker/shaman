@@ -977,6 +977,12 @@ impl Acting {
                 match created {
                     Ok(created) => Ok(created),
                     Err(unanswered) => {
+                        let may_have_reached = self
+                            .local
+                            .borrow()
+                            .provisional
+                            .as_ref()
+                            .is_some_and(|provisional| provisional.may_have_reached);
                         // An asking no way carried reached no Server to ask.
                         let reached = !matches!(
                             unanswered,
@@ -990,6 +996,15 @@ impl Acting {
                         match (held, unanswered) {
                             (Some(held), _) => Ok(held),
                             (None, Unanswered::MaybeDone) => Err(Progress::MayHaveBegun),
+                            // Not carried, this asking says nothing of an
+                            // earlier one that may have landed: a beginning
+                            // that may have begun is never said refused but
+                            // in its Server's own words.
+                            (None, Unanswered::NotDone(ActError::Unreachable { .. }))
+                                if may_have_reached =>
+                            {
+                                Err(Progress::MayHaveBegun)
+                            }
                             (None, Unanswered::NotDone(refused)) => {
                                 Err(Progress::Refused(refused.to_string()))
                             }
