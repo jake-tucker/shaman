@@ -311,15 +311,15 @@ const ASKING_NOTHING: &[&str] = &["new", "recovery_backoff"];
 mod tests {
     use std::collections::BTreeSet;
 
-    /// The name of each `pub fn` declared in `impl SessionCommands`, as its
-    /// source declares it.
-    fn declared() -> BTreeSet<String> {
-        let source = include_str!("../session_commands.rs");
-        let (_, body) = source
-            .split_once("\nimpl SessionCommands {\n")
-            .expect("the commands are declared");
-        let (body, _) = body.split_once("\n}\n").expect("the declaration ends");
-        body.lines()
+    /// The name of each `pub fn` declared in `impl SessionCommands`, as
+    /// `source` declares it, however its lines end: a checkout on Windows
+    /// ends them with CRLF.
+    fn declared(source: &str) -> BTreeSet<String> {
+        source
+            .lines()
+            .skip_while(|line| *line != "impl SessionCommands {")
+            .skip(1)
+            .take_while(|line| *line != "}")
             .filter_map(|line| {
                 let line = line.strip_prefix("    pub ")?;
                 let line = line.strip_prefix("async ").unwrap_or(line);
@@ -328,6 +328,18 @@ mod tests {
                 Some(name[..end].to_owned())
             })
             .collect()
+    }
+
+    const SOURCE: &str = include_str!("../session_commands.rs");
+
+    #[test]
+    fn the_commands_are_read_alike_whatever_their_lines_end_with() {
+        let unix = SOURCE.replace("\r\n", "\n");
+        let windows = unix.replace('\n', "\r\n");
+        let read = declared(&unix);
+        assert!(read.contains("health"), "{read:?}");
+        assert!(read.contains("list_workspaces"), "{read:?}");
+        assert_eq!(declared(&windows), read);
     }
 
     #[tokio::test]
@@ -344,7 +356,7 @@ mod tests {
         })
         .await;
         let walked = walked.into_inner().expect("the walked lock");
-        let declared = declared();
+        let declared = declared(SOURCE);
         assert!(declared.contains("list_workspaces"), "{declared:?}");
         let unwalked = declared
             .iter()
