@@ -25,6 +25,7 @@ that crate, is built on a Mac alone, by the loop in `ios/AGENTS.md`.
 reason, least of all in text the user reads: the UI says "Moving session" and "Waiting to move", not "Moving Session"
 and "Waiting to Move". Capitalise only what ordinary English would: real names (Codex, Copilot, Claude, Shaman) and the
 start of a sentence or label.
+- Do not make changes to README.md in the repo root. This file is written by humans, for humans.
 
 ## Plugins
 
