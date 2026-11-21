@@ -23,14 +23,54 @@ struct SessionScreen: View {
   /// The Session an entry of the tree handed back, shown once its sheet has gone.
   @State private var chosen: String?
 
+  /// PROTOTYPE: the third column.
+  @State private var own = AsideState()
+  private var aside: AsideState { stack?.aside ?? own }
+  private var asides: Bool { Proto.shared.asides }
+
+  /// The work of the last Turn the conversation holds.
+  private var lastTurn: String? {
+    for item in model.conversation.rows.reversed() {
+      if case .turn(let card) = item.kind { return card.work }
+    }
+    return nil
+  }
+
+  /// What the third column shows before the reader chooses: the tree where there is one, else the last Turn's work.
+  private func fillAside() {
+    if aside.model !== model {
+      aside.model = model
+      aside.chosen = false
+      aside.root = nil
+      aside.path = []
+    }
+    aside.lastTurn = lastTurn
+    guard asides, !aside.chosen else { return }
+    if model.frame?.tree != nil {
+      aside.root = .tree
+    } else if let lastTurn {
+      aside.root = .work(lastTurn)
+    }
+    aside.shown = true
+  }
+
   var body: some View {
     ConversationView(model: model) { pushed in
-      stack?.path.append(pushed)
+      switch pushed {
+      case .work(_, let turn) where asides: aside.show(.work(turn))
+      case .detail(_, let activity) where asides: aside.show(.detail(activity))
+      default: stack?.path.append(pushed)
+      }
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       SessionFoot(model: model) { opens in
         if let stack {
-          showingTree = stack.review(opens, over: model.route)
+          let tree = stack.review(opens, over: model.route)
+          if tree, asides {
+            aside.show(.tree)
+          } else {
+            showingTree = tree
+          }
         } else if opens == .interventions {
           model.review()
         }
@@ -51,7 +91,11 @@ struct SessionScreen: View {
     .noticeBanner(covered: model.presented != nil || showingTree)
     .onChange(of: model.popped) {
       if model.popped {
-        dismiss()
+        if let stack, Proto.shared.variant != .stack, stack.path.first?.route == model.route {
+          stack.path = []
+        } else {
+          dismiss()
+        }
       }
     }
     .overlay {
@@ -74,10 +118,34 @@ struct SessionScreen: View {
       }
       if let tree = model.frame?.tree {
         ToolbarItem(placement: .topBarTrailing) {
-          TreeButtonView(button: tree) { showingTree = true }
+          TreeButtonView(button: tree) {
+            if asides {
+              aside.show(.tree)
+            } else {
+              showingTree = true
+            }
+          }
+        }
+      }
+      if asides {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button {
+            aside.shown.toggle()
+          } label: {
+            Label("Work and sessions", systemImage: "sidebar.trailing")
+          }
         }
       }
     }
+    .onAppear { fillAside() }
+    .onDisappear {
+      if aside.model === model {
+        aside.model = nil
+      }
+    }
+    .onChange(of: asides, initial: true) { fillAside() }
+    .onChange(of: lastTurn) { fillAside() }
+    .onChange(of: model.frame?.tree != nil) { fillAside() }
     // Presented by the frame alone: SwiftUI clears the item only when the reader swipes the sheet away, which
     // dismisses what was pending; the core taking it away, once it is answered, clears nothing.
     .sheet(
@@ -1294,7 +1362,10 @@ final class SessionModel {
 final class SessionStack {
   /// The screens pushed, the one on top last.
   var path: [Pushed] {
-    didSet { closeUnpushed() }
+    didSet {
+      protoLog("path \(oldValue.map(\.tag)) -> \(path.map(\.tag))")
+      closeUnpushed()
+    }
   }
   @ObservationIgnored private let core: any Core
   @ObservationIgnored private var models: [SessionRoute: SessionModel] = [:]
@@ -1302,6 +1373,41 @@ final class SessionStack {
   /// The Sessions' screens restored after a cold start, any of which found gone before it is read sends the reader
   /// back to the listing.
   @ObservationIgnored private var restored: Set<SessionRoute> = []
+  /// PROTOTYPE: the new-session screen the second column holds while no Session is open, never on the path.
+  private(set) var rootLanding = LandingRoute()
+
+  /// PROTOTYPE: the third column, answering for the Session whose screen is up.
+  @ObservationIgnored let aside = AsideState()
+
+  /// PROTOTYPE: a new-session screen afresh in the second column.
+  func renewRootLanding() {
+    rootLanding = LandingRoute()
+    closeUnpushed()
+  }
+
+  /// PROTOTYPE: when a screen pushed within the second column was last popped.
+  @ObservationIgnored var popped = Date.distantPast
+
+  /// PROTOTYPE: what is pushed over the second column's root.
+  var rest: [Pushed] {
+    get { Array(path.dropFirst()) }
+    set {
+      protoLog("rest set \(newValue.map(\.tag))")
+      if newValue.count < path.count - 1 {
+        popped = Date()
+      }
+      path = Array(path.prefix(1)) + newValue
+    }
+  }
+
+  /// PROTOTYPE: whether the second column's root is the Session `session` names.
+  func roots(_ session: String) -> Bool {
+    switch path.first {
+    case .session(let route): route.session == session
+    case .landing(let route): landings[route]?.begun?.session == session
+    default: false
+    }
+  }
 
   init(core: any Core, path: [Pushed] = []) {
     self.core = core
@@ -1340,7 +1446,15 @@ final class SessionStack {
       return model
     }
     let model = NewSessionModel(core: core)
-    model.adopted = { [weak self] begun in self?.models[begun.route] = begun }
+    model.adopted = { [weak self] begun in
+      guard let self else { return }
+      models[begun.route] = begun
+      // PROTOTYPE: begun from the second column's resting screen, it becomes what is open.
+      if route == rootLanding, path.isEmpty {
+        path = [.landing(route)]
+        rootLanding = LandingRoute()
+      }
+    }
     landings[route] = model
     return model
   }
@@ -1398,7 +1512,8 @@ final class SessionStack {
   /// Closes every Session no screen of which is on the path, a Session begun from a new-session screen standing for
   /// as long as its screen does.
   private func closeUnpushed() {
-    let landed = Set(path.compactMap { if case .landing(let route) = $0 { route } else { nil } })
+    var landed = Set(path.compactMap { if case .landing(let route) = $0 { route } else { nil } })
+    landed.insert(rootLanding)
     let pushed = Set(path.compactMap(\.route) + landed.compactMap { landings[$0]?.begun?.route })
     for (route, model) in models where !pushed.contains(route) {
       model.close()
@@ -1424,6 +1539,15 @@ struct LandingRoute: Hashable {
 /// A screen pushed over the listing: a Session's, or a Turn's work or an Activity's whole pushed from one, which
 /// read through the Session `route` names for as long as they are up; or the new-session screen.
 enum Pushed: Hashable {
+  var tag: String {
+    switch self {
+    case .session(let route): "session(\(route.session))"
+    case .work: "work"
+    case .detail: "detail"
+    case .landing: "landing"
+    }
+  }
+
   case session(SessionRoute)
   case work(SessionRoute, turn: String)
   case detail(SessionRoute, activity: String)

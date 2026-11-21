@@ -12,12 +12,14 @@ import SwiftUI
 struct NewSessionScreen: View {
   let model: NewSessionModel
   let stack: SessionStack
+  /// PROTOTYPE: whether the keyboard is up on arrival; not where the screen is what the second column holds at rest.
+  var arrivesWriting = true
 
   var body: some View {
     if let begun = model.begun {
       SessionScreen(model: begun, stack: stack)
     } else {
-      LandingView(model: model)
+      LandingView(model: model, arrivesWriting: arrivesWriting)
     }
   }
 }
@@ -25,6 +27,7 @@ struct NewSessionScreen: View {
 /// The Landing as the screen draws it before the send.
 private struct LandingView: View {
   @Bindable var model: NewSessionModel
+  var arrivesWriting = true
   @FocusState private var writing: Bool
   /// Whether the Workspace Picker is pushed over the screen.
   @State private var picking = false
@@ -80,7 +83,7 @@ private struct LandingView: View {
     }
     .task { await model.follow() }
     // The keyboard is up on arrival: beginning is writing.
-    .onAppear { writing = true }
+    .onAppear { writing = arrivesWriting }
   }
 }
 

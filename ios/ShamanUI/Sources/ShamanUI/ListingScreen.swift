@@ -48,64 +48,61 @@ struct ListingScreen: View {
     KeptScene(scope: model.listing?.scope ?? restoring, pushed: stack.kept)
   }
 
+  @Bindable private var proto = Proto.shared
+  @Environment(\.horizontalSizeClass) private var width
+  @State private var columns = NavigationSplitViewVisibility.all
+  @State private var asideSettling = false
+  /// When the window's width class last changed, or the screen was made.
+  @State private var settled = Date()
+  @State private var compact = NavigationSplitViewColumn.sidebar
+
   var body: some View {
-    NavigationStack(path: $stack.path) {
-      List {
-        if let listing = model.listing {
-          rows(listing)
+    Group {
+      switch proto.variant {
+      case .stack:
+        NavigationStack(path: $stack.path) {
+          listingColumn
+            .navigationDestination(for: Pushed.self) { destination($0) }
         }
-      }
-      .listStyle(.plain)
-      .overlay {
-        if let empty = model.listing?.empty {
-          ContentUnavailableView {
-            Label {
-              Text(verbatim: empty)
-                .accessibilityIdentifier("listing.empty")
-            } icon: {
-              Image(systemName: model.listing?.found == nil ? "square.and.pencil" : "magnifyingglass")
+      case .two, .three:
+        if proto.variant == .three {
+          styled
+            .inspector(isPresented: asideShown) {
+              Group {
+                if let session = stack.aside.model {
+                  AsideColumn(model: session, state: stack.aside, stack: stack)
+                }
+              }
+              .inspectorColumnWidth(min: 240, ideal: 290, max: 360)
             }
-          }
+        } else {
+          styled
         }
       }
-      .navigationTitle(model.listing?.title ?? "")
-      .navigationBarTitleDisplayMode(.inline)
-      .searchable(
-        text: $query, placement: .navigationBarDrawer(displayMode: .always),
-        prompt: Text(verbatim: model.listing?.searchPrompt ?? "")
-      )
-      .onChange(of: query) { model.search(query) }
-      .safeAreaInset(edge: .top) {
-        if let failure = model.failure {
-          Banner(text: failure)
-            .onTapGesture { model.dismissFailure() }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint("Dismisses this")
-        }
+    }
+    .overlay(alignment: .top) {
+      if proto.pill {
+        PrototypePill().padding(.top, 52)
       }
-      .noticeBanner(covered: sheet != nil)
-      .toolbar {
-        ToolbarItem(placement: .principal) {
-          if let listing = model.listing {
-            ScopeMenu(listing: listing) { scope in Task { await model.narrow(scope) } }
-          }
-        }
-        bottomBar
-      }
-      .navigationDestination(for: Pushed.self) { pushed in
-        switch pushed {
-        case .session(let route):
-          SessionScreen(model: stack.model(for: route), stack: stack)
-        case .work(let route, let turn):
-          TurnWorkScreen(session: stack.model(for: route), turn: turn)
-            .noticeBanner()
-        case .detail(let route, let activity):
-          ActivityDetailScreen(session: stack.model(for: route), activity: activity)
-            .noticeBanner()
-        case .landing(let route):
-          NewSessionScreen(model: stack.landing(for: route), stack: stack)
-            .noticeBanner()
-        }
+    }
+    .onChange(of: width, initial: true) { proto.regular = width == .regular }
+    .onGeometryChange(for: Bool.self) { $0.size.width > 800 } action: { proto.wide = $0 }
+    .onChange(of: Arrangement(self), initial: true) { arrange() }
+    .onAppear { compact = stack.path.isEmpty ? .sidebar : .detail }
+    .onChange(of: stack.path.isEmpty) { _, empty in
+      // Collapsed, an empty path is the listing, and anything opened is the second column.
+      compact = empty ? .sidebar : .detail
+    }
+    .onChange(of: compact) { protoLog("compact -> \(compact)") }
+    .onChange(of: width) { settled = Date() }
+    .onChange(of: proto.asides) { _, asides in
+      // The system loses the third column through a fold; presenting it afresh once the window is wide again
+      // brings it back.
+      guard asides else { return }
+      asideSettling = true
+      Task {
+        try? await Task.sleep(for: .milliseconds(400))
+        asideSettling = false
       }
     }
     .task { await model.follow(restoring: restoring) }
@@ -136,6 +133,200 @@ struct ListingScreen: View {
           }
         }
       }
+    }
+  }
+
+  /// One split view on every iPhone. The second column's root is the first screen on the path, a Session or the
+  /// new-session screen, and the rest of the path is pushed over it within the column; with nothing on the path it
+  /// holds what the pill's menu says. Collapsed, the listing stands while the path is empty.
+  private var split: some View {
+    NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compact) {
+      listingColumn
+    } detail: {
+      let first = stack.path.first
+      NavigationStack(path: $stack.rest) {
+        Group {
+          if let first {
+            destination(first)
+          } else {
+            switch proto.empty {
+            case .landing:
+              NewSessionScreen(model: stack.landing(for: stack.rootLanding), stack: stack, arrivesWriting: false)
+                .noticeBanner()
+                .id(stack.rootLanding)
+            case .nothing:
+              ContentUnavailableView("No session open", systemImage: "bubble.left.and.text.bubble.right")
+            }
+          }
+        }
+        .navigationDestination(for: Pushed.self) { destination($0) }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var styled: some View {
+    switch proto.style {
+    case .balanced: split.navigationSplitViewStyle(.balanced)
+    case .automatic: split.navigationSplitViewStyle(.automatic)
+    case .prominent: split.navigationSplitViewStyle(.prominentDetail)
+    }
+  }
+
+  /// What decides which columns stand.
+  private struct Arrangement: Equatable {
+    let variant: Proto.Variant
+    let regular: Bool
+    let wide: Bool
+    let root: Pushed?
+    let aside: Bool
+    let hides: Bool
+
+    @MainActor
+    init(_ screen: ListingScreen) {
+      variant = screen.proto.variant
+      regular = screen.proto.regular
+      wide = screen.proto.wide
+      root = screen.stack.path.first
+      aside = screen.asideShown.wrappedValue
+      hides = screen.proto.asideHidesListing
+    }
+  }
+
+  /// Stands the columns for where the window is now. Tiled, the listing stands beside what is open, but where the
+  /// third column takes its place. Too narrow to tile, as the inner display in portrait, the listing stands over the
+  /// second column while nothing is open, and goes as something opens, as it does on the closed display.
+  private func arrange() {
+    guard proto.variant != .stack, proto.regular else { return }
+    if !proto.wide {
+      columns = stack.path.isEmpty ? .all : .detailOnly
+    } else if proto.variant == .three, proto.asideHidesListing, asideShown.wrappedValue {
+      columns = .detailOnly
+    } else {
+      columns = .all
+    }
+  }
+
+  /// Whether the third column stands: where the variant has one, a Session's screen is up and the reader has it shown.
+  private var asideShown: Binding<Bool> {
+    Binding {
+      proto.asides && !asideSettling && stack.aside.model != nil && stack.aside.shown
+    } set: { _ in
+      // Only the Session's own button shows and hides it; the system's dismissals through a fold are passed over.
+    }
+  }
+
+  /// What is pushed over the second column's root.
+  private var rest: Binding<[Pushed]> {
+    Binding {
+      Array(stack.path.dropFirst())
+    } set: { rest in
+      protoLog("rest set \(rest.map(\.tag))")
+      stack.path = Array(stack.path.prefix(1)) + rest
+    }
+  }
+
+  /// The listing came on screen. Collapsed, with something open, that is the reader coming back to it, which closes
+  /// what was open. The column the system writes cannot say so: in iOS 27.2 it writes the listing as any screen
+  /// pushed within the second column is popped, and nothing once it has. A fold re-hosts the listing, so its
+  /// appearing just after the width changes is passed over.
+  private func listingAppeared() {
+    protoLog("listing appeared width \(String(describing: width)) path \(stack.path.map(\.tag))")
+    guard proto.variant != .stack, width == .compact, !stack.path.isEmpty else { return }
+    guard Date().timeIntervalSince(settled) > 1 else { return }
+    stack.path = []
+  }
+
+  /// A row that opens its Session: pushed in the stack, and in the split view made the second column's root.
+  @ViewBuilder
+  private func opens(_ session: String, @ViewBuilder label: () -> some View) -> some View {
+    if proto.variant == .stack {
+      NavigationLink(value: Pushed.session(SessionRoute(session: session))) { label() }
+    } else {
+      Button {
+        if !stack.roots(session) {
+          stack.path = [.session(SessionRoute(session: session))]
+        }
+      } label: {
+        label()
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .listRowBackground(stack.roots(session) && proto.regular ? Color.accentColor.opacity(0.14) : nil)
+    }
+  }
+
+  @ViewBuilder
+  private func destination(_ pushed: Pushed) -> some View {
+    switch pushed {
+    case .session(let route):
+      SessionScreen(model: stack.model(for: route), stack: stack)
+    case .work(let route, let turn):
+      TurnWorkScreen(session: stack.model(for: route), turn: turn)
+        .noticeBanner()
+    case .detail(let route, let activity):
+      ActivityDetailScreen(session: stack.model(for: route), activity: activity)
+        .noticeBanner()
+    case .landing(let route):
+      NewSessionScreen(model: stack.landing(for: route), stack: stack)
+        .noticeBanner()
+    }
+  }
+
+  private var listingColumn: some View {
+    List {
+      if let listing = model.listing {
+        rows(listing)
+      }
+    }
+    .listStyle(.plain)
+    .onAppear { listingAppeared() }
+    .overlay {
+      if let empty = model.listing?.empty {
+        ContentUnavailableView {
+          Label {
+            Text(verbatim: empty)
+              .accessibilityIdentifier("listing.empty")
+          } icon: {
+            Image(systemName: model.listing?.found == nil ? "square.and.pencil" : "magnifyingglass")
+          }
+        }
+      }
+    }
+    .navigationTitle(model.listing?.title ?? "")
+    .navigationBarTitleDisplayMode(.inline)
+    .searchable(
+      text: $query, placement: .navigationBarDrawer(displayMode: .always),
+      prompt: Text(verbatim: model.listing?.searchPrompt ?? "")
+    )
+    .onChange(of: query) { model.search(query) }
+    .safeAreaInset(edge: .top) {
+      if let failure = model.failure {
+        Banner(text: failure)
+          .onTapGesture { model.dismissFailure() }
+          .accessibilityAddTraits(.isButton)
+          .accessibilityHint("Dismisses this")
+      }
+    }
+    .noticeBanner(covered: sheet != nil)
+    .toolbar {
+      ToolbarItem(placement: .principal) {
+        if let listing = model.listing {
+          ScopeMenu(listing: listing) { scope in Task { await model.narrow(scope) } }
+        }
+      }
+      bottomBar
+    }
+  }
+
+  /// The compose button: pushed over the listing in the stack, and in the split view the second column's own root
+  /// where that is what it holds while no Session is open.
+  private func compose() {
+    if proto.variant == .stack {
+      stack.path.append(.landing(LandingRoute()))
+    } else {
+      stack.path = [.landing(LandingRoute())]
     }
   }
 
@@ -219,7 +410,7 @@ struct ListingScreen: View {
   }
 
   private func active(_ row: ActiveRow) -> some View {
-    NavigationLink(value: Pushed.session(SessionRoute(session: row.session))) {
+    opens(row.session) {
       ActiveRowView(row: row)
     }
     .accessibilityIdentifier("listing.active")
@@ -232,7 +423,7 @@ struct ListingScreen: View {
   }
 
   private func settled(_ row: SettledRow) -> some View {
-    NavigationLink(value: Pushed.session(SessionRoute(session: row.session))) {
+    opens(row.session) {
       SettledRowView(row: row)
     }
     .accessibilityIdentifier("listing.settled")
@@ -269,7 +460,7 @@ struct ListingScreen: View {
     ToolbarItem(placement: .bottomBar) {
       // The new-session screen, where the Outlook stands.
       Button {
-        stack.path.append(.landing(LandingRoute()))
+        compose()
       } label: {
         Label("New session", systemImage: "square.and.pencil")
       }
