@@ -91,7 +91,7 @@ struct SessionScreen: View {
       }
     }
     // PROTOTYPE: the band kept for the fold, left empty between the conversation and the third column.
-    .padding(.trailing, asides ? Proto.shared.asideBand : 0)
+    .padding(.trailing, asides && Proto.shared.conversationKeepsOutOfGap ? Proto.shared.asideBand : 0)
     .noticeBanner(covered: model.presented != nil || showingTree)
     .onChange(of: model.popped) {
       if model.popped {

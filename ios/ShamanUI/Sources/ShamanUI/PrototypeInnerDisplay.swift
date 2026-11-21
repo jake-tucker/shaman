@@ -69,6 +69,8 @@ final class Proto {
   var asideBand: CGFloat = 0
   /// How much of the band kept for the fold is left empty before the third column, in points.
   var foldGap: CGFloat = 20
+  /// Whether the conversation stops short of that gap, leaving it empty, or runs up to the third column's edge.
+  var conversationKeepsOutOfGap = false
 
   /// Whether the window is wide enough to tile columns: the inner display in landscape, not in portrait.
   var wide = false
@@ -110,6 +112,7 @@ struct PrototypePill: View {
           ForEach(Proto.Empty.allCases, id: \.self) { Text($0.name).tag($0) }
         }
         Toggle("Third column hides the listing", isOn: $proto.asideHidesListing)
+        Toggle("Conversation stops short of the gap", isOn: $proto.conversationKeepsOutOfGap)
         Picker("Gap at the fold before the third column", selection: $proto.foldGap) {
           ForEach([0, 10, 20, 30, 40] as [CGFloat], id: \.self) { Text("\(Int($0)) points").tag($0) }
         }
