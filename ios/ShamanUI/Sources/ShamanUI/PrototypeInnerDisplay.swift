@@ -64,6 +64,10 @@ final class Proto {
     var window: CGFloat
   }
 
+  /// How wide the band kept for the fold is while the third column stands past it: the conversation stops short of
+  /// it by as much.
+  var asideBand: CGFloat = 0
+
   /// Whether the window is wide enough to tile columns: the inner display in landscape, not in portrait.
   var wide = false
   /// Whether the third column takes the listing's place while it is shown, two columns at a time, as Apple's

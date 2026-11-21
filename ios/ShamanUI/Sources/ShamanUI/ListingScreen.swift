@@ -77,9 +77,8 @@ struct ListingScreen: View {
                     .id(session.route)
                 }
               }
-              // Partly folded like a book, the column takes the whole half past the fold, its content clear of the
-              // band kept for the fold, and the conversation the half before it.
-              .safeAreaPadding(.leading, settledFold?.width ?? 0)
+              // Partly folded like a book, the column stands on the flat of the half past the fold, beginning where
+              // the band kept for the fold ends; the conversation keeps the half before it, and the band stays empty.
               .inspectorColumnWidth(
                 min: foldAside ?? 240, ideal: foldAside ?? 290, max: foldAside ?? 360)
             }
@@ -108,6 +107,9 @@ struct ListingScreen: View {
     .onChange(of: width, initial: true) { proto.regular = width == .regular }
     .onGeometryChange(for: Bool.self) { $0.size.width > 800 } action: { proto.wide = $0 }
     .onChange(of: Arrangement(self), initial: true) { arrange() }
+    .onChange(of: asideShown.wrappedValue ? settledFold?.width ?? 0 : 0, initial: true) { _, band in
+      proto.asideBand = band
+    }
     .onAppear { compact = stack.path.isEmpty ? .sidebar : .detail }
     .onChange(of: stack.path.isEmpty) { _, empty in
       // Collapsed, an empty path is the listing, and anything opened is the second column.
@@ -233,7 +235,7 @@ struct ListingScreen: View {
   /// How wide the third column is while the phone is partly folded like a book: from where the fold begins to the
   /// window's far edge.
   private var foldAside: CGFloat? {
-    settledFold.map { $0.window - $0.leading }
+    settledFold.map { $0.window - $0.leading - $0.width }
   }
 
   /// Whether the third column stands: where the variant has one, a Session's screen is up and the reader has it shown.
