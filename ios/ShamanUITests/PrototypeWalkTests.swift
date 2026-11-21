@@ -243,6 +243,10 @@ final class PrototypeWalkTests: XCTestCase {
       rows.element(boundBy: Int(ProcessInfo.processInfo.environment["PROTO_ROW"] ?? "0") ?? 0).tap()
     }
     Thread.sleep(forTimeInterval: 2)
+    if ProcessInfo.processInfo.environment["PROTO_TAP_TURN"] != nil {
+      tap("session.turn", in: app)
+      Thread.sleep(forTimeInterval: 1.5)
+    }
     let hold = "/tmp/duo714/req/hold"
     FileManager.default.createFile(atPath: hold, contents: Data())
     let deadline = Date().addingTimeInterval(600)

@@ -53,6 +53,17 @@ final class Proto {
   var pill: Bool
   /// Whether the window is of regular width, read outside the split view, whose columns may say otherwise.
   var regular = false
+  /// The fold, while the phone is partly folded like a book: how far across the window it begins, and how wide the
+  /// band kept clear for it is.
+  var fold: Fold?
+
+  struct Fold: Equatable {
+    var leading: CGFloat
+    var width: CGFloat
+    /// How wide the window is, less its safe area.
+    var window: CGFloat
+  }
+
   /// Whether the window is wide enough to tile columns: the inner display in landscape, not in portrait.
   var wide = false
   /// Whether the third column takes the listing's place while it is shown, two columns at a time, as Apple's
@@ -142,7 +153,7 @@ final class AsideState {
 
   /// Whether the reader has the column shown: their standing choice, kept from one Session to the next and through a
   /// fold.
-  var wanted = true
+  var wanted = false
   /// Whether the column is up now, as the system has it: the system takes it down through a fold by itself.
   var presented = false
   /// The Session's screen whose work it shows.
@@ -263,4 +274,26 @@ func protoLog(_ line: String) {
       try? data.write(to: url)
     }
   #endif
+}
+
+/// PROTOTYPE: asks for the fold's reserved region, twice a second as #712's probe did, since nothing says a
+/// `GeometryReader` is drawn again as the fold comes and goes.
+@available(iOS 27.1, *)
+struct FoldReader: View {
+  var body: some View {
+    TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+      GeometryReader { proxy in
+        let region = proxy.reservedRegions(kind: .division).first { $0.isActive && $0.frame.height > $0.frame.width }
+        let fold = region.map {
+          Proto.Fold(leading: $0.frame.minX, width: $0.frame.width, window: proxy.size.width)
+        }
+        Color.clear.onChange(of: fold, initial: true) { _, fold in
+          protoLog("fold \(String(describing: fold))")
+          Proto.shared.fold = fold
+        }
+      }
+    }
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
 }

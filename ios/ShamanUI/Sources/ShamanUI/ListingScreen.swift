@@ -52,6 +52,9 @@ struct ListingScreen: View {
   @Environment(\.horizontalSizeClass) private var width
   @State private var columns = NavigationSplitViewVisibility.all
   @State private var asideSettling = false
+  /// The fold, once the system has finished standing its own columns about it: widening the third column while it
+  /// does so trips an assertion in UIKit's split view.
+  @State private var settledFold: Proto.Fold?
   /// When the window's width class last changed, or the screen was made.
   @State private var settled = Date()
   @State private var compact = NavigationSplitViewColumn.sidebar
@@ -74,7 +77,11 @@ struct ListingScreen: View {
                     .id(session.route)
                 }
               }
-              .inspectorColumnWidth(min: 240, ideal: 290, max: 360)
+              // Partly folded like a book, the column takes the whole half past the fold, its content clear of the
+              // band kept for the fold, and the conversation the half before it.
+              .safeAreaPadding(.leading, settledFold?.width ?? 0)
+              .inspectorColumnWidth(
+                min: foldAside ?? 240, ideal: foldAside ?? 290, max: foldAside ?? 360)
             }
         } else {
           styled
@@ -85,6 +92,18 @@ struct ListingScreen: View {
       if proto.pill {
         PrototypePill().padding(.top, 52)
       }
+    }
+    .background {
+      if #available(iOS 27.1, *) {
+        FoldReader()
+      }
+    }
+    .task(id: proto.fold) {
+      let fold = proto.fold
+      try? await Task.sleep(for: .milliseconds(900))
+      guard !Task.isCancelled else { return }
+      protoLog("settled fold \(String(describing: fold))")
+      settledFold = fold
     }
     .onChange(of: width, initial: true) { proto.regular = width == .regular }
     .onGeometryChange(for: Bool.self) { $0.size.width > 800 } action: { proto.wide = $0 }
@@ -209,6 +228,12 @@ struct ListingScreen: View {
     } else {
       columns = .all
     }
+  }
+
+  /// How wide the third column is while the phone is partly folded like a book: from where the fold begins to the
+  /// window's far edge.
+  private var foldAside: CGFloat? {
+    settledFold.map { $0.window - $0.leading }
   }
 
   /// Whether the third column stands: where the variant has one, a Session's screen is up and the reader has it shown.
