@@ -157,6 +157,47 @@ import UIKit
     #expect(list.view.distanceToFoot > 2000, "\(list.view.distanceToFoot)")
   }
 
+  /// A scroll toward a point near the foot, under way as the last row grows: the list goes to the new foot itself,
+  /// which stops that scroll, and UIKit says the scroll ended before the list stands there. That is no reader coming to
+  /// rest above the foot.
+  @Test func aScrollNearTheFootStoppedByARowGrowingKeepsFollowing() async throws {
+    let list = try await HostedList(rows: 60, height: 80)
+    defer { list.close() }
+    let view = list.view
+    view.setContentOffset(CGPoint(x: 0, y: view.contentOffset.y - 30), animated: true)
+    list.follower.report("item:59", 80 + 310)
+    try await list.frames(60)
+    #expect(list.follower.following, "still following the foot")
+    #expect(view.distanceToFoot < 1, "at the foot of the grown row: \(view.distanceToFoot)")
+  }
+
+  @Test func aScrollToTheLastRowWhileItGrowsKeepsFollowing() async throws {
+    let list = try await HostedList(rows: 60, height: 80)
+    defer { list.close() }
+    let view = list.view
+    view.setContentOffset(CGPoint(x: 0, y: view.contentOffset.y - 20), animated: false)
+    view.scrollToItem(at: IndexPath(item: 59, section: 0), at: .bottom, animated: true)
+    list.follower.report("item:59", 80 + 310)
+    try await list.frames(60)
+    #expect(list.follower.following)
+    #expect(view.distanceToFoot < 1, "\(view.distanceToFoot)")
+  }
+
+  /// The room the list has changing, as the composer growing or the keyboard rising changes it, with nothing else
+  /// laying the list out: it follows its foot there.
+  @Test func anInsetChangingAloneIsFollowed() async throws {
+    let list = try await HostedList(rows: 60, height: 80)
+    defer { list.close() }
+    let view = list.view
+    view.contentInset.bottom += 200
+    try await list.frames(30)
+    #expect(list.follower.following)
+    #expect(view.distanceToFoot < 1, "at the foot of the smaller room: \(view.distanceToFoot)")
+    view.contentInset.bottom -= 200
+    try await list.frames(30)
+    #expect(view.distanceToFoot < 1, "and back: \(view.distanceToFoot)")
+  }
+
   @Test func aScrollToTheFootItselfKeepsFollowing() async throws {
     let list = try await HostedList(rows: 60, height: 80)
     defer { list.close() }

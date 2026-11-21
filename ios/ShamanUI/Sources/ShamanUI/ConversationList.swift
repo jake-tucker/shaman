@@ -336,7 +336,11 @@ struct ConversationList<Row: View>: UIViewRepresentable {
   }
 
   func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-    rested()
+    // Ended by the list going to its foot itself, which stops any scroll under way and says so before the list
+    // stands at the foot, it is no reader coming to rest.
+    if view?.adjusting != true {
+      rested()
+    }
   }
 
   func scrollViewShouldScrollToTop(_ scrollView: UIScrollView) -> Bool {
@@ -381,7 +385,7 @@ final class FootCollectionView: UICollectionView {
   weak var follower: ConversationFollower?
   /// Whether the list is going back to its foot itself, or the system is adjusting it to a change in what it holds
   /// or the room it has.
-  private var adjusting = false
+  private(set) var adjusting = false
 
   /// How far above its foot the list stands.
   var distanceToFoot: CGFloat {
@@ -414,6 +418,8 @@ final class FootCollectionView: UICollectionView {
 
   override func adjustedContentInsetDidChange() {
     adjust { super.adjustedContentInsetDidChange() }
+    // The room changed, so the foot moved: laid out again, the list follows it.
+    setNeedsLayout()
   }
 
   /// Runs `body` as the list's own adjustment, or the system's, rather than someone's scroll.
