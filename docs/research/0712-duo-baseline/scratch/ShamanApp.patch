@@ -1,0 +1,12 @@
+diff --git a/ios/Shaman/ShamanApp.swift b/ios/Shaman/ShamanApp.swift
+index 61a27ae5..da8d061a 100644
+--- a/ios/Shaman/ShamanApp.swift
++++ b/ios/Shaman/ShamanApp.swift
+@@ -24,6 +24,7 @@ struct ShamanApp: App {
+             }
+           }
+           .environment(\.codeScanner, Launch.scanner ?? .camera)
++          .overlay { if #available(iOS 27.1, *) { DuoProbe() } }  // SCRATCH for #712, never commit
+         #else
+           RootScreen(core: core, appVersion: Self.version)
+         #endif
