@@ -37,21 +37,23 @@ struct SessionScreen: View {
   }
 
   /// What the third column shows before the reader chooses: the tree where there is one, else the last Turn's work.
-  private func fillAside() {
-    if aside.model !== model {
-      aside.model = model
+  private func fillAside(appearing: Bool = false) {
+    if appearing, aside.owner != model.route {
+      aside.owner = model.route
       aside.chosen = false
       aside.root = nil
       aside.path = []
+      aside.presented = aside.wanted
     }
+    // A Session's screen beneath another's leaves the column to the one on top.
+    guard aside.owner == model.route else { return }
     aside.lastTurn = lastTurn
-    guard asides, !aside.chosen else { return }
+    guard !aside.chosen else { return }
     if model.frame?.tree != nil {
       aside.root = .tree
     } else if let lastTurn {
       aside.root = .work(lastTurn)
     }
-    aside.shown = true
   }
 
   var body: some View {
@@ -130,20 +132,15 @@ struct SessionScreen: View {
       if asides {
         ToolbarItem(placement: .topBarTrailing) {
           Button {
-            aside.shown.toggle()
+            aside.toggle()
           } label: {
             Label("Work and sessions", systemImage: "sidebar.trailing")
           }
         }
       }
     }
-    .onAppear { fillAside() }
-    .onDisappear {
-      if aside.model === model {
-        aside.model = nil
-      }
-    }
-    .onChange(of: asides, initial: true) { fillAside() }
+    .onAppear { fillAside(appearing: true) }
+    .onChange(of: asides) { fillAside() }
     .onChange(of: lastTurn) { fillAside() }
     .onChange(of: model.frame?.tree != nil) { fillAside() }
     // Presented by the frame alone: SwiftUI clears the item only when the reader swipes the sheet away, which
@@ -1378,6 +1375,18 @@ final class SessionStack {
 
   /// PROTOTYPE: the third column, answering for the Session whose screen is up.
   @ObservationIgnored let aside = AsideState()
+
+  /// PROTOTYPE: the Session whose screen is on top in the second column, which the third column answers for.
+  var topSession: SessionModel? {
+    for pushed in path.reversed() {
+      switch pushed {
+      case .session(let route): return model(for: route)
+      case .landing(let route): return landings[route]?.begun
+      case .work, .detail: continue
+      }
+    }
+    return nil
+  }
 
   /// PROTOTYPE: a new-session screen afresh in the second column.
   func renewRootLanding() {

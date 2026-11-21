@@ -69,8 +69,9 @@ struct ListingScreen: View {
           styled
             .inspector(isPresented: asideShown) {
               Group {
-                if let session = stack.aside.model {
+                if let session = stack.topSession {
                   AsideColumn(model: session, state: stack.aside, stack: stack)
+                    .id(session.route)
                 }
               }
               .inspectorColumnWidth(min: 240, ideal: 290, max: 360)
@@ -102,6 +103,7 @@ struct ListingScreen: View {
       asideSettling = true
       Task {
         try? await Task.sleep(for: .milliseconds(400))
+        stack.aside.presented = stack.aside.wanted
         asideSettling = false
       }
     }
@@ -212,9 +214,11 @@ struct ListingScreen: View {
   /// Whether the third column stands: where the variant has one, a Session's screen is up and the reader has it shown.
   private var asideShown: Binding<Bool> {
     Binding {
-      proto.asides && !asideSettling && stack.aside.model != nil && stack.aside.shown
-    } set: { _ in
-      // Only the Session's own button shows and hides it; the system's dismissals through a fold are passed over.
+      proto.asides && !asideSettling && stack.topSession != nil && stack.aside.presented
+    } set: { presented in
+      // The system takes it down by itself, as through a fold; the reader's standing choice is kept apart.
+      protoLog("aside presented -> \(presented)")
+      stack.aside.presented = presented
     }
   }
 

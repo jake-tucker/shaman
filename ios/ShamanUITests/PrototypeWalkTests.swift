@@ -139,6 +139,56 @@ final class PrototypeWalkTests: XCTestCase {
     }
   }
 
+  /// The third column: its button, a Turn's card, and another Session, over and over.
+  @MainActor
+  func testAside() {
+    let app = launched(["--fake", "paired", "--forget-scene"])
+    XCTAssertTrue(element("listing.active", in: app).waitForExistence(timeout: 10))
+    let rows = app.descendants(matching: .any).matching(identifier: "listing.active")
+    let button = app.buttons["Work and sessions"]
+    let sidebar = app.buttons.matching(NSPredicate(format: "label == 'Show Sidebar' OR label == 'Hide Sidebar'")).firstMatch
+    func up() -> Bool { element("work.row", in: app).exists || element("tree.row", in: app).exists }
+    func open(_ row: Int) {
+      if !rows.element(boundBy: row).isHittable, sidebar.exists { sidebar.tap() }
+      Thread.sleep(forTimeInterval: 1)
+      rows.element(boundBy: row).tap()
+      Thread.sleep(forTimeInterval: 2.5)
+    }
+    open(0)
+    note("opened 0: up \(up())")
+    for press in 1...6 {
+      button.tap()
+      Thread.sleep(forTimeInterval: 1.2)
+      note("press \(press): up \(up())")
+    }
+    capture("a1")
+    // Hidden by the button, then a card.
+    if up() { button.tap(); Thread.sleep(forTimeInterval: 1.2) }
+    note("hidden: up \(up())")
+    tap("session.turn", in: app)
+    Thread.sleep(forTimeInterval: 1.5)
+    note("card: up \(up())")
+    open(2)
+    note("opened 2: up \(up())")
+    button.tap()
+    Thread.sleep(forTimeInterval: 1.2)
+    note("press: up \(up())")
+    open(3)
+    note("opened 3 while hidden: up \(up())")
+    tap("session.turn", in: app)
+    Thread.sleep(forTimeInterval: 1.5)
+    note("card: up \(up())")
+    capture("a2")
+    for press in 1...4 {
+      button.tap()
+      Thread.sleep(forTimeInterval: 1.2)
+      note("press \(press): up \(up())")
+    }
+    open(6)
+    note("opened 6 (tree): up \(up())")
+    capture("a3")
+  }
+
   /// The new-session screen from the compose button, the Workspace Picker over it, and a Session begun.
   @MainActor
   func testCompose() {

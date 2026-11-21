@@ -140,9 +140,13 @@ final class AsideState {
     case tree
   }
 
-  var shown = false
-  /// The Session it answers for: the one whose screen is up in the second column.
-  var model: SessionModel?
+  /// Whether the reader has the column shown: their standing choice, kept from one Session to the next and through a
+  /// fold.
+  var wanted = true
+  /// Whether the column is up now, as the system has it: the system takes it down through a fold by itself.
+  var presented = false
+  /// The Session's screen whose work it shows.
+  var owner: SessionRoute?
   /// The work of the last Turn that Session's conversation holds.
   var lastTurn: String?
   var root: Root?
@@ -154,8 +158,16 @@ final class AsideState {
   func show(_ root: Root) {
     self.root = root
     path = []
-    shown = true
     chosen = true
+    wanted = true
+    presented = true
+  }
+
+  /// The Session's own button: hides the column where it is up, and shows it where it is not.
+  func toggle() {
+    let next = !presented
+    wanted = next
+    presented = next
   }
 }
 
