@@ -147,7 +147,9 @@ struct ListingScreen: View {
       NavigationStack(path: $stack.rest) {
         Group {
           if let first {
+            // Each Session opened is a screen of its own, read afresh.
             destination(first)
+              .id(first)
           } else {
             switch proto.empty {
             case .landing:

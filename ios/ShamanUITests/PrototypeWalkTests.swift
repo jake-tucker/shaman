@@ -124,6 +124,21 @@ final class PrototypeWalkTests: XCTestCase {
     }
   }
 
+  /// One Session opened after another from the listing.
+  @MainActor
+  func testSwitch() {
+    let app = launched(["--fake", "paired", "--forget-scene"])
+    XCTAssertTrue(element("listing.active", in: app).waitForExistence(timeout: 10))
+    let rows = app.descendants(matching: .any).matching(identifier: "listing.active")
+    for (step, row) in [0, 2, 3, 0].enumerated() {
+      if !rows.element(boundBy: row).isHittable { back(in: app) }
+      rows.element(boundBy: row).tap()
+      Thread.sleep(forTimeInterval: 2.5)
+      note("row \(row): turn \(element("session.turn", in: app).exists) title \(element("session.title", in: app).label)")
+      capture("s\(step)-row\(row)", settle: 0.5)
+    }
+  }
+
   /// The new-session screen from the compose button, the Workspace Picker over it, and a Session begun.
   @MainActor
   func testCompose() {
