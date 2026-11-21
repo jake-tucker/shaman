@@ -107,7 +107,7 @@ struct ListingScreen: View {
     .onChange(of: width, initial: true) { proto.regular = width == .regular }
     .onGeometryChange(for: Bool.self) { $0.size.width > 800 } action: { proto.wide = $0 }
     .onChange(of: Arrangement(self), initial: true) { arrange() }
-    .onChange(of: asideShown.wrappedValue ? settledFold?.width ?? 0 : 0, initial: true) { _, band in
+    .onChange(of: asideShown.wrappedValue ? settledFold.map { min(proto.foldGap, $0.width) } ?? 0 : 0, initial: true) { _, band in
       proto.asideBand = band
     }
     .onAppear { compact = stack.path.isEmpty ? .sidebar : .detail }
@@ -235,7 +235,7 @@ struct ListingScreen: View {
   /// How wide the third column is while the phone is partly folded like a book: from where the fold begins to the
   /// window's far edge.
   private var foldAside: CGFloat? {
-    settledFold.map { $0.window - $0.leading - $0.width }
+    settledFold.map { $0.window - $0.leading - min(proto.foldGap, $0.width) }
   }
 
   /// Whether the third column stands: where the variant has one, a Session's screen is up and the reader has it shown.
