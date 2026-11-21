@@ -69,6 +69,31 @@ final class LongSessionTests: XCTestCase {
     XCTAssertGreaterThan(closing.frame.maxY, composer.frame.minY - 60, "at the foot, not above it")
   }
 
+  /// The conversation's last row, the answer holding `lastWords`, ends just above the composer, once it stands
+  /// there and the rows have had a moment to settle.
+  @MainActor
+  private func assertAtTheFoot(_ app: XCUIApplication, lastWords: String, _ said: String) {
+    let last = app.descendants(matching: .any).matching(identifier: "session.agentMessage")
+      .matching(NSPredicate(format: "label CONTAINS %@", lastWords)).firstMatch
+    XCTAssertTrue(last.waitForExistence(timeout: 15), "\(said): the last row comes on screen")
+    Thread.sleep(forTimeInterval: 1.5)
+    let composer = app.descendants(matching: .any)["session.composer"]
+    let gap = composer.frame.minY - last.frame.maxY
+    if !(0...40).contains(gap) {
+      attach(XCUIScreen.main.screenshot(), said)
+    }
+    XCTAssertTrue((0...40).contains(gap), "\(said): the last row ends \(gap) points above the composer")
+  }
+
+  /// `/33` ends in eight one-line answers, each of which Textual draws empty first, so the conversation shrinks under
+  /// its foot as it opens: the system scrolls toward the new foot over a few frames, which the list must neither ride
+  /// up nor take for the reader leaving.
+  @MainActor
+  func testAConversationShrinkingUnderItsFootAsItOpensStandsAtItsFoot() {
+    let app = launched(opening: "workstation-key/33")
+    assertAtTheFoot(app, lastWords: "Tail line #7", "opened")
+  }
+
   /// Begun while the rows just above the foot are still being measured, and on up through rows never drawn, past
   /// tall answers, tables and code blocks, then back down over them.
   @MainActor

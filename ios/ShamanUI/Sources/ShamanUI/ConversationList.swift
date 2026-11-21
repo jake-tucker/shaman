@@ -339,10 +339,6 @@ struct ConversationList<Row: View>: UIViewRepresentable {
     rested()
   }
 
-  func scrollViewDidScroll(_ scrollView: UIScrollView) {
-    view?.scrolled()
-  }
-
   func scrollViewShouldScrollToTop(_ scrollView: UIScrollView) -> Bool {
     following = false
     return true
@@ -374,12 +370,18 @@ final class RowCell: UICollectionViewCell {
 }
 
 /// The collection view an open conversation scrolls in, which goes back to its foot each time it is laid out while
-/// the reader stands there, and leaves it on any scroll away.
+/// the reader stands there.
+///
+/// What leaves the foot is a scroll someone asked for, never how far the list moved in a frame: the reader's drag,
+/// VoiceOver's page scroll, and a scroll to an offset, a rect or a row above the foot, as the app, the keyboard or
+/// focus moving asks, animated or not. When what the list holds or the room it has changes, the system scrolls it to
+/// suit, asking for an offset as anyone would, and where the rows shrank, over a few frames, as far in each as it
+/// pleases; that is not someone scrolling, and at the foot the list goes there itself at once, which stops it.
 final class FootCollectionView: UICollectionView {
   weak var follower: ConversationFollower?
-  /// Where the list last went back to its foot, so that a scroll from there that it did not make is the reader's.
-  private var pinned: CGFloat?
-  private var pinning = false
+  /// Whether the list is going back to its foot itself, or the system is adjusting it to a change in what it holds
+  /// or the room it has.
+  private var adjusting = false
 
   /// How far above its foot the list stands.
   var distanceToFoot: CGFloat {
@@ -396,27 +398,65 @@ final class FootCollectionView: UICollectionView {
   }
 
   override func layoutSubviews() {
-    super.layoutSubviews()
+    adjust { super.layoutSubviews() }
     guard follower?.following == true, !isTracking, !isDecelerating else { return }
     let foot = foot
     if abs(contentOffset.y - foot) > 0.5 {
-      pinning = true
-      contentOffset.y = foot
-      pinning = false
+      // Without animation, which also stops any scroll the system had begun toward where the foot was.
+      adjust { setContentOffset(CGPoint(x: contentOffset.x, y: foot), animated: false) }
     }
-    pinned = foot
   }
 
-  /// Leaves the foot where the list moved up, further than a reader at rest near the foot stands from it, from where
-  /// it went back to it and from the foot as it stands now, by any hand but its own: the system scrolling to a row
-  /// VoiceOver or the keyboard moved to, or one the app asked for. The system easing the insets as a screen is pushed
-  /// moves it a few points, growing below moves nothing, and shrinking only brings the list up with its foot.
-  func scrolled() {
-    let near = ConversationFollower.near
-    guard !pinning, let follower, follower.following, let pinned, contentOffset.y < pinned - near,
-      distanceToFoot > near
-    else { return }
-    follower.following = false
+  override var contentSize: CGSize {
+    get { super.contentSize }
+    set { adjust { super.contentSize = newValue } }
+  }
+
+  override func adjustedContentInsetDidChange() {
+    adjust { super.adjustedContentInsetDidChange() }
+  }
+
+  /// Runs `body` as the list's own adjustment, or the system's, rather than someone's scroll.
+  private func adjust(_ body: () -> Void) {
+    let was = adjusting
+    adjusting = true
+    body()
+    adjusting = was
+  }
+
+  /// A scroll to `offset` someone asked for leaves the foot where it goes further above it than a reader at rest near
+  /// the foot stands.
+  override func setContentOffset(_ offset: CGPoint, animated: Bool) {
+    if !adjusting {
+      leave(toward: offset.y)
+    }
+    super.setContentOffset(offset, animated: animated)
+  }
+
+  /// A rect above what the reader sees, brought into sight, leaves the foot.
+  override func scrollRectToVisible(_ rect: CGRect, animated: Bool) {
+    if !adjusting, rect.minY < contentOffset.y + adjustedContentInset.top - 0.5 {
+      follower?.following = false
+    }
+    super.scrollRectToVisible(rect, animated: animated)
+  }
+
+  /// A row scrolled to that ends above the foot by more than a reader at rest near it stands leaves it.
+  override func scrollToItem(
+    at indexPath: IndexPath, at scrollPosition: UICollectionView.ScrollPosition, animated: Bool
+  ) {
+    if !adjusting, let row = collectionViewLayout.layoutAttributesForItem(at: indexPath),
+      row.frame.maxY < contentSize.height - ConversationFollower.near
+    {
+      follower?.following = false
+    }
+    super.scrollToItem(at: indexPath, at: scrollPosition, animated: animated)
+  }
+
+  private func leave(toward offset: CGFloat) {
+    if offset < foot - ConversationFollower.near {
+      follower?.following = false
+    }
   }
 
   /// VoiceOver's three-finger scroll: a page at a time, leaving the foot as any scroll does.

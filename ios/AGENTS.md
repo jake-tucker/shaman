@@ -11,7 +11,7 @@ app's shape. Everything here is built from a terminal on a Mac with Xcode 27.2; 
 | `Shaman.xcodeproj` | The project, in Xcode 27's JSON format (`project.xcproj`) with folders synced to disk, and the shared `Shaman` scheme |
 | `Shaman/` | The `Shaman` app target: `@main`, the choice of live core or fake, the Info settings |
 | `ShamanUI/` | A local package: the views, the `Core` protocol the app reaches the core through, `LiveCore`, `FakeCore`, and the adapters around the core. Its unit tests are `ShamanUIUnitTests` |
-| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements: the Keychain item the identity key's blob is kept in |
+| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the conversation's list under a ticking display link |
 | `ShamanUITests/` | The XCUITest target |
 | `ShamanCore/` | The core and its generated Swift, written by `scripts/build-ios-core.sh`; ignored by git |
 | `build/` | Where the commands below put what `xcodebuild` makes; ignored by git |
@@ -110,12 +110,14 @@ short bubbles among long Markdown answers with code blocks and tables, Turn card
 numbered so that one can be told from another: `workstation-key/30` has settled, its last item the line "That's
 everything", and in `/31` the last answer streams on for minutes. `LongSessionTests` reads them from screenshots,
 dragging by where the conversation stands on the screen. There too `/32`'s answer is written again every few seconds,
-long under the Model's name and then short without it. A card pushes its Turn's work from `FakeWork`, and a row its Activity's whole: in `/7` the work holds a settled Approval, File
-Changes and the placeholder for a kind a newer Server sent, and in `/1` the running command's output grows a line at a
-time while its screen is up. Every act a fake Session is asked is answered as the core would answer it, after a moment:
-a Prompt holding "fail" is refused, one holding "gone" finds the Session gone, which pops its screen, and one holding
-"unanswered" is never answered, so its text stays in the composer with the line saying it may have been sent; answers to
-a Questionnaire holding "fail" are refused.
+long under the Model's name and then short without it, and `/33` is `/30` ending in eight one-line answers, which
+Textual draws empty first, so it shrinks under its foot as it opens. A card pushes its Turn's work from `FakeWork`, and
+a row its Activity's whole: in `/7` the work holds a settled Approval, File Changes and the placeholder for a kind a
+newer Server sent, and in `/1` the running command's output grows a line at a time while its screen is up. Every act a
+fake Session is asked is answered as the core would answer it, after a moment: a Prompt holding "fail" is refused, one
+holding "gone" finds the Session gone, which pops its screen, and one holding "unanswered" is never answered, so its
+text stays in the composer with the line saying it may have been sent; answers to a Questionnaire holding "fail" are
+refused.
 
 ```sh
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake paired --open workstation-key/1
@@ -240,7 +242,9 @@ well. `--stop` stops it otherwise. Run it before merging a change to pairing or 
 **Test.** `ShamanUI`'s unit tests run under its own scheme; `ShamanTests` and the UI tests under the app's. A result
 bundle's path must not exist yet. The package's tests run without the Keychain, which answers a test bundle with no
 host app `errSecMissingEntitlement` (-34018), so whatever reaches the Keychain is tested in `ShamanTests`, hosted in
-the app. The Secure Enclave needs no entitlement, so the signer is tested in the package.
+the app. The Secure Enclave needs no entitlement, so the signer is tested in the package. The package's tests have no
+scene either, so what UIKit animates over frames, as the conversation's list scrolling toward a foot its rows shrank
+to, is tested in `ShamanTests` too, in a window of the app's scene.
 
 ```sh
 (cd ShamanUI && xcodebuild test -scheme ShamanUI -destination "platform=iOS Simulator,id=$UDID" \

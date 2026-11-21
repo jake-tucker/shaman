@@ -78,7 +78,8 @@
       case lastRemovedThere
       /// The `paired` phone whose listing also carries two long Sessions, `FakeLong`'s, of hundreds of items of very
       /// uneven height: `workstation-key/30`, settled, and `/31`, whose last answer still streams; and `/32`, whose
-      /// answer is written again and again, long and short in turn.
+      /// answer is written again and again, long and short in turn; and `/33`, `/30` ending in eight one-line
+      /// answers.
       case longSession
     }
 

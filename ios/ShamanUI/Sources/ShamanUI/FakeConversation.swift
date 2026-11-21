@@ -37,6 +37,8 @@
       case longWorking
       /// A short Session whose answer is written again and again, long under the Model's name, then short without it.
       case rewriting
+      /// The `long` Session ending in eight one-line answers.
+      case longTailed
     }
 
     /// How the conversation stands of the Session whose last Turn stands as `scenario`.
@@ -89,6 +91,8 @@
         return FakeLong.items(streaming: false)
       case .longWorking:
         return FakeLong.items(streaming: true)
+      case .longTailed:
+        return FakeLong.items(streaming: false, tail: true)
       case .rewriting:
         return [
           user("open", "Write the release notes"),
@@ -174,7 +178,7 @@
             ]),
         ]
       case .working, .settled, .stopped, .failed, .undelivered, .monitoring, .delegating, .questionnaire, .long,
-        .longWorking, .rewriting:
+        .longWorking, .rewriting, .longTailed:
         return []
       }
     }
@@ -207,8 +211,8 @@
       switch scenario {
       case .working: Array(streamed.dropFirst())
       case .longWorking: (1...FakeLong.growths).map(FakeLong.streamed)
-      // Short four times, then long four times, and so on: each stands 2.8 seconds.
-      case .rewriting: (0..<FakeLong.growths).map { FakeLong.rewritten(long: $0 % 8 >= 4) }
+      // Short six times, then long six times, and so on: each stands 4.2 seconds.
+      case .rewriting: (0..<FakeLong.growths).map { FakeLong.rewritten(long: $0 % 12 >= 6) }
       default: []
       }
     }

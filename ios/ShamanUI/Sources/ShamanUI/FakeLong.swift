@@ -5,7 +5,8 @@
   /// Two long Sessions on the workstation, as a real one of a long day reads: hundreds of items of very uneven
   /// height, short bubbles beside long Markdown answers with code blocks and tables, Turn cards and Compactions. One
   /// has settled; in the other the last answer is still streaming in, growing a paragraph or a few lines of code at a
-  /// time, for minutes. And a short one whose answer is written again and again, long and short in turn.
+  /// time, for minutes. A short one whose answer is written again and again, long and short in turn; and one like the settled
+  /// one ending in a run of one-line answers.
   enum FakeLong {
     /// The settled one.
     static let settled = "workstation-key/30"
@@ -13,6 +14,8 @@
     static let streaming = "workstation-key/31"
     /// A short one whose answer is written again and again, long and short in turn.
     static let rewriting = "workstation-key/32"
+    /// The settled one with eight one-line answers after its last item.
+    static let tailed = "workstation-key/33"
 
     /// The Turns before the last.
     static let turns = 80
@@ -31,10 +34,14 @@
         id: rewriting, remote: "workstation", workspace: "shaman", title: "Write the release notes", glyph: nil,
         checkout: CheckoutLine(glyph: nil, words: "main"), standing: .done, running: 0, moved: 4, settled: false,
         reads: .rewriting),
+      FakeSession(
+        id: tailed, remote: "workstation", workspace: "shaman", title: "Check the transcript part by part", glyph: nil,
+        checkout: CheckoutLine(glyph: nil, words: "main"), standing: .done, running: 0, moved: 5, settled: false,
+        reads: .longTailed),
     ]
 
     /// The conversation, the last answer streaming where `streaming`, standing as it does at first.
-    static func items(streaming: Bool) -> [ConversationItem] {
+    static func items(streaming: Bool, tail: Bool = false) -> [ConversationItem] {
       var items: [ConversationItem] = []
       for turn in 0..<turns {
         items.append(FakeConversation.user("long-prompt-\(turn)", "\(prompt(turn)) (#\(turn))"))
@@ -76,6 +83,14 @@
         items.append(agent("long-last-answer", answer(turns)))
         items.append(
           agent("long-closing", "That's everything. The last item of this Session is this line.", model: nil))
+      }
+      if tail {
+        // One-line answers, each of which Textual draws empty first, so that the conversation shrinks under its foot
+        // as it opens.
+        for turn in 0..<8 {
+          items.append(
+            agent("tail-answer-\(turn)", "Then I checked part \(turn) of it, which holds. Tail line #\(turn)."))
+        }
       }
       return items
     }

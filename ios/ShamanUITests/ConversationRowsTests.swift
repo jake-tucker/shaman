@@ -63,7 +63,7 @@ final class ConversationRowsTests: XCTestCase {
   /// Each time its row comes to stand as tall as its words, neither running over what is below nor leaving anything
   /// blank beneath them.
   @MainActor
-  func testAnAnswerWrittenShorterOrLongerStandsAsTallAsItsWords() {
+  func testAnAnswerWrittenShorterOrLongerStandsAsTallAsItsWords() throws {
     let app = XCUIApplication()
     app.launchArguments = ["--fake", "longSession", "--open", "workstation-key/32"]
     app.launch()
@@ -72,21 +72,30 @@ final class ConversationRowsTests: XCTestCase {
     XCTAssertTrue(answer.waitForExistence(timeout: 10))
     for round in 0..<2 {
       for (words, long) in [("short notes end here", false), ("long notes end here", true)] {
-        // Caught as soon as it is so written, for each writing stands only a few seconds.
-        let deadline = Date.now.addingTimeInterval(10)
-        while !answer.label.contains(words), Date.now < deadline {
-          Thread.sleep(forTimeInterval: 0.05)
-        }
-        // Past the moment a shorter row waits to be sure of what it measures.
-        Thread.sleep(forTimeInterval: 0.6)
         let said = "round \(round), \(long ? "long" : "short")"
-        XCTAssertTrue(answer.label.contains(words), "\(said): still so written")
-        if abs(row.frame.height - answer.frame.height) > 2 {
+        // Measured while it is so written, which it stays a few seconds at a time: what was read while it was
+        // written again is read again.
+        var measured: (row: CGRect, answer: CGRect)?
+        let deadline = Date.now.addingTimeInterval(15)
+        while measured == nil, Date.now < deadline {
+          guard answer.label.contains(words) else {
+            Thread.sleep(forTimeInterval: 0.05)
+            continue
+          }
+          // Past the moment a shorter row waits to be sure of what it measures.
+          Thread.sleep(forTimeInterval: 0.6)
+          let frames = (row: row.frame, answer: answer.frame)
+          if answer.label.contains(words) {
+            measured = frames
+          }
+        }
+        let frames = try XCTUnwrap(measured, "\(said): so written a while")
+        if abs(frames.row.height - frames.answer.height) > 2 {
           attach(app, said)
         }
         XCTAssertEqual(
-          row.frame.height, answer.frame.height, accuracy: 2,
-          "\(said): its row stands as tall as its words, at \(row.frame) for \(answer.frame)")
+          frames.row.height, frames.answer.height, accuracy: 2,
+          "\(said): its row stands as tall as its words, at \(frames.row) for \(frames.answer)")
         XCTAssertFalse(
           app.descendants(matching: .any)["session.model"].exists, "the Model's name went with the first writing again")
       }
