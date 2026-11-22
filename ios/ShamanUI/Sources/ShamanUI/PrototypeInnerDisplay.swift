@@ -230,15 +230,30 @@ struct AsideColumn: View {
         ContentUnavailableView("Nothing yet", systemImage: "list.bullet")
       }
     }
-    .safeAreaInset(edge: .bottom) {
-      if model.frame?.tree != nil, lastTurn != nil {
-        HStack(spacing: 8) {
-          choice("Work", tree: false)
-          choice("Sessions", tree: true)
+    // #718: beneath the column's content and not over it as a safe area inset, which the tree's own list took no
+    // notice of, so that its last row stood under the chooser.
+    .frame(maxHeight: .infinity)
+    .modifier(ChooserBeneath(shown: model.frame?.tree != nil && lastTurn != nil) {
+      HStack(spacing: 8) {
+        choice("Work", tree: false)
+        choice("Sessions", tree: true)
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 6)
+      .background(Color(.systemBackground))
+    })
+  }
+
+  private struct ChooserBeneath<Chooser: View>: ViewModifier {
+    let shown: Bool
+    @ViewBuilder let chooser: Chooser
+
+    func body(content: Content) -> some View {
+      VStack(spacing: 0) {
+        content
+        if shown {
+          chooser
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Color(.systemBackground))
       }
     }
   }

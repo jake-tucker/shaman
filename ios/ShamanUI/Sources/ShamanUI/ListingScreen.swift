@@ -101,8 +101,15 @@ struct ListingScreen: View {
     }
     .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { ProtoL.shared.rootBottom = $0 }
     .onChange(of: stack.topSession?.route, initial: true) { _, route in ProtoL.shared.sessionUp = route != nil }
-    // PROTOTYPE #718: what stands in the half below the fold while the phone sits like a laptop.
-    .overlay { laptopOverlay }
+    // PROTOTYPE #718: what stands in the half below the fold while the phone sits like a laptop. Over the whole split
+    // view, for within the second column its own bar loses its title; so it goes while the listing is shown over
+    // that column, which it would otherwise stand on top of.
+    .overlay {
+      if columns == .detailOnly {
+        laptopOverlay
+      }
+    }
+    .onChange(of: columns) { protoLog("columns -> \(columns)") }
     .task {
       // PROTOTYPE #718: launched in portrait with something open, the system stands the listing over it whatever
       // the columns say; saying it again a moment later takes it away.
@@ -219,8 +226,10 @@ struct ListingScreen: View {
       // Under a keyboard, not above it: the keyboard takes this half. Where the Session's foot carries its field to
       // the bottom edge, the deck stops short of it.
       let laptop = ProtoL.shared
+      let top = stack.topSession
       let carried =
-        laptop.deckComposer == .bottom ? (stack.topSession.flatMap { laptop.composerHeight[$0.route] } ?? 0) : 0
+        laptop.deckComposer != .bottom
+        ? 0 : top.map { laptop.composerHeight[$0.route] ?? 0 } ?? laptop.landingComposerHeight
       VStack(spacing: 0) {
         Spacer(minLength: 0)
         laptopDeck(deck)
@@ -238,11 +247,10 @@ struct ListingScreen: View {
   private func laptopDeck(_ deck: ProtoL.Variant) -> some View {
     switch deck {
     case .work:
+      // With no Session open there is no work to show: the half stays the new-session screen's own.
       if let session = stack.topSession {
         AsideColumn(model: session, state: stack.aside, stack: stack)
           .id(session.route)
-      } else {
-        ContentUnavailableView("No session open", systemImage: "list.bullet")
       }
     case .listing:
       NavigationStack {

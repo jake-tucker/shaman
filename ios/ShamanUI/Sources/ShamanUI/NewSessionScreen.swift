@@ -206,7 +206,11 @@ private struct LandingFoot: View {
 
   var body: some View {
     let empty = model.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    VStack(alignment: .leading, spacing: 8) {
+    // PROTOTYPE #718: in two parts, as a Session's foot is: sat like a laptop the field and send stand on the bottom
+    // edge of the half below the fold, and the line an Unreachable Remote leaves stays above it.
+    let laptop = ProtoL.shared
+    let split = laptop.landingSplits
+    VStack(spacing: 0) {
       if let line = landing.unreachable {
         Label {
           Text(verbatim: line)
@@ -218,7 +222,15 @@ private struct LandingFoot: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("landing.unreachable")
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, split ? 8 : 0)
+        .background(.bar)
       }
+      VStack(spacing: 0) {
+      Color.clear.frame(height: split ? laptop.band : 0)
+      Spacer(minLength: 0).frame(maxHeight: split ? .infinity : 0)
+      VStack(alignment: .leading, spacing: 8) {
       HStack(alignment: .bottom, spacing: 8) {
         TextField(text: $model.text, axis: .vertical) {
           Text(verbatim: landing.placeholder)
@@ -252,10 +264,21 @@ private struct LandingFoot: View {
           .foregroundStyle(.red)
           .accessibilityIdentifier("landing.invalid")
       }
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+      .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { laptop.landingComposerHeight = $0 }
+      // On the display's bottom edge, with no band beneath, as a Session's stands.
+      .padding(.bottom, split ? -laptop.rootBottom : 0)
+      .background(.bar)
+      }
+      .frame(height: split ? laptop.lowerRoom : nil)
+      .background {
+        if split {
+          Color(.systemBackground).ignoresSafeArea(.container, edges: .bottom)
+        }
+      }
     }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
-    .background(.bar)
   }
 }
 

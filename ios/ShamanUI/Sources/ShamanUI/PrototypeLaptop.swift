@@ -79,6 +79,8 @@ final class ProtoL {
   var sessionUp = false
   /// How tall the field and send stand, with their padding, for each Session's screen.
   var composerHeight: [SessionRoute: CGFloat] = [:]
+  /// The same for the new-session screen.
+  var landingComposerHeight: CGFloat = 0
 
   /// The fold while it lies across the window, in the window's own coordinates: where the band kept for it begins
   /// and ends, and how tall the window is.
@@ -117,8 +119,8 @@ final class ProtoL {
   /// keyboard has already brought it most of the way.
   var columnLift: CGFloat {
     guard let fold, deck != nil else { return 0 }
-    // A Session's own foot does it where it also carries the field to the bottom edge.
-    if deckComposer == .bottom, sessionUp { return 0 }
+    // A screen's own foot does it where it also carries the field to the bottom edge.
+    if deckComposer == .bottom { return 0 }
     return max(0, fold.window - fold.top - rootBottom)
   }
 
@@ -126,6 +128,11 @@ final class ProtoL {
   /// bottom edge, with the deck between.
   var footSplits: Bool {
     deck != nil && deckComposer == .bottom && sessionUp && !keyboardUp
+  }
+
+  /// Whether the new-session screen's foot stands in two the same way, while no Session is open.
+  var landingSplits: Bool {
+    deck != nil && deckComposer == .bottom && !sessionUp && !keyboardUp
   }
 
   /// How tall the second part of a split foot is, from where the fold begins to the bottom safe area.
@@ -140,7 +147,10 @@ final class ProtoL {
 
   /// The heights a Questionnaire's sheet may stand at.
   var questionnaireDetents: Set<PresentationDetent> {
-    fold != nil && variant != .asis && questionnaire == .half ? [.height(below), .large] : [.large]
+    // A height detent stands 42 points taller than it is asked: the bottom safe area and 8 more. Asked so, the
+    // sheet begins 8 points past the band kept for the fold, clear of it; the system's own medium begins 8 points
+    // inside it.
+    fold != nil && variant != .asis && questionnaire == .half ? [.height(max(200, below - 50)), .large] : [.large]
   }
 
   /// How tall the half below the fold is, from where the band kept for the fold ends.
