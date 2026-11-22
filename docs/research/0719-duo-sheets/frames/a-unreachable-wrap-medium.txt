@@ -1,0 +1,12 @@
+window x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+bar[Everywhere] x 0.0 y 24.0 w 466.0 h 112.0 (to x 466.0 y 136.0)
+toolbar[Toolbar] x 8.0 y 280.0 w 450.0 h 390.0 (to x 458.0 y 670.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+  toolbar button[Servers & device] x 399.0 y 551.0 w 38.0 h 38.0 (to x 437.0 y 589.0)
+  toolbar button[New session] x 399.0 y 611.0 w 38.0 h 38.0 (to x 437.0 y 649.0)
+--- app
+301.92827796936035 sheet unreachable safe x -44.0 y -1279.2 w 88.0 h 2558.3 insets t 0.0 l 0.0 b 0.0 r 0.0
+301.94995307922363 sheet unreachable safe x 8.0 y 296.0 w 374.0 h 340.0 insets t 16.0 l 0.0 b 34.0 r 76.0
+301.954715013504 sheet unreachable safe x 8.0 y 280.0 w 374.0 h 356.0 insets t 0.0 l 0.0 b 34.0 r 76.0

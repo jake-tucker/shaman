@@ -1,0 +1,25 @@
+window x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+login.cancel x 28.0 y 114.0 w 78.0 h 36.0 (to x 106.0 y 150.0)
+login.code x 122.3 y 208.0 w 221.3 h 72.7 (to x 343.7 y 280.7)
+bar[Servers & device] x 24.0 y 104.3 w 418.0 h 53.9 (to x 442.0 y 158.2)
+  bar text[Servers & device] x 170.8 y 117.0 w 124.2 h 19.2 (to x 294.9 y 136.2)
+bar[Log in at relay.example.com] x 8.0 y 108.0 w 450.0 h 58.0 (to x 458.0 y 166.0)
+  bar text[Log in at relay.example.com] x 123.0 y 121.7 w 220.0 h 20.7 (to x 343.0 y 142.3)
+  bar button[Cancel] x 28.0 y 114.0 w 78.0 h 36.0 (to x 106.0 y 150.0)
+bar[All workspaces] x 0.0 y 24.0 w 466.0 h 112.0 (to x 466.0 y 136.0)
+  bar text[All workspaces] x 131.0 y 37.3 w 140.0 h 21.3 (to x 271.0 y 58.7)
+  bar text[All workspaces] x 131.0 y 37.8 w 120.0 h 20.3 (to x 251.0 y 58.2)
+  bar button[All workspaces] x 131.0 y 37.3 w 140.0 h 21.3 (to x 271.0 y 58.7)
+  bar button[] x 131.0 y 37.3 w 140.0 h 21.3 (to x 271.0 y 58.7)
+toolbar[Toolbar] x 24.0 y 82.0 w 418.0 h 553.6 (to x 442.0 y 635.6)
+toolbar[Toolbar] x 8.0 y 92.0 w 450.0 h 586.0 (to x 458.0 y 678.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+  toolbar button[Servers & device] x 399.0 y 551.0 w 38.0 h 38.0 (to x 437.0 y 589.0)
+  toolbar button[New session] x 399.0 y 611.0 w 38.0 h 38.0 (to x 437.0 y 649.0)
+--- app
+230.17260599136353 sheet login safe x 8.0 y 8.0 w 374.0 h 636.0 insets t 0.0 l 0.0 b 34.0 r 76.0
+230.1961009502411 sheet login safe x 8.0 y 82.0 w 450.0 h 562.0 insets t 74.0 l 0.0 b 34.0 r 0.0
+230.2437460422516 sheet login safe x 8.0 y 92.0 w 450.0 h 552.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+230.25545501708984 sheet servers safe x 24.0 y 82.0 w 418.0 h 522.0 insets t 0.0 l 0.0 b 34.0 r 0.0

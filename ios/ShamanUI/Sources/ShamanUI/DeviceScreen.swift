@@ -55,6 +55,7 @@ public struct DeviceScreen: View {
         }
       }
       .navigationTitle("Servers & device")
+      .protoSheetStack()
       .safeAreaInset(edge: .top) {
         if let failure = model.failure {
           Banner(text: failure)
@@ -62,6 +63,7 @@ public struct DeviceScreen: View {
       }
       .noticeBanner(covered: model.loggingIn != nil)
     }
+    .protoSheet("servers")
     // The scanner scans only while it stands at the top of the path.
     .onChange(of: path, initial: true) { scanning.stands(atTop: path.last == .scan) }
     .task { await model.follow() }

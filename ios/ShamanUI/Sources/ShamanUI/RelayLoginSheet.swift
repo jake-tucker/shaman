@@ -106,13 +106,23 @@ struct RelayLoginSheet: View {
       }
       .navigationTitle(model.title)
       .navigationBarTitleDisplayMode(.inline)
+      .protoSheetStack()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel") { dismiss() }
-            .accessibilityIdentifier("login.cancel")
+          Button {
+            dismiss()
+          } label: {
+            if ProtoS.shared.symbols {
+              Label("Cancel", systemImage: "xmark")
+            } else {
+              Text("Cancel")
+            }
+          }
+          .accessibilityIdentifier("login.cancel")
         }
       }
     }
+    .protoSheet("login")
     .task(id: attempt) {
       if await model.follow() {
         loggedIn()

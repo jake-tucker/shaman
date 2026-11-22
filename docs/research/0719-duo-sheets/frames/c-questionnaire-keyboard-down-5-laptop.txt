@@ -1,0 +1,30 @@
+window x 0.0 y 0.0 w 669.0 h 951.0 (to x 669.0 y 951.0)
+questionnaire.sheet x 8.0 y 503.7 w 653.0 h 439.7 (to x 661.0 y 943.3)
+questionnaire.decline x 28.0 y 525.7 w 82.3 h 36.0 (to x 110.3 y 561.7)
+questionnaire.question x 28.0 y 624.0 w 322.7 h 24.0 (to x 350.7 y 648.0)
+questionnaire.next x 28.0 y 847.0 w 613.0 h 50.3 (to x 641.0 y 897.3)
+questionnaire.field x 34.0 y 889.0 w 601.0 h 22.0 (to x 635.0 y 911.0)
+session.composer x 34.0 y 912.0 w 555.7 h 22.0 (to x 589.7 y 934.0)
+session.conversation x 0.0 y 0.0 w 669.0 h 402.0 (to x 669.0 y 402.0)
+grabber x 284.5 y 499.7 w 100.0 h 24.0 (to x 384.5 y 523.7)
+bar[Working] x 0.0 y 505.7 w 669.0 h 58.0 (to x 669.0 y 563.7)
+  bar text[Working] x 301.3 y 519.3 w 66.0 h 20.7 (to x 367.3 y 540.0)
+bar[Question 1 of 3] x 8.0 y 519.7 w 653.0 h 58.0 (to x 661.0 y 577.7)
+  bar text[Question 1 of 3] x 275.0 y 533.3 w 119.0 h 20.7 (to x 394.0 y 554.0)
+  bar button[Decline] x 28.0 y 525.7 w 82.3 h 36.0 (to x 110.3 y 561.7)
+bar[_TtGC7SwiftUI29PresentationHosting] x 0.0 y 24.0 w 669.0 h 58.0 (to x 669.0 y 82.0)
+  bar text[Run the relay's tests before the release] x 179.3 y 30.2 w 310.0 h 20.3 (to x 489.3 y 50.5)
+  bar text[shaman · release/relay] x 271.2 y 51.5 w 126.3 h 14.3 (to x 397.5 y 65.8)
+  bar button[Show Sidebar] x 24.0 y 28.0 w 40.0 h 40.0 (to x 64.0 y 68.0)
+toolbar[Toolbar] x 0.0 y 495.7 w 669.0 h 399.3 (to x 669.0 y 895.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 669.0 h 951.0 (to x 669.0 y 951.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 669.0 h 951.0 (to x 669.0 y 951.0)
+toolbar[Toolbar] x 8.0 y 503.7 w 653.0 h 439.7 (to x 661.0 y 943.3)
+toolbar[Toolbar] x 0.0 y 0.0 w 669.0 h 951.0 (to x 669.0 y 951.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 669.0 h 951.0 (to x 669.0 y 951.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 669.0 h 951.0 (to x 669.0 y 951.0)
+--- app
+710.5176410675049 questionnaire detent lower
+710.7479181289673 sheet questionnaire safe x 8.0 y 511.7 w 653.0 h 835.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+710.7631449699402 sheet questionnaire safe x 8.0 y 511.7 w 653.0 h 405.7 insets t 0.0 l 0.0 b 34.0 r 0.0
+710.7691168785095 sheet questionnaire safe x 8.0 y 503.7 w 653.0 h 405.7 insets t 0.0 l 0.0 b 34.0 r 0.0

@@ -1,0 +1,27 @@
+window x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+approval.sheet x 149.0 y 296.0 w 653.0 h 319.0 (to x 802.0 y 615.0)
+approval.title x 397.2 y 296.0 w 156.7 h 20.3 (to x 553.8 y 316.3)
+session.composer x 354.0 y 630.0 w 445.7 h 22.0 (to x 799.7 y 652.0)
+session.conversation x 320.0 y -0.0 w 547.0 h 567.3 (to x 867.0 y 567.3)
+grabber x 425.5 y 272.0 w 100.0 h 24.0 (to x 525.5 y 296.0)
+bar[All workspaces] x 0.0 y 24.0 w 320.0 h 112.0 (to x 320.0 y 136.0)
+  bar text[All workspaces] x 90.0 y 37.3 w 140.0 h 21.3 (to x 230.0 y 58.7)
+  bar text[All workspaces] x 90.0 y 37.8 w 120.0 h 20.3 (to x 210.0 y 58.2)
+  bar button[Hide Sidebar] x 256.0 y 28.0 w 40.0 h 40.0 (to x 296.0 y 68.0)
+  bar button[All workspaces] x 90.0 y 37.3 w 140.0 h 21.3 (to x 230.0 y 58.7)
+  bar button[] x 90.0 y 37.3 w 140.0 h 21.3 (to x 230.0 y 58.7)
+bar[_TtGC7SwiftUI29PresentationHosting] x 0.0 y 24.0 w 951.0 h 58.0 (to x 951.0 y 82.0)
+  bar text[Relax the exact-version rule for peers] x 455.3 y 30.2 w 296.0 h 20.3 (to x 751.3 y 50.5)
+  bar text[shaman · feature/peer-version-floor] x 502.7 y 51.5 w 201.3 h 14.3 (to x 704.0 y 65.8)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+  toolbar button[Work and sessions] x 884.0 y 129.0 w 38.0 h 38.0 (to x 922.0 y 167.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+  toolbar button[Servers & device] x 25.0 y 602.0 w 38.0 h 38.0 (to x 63.0 y 640.0)
+  toolbar button[New session] x 257.0 y 602.0 w 38.0 h 38.0 (to x 295.0 y 640.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 320.0 h 669.0 (to x 320.0 y 669.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+--- app
+85.31757593154907 sheet approval safe x 149.0 y 317.3 w 653.0 h 309.7 insets t 0.0 l 0.0 b 34.0 r 0.0
+85.37056016921997 sheet approval safe x 149.0 y 276.0 w 653.0 h 351.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+104.61227416992188 sheet approval safe x 8.0 y 276.0 w 459.3 h 351.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+123.4977798461914 sheet approval safe x 149.0 y 276.0 w 653.0 h 351.0 insets t 0.0 l 0.0 b 34.0 r 0.0

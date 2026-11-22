@@ -1,0 +1,19 @@
+window x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+approval.sheet x 8.0 y 102.0 w 450.0 h 530.0 (to x 458.0 y 632.0)
+approval.title x 154.7 y 102.0 w 156.7 h 20.3 (to x 311.3 y 122.3)
+session.composer x 34.0 y 639.0 w 280.7 h 22.0 (to x 314.7 y 661.0)
+session.conversation x 0.0 y 0.0 w 382.0 h 576.3 (to x 382.0 y 576.3)
+grabber x 183.0 y 78.0 w 100.0 h 24.0 (to x 283.0 y 102.0)
+bar[_TtGC7SwiftUI29PresentationHosting] x 0.0 y 24.0 w 466.0 h 58.0 (to x 466.0 y 82.0)
+  bar text[Relax the exact-version rule for peers] x 53.0 y 30.2 w 296.0 h 20.3 (to x 349.0 y 50.5)
+  bar text[shaman · feature/peer-version-floor] x 100.3 y 51.5 w 201.3 h 14.3 (to x 301.7 y 65.8)
+toolbar[Toolbar] x 8.0 y 82.0 w 450.0 h 596.0 (to x 458.0 y 678.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+  toolbar button[] x 399.0 y 179.0 w 38.0 h 38.0 (to x 437.0 y 217.0)
+--- app
+333.56777906417847 sheet approval safe x 8.0 y 84.0 w 450.0 h 555.7 insets t 0.0 l 0.0 b 34.0 r 0.0
+333.5691909790039 sheet approval safe x 8.0 y 84.0 w 450.0 h 560.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+333.58450198173523 sheet approval safe x 8.0 y 82.0 w 450.0 h 560.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+333.58634901046753 sheet approval safe x 8.0 y 82.0 w 450.0 h 562.0 insets t 0.0 l 0.0 b 34.0 r 0.0

@@ -1,0 +1,26 @@
+window x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+tree.sheet x 577.0 y -0.0 w 374.0 h 595.3 (to x 951.0 y 595.3)
+tree.count x 718.2 y 51.5 w 73.3 h 14.3 (to x 791.5 y 65.8)
+session.composer x 34.0 y 630.0 w 463.7 h 22.0 (to x 497.7 y 652.0)
+session.conversation x 0.0 y -0.0 w 577.0 h 567.3 (to x 577.0 y 567.3)
+bar[Subagents] x 577.0 y 24.0 w 374.0 h 58.0 (to x 951.0 y 82.0)
+  bar text[Subagents] x 712.0 y 30.0 w 85.7 h 36.0 (to x 797.7 y 66.0)
+  bar text[Subagents] x 712.0 y 30.2 w 85.7 h 20.3 (to x 797.7 y 50.5)
+  bar text[6 · 3 working] x 718.2 y 51.5 w 73.3 h 14.3 (to x 791.5 y 65.8)
+bar[_TtGC7SwiftUI32NavigationStackHosting] x 0.0 y 24.0 w 951.0 h 58.0 (to x 951.0 y 82.0)
+  bar text[Find what holds the session lock] x 160.0 y 30.2 w 257.0 h 20.3 (to x 417.0 y 50.5)
+  bar text[shaman · fix/session-lock] x 216.8 y 51.5 w 143.3 h 14.3 (to x 360.2 y 65.8)
+  bar button[Show Sidebar] x 24.0 y 28.0 w 40.0 h 40.0 (to x 64.0 y 68.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+  toolbar button[Work and sessions] x 884.0 y 129.0 w 38.0 h 38.0 (to x 922.0 y 167.0)
+  toolbar button[6 subagents, 3 working] x 418.7 y 603.0 w 50.0 h 36.0 (to x 468.7 y 639.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+toolbar[Toolbar] x 577.0 y -0.0 w 374.0 h 595.3 (to x 951.0 y 595.3)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+--- app
+401.3015351295471 sheet approval safe x 149.0 y 650.7 w 653.0 h 351.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+401.3182921409607 sheet approval safe x 149.0 y 651.0 w 653.0 h 351.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+402.937047958374 sheet approval safe x 149.0 y 661.0 w 653.0 h 351.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+407.19377613067627 sheet tree safe x 577.0 y 0.0 w 290.0 h 595.3 insets t 0.0 l 0.0 b 0.0 r 84.0

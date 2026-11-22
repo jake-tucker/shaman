@@ -361,6 +361,7 @@ private struct ApprovalSheet: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("approval.sheet")
+    .protoSheet("approval", places: true, wraps: true)
     .presentationDetents([.medium, .large])
     .presentationDragIndicator(.visible)
     .presentationBackground(Color(.systemBackground))

@@ -97,6 +97,7 @@ struct TreeSheet: View {
       }
       .navigationTitle(Text(verbatim: tree?.title ?? ""))
       .navigationBarTitleDisplayMode(.inline)
+      .protoSheetStack()
       .toolbar {
         // The count stands beneath the title, as words rather than a control.
         ToolbarItem(placement: .principal) {
@@ -118,6 +119,7 @@ struct TreeSheet: View {
     // Opaque, so nothing of the conversation beneath reads as part of an entry.
     .presentationBackground(Color(.systemBackground))
     .accessibilityIdentifier("tree.sheet")
+    .protoSheet("tree")
     .task {
       for await tree in model.tree() {
         self.tree = tree

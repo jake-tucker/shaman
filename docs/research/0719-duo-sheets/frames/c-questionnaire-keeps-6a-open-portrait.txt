@@ -1,0 +1,27 @@
+window x 0.0 y 0.0 w 669.0 h 951.0 (to x 669.0 y 951.0)
+questionnaire.sheet x 8.0 y 82.0 w 653.0 h 869.0 (to x 661.0 y 951.0)
+questionnaire.decline x 28.0 y 112.0 w 82.3 h 36.0 (to x 110.3 y 148.0)
+questionnaire.question x 28.0 y 210.3 w 322.7 h 24.0 (to x 350.7 y 234.3)
+questionnaire.next x 28.0 y 854.7 w 613.0 h 50.3 (to x 641.0 y 905.0)
+questionnaire.field x 34.0 y 475.3 w 601.0 h 22.0 (to x 635.0 y 497.3)
+session.composer x 34.0 y 912.0 w 555.7 h 22.0 (to x 589.7 y 934.0)
+session.conversation x 0.0 y 0.0 w 669.0 h 849.3 (to x 669.0 y 849.3)
+grabber x 284.5 y 78.0 w 100.0 h 24.0 (to x 384.5 y 102.0)
+bar[Question 1 of 3] x 8.0 y 106.0 w 653.0 h 58.0 (to x 661.0 y 164.0)
+  bar text[Question 1 of 3] x 275.0 y 119.7 w 119.0 h 20.7 (to x 394.0 y 140.3)
+  bar button[Decline] x 28.0 y 112.0 w 82.3 h 36.0 (to x 110.3 y 148.0)
+bar[_TtGC7SwiftUI29PresentationHosting] x 0.0 y 24.0 w 669.0 h 58.0 (to x 669.0 y 82.0)
+  bar text[Run the relay's tests before the release] x 179.3 y 30.2 w 310.0 h 20.3 (to x 489.3 y 50.5)
+  bar text[shaman · release/relay] x 271.2 y 51.5 w 126.3 h 14.3 (to x 397.5 y 65.8)
+  bar button[Show Sidebar] x 24.0 y 28.0 w 40.0 h 40.0 (to x 64.0 y 68.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 669.0 h 951.0 (to x 669.0 y 951.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 669.0 h 951.0 (to x 669.0 y 951.0)
+toolbar[Toolbar] x 8.0 y 82.0 w 653.0 h 869.0 (to x 661.0 y 951.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 669.0 h 951.0 (to x 669.0 y 951.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 669.0 h 951.0 (to x 669.0 y 951.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 669.0 h 951.0 (to x 669.0 y 951.0)
+--- app
+198.19670915603638 sheet questionnaire safe x 8.0 y 8.0 w 459.3 h 627.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+202.30658292770386 sheet questionnaire safe x 8.0 y 82.0 w 653.0 h 835.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+202.48048400878906 questionnaire detents 2 was 1
+219.72709608078003 questionnaire detents 1 was 2

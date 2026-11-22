@@ -297,7 +297,7 @@ struct AsideColumn: View {
 /// PROTOTYPE: a line in a file on the Mac, from the simulator.
 func protoLog(_ line: String) {
   #if targetEnvironment(simulator)
-    let url = URL(fileURLWithPath: "/tmp/duo718/app.log")
+    let url = URL(fileURLWithPath: "/tmp/duo719/app.log")
     let data = Data(("\(Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 1000)) " + line + "\n").utf8)
     if let handle = try? FileHandle(forWritingTo: url) {
       handle.seekToEndOfFile()

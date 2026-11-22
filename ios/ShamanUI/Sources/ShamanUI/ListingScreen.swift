@@ -741,6 +741,7 @@ struct UnreachableSheetView: View {
           .accessibilityHint("Dismisses this")
       }
     }
+    .protoSheet("unreachable", wraps: true)
     .presentationDetents([.medium])
     .relayLogin($loggingIn, core: model.core) { _ in
       Task {

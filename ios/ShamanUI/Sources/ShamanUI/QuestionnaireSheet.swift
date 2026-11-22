@@ -51,12 +51,17 @@ struct QuestionnaireSheet: View {
       }
       .navigationTitle(question?.position ?? "")
       .navigationBarTitleDisplayMode(.inline)
+      .protoSheetStack()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button(role: .destructive) {
             Task { await model.decline(questionnaire) }
           } label: {
-            Text(verbatim: questionnaire.decline)
+            if ProtoS.shared.symbols {
+              Label(questionnaire.decline, systemImage: "xmark")
+            } else {
+              Text(verbatim: questionnaire.decline)
+            }
           }
           .accessibilityIdentifier("questionnaire.decline")
         }
@@ -72,10 +77,20 @@ struct QuestionnaireSheet: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("questionnaire.sheet")
+    .protoSheet("questionnaire", places: true)
     // PROTOTYPE #718: sat like a laptop, on the half below the fold, as an Approval's sheet lands.
     .presentationDetents(ProtoL.shared.questionnaireDetents, selection: $detent)
-    .onChange(of: ProtoL.shared.questionnaireDetents, initial: true) { _, detents in
+    .onChange(of: ProtoL.shared.questionnaireDetents, initial: true) { old, detents in
+      protoLog("questionnaire detents \(detents.count) was \(old.count)")
+      // PROTOTYPE #719: left alone, a sheet already up keeps the detent it stands at while that is still offered.
+      if ProtoS.shared.questionnaireKeeps, old != detents {
+        if !detents.contains(detent) { detent = .large }
+        return
+      }
       detent = detents.first { $0 != .large } ?? .large
+    }
+    .onChange(of: detent, initial: true) { _, detent in
+      protoLog("questionnaire detent \(detent == .large ? "large" : "lower")")
     }
     .presentationDragIndicator(.visible)
     .presentationBackground(Color(.systemBackground))

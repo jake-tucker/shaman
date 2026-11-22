@@ -1,0 +1,27 @@
+window x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+approval.sheet x 8.0 y 28.0 w 459.3 h 595.0 (to x 467.3 y 623.0)
+approval.title x 159.3 y 28.0 w 156.7 h 20.3 (to x 316.0 y 48.3)
+session.composer x 529.7 y 630.0 w 270.0 h 22.0 (to x 799.7 y 652.0)
+session.conversation x 495.7 y -0.0 w 371.3 h 567.3 (to x 867.0 y 567.3)
+grabber x 187.8 y 4.0 w 100.0 h 24.0 (to x 287.8 y 28.0)
+bar[All workspaces] x 0.0 y 24.0 w 475.7 h 112.0 (to x 475.7 y 136.0)
+  bar text[All workspaces] x 157.7 y 37.3 w 140.0 h 21.3 (to x 297.7 y 58.7)
+  bar text[All workspaces] x 157.7 y 37.8 w 120.0 h 20.3 (to x 277.7 y 58.2)
+  bar button[Hide Sidebar] x 391.7 y 28.0 w 40.0 h 40.0 (to x 431.7 y 68.0)
+  bar button[All workspaces] x 157.7 y 37.3 w 140.0 h 21.3 (to x 297.7 y 58.7)
+  bar button[] x 157.7 y 37.3 w 140.0 h 21.3 (to x 297.7 y 58.7)
+bar[_TtGC7SwiftUI29PresentationHosting] x 0.0 y 24.0 w 951.0 h 58.0 (to x 951.0 y 82.0)
+  bar text[Relax the exact-version rule for peers] x 543.3 y 30.2 w 296.0 h 20.3 (to x 839.3 y 50.5)
+  bar text[shaman · feature/peer-version-floor] x 590.7 y 51.5 w 201.3 h 14.3 (to x 792.0 y 65.8)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+  toolbar button[Work and sessions] x 884.0 y 129.0 w 38.0 h 38.0 (to x 922.0 y 167.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+  toolbar button[Servers & device] x 25.0 y 602.0 w 38.0 h 38.0 (to x 63.0 y 640.0)
+  toolbar button[New session] x 392.7 y 602.0 w 38.0 h 38.0 (to x 430.7 y 640.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 475.7 h 669.0 (to x 475.7 y 669.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+--- app
+253.29098105430603 sheet approval safe x 8.0 y 82.0 w 450.0 h 562.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+253.34971404075623 sheet approval safe x 149.0 y 82.0 w 653.0 h 553.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+253.404953956604 sheet approval safe x 149.0 y 8.0 w 653.0 h 627.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+272.538409948349 sheet approval safe x 8.0 y 8.0 w 459.3 h 627.0 insets t 0.0 l 0.0 b 34.0 r 0.0

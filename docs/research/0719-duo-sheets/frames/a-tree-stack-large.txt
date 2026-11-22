@@ -1,0 +1,24 @@
+window x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+tree.sheet x 8.0 y 82.0 w 450.0 h 596.0 (to x 458.0 y 678.0)
+tree.count x 196.2 y 133.5 w 73.3 h 14.3 (to x 269.5 y 147.8)
+session.composer x 34.0 y 581.0 w 280.7 h 22.0 (to x 314.7 y 603.0)
+session.conversation x 0.0 y 0.0 w 382.0 h 518.3 (to x 382.0 y 518.3)
+grabber x 183.0 y 78.0 w 100.0 h 24.0 (to x 283.0 y 102.0)
+bar[Subagents] x 8.0 y 106.0 w 450.0 h 58.0 (to x 458.0 y 164.0)
+  bar text[Subagents] x 190.0 y 112.0 w 85.7 h 36.0 (to x 275.7 y 148.0)
+  bar text[Subagents] x 190.0 y 112.2 w 85.7 h 20.3 (to x 275.7 y 132.5)
+  bar text[6 · 3 working] x 196.2 y 133.5 w 73.3 h 14.3 (to x 269.5 y 147.8)
+bar[_TtGC7SwiftUI29PresentationHosting] x 0.0 y 24.0 w 466.0 h 58.0 (to x 466.0 y 82.0)
+  bar text[Find what holds the session lock] x 72.3 y 30.2 w 257.0 h 20.3 (to x 329.3 y 50.5)
+  bar text[shaman · fix/session-lock] x 129.2 y 51.5 w 143.3 h 14.3 (to x 272.5 y 65.8)
+toolbar[Toolbar] x 8.0 y 82.0 w 450.0 h 596.0 (to x 458.0 y 678.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+toolbar[Toolbar] x 0.0 y 0.0 w 466.0 h 678.0 (to x 466.0 y 678.0)
+  toolbar button[] x 399.0 y 179.0 w 38.0 h 38.0 (to x 437.0 y 217.0)
+  toolbar button[6 subagents, 3 working] x 176.0 y 612.0 w 50.0 h 36.0 (to x 226.0 y 648.0)
+--- app
+189.78459000587463 sheet tree safe x 8.0 y 92.3 w 450.0 h 551.7 insets t 0.0 l 0.0 b 34.0 r 0.0
+189.80108785629272 sheet tree safe x 8.0 y 88.3 w 450.0 h 555.7 insets t 0.0 l 0.0 b 34.0 r 0.0
+189.8178310394287 sheet tree safe x 8.0 y 84.0 w 450.0 h 560.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+189.83458995819092 sheet tree safe x 8.0 y 82.0 w 450.0 h 562.0 insets t 0.0 l 0.0 b 34.0 r 0.0

@@ -1,0 +1,30 @@
+window x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+approval.sheet x 149.0 y 296.0 w 653.0 h 319.0 (to x 802.0 y 615.0)
+approval.title x 397.2 y 296.0 w 156.7 h 20.3 (to x 553.8 y 316.3)
+tree.sheet x 577.0 y -0.0 w 374.0 h 595.3 (to x 951.0 y 595.3)
+tree.count x 718.2 y 51.5 w 73.3 h 14.3 (to x 791.5 y 65.8)
+session.conversation x 0.0 y -0.0 w 577.0 h 589.3 (to x 577.0 y 589.3)
+grabber x 425.5 y 272.0 w 100.0 h 24.0 (to x 525.5 y 296.0)
+bar[Subagents] x 577.0 y 24.0 w 374.0 h 58.0 (to x 951.0 y 82.0)
+  bar text[Subagents] x 712.0 y 30.0 w 85.7 h 36.0 (to x 797.7 y 66.0)
+  bar text[Subagents] x 712.0 y 30.2 w 85.7 h 20.3 (to x 797.7 y 50.5)
+  bar text[6 · 3 working] x 718.2 y 51.5 w 73.3 h 14.3 (to x 791.5 y 65.8)
+bar[_TtGC7SwiftUI29PresentationHosting] x 0.0 y 24.0 w 951.0 h 58.0 (to x 951.0 y 82.0)
+  bar text[Find what held the lock] x 196.7 y 30.2 w 183.3 h 20.3 (to x 380.0 y 50.5)
+  bar text[Explorer · haiku] x 244.7 y 51.5 w 87.3 h 14.3 (to x 332.0 y 65.8)
+  bar text[3] x 538.8 y 40.8 w 8.0 h 14.3 (to x 546.8 y 55.2)
+  bar button[Show Sidebar] x 24.0 y 28.0 w 40.0 h 40.0 (to x 64.0 y 68.0)
+  bar button[6 subagents, 3 working] x 501.0 y 30.0 w 52.0 h 36.0 (to x 553.0 y 66.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+  toolbar button[] x 884.0 y 129.0 w 38.0 h 38.0 (to x 922.0 y 167.0)
+  toolbar button[Work and sessions] x 884.0 y 189.0 w 38.0 h 38.0 (to x 922.0 y 227.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+toolbar[Toolbar] x 577.0 y -0.0 w 374.0 h 595.3 (to x 951.0 y 595.3)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+toolbar[Toolbar] x 0.0 y -0.0 w 951.0 h 669.0 (to x 951.0 y 669.0)
+--- app
+424.15381717681885 sheet tree safe x 577.0 y 0.0 w 290.0 h 635.0 insets t 0.0 l 0.0 b 34.0 r 84.0
+424.27155590057373 sheet tree safe x 577.0 y 0.0 w 290.0 h 635.0 insets t 0.0 l 0.0 b 34.0 r 84.0
+424.8008189201355 sheet tree safe x 577.0 y 0.0 w 290.0 h 595.3 insets t 0.0 l 0.0 b 0.0 r 84.0
+424.82964301109314 sheet approval safe x 149.0 y 276.0 w 653.0 h 351.0 insets t 0.0 l 0.0 b 34.0 r 0.0

@@ -1,0 +1,26 @@
+laptop fold nil
+sheet approval safe x 8.0 y 280.0 w 374.0 h 356.0 insets t 0.0 l 0.0 b 34.0 r 76.0
+=== 2-flat
+sheet approval safe x 8.0 y 321.3 w 450.0 h 314.7 insets t 0.0 l 0.0 b 34.0 r 0.0
+sheet approval safe x 149.0 y 317.3 w 653.0 h 309.7 insets t 0.0 l 0.0 b 34.0 r 0.0
+sheet approval safe x 149.0 y 276.0 w 653.0 h 351.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+=== 3-book
+sheet approval safe x 8.0 y 276.0 w 459.3 h 351.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+=== 4-flat
+sheet approval safe x 149.0 y 276.0 w 653.0 h 351.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+=== 5-laptop
+sheet approval safe x 8.0 y 276.0 w 459.3 h 351.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+sheet approval safe x 8.0 y 487.7 w 653.0 h 421.7 insets t 0.0 l 0.0 b 34.0 r 0.0
+laptop fold Optional(ShamanUI.ProtoL.Fold(top: 455.5, bottom: 495.5, window: 951.0))
+=== 6a-open-portrait
+laptop fold nil
+=== 6-flat
+sheet approval safe x 149.0 y 317.3 w 653.0 h 309.7 insets t 0.0 l 0.0 b 34.0 r 0.0
+sheet approval safe x 149.0 y 276.0 w 653.0 h 351.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+sheet approval safe x 8.0 y 487.7 w 653.0 h 421.7 insets t 0.0 l 0.0 b 34.0 r 0.0
+sheet approval safe x 149.0 y 317.3 w 653.0 h 309.7 insets t 0.0 l 0.0 b 34.0 r 0.0
+sheet approval safe x 149.0 y 276.0 w 653.0 h 351.0 insets t 0.0 l 0.0 b 34.0 r 0.0
+=== 7-closed
+sheet approval safe x 8.0 y 276.0 w 859.0 h 351.0 insets t 0.0 l 0.0 b 34.0 r 76.0
+sheet approval safe x 8.0 y 477.7 w 374.0 h 158.7 insets t 0.0 l 0.0 b 34.0 r 76.0
+sheet approval safe x 8.0 y 280.0 w 374.0 h 356.0 insets t 0.0 l 0.0 b 34.0 r 76.0
