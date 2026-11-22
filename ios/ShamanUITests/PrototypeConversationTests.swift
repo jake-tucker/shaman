@@ -1,5 +1,5 @@
-// PROTOTYPE for #717. Throwaway: launches the app as the Mac asks and then does what it is told, one command at a
-// time, from the file /tmp/duo717/cmd, which it removes once the command is done:
+// PROTOTYPE for #717 and #718. Throwaway: launches the app as the Mac asks and then does what it is told, one command at a
+// time, from the file /tmp/duo718/cmd, which it removes once the command is done:
 //
 //   drag <from> <to>     drags the conversation between two heights, as shares of its own height
 //   flick <from> <to>    the same, let go moving
@@ -18,9 +18,9 @@ final class PrototypeConversationTests: XCTestCase {
     app.launchArguments = (environment["PROTO_ARGS"] ?? "--fake longSession --open workstation-key/30")
       .split(separator: " ").map(String.init) + ["--forget-scene"]
     app.launch()
-    let command = "/tmp/duo717/cmd"
+    let command = "/tmp/duo718/cmd"
     try? FileManager.default.removeItem(atPath: command)
-    FileManager.default.createFile(atPath: "/tmp/duo717/ready", contents: Data())
+    FileManager.default.createFile(atPath: "/tmp/duo718/ready", contents: Data())
     let deadline = Date().addingTimeInterval(1500)
     while Date() < deadline {
       guard let told = try? String(contentsOfFile: command, encoding: .utf8) else {
@@ -65,7 +65,7 @@ final class PrototypeConversationTests: XCTestCase {
       default:
         said = "unknown"
       }
-      try? said.write(toFile: "/tmp/duo717/said", atomically: true, encoding: .utf8)
+      try? said.write(toFile: "/tmp/duo718/said", atomically: true, encoding: .utf8)
       try? FileManager.default.removeItem(atPath: command)
     }
   }

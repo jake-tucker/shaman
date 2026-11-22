@@ -56,7 +56,7 @@ struct SessionScreen: View {
     }
   }
 
-  var body: some View {
+  private var conversation: some View {
     ConversationView(model: model) { pushed in
       switch pushed {
       case .work(_, let turn) where asides: aside.show(.work(turn))
@@ -64,22 +64,36 @@ struct SessionScreen: View {
       default: stack?.path.append(pushed)
       }
     }
-    .modifier(
-      ProtoFoot {
-        SessionFoot(model: model) { opens in
-          if let stack {
-            let tree = stack.review(opens, over: model.route)
-            if tree, asides {
-              aside.show(.tree)
-            } else {
-              showingTree = tree
-            }
-          } else if opens == .interventions {
-            model.review()
-          }
+  }
+
+  private var foot: some View {
+    SessionFoot(model: model) { opens in
+      if let stack {
+        let tree = stack.review(opens, over: model.route)
+        if tree, asides {
+          aside.show(.tree)
+        } else {
+          showingTree = tree
         }
+      } else if opens == .interventions {
+        model.review()
       }
-    )
+    }
+  }
+
+  var body: some View {
+    Group {
+      // PROTOTYPE #718: SwiftUI's own arrangement view, the conversation its primary and the foot its secondary.
+      if ProtoL.shared.variant == .arrangement, #available(iOS 27.1, *) {
+        ProtoArrangement {
+          conversation
+        } secondary: {
+          foot
+        }
+      } else {
+        conversation.modifier(ProtoFoot { foot })
+      }
+    }
     .background { ProtoMarginsReader() }
     .toolbarMinimizationBehavior(ProtoC.shared.title.behavior, for: .navigationBar)
     .safeAreaInset(edge: .top) {
@@ -135,7 +149,7 @@ struct SessionScreen: View {
           }
         }
       }
-      if asides {
+      if Proto.shared.column {
         ToolbarItem(placement: .topBarTrailing) {
           Button {
             aside.toggle()
@@ -249,7 +263,7 @@ private struct ProtoFoot<Foot: View>: ViewModifier {
 
   func body(content: Content) -> some View {
     switch ProtoC.shared.foot {
-    case .inset: content.safeAreaInset(edge: .bottom, spacing: 0) { foot }
+    case .inset: content.safeAreaInset(edge: .bottom, spacing: 0) { ProtoLaptopFoot { foot } }
     case .bar: content.safeAreaBar(edge: .bottom, spacing: 0) { foot }
     }
   }

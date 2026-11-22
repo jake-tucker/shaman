@@ -91,7 +91,10 @@ final class Proto {
   }
 
   /// Whether a Turn's work and the tree stand in a third column rather than being pushed or presented.
-  var asides: Bool { variant == .three && regular && wide }
+  var asides: Bool { column || ProtoL.shared.deck == .work }
+
+  /// Whether the third column itself stands beside the conversation.
+  var column: Bool { variant == .three && regular && wide }
 }
 
 /// The floating pill: the variant shown between two arrows, and a menu for the rest. It drags out of the way.
@@ -108,6 +111,7 @@ struct PrototypePill: View {
         Image(systemName: "chevron.left").frame(width: 30, height: 30)
       }
       Menu {
+        ProtoLaptopMenu()
         Picker("While no session is open, show", selection: $proto.empty) {
           ForEach(Proto.Empty.allCases, id: \.self) { Text($0.name).tag($0) }
         }
@@ -121,7 +125,7 @@ struct PrototypePill: View {
         }
         ProtoConversationMenu()
       } label: {
-        Text(verbatim: proto.variant.name)
+        Text(verbatim: ProtoL.shared.variant.name)
           .font(.caption.weight(.semibold))
           .lineLimit(1)
           .fixedSize()
@@ -149,9 +153,10 @@ struct PrototypePill: View {
   }
 
   private func step(_ by: Int) {
-    let all = Proto.Variant.allCases
-    let at = all.firstIndex(of: proto.variant) ?? 0
-    proto.variant = all[(at + by + all.count) % all.count]
+    // #718: the arrows step through the laptop pose's variants; the columns' are in the menu.
+    let all = ProtoL.Variant.allCases
+    let at = all.firstIndex(of: ProtoL.shared.variant) ?? 0
+    ProtoL.shared.variant = all[(at + by + all.count) % all.count]
   }
 }
 
@@ -277,7 +282,7 @@ struct AsideColumn: View {
 /// PROTOTYPE: a line in a file on the Mac, from the simulator.
 func protoLog(_ line: String) {
   #if targetEnvironment(simulator)
-    let url = URL(fileURLWithPath: "/tmp/duo717/app.log")
+    let url = URL(fileURLWithPath: "/tmp/duo718/app.log")
     let data = Data(("\(Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 1000)) " + line + "\n").utf8)
     if let handle = try? FileHandle(forWritingTo: url) {
       handle.seekToEndOfFile()

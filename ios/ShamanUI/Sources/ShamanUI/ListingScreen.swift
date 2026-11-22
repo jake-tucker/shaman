@@ -95,6 +95,22 @@ struct ListingScreen: View {
     .background {
       if #available(iOS 27.1, *) {
         FoldReader()
+        LaptopFoldReader()
+      }
+    }
+    .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { ProtoL.shared.rootBottom = $0 }
+    // PROTOTYPE #718: what stands in the half below the fold while the phone sits like a laptop.
+    .overlay {
+      if let deck = ProtoL.shared.deck {
+        // Under a keyboard, not above it: the keyboard takes this half.
+        VStack(spacing: 0) {
+          Spacer(minLength: 0)
+          laptopDeck(deck)
+            .frame(height: ProtoL.shared.below)
+            .background(Color(.systemBackground))
+        }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .transition(.move(edge: .bottom))
       }
     }
     .task(id: proto.fold) {
@@ -129,6 +145,15 @@ struct ListingScreen: View {
       }
     }
     .task { await model.follow(restoring: restoring) }
+    .task {
+      // PROTOTYPE #718: launched in portrait with something open, the system stands the listing over it whatever
+      // the columns say; saying it again a moment later takes it away.
+      try? await Task.sleep(for: .milliseconds(800))
+      guard proto.variant != .stack, proto.regular, !proto.wide, !stack.path.isEmpty else { return }
+      columns = .all
+      try? await Task.sleep(for: .milliseconds(100))
+      columns = .detailOnly
+    }
     .onChange(of: kept, initial: true) { _, kept in keep(kept) }
     .onChange(of: model.listing?.unreachable) {
       // A Remote that answers again on its own takes its sheet with it.
@@ -186,6 +211,30 @@ struct ListingScreen: View {
         }
         .navigationDestination(for: Pushed.self) { destination($0) }
       }
+      // PROTOTYPE #718: the column ends where the fold begins while something stands below it.
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        Color.clear.frame(height: ProtoL.shared.columnLift)
+      }
+    }
+  }
+
+  /// PROTOTYPE #718: the half below the fold: the third column's own content, or the listing.
+  @ViewBuilder
+  private func laptopDeck(_ deck: ProtoL.Variant) -> some View {
+    switch deck {
+    case .work:
+      if let session = stack.topSession {
+        AsideColumn(model: session, state: stack.aside, stack: stack)
+          .id(session.route)
+      } else {
+        ContentUnavailableView("No session open", systemImage: "list.bullet")
+      }
+    case .listing:
+      NavigationStack {
+        listingColumn
+      }
+    default:
+      EmptyView()
     }
   }
 
@@ -241,7 +290,7 @@ struct ListingScreen: View {
   /// Whether the third column stands: where the variant has one, a Session's screen is up and the reader has it shown.
   private var asideShown: Binding<Bool> {
     Binding {
-      proto.asides && !asideSettling && stack.topSession != nil && stack.aside.presented
+      proto.column && !asideSettling && stack.topSession != nil && stack.aside.presented
     } set: { presented in
       // The system takes it down by itself, as through a fold; the reader's standing choice is kept apart.
       protoLog("aside presented -> \(presented)")
