@@ -743,37 +743,68 @@ private struct SessionFoot: View {
 
   var body: some View {
     if let frame = model.frame, frame.bar != nil || frame.composer != nil {
-      VStack(spacing: 8) {
-        // Unreachable, or across a gap only updating one side bridges: the core's words say which.
-        if let line = frame.composer?.unreachable {
-          Label {
-            Text(verbatim: line)
-          } icon: {
-            Image(systemName: "exclamationmark.circle")
+      // PROTOTYPE #718: in two parts, so that sat like a laptop the field and send can stand on the bottom edge of
+      // the half below the fold while the bar and the other lines stay above it. One shape whatever the pose, so the
+      // field keeps its focus as the keyboard comes.
+      let laptop = ProtoL.shared
+      let split = laptop.footSplits
+      let sides = ProtoC.shared.sides(fixed: 12)
+      let hasUpper = frame.composer?.unreachable != nil || frame.bar != nil
+      VStack(spacing: 0) {
+        VStack(spacing: 8) {
+          // Unreachable, or across a gap only updating one side bridges: the core's words say which.
+          if let line = frame.composer?.unreachable {
+            Label {
+              Text(verbatim: line)
+            } icon: {
+              Image(systemName: "exclamationmark.circle")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("session.unreachable")
           }
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .accessibilityElement(children: .combine)
-          .accessibilityIdentifier("session.unreachable")
-        }
-        if let bar = frame.bar {
-          BarView(bar: bar, stopping: model.stopping) {
-            Task { await model.stop() }
-          } review: {
-            review($0)
+          if let bar = frame.bar {
+            BarView(bar: bar, stopping: model.stopping) {
+              Task { await model.stop() }
+            } review: {
+              review($0)
+            }
           }
         }
-        if let composer = frame.composer {
-          ComposerView(composer: composer, model: model)
+        .padding(.leading, sides.leading)
+        .padding(.trailing, sides.trailing)
+        .protoMeasured()
+        .padding(.top, hasUpper ? 8 : 0)
+        .padding(.bottom, hasUpper && split ? 8 : 0)
+        .modifier(ProtoGround())
+        VStack(spacing: 0) {
+          Color.clear.frame(height: split ? laptop.band : 0)
+          Spacer(minLength: 0).frame(maxHeight: split ? .infinity : 0)
+          VStack(spacing: 0) {
+            if let composer = frame.composer {
+              ComposerView(composer: composer, model: model)
+            }
+          }
+          .padding(.leading, sides.leading)
+          .padding(.trailing, sides.trailing)
+          .protoMeasured()
+          .padding(.top, frame.composer != nil ? 8 : 0)
+          .padding(.bottom, 8)
+          .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            laptop.composerHeight[model.route] = frame.composer != nil ? height : 0
+          }
+          .protoBand()
+          .modifier(ProtoGround())
+        }
+        .frame(height: split ? laptop.lowerRoom : nil)
+        .background {
+          if split {
+            Color(.systemBackground).ignoresSafeArea(.container, edges: .bottom)
+          }
         }
       }
-      .padding(.leading, ProtoC.shared.sides(fixed: 12).leading)
-      .padding(.trailing, ProtoC.shared.sides(fixed: 12).trailing)
-      .protoMeasured()
-      .padding(.vertical, 8)
-      .protoBand()
-      .modifier(ProtoGround())
     }
   }
 }

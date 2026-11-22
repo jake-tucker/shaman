@@ -13,7 +13,10 @@
 //
 // `--laptop-composer <under|bottom>` says where `clear` stands the composer: just under the fold, or on the bottom
 // edge. `--laptop-arrangement <split|fixed|overlay>` says how `arrangement` is styled: split evenly, split with the
-// foot at its own height, or the foot overlaid on the conversation's bottom edge.
+// foot at its own height, or the foot overlaid on the conversation's bottom edge. `--laptop-deck-composer
+// <bottom|above>` says where `work` and `listing` stand the field and send: on the bottom edge of the half below the
+// fold, the bar and the other lines staying above it, or above the fold with them. `--laptop-questionnaire
+// <half|full>` says whether a Questionnaire's sheet lands on the half below the fold, as an Approval's does.
 
 import ShamanCore
 import SwiftUI
@@ -55,9 +58,27 @@ final class ProtoL {
     }
   }
 
+  /// Where `work` and `listing` stand the composer's field and send.
+  enum DeckComposer: String, CaseIterable {
+    case bottom, above
+    var name: String { self == .bottom ? "on the bottom edge, the bar above the fold" : "above the fold" }
+  }
+
+  /// How tall a Questionnaire's sheet stands while the phone sits like a laptop.
+  enum Questionnaire: String, CaseIterable {
+    case half, full
+    var name: String { self == .half ? "the half below the fold" : "full height, as today" }
+  }
+
   var variant: Variant
   var composer: Composer
   var styled: Styled
+  var deckComposer: DeckComposer
+  var questionnaire: Questionnaire
+  /// Whether a Session's screen is the one up in the second column.
+  var sessionUp = false
+  /// How tall the field and send stand, with their padding, for each Session's screen.
+  var composerHeight: [SessionRoute: CGFloat] = [:]
 
   /// The fold while it lies across the window, in the window's own coordinates: where the band kept for it begins
   /// and ends, and how tall the window is.
@@ -79,6 +100,8 @@ final class ProtoL {
     variant = value("--laptop").flatMap(Variant.init) ?? .asis
     composer = value("--laptop-composer").flatMap(Composer.init) ?? .under
     styled = value("--laptop-arrangement").flatMap(Styled.init) ?? .split
+    deckComposer = value("--laptop-deck-composer").flatMap(DeckComposer.init) ?? .bottom
+    questionnaire = value("--laptop-questionnaire").flatMap(Questionnaire.init) ?? .half
   }
 
   /// Whether a keyboard stands in the half below the fold.
@@ -94,7 +117,30 @@ final class ProtoL {
   /// keyboard has already brought it most of the way.
   var columnLift: CGFloat {
     guard let fold, deck != nil else { return 0 }
+    // A Session's own foot does it where it also carries the field to the bottom edge.
+    if deckComposer == .bottom, sessionUp { return 0 }
     return max(0, fold.window - fold.top - rootBottom)
+  }
+
+  /// Whether a Session's foot stands in two: the bar and its other lines above the fold, the field and send on the
+  /// bottom edge, with the deck between.
+  var footSplits: Bool {
+    deck != nil && deckComposer == .bottom && sessionUp && !keyboardUp
+  }
+
+  /// How tall the second part of a split foot is, from where the fold begins to the bottom safe area.
+  var lowerRoom: CGFloat {
+    fold.map { max(0, $0.window - $0.top - rootBottom) } ?? 0
+  }
+
+  /// How tall the band kept for the fold is.
+  var band: CGFloat {
+    fold.map { $0.bottom - $0.top } ?? 0
+  }
+
+  /// The heights a Questionnaire's sheet may stand at.
+  var questionnaireDetents: Set<PresentationDetent> {
+    fold != nil && variant != .asis && questionnaire == .half ? [.height(below), .large] : [.large]
   }
 
   /// How tall the half below the fold is, from where the band kept for the fold ends.
@@ -163,6 +209,12 @@ struct ProtoLaptopMenu: View {
     }
     Picker("B stands the composer", selection: $laptop.composer) {
       ForEach(ProtoL.Composer.allCases, id: \.self) { Text($0.name).tag($0) }
+    }
+    Picker("C and D stand the composer", selection: $laptop.deckComposer) {
+      ForEach(ProtoL.DeckComposer.allCases, id: \.self) { Text($0.name).tag($0) }
+    }
+    Picker("A questionnaire takes", selection: $laptop.questionnaire) {
+      ForEach(ProtoL.Questionnaire.allCases, id: \.self) { Text($0.name).tag($0) }
     }
     Picker("E is styled", selection: $laptop.styled) {
       ForEach(ProtoL.Styled.allCases, id: \.self) { Text($0.name).tag($0) }

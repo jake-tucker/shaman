@@ -11,6 +11,7 @@ struct QuestionnaireSheet: View {
   let model: SessionModel
   @Environment(\.interventionArming) private var arming
   @State private var armed = false
+  @State private var detent = PresentationDetent.large
 
   var body: some View {
     let draft = model.draft(of: questionnaire)
@@ -71,7 +72,11 @@ struct QuestionnaireSheet: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("questionnaire.sheet")
-    .presentationDetents([.large])
+    // PROTOTYPE #718: sat like a laptop, on the half below the fold, as an Approval's sheet lands.
+    .presentationDetents(ProtoL.shared.questionnaireDetents, selection: $detent)
+    .onChange(of: ProtoL.shared.questionnaireDetents, initial: true) { _, detents in
+      detent = detents.first { $0 != .large } ?? .large
+    }
     .presentationDragIndicator(.visible)
     .presentationBackground(Color(.systemBackground))
     .interactiveDismissDisabled(sending)
