@@ -9,7 +9,7 @@
 //                                     the place kept is a block's and not a share of the whole answer
 //   --conv-measure <0|600|700>        how wide a conversation reads at most, 0 for as wide as its column
 //   --conv-align <centre|leading>     where a conversation narrower than its column stands
-//   --conv-margins <fixed|system>     14 points a side, or the container's content margins
+//   --conv-margins <fixed|floor|system>   14 points a side, or the container's content margins, with or without a floor of 8
 //   --conv-band <kept|16|8|0>         the bottom safe area under the composer: kept, or trimmed to so many points
 //   --conv-title <automatic|never|down|up>   whether the title's bar scrolls away under the conversation
 //   --conv-foot <inset|bar>           the foot as a `safeAreaInset` on its own ground, or as a `safeAreaBar`
@@ -38,8 +38,14 @@ final class ProtoC {
   }
 
   enum Margins: String, CaseIterable {
-    case fixed, system
-    var name: String { self == .fixed ? "14 points" : "the system's" }
+    case fixed, floor, system
+    var name: String {
+      switch self {
+      case .fixed: "14 points"
+      case .floor: "the system's, at least 8 points"
+      case .system: "the system's, none beside the side bar"
+      }
+    }
   }
 
   enum Title: String, CaseIterable {
@@ -101,8 +107,8 @@ final class ProtoC {
     rows = value("--conv-rows").flatMap(Rows.init) ?? .whole
     measure = value("--conv-measure").flatMap(Double.init).map { CGFloat($0) } ?? 700
     align = value("--conv-align").flatMap(Align.init) ?? .centre
-    margins = value("--conv-margins").flatMap(Margins.init) ?? .fixed
-    band = value("--conv-band").flatMap(Double.init).map { CGFloat($0) }
+    margins = value("--conv-margins").flatMap(Margins.init) ?? .floor
+    band = value("--conv-band") == "kept" ? nil : value("--conv-band").flatMap(Double.init).map { CGFloat($0) } ?? 0
     title = value("--conv-title").flatMap(Title.init) ?? .automatic
     foot = value("--conv-foot").flatMap(Foot.init) ?? .inset
     ground = value("--conv-ground").flatMap(Ground.init) ?? .column
@@ -112,7 +118,8 @@ final class ProtoC {
   func sides(fixed: CGFloat) -> (leading: CGFloat, trailing: CGFloat) {
     switch margins {
     case .fixed: (fixed, fixed)
-    case .system: (max(system.leading, 8), max(system.trailing, 8))
+    case .floor: (max(system.leading, 8), max(system.trailing, 8))
+    case .system: (system.leading, system.trailing)
     }
   }
 }
