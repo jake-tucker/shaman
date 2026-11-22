@@ -1,0 +1,57 @@
+244.123 fold probe onGeometryChange: size=466x678 fold=none
+244.124 fold probe GeometryReader: size=466x678 fold=none
+244.124 swiftui aside on=false size=382x644 fold=none
+244.124 lab swiftui launched ["--fake", "paired", "--lab", "swiftui", "--lab-open", "2", "--lab-aside-up"]
+244.124 swiftui root S1 onAppear
+244.126 swiftui listing onAppear width=Optional(SwiftUI.UserInterfaceSizeClass.compact) path=["S1", "S1+"]
+244.167 swiftui compact column -> NavigationSplitViewColumn(tag: SwiftUI.NavigationSplitViewColumn.Tag.detail)
+244.167 swiftui listing onDisappear
+244.167 swiftui root S1 onDisappear
+244.171 fold probe updateConstraints run 1: size=466x678 fold=none
+244.229 fold probe layoutSubviews run 1: size=466x678 fold=none
+------- closed
+248.449 fold probe GeometryReader: size=951x669 fold=none
+248.449 fold probe onGeometryChange: size=951x669 fold=none
+248.449 swiftui width class -> Optional(SwiftUI.UserInterfaceSizeClass.regular)
+248.466 swiftui aside on=true size=867x635 fold=none
+248.466 swiftui listing onAppear width=Optional(SwiftUI.UserInterfaceSizeClass.regular) path=["S1", "S1+"]
+248.490 fold probe layoutSubviews run 3: size=951x669 fold=none
+248.584 fold probe updateConstraints run 2: size=951x669 fold=none
+------- open
+255.344 fold probe updateConstraints run 3: size=951x669 fold=455,0 40x669
+255.345 fold probe GeometryReader: size=951x669 fold=455,0 40x669
+255.345 fold probe onGeometryChange: size=951x669 fold=455,0 40x669
+255.386 probe listing willAppear animated=false transition=false interactive=false from=nil to=nil collapsed=Optional(false)
+255.483 fold probe layoutSubviews run 5: size=951x669 fold=455,0 40x669
+255.524 probe listing didAppear
+------- book
+261.805 fold probe updateConstraints run 4: size=951x669 fold=none
+261.806 fold probe GeometryReader: size=951x669 fold=none
+261.806 fold probe onGeometryChange: size=951x669 fold=none
+261.861 fold probe layoutSubviews run 6: size=951x669 fold=none
+262.417 swiftui listing onDisappear
+262.417 probe listing didDisappear
+------- open-again
+268.946 swiftui width class -> Optional(SwiftUI.UserInterfaceSizeClass.compact)
+268.946 swiftui aside on=false size=867x635 fold=none
+269.015 fold probe GeometryReader: size=466x678 fold=none
+269.015 fold probe onGeometryChange: size=466x678 fold=none
+269.017 fold probe updateConstraints run 7: size=466x678 fold=none
+269.022 fold probe layoutSubviews run 8: size=466x678 fold=none
+------- closed-again
+275.423 fold probe GeometryReader: size=951x669 fold=none
+275.424 fold probe onGeometryChange: size=951x669 fold=none
+275.424 swiftui width class -> Optional(SwiftUI.UserInterfaceSizeClass.regular)
+275.432 swiftui aside on=true size=867x635 fold=none
+275.432 swiftui listing onAppear width=Optional(SwiftUI.UserInterfaceSizeClass.regular) path=["S1", "S1+"]
+275.446 fold probe layoutSubviews run 12: size=951x669 fold=none
+275.500 fold probe updateConstraints run 9: size=951x669 fold=none
+------- open-third
+282.295 swiftui width class -> Optional(SwiftUI.UserInterfaceSizeClass.compact)
+282.295 swiftui aside on=false size=867x635 fold=none
+282.296 swiftui listing onDisappear
+282.361 fold probe GeometryReader: size=466x678 fold=none
+282.362 fold probe onGeometryChange: size=466x678 fold=none
+282.364 fold probe updateConstraints run 12: size=466x678 fold=none
+282.370 fold probe layoutSubviews run 15: size=466x678 fold=none
+------- end

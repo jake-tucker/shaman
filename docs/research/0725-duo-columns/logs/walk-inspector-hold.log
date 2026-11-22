@@ -1,0 +1,144 @@
+395.372 inspector set, wrapped in nil
+395.390 fold probe onGeometryChange: size=466x678 fold=none
+395.390 fold probe GeometryReader: size=466x678 fold=none
+395.390 lab uikit launched ["--fake", "paired", "--lab", "uikit", "--lab-aside", "inspector", "--lab-open", "2", "--lab-aside-up", "--lab-hold"]
+395.392 fold probe updateConstraints run 1: size=466x678 fold=none
+395.394 willChangeTo mode=2 collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=false
+395.394 topColumnForCollapsing proposed=main answered=main collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=false
+395.398 willShow sidebar collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=false
+395.400 willHide sidebar collapsed=false mode=1 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=false
+395.401 nav sidebar willShow UINavigationController, no transition
+395.443 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=false
+395.443 didHide sidebar collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=false
+395.443 columns laid out: size=466x678 fold=none collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=false
+395.444 fold probe layoutSubviews run 1: size=466x678 fold=none
+395.455 nav main willShow S1+, no transition
+395.457 nav main didShow S1+ collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=false
+395.617 columns appeared collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=false
+------- closed
+399.525 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=false
+399.528 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=false
+399.529 viewWillTransition to 951x669 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=false
+399.538 willChangeTo mode=1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=false
+399.538 displayModeForExpanding proposed=1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=false
+399.539 willShow aside collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=false
+399.554 nav sidebar willShow listing, no transition
+399.556 nav sidebar didShow listing collapsed=true mode=2 sidebar=["listing"] main=["S1", "S1+"] inspector=false
+399.557 the listing is its navigation controller's top: narrow=false expanding=true
+399.557 willShow main collapsed=true mode=2 sidebar=["listing"] main=["S1", "S1+"] inspector=false
+399.558 fold probe GeometryReader: size=951x669 fold=none
+399.558 fold probe onGeometryChange: size=951x669 fold=none
+399.559 columns laid out: size=951x669 fold=none collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+399.613 fold probe layoutSubviews run 3: size=951x669 fold=none
+399.801 didExpand collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+399.802 didShow main collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+399.804 didShow aside collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+399.824 fold probe updateConstraints run 2: size=951x669 fold=none
+------- open
+406.152 willChangeTo mode=2 collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+406.152 topColumnForCollapsing proposed=main answered=main collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+406.152 holding the aside back before the collapse
+406.153 willHide aside collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+406.153 willShow sidebar collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+406.153 willHide main collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+406.171 willShow aside collapsed=false mode=1 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+406.172 willHide sidebar collapsed=false mode=1 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+406.172 nav sidebar willShow UINavigationController, no transition
+406.191 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+406.191 didHide sidebar collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+406.191 didHide main collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+406.191 didShow aside collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+406.283 nav sidebar didShow UINavigationController collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+406.287 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+406.287 viewWillTransition to 466x678 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+406.306 fold probe GeometryReader: size=466x678 fold=none
+406.306 fold probe onGeometryChange: size=466x678 fold=none
+406.307 columns laid out: size=466x678 fold=none collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+406.315 fold probe layoutSubviews run 6: size=466x678 fold=none
+406.315 fold probe updateConstraints run 5: size=466x678 fold=none
+------- closed-again
+412.744 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+412.748 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+412.748 viewWillTransition to 951x669 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+412.782 willChangeTo mode=1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+412.782 displayModeForExpanding proposed=1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+412.803 nav sidebar willShow listing, no transition
+412.810 nav sidebar didShow listing collapsed=true mode=2 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+412.810 the listing is its navigation controller's top: narrow=false expanding=true
+412.810 willShow main collapsed=true mode=2 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+412.812 fold probe GeometryReader: size=951x669 fold=none
+412.813 fold probe onGeometryChange: size=951x669 fold=none
+412.817 columns laid out: size=951x669 fold=none collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+412.859 fold probe layoutSubviews run 10: size=951x669 fold=none
+412.969 didExpand collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+412.970 didShow main collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+412.988 fold probe updateConstraints run 7: size=951x669 fold=none
+------- open-again
+419.675 fold probe updateConstraints run 8: size=951x669 fold=455,0 40x669
+419.676 fold probe GeometryReader: size=951x669 fold=455,0 40x669
+419.676 fold probe onGeometryChange: size=951x669 fold=455,0 40x669
+419.697 columns laid out: size=951x669 fold=455,0 40x669 collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+419.699 fold probe layoutSubviews run 12: size=951x669 fold=455,0 40x669
+------- book
+426.669 willChangeTo mode=2 collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+426.669 topColumnForCollapsing proposed=main answered=main collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+426.670 holding the aside back before the collapse
+426.670 willHide aside collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+426.670 willShow sidebar collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+426.670 willHide main collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+426.687 willShow aside collapsed=false mode=1 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+426.687 willHide sidebar collapsed=false mode=1 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+426.688 nav sidebar willShow UINavigationController, no transition
+426.707 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+426.707 didHide sidebar collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+426.707 didHide main collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+426.707 didShow aside collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+426.787 nav sidebar didShow UINavigationController collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+426.794 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+426.795 viewWillTransition to 466x678 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+426.801 fold probe updateConstraints run 10: size=951x669 fold=0,455 669x40
+426.842 fold probe GeometryReader: size=466x678 fold=455,0 40x669
+426.842 fold probe onGeometryChange: size=466x678 fold=455,0 40x669
+426.842 fold probe GeometryReader: size=466x678 fold=0,455 669x40
+426.842 fold probe onGeometryChange: size=466x678 fold=0,455 669x40
+426.843 columns laid out: size=466x678 fold=0,455 669x40 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+426.850 fold probe layoutSubviews run 14: size=466x678 fold=0,455 669x40
+426.850 fold probe updateConstraints run 11: size=466x678 fold=0,455 669x40
+426.870 fold probe updateConstraints run 12: size=466x678 fold=none
+426.873 fold probe GeometryReader: size=466x678 fold=none
+426.873 fold probe onGeometryChange: size=466x678 fold=none
+426.873 columns laid out: size=466x678 fold=none collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+426.874 fold probe layoutSubviews run 16: size=466x678 fold=none
+------- closed-from-book
+433.060 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+433.064 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+433.064 viewWillTransition to 951x669 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+433.097 willChangeTo mode=1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+433.098 displayModeForExpanding proposed=1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1", "S1+"] inspector=true
+433.116 nav sidebar willShow listing, no transition
+433.122 nav sidebar didShow listing collapsed=true mode=2 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+433.122 the listing is its navigation controller's top: narrow=false expanding=true
+433.123 willShow main collapsed=true mode=2 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+433.125 fold probe GeometryReader: size=951x669 fold=none
+433.125 fold probe onGeometryChange: size=951x669 fold=none
+433.130 columns laid out: size=951x669 fold=none collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+433.167 fold probe layoutSubviews run 18: size=951x669 fold=none
+433.275 didExpand collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+433.276 didShow main collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+433.294 fold probe updateConstraints run 13: size=951x669 fold=none
+------- open-third
+438.084 viewWillTransition to 669x951 collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+438.084 willHide aside collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=true
+438.087 fold probe GeometryReader: size=669x951 fold=none
+438.087 fold probe onGeometryChange: size=669x951 fold=none
+438.089 columns laid out: size=669x951 fold=none collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=false
+438.101 fold probe updateConstraints run 14: size=669x951 fold=none
+438.102 fold probe layoutSubviews run 20: size=669x951 fold=none
+438.716 didHide aside collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=false
+------- portrait
+445.407 fold probe updateConstraints run 16: size=669x951 fold=0,455 669x40
+445.408 fold probe GeometryReader: size=669x951 fold=0,455 669x40
+445.408 fold probe onGeometryChange: size=669x951 fold=0,455 669x40
+445.410 columns laid out: size=669x951 fold=0,455 669x40 collapsed=false mode=1 sidebar=["listing"] main=["S1", "S1+"] inspector=false
+445.411 fold probe layoutSubviews run 22: size=669x951 fold=0,455 669x40
+------- laptop

@@ -8,6 +8,21 @@ struct ShamanApp: App {
 
   var body: some Scene {
     WindowGroup {
+      #if DEBUG
+        if Lab.variant != nil {
+          ColumnsLab()
+        } else {
+          real
+        }
+      #else
+        real
+      #endif
+    }
+  }
+
+  @ViewBuilder
+  private var real: some View {
+    Group {
       switch opened {
       case .core(let core):
         #if DEBUG
