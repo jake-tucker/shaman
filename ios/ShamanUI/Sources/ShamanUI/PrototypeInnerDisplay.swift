@@ -83,7 +83,7 @@ final class Proto {
     func value(_ flag: String) -> String? {
       arguments.firstIndex(of: flag).flatMap { arguments.dropFirst($0 + 1).first }
     }
-    variant = value("--inner").flatMap(Variant.init) ?? .two
+    variant = value("--inner").flatMap(Variant.init) ?? .three
     empty = value("--inner-empty").flatMap(Empty.init) ?? .landing
     style = value("--inner-style").flatMap(Style.init) ?? .balanced
     pill = value("--inner-pill") != "off"
@@ -119,6 +119,7 @@ struct PrototypePill: View {
         Picker("Split view style", selection: $proto.style) {
           ForEach(Proto.Style.allCases, id: \.self) { Text($0.rawValue).tag($0) }
         }
+        ProtoConversationMenu()
       } label: {
         Text(verbatim: proto.variant.name)
           .font(.caption.weight(.semibold))
@@ -276,7 +277,7 @@ struct AsideColumn: View {
 /// PROTOTYPE: a line in a file on the Mac, from the simulator.
 func protoLog(_ line: String) {
   #if targetEnvironment(simulator)
-    let url = URL(fileURLWithPath: "/tmp/duo714/app.log")
+    let url = URL(fileURLWithPath: "/tmp/duo717/app.log")
     let data = Data(("\(Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 1000)) " + line + "\n").utf8)
     if let handle = try? FileHandle(forWritingTo: url) {
       handle.seekToEndOfFile()

@@ -45,6 +45,45 @@ struct ConversationGeometry {
     place()
   }
 
+  /// PROTOTYPE: what the rows measured at each width they have been drawn at, so that a width come back to stands
+  /// its rows exactly where they stood.
+  private var remembered: [Int: [String: CGFloat]] = [:]
+  private var widths: [Int] = []
+
+  /// PROTOTYPE: puts by what was measured at `old` and takes up what was measured at `new`, where anything was.
+  mutating func turn(from old: CGFloat, to new: CGFloat) {
+    let was = Int(old.rounded())
+    let now = Int(new.rounded())
+    remembered[was] = heights
+    widths.removeAll { $0 == was }
+    widths.append(was)
+    // A resize passes through widths that are never come back to.
+    while widths.count > 8 {
+      remembered[widths.removeFirst()] = nil
+    }
+    heights = (remembered[now] ?? [:]).filter { indices[$0.key] != nil }
+    shrinking = [:]
+    place()
+  }
+
+  /// PROTOTYPE: the row standing at the depth `y`, and how far through it `y` is: as a share of its height, and,
+  /// where `y` falls in the space above it, as points above its head.
+  func anchor(at y: CGFloat) -> ConversationPlace? {
+    guard !ids.isEmpty else { return nil }
+    let index = min(partition { tops[$0] + height(of: ids[$0]) > y }, ids.count - 1)
+    let top = tops[index]
+    let height = height(of: ids[index])
+    let within = y - top
+    return ConversationPlace(
+      id: ids[index], share: height > 0 ? min(1, max(0, within / height)) : 0, above: min(0, within))
+  }
+
+  /// PROTOTYPE: the depth `place` stands at now.
+  func depth(of place: ConversationPlace) -> CGFloat? {
+    guard let index = indices[place.id] else { return nil }
+    return tops[index] + place.share * height(of: place.id) + place.above
+  }
+
   /// The row at `index`'s frame across `width`.
   func frame(of index: Int, width: CGFloat) -> CGRect {
     CGRect(x: 0, y: tops[index], width: width, height: height(of: ids[index]))
@@ -139,15 +178,26 @@ struct ConversationGeometry {
   }
 }
 
+/// PROTOTYPE: where the reader stands in a conversation away from its foot: the row at the top of what they see, and
+/// how far through it they are.
+struct ConversationPlace: Equatable {
+  let id: String
+  let share: CGFloat
+  let above: CGFloat
+}
+
 /// One row of an open conversation as its list holds it: an item, or a Prompt queued at the foot.
 enum ConversationRow: Equatable {
   case item(ConversationItem)
   case queued(QueuedPrompt)
+  /// PROTOTYPE: one block of an Agent's answer, standing as a row of its own.
+  case block(id: String, markdown: String, model: String?)
 
   var id: String {
     switch self {
     case .item(let item): "item:\(item.id)"
     case .queued(let queued): "queued:\(queued.prompt)"
+    case .block(let id, _, _): "block:\(id)"
     }
   }
 }
@@ -234,6 +284,59 @@ struct ConversationList<Row: View>: UIViewRepresentable {
   private var settling: Task<Void, Never>?
   private let clock: () -> TimeInterval
 
+  /// PROTOTYPE: where the reader last scrolled to, away from the foot. Only a scroll of theirs changes it, so a
+  /// width come back to with no scroll between returns exactly.
+  private(set) var place: ConversationPlace?
+  /// PROTOTYPE: whether the list stands at `place` rather than wherever its offset fell, from a change of width
+  /// until the reader scrolls.
+  private(set) var holding = false
+
+  /// PROTOTYPE: takes where the reader stands now as their place.
+  func capture() {
+    guard let view else { return }
+    place = geometry.anchor(at: view.visibleHead)
+  }
+
+  /// PROTOTYPE: the list's width changed.
+  func turned(from old: CGFloat, to new: CGFloat) {
+    guard ProtoC.shared.place == .kept else {
+      geometry.forget()
+      protoLog("list width \(Int(old)) -> \(Int(new)): forgot, following \(following)")
+      return
+    }
+    if !following, place == nil {
+      capture()
+    }
+    geometry.turn(from: old, to: new)
+    holding = !following && place != nil
+    protoLog(
+      "list width \(Int(old)) -> \(Int(new)): following \(following) holding \(holding) place \(String(describing: place))"
+    )
+  }
+
+  /// PROTOTYPE: the offset that stands the list at the reader's place.
+  var held: CGFloat? {
+    guard holding, let place, let view else { return nil }
+    return geometry.depth(of: place).map { $0 - view.adjustedContentInset.top }
+  }
+
+  func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    // The reader's own scroll, not the list's adjustments nor the system's.
+    if scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating {
+      holding = false
+      if following {
+        place = nil
+      } else {
+        capture()
+      }
+    }
+  }
+
+  func scrollViewDidScrollToTop(_ scrollView: UIScrollView) {
+    holding = false
+    capture()
+  }
+
   init(clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
     self.clock = clock
   }
@@ -300,7 +403,7 @@ struct ConversationList<Row: View>: UIViewRepresentable {
     let moved = geometry.measured(id, at: height, foot: view.visibleFoot)
     let context = UICollectionViewLayoutInvalidationContext()
     // At the foot the list goes back to the foot; above it, what the reader sees stays where it stands.
-    if moved != 0, !following {
+    if moved != 0, !following, !holding {
       context.contentOffsetAdjustment = CGPoint(x: 0, y: moved)
     }
     view.collectionViewLayout.invalidateLayout(with: context)
@@ -323,6 +426,7 @@ struct ConversationList<Row: View>: UIViewRepresentable {
 
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
     following = false
+    holding = false
   }
 
   func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
@@ -351,6 +455,11 @@ struct ConversationList<Row: View>: UIViewRepresentable {
   /// The reader at rest stands at the foot where they are near it.
   private func rested() {
     following = view.map { $0.distanceToFoot <= Self.near } ?? false
+    if following {
+      place = nil
+    } else if !holding {
+      capture()
+    }
   }
 }
 
@@ -401,8 +510,38 @@ final class FootCollectionView: UICollectionView {
     max(-adjustedContentInset.top, contentSize.height + adjustedContentInset.bottom - bounds.height)
   }
 
+  /// PROTOTYPE: the depth of the head of what the reader sees, in what the list holds.
+  var visibleHead: CGFloat {
+    contentOffset.y + adjustedContentInset.top
+  }
+
+  private var regionsSeen = ""
+
+  /// PROTOTYPE: whether a collection view in a `UIViewRepresentable` is told of the fold, and laid out again as it
+  /// comes and goes.
+  private func askOfTheFold() {
+    guard #available(iOS 27.1, *) else { return }
+    let regions = reservedRegions(kind: .division, options: [.includeInactive])
+    let seen = regions.map { "\($0.isActive ? "active" : "inactive") \($0.frame) margins \($0.margins)" }
+      .joined(separator: "; ")
+    let all = "bounds \(Int(bounds.width))x\(Int(bounds.height)) insets \(adjustedContentInset) margins \(layoutMargins) fold [\(seen)]"
+    if all != regionsSeen {
+      regionsSeen = all
+      protoLog("list laid out: \(all)")
+    }
+  }
+
   override func layoutSubviews() {
     adjust { super.layoutSubviews() }
+    askOfTheFold()
+    if let held = follower?.held, !isTracking, !isDecelerating {
+      let to = min(max(held, -adjustedContentInset.top), foot)
+      if abs(contentOffset.y - to) > 0.5 {
+        protoLog("list held: offset \(Int(contentOffset.y)) -> \(Int(to)) of \(Int(contentSize.height))")
+        adjust { setContentOffset(CGPoint(x: contentOffset.x, y: to), animated: false) }
+      }
+      return
+    }
     guard follower?.following == true, !isTracking, !isDecelerating else { return }
     let foot = foot
     if abs(contentOffset.y - foot) > 0.5 {
@@ -482,6 +621,7 @@ final class FootCollectionView: UICollectionView {
     guard abs(to - contentOffset.y) > 0.5 else { return false }
     follower?.following = to >= foot - 0.5
     setContentOffset(CGPoint(x: contentOffset.x, y: to), animated: false)
+    follower?.scrollViewDidScrollToTop(self)
     UIAccessibility.post(notification: .pageScrolled, argument: nil)
     return true
   }
@@ -512,7 +652,7 @@ final class ConversationLayout: UICollectionViewLayout {
     if width != self.width {
       // Drawn across another width, every row measures anew.
       if self.width != 0 {
-        follower?.geometry.forget()
+        follower?.turned(from: self.width, to: width)
       }
       self.width = width
     }
@@ -561,7 +701,7 @@ final class ConversationLayout: UICollectionViewLayout {
     else { return context }
     let id = geometry.ids[original.indexPath.item]
     let moved = follower.geometry.measured(id, at: preferred.size.height, foot: collectionView.visibleFoot)
-    if moved != 0, !follower.following {
+    if moved != 0, !follower.following, !follower.holding {
       context.contentOffsetAdjustment = CGPoint(x: 0, y: moved)
     }
     return context

@@ -64,20 +64,24 @@ struct SessionScreen: View {
       default: stack?.path.append(pushed)
       }
     }
-    .safeAreaInset(edge: .bottom, spacing: 0) {
-      SessionFoot(model: model) { opens in
-        if let stack {
-          let tree = stack.review(opens, over: model.route)
-          if tree, asides {
-            aside.show(.tree)
-          } else {
-            showingTree = tree
+    .modifier(
+      ProtoFoot {
+        SessionFoot(model: model) { opens in
+          if let stack {
+            let tree = stack.review(opens, over: model.route)
+            if tree, asides {
+              aside.show(.tree)
+            } else {
+              showingTree = tree
+            }
+          } else if opens == .interventions {
+            model.review()
           }
-        } else if opens == .interventions {
-          model.review()
         }
       }
-    }
+    )
+    .background { ProtoMarginsReader() }
+    .toolbarMinimizationBehavior(ProtoC.shared.title.behavior, for: .navigationBar)
     .safeAreaInset(edge: .top) {
       // While a sheet stands, its own banner says it: an Intervention's, or the tree's.
       if let banner = model.banner, model.presented == nil, !showingTree {
@@ -191,27 +195,77 @@ private struct ConversationView: View {
   let push: (Pushed) -> Void
 
   var body: some View {
+    let blocks = ProtoC.shared.rows == .blocks
     let rows =
-      model.conversation.rows.map(ConversationRow.item) + (model.frame?.queued ?? []).map(ConversationRow.queued)
+      model.conversation.rows.flatMap { item -> [ConversationRow] in
+        if blocks, case .agentMessage(let markdown, let name, _) = item.kind {
+          return protoBlocks(markdown).enumerated().map { index, block in
+            .block(id: "\(item.id)#\(index)", markdown: block, model: index == 0 ? name : nil)
+          }
+        }
+        return [.item(item)]
+      } + (model.frame?.queued ?? []).map(ConversationRow.queued)
     // Read here, for the rows are drawn later, as the list draws each.
     let model = model
     let push = push
     ConversationList(rows: rows, sent: model.sent) { row in
-      Group {
+      ProtoRow {
         switch row {
         case .item(let item):
           ItemView(item: item, route: model.route, model: model, push: push)
         case .queued(let queued):
           QueuedBubble(queued: queued, model: model)
+        case .block(_, let markdown, let name):
+          AgentMessage(markdown: markdown, model: name)
         }
       }
-      .padding(.horizontal, 14)
     }
     // Beneath the navigation bar, which the list insets itself for; above the foot, which keeps the room it needs.
     .ignoresSafeArea(.container, edges: .top)
     .overlay {
       ForEach(model.conversation.marks, id: \.id) { mark in
         ItemView(item: mark, route: model.route, model: model, push: push)
+      }
+    }
+  }
+}
+
+/// PROTOTYPE: a row at the margins and the measure the pill says.
+private struct ProtoRow<Content: View>: View {
+  @ViewBuilder let content: Content
+
+  var body: some View {
+    let sides = ProtoC.shared.sides(fixed: 14)
+    content
+      .padding(.leading, sides.leading)
+      .padding(.trailing, sides.trailing)
+      .protoMeasured()
+  }
+}
+
+/// PROTOTYPE: the foot as a `safeAreaInset` or a `safeAreaBar`.
+private struct ProtoFoot<Foot: View>: ViewModifier {
+  @ViewBuilder let foot: Foot
+
+  func body(content: Content) -> some View {
+    switch ProtoC.shared.foot {
+    case .inset: content.safeAreaInset(edge: .bottom, spacing: 0) { foot }
+    case .bar: content.safeAreaBar(edge: .bottom, spacing: 0) { foot }
+    }
+  }
+}
+
+/// PROTOTYPE: the foot's ground: none of its own as a `safeAreaBar`, and else the bar's material, in its column or
+/// reaching under the side bar.
+private struct ProtoGround: ViewModifier {
+  func body(content: Content) -> some View {
+    let proto = ProtoC.shared
+    switch (proto.foot, proto.ground) {
+    case (.bar, _): content
+    case (.inset, .column): content.background(.bar)
+    case (.inset, .under):
+      content.background {
+        Rectangle().fill(.bar).ignoresSafeArea(.container, edges: [.horizontal, .bottom])
       }
     }
   }
@@ -700,9 +754,12 @@ private struct SessionFoot: View {
           ComposerView(composer: composer, model: model)
         }
       }
-      .padding(.horizontal, 12)
+      .padding(.leading, ProtoC.shared.sides(fixed: 12).leading)
+      .padding(.trailing, ProtoC.shared.sides(fixed: 12).trailing)
+      .protoMeasured()
       .padding(.vertical, 8)
-      .background(.bar)
+      .protoBand()
+      .modifier(ProtoGround())
     }
   }
 }
