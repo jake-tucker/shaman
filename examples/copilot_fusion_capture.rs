@@ -59,14 +59,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use github_copilot_sdk::{
-    CapiSessionOptions, Client, CopilotExpAssignmentResponse, DeliveryMode, ResumeSessionConfig,
-    SessionId,
+use copilot_sdk::{
+    CapiSessionOptions, Client, ClientMode, CopilotExpAssignmentResponse, DeliveryMode,
+    ResumeSessionOptions, SessionId,
     handler::ApproveAllHandler,
     session::Session,
     session_events::AutoTier,
     subscription::RecvErrorKind,
-    types::{MessageOptions, SessionConfig, SessionEvent, SetModelOptions},
+    types::{CreateSessionOptions, MessageOptions, SessionEvent, SetModelOptions},
 };
 use serde_json::{Value, json};
 use tokio::{
@@ -143,31 +143,46 @@ impl Run {
 
     /// A Session on `auto`, staged on the tier unless it is `default`, with the assignment if it is
     /// `assigned`.
-    fn config(&self, tier: &str, assigned: bool) -> Result<SessionConfig, Failure> {
-        let mut config = SessionConfig::default()
+    fn config(&self, tier: &str, assigned: bool) -> Result<CreateSessionOptions, Failure> {
+        let mut config = CreateSessionOptions::default()
             .with_model("auto")
-            .with_streaming(true)
-            .with_include_sub_agent_streaming_events(true)
-            .with_permission_handler(Arc::new(ApproveAllHandler));
+            .with_events(|events| {
+                events
+                    .with_streaming(true)
+                    .with_include_sub_agent_streaming_events(true)
+            })
+            .with_permissions(|permissions| {
+                permissions.with_on_request(Arc::new(ApproveAllHandler))
+            });
         if tier != "default" {
-            config = config.with_capi(CapiSessionOptions::new().with_auto_tier(auto_tier(tier)?));
+            let capi = CapiSessionOptions::new().with_auto_tier(auto_tier(tier)?);
+            config = config.with_github(|github| github.with_capi(capi));
         }
         if assigned {
-            config = config.with_exp_assignments(self.assigned()?);
+            let assignment = self.assigned()?;
+            config =
+                config.with_experiments(|experiments| experiments.with_assignments(assignment));
         }
         if let Ok(models) = std::env::var("PROBE_ALLOWED_MODELS") {
-            config = config.with_allowed_models(models.split(',').map(str::to_owned));
+            config = config.with_policy(|policy| {
+                policy.with_allowed_models(models.split(',').map(str::to_owned))
+            });
         }
         Ok(config)
     }
 
-    fn resume_config(&self, session_id: &SessionId, assigned: bool) -> ResumeSessionConfig {
-        let mut config = ResumeSessionConfig::new(session_id.clone())
-            .with_streaming(true)
-            .with_include_sub_agent_streaming_events(true)
-            .with_permission_handler(Arc::new(ApproveAllHandler));
+    fn resume_config(&self, session_id: &SessionId, assigned: bool) -> ResumeSessionOptions {
+        let mut config = ResumeSessionOptions::new(session_id.clone())
+            .with_events(|events| {
+                events
+                    .with_streaming(true)
+                    .with_include_sub_agent_streaming_events(true)
+            })
+            .with_permissions(|permissions| {
+                permissions.with_on_request(Arc::new(ApproveAllHandler))
+            });
         if assigned {
-            config.exp_assignments = self.assignment.clone();
+            config.experiments.assignments = self.assignment.clone();
         }
         config
     }
@@ -184,7 +199,7 @@ impl Run {
         &'run self,
         client: &Client,
         label: &str,
-        config: SessionConfig,
+        config: CreateSessionOptions,
     ) -> Result<Option<Live<'run>>, Failure> {
         let prepared = client.prepare_session(config)?;
         let events = self.tap(prepared.subscribe());
@@ -197,7 +212,7 @@ impl Run {
         &'run self,
         client: &Client,
         label: &str,
-        config: ResumeSessionConfig,
+        config: ResumeSessionOptions,
     ) -> Result<Option<Live<'run>>, Failure> {
         let prepared = client.prepare_resume_session(config)?;
         let events = self.tap(prepared.subscribe());
@@ -211,7 +226,7 @@ impl Run {
         label: &str,
         begun: Instant,
         events: UnboundedReceiver<SessionEvent>,
-        outcome: Result<Session, github_copilot_sdk::Error>,
+        outcome: Result<Session, copilot_sdk::Error>,
     ) -> Result<Option<Live<'run>>, Failure> {
         let took_ms = begun.elapsed().as_millis();
         match outcome {
@@ -240,7 +255,7 @@ impl Run {
     /// Records every event as it arrives, whatever the run is waiting on, and hands them on.
     fn tap(
         &self,
-        mut subscription: github_copilot_sdk::subscription::EventSubscription,
+        mut subscription: copilot_sdk::subscription::EventSubscription,
     ) -> UnboundedReceiver<SessionEvent> {
         let (sender, receiver) = mpsc::unbounded_channel();
         let started = self.started;
@@ -550,7 +565,12 @@ async fn start_cli(run: &Run) -> Result<(Client, Child), Failure> {
         .spawn()?;
     let stdin = child.stdin.take().ok_or("the CLI's stdin is piped")?;
     let stdout = child.stdout.take().ok_or("the CLI's stdout is piped")?;
-    let client = Client::from_streams(stdout, stdin, std::env::current_dir()?)?;
+    let client = Client::from_streams(
+        ClientMode::CodingAgent,
+        stdout,
+        stdin,
+        std::env::current_dir()?,
+    )?;
     client.verify_protocol_version().await?;
     run.note(
         "cli_started",
@@ -907,7 +927,7 @@ async fn set_model(
     Ok(())
 }
 
-fn answered_debug<T: std::fmt::Debug>(answered: &Result<T, github_copilot_sdk::Error>) -> Value {
+fn answered_debug<T: std::fmt::Debug>(answered: &Result<T, copilot_sdk::Error>) -> Value {
     match answered {
         Ok(result) => json!({ "ok": format!("{result:?}") }),
         Err(error) => json!({ "error": error.to_string() }),
@@ -1172,11 +1192,15 @@ async fn clear(run: &Run) -> Result<(), Failure> {
 /// The way Shaman reaches a tier: a Session opened with no Model, listed, and then switched.
 async fn first_switch(run: &Run, tier: &str) -> Result<(), Failure> {
     let (client, child) = start_cli(run).await?;
-    let config = SessionConfig::default()
-        .with_streaming(true)
-        .with_include_sub_agent_streaming_events(true)
-        .with_permission_handler(Arc::new(ApproveAllHandler))
-        .with_exp_assignments(run.assigned()?);
+    let assignment = run.assigned()?;
+    let config = CreateSessionOptions::default()
+        .with_events(|events| {
+            events
+                .with_streaming(true)
+                .with_include_sub_agent_streaming_events(true)
+        })
+        .with_permissions(|permissions| permissions.with_on_request(Arc::new(ApproveAllHandler)))
+        .with_experiments(|experiments| experiments.with_assignments(assignment));
     let mut live = run
         .open(&client, "first-switch", config)
         .await?
@@ -1193,11 +1217,15 @@ async fn first_switch(run: &Run, tier: &str) -> Result<(), Failure> {
 /// What Copilot says a Session with the assignment holds when it never chose a tier.
 async fn plain(run: &Run) -> Result<(), Failure> {
     let (client, child) = start_cli(run).await?;
-    let config = SessionConfig::default()
-        .with_streaming(true)
-        .with_include_sub_agent_streaming_events(true)
-        .with_permission_handler(Arc::new(ApproveAllHandler))
-        .with_exp_assignments(run.assigned()?);
+    let assignment = run.assigned()?;
+    let config = CreateSessionOptions::default()
+        .with_events(|events| {
+            events
+                .with_streaming(true)
+                .with_include_sub_agent_streaming_events(true)
+        })
+        .with_permissions(|permissions| permissions.with_on_request(Arc::new(ApproveAllHandler)))
+        .with_experiments(|experiments| experiments.with_assignments(assignment));
     let mut live = run
         .open(&client, "plain", config)
         .await?
@@ -1241,19 +1269,21 @@ async fn store(run: &Run) -> Result<(), Failure> {
         ("errand-turn", true, true),
         ("conversation-turn", false, true),
     ] {
-        let mut config = SessionConfig::default()
-            .with_streaming(false)
-            .with_permission_handler(Arc::new(ApproveAllHandler));
+        let mut config = CreateSessionOptions::default()
+            .with_events(|events| events.with_streaming(false))
+            .with_permissions(|permissions| {
+                permissions.with_on_request(Arc::new(ApproveAllHandler))
+            });
         if with_turn {
             config = config.with_model("gpt-5.6-luna");
-            config.reasoning_effort = Some("none".to_owned());
+            config.inference.reasoning_effort = Some("none".to_owned());
         }
         if errand_settings {
             config = config
-                .with_available_tools(Vec::<String>::new())
-                .deny_all_permissions()
-                .with_enable_session_store(false)
-                .with_enable_skills(false);
+                .with_tools(|tools| tools.with_available_tools(Vec::<String>::new()))
+                .with_permissions(|permissions| permissions.deny_all_permissions())
+                .with_state(|state| state.with_enable_cross_session_store(false))
+                .with_skills(|skills| skills.with_enabled(false));
         }
         let mut live = run
             .open(&client, label, config)

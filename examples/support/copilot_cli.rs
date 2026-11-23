@@ -5,7 +5,7 @@
 //! stdio. `SHAMAN_COPILOT_PATH` names the CLI (default `copilot`).
 use std::{io, path::PathBuf, process::Stdio};
 
-use github_copilot_sdk::Client;
+use copilot_sdk::{Client, ClientMode};
 
 pub async fn start() -> io::Result<Client> {
     let program =
@@ -18,8 +18,13 @@ pub async fn start() -> io::Result<Client> {
     let stdin = child.stdin.take().expect("the CLI's stdin is piped");
     let stdout = child.stdout.take().expect("the CLI's stdout is piped");
     // The CLI serves stdio until its stdin closes, which stopping the client does.
-    let client =
-        Client::from_streams(stdout, stdin, std::env::current_dir()?).map_err(io::Error::other)?;
+    let client = Client::from_streams(
+        ClientMode::CodingAgent,
+        stdout,
+        stdin,
+        std::env::current_dir()?,
+    )
+    .map_err(io::Error::other)?;
     client
         .verify_protocol_version()
         .await

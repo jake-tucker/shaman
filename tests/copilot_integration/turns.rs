@@ -871,9 +871,9 @@ async fn a_prompt_streams_a_copilot_message_into_the_transcript_and_settles_the_
             .is_some_and(|id| !id.is_empty()),
         "Shaman generates the Copilot Session identifier before creation: {parameters}"
     );
-    assert_eq!(parameters["streaming"], Value::Bool(true));
+    assert_eq!(parameters["events"]["streaming"], Value::Bool(true));
     assert_eq!(
-        parameters["requestPermission"],
+        parameters["permissions"]["request"],
         Value::Bool(true),
         "Shaman installs the permission handler before opening the native Session"
     );
@@ -1480,7 +1480,7 @@ async fn managed_worktree_native_copilot_starts_at_prepared_root() {
     let request = copilot
         .requests()
         .into_iter()
-        .find(|r| r["method"] == "session.create" && r["params"]["streaming"] == true)
+        .find(|r| r["method"] == "session.create" && r["params"]["events"]["streaming"] == true)
         .unwrap();
     assert_eq!(
         request["params"]["workingDirectory"].as_str(),

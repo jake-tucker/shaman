@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use github_copilot_sdk::{
+use copilot_sdk::{
     CopilotExpAssignmentResponse, ExpConfigEntry, ExpFlagValue,
     rpc::{AutoTierDescriptor, AutoTierMetadata, AutoTierStatus},
 };
@@ -126,7 +126,7 @@ async fn listed_tiers(
 ) -> Result<Option<AutoTierMetadata>, ProviderError> {
     let config = least_capable_session_config()
         .with_working_directory(std::env::temp_dir())
-        .with_exp_assignments(fusion_tier_assignment());
+        .with_experiments(|experiments| experiments.with_assignments(fusion_tier_assignment()));
     let session_id = config
         .session_id
         .clone()

@@ -6,8 +6,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use github_copilot_sdk::{
-    SessionConfig, SessionId,
+use copilot_sdk::{
+    CreateSessionOptions, SessionId,
     rpc::{
         CommandsInvokeRequest, CommandsListRequest, Skill, SlashCommandInvocationResult,
         SlashCommandKind,
@@ -121,14 +121,14 @@ impl CopilotSkills {
     ) -> Result<SkillCatalog, ProviderError> {
         let generation = self.begin_discovery(execution_directory);
         let session_id = SessionId::new(uuid::Uuid::new_v4().to_string());
-        let config = SessionConfig::default()
+        let config = CreateSessionOptions::default()
             .with_session_id(session_id.clone())
             .with_client_name(COPILOT_CLIENT_NAME)
             .with_working_directory(execution_directory)
-            .with_streaming(false)
+            .with_events(|events| events.with_streaming(false))
             .with_enable_config_discovery(true)
-            .with_enable_skills(true)
-            .approve_all_permissions();
+            .with_skills(|skills| skills.with_enabled(true))
+            .with_permissions(|permissions| permissions.approve_all_permissions());
         let native = until_crash(
             handle,
             DISCOVERY_CONTEXT,
@@ -179,7 +179,10 @@ impl CopilotSkills {
         }
 
         let (Some(commands), Some(skills)) = (commands?, skills?) else {
-            return Ok(Self::incompatible_catalog(execution_directory));
+            return Ok(Self::unavailable_catalog(
+                execution_directory,
+                INCOMPATIBLE_MESSAGE.to_owned(),
+            ));
         };
         let mut commands = commands
             .commands
@@ -270,7 +273,9 @@ impl CopilotSkills {
         })
     }
 
-    pub(super) fn incompatible_catalog(execution_directory: &Path) -> SkillCatalog {
+    /// The catalog of a CLI whose Skills Shaman cannot reach, saying why and what fixes it in
+    /// `message`.
+    pub(super) fn unavailable_catalog(execution_directory: &Path, message: String) -> SkillCatalog {
         SkillCatalog {
             provider: ProviderId::new("copilot"),
             execution_directory: crate::protocol::ExecutionDirectory {
@@ -281,9 +286,7 @@ impl CopilotSkills {
                 max_distinct_invocations: Some(0),
                 supported_deliveries: Vec::new(),
             },
-            status: SkillCatalogStatus::Unavailable {
-                message: INCOMPATIBLE_MESSAGE.to_owned(),
-            },
+            status: SkillCatalogStatus::Unavailable { message },
         }
     }
 

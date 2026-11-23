@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use github_copilot_sdk::session_events::ToolExecutionStartData;
+use copilot_sdk::session_events::ToolExecutionStartData;
 use serde_json::Value;
 
 use super::super::command_presentation::{PresentedCommand, present_command};
@@ -215,7 +215,7 @@ fn shell_command(started: &ToolExecutionStartData) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use github_copilot_sdk::session_events::ToolExecutionStartShellToolInfo;
+    use copilot_sdk::session_events::ToolExecutionStartShellToolInfo;
     use serde_json::json;
 
     use super::*;

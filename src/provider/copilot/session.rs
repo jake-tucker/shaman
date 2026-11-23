@@ -22,8 +22,8 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use github_copilot_sdk::{
-    Attachment, DeliveryMode, MessageOptions, ResumeSessionConfig, SessionConfig,
+use copilot_sdk::{
+    Attachment, CreateSessionOptions, DeliveryMode, MessageOptions, ResumeSessionOptions,
     SessionId as CopilotSessionId, SetModelOptions, ToolSearchConfig,
     rpc::{CurrentModel, HistoryCompactRequest, HistoryCompactRequestTrigger, TasksCancelRequest},
     session::Session as NativeSession,
@@ -140,21 +140,26 @@ pub(super) async fn start_copilot_session(
         // would read as continuous while having forgotten everything, so the failure stands and the
         // Transcript the Session was restored with stays readable.
         Some(session_id) => {
-            let mut config = ResumeSessionConfig::new(session_id.clone())
+            let mut config = ResumeSessionOptions::new(session_id.clone())
                 .with_client_name(COPILOT_CLIENT_NAME)
                 .with_working_directory(request.execution_directory)
-                .with_streaming(true)
-                // Pinned rather than left to the CLI's default: a Subagent's deltas are its
-                // child Session's whole Transcript.
-                .with_include_sub_agent_streaming_events(true)
+                .with_events(|events| {
+                    events
+                        .with_streaming(true)
+                        // Pinned rather than left to the CLI's default: a Subagent's deltas are
+                        // its child Session's whole Transcript.
+                        .with_include_sub_agent_streaming_events(true)
+                })
                 .with_enable_config_discovery(true)
-                .with_enable_skills(true)
-                .with_tool_search(enabled_tool_search())
-                .with_permission_handler(approvals.clone())
-                .with_user_input_handler(questionnaires.clone());
-            config.mcp_servers = broker;
+                .with_skills(|skills| skills.with_enabled(true))
+                .with_tools(|tools| tools.with_search(enabled_tool_search()))
+                .with_permissions(|permissions| permissions.with_on_request(approvals.clone()))
+                .with_interaction(|interaction| {
+                    interaction.with_on_user_input_request(questionnaires.clone())
+                });
+            config.mcp.servers = broker;
             config.system_message = broker_note;
-            config.exp_assignments = exp_assignments;
+            config.experiments.assignments = exp_assignments;
             let native = until_crash(
                 &handle,
                 RESUME_CONTEXT,
@@ -167,22 +172,27 @@ pub(super) async fn start_copilot_session(
         // what gives the Session-scoped requests the CLI may issue mid-creation somewhere to land.
         None => {
             let session_id = CopilotSessionId::new(uuid::Uuid::new_v4().to_string());
-            let mut config = SessionConfig::default()
+            let mut config = CreateSessionOptions::default()
                 .with_session_id(session_id.clone())
                 .with_client_name(COPILOT_CLIENT_NAME)
                 .with_working_directory(request.execution_directory)
-                .with_streaming(true)
-                // Pinned rather than left to the CLI's default: a Subagent's deltas are its
-                // child Session's whole Transcript.
-                .with_include_sub_agent_streaming_events(true)
+                .with_events(|events| {
+                    events
+                        .with_streaming(true)
+                        // Pinned rather than left to the CLI's default: a Subagent's deltas are
+                        // its child Session's whole Transcript.
+                        .with_include_sub_agent_streaming_events(true)
+                })
                 .with_enable_config_discovery(true)
-                .with_enable_skills(true)
-                .with_tool_search(enabled_tool_search())
-                .with_permission_handler(approvals.clone())
-                .with_user_input_handler(questionnaires.clone());
-            config.mcp_servers = broker;
+                .with_skills(|skills| skills.with_enabled(true))
+                .with_tools(|tools| tools.with_search(enabled_tool_search()))
+                .with_permissions(|permissions| permissions.with_on_request(approvals.clone()))
+                .with_interaction(|interaction| {
+                    interaction.with_on_user_input_request(questionnaires.clone())
+                });
+            config.mcp.servers = broker;
             config.system_message = broker_note;
-            config.exp_assignments = exp_assignments;
+            config.experiments.assignments = exp_assignments;
             let native = until_crash(
                 &handle,
                 STARTUP_CONTEXT,
@@ -328,7 +338,7 @@ fn known_session_id(
 pub(super) async fn until_crash<T>(
     handle: &SharedHarnessHandle<CopilotConnection>,
     context: &str,
-    work: impl Future<Output = Result<T, github_copilot_sdk::Error>>,
+    work: impl Future<Output = Result<T, copilot_sdk::Error>>,
 ) -> Result<T, ProviderError> {
     tokio::select! {
         biased;
@@ -900,7 +910,7 @@ impl CopilotSession {
         &self,
         wanted: AgentSelection,
         without_the_tier: SetModelOptions,
-        refusal: &github_copilot_sdk::Error,
+        refusal: &copilot_sdk::Error,
         held_tier: Option<String>,
     ) -> Result<AppliedSelection, ProviderError> {
         let refused = wanted
@@ -1432,7 +1442,7 @@ impl ProviderSession for CopilotSession {
 mod tests {
     use serde_json::json;
 
-    use github_copilot_sdk::{rpc::CurrentModel, session_events::AutoTier};
+    use copilot_sdk::{rpc::CurrentModel, session_events::AutoTier};
 
     use super::{CopilotSessionId, agent_selection, known_session_id, lower_selection_options};
     use crate::{
@@ -1495,7 +1505,7 @@ mod tests {
             lower_selection_options(&selection)
                 .expect("a tier lowers")
                 .auto_tier,
-            Some(github_copilot_sdk::types::AutoTierPreference::Tier(
+            Some(copilot_sdk::types::AutoTierPreference::Tier(
                 AutoTier::Custom("hydrafusion".to_owned())
             ))
         );

@@ -124,8 +124,7 @@ use std::{
     sync::{Arc, Mutex as StdMutex},
 };
 
-use futures_util::stream;
-use github_copilot_sdk::{
+use copilot_sdk::{
     EventSubscription, SessionEvent,
     rpc::{TaskExecutionMode, TaskShellInfo, TaskShellInfoAttachmentMode, TaskStatus},
     session::Session as NativeSession,
@@ -141,6 +140,7 @@ use github_copilot_sdk::{
     },
     subscription::RecvErrorKind,
 };
+use futures_util::stream;
 use tokio::{
     sync::{Notify, mpsc},
     time::{Duration, timeout},
@@ -1712,7 +1712,7 @@ fn queue_projected(events: &mut CopilotEvents, event: TimelineEvent) {
         SessionEventType::PermissionRequested => {
             if let Some(request_id) = event.data["requestId"]
                 .as_str()
-                .map(github_copilot_sdk::RequestId::new)
+                .map(copilot_sdk::RequestId::new)
             {
                 let attribution = event
                     .agent_id
@@ -1726,7 +1726,7 @@ fn queue_projected(events: &mut CopilotEvents, event: TimelineEvent) {
         SessionEventType::PermissionCompleted => {
             if let Some(request_id) = event.data["requestId"]
                 .as_str()
-                .map(github_copilot_sdk::RequestId::new)
+                .map(copilot_sdk::RequestId::new)
                 && let Some(withdrawn) = events.approvals.complete(&request_id)
             {
                 events.pending.push_back(Ok(withdrawn));
@@ -1933,7 +1933,6 @@ fn project_session_event(
                 project_usage_event(streams, &event, &correlation.pricing)?,
             ));
             let conversation = is_conversation_model_call(
-                &event,
                 usage.interaction_type.as_deref(),
                 usage.initiator.as_deref(),
                 ConversationKind::Subagent,
@@ -2145,7 +2144,6 @@ fn project_session_event(
         // the conversation's Prompt Cache lapses is no Usage, and is taken.
         SessionEventType::AssistantUsage if correlation.is_compacting_on_request() => {
             Ok(reported::<AssistantUsageData>(&event)
-                .filter(|_| !has_parent_tool_call(&event))
                 .and_then(|usage| reported_lapse(&event, &usage))
                 .map(|lapse| attributed(None, lapse))
                 .into_iter()
@@ -2168,7 +2166,6 @@ fn project_session_event(
                 project_usage_event(&mut turn.streams, &event, &correlation.pricing)?,
             )];
             let conversation = is_conversation_model_call(
-                &event,
                 usage.interaction_type.as_deref(),
                 usage.initiator.as_deref(),
                 ConversationKind::Main,
@@ -2294,7 +2291,7 @@ fn project_session_event(
                 .turn
                 .as_mut()
                 .expect("the main conversation's streams live inside its Turn");
-            let current = if compacting || previous_call || has_parent_tool_call(&event) {
+            let current = if compacting || previous_call {
                 None
             } else {
                 turn.streams
@@ -2370,15 +2367,11 @@ struct ModelRouting<'a> {
 }
 
 fn is_conversation_model_call(
-    event: &SessionEvent,
     interaction_type: Option<&str>,
     initiator: Option<&str>,
     conversation: ConversationKind,
     compacting: bool,
 ) -> bool {
-    if matches!(conversation, ConversationKind::Main) && has_parent_tool_call(event) {
-        return false;
-    }
     match (interaction_type, conversation) {
         (Some("conversation-agent"), ConversationKind::Main)
         | (Some("conversation-subagent"), ConversationKind::Subagent) => true,
@@ -2412,17 +2405,23 @@ fn is_conversation_model_failure(
     conversation: ConversationKind,
     compacting: bool,
 ) -> bool {
-    matches!(
-        (&failure.source, conversation),
-        (ModelCallFailureSource::TopLevel, ConversationKind::Main)
-            | (ModelCallFailureSource::Subagent, ConversationKind::Subagent)
-    ) && is_conversation_model_call(
-        event,
-        failure.interaction_type.as_deref(),
-        failure.initiator.as_deref(),
-        conversation,
-        compacting,
-    )
+    // A failure still names the call that spawned the conversation it happened in, which a usage
+    // report or a message no longer does: one naming a spawn under no Subagent's envelope is not
+    // the main conversation's own.
+    let unscoped_child =
+        matches!(conversation, ConversationKind::Main) && has_parent_tool_call(event);
+    !unscoped_child
+        && matches!(
+            (&failure.source, conversation),
+            (ModelCallFailureSource::TopLevel, ConversationKind::Main)
+                | (ModelCallFailureSource::Subagent, ConversationKind::Subagent)
+        )
+        && is_conversation_model_call(
+            failure.interaction_type.as_deref(),
+            failure.initiator.as_deref(),
+            conversation,
+            compacting,
+        )
 }
 
 fn reported_model_call(
@@ -2758,15 +2757,12 @@ fn project_conversation_event(
                         .and_then(|route| route.source_model.as_deref()),
                 )
             });
-            let unscoped_child = matches!(routing.conversation, ConversationKind::Main)
-                && has_parent_tool_call(event);
             let reported_id = message.api_call_id.as_deref().filter(|id| !id.is_empty());
-            let current_call = !unscoped_child
-                && streams.observe_model_call(
-                    reported_id,
-                    routing.previous_calls,
-                    routing.selected.is_some(),
-                );
+            let current_call = streams.observe_model_call(
+                reported_id,
+                routing.previous_calls,
+                routing.selected.is_some(),
+            );
             let auto_call = current_call
                 && !reported_id.is_some_and(|id| streams.fixed_model_calls.contains(id))
                 && !(reported_id.is_none() && streams.anonymous_fixed_call);
@@ -2947,9 +2943,9 @@ fn project_conversation_event(
             },
         )),
         // A running shell streams its output as `tool.shell_output` chunks, each appending to what
-        // came before. The `tool.execution_partial_result` Copilot still sends beside them is the
-        // output so far, repeated whole each time, so it carries nothing the chunks have not
-        // (docs/validation/copilot-tool-output-streaming.md).
+        // came before. The `tool.execution_partial_result` an older CLI sent beside them was the
+        // output so far, repeated whole each time, so it carried nothing the chunks had not
+        // (docs/validation/copilot-tool-output-streaming.md), and the SDK no longer names it.
         SessionEventType::ToolShellOutput => Ok(reported(event).map_or_else(
             Vec::new,
             |output: ToolShellOutputData| {
@@ -5496,7 +5492,7 @@ mod tests {
     }
 
     #[test]
-    fn unclassified_sampling_and_child_messages_are_not_root_auto_evidence() {
+    fn unclassified_sampling_is_not_root_auto_evidence() {
         let mut correlation = with_subagent();
         correlation.selection.model = ModelId::new(AUTO_MODEL_ID);
         let sampling = project(
@@ -5516,19 +5512,6 @@ mod tests {
             !sampling
                 .iter()
                 .any(|event| matches!(event, ProviderEvent::ModelCallRecorded { .. }))
-        );
-        let child = project(
-            &mut correlation,
-            "assistant.message",
-            json!({
-                "messageId": "child-message", "content": "Child answer",
-                "model": "child-model", "parentToolCallId": "t-spawn",
-            }),
-        );
-        assert!(
-            !child
-                .iter()
-                .any(|event| matches!(event, ProviderEvent::AgentMessageModelKnown { .. }))
         );
     }
 
@@ -5951,29 +5934,25 @@ mod tests {
 
     #[test]
     fn model_calls_exclude_other_conversations_and_background_work_without_losing_usage() {
-        for (child, interaction, parent_tool, expected) in [
-            (false, None, false, true),
-            (false, Some("conversation-agent"), false, true),
-            (false, Some("conversation-subagent"), false, false),
-            (false, Some("conversation-compaction"), false, false),
-            (false, Some("conversation-background"), false, false),
-            (false, Some("conversation-sampling"), false, false),
-            (false, Some("future-interaction"), false, false),
-            (false, None, true, false),
-            (true, None, false, true),
-            (true, Some("conversation-subagent"), false, true),
-            (true, Some("conversation-agent"), false, false),
-            (true, Some("conversation-compaction"), false, false),
+        for (child, interaction, expected) in [
+            (false, None, true),
+            (false, Some("conversation-agent"), true),
+            (false, Some("conversation-subagent"), false),
+            (false, Some("conversation-compaction"), false),
+            (false, Some("conversation-background"), false),
+            (false, Some("conversation-sampling"), false),
+            (false, Some("future-interaction"), false),
+            (true, None, true),
+            (true, Some("conversation-subagent"), true),
+            (true, Some("conversation-agent"), false),
+            (true, Some("conversation-compaction"), false),
         ] {
             let mut correlation = with_subagent();
             correlation.selection.model = ModelId::new(AUTO_MODEL_ID);
-            let mut data = json!({
+            let data = json!({
                 "apiCallId": "call", "model": "reported-model",
                 "isAuto": true, "inputTokens": 1, "interactionType": interaction,
             });
-            if parent_tool {
-                data["parentToolCallId"] = json!("child-tool");
-            }
             let event = if child {
                 agent_event("agent-1", "assistant.usage", data)
             } else {
@@ -5985,14 +5964,14 @@ mod tests {
                     &event.event,
                     ProviderEvent::Usage { usage, .. } if usage.fresh_input_tokens == Some(1)
                 )),
-                "usage must remain accounted for {child:?} {interaction:?} {parent_tool:?}"
+                "usage must remain accounted for {child:?} {interaction:?}"
             );
             assert_eq!(
                 projected
                     .iter()
                     .any(|event| matches!(event.event, ProviderEvent::ModelCallRecorded { .. })),
                 expected,
-                "call attribution for child={child}, interaction={interaction:?}, parent_tool={parent_tool}",
+                "call attribution for child={child}, interaction={interaction:?}",
             );
         }
     }

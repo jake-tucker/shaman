@@ -256,7 +256,7 @@ async fn a_reopened_session_resumes_its_persisted_copilot_session_after_a_restar
             expected.to_string_lossy().as_ref()
         );
         assert_eq!(
-            request["params"]["toolSearch"],
+            request["params"]["tools"]["search"],
             serde_json::json!({"enabled": true}),
             "{method} turns tool search on rather than leaving it to the CLI's rollout"
         );
@@ -375,7 +375,7 @@ async fn resumed_copilot_sessions_register_and_answer_native_questionnaires() {
         })
         .unwrap();
     assert_eq!(
-        fixture.wait_for_request("session.resume").await["params"]["requestUserInput"],
+        fixture.wait_for_request("session.resume").await["params"]["interaction"]["requestUserInput"],
         true
     );
     live.client

@@ -8,7 +8,7 @@
 
 use std::collections::HashSet;
 
-use github_copilot_sdk::{
+use copilot_sdk::{
     rpc::{
         Model, ModelBillingPromo, ModelBillingTokenPrices, ModelMessage, ModelPickerCategory,
         ModelPickerPriceCategory, ModelPolicyState,
@@ -173,14 +173,12 @@ pub(super) fn token_prices(prices: &ModelBillingTokenPrices) -> Option<ModelPric
         ($tier:expr, $prices:expr) => {{
             let prices = $prices;
             let price = |units: Option<f64>| units.and_then(ModelPrice::from_units);
-            #[allow(deprecated)]
-            let cache_read = prices.cache_read_price.or(prices.cache_price);
             ModelPriceTier {
                 label: humanized_wire_id(&tier_id($tier)),
                 max_prompt_tokens: prices.max_prompt_tokens.and_then(token_count),
                 input: price(prices.input_price),
                 output: price(prices.output_price),
-                cache_read: price(cache_read),
+                cache_read: price(prices.cache_read_price),
                 cache_write: price(prices.cache_write_price),
                 cache_write_1h: price(prices.cache_write1h_price),
             }

@@ -8,9 +8,10 @@ use crate::copilot_integration::{
         next_skill_catalog, receive_initial_state,
     },
     support::{
-        COPILOT_MODELS, ScriptedCopilot, connect_arm, create_session_arm, current_model_arm,
-        delete_session_arm, detach_session_arm, models_arm, permission_decision_arm, send_arm,
-        session_where, settled_session, signed_in_arm, upgradable_connect_arm,
+        COPILOT_MODELS, NEWER_PROTOCOL, ScriptedCopilot, connect_arm, create_session_arm,
+        current_model_arm, delete_session_arm, detach_session_arm, models_arm,
+        permission_decision_arm, send_arm, session_where, settled_session, signed_in_arm,
+        upgradable_connect_arm,
     },
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -48,7 +49,7 @@ fn partially_invalid_command_catalog_arm() -> &'static str {
 
 #[tokio::test]
 async fn an_incompatible_pinned_cli_reports_copilot_skills_actionably_unavailable() {
-    let copilot = ScriptedCopilot::new(&upgradable_connect_arm());
+    let copilot = ScriptedCopilot::new(&upgradable_connect_arm(NEWER_PROTOCOL));
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
     let workspace = tempfile::tempdir().expect("create valid Workspace");
     let channel = "copilot-skill-incompatible-handshake";
@@ -78,7 +79,10 @@ async fn an_incompatible_pinned_cli_reports_copilot_skills_actionably_unavailabl
     let SkillCatalogStatus::Unavailable { message } = catalog.status else {
         panic!("incompatible pinned CLI makes Copilot Skills unavailable");
     };
-    assert!(message.contains("update the Copilot CLI"));
+    assert!(
+        message.contains("update Shaman"),
+        "a CLI ahead of Shaman is fixed by updating Shaman, got: {message}"
+    );
     assert_eq!(catalog.capabilities.max_distinct_invocations, Some(0));
 
     drop(client);
@@ -304,7 +308,7 @@ async fn copilot_lists_only_native_skills_with_stable_opaque_identity_and_one_sk
     assert!(
         creates
             .iter()
-            .all(|request| request["params"]["enableSkills"] == true)
+            .all(|request| request["params"]["skills"]["enabled"] == true)
     );
     assert!(
         creates

@@ -6,7 +6,7 @@ use crate::{
     },
     provider::{AttributedProviderEvent, ProviderError, ProviderEvent},
 };
-use github_copilot_sdk::{
+use copilot_sdk::{
     RequestId, SessionId,
     handler::{UserInputHandler, UserInputResponse},
 };

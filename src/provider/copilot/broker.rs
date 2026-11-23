@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 
-use github_copilot_sdk::{IndexMap, McpHttpServerConfig, McpServerConfig, SystemMessageConfig};
+use copilot_sdk::{IndexMap, McpHttpServerConfig, McpServerConfig, SystemMessageConfig};
 
 use crate::{
     broker::{BROKER_CALL_TIMEOUT_MS, BROKER_SERVER_NAME},

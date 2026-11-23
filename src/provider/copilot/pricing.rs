@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use github_copilot_sdk::{rpc::Model, session_events::ContextTier};
+use copilot_sdk::{rpc::Model, session_events::ContextTier};
 
 use super::catalog::{token_count, token_prices};
 use crate::{
@@ -251,10 +251,10 @@ fn component(tokens: u64, price: Option<f64>) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    use github_copilot_sdk::rpc::Model;
+    use copilot_sdk::rpc::Model;
     use serde_json::json;
 
-    use github_copilot_sdk::session_events::ContextTier;
+    use copilot_sdk::session_events::ContextTier;
 
     use super::CopilotPricing;
     use crate::pricing::CacheWrite;
@@ -268,7 +268,7 @@ mod tests {
             "id": "luna-fixture", "name": "Luna Fixture", "capabilities": {},
             "billing": { "tokenPrices": {
                 "batchSize": 1_000_000, "inputPrice": 10.0, "outputPrice": 50.0,
-                "cachePrice": 1.0, "cacheWritePrice": 12.5, "cacheWrite1hPrice": 20.0,
+                "cacheReadPrice": 1.0, "cacheWritePrice": 12.5, "cacheWrite1hPrice": 20.0,
                 "maxPromptTokens": 272_000,
                 "longContext": {
                     "inputPrice": 20.0, "outputPrice": 75.0, "cacheReadPrice": 2.0,

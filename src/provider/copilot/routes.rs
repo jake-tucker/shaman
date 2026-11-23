@@ -27,7 +27,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use github_copilot_sdk::{
+use copilot_sdk::{
     SessionEvent,
     session_events::{
         AssistantFusionPhaseCompletedData, AssistantFusionPhaseFailedData,

@@ -411,7 +411,7 @@ dependencies = [
  "arrayvec",
  "cc",
  "cfg-if",
- "constant_time_eq",
+ "constant_time_eq 0.4.2",
  "cpufeatures 0.3.0",
 ]
 
@@ -686,6 +686,44 @@ name = "constant_time_eq"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
+
+[[package]]
+name = "constant_time_eq"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9eb6feb175df65d0a3ccd3e73484e940d0ac664e8034f0519fd49a93db3071d9"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
+name = "copilot-sdk"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cebb397f41a8213c68f256d3a68031baa4078f32835f0b2bdfe1d72705156e84"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "bytes",
+ "flate2",
+ "futures-util",
+ "getrandom 0.4.3",
+ "http",
+ "indexmap",
+ "parking_lot",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tar",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+ "uuid",
+ "windows-sys 0.61.2",
+ "zip",
+]
 
 [[package]]
 name = "core-foundation"
@@ -1553,35 +1591,6 @@ checksum = "ee8cfcc411d9adbbaba82fb72661cc1bcca13e8bba98b364e62b2dba8f960159"
 dependencies = [
  "color_quant",
  "weezl",
-]
-
-[[package]]
-name = "github-copilot-sdk"
-version = "1.0.29-preview.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84d1eb159d8fbff52f1136422b68a7b965fd82c5f1fe9d62c8ac6254b665430b"
-dependencies = [
- "async-trait",
- "base64 0.23.1",
- "bytes",
- "flate2",
- "futures-util",
- "getrandom 0.4.3",
- "http",
- "indexmap",
- "parking_lot",
- "regex",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tar",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tracing",
- "uuid",
- "windows-sys 0.61.2",
- "zip",
 ]
 
 [[package]]
@@ -3699,6 +3708,7 @@ dependencies = [
  "blake3",
  "bytes",
  "clap",
+ "copilot-sdk",
  "core-foundation 0.10.1",
  "crossterm",
  "curve25519-dalek",
@@ -3710,7 +3720,6 @@ dependencies = [
  "flate2",
  "fs2",
  "futures-util",
- "github-copilot-sdk",
  "hostname",
  "http",
  "http-body-util",
@@ -5787,6 +5796,20 @@ name = "zeroize"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "zerotrie"
@@ -5823,10 +5846,11 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "9.3.0"
+version = "9.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaeb7f16d2605b49aef586996ded29e65642fab7259a3077e537351df6d80426"
+checksum = "a9534624d547e3f516ecde0ed9a70d37788f01d340efcfdd03bf3ea8e163c1d0"
 dependencies = [
+ "constant_time_eq 0.6.1",
  "crc32fast",
  "flate2",
  "getrandom 0.4.3",
@@ -5836,6 +5860,7 @@ dependencies = [
  "nix 0.31.3",
  "typed-path",
  "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]

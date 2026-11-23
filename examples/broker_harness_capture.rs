@@ -66,12 +66,13 @@ use axum::{
     response::Response,
     routing::post,
 };
-use github_copilot_sdk::{
+use copilot_sdk::{
     Client, IndexMap, PermissionRequestData, RequestId, SessionId,
     handler::{PermissionHandler, PermissionResult},
     session::Session,
     types::{
-        McpHttpServerConfig, McpServerConfig, MessageOptions, ResumeSessionConfig, SessionConfig,
+        CreateSessionOptions, McpHttpServerConfig, McpServerConfig, MessageOptions,
+        ResumeSessionOptions,
     },
 };
 use serde_json::{Value, json};
@@ -1203,13 +1204,18 @@ async fn copilot_session(
 ) -> anyhow::Result<Session> {
     let session = client
         .create_session(
-            SessionConfig::default()
+            CreateSessionOptions::default()
                 .with_model(model)
                 .with_working_directory(workspace)
-                .with_streaming(true)
-                .with_include_sub_agent_streaming_events(true)
-                .with_mcp_servers(servers)
-                .with_permission_handler(Arc::new(LoggingApprover)),
+                .with_events(|events| {
+                    events
+                        .with_streaming(true)
+                        .with_include_sub_agent_streaming_events(true)
+                })
+                .with_mcp(|mcp| mcp.with_servers(servers))
+                .with_permissions(|permissions| {
+                    permissions.with_on_request(Arc::new(LoggingApprover))
+                }),
         )
         .await?;
     log(
@@ -1330,13 +1336,20 @@ async fn copilot(scenario: &str, options: &Options) -> anyhow::Result<()> {
             let client = copilot_client().await?;
             let session = client
                 .resume_session(
-                    ResumeSessionConfig::new(id)
+                    ResumeSessionOptions::new(id)
                         .with_model(model)
                         .with_working_directory(workspace.path())
-                        .with_streaming(true)
-                        .with_include_sub_agent_streaming_events(true)
-                        .with_mcp_servers(copilot_servers(&url, "capture-token-resume", timeout))
-                        .with_permission_handler(Arc::new(LoggingApprover)),
+                        .with_events(|events| {
+                            events
+                                .with_streaming(true)
+                                .with_include_sub_agent_streaming_events(true)
+                        })
+                        .with_mcp(|mcp| {
+                            mcp.with_servers(copilot_servers(&url, "capture-token-resume", timeout))
+                        })
+                        .with_permissions(|permissions| {
+                            permissions.with_on_request(Arc::new(LoggingApprover))
+                        }),
                 )
                 .await?;
             copilot_turn(&session, "resume", &echo("copilot-resume")).await?;

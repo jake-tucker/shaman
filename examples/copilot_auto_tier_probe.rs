@@ -23,8 +23,8 @@ mod copilot_cli;
 
 use std::{collections::HashMap, time::Duration};
 
-use github_copilot_sdk::{
-    CapiSessionOptions, MessageOptions, session_events::AutoTier, types::SessionConfig,
+use copilot_sdk::{
+    CapiSessionOptions, MessageOptions, session_events::AutoTier, types::CreateSessionOptions,
 };
 
 #[tokio::main]
@@ -64,7 +64,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut config = auto_session();
         if tier != "default" {
             let auto_tier: AutoTier = serde_json::from_value(tier.as_str().into())?;
-            config = config.with_capi(CapiSessionOptions::new().with_auto_tier(auto_tier));
+            config = config.with_github(|github| {
+                github.with_capi(CapiSessionOptions::new().with_auto_tier(auto_tier))
+            });
         }
         let session = match client.create_session(config).await {
             Ok(session) => session,
@@ -116,25 +118,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// An `auto` Session carrying whatever flags the environment names.
-fn auto_session() -> SessionConfig {
-    let mut config = SessionConfig::default().with_model("auto");
+fn auto_session() -> CreateSessionOptions {
+    let mut config = CreateSessionOptions::default().with_model("auto");
     if let Ok(flags) = std::env::var("PROBE_FEATURE_FLAGS") {
         let flags: HashMap<String, bool> = flags
             .split(',')
             .filter(|flag| !flag.is_empty())
             .map(|flag| (flag.trim().to_owned(), true))
             .collect();
-        config = config.with_feature_flags(flags);
+        config = config.with_experiments(|experiments| experiments.with_flags(flags));
     }
     if let Some(path) = std::env::var_os("PROBE_EXP_ASSIGNMENTS") {
         let assignments = std::fs::read_to_string(path).expect("PROBE_EXP_ASSIGNMENTS is readable");
-        config = config.with_exp_assignments(
-            serde_json::from_str(&assignments)
-                .expect("PROBE_EXP_ASSIGNMENTS holds ExP assignments"),
-        );
+        config = config.with_experiments(|experiments| {
+            experiments.with_assignments(
+                serde_json::from_str(&assignments)
+                    .expect("PROBE_EXP_ASSIGNMENTS holds ExP assignments"),
+            )
+        });
     }
     if std::env::var("PROBE_EXPERIMENTAL").is_ok_and(|value| value == "1") {
-        config = config.with_enable_experimental_mode(true);
+        config =
+            config.with_experiments(|experiments| experiments.with_enable_experimental_mode(true));
     }
     config
 }

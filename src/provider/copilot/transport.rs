@@ -14,7 +14,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use github_copilot_sdk::{Client, ErrorKind, ProtocolErrorKind, rpc::Model};
+use copilot_sdk::{Client, ClientMode, ErrorKind, ProtocolErrorKind, rpc::Model};
 use serde::Deserialize;
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
@@ -35,8 +35,9 @@ use crate::{
     },
 };
 
+/// The CLI this build was verified against, which is also the one the SDK it is built on pins.
 const COPILOT_SUGGESTED_VERSION: SuggestedCliVersion =
-    SuggestedCliVersion::new("Copilot CLI", 1, 0, 88);
+    SuggestedCliVersion::new("Copilot CLI", 1, 0, 114);
 
 /// Builds the Copilot client over each freshly launched harness process.
 pub(super) struct CopilotConnector {
@@ -64,8 +65,13 @@ impl HarnessConnector for CopilotConnector {
         let stdin = HarnessStdin::new(io.stdin);
         let event_drain = CopilotEventDrain::new();
         let stdout = event_drain.observe(io.stdout);
-        let client = Client::from_streams(stdout, stdin.clone(), self.cwd.clone())
-            .map_err(|error| copilot_error(format!("could not drive the Copilot CLI: {error}")))?;
+        let client = Client::from_streams(
+            ClientMode::CodingAgent,
+            stdout,
+            stdin.clone(),
+            self.cwd.clone(),
+        )
+        .map_err(|error| copilot_error(format!("could not drive the Copilot CLI: {error}")))?;
         Ok(CopilotConnection {
             client,
             stdin,
@@ -88,8 +94,8 @@ impl HarnessConnector for CopilotConnector {
                     // The version the CLI reported is the SDK's own answer rather than anything
                     // the process's exit could explain, so drift is reported from the handshake
                     // itself while every other way it can fail defers to the supervisor.
-                    if is_version_drift(&error) {
-                        return version_drift(&error);
+                    if let Some(behind) = drifted_behind(&error) {
+                        return version_drift(behind, &error);
                     }
                     connection.failure("Copilot CLI server handshake failed", error)
                 })?;
@@ -117,31 +123,55 @@ impl HarnessConnector for CopilotConnector {
 /// Shaman names the wire constant itself.
 const METHOD_NOT_FOUND: i32 = -32601;
 
-/// Whether `error` is the handshake refusing the CLI's protocol version rather than the transport
-/// failing under it. Every shape the SDK reports drift in counts: a version outside the range it
-/// speaks, one it cannot even read, and one that changed under a live connection.
-fn is_version_drift(error: &github_copilot_sdk::Error) -> bool {
-    matches!(
-        error.kind(),
-        ErrorKind::Protocol(
-            ProtocolErrorKind::VersionMismatch { .. }
-                | ProtocolErrorKind::InvalidProtocolVersion { .. }
-                | ProtocolErrorKind::VersionChanged { .. }
-        )
-    )
+/// Which side version drift left behind, and so which one the user updates to close it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Behind {
+    /// The CLI speaks a protocol older than any Shaman does.
+    Cli,
+    /// The CLI speaks a protocol newer than any Shaman does, which no update to the CLI changes.
+    Shaman,
 }
 
-/// A CLI too old or too new for the protocol Shaman speaks, as the typed condition. The user owns
-/// their own CLI, so version drift is theirs to fix: reported this way it reads as an actionable
-/// condition rather than as a Provider that broke.
-fn version_drift(error: &impl std::fmt::Display) -> ProviderError {
+/// The side left behind when `error` is the handshake refusing the CLI's protocol version, and
+/// `None` when it is the transport failing under it. Every shape the SDK reports drift in counts: a
+/// version outside the range it speaks, one it cannot even read, and one that changed under a live
+/// connection.
+fn drifted_behind(error: &copilot_sdk::Error) -> Option<Behind> {
+    let ErrorKind::Protocol(drift) = error.kind() else {
+        return None;
+    };
+    match drift {
+        ProtocolErrorKind::VersionMismatch { server, max, .. } if server > max => {
+            Some(Behind::Shaman)
+        }
+        // A version too large for the SDK to hold is past any it speaks; a negative one is no
+        // version a newer protocol would report.
+        ProtocolErrorKind::InvalidProtocolVersion { server } if *server > 0 => Some(Behind::Shaman),
+        ProtocolErrorKind::VersionMismatch { .. }
+        | ProtocolErrorKind::InvalidProtocolVersion { .. }
+        // The process changed its answer under a connection that had agreed one, which nothing
+        // about Shaman explains.
+        | ProtocolErrorKind::VersionChanged { .. } => Some(Behind::Cli),
+        _ => None,
+    }
+}
+
+/// A CLI too old or too new for the protocol Shaman speaks, as the typed condition. Version drift
+/// is the user's to fix, so it is reported as an actionable condition rather than as a Provider that
+/// broke, and names the side that is `behind`: updating a CLI that is already ahead of Shaman would
+/// change nothing.
+fn version_drift(behind: Behind, error: &impl std::fmt::Display) -> ProviderError {
+    let (direction, fix) = match behind {
+        Behind::Cli => (
+            "an older",
+            super::copilot_fix(ProviderUnavailability::IncompatibleVersion),
+        ),
+        Behind::Shaman => ("a newer", super::UPDATE_SHAMAN_FIX),
+    };
     copilot_error(format!(
-        "Copilot CLI server speaks another protocol: {error}"
+        "Copilot CLI server speaks {direction} protocol than this Shaman: {error}"
     ))
-    .mark_unavailable(
-        ProviderUnavailability::IncompatibleVersion,
-        super::copilot_fix(ProviderUnavailability::IncompatibleVersion),
-    )
+    .mark_unavailable(ProviderUnavailability::IncompatibleVersion, fix)
 }
 
 /// The live connection to one Copilot CLI server process: the SDK client every demand speaks
@@ -232,7 +262,7 @@ impl CopilotConnection {
                 // for a CLI too old to answer `connect`, so the first unknown method is where such
                 // a CLI gives itself away.
                 if error.rpc_code() == Some(METHOD_NOT_FOUND) {
-                    return version_drift(&error);
+                    return version_drift(Behind::Cli, &error);
                 }
                 self.failure("Copilot sign-in check failed", error)
             })?;
@@ -259,7 +289,7 @@ impl CopilotConnection {
     /// error that says nothing about why. The supervisor's account wins when it has arrived; when
     /// the SDK observes the dead transport first, that typed signal invalidates this shared-harness
     /// generation so a later demand cannot be granted the same connection.
-    pub(super) fn failure(&self, context: &str, error: github_copilot_sdk::Error) -> ProviderError {
+    pub(super) fn failure(&self, context: &str, error: copilot_sdk::Error) -> ProviderError {
         if error.is_transport_failure() {
             let lost = copilot_error(format!(
                 "{} connection was lost: {error}",

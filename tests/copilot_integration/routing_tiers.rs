@@ -162,22 +162,22 @@ async fn discovery_runs_no_turn_and_leaves_no_session_behind() {
         panic!("one discovery Session: {created:?}");
     };
     assert_eq!(
-        created["expAssignments"]["Configs"][0]["Parameters"]["copilot_cli_dynamic_auto_tiers"],
+        created["experiments"]["assignments"]["Configs"][0]["Parameters"]["copilot_cli_dynamic_auto_tiers"],
         json!(true),
         "it needs the assignment to be offered any"
     );
     assert_eq!(
-        created["enableSessionStore"],
+        created["state"]["enableCrossSessionStore"],
         json!(false),
         "it stays out of the CLI's store"
     );
-    assert_eq!(created["availableTools"], json!([]), "no Tools");
-    assert_eq!(created["skillDirectories"], Value::Null, "no Skills");
-    assert_eq!(created["enableSkills"], json!(false), "no Skills");
+    assert_eq!(created["tools"]["availableTools"], json!([]), "no Tools");
+    assert_eq!(created["skills"]["directories"], Value::Null, "no Skills");
+    assert_eq!(created["skills"]["enabled"], json!(false), "no Skills");
     assert!(
-        created["mcpServers"].is_null(),
+        created["mcp"]["servers"].is_null(),
         "no Broker: {}",
-        created["mcpServers"]
+        created["mcp"]["servers"]
     );
     assert_eq!(requests_of(&requests, "session.send"), Vec::<Value>::new());
     assert_eq!(
@@ -605,7 +605,8 @@ async fn a_tier_survives_a_resume_without_being_asked_for_again() {
     assert_eq!(resumed.turns[1].status, TurnStatus::Completed);
     assert_eq!(switches(&copilot).len(), 1, "Copilot still holds it");
     assert!(
-        requests_of(&copilot.requests(), "session.resume")[0]["expAssignments"].is_object(),
+        requests_of(&copilot.requests(), "session.resume")[0]["experiments"]["assignments"]
+            .is_object(),
         "a resume supplies the assignment the tier needs"
     );
 
@@ -799,7 +800,7 @@ async fn with_the_setting_off_a_resumed_session_on_a_tier_falls_back_to_plain_au
     let resumed = settled_session(&client, session_id, 1).await;
 
     assert_eq!(
-        requests_of(&copilot.requests(), "session.resume")[0].get("expAssignments"),
+        requests_of(&copilot.requests(), "session.resume")[0]["experiments"].get("assignments"),
         None
     );
     assert_eq!(resumed.turns[1].status, TurnStatus::Completed);
@@ -928,7 +929,7 @@ async fn with_the_setting_off_other_models_ask_for_no_tier() {
     assert!(
         opened
             .iter()
-            .all(|params| params.get("expAssignments").is_none()),
+            .all(|params| params["experiments"].get("assignments").is_none()),
         "no Session opened was told of a tier: {opened:?}"
     );
 

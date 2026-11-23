@@ -23,10 +23,10 @@ mod copilot_cli;
 
 use std::{sync::Arc, time::Duration};
 
-use github_copilot_sdk::{
+use copilot_sdk::{
     handler::ApproveAllHandler,
     rpc::TasksSendMessageRequest,
-    types::{MessageOptions, SessionConfig},
+    types::{CreateSessionOptions, MessageOptions},
 };
 
 const WORKER: &str = "Make THREE SEPARATE bash tool calls, one at a time, waiting for each to \
@@ -74,11 +74,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = copilot_cli::start().await?;
     let session = client
         .create_session(
-            SessionConfig::default()
+            CreateSessionOptions::default()
                 .with_model(model)
-                .with_streaming(true)
-                .with_include_sub_agent_streaming_events(true)
-                .with_permission_handler(Arc::new(ApproveAllHandler)),
+                .with_events(|events| {
+                    events
+                        .with_streaming(true)
+                        .with_include_sub_agent_streaming_events(true)
+                })
+                .with_permissions(|permissions| {
+                    permissions.with_on_request(Arc::new(ApproveAllHandler))
+                }),
         )
         .await?;
     let mut events = session.subscribe();

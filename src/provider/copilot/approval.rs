@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use github_copilot_sdk::{
+use copilot_sdk::{
     PermissionDecision, PermissionDecisionApproveOnce, PermissionDecisionContext,
     PermissionDecisionOutcome, PermissionDecisionReject, PermissionDecisionSource,
     PermissionDecisionSurface, PermissionRequestData, PermissionRequestKind, RequestId, SessionId,

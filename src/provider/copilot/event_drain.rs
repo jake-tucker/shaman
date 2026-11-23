@@ -1,7 +1,7 @@
 //! Orders Copilot's final on-wire Session events ahead of a harness crash.
 //!
 //! The SDK reads stdout on its own task and routes each `session.event` through two more tasks
-//! before a [`github_copilot_sdk::EventSubscription`] sees it. The process supervisor can observe
+//! before a [`copilot_sdk::EventSubscription`] sees it. The process supervisor can observe
 //! the child exit while those tasks still hold complete frames that were written before it died.
 //! This module keeps a ledger of the last event identifier read for each Session and the last one
 //! delivered by the SDK. Once stdout ends, matching those identifiers is the barrier that says every
@@ -18,7 +18,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use github_copilot_sdk::SessionEvent;
+use copilot_sdk::SessionEvent;
 use serde::Deserialize;
 use tokio::{
     io::{AsyncRead, ReadBuf},
@@ -299,7 +299,7 @@ impl FrameBuffer {
                 && frame.method.as_deref() == Some("session.event")
                 && let Some(params) = frame.params
                 && let Ok(notification) =
-                    serde_json::from_value::<github_copilot_sdk::SessionEventNotification>(params)
+                    serde_json::from_value::<copilot_sdk::SessionEventNotification>(params)
             {
                 drain.record_wire_event(notification.session_id.to_string(), notification.event);
             }

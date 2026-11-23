@@ -19,7 +19,7 @@
 #[path = "support/copilot_cli.rs"]
 mod copilot_cli;
 
-use github_copilot_sdk::types::{SessionConfig, SetModelOptions};
+use copilot_sdk::types::{CreateSessionOptions, SetModelOptions};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let session = client
-        .create_session(SessionConfig::default().with_model("gpt-5-mini"))
+        .create_session(CreateSessionOptions::default().with_model("gpt-5-mini"))
         .await?;
     let per_session = session.rpc().model().list().await?.list;
     if let Some(m) = per_session.iter().find(|m| m["id"] == model) {
@@ -82,9 +82,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // A fresh Session opened on the Model with "none" chosen up front, as an Errand would open it.
     let opened = client
         .create_session(
-            SessionConfig::default()
+            CreateSessionOptions::default()
                 .with_model(&model)
-                .with_reasoning_effort("none"),
+                .with_inference(|inference| inference.with_reasoning_effort("none")),
         )
         .await;
     match opened {
@@ -96,14 +96,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Exactly Shaman's own path: a Session opened on no Model, then switched onto the Model with
     // the effort and the context tier lowered together, as `apply_selection` does.
-    use github_copilot_sdk::session_events::ContextTier;
+    use copilot_sdk::session_events::ContextTier;
     for (effort, tier) in [
         (Some("none"), None),
         (Some("none"), Some(ContextTier::Default)),
         (Some("low"), Some(ContextTier::Default)),
         (None, Some(ContextTier::Default)),
     ] {
-        let fresh = client.create_session(SessionConfig::default()).await?;
+        let fresh = client
+            .create_session(CreateSessionOptions::default())
+            .await?;
         println!(
             "[PROBE] fresh current                -> {:?}",
             current(&fresh).await
@@ -123,7 +125,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .filter(|m| m.supported_reasoning_efforts.is_some())
         {
-            let fresh = client.create_session(SessionConfig::default()).await?;
+            let fresh = client
+                .create_session(CreateSessionOptions::default())
+                .await?;
             let opts = SetModelOptions {
                 reasoning_effort: Some("none".to_owned()),
                 ..Default::default()
@@ -149,7 +153,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ("gpt-6-luna", None, "gpt-6-luna", Some("none")),
         ];
         for (m1, e1, m2, e2) in sequences {
-            let fresh = client.create_session(SessionConfig::default()).await?;
+            let fresh = client
+                .create_session(CreateSessionOptions::default())
+                .await?;
             let first = fresh
                 .set_model(
                     m1,
@@ -184,7 +190,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..Default::default()
             })
         };
-        let show = |label: &str, r: Result<(), github_copilot_sdk::Error>| {
+        let show = |label: &str, r: Result<(), copilot_sdk::Error>| {
             println!(
                 "[PROBE-ISO] {label} -> {}",
                 match r {
@@ -194,21 +200,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         };
         let s1 = client
-            .create_session(SessionConfig::default().with_model("gpt-5-mini"))
+            .create_session(CreateSessionOptions::default().with_model("gpt-5-mini"))
             .await?;
         show(
             "S1 created(gpt-5-mini); switchTo(luna,none)",
             s1.set_model(&model, none()).await,
         );
         let s2 = client
-            .create_session(SessionConfig::default().with_model("gpt-5-mini"))
+            .create_session(CreateSessionOptions::default().with_model("gpt-5-mini"))
             .await?;
         let _ = s2.set_model(&model, None).await;
         show(
             "S2 created(gpt-5-mini); switchTo(luna); switchTo(luna,none)",
             s2.set_model(&model, none()).await,
         );
-        let s3 = client.create_session(SessionConfig::default()).await?;
+        let s3 = client
+            .create_session(CreateSessionOptions::default())
+            .await?;
         let listed = s3.rpc().model().list().await?.list;
         if let Some(m) = listed.iter().find(|m| m["id"] == model) {
             println!(
@@ -221,20 +229,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             s3.set_model(&model, none()).await,
         );
         let s4 = client
-            .create_session(SessionConfig::default().with_model(&model))
+            .create_session(CreateSessionOptions::default().with_model(&model))
             .await?;
         show(
             "S4 created(luna); switchTo(luna,none)",
             s4.set_model(&model, none()).await,
         );
-        let s5 = client.create_session(SessionConfig::default()).await?;
+        let s5 = client
+            .create_session(CreateSessionOptions::default())
+            .await?;
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         show(
             "S5 created(); sleep 3s; switchTo(luna,none)",
             s5.set_model(&model, none()).await,
         );
         let s6 = client
-            .create_session(SessionConfig::default().with_model("gpt-5-mini"))
+            .create_session(CreateSessionOptions::default().with_model("gpt-5-mini"))
             .await?;
         let _ = s6.set_model("gpt-5-mini", None).await;
         show(
@@ -243,8 +253,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     if std::env::var_os("PROBE_TURN").is_some() {
-        use github_copilot_sdk::MessageOptions;
-        let s = client.create_session(SessionConfig::default()).await?;
+        use copilot_sdk::MessageOptions;
+        let s = client
+            .create_session(CreateSessionOptions::default())
+            .await?;
         let started = std::time::Instant::now();
         let _ = s.rpc().model().list().await?;
         println!(
@@ -281,7 +293,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn current(session: &github_copilot_sdk::session::Session) -> String {
+async fn current(session: &copilot_sdk::session::Session) -> String {
     match session.rpc().model().get_current().await {
         Ok(c) => format!("model={:?} effort={:?}", c.model_id, c.reasoning_effort),
         Err(e) => format!("Err({e})"),

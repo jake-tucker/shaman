@@ -119,7 +119,7 @@ pub fn connect_arm() -> String {
 }
 
 /// The Copilot CLI version this build suggests, matching the live CLI it was verified against.
-pub const COPILOT_SUGGESTED_VERSION: &str = "1.0.88";
+pub const COPILOT_SUGGESTED_VERSION: &str = "1.0.114";
 
 /// Answers both startup version requests with a compatible protocol and `version` as the CLI
 /// package version.
@@ -132,15 +132,20 @@ pub fn connect_arm_with_version(version: &str) -> String {
       reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"version":"{version}","protocolVersion":{protocol}}}}}'
       ;;
 "#,
-        protocol = github_copilot_sdk::SDK_PROTOCOL_VERSION,
+        protocol = copilot_sdk::SDK_PROTOCOL_VERSION,
     )
 }
 
-/// A `connect` arm reporting a protocol version well outside the range this SDK build speaks,
-/// standing in for a CLI too new for Shaman — until [`ScriptedCopilot::upgrade`] leaves the marker
-/// that makes the same fixture answer compatibly, which is the user fixing the version outside
-/// Shaman.
-pub fn upgradable_connect_arm() -> String {
+/// A protocol version newer than any this SDK build speaks, standing in for a CLI ahead of Shaman.
+pub const NEWER_PROTOCOL: u32 = copilot_sdk::SDK_PROTOCOL_VERSION + 1_000;
+
+/// A protocol version older than any this SDK build speaks, standing in for a CLI behind Shaman.
+pub const OLDER_PROTOCOL: u32 = 1;
+
+/// A `connect` arm reporting `drifted`, a protocol version outside the range this SDK build
+/// speaks — until [`ScriptedCopilot::upgrade`] leaves the marker that makes the same fixture answer
+/// compatibly, which is the user bringing the two sides back together outside Shaman.
+pub fn upgradable_connect_arm(drifted: u32) -> String {
     format!(
         r#"    *'"method":"connect"'*)
       if [ -e "$COPILOT_FIXTURE_UPGRADED" ]; then
@@ -153,8 +158,7 @@ pub fn upgradable_connect_arm() -> String {
       reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"version":"{suggested}","protocolVersion":{compatible}}}}}'
       ;;
 "#,
-        compatible = github_copilot_sdk::SDK_PROTOCOL_VERSION,
-        drifted = github_copilot_sdk::SDK_PROTOCOL_VERSION + 1_000,
+        compatible = copilot_sdk::SDK_PROTOCOL_VERSION,
         suggested = COPILOT_SUGGESTED_VERSION,
     )
 }
@@ -334,7 +338,7 @@ pub const AUTO_TIERS: &str = concat!(
 /// which Sessions carried the assignment.
 pub fn assigned_session_arms(auto: &str) -> String {
     format!(
-        r#"    *'"method":"session.create"'*'"expAssignments"'*|*'"method":"session.resume"'*'"expAssignments"'*)
+        r#"    *'"method":"session.create"'*'"experiments":{{"assignments"'*|*'"method":"session.resume"'*'"experiments":{{"assignments"'*)
       sid=$(printf '%s' "$body" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
       : > "$COPILOT_FIXTURE_LOG.assigned-$sid"
       reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"sessionId":"'"$sid"'"}}}}'

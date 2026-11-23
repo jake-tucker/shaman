@@ -323,19 +323,19 @@ async fn an_errand_runs_at_copilots_declared_selection_carrying_no_tools_and_sto
 
     let creation = errand_creation(&copilot).await;
     let params = &creation["params"];
-    assert_eq!(params["reasoningEffort"], ERRAND_EFFORT);
+    assert_eq!(params["inference"]["reasoningEffort"], ERRAND_EFFORT);
     assert_eq!(
-        params["availableTools"],
+        params["tools"]["availableTools"],
         serde_json::json!([]),
         "an Errand carries no Tools"
     );
     assert_eq!(
-        params["enableSessionStore"],
+        params["state"]["enableCrossSessionStore"],
         serde_json::json!(false),
         "an Errand takes the least-persistent mode the CLI offers"
     );
     assert!(
-        params.get("mcpServers").is_none(),
+        params["mcp"].get("servers").is_none(),
         "an Errand is handed no MCP server, the Broker's included: {params}"
     );
     let conversation = request_where(
@@ -347,7 +347,7 @@ async fn an_errand_runs_at_copilots_declared_selection_carrying_no_tools_and_sto
     )
     .await;
     assert!(
-        conversation["params"]["mcpServers"]["shaman"].is_object(),
+        conversation["params"]["mcp"]["servers"]["shaman"].is_object(),
         "while the Session's own Copilot Session beside it is handed the Broker: {conversation}"
     );
     assert_eq!(

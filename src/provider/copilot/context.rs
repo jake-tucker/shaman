@@ -6,7 +6,7 @@
 //! the Session, which Context Fill measures against too, and the reserve stays unknown. Its
 //! per-source entries are not read: how their kinds nest within the categories is undocumented.
 
-use github_copilot_sdk::rpc::MetadataContextAttributionResultContextAttribution as Attribution;
+use copilot_sdk::rpc::MetadataContextAttributionResultContextAttribution as Attribution;
 
 use super::copilot_error;
 use crate::{

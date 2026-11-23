@@ -52,9 +52,10 @@ fn assignments_on(requests: &[Value], method: &str) -> Vec<Option<Value>> {
         .filter(|request| request["method"] == method)
         .filter(|request| {
             let params = &request["params"];
-            params.get("expAssignments").is_none() || params["enableSessionStore"] != false
+            params["experiments"].get("assignments").is_none()
+                || params["state"]["enableCrossSessionStore"] != false
         })
-        .map(|request| request["params"].get("expAssignments").cloned())
+        .map(|request| request["params"]["experiments"].get("assignments").cloned())
         .collect()
 }
 

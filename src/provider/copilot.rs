@@ -1,7 +1,7 @@
 //! GitHub Copilot Provider runtime over the Copilot CLI's stdio server mode.
 //!
 //! The integration is layered like the Codex one, but reaches its harness through the first-party
-//! `github-copilot-sdk` crate rather than a hand-rolled wire: the provider-neutral harness
+//! `copilot-sdk` crate rather than a hand-rolled wire: the provider-neutral harness
 //! machinery owns the CLI process and [`transport`] wraps its stdio in the SDK's client, [`catalog`]
 //! normalizes the Models that client reports into Shaman's Model catalog, and [`runtime`] composes
 //! them into the Provider runtime the rest of Shaman uses.
@@ -52,7 +52,7 @@ use crate::protocol::ProviderUnavailability;
 /// cannot read. The Turn keeps going without it: the reader loses that report, which is what an
 /// unreadable report costs, rather than the Turn it belongs to. The Log says one went, without the
 /// conversation content it was carrying.
-fn reported<T: serde::de::DeserializeOwned>(event: &github_copilot_sdk::SessionEvent) -> Option<T> {
+fn reported<T: serde::de::DeserializeOwned>(event: &copilot_sdk::SessionEvent) -> Option<T> {
     let decoded = event.typed_data();
     if decoded.is_none() {
         tracing::warn!(
@@ -97,6 +97,10 @@ fn copilot_fix(reason: ProviderUnavailability) -> &'static str {
         ProviderUnavailability::Unknown => "see the Copilot CLI's own documentation",
     }
 }
+
+/// What fixes a Copilot CLI that is ahead of Shaman rather than behind it. The reason is the same
+/// [`ProviderUnavailability::IncompatibleVersion`] either way; only the side to update differs.
+const UPDATE_SHAMAN_FIX: &str = "update Shaman";
 
 fn copilot_error(message: impl AsRef<str>) -> ProviderError {
     ProviderError::new(concise_remote_message(

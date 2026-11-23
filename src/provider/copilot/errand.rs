@@ -22,13 +22,13 @@
 //! every `assistant.usage` it makes while the Errand runs, summed and priced as a Copilot Turn's
 //! are.
 
-use futures_util::{FutureExt, StreamExt};
-use github_copilot_sdk::{
-    MessageOptions, SessionConfig, SessionEvent, SessionId as CopilotSessionId,
+use copilot_sdk::{
+    CreateSessionOptions, MessageOptions, SessionEvent, SessionId as CopilotSessionId,
     session::Session as NativeSession,
     session_events::{AssistantMessageData, SessionEventType},
     subscription::{EventSubscription, Lagged},
 };
+use futures_util::{FutureExt, StreamExt};
 use serde_json::Value;
 
 use super::{
@@ -178,35 +178,35 @@ impl ErrandMetering {
 /// the Session path's full-auto posture. It runs in the Session's own Workspace so that project
 /// agent instructions inform the answer, and it streams nothing, because an Errand has no reader to
 /// stream to and only the finished reply is of any use.
-fn errand_session_config(errand: &ProviderErrand) -> Result<SessionConfig, ProviderError> {
+fn errand_session_config(errand: &ProviderErrand) -> Result<CreateSessionOptions, ProviderError> {
     let options = lower_selection_options(&errand.selection)?;
     let mut config = least_capable_session_config()
         .with_working_directory(errand.execution_directory.clone())
         .with_model(errand.selection.model.as_str());
-    config.reasoning_effort = options.reasoning_effort;
-    config.context_tier = options.context_tier.map(tier_id);
+    config.inference.reasoning_effort = options.reasoning_effort;
+    config.inference.context_tier = options.context_tier.map(tier_id);
     Ok(config)
 }
 
 /// The least-capable, least-persistent Session the SDK will open, for one Shaman opens for its own
 /// purposes and discards: no Tools, no Skills, a refusal for anything it asks permission for, and
 /// nothing streamed.
-pub(super) fn least_capable_session_config() -> SessionConfig {
-    SessionConfig::default()
+pub(super) fn least_capable_session_config() -> CreateSessionOptions {
+    CreateSessionOptions::default()
         // The SDK registers the identifier before it asks the CLI to create the Session, which is
         // what gives the Session-scoped requests the CLI may issue mid-creation somewhere to land.
         .with_session_id(CopilotSessionId::new(uuid::Uuid::new_v4().to_string()))
         .with_client_name(COPILOT_CLIENT_NAME)
-        .with_available_tools(Vec::<String>::new())
-        .deny_all_permissions()
+        .with_tools(|tools| tools.with_available_tools(Vec::<String>::new()))
+        .with_permissions(|permissions| permissions.deny_all_permissions())
         // The least-persistent mode on offer. A deleted Session that ran a Turn under it leaves no
         // row in the CLI's `session-store.db`, where one under the default leaves several
         // (docs/validation/copilot-routing-tier-selection.md). Copilot files the Session under its
         // own state directory and lists it in its own picker regardless, which is why discarding
         // one means deleting it rather than only closing it.
-        .with_enable_session_store(false)
-        .with_enable_skills(false)
-        .with_streaming(false)
+        .with_state(|state| state.with_enable_cross_session_store(false))
+        .with_skills(|skills| skills.with_enabled(false))
+        .with_events(|events| events.with_streaming(false))
 }
 
 /// The Prompt one Errand delivers: what was asked, and the shape it must be answered in.

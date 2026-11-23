@@ -6,8 +6,9 @@
 //! itself.
 
 use crate::copilot_integration::support::{
-    COPILOT_MODELS, ScriptedCopilot, connect_arm, copilot_catalog, gh_cli_signed_in_arm, hosting,
-    models_arm, signed_in_arm, signed_out_arm, unknown_method_arm, upgradable_connect_arm,
+    COPILOT_MODELS, NEWER_PROTOCOL, OLDER_PROTOCOL, ScriptedCopilot, connect_arm, copilot_catalog,
+    gh_cli_signed_in_arm, hosting, models_arm, signed_in_arm, signed_out_arm, unknown_method_arm,
+    upgradable_connect_arm,
 };
 use shaman::{
     managed_client::ManagedClient,
@@ -28,8 +29,11 @@ fn condition(status: &ProviderCatalogStatus) -> (ProviderUnavailability, String,
     (*reason, message.clone(), fix.clone())
 }
 
-/// What Copilot says fixes a CLI that is too old or too new for Shaman, however it gave itself away.
+/// What Copilot says fixes a CLI that is too old for Shaman, however it gave itself away.
 const UPDATE_THE_CLI: &str = "update the Copilot CLI";
+
+/// What it says fixes a CLI that is too new for Shaman, which no update to the CLI would.
+const UPDATE_SHAMAN: &str = "update Shaman";
 
 /// Asserts the refresh after the user has fixed the condition outside Shaman finds Copilot usable
 /// again, which is the recovery every one of these conditions shares.
@@ -169,15 +173,15 @@ async fn a_cli_signed_in_through_the_gh_cli_serves_its_models_without_showing_sh
 }
 
 #[tokio::test]
-async fn a_cli_speaking_a_protocol_shaman_does_not_is_reported_as_an_incompatible_version() {
+async fn a_cli_speaking_a_newer_protocol_than_shaman_is_fixed_by_updating_shaman() {
     let copilot = ScriptedCopilot::new(&format!(
         "{}{}{}",
-        upgradable_connect_arm(),
+        upgradable_connect_arm(NEWER_PROTOCOL),
         signed_in_arm(),
         models_arm(COPILOT_MODELS),
     ));
     let state_dir = tempfile::tempdir().expect("create isolated state directory");
-    let (server, client) = hosting(&copilot, "copilot-version-drift", state_dir.path()).await;
+    let (server, client) = hosting(&copilot, "copilot-newer-cli", state_dir.path()).await;
 
     let catalog = client
         .list_models()
@@ -186,12 +190,50 @@ async fn a_cli_speaking_a_protocol_shaman_does_not_is_reported_as_an_incompatibl
     let (reason, message, fix) = condition(&copilot_catalog(&catalog).status);
     assert_eq!(reason, ProviderUnavailability::IncompatibleVersion);
     assert!(
-        message.contains("version"),
-        "the condition names the version drift, got: {message}"
+        message.contains("newer") && message.contains("version"),
+        "the condition names which way the versions drifted, got: {message}"
+    );
+    assert_eq!(
+        fix, UPDATE_SHAMAN,
+        "the CLI is the side ahead, so updating it again would change nothing"
+    );
+
+    copilot.upgrade();
+    assert_the_refresh_clears_the_condition(&client).await;
+    assert_eq!(
+        copilot.launches(),
+        2,
+        "a handshake that fails stops its process, so the recovery launches a fresh one"
+    );
+
+    server.shutdown().await.expect("shut the server down");
+    copilot.wait_for_exit().await;
+}
+
+#[tokio::test]
+async fn a_cli_speaking_an_older_protocol_than_shaman_is_fixed_by_updating_the_cli() {
+    let copilot = ScriptedCopilot::new(&format!(
+        "{}{}{}",
+        upgradable_connect_arm(OLDER_PROTOCOL),
+        signed_in_arm(),
+        models_arm(COPILOT_MODELS),
+    ));
+    let state_dir = tempfile::tempdir().expect("create isolated state directory");
+    let (server, client) = hosting(&copilot, "copilot-older-cli", state_dir.path()).await;
+
+    let catalog = client
+        .list_models()
+        .await
+        .expect("a protocol mismatch is an answer, not a crash");
+    let (reason, message, fix) = condition(&copilot_catalog(&catalog).status);
+    assert_eq!(reason, ProviderUnavailability::IncompatibleVersion);
+    assert!(
+        message.contains("older") && message.contains("version"),
+        "the condition names which way the versions drifted, got: {message}"
     );
     assert_eq!(
         fix, UPDATE_THE_CLI,
-        "Shaman cannot name a version that would speak its protocol, so the fix is to update"
+        "the CLI is the side behind, and Shaman cannot name a version that would catch it up"
     );
 
     copilot.upgrade();

@@ -24,10 +24,10 @@ mod copilot_cli;
 
 use std::{sync::Arc, time::Duration};
 
-use github_copilot_sdk::{
+use copilot_sdk::{
     handler::ApproveAllHandler,
     rpc::TasksCancelRequest,
-    types::{MessageOptions, SessionConfig},
+    types::{CreateSessionOptions, MessageOptions},
 };
 
 #[tokio::main]
@@ -69,10 +69,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = copilot_cli::start().await?;
     let session = client
         .create_session(
-            SessionConfig::default()
+            CreateSessionOptions::default()
                 .with_model(model)
-                .with_streaming(true)
-                .with_permission_handler(Arc::new(ApproveAllHandler)),
+                .with_events(|events| events.with_streaming(true))
+                .with_permissions(|permissions| {
+                    permissions.with_on_request(Arc::new(ApproveAllHandler))
+                }),
         )
         .await?;
     let mut events = session.subscribe();

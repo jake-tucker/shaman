@@ -214,13 +214,19 @@ impl ProviderRuntime for CopilotRuntime {
         Box::pin(async move {
             let handle = match self.harness.demand().await {
                 Ok(handle) => handle,
-                Err(error)
-                    if error.unavailability()
-                        == Some(ProviderUnavailability::IncompatibleVersion) =>
-                {
-                    return Ok(CopilotSkills::incompatible_catalog(&execution_directory));
+                Err(error) => {
+                    // The handshake already said which side is behind, so the Skill catalog says
+                    // what it said rather than guessing at the fix.
+                    let Some((ProviderUnavailability::IncompatibleVersion, fix)) =
+                        error.unavailability_with_fix()
+                    else {
+                        return Err(error);
+                    };
+                    return Ok(CopilotSkills::unavailable_catalog(
+                        &execution_directory,
+                        format!("{error}; {fix}"),
+                    ));
                 }
-                Err(error) => return Err(error),
             };
             self.skills.discover(&handle, &execution_directory).await
         })

@@ -164,7 +164,7 @@ async fn created_then_resumed(channel: &'static str, document: &str) -> CreatedT
 /// checked to be the Broker at `endpoint` over HTTP with the Broker's call timeout, and the only
 /// server Shaman names.
 fn broker_token<'a>(params: &'a Value, method: &str, endpoint: &str) -> &'a str {
-    let servers = params["mcpServers"]
+    let servers = params["mcp"]["servers"]
         .as_object()
         .unwrap_or_else(|| panic!("{method} carries a server list: {params}"));
     assert_eq!(
@@ -408,7 +408,7 @@ async fn a_sidekicks_session_created_once_memories_exist_is_told_their_titles_an
         before.contains("You are a Sidekick") && !before.contains("memory_id"),
         "a Sidekick created while there are no Memories is told nothing of them: {before:?}"
     );
-    let entry = &create["mcpServers"]["shaman"];
+    let entry = &create["mcp"]["servers"]["shaman"];
     let mut sidekick = McpClient::presenting(
         entry["url"].as_str().expect("the Broker's URL"),
         entry["headers"]["Authorization"]
@@ -457,7 +457,7 @@ async fn with_the_broker_off_neither_create_nor_resume_carries_the_server_or_not
         ("session.resume", &sent.resume),
     ] {
         assert!(
-            params.get("mcpServers").is_none(),
+            params["mcp"].get("servers").is_none(),
             "{method} made while the Broker is off names no server: {params}"
         );
         assert!(
@@ -629,7 +629,7 @@ async fn a_report_leaves_as_an_immediate_session_send_waking_the_idle_parent() {
     settled_session(&opened.client, parent_id, 0).await;
     let create = copilot.wait_for_request("session.create").await["params"].clone();
     let parent_sid = create["sessionId"].clone();
-    let server_entry = &create["mcpServers"]["shaman"];
+    let server_entry = &create["mcp"]["servers"]["shaman"];
     let mut broker = McpClient::presenting(
         server_entry["url"].as_str().expect("the Broker's URL"),
         server_entry["headers"]["Authorization"]
@@ -741,7 +741,7 @@ async fn a_sidekick_report_leaves_as_an_immediate_session_send_waking_the_idle_s
     settled_session(&client, sidekick_id, 0).await;
     let create = copilot.wait_for_request("session.create").await["params"].clone();
     let sidekick_sid = create["sessionId"].clone();
-    let server_entry = &create["mcpServers"]["shaman"];
+    let server_entry = &create["mcp"]["servers"]["shaman"];
     let mut sidekick = McpClient::presenting(
         server_entry["url"].as_str().expect("the Broker's URL"),
         server_entry["headers"]["Authorization"]

@@ -93,7 +93,7 @@ async fn copilot_native_questionnaire_maps_selected_freeform_and_decline_results
         assert_eq!(questionnaire.questions[0].freeform, allow_freeform);
         assert!(!questionnaire.questions[0].multiple);
         assert_eq!(
-            fixture.wait_for_request("session.create").await["params"]["requestUserInput"],
+            fixture.wait_for_request("session.create").await["params"]["interaction"]["requestUserInput"],
             true
         );
         live.client

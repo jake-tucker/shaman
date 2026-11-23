@@ -18,7 +18,7 @@ mod copilot_cli;
 
 use std::time::Duration;
 
-use github_copilot_sdk::{MessageOptions, types::SessionConfig};
+use copilot_sdk::{MessageOptions, types::CreateSessionOptions};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let session = client
-            .create_session(SessionConfig::default().with_model(model))
+            .create_session(CreateSessionOptions::default().with_model(model))
             .await?;
         let mut events = session.subscribe();
         let watcher = tokio::spawn(async move {

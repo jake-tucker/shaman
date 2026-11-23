@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use github_copilot_sdk::{
+use copilot_sdk::{
     SessionEvent,
     session_events::{
         AssistantFusionPhaseCompletedData, AssistantFusionPhaseFailedData,
@@ -327,7 +327,7 @@ fn concrete(model: Option<&str>) -> Option<ModelId> {
 
 #[cfg(test)]
 mod tests {
-    use github_copilot_sdk::SessionEvent;
+    use copilot_sdk::SessionEvent;
     use serde_json::{Value, json};
 
     use crate::provider::ProviderEvent;

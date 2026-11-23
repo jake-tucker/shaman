@@ -6,8 +6,8 @@ use std::sync::Arc;
 use crate::copilot_integration::{
     provider_support::ControlledProvider,
     support::{
-        ScriptedCopilot, connect, connect_arm, connect_arm_with_version, copilot_catalog, hosting,
-        models_arm, signed_in_arm,
+        COPILOT_SUGGESTED_VERSION, ScriptedCopilot, connect, connect_arm, connect_arm_with_version,
+        copilot_catalog, hosting, models_arm, signed_in_arm,
     },
 };
 use shaman::{
@@ -58,7 +58,7 @@ async fn a_cli_below_the_suggested_version_warns_without_withholding_models() {
         ProviderCatalogStatus::Warning { message }
             if message.contains("Copilot CLI 1.0.79")
                 && message.contains("may have compatibility issues")
-                && message.contains("1.0.88 or newer")
+                && message.contains(&format!("{COPILOT_SUGGESTED_VERSION} or newer"))
     ));
 
     server.shutdown().await.expect("shut the server down");
@@ -191,7 +191,7 @@ const DETAILED_COPILOT_MODELS: &str = concat!(
     r#""supports":{"vision":true}},"#,
     r#""modelPickerCategory":"lightweight","modelPickerPriceCategory":"low","#,
     r#""billing":{"tokenPrices":{"batchSize":1000000,"inputPrice":10.0,"outputPrice":50.0,"#,
-    r#""cachePrice":1.0,"cacheWritePrice":12.5,"maxPromptTokens":272000,"#,
+    r#""cacheReadPrice":1.0,"cacheWritePrice":12.5,"maxPromptTokens":272000,"#,
     r#""longContext":{"inputPrice":20.0,"outputPrice":75.0,"cacheReadPrice":2.0,"#,
     r#""cacheWritePrice":25.0,"cacheWrite1hPrice":40.0,"maxPromptTokens":872000}},"#,
     r#""promo":{"discountPercent":25,"message":"25% off this month","#,
