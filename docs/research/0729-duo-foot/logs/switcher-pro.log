@@ -1,0 +1,72 @@
+661.353 inspector set, wrapped in nil
+661.390 fold probe onGeometryChange: size=402x874 fold=none
+661.390 f=0 t=0 probe root swiftui: edge=nil classes=compact/regular size=402x874 global=0,0 402x874 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+661.391 fold probe GeometryReader: size=402x874 fold=none
+661.391 lab uikit launched ["--fake", "paired", "--lab", "uikit", "--lab-aside", "inspector", "--foot", "band", "--foot-log", "pro", "--lab-open", "1"]
+661.396 f=0 t=0 probe root uikit(moved): edge=nil classes=1/2 window=402x874 windowSafe=62,0,34,0 frameInWindow=0,0 402x874
+661.397 fold probe updateConstraints run 1: size=402x874 fold=none
+661.400 willChangeTo mode=2 collapsed=false mode=1 sidebar=["listing"] main=["S1"] inspector=false
+661.400 topColumnForCollapsing proposed=main answered=main collapsed=false mode=1 sidebar=["listing"] main=["S1"] inspector=false
+661.406 willShow sidebar collapsed=false mode=1 sidebar=["listing"] main=["S1"] inspector=false
+661.408 willHide sidebar collapsed=false mode=1 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+661.409 willShow main collapsed=false mode=1 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+661.410 nav sidebar willShow UINavigationController, no transition
+661.468 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+661.468 didHide sidebar collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+661.468 didShow main collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+661.468 columns laid out: size=402x874 fold=none collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+661.469 fold probe layoutSubviews run 1: size=402x874 fold=none
+661.480 nav main willShow S1, no transition
+661.480 nav main didShow S1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+661.606 f=0 t=0 main column geometry: size=402x724 bottomSafe=34 edge=nil variant=band
+661.606 f=0 t=0 main column edge: nil bottomSafe=34 variant=band
+661.606 f=0 t=0 field moved: global top=797.8 bottom=831.8 edge=nil bottomSafe=34 focused=false
+661.606 f=0 t=0 probe main swiftui: edge=nil classes=compact/regular size=402x874 global=0,0 402x874 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+661.609 f=0 t=0 probe main uikit(moved): edge=nil classes=1/2 window=402x874 windowSafe=62,0,34,0 frameInWindow=0,0 402x874
+661.685 columns appeared collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+661.690 f=0 t=0 system: UISceneDidActivateNotification
+661.705 f=1 t=0 root tick: window 402x874 safe=62,0,34,0 edge=nil orientation=1 scene=0
+661.705 f=1 t=0 regions changed: reader=0,0 402x874 window=0,0 402x874 reader.occlusion=[0,0 402x54 active=true] reader.occlusion+inactive=[0,0 402x54 active=true] reader.division=none reader.division+inactive=none window.occlusion=[0,0 402x54 active=true] window.occlusion+inactive=[0,0 402x54 active=true] window.division=none window.division+inactive=none
+661.709 f=1 t=0 probe root swiftui: edge=nil classes=compact/regular size=402x874 global=0,0 402x874 safe=0,0,0,0 occlusion=[0,0 402x54 active=true margins=0,0,0,0] occlusion+inactive=[0,0 402x54 active=true margins=0,0,0,0] division=none division+inactive=none
+661.713 f=1 t=0 probe main swiftui: edge=nil classes=compact/regular size=402x874 global=0,0 402x874 safe=0,0,0,0 occlusion=[0,0 402x54 active=true margins=0,0,0,0] occlusion+inactive=[0,0 402x54 active=true margins=0,0,0,0] division=none division+inactive=none
+------- mac: app switcher test begins
+666.700 f=300 t=924 regions sampled every frame, unchanged since f=1
+672.433 f=600 t=1783 regions sampled every frame, unchanged since f=1
+677.047 f=847 t=2524 system: UISceneWillDeactivateNotification
+677.068 f=848 t=2524 root tick: window 402x874 safe=62,0,34,0 edge=nil orientation=1 scene=1
+677.950 f=900 t=2681 regions sampled every frame, unchanged since f=1
+682.950 f=1200 t=3597 regions sampled every frame, unchanged since f=1
+683.278 f=1219 t=3656 system: UISceneDidEnterBackgroundNotification
+683.287 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+683.413 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+683.529 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+683.566 f=1220 t=3657 root tick: window 402x874 safe=62,0,34,0 edge=nil orientation=1 scene=2
+------- mac: app switcher test ended
+------- mac: front again
+698.782 f=1238 t=3711 system: UISceneWillEnterForegroundNotification
+698.812 f=1239 t=3711 root tick: window 402x874 safe=62,0,34,0 edge=nil orientation=1 scene=1
+698.816 f=1240 t=3711 ------- command: dump after the app switcher
+698.817 f=1240 t=3711 dump[after the app switcher] root regions: reader=0,0 402x874 window=0,0 402x874 reader.occlusion=[0,0 402x54 active=true] reader.occlusion+inactive=[0,0 402x54 active=true] reader.division=none reader.division+inactive=none window.occlusion=[0,0 402x54 active=true] window.occlusion+inactive=[0,0 402x54 active=true] window.division=none window.division+inactive=none
+698.817 f=1240 t=3711 dump[after the app switcher] root hinge: never called runs=0
+698.822 f=1240 t=3711 dump[after the app switcher] probe root uikit: edge=nil classes=1/2 window=402x874 windowSafe=62,0,34,0 frameInWindow=0,0 402x874 | chain: UIHostingController<ModifiedConten:nil < window:nil
+698.822 f=1240 t=3711 dump[after the app switcher] probe main uikit: edge=nil classes=1/2 window=402x874 windowSafe=62,0,34,0 frameInWindow=0,0 402x874 | chain: LabHost:nil < UINavigationController:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+698.822 f=1240 t=3711 dump[after the app switcher] mark ground: top=789.7 bottom=874 fromWindowBottom=0 topFromWindowBottom=84.3 x=0..402 window=402x874
+698.822 f=1240 t=3711 dump[after the app switcher] list UpdateCoalescingCollectionView: frameInWindow=0,0 402x874 content=15600 adjustedInset=116,0,84.3,0 inset=0,0,0,0 offset=-116 endOffset=14810.3 contentEndsAtFromWindowBottom=-14842
+698.822 f=1240 t=3711 dump[after the app switcher] mark foot: top=789.7 bottom=840 fromWindowBottom=34 topFromWindowBottom=84.3 x=0..402 window=402x874
+698.822 f=1240 t=3711 dump[after the app switcher] mark field: top=798 bottom=832 fromWindowBottom=42 topFromWindowBottom=76 x=8..322.7 window=402x874
+698.822 f=1240 t=3711 dump[after the app switcher] probe root swiftui: edge=nil classes=compact/regular size=402x874 global=0,0 402x874 safe=0,0,0,0 occlusion=[0,0 402x54 active=true margins=0,0,0,0] occlusion+inactive=[0,0 402x54 active=true margins=0,0,0,0] division=none division+inactive=none
+698.822 f=1240 t=3711 dump[after the app switcher] probe main swiftui: edge=nil classes=compact/regular size=402x874 global=0,0 402x874 safe=0,0,0,0 occlusion=[0,0 402x54 active=true margins=0,0,0,0] occlusion+inactive=[0,0 402x54 active=true margins=0,0,0,0] division=none division+inactive=none
+699.222 f=1262 t=3738 system: UISceneDidActivateNotification
+699.249 f=1263 t=3741 root tick: window 402x874 safe=62,0,34,0 edge=nil orientation=1 scene=0
+703.135 f=1496 t=4444 ------- command: dump after the app switcher
+703.136 f=1496 t=4444 dump[after the app switcher] root regions: reader=0,0 402x874 window=0,0 402x874 reader.occlusion=[0,0 402x54 active=true] reader.occlusion+inactive=[0,0 402x54 active=true] reader.division=none reader.division+inactive=none window.occlusion=[0,0 402x54 active=true] window.occlusion+inactive=[0,0 402x54 active=true] window.division=none window.division+inactive=none
+703.136 f=1496 t=4444 dump[after the app switcher] root hinge: never called runs=0
+703.136 f=1496 t=4444 dump[after the app switcher] probe root uikit: edge=nil classes=1/2 window=402x874 windowSafe=62,0,34,0 frameInWindow=0,0 402x874 | chain: UIHostingController<ModifiedConten:nil < window:nil
+703.137 f=1496 t=4444 dump[after the app switcher] probe main uikit: edge=nil classes=1/2 window=402x874 windowSafe=62,0,34,0 frameInWindow=0,0 402x874 | chain: LabHost:nil < UINavigationController:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+703.137 f=1496 t=4444 dump[after the app switcher] mark ground: top=789.7 bottom=874 fromWindowBottom=0 topFromWindowBottom=84.3 x=0..402 window=402x874
+703.137 f=1496 t=4444 dump[after the app switcher] list UpdateCoalescingCollectionView: frameInWindow=0,0 402x874 content=15600 adjustedInset=116,0,84.3,0 inset=0,0,0,0 offset=-116 endOffset=14810.3 contentEndsAtFromWindowBottom=-14842
+703.137 f=1496 t=4444 dump[after the app switcher] mark foot: top=789.7 bottom=840 fromWindowBottom=34 topFromWindowBottom=84.3 x=0..402 window=402x874
+703.137 f=1496 t=4444 dump[after the app switcher] mark field: top=798 bottom=832 fromWindowBottom=42 topFromWindowBottom=76 x=8..322.7 window=402x874
+703.138 f=1496 t=4444 dump[after the app switcher] probe root swiftui: edge=nil classes=compact/regular size=402x874 global=0,0 402x874 safe=0,0,0,0 occlusion=[0,0 402x54 active=true margins=0,0,0,0] occlusion+inactive=[0,0 402x54 active=true margins=0,0,0,0] division=none division+inactive=none
+703.138 f=1496 t=4444 dump[after the app switcher] probe main swiftui: edge=nil classes=compact/regular size=402x874 global=0,0 402x874 safe=0,0,0,0 occlusion=[0,0 402x54 active=true margins=0,0,0,0] occlusion+inactive=[0,0 402x54 active=true margins=0,0,0,0] division=none division+inactive=none
+703.200 f=1500 t=4455 regions sampled every frame, unchanged since f=1

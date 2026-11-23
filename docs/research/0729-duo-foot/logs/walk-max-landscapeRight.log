@@ -1,0 +1,297 @@
+307.338 inspector set, wrapped in nil
+307.359 fold probe onGeometryChange: size=956x440 fold=none
+307.359 f=0 t=0 probe root swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+307.359 fold probe GeometryReader: size=956x440 fold=none
+307.359 lab uikit launched ["--fake", "paired", "--lab", "uikit", "--lab-aside", "inspector", "--foot", "band", "--foot-log", "max"]
+307.361 f=0 t=0 probe root uikit(moved): edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440
+307.362 fold probe updateConstraints run 1: size=956x440 fold=none
+307.364 willChangeTo mode=2 collapsed=false mode=1 sidebar=["listing"] main=["landing"] inspector=false
+307.368 willShow sidebar collapsed=false mode=1 sidebar=["listing"] main=["landing"] inspector=false
+307.369 willShow main collapsed=false mode=1 sidebar=["listing"] main=["landing"] inspector=false
+307.430 didShow sidebar collapsed=false mode=2 sidebar=["listing"] main=["landing"] inspector=false
+307.430 didShow main collapsed=false mode=2 sidebar=["listing"] main=["landing"] inspector=false
+307.430 columns laid out: size=956x440 fold=none collapsed=false mode=2 sidebar=["listing"] main=["landing"] inspector=false
+307.430 fold probe layoutSubviews run 1: size=956x440 fold=none
+307.439 nav sidebar willShow listing, no transition
+307.441 nav sidebar didShow listing collapsed=false mode=2 sidebar=["listing"] main=["landing"] inspector=false
+307.444 nav main willShow landing, no transition
+307.445 nav main didShow landing collapsed=false mode=2 sidebar=["listing"] main=["landing"] inspector=false
+307.544 f=0 t=0 probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=0,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+307.547 f=0 t=0 probe sidebar uikit(moved): edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 382x440
+307.635 columns appeared collapsed=false mode=2 sidebar=["listing"] main=["landing"] inspector=false
+307.639 f=0 t=0 system: UISceneDidActivateNotification
+307.651 f=1 t=0 root tick: window 956x440 safe=0,62,20,62 edge=nil orientation=4 scene=0
+307.651 f=1 t=0 regions changed: reader=0,0 956x440 window=0,0 956x440 reader.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] reader.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] reader.division=none reader.division+inactive=none window.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] window.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] window.division=none window.division+inactive=none
+307.656 f=1 t=0 probe root swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+------- mac: pose max-landscapeRight, facing Current Device Orientation: landscapeRight
+311.517 f=232 t=722 ------- command: dump max-landscapeRight listing
+311.518 f=232 t=722 dump[max-landscapeRight listing] root regions: reader=0,0 956x440 window=0,0 956x440 reader.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] reader.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] reader.division=none reader.division+inactive=none window.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] window.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] window.division=none window.division+inactive=none
+311.518 f=232 t=722 dump[max-landscapeRight listing] root hinge: never called runs=0
+311.521 f=232 t=722 dump[max-landscapeRight listing] probe root uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: UIHostingController<ModifiedConten:nil < window:nil
+311.521 f=232 t=722 dump[max-landscapeRight listing] probe sidebar uikit: edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 382x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+311.521 f=232 t=722 dump[max-landscapeRight listing] probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=0,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+311.521 f=232 t=722 dump[max-landscapeRight listing] probe root swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+312.451 f=288 t=889 ------- command: open
+312.451 open S1
+312.458 nav main willShow S1, no transition
+312.460 nav main didShow S1 collapsed=false mode=2 sidebar=["listing"] main=["S1"] inspector=false
+312.507 f=288 t=889 main column geometry: size=512x342 bottomSafe=20 edge=nil variant=band
+312.507 f=288 t=889 main column edge: nil bottomSafe=20 variant=band
+312.507 f=288 t=889 field moved: global top=377.8 bottom=411.8 edge=nil bottomSafe=20 focused=false
+312.507 f=288 t=889 probe main swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+312.510 f=288 t=889 probe main uikit(moved): edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440
+312.734 f=300 t=902 regions sampled every frame, unchanged since f=1
+314.351 f=396 t=1156 ------- command: dump max-landscapeRight main
+314.351 f=396 t=1156 dump[max-landscapeRight main] root regions: reader=0,0 956x440 window=0,0 956x440 reader.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] reader.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] reader.division=none reader.division+inactive=none window.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] window.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] window.division=none window.division+inactive=none
+314.351 f=396 t=1156 dump[max-landscapeRight main] root hinge: never called runs=0
+314.351 f=396 t=1156 dump[max-landscapeRight main] probe root uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: UIHostingController<ModifiedConten:nil < window:nil
+314.351 f=396 t=1156 dump[max-landscapeRight main] probe sidebar uikit: edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 382x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+314.351 f=396 t=1156 dump[max-landscapeRight main] probe main uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+314.351 f=396 t=1156 dump[max-landscapeRight main] mark ground: top=369.7 bottom=440.0 fromWindowBottom=0.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+314.351 f=396 t=1156 dump[max-landscapeRight main] list UpdateCoalescingCollectionView: frameInWindow=0,0 956x440 content=15600 adjustedInset=78,0,70.3,0 inset=0,0,0,0 offset=-78 endOffset=15230.3 contentEndsAtFromWindowBottom=-15238
+314.351 f=396 t=1156 dump[max-landscapeRight main] mark foot: top=369.7 bottom=420.0 fromWindowBottom=20.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+314.352 f=396 t=1156 dump[max-landscapeRight main] mark field: top=378 bottom=412 fromWindowBottom=28 topFromWindowBottom=62 x=390..814.7 window=956x440
+314.352 f=396 t=1156 dump[max-landscapeRight main] probe main swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+314.352 f=396 t=1156 dump[max-landscapeRight main] probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=0,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+314.352 f=396 t=1156 dump[max-landscapeRight main] probe root swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+315.217 f=448 t=1312 ------- command: aside
+315.218 reader toggled aside, wanted=true
+315.220 willChangeTo mode=1 collapsed=false mode=2 sidebar=["listing"] main=["S1"] inspector=false
+315.222 willHide sidebar collapsed=false mode=2 sidebar=["listing"] main=["S1"] inspector=false
+315.232 f=448 t=1312 probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=-382,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+315.243 f=448 t=1312 main column geometry: size=552x342 bottomSafe=20 edge=nil variant=band
+315.243 f=448 t=1312 field moved: global top=377.8 bottom=411.8 edge=nil bottomSafe=20 focused=false
+315.277 f=448 t=1312 probe aside swiftui: edge=nil classes=compact/compact size=0x0 global=0,0 0x0 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+315.295 f=448 t=1312 probe aside swiftui: edge=nil classes=compact/compact size=342x440 global=614,0 342x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+315.300 f=448 t=1312 probe aside swiftui: edge=nil classes=compact/compact size=342x440 global=614,0 342x440 safe=0,0,0,0 occlusion=[288,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[288,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+315.301 f=448 t=1312 probe aside uikit(moved): edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=614,0 342x440
+315.852 didHide sidebar collapsed=false mode=1 sidebar=["listing"] main=["S1"] inspector=true
+315.852 f=478 t=1406 probe sidebar uikit(moved): edge=nil classes=1/1 NOT-IN-A-WINDOW
+315.858 f=478 t=1406 probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=0,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+317.884 f=600 t=1774 regions sampled every frame, unchanged since f=1
+318.151 f=616 t=1822 ------- command: dump max-landscapeRight aside
+318.151 f=616 t=1822 dump[max-landscapeRight aside] root regions: reader=0,0 956x440 window=0,0 956x440 reader.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] reader.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] reader.division=none reader.division+inactive=none window.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] window.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] window.division=none window.division+inactive=none
+318.151 f=616 t=1822 dump[max-landscapeRight aside] root hinge: never called runs=0
+318.151 f=616 t=1822 dump[max-landscapeRight aside] probe root uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: UIHostingController<ModifiedConten:nil < window:nil
+318.151 f=616 t=1822 dump[max-landscapeRight aside] probe sidebar uikit: edge=nil classes=1/1 NOT-IN-A-WINDOW | chain: LabHost:nil < UINavigationController:nil
+318.151 f=616 t=1822 dump[max-landscapeRight aside] probe main uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+318.151 f=616 t=1822 dump[max-landscapeRight aside] mark ground: top=369.7 bottom=440.0 fromWindowBottom=0.0 topFromWindowBottom=70.3 x=62..614 window=956x440
+318.151 f=616 t=1822 dump[max-landscapeRight aside] list UpdateCoalescingCollectionView: frameInWindow=0,0 956x440 content=15600 adjustedInset=78,0,70.3,0 inset=0,0,0,0 offset=-78 endOffset=15230.3 contentEndsAtFromWindowBottom=-15238
+318.151 f=616 t=1822 dump[max-landscapeRight aside] mark foot: top=369.7 bottom=420.0 fromWindowBottom=20.0 topFromWindowBottom=70.3 x=62..614 window=956x440
+318.152 f=616 t=1822 dump[max-landscapeRight aside] mark field: top=378 bottom=412 fromWindowBottom=28 topFromWindowBottom=62 x=70..534.7 window=956x440
+318.152 f=616 t=1822 dump[max-landscapeRight aside] probe aside uikit: edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=614,0 342x440 | chain: NavigationStackHostingController<A:nil < UIKitNavigationController:nil < UIHostingController<LabAsideStack>:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+318.152 f=616 t=1822 dump[max-landscapeRight aside] probe root swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+318.152 f=616 t=1822 dump[max-landscapeRight aside] probe main swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+318.152 f=616 t=1822 dump[max-landscapeRight aside] probe aside swiftui: edge=nil classes=compact/compact size=342x440 global=614,0 342x440 safe=0,0,0,0 occlusion=[288,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[288,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+319.017 f=668 t=1978 ------- command: aside
+319.018 reader toggled aside, wanted=false
+319.019 willChangeTo mode=2 collapsed=false mode=1 sidebar=["listing"] main=["S1"] inspector=true
+319.020 willShow sidebar collapsed=false mode=1 sidebar=["listing"] main=["S1"] inspector=true
+319.021 nav sidebar willShow listing, no transition
+319.022 f=668 t=1978 probe sidebar uikit(moved): edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=-382,0 382x440
+319.035 f=668 t=1978 probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=-382,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+319.035 f=668 t=1978 dump[max-landscapeRight aside] probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=-382,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+319.035 f=668 t=1978 probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=-382,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+319.039 f=668 t=1978 probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=0,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+319.047 f=668 t=1978 main column geometry: size=512x342 bottomSafe=20 edge=nil variant=band
+319.047 f=668 t=1978 field moved: global top=377.8 bottom=411.8 edge=nil bottomSafe=20 focused=false
+319.055 f=668 t=1978 probe aside swiftui: edge=nil classes=compact/compact size=342x440 global=956,0 342x440 safe=0,0,0,0 occlusion=[288,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[288,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+319.056 f=668 t=1978 probe aside swiftui: edge=nil classes=compact/compact size=342x440 global=956,0 342x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+319.059 nav sidebar didShow listing collapsed=false mode=2 sidebar=["listing"] main=["S1"] inspector=false
+319.059 the listing is its navigation controller's top: narrow=false expanding=false
+319.569 didShow sidebar collapsed=false mode=2 sidebar=["listing"] main=["S1"] inspector=false
+319.569 f=698 t=2071 probe aside uikit(moved): edge=nil classes=1/1 NOT-IN-A-WINDOW
+319.577 f=698 t=2071 probe aside swiftui: edge=nil classes=compact/compact size=342x440 global=0,0 342x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+321.468 f=812 t=2419 ------- command: sheet medium
+321.497 f=812 t=2419 probe sheet-medium swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+321.524 f=812 t=2419 probe sheet-medium swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+321.524 f=812 t=2419 probe sheet-medium uikit(moved): edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440
+323.068 f=900 t=2683 regions sampled every frame, unchanged since f=1
+324.401 f=980 t=2922 ------- command: dump max-landscapeRight sheet-medium
+324.402 f=980 t=2922 dump[max-landscapeRight sheet-medium] root regions: reader=0,0 956x440 window=0,0 956x440 reader.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] reader.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] reader.division=none reader.division+inactive=none window.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] window.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] window.division=none window.division+inactive=none
+324.402 f=980 t=2922 dump[max-landscapeRight sheet-medium] root hinge: never called runs=0
+324.402 f=980 t=2922 dump[max-landscapeRight sheet-medium] probe root uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: UIHostingController<ModifiedConten:nil < window:nil
+324.403 f=980 t=2922 dump[max-landscapeRight sheet-medium] probe sidebar uikit: edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 382x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+324.403 f=980 t=2922 dump[max-landscapeRight sheet-medium] probe main uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+324.403 f=980 t=2922 dump[max-landscapeRight sheet-medium] mark ground: top=369.7 bottom=440.0 fromWindowBottom=0.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+324.403 f=980 t=2922 dump[max-landscapeRight sheet-medium] list UpdateCoalescingCollectionView: frameInWindow=0,0 956x440 content=15600 adjustedInset=78,0,70.3,0 inset=0,0,0,0 offset=-78 endOffset=15230.3 contentEndsAtFromWindowBottom=-15238
+324.403 f=980 t=2922 dump[max-landscapeRight sheet-medium] mark foot: top=369.7 bottom=420.0 fromWindowBottom=20.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+324.404 f=980 t=2922 dump[max-landscapeRight sheet-medium] mark field: top=378 bottom=412 fromWindowBottom=28 topFromWindowBottom=62 x=390..814.7 window=956x440
+324.404 f=980 t=2922 dump[max-landscapeRight sheet-medium] probe aside uikit: edge=nil classes=1/1 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:nil < UIKitNavigationController:nil < UIHostingController<LabAsideStack>:nil
+324.404 f=980 t=2922 dump[max-landscapeRight sheet-medium] probe sheet-medium uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: NavigationStackHostingController<A:nil < UIKitNavigationController:nil < PresentationHostingController<AnyV:nil < UIHostingController<ModifiedConten:nil < window:nil
+324.405 f=980 t=2922 dump[max-landscapeRight sheet-medium] probe root swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+324.405 f=980 t=2922 dump[max-landscapeRight sheet-medium] probe sheet-medium swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+324.405 f=980 t=2922 dump[max-landscapeRight sheet-medium] probe main swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+324.405 f=980 t=2922 dump[max-landscapeRight sheet-medium] probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=0,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+325.267 f=1032 t=3077 ------- command: sheet off
+325.285 f=1033 t=3079 probe sheet-medium swiftui: edge=nil classes=regular/compact size=956x440 global=0,440 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+325.286 f=1033 t=3079 probe sheet-medium swiftui: edge=nil classes=regular/compact size=956x440 global=0,440 956x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+325.839 f=1063 t=3173 probe sheet-medium uikit(moved): edge=nil classes=2/1 NOT-IN-A-WINDOW
+325.844 f=1063 t=3173 probe sheet-medium swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+327.734 f=1176 t=3517 ------- command: sheet large
+327.754 f=1176 t=3517 probe sheet-large swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+327.770 f=1176 t=3517 probe sheet-large swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+327.771 f=1176 t=3517 probe sheet-large uikit(moved): edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440
+328.256 f=1200 t=3575 regions sampled every frame, unchanged since f=1
+330.651 f=1344 t=4012 ------- command: dump max-landscapeRight sheet-large
+330.652 f=1344 t=4012 dump[max-landscapeRight sheet-large] root regions: reader=0,0 956x440 window=0,0 956x440 reader.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] reader.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] reader.division=none reader.division+inactive=none window.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] window.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] window.division=none window.division+inactive=none
+330.652 f=1344 t=4012 dump[max-landscapeRight sheet-large] root hinge: never called runs=0
+330.652 f=1344 t=4012 dump[max-landscapeRight sheet-large] probe root uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: UIHostingController<ModifiedConten:nil < window:nil
+330.653 f=1344 t=4012 dump[max-landscapeRight sheet-large] probe sidebar uikit: edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 382x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+330.653 f=1344 t=4012 dump[max-landscapeRight sheet-large] probe main uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+330.653 f=1344 t=4012 dump[max-landscapeRight sheet-large] mark ground: top=369.7 bottom=440.0 fromWindowBottom=0.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+330.654 f=1344 t=4012 dump[max-landscapeRight sheet-large] list UpdateCoalescingCollectionView: frameInWindow=0,0 956x440 content=15600 adjustedInset=78,0,70.3,0 inset=0,0,0,0 offset=-78 endOffset=15230.3 contentEndsAtFromWindowBottom=-15238
+330.654 f=1344 t=4012 dump[max-landscapeRight sheet-large] mark foot: top=369.7 bottom=420.0 fromWindowBottom=20.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+330.654 f=1344 t=4012 dump[max-landscapeRight sheet-large] mark field: top=378 bottom=412 fromWindowBottom=28 topFromWindowBottom=62 x=390..814.7 window=956x440
+330.654 f=1344 t=4012 dump[max-landscapeRight sheet-large] probe aside uikit: edge=nil classes=1/1 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:nil < UIKitNavigationController:nil < UIHostingController<LabAsideStack>:nil
+330.655 f=1344 t=4012 dump[max-landscapeRight sheet-large] probe sheet-large uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: NavigationStackHostingController<A:nil < UIKitNavigationController:nil < PresentationHostingController<AnyV:nil < UIHostingController<ModifiedConten:nil < window:nil
+330.655 f=1344 t=4012 dump[max-landscapeRight sheet-large] probe root swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+330.656 f=1344 t=4012 dump[max-landscapeRight sheet-large] probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=0,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+330.656 f=1344 t=4012 dump[max-landscapeRight sheet-large] probe main swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+330.656 f=1344 t=4012 dump[max-landscapeRight sheet-large] probe sheet-large swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+331.517 f=1396 t=4167 ------- command: sheet off
+331.537 f=1397 t=4169 probe sheet-large swiftui: edge=nil classes=regular/compact size=956x440 global=0,440 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+331.539 f=1397 t=4169 probe sheet-large swiftui: edge=nil classes=regular/compact size=956x440 global=0,440 956x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+332.087 f=1427 t=4283 probe sheet-large uikit(moved): edge=nil classes=2/1 NOT-IN-A-WINDOW
+332.093 f=1427 t=4283 probe sheet-large swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+333.317 f=1500 t=4504 regions sampled every frame, unchanged since f=1
+333.985 f=1540 t=4624 ------- command: bar off
+336.384 f=1684 t=5055 ------- command: dump max-landscapeRight bar-off main
+336.385 f=1684 t=5055 dump[max-landscapeRight bar-off main] root regions: reader=0,0 956x440 window=0,0 956x440 reader.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] reader.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] reader.division=none reader.division+inactive=none window.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] window.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] window.division=none window.division+inactive=none
+336.385 f=1684 t=5055 dump[max-landscapeRight bar-off main] root hinge: never called runs=0
+336.385 f=1684 t=5055 dump[max-landscapeRight bar-off main] probe root uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: UIHostingController<ModifiedConten:nil < window:nil
+336.386 f=1684 t=5055 dump[max-landscapeRight bar-off main] probe sidebar uikit: edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 382x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil asks-off < UIHostingController<ModifiedConten:nil < window:nil
+336.386 f=1684 t=5055 dump[max-landscapeRight bar-off main] probe main uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil asks-off < UIHostingController<ModifiedConten:nil < window:nil
+336.386 f=1684 t=5055 dump[max-landscapeRight bar-off main] mark ground: top=369.7 bottom=440.0 fromWindowBottom=0.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+336.386 f=1684 t=5055 dump[max-landscapeRight bar-off main] list UpdateCoalescingCollectionView: frameInWindow=0,0 956x440 content=15600 adjustedInset=78,0,70.3,0 inset=0,0,0,0 offset=-78 endOffset=15230.3 contentEndsAtFromWindowBottom=-15238
+336.387 f=1684 t=5055 dump[max-landscapeRight bar-off main] mark foot: top=369.7 bottom=420.0 fromWindowBottom=20.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+336.387 f=1684 t=5055 dump[max-landscapeRight bar-off main] mark field: top=378 bottom=412 fromWindowBottom=28 topFromWindowBottom=62 x=390..814.7 window=956x440
+336.387 f=1684 t=5055 dump[max-landscapeRight bar-off main] probe aside uikit: edge=nil classes=1/1 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:nil < UIKitNavigationController:nil < UIHostingController<LabAsideStack>:nil
+336.387 f=1684 t=5055 dump[max-landscapeRight bar-off main] probe root swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+336.388 f=1684 t=5055 dump[max-landscapeRight bar-off main] probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=0,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+336.388 f=1684 t=5055 dump[max-landscapeRight bar-off main] probe main swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+337.318 f=1740 t=5222 ------- command: sheet medium
+337.336 f=1740 t=5222 probe sheet-medium swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+337.352 f=1740 t=5222 probe sheet-medium swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+337.353 f=1740 t=5222 probe sheet-medium uikit(moved): edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440
+338.451 f=1800 t=5421 regions sampled every frame, unchanged since f=1
+340.184 f=1904 t=5738 ------- command: dump max-landscapeRight bar-off sheet-medium
+340.185 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] root regions: reader=0,0 956x440 window=0,0 956x440 reader.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] reader.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] reader.division=none reader.division+inactive=none window.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] window.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] window.division=none window.division+inactive=none
+340.185 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] root hinge: never called runs=0
+340.185 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] probe root uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: UIHostingController<ModifiedConten:nil < window:nil
+340.186 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] probe sidebar uikit: edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 382x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil asks-off < UIHostingController<ModifiedConten:nil < window:nil
+340.186 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] probe main uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil asks-off < UIHostingController<ModifiedConten:nil < window:nil
+340.186 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] mark ground: top=369.7 bottom=440.0 fromWindowBottom=0.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+340.186 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] list UpdateCoalescingCollectionView: frameInWindow=0,0 956x440 content=15600 adjustedInset=78,0,70.3,0 inset=0,0,0,0 offset=-78 endOffset=15230.3 contentEndsAtFromWindowBottom=-15238
+340.187 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] mark foot: top=369.7 bottom=420.0 fromWindowBottom=20.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+340.187 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] mark field: top=378 bottom=412 fromWindowBottom=28 topFromWindowBottom=62 x=390..814.7 window=956x440
+340.187 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] probe aside uikit: edge=nil classes=1/1 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:nil < UIKitNavigationController:nil < UIHostingController<LabAsideStack>:nil
+340.187 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] probe sheet-medium uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: NavigationStackHostingController<A:nil < UIKitNavigationController:nil < PresentationHostingController<AnyV:nil < UIHostingController<ModifiedConten:nil < window:nil
+340.188 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] probe root swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+340.188 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=0,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+340.188 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] probe main swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+340.188 f=1904 t=5738 dump[max-landscapeRight bar-off sheet-medium] probe sheet-medium swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+341.118 f=1960 t=5905 ------- command: sheet off
+341.137 f=1961 t=5906 probe sheet-medium swiftui: edge=nil classes=regular/compact size=956x440 global=0,440 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+341.139 f=1961 t=5906 probe sheet-medium swiftui: edge=nil classes=regular/compact size=956x440 global=0,440 956x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+341.685 f=1991 t=6015 probe sheet-medium uikit(moved): edge=nil classes=2/1 NOT-IN-A-WINDOW
+341.689 f=1991 t=6015 probe sheet-medium swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+343.501 f=2100 t=6347 regions sampled every frame, unchanged since f=1
+343.568 f=2104 t=6359 ------- command: sheet large
+343.588 f=2104 t=6359 probe sheet-large swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+343.606 f=2104 t=6359 probe sheet-large swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+343.606 f=2104 t=6359 probe sheet-large uikit(moved): edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440
+346.501 f=2272 t=6887 ------- command: dump max-landscapeRight bar-off sheet-large
+346.502 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] root regions: reader=0,0 956x440 window=0,0 956x440 reader.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] reader.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] reader.division=none reader.division+inactive=none window.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] window.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] window.division=none window.division+inactive=none
+346.502 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] root hinge: never called runs=0
+346.502 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] probe root uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: UIHostingController<ModifiedConten:nil < window:nil
+346.502 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] probe sidebar uikit: edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 382x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil asks-off < UIHostingController<ModifiedConten:nil < window:nil
+346.503 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] probe main uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil asks-off < UIHostingController<ModifiedConten:nil < window:nil
+346.503 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] mark ground: top=369.7 bottom=440.0 fromWindowBottom=0.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+346.503 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] list UpdateCoalescingCollectionView: frameInWindow=0,0 956x440 content=15600 adjustedInset=78,0,70.3,0 inset=0,0,0,0 offset=-78 endOffset=15230.3 contentEndsAtFromWindowBottom=-15238
+346.503 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] mark foot: top=369.7 bottom=420.0 fromWindowBottom=20.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+346.503 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] mark field: top=378 bottom=412 fromWindowBottom=28 topFromWindowBottom=62 x=390..814.7 window=956x440
+346.504 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] probe aside uikit: edge=nil classes=1/1 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:nil < UIKitNavigationController:nil < UIHostingController<LabAsideStack>:nil
+346.504 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] probe sheet-large uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: NavigationStackHostingController<A:nil < UIKitNavigationController:nil < PresentationHostingController<AnyV:nil < UIHostingController<ModifiedConten:nil < window:nil
+346.505 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] probe root swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+346.505 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=0,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+346.505 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] probe main swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+346.505 f=2272 t=6887 dump[max-landscapeRight bar-off sheet-large] probe sheet-large swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+347.367 f=2324 t=7041 ------- command: sheet off
+347.385 f=2325 t=7043 probe sheet-large swiftui: edge=nil classes=regular/compact size=956x440 global=0,440 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+347.386 f=2325 t=7043 probe sheet-large swiftui: edge=nil classes=regular/compact size=956x440 global=0,440 956x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+347.939 f=2355 t=7154 probe sheet-large uikit(moved): edge=nil classes=2/1 NOT-IN-A-WINDOW
+347.946 f=2355 t=7154 probe sheet-large swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+348.701 f=2400 t=7296 regions sampled every frame, unchanged since f=1
+349.767 f=2464 t=7487 ------- command: bar on
+351.701 f=2580 t=7834 ------- command: dump max-landscapeRight bar-on-again main
+351.701 f=2580 t=7834 dump[max-landscapeRight bar-on-again main] root regions: reader=0,0 956x440 window=0,0 956x440 reader.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] reader.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] reader.division=none reader.division+inactive=none window.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] window.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] window.division=none window.division+inactive=none
+351.701 f=2580 t=7834 dump[max-landscapeRight bar-on-again main] root hinge: never called runs=0
+351.701 f=2580 t=7834 dump[max-landscapeRight bar-on-again main] probe root uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: UIHostingController<ModifiedConten:nil < window:nil
+351.702 f=2580 t=7834 dump[max-landscapeRight bar-on-again main] probe sidebar uikit: edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 382x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+351.702 f=2580 t=7834 dump[max-landscapeRight bar-on-again main] probe main uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+351.702 f=2580 t=7834 dump[max-landscapeRight bar-on-again main] mark ground: top=369.7 bottom=440.0 fromWindowBottom=0.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+351.702 f=2580 t=7834 dump[max-landscapeRight bar-on-again main] list UpdateCoalescingCollectionView: frameInWindow=0,0 956x440 content=15600 adjustedInset=78,0,70.3,0 inset=0,0,0,0 offset=-78 endOffset=15230.3 contentEndsAtFromWindowBottom=-15238
+351.703 f=2580 t=7834 dump[max-landscapeRight bar-on-again main] mark foot: top=369.7 bottom=420.0 fromWindowBottom=20.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+351.703 f=2580 t=7834 dump[max-landscapeRight bar-on-again main] mark field: top=378 bottom=412 fromWindowBottom=28 topFromWindowBottom=62 x=390..814.7 window=956x440
+351.703 f=2580 t=7834 dump[max-landscapeRight bar-on-again main] probe aside uikit: edge=nil classes=1/1 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:nil < UIKitNavigationController:nil < UIHostingController<LabAsideStack>:nil
+351.703 f=2580 t=7834 dump[max-landscapeRight bar-on-again main] probe root swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+351.704 f=2580 t=7834 dump[max-landscapeRight bar-on-again main] probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=0,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+351.704 f=2580 t=7834 dump[max-landscapeRight bar-on-again main] probe main swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+------- mac: away to Settings
+352.312 f=2616 t=7946 system: UISceneWillDeactivateNotification
+352.317 f=2617 t=7948 root tick: window 956x440 safe=0,62,20,62 edge=nil orientation=4 scene=1
+353.717 f=2700 t=8037 regions sampled every frame, unchanged since f=1
+------- mac: front again
+356.890 f=2890 t=8609 system: UISceneDidEnterBackgroundNotification
+356.902 willTransition to width class 2 collapsed=false mode=2 sidebar=["listing"] main=["S1"] inspector=false
+357.070 willTransition to width class 2 collapsed=false mode=2 sidebar=["listing"] main=["S1"] inspector=false
+357.128 willTransition to width class 2 collapsed=false mode=2 sidebar=["listing"] main=["S1"] inspector=false
+357.176 f=2891 t=8609 root tick: window 956x440 safe=0,62,20,62 edge=nil orientation=4 scene=2
+357.179 f=2891 t=8609 system: UISceneWillEnterForegroundNotification
+357.223 f=2892 t=8609 root tick: window 956x440 safe=0,62,20,62 edge=nil orientation=4 scene=1
+357.390 f=2900 t=8643 system: UISceneDidActivateNotification
+357.417 f=2901 t=8647 root tick: window 956x440 safe=0,62,20,62 edge=nil orientation=4 scene=0
+359.084 f=3000 t=8951 regions sampled every frame, unchanged since f=1
+362.951 f=3232 t=9647 ------- command: dump max-landscapeRight returned
+362.951 f=3232 t=9647 dump[max-landscapeRight returned] root regions: reader=0,0 956x440 window=0,0 956x440 reader.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] reader.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] reader.division=none reader.division+inactive=none window.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] window.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] window.division=none window.division+inactive=none
+362.951 f=3232 t=9647 dump[max-landscapeRight returned] root hinge: never called runs=0
+362.951 f=3232 t=9647 dump[max-landscapeRight returned] probe root uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: UIHostingController<ModifiedConten:nil < window:nil
+362.952 f=3232 t=9647 dump[max-landscapeRight returned] probe sidebar uikit: edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 382x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+362.952 f=3232 t=9647 dump[max-landscapeRight returned] probe main uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+362.952 f=3232 t=9647 dump[max-landscapeRight returned] mark ground: top=369.7 bottom=440.0 fromWindowBottom=0.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+362.952 f=3232 t=9647 dump[max-landscapeRight returned] list UpdateCoalescingCollectionView: frameInWindow=0,0 956x440 content=15600 adjustedInset=78,0,70.3,0 inset=0,0,0,0 offset=-78 endOffset=15230.3 contentEndsAtFromWindowBottom=-15238
+362.952 f=3232 t=9647 dump[max-landscapeRight returned] mark foot: top=369.7 bottom=420.0 fromWindowBottom=20.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+362.952 f=3232 t=9647 dump[max-landscapeRight returned] mark field: top=378 bottom=412 fromWindowBottom=28 topFromWindowBottom=62 x=390..814.7 window=956x440
+362.952 f=3232 t=9647 dump[max-landscapeRight returned] probe aside uikit: edge=nil classes=1/1 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:nil < UIKitNavigationController:nil < UIHostingController<LabAsideStack>:nil
+362.952 f=3232 t=9647 dump[max-landscapeRight returned] probe root swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+362.952 f=3232 t=9647 dump[max-landscapeRight returned] probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=0,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+362.952 f=3232 t=9647 dump[max-landscapeRight returned] probe main swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+------- mac: away to Messages
+363.476 f=3263 t=9743 system: UISceneWillDeactivateNotification
+363.484 f=3264 t=9745 root tick: window 956x440 safe=0,62,20,62 edge=nil orientation=4 scene=1
+364.084 f=3300 t=9853 regions sampled every frame, unchanged since f=1
+364.391 f=3318 t=9910 system: UISceneDidEnterBackgroundNotification
+364.399 willTransition to width class 2 collapsed=false mode=2 sidebar=["listing"] main=["S1"] inspector=false
+364.543 willTransition to width class 2 collapsed=false mode=2 sidebar=["listing"] main=["S1"] inspector=false
+364.678 willTransition to width class 2 collapsed=false mode=2 sidebar=["listing"] main=["S1"] inspector=false
+364.714 f=3319 t=9910 root tick: window 956x440 safe=0,62,20,62 edge=nil orientation=4 scene=2
+------- mac: front again from Messages
+368.182 f=3339 t=9966 system: UISceneWillEnterForegroundNotification
+368.222 f=3340 t=9966 root tick: window 956x440 safe=0,62,20,62 edge=nil orientation=4 scene=1
+368.623 f=3362 t=10057 system: UISceneDidActivateNotification
+368.634 f=3363 t=10059 root tick: window 956x440 safe=0,62,20,62 edge=nil orientation=4 scene=0
+372.184 f=3576 t=10699 ------- command: dump max-landscapeRight returned from Messages
+372.184 f=3576 t=10699 dump[max-landscapeRight returned from Messages] root regions: reader=0,0 956x440 window=0,0 956x440 reader.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] reader.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] reader.division=none reader.division+inactive=none window.occlusion=[902,0 54x440 active=true IN-BOTTOM-34] window.occlusion+inactive=[902,0 54x440 active=true IN-BOTTOM-34] window.division=none window.division+inactive=none
+372.184 f=3576 t=10699 dump[max-landscapeRight returned from Messages] root hinge: never called runs=0
+372.184 f=3576 t=10699 dump[max-landscapeRight returned from Messages] probe root uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: UIHostingController<ModifiedConten:nil < window:nil
+372.184 f=3576 t=10699 dump[max-landscapeRight returned from Messages] probe sidebar uikit: edge=nil classes=1/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 382x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+372.184 f=3576 t=10699 dump[max-landscapeRight returned from Messages] probe main uikit: edge=nil classes=2/1 window=956x440 windowSafe=0,62,20,62 frameInWindow=0,0 956x440 | chain: LabHost:nil < UINavigationController:nil < LabColumns:nil < UIHostingController<ModifiedConten:nil < window:nil
+372.184 f=3576 t=10699 dump[max-landscapeRight returned from Messages] mark ground: top=369.7 bottom=440.0 fromWindowBottom=0.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+372.184 f=3576 t=10699 dump[max-landscapeRight returned from Messages] list UpdateCoalescingCollectionView: frameInWindow=0,0 956x440 content=15600 adjustedInset=78,0,70.3,0 inset=0,0,0,0 offset=-78 endOffset=15230.3 contentEndsAtFromWindowBottom=-15238
+372.185 f=3576 t=10699 dump[max-landscapeRight returned from Messages] mark foot: top=369.7 bottom=420.0 fromWindowBottom=20.0 topFromWindowBottom=70.3 x=382..894 window=956x440
+372.185 f=3576 t=10699 dump[max-landscapeRight returned from Messages] mark field: top=378 bottom=412 fromWindowBottom=28 topFromWindowBottom=62 x=390..814.7 window=956x440
+372.185 f=3576 t=10699 dump[max-landscapeRight returned from Messages] probe aside uikit: edge=nil classes=1/1 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:nil < UIKitNavigationController:nil < UIHostingController<LabAsideStack>:nil
+372.185 f=3576 t=10699 dump[max-landscapeRight returned from Messages] probe root swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none
+372.185 f=3576 t=10699 dump[max-landscapeRight returned from Messages] probe sidebar swiftui: edge=nil classes=compact/compact size=382x440 global=0,0 382x440 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+372.185 f=3576 t=10699 dump[max-landscapeRight returned from Messages] probe main swiftui: edge=nil classes=regular/compact size=956x440 global=0,0 956x440 safe=0,0,0,0 occlusion=[902,0 54x440 active=true margins=0,0,0,0] occlusion+inactive=[902,0 54x440 active=true margins=0,0,0,0] division=none division+inactive=none

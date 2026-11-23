@@ -1,0 +1,105 @@
+019.000 f=1500 t=4243 regions sampled every frame, unchanged since f=1
+021.237 inspector set, wrapped in nil
+021.245 f=0 t=0 probe root uikit(traits): edge=trailing classes=1/2 NOT-IN-A-WINDOW
+021.253 fold probe onGeometryChange: size=466x678 fold=none
+021.254 f=0 t=0 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+021.254 fold probe GeometryReader: size=466x678 fold=none
+021.254 lab uikit launched ["--fake", "paired", "--lab", "uikit", "--lab-aside", "inspector", "--foot", "band", "--foot-log", "duo", "--lab-open", "1"]
+021.255 f=0 t=0 probe root uikit(moved): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+021.256 fold probe updateConstraints run 1: size=466x678 fold=none
+021.258 willChangeTo mode=2 collapsed=false mode=1 sidebar=["listing"] main=["S1"] inspector=false
+021.258 topColumnForCollapsing proposed=main answered=main collapsed=false mode=1 sidebar=["listing"] main=["S1"] inspector=false
+021.262 willShow sidebar collapsed=false mode=1 sidebar=["listing"] main=["S1"] inspector=false
+021.264 willHide sidebar collapsed=false mode=1 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+021.264 willShow main collapsed=false mode=1 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+021.265 nav sidebar willShow UINavigationController, no transition
+021.314 didShow main collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+021.314 didHide sidebar collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+021.314 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+021.314 columns laid out: size=466x678 fold=none collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+021.314 fold probe layoutSubviews run 1: size=466x678 fold=none
+021.326 nav main willShow S1, no transition
+021.327 nav main didShow S1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+021.438 f=0 t=0 main column geometry: size=382x620 bottomSafe=34 edge=trailing variant=band
+021.439 f=0 t=0 main column edge: trailing bottomSafe=34 variant=band
+021.439 f=0 t=0 field moved: global top=601.8 bottom=635.8 edge=trailing bottomSafe=34 focused=false
+021.439 f=0 t=0 probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+021.441 f=0 t=0 probe main uikit(moved): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+021.468 f=0 t=0 main column geometry: size=382x562 bottomSafe=34 edge=trailing variant=band
+021.468 f=0 t=0 field moved: global top=601.8 bottom=635.8 edge=trailing bottomSafe=34 focused=false
+021.530 columns appeared collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+021.532 f=0 t=0 system: UISceneDidActivateNotification
+021.543 f=0 t=0 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+021.548 f=0 t=0 probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+021.554 f=1 t=0 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=0
+021.555 f=1 t=0 regions changed: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+021.569 f=1 t=0 onHingeChange run 1: closed 0
+------- mac: app switcher test begins
+026.549 f=300 t=918 regions sampled every frame, unchanged since f=1
+033.515 f=600 t=1746 regions sampled every frame, unchanged since f=1
+036.804 f=777 t=2292 system: UISceneWillDeactivateNotification
+036.806 f=778 t=2292 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=1
+038.866 f=900 t=2664 regions sampled every frame, unchanged since f=1
+042.772 f=1133 t=3382 system: UISceneDidEnterBackgroundNotification
+042.783 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+042.925 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+043.077 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+043.082 viewWillTransition to 951x669 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+043.089 f=1133 t=3382 probe main uikit(traits): edge=nil classes=1/2 window=951x669 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+043.097 f=1133 t=3382 probe root swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+043.097 fold probe GeometryReader: size=951x669 fold=none
+043.097 fold probe onGeometryChange: size=951x669 fold=none
+043.099 f=1133 t=3382 probe root swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=[884.7,399.7 37x37 active=true margins=0,0,0,0][777,382 174x84 active=true margins=0,0,0,0] occlusion+inactive=[884.7,399.7 37x37 active=true margins=0,0,0,0][777,382 174x84 active=true margins=0,0,0,0] division=none division+inactive=none
+043.100 columns laid out: size=951x669 fold=none collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+043.148 f=1133 t=3382 probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+043.148 f=1133 t=3382 main column edge: nil bottomSafe=34 variant=band
+043.149 f=1133 t=3382 probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+043.153 fold probe layoutSubviews run 2: size=951x669 fold=none
+043.153 f=1133 t=3382 probe root uikit(layout): edge=trailing classes=1/2 window=951x669 windowSafe=0,0,34,84 frameInWindow=0,0 951x669
+043.161 f=1133 t=3382 probe main uikit(traits): edge=trailing classes=1/2 window=951x669 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+043.171 f=1133 t=3382 probe main swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+043.171 f=1133 t=3382 main column geometry: size=867x553 bottomSafe=34 edge=trailing variant=band
+043.172 f=1133 t=3382 main column edge: trailing bottomSafe=34 variant=band
+043.172 f=1133 t=3382 field moved: global top=592.8 bottom=626.8 edge=trailing bottomSafe=34 focused=false
+043.172 f=1133 t=3382 probe main swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=[884.7,399.7 37x37 active=true margins=0,0,0,0][777,382 174x84 active=true margins=0,0,0,0] occlusion+inactive=[884.7,399.7 37x37 active=true margins=0,0,0,0][777,382 174x84 active=true margins=0,0,0,0] division=none division+inactive=none
+043.185 f=1133 t=3382 probe main uikit(layout): edge=trailing classes=1/2 window=951x669 windowSafe=0,0,34,84 frameInWindow=0,0 951x669
+043.431 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+043.433 viewWillTransition to 466x678 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+043.448 f=1133 t=3382 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+043.449 fold probe GeometryReader: size=466x678 fold=none
+043.449 fold probe onGeometryChange: size=466x678 fold=none
+043.450 f=1133 t=3382 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+043.451 columns laid out: size=466x678 fold=none collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+043.465 f=1133 t=3382 probe main swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+043.476 fold probe layoutSubviews run 3: size=466x678 fold=none
+043.476 f=1133 t=3382 probe root uikit(layout): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+043.478 f=1133 t=3382 probe main uikit(layout): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 951x669
+043.480 f=1133 t=3382 probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+043.480 f=1133 t=3382 main column geometry: size=382x562 bottomSafe=34 edge=trailing variant=band
+043.481 f=1133 t=3382 field moved: global top=601.8 bottom=635.8 edge=trailing bottomSafe=34 focused=false
+043.488 f=1133 t=3382 probe main uikit(layout): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+043.551 f=1134 t=3382 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=2
+------- mac: app switcher test ended
+------- mac: front again
+049.461 f=1143 t=3405 system: UISceneWillEnterForegroundNotification
+049.486 f=1144 t=3405 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=1
+049.504 f=1146 t=3407 system: UISceneDidActivateNotification
+049.532 f=1147 t=3410 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=0
+050.309 f=1192 t=3550 system: UIKeyboardWillChangeFrameNotification end=360.3,569.0 325.4x0
+050.310 f=1192 t=3550 system: UIKeyboardWillShowNotification end=360.3,569.0 325.4x0
+050.310 f=1192 t=3550 system: UIKeyboardDidShowNotification end=360.3,569.0 325.4x0
+050.327 f=1193 t=3555 system: UIKeyboardWillChangeFrameNotification end=0,678 466x0
+050.327 f=1193 t=3555 system: UIKeyboardWillHideNotification end=0,678 466x0
+050.339 f=1193 t=3555 system: UIKeyboardDidHideNotification end=0,678 466x0
+050.432 f=1200 t=3571 regions sampled every frame, unchanged since f=1
+052.500 f=1324 t=3945 ------- command: dump after the app switcher
+052.500 f=1324 t=3945 dump[after the app switcher] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+052.500 f=1324 t=3945 dump[after the app switcher] root hinge: closed 0 runs=1
+052.508 f=1324 t=3945 dump[after the app switcher] probe root uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:trailing < window:trailing
+052.509 f=1324 t=3945 dump[after the app switcher] probe main uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: LabHost:trailing < UINavigationController:trailing < UINavigationController:trailing < LabColumns:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+052.509 f=1324 t=3945 dump[after the app switcher] mark ground: top=593.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=84.3 x=0..382 window=466x678
+052.509 f=1324 t=3945 dump[after the app switcher] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=-82 endOffset=15006.3 contentEndsAtFromWindowBottom=-15004
+052.509 f=1324 t=3945 dump[after the app switcher] mark foot: top=593.7 bottom=644 fromWindowBottom=34 topFromWindowBottom=84.3 x=0..382 window=466x678
+052.509 f=1324 t=3945 dump[after the app switcher] mark field: top=602 bottom=636 fromWindowBottom=42 topFromWindowBottom=76 x=8..302.7 window=466x678
+052.510 f=1324 t=3945 dump[after the app switcher] probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+052.510 f=1324 t=3945 dump[after the app switcher] probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none

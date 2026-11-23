@@ -1,0 +1,92 @@
+785.608 inspector set, wrapped in nil
+785.649 f=0 t=0 probe root uikit(traits): edge=trailing classes=1/2 NOT-IN-A-WINDOW
+785.695 fold probe onGeometryChange: size=466x678 fold=none
+785.695 f=0 t=0 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+785.695 fold probe GeometryReader: size=466x678 fold=none
+785.695 lab uikit launched ["--fake", "paired", "--lab", "uikit", "--lab-aside", "inspector", "--foot", "a-content", "--foot-log", "duo", "--lab-open", "1"]
+785.700 f=0 t=0 probe root uikit(moved): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+785.702 fold probe updateConstraints run 1: size=466x678 fold=none
+785.703 willChangeTo mode=2 collapsed=false mode=1 sidebar=["listing"] main=["S1"] inspector=false
+785.703 topColumnForCollapsing proposed=main answered=main collapsed=false mode=1 sidebar=["listing"] main=["S1"] inspector=false
+785.708 willShow sidebar collapsed=false mode=1 sidebar=["listing"] main=["S1"] inspector=false
+785.712 willHide sidebar collapsed=false mode=1 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+785.713 willShow main collapsed=false mode=1 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+785.715 nav sidebar willShow UINavigationController, no transition
+785.853 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+785.854 didHide sidebar collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+785.854 didShow main collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+785.854 columns laid out: size=466x678 fold=none collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+785.854 fold probe layoutSubviews run 1: size=466x678 fold=none
+785.875 nav main willShow S1, no transition
+785.876 nav main didShow S1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+786.055 f=0 t=0 main column geometry: size=382x620 bottomSafe=34 edge=trailing variant=a-content
+786.055 f=0 t=0 main column edge: trailing bottomSafe=34 variant=a-content
+786.055 f=0 t=0 field moved: global top=635.8 bottom=669.8 edge=trailing bottomSafe=34 focused=false
+786.055 f=0 t=0 probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+786.058 f=0 t=0 probe main uikit(moved): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+786.092 f=0 t=0 main column geometry: size=382x562 bottomSafe=34 edge=trailing variant=a-content
+786.183 f=0 t=0 system: UISceneDidActivateNotification
+786.193 f=0 t=0 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+786.198 f=0 t=0 probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+786.202 columns appeared collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+786.223 f=1 t=0 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=0
+786.224 f=1 t=0 regions changed: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+786.235 f=1 t=0 onHingeChange run 1: closed 0
+786.283 f=4 t=28 ------- command: end
+786.284 f=4 t=28 end: scrolled to rest, list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=15006.3 endOffset=15006.3 contentEndsAtFromWindowBottom=84.3
+787.452 f=72 t=238 ------- command: dump closed-portrait a-content keyboard-down
+787.453 f=72 t=238 dump[closed-portrait a-content keyboard-down] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+787.453 f=72 t=238 dump[closed-portrait a-content keyboard-down] root hinge: closed 0 runs=1
+787.461 f=72 t=238 dump[closed-portrait a-content keyboard-down] probe root uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:trailing < window:trailing
+787.461 f=72 t=238 dump[closed-portrait a-content keyboard-down] probe main uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: LabHost:trailing < UINavigationController:trailing < UINavigationController:trailing < LabColumns:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+787.461 f=72 t=238 dump[closed-portrait a-content keyboard-down] mark ground: top=627.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=50.3 x=0..382 window=466x678
+787.461 f=72 t=238 dump[closed-portrait a-content keyboard-down] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=15006.3 endOffset=15006.3 contentEndsAtFromWindowBottom=84.3
+787.461 f=72 t=238 dump[closed-portrait a-content keyboard-down] mark foot: top=627.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=50.3 x=0..382 window=466x678
+787.462 f=72 t=238 dump[closed-portrait a-content keyboard-down] mark field: top=635.7 bottom=669.7 fromWindowBottom=8.3 topFromWindowBottom=42.3 x=8..302.7 window=466x678
+787.462 f=72 t=238 dump[closed-portrait a-content keyboard-down] mark lastrow: top=541.7 bottom=593.7 fromWindowBottom=84.3 topFromWindowBottom=136.3 x=0..382 window=466x678
+787.462 f=72 t=238 dump[closed-portrait a-content keyboard-down] probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+787.462 f=72 t=238 dump[closed-portrait a-content keyboard-down] probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+788.451 f=132 t=417 ------- command: focus
+788.671 f=132 t=417 field focused=true
+788.778 f=132 t=417 main column geometry: size=382x292 bottomSafe=304 edge=trailing variant=a-content
+788.779 f=132 t=417 field moved: global top=331.8 bottom=365.8 edge=trailing bottomSafe=304 focused=true
+788.783 f=132 t=417 system: UIKeyboardWillChangeFrameNotification end=0,374 466x304
+788.784 f=132 t=417 system: UIKeyboardWillShowNotification end=0,374 466x304
+789.219 f=153 t=464 system: UIKeyboardDidShowNotification end=0,374 466x304
+791.666 f=300 t=904 regions sampled every frame, unchanged since f=1
+791.866 f=312 t=940 ------- command: end
+791.867 f=312 t=940 end: scrolled to rest, list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,354.3,0 inset=0,0,0,0 offset=15276.3 endOffset=15276.3 contentEndsAtFromWindowBottom=354.3
+793.334 f=400 t=1206 ------- command: dump closed-portrait a-content keyboard-up
+793.335 f=400 t=1206 dump[closed-portrait a-content keyboard-up] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+793.335 f=400 t=1206 dump[closed-portrait a-content keyboard-up] root hinge: closed 0 runs=1
+793.342 f=400 t=1206 dump[closed-portrait a-content keyboard-up] probe root uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:trailing < window:trailing
+793.343 f=400 t=1206 dump[closed-portrait a-content keyboard-up] probe main uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: LabHost:trailing < UINavigationController:trailing < UINavigationController:trailing < LabColumns:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+793.343 f=400 t=1206 dump[closed-portrait a-content keyboard-up] mark ground: top=323.7 bottom=374.0 fromWindowBottom=304.0 topFromWindowBottom=354.3 x=0..382 window=466x678
+793.343 f=400 t=1206 dump[closed-portrait a-content keyboard-up] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,354.3,0 inset=0,0,0,0 offset=15276.3 endOffset=15276.3 contentEndsAtFromWindowBottom=354.3
+793.343 f=400 t=1206 dump[closed-portrait a-content keyboard-up] mark foot: top=323.7 bottom=374.0 fromWindowBottom=304.0 topFromWindowBottom=354.3 x=0..382 window=466x678
+793.343 f=400 t=1206 dump[closed-portrait a-content keyboard-up] mark field: top=332 bottom=366 fromWindowBottom=312 topFromWindowBottom=346 x=8..302.7 window=466x678
+793.343 f=400 t=1206 dump[closed-portrait a-content keyboard-up] mark lastrow: top=271.7 bottom=323.7 fromWindowBottom=354.3 topFromWindowBottom=406.3 x=0..382 window=466x678
+793.343 f=400 t=1206 dump[closed-portrait a-content keyboard-up] probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+793.344 f=400 t=1206 dump[closed-portrait a-content keyboard-up] probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+794.333 f=460 t=1385 ------- command: blur
+794.369 f=460 t=1385 system: UIKeyboardWillChangeFrameNotification end=0,678 466x304
+794.369 f=460 t=1385 system: UIKeyboardWillHideNotification end=0,678 466x304
+794.371 f=460 t=1385 main column geometry: size=382x562 bottomSafe=34 edge=trailing variant=a-content
+794.371 f=460 t=1385 field moved: global top=635.8 bottom=669.8 edge=trailing bottomSafe=34 focused=true
+794.378 f=460 t=1385 field focused=false
+794.770 f=483 t=1445 system: UIKeyboardDidHideNotification end=0,678 466x304
+796.716 f=600 t=1792 regions sampled every frame, unchanged since f=1
+797.316 f=636 t=1900 ------- command: end
+797.316 f=636 t=1900 end: scrolled to rest, list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=15006.3 endOffset=15006.3 contentEndsAtFromWindowBottom=84.3
+798.717 f=720 t=2152 ------- command: dump closed-portrait a-content keyboard-down-again
+798.718 f=720 t=2152 dump[closed-portrait a-content keyboard-down-again] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+798.718 f=720 t=2152 dump[closed-portrait a-content keyboard-down-again] root hinge: closed 0 runs=1
+798.719 f=720 t=2152 dump[closed-portrait a-content keyboard-down-again] probe root uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:trailing < window:trailing
+798.719 f=720 t=2152 dump[closed-portrait a-content keyboard-down-again] probe main uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: LabHost:trailing < UINavigationController:trailing < UINavigationController:trailing < LabColumns:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+798.719 f=720 t=2152 dump[closed-portrait a-content keyboard-down-again] mark ground: top=627.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=50.3 x=0..382 window=466x678
+798.719 f=720 t=2152 dump[closed-portrait a-content keyboard-down-again] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=15006.3 endOffset=15006.3 contentEndsAtFromWindowBottom=84.3
+798.720 f=720 t=2152 dump[closed-portrait a-content keyboard-down-again] mark foot: top=627.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=50.3 x=0..382 window=466x678
+798.720 f=720 t=2152 dump[closed-portrait a-content keyboard-down-again] mark field: top=635.7 bottom=669.7 fromWindowBottom=8.3 topFromWindowBottom=42.3 x=8..302.7 window=466x678
+798.720 f=720 t=2152 dump[closed-portrait a-content keyboard-down-again] mark lastrow: top=541.7 bottom=593.7 fromWindowBottom=84.3 topFromWindowBottom=136.3 x=0..382 window=466x678
+798.721 f=720 t=2152 dump[closed-portrait a-content keyboard-down-again] probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+798.721 f=720 t=2152 dump[closed-portrait a-content keyboard-down-again] probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none

@@ -1,0 +1,410 @@
+109.926 inspector set, wrapped in nil
+109.934 f=0 t=0 probe root uikit(traits): edge=trailing classes=1/2 NOT-IN-A-WINDOW
+109.943 fold probe onGeometryChange: size=466x678 fold=none
+109.944 f=0 t=0 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+109.944 fold probe GeometryReader: size=466x678 fold=none
+109.944 lab uikit launched ["--fake", "paired", "--lab", "uikit", "--lab-aside", "inspector", "--foot", "band", "--foot-log", "duo"]
+109.949 f=0 t=0 probe root uikit(moved): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+109.950 fold probe updateConstraints run 1: size=466x678 fold=none
+109.952 willChangeTo mode=2 collapsed=false mode=1 sidebar=["listing"] main=["landing"] inspector=false
+109.952 topColumnForCollapsing proposed=main answered=sidebar collapsed=false mode=1 sidebar=["listing"] main=["landing"] inspector=false
+109.956 willShow sidebar collapsed=false mode=1 sidebar=["listing"] main=["landing"] inspector=false
+109.966 didShow sidebar collapsed=true mode=2 sidebar=["listing"] main=["landing"] inspector=false
+109.966 didCollapse collapsed=true mode=2 sidebar=["listing"] main=["landing"] inspector=false
+109.966 columns laid out: size=466x678 fold=none collapsed=true mode=2 sidebar=["listing"] main=["landing"] inspector=false
+109.967 fold probe layoutSubviews run 1: size=466x678 fold=none
+109.977 nav sidebar willShow listing, no transition
+109.978 nav sidebar didShow listing collapsed=true mode=2 sidebar=["listing"] main=["landing"] inspector=false
+110.081 f=0 t=0 probe sidebar swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+110.083 f=0 t=0 probe sidebar uikit(moved): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+110.157 columns appeared collapsed=true mode=2 sidebar=["listing"] main=["landing"] inspector=false
+110.159 f=0 t=0 system: UISceneDidActivateNotification
+110.168 f=0 t=0 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+110.171 f=0 t=0 probe sidebar swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+110.178 f=1 t=0 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=0
+110.179 f=1 t=0 regions changed: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+110.202 f=1 t=4 onHingeChange run 1: closed 0
+------- mac: pose closed-portrait, facing Current Device Orientation: portrait
+113.917 f=224 t=696 ------- command: dump closed-portrait listing
+113.918 f=224 t=696 dump[closed-portrait listing] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+113.918 f=224 t=696 dump[closed-portrait listing] root hinge: closed 0 runs=1
+113.921 f=224 t=696 dump[closed-portrait listing] probe root uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:trailing < window:trailing
+113.921 f=224 t=696 dump[closed-portrait listing] probe sidebar uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: LabHost:trailing < UINavigationController:trailing < LabColumns:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+113.921 f=224 t=696 dump[closed-portrait listing] probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+113.921 f=224 t=696 dump[closed-portrait listing] probe sidebar swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+114.917 f=284 t=875 ------- command: open
+114.917 open S1
+114.922 willHide sidebar collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+114.924 nav sidebar willShow UINavigationController, transition interactive=false
+114.927 f=284 t=875 probe sidebar uikit(moved): edge=trailing classes=1/2 NOT-IN-A-WINDOW
+114.929 f=284 t=875 probe sidebar uikit(moved): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+114.932 nav main willShow S1, transition interactive=false
+114.934 nav main didShow S1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+114.970 f=284 t=875 main column geometry: size=382x562 bottomSafe=34 edge=trailing variant=band
+114.970 f=284 t=875 main column edge: trailing bottomSafe=34 variant=band
+114.970 f=284 t=875 field moved: global top=601.8 bottom=635.8 edge=trailing bottomSafe=34 focused=false
+114.970 f=284 t=875 probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+114.982 f=284 t=875 probe main uikit(moved): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+115.063 f=284 t=875 probe sidebar swiftui: edge=trailing classes=compact/regular size=466x678 global=-140,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+115.063 f=284 t=875 probe sidebar swiftui: edge=trailing classes=compact/regular size=466x678 global=-140,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+115.350 f=300 t=925 regions sampled every frame, unchanged since f=1
+115.561 f=312 t=969 probe sidebar uikit(moved): edge=trailing classes=1/2 NOT-IN-A-WINDOW
+115.563 nav main didShow S1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+115.563 nav sidebar didShow UINavigationController collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+115.563 didHide sidebar collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+115.564 nav sidebar transition to UINavigationController ended cancelled=false
+115.564 nav main transition to S1 ended cancelled=false
+115.569 f=312 t=969 probe sidebar swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+116.817 f=388 t=1193 ------- command: dump closed-portrait main
+116.818 f=388 t=1193 dump[closed-portrait main] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+116.818 f=388 t=1193 dump[closed-portrait main] root hinge: closed 0 runs=1
+116.818 f=388 t=1193 dump[closed-portrait main] probe root uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:trailing < window:trailing
+116.818 f=388 t=1193 dump[closed-portrait main] probe sidebar uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: LabHost:trailing
+116.818 f=388 t=1193 dump[closed-portrait main] probe main uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: LabHost:trailing < UINavigationController:trailing < UINavigationController:trailing < LabColumns:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+116.818 f=388 t=1193 dump[closed-portrait main] mark ground: top=593.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=84.3 x=0..382 window=466x678
+116.818 f=388 t=1193 dump[closed-portrait main] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=-82 endOffset=15006.3 contentEndsAtFromWindowBottom=-15004
+116.818 f=388 t=1193 dump[closed-portrait main] mark foot: top=593.7 bottom=644 fromWindowBottom=34 topFromWindowBottom=84.3 x=0..382 window=466x678
+116.818 f=388 t=1193 dump[closed-portrait main] mark field: top=602 bottom=636 fromWindowBottom=42 topFromWindowBottom=76 x=8..302.7 window=466x678
+116.819 f=388 t=1193 dump[closed-portrait main] probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+116.819 f=388 t=1193 dump[closed-portrait main] probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+117.818 f=448 t=1373 ------- command: aside
+117.818 reader toggled aside, wanted=true
+117.824 willShow aside collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+117.851 f=448 t=1373 probe aside uikit(traits): edge=trailing classes=1/2 NOT-IN-A-WINDOW
+117.852 f=448 t=1373 probe aside swiftui: edge=trailing classes=compact/regular size=0x0 global=0,0 0x0 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+117.866 f=448 t=1373 probe aside swiftui: edge=trailing classes=compact/regular size=450x670 global=8,8 450x670 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+117.870 f=448 t=1373 probe aside swiftui: edge=trailing classes=compact/regular size=450x670 global=8,8 450x670 safe=0,0,0,0 occlusion=[391.7,21.3 37x37 active=true margins=0,0,0,0][374,-8 84x174 active=true margins=0,0,0,0] occlusion+inactive=[391.7,21.3 37x37 active=true margins=0,0,0,0][374,-8 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+117.870 f=448 t=1373 probe aside uikit(moved): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=8,8 450x670
+118.468 didShow aside collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=true
+120.601 f=600 t=1789 regions sampled every frame, unchanged since f=1
+120.739 f=608 t=1813 ------- command: dump closed-portrait aside
+120.739 f=608 t=1813 dump[closed-portrait aside] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+120.739 f=608 t=1813 dump[closed-portrait aside] root hinge: closed 0 runs=1
+120.745 f=608 t=1813 dump[closed-portrait aside] probe root uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:trailing < window:trailing
+120.746 f=608 t=1813 dump[closed-portrait aside] probe sidebar uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: LabHost:trailing
+120.746 f=608 t=1813 dump[closed-portrait aside] probe main uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: LabHost:trailing < UINavigationController:trailing < UINavigationController:trailing < LabColumns:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+120.746 f=608 t=1813 dump[closed-portrait aside] mark ground: top=593.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=84.3 x=0..382 window=466x678
+120.750 f=608 t=1813 dump[closed-portrait aside] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=-82 endOffset=15006.3 contentEndsAtFromWindowBottom=-15004
+120.750 f=608 t=1813 dump[closed-portrait aside] mark foot: top=593.7 bottom=644 fromWindowBottom=34 topFromWindowBottom=84.3 x=0..382 window=466x678
+120.750 f=608 t=1813 dump[closed-portrait aside] mark field: top=602 bottom=636 fromWindowBottom=42 topFromWindowBottom=76 x=8..302.7 window=466x678
+120.750 f=608 t=1813 dump[closed-portrait aside] probe aside uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=8,8 450x670 | chain: NavigationStackHostingController<A:trailing < UIKitNavigationController:trailing < UIHostingController<LabAsideStack>:trailing < UINavigationController:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+120.752 f=608 t=1813 dump[closed-portrait aside] probe aside swiftui: edge=trailing classes=compact/regular size=450x670 global=8,8 450x670 safe=0,0,0,0 occlusion=[391.7,21.3 37x37 active=true margins=0,0,0,0][374,-8 84x174 active=true margins=0,0,0,0] occlusion+inactive=[391.7,21.3 37x37 active=true margins=0,0,0,0][374,-8 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+120.752 f=608 t=1813 dump[closed-portrait aside] probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+120.752 f=608 t=1813 dump[closed-portrait aside] probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+121.801 f=668 t=1993 ------- command: aside
+121.801 reader toggled aside, wanted=false
+121.856 willHide aside collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=true
+121.900 f=668 t=1993 probe aside swiftui: edge=trailing classes=compact/regular size=450x670 global=8,678 450x670 safe=0,0,0,0 occlusion=[391.7,21.3 37x37 active=true margins=0,0,0,0][374,-8 84x174 active=true margins=0,0,0,0] occlusion+inactive=[391.7,21.3 37x37 active=true margins=0,0,0,0][374,-8 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+121.904 f=668 t=1993 probe aside swiftui: edge=trailing classes=compact/regular size=450x670 global=8,678 450x670 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+122.487 f=698 t=2057 probe aside uikit(moved): edge=trailing classes=1/2 NOT-IN-A-WINDOW
+122.488 didHide aside collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+122.493 f=698 t=2057 probe aside swiftui: edge=trailing classes=compact/regular size=450x670 global=0,0 450x670 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+124.184 f=800 t=2362 ------- command: sheet medium
+124.243 f=800 t=2362 probe sheet-medium uikit(traits): edge=trailing classes=1/2 NOT-IN-A-WINDOW
+124.243 f=800 t=2362 probe sheet-medium swiftui: edge=trailing classes=compact/regular size=0x0 global=0,0 0x0 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+124.253 f=800 t=2362 probe sheet-medium swiftui: edge=trailing classes=compact/regular size=450x390 global=8,280 450x390 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+124.272 f=800 t=2362 probe sheet-medium uikit(moved): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=8,280 450x390
+126.017 f=900 t=2628 regions sampled every frame, unchanged since f=1
+127.084 f=964 t=2820 ------- command: dump closed-portrait sheet-medium
+127.084 f=964 t=2820 dump[closed-portrait sheet-medium] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+127.085 f=964 t=2820 dump[closed-portrait sheet-medium] root hinge: closed 0 runs=1
+127.085 f=964 t=2820 dump[closed-portrait sheet-medium] probe root uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:trailing < window:trailing
+127.085 f=964 t=2820 dump[closed-portrait sheet-medium] probe sidebar uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: LabHost:trailing
+127.085 f=964 t=2820 dump[closed-portrait sheet-medium] probe main uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: LabHost:trailing < UINavigationController:trailing < UINavigationController:trailing < LabColumns:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+127.085 f=964 t=2820 dump[closed-portrait sheet-medium] mark ground: top=593.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=84.3 x=0..382 window=466x678
+127.085 f=964 t=2820 dump[closed-portrait sheet-medium] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=-82 endOffset=15006.3 contentEndsAtFromWindowBottom=-15004
+127.085 f=964 t=2820 dump[closed-portrait sheet-medium] mark foot: top=593.7 bottom=644 fromWindowBottom=34 topFromWindowBottom=84.3 x=0..382 window=466x678
+127.085 f=964 t=2820 dump[closed-portrait sheet-medium] mark field: top=602 bottom=636 fromWindowBottom=42 topFromWindowBottom=76 x=8..302.7 window=466x678
+127.085 f=964 t=2820 dump[closed-portrait sheet-medium] probe aside uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:trailing < UIKitNavigationController:trailing < UIHostingController<LabAsideStack>:trailing < UINavigationController:trailing
+127.085 f=964 t=2820 dump[closed-portrait sheet-medium] probe sheet-medium uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=8,280 450x390 | chain: NavigationStackHostingController<A:trailing < UIKitNavigationController:trailing < PresentationHostingController<AnyV:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+127.086 f=964 t=2820 dump[closed-portrait sheet-medium] probe sheet-medium swiftui: edge=trailing classes=compact/regular size=450x390 global=8,280 450x390 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+127.086 f=964 t=2820 dump[closed-portrait sheet-medium] probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+127.086 f=964 t=2820 dump[closed-portrait sheet-medium] probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+128.151 f=1028 t=3012 ------- command: sheet off
+128.168 f=1029 t=3014 probe sheet-medium swiftui: edge=trailing classes=compact/regular size=450x390 global=8,670 450x390 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+128.702 f=1059 t=3079 probe sheet-medium uikit(moved): edge=trailing classes=1/2 NOT-IN-A-WINDOW
+128.708 f=1059 t=3079 probe sheet-medium swiftui: edge=trailing classes=compact/regular size=450x390 global=0,0 450x390 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+130.601 f=1172 t=3415 ------- command: sheet large
+130.611 f=1172 t=3415 probe sheet-large uikit(traits): edge=trailing classes=1/2 NOT-IN-A-WINDOW
+130.611 f=1172 t=3415 probe sheet-large swiftui: edge=trailing classes=compact/regular size=0x0 global=0,0 0x0 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+130.617 f=1172 t=3415 probe sheet-large swiftui: edge=trailing classes=compact/regular size=450x670 global=8,8 450x670 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+130.627 f=1172 t=3415 probe sheet-large swiftui: edge=trailing classes=compact/regular size=450x670 global=8,8 450x670 safe=0,0,0,0 occlusion=[391.7,21.3 37x37 active=true margins=0,0,0,0][374,-8 84x174 active=true margins=0,0,0,0] occlusion+inactive=[391.7,21.3 37x37 active=true margins=0,0,0,0][374,-8 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+130.627 f=1172 t=3415 probe sheet-large uikit(moved): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=8,8 450x670
+131.167 f=1200 t=3477 regions sampled every frame, unchanged since f=1
+133.501 f=1340 t=3891 ------- command: dump closed-portrait sheet-large
+133.501 f=1340 t=3891 dump[closed-portrait sheet-large] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+133.501 f=1340 t=3891 dump[closed-portrait sheet-large] root hinge: closed 0 runs=1
+133.501 f=1340 t=3891 dump[closed-portrait sheet-large] probe root uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:trailing < window:trailing
+133.502 f=1340 t=3891 dump[closed-portrait sheet-large] probe sidebar uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: LabHost:trailing
+133.502 f=1340 t=3891 dump[closed-portrait sheet-large] probe main uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: LabHost:trailing < UINavigationController:trailing < UINavigationController:trailing < LabColumns:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+133.502 f=1340 t=3891 dump[closed-portrait sheet-large] mark ground: top=593.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=84.3 x=0..382 window=466x678
+133.502 f=1340 t=3891 dump[closed-portrait sheet-large] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=-82 endOffset=15006.3 contentEndsAtFromWindowBottom=-15004
+133.502 f=1340 t=3891 dump[closed-portrait sheet-large] mark foot: top=593.7 bottom=644 fromWindowBottom=34 topFromWindowBottom=84.3 x=0..382 window=466x678
+133.502 f=1340 t=3891 dump[closed-portrait sheet-large] mark field: top=602 bottom=636 fromWindowBottom=42 topFromWindowBottom=76 x=8..302.7 window=466x678
+133.502 f=1340 t=3891 dump[closed-portrait sheet-large] probe aside uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:trailing < UIKitNavigationController:trailing < UIHostingController<LabAsideStack>:trailing < UINavigationController:trailing
+133.502 f=1340 t=3891 dump[closed-portrait sheet-large] probe sheet-large uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=8,8 450x670 | chain: NavigationStackHostingController<A:trailing < UIKitNavigationController:trailing < PresentationHostingController<AnyV:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+133.502 f=1340 t=3891 dump[closed-portrait sheet-large] probe sheet-large swiftui: edge=trailing classes=compact/regular size=450x670 global=8,8 450x670 safe=0,0,0,0 occlusion=[391.7,21.3 37x37 active=true margins=0,0,0,0][374,-8 84x174 active=true margins=0,0,0,0] occlusion+inactive=[391.7,21.3 37x37 active=true margins=0,0,0,0][374,-8 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+133.502 f=1340 t=3891 dump[closed-portrait sheet-large] probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+133.502 f=1340 t=3891 dump[closed-portrait sheet-large] probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+134.502 f=1400 t=4071 ------- command: sheet off
+134.520 f=1401 t=4072 probe sheet-large swiftui: edge=trailing classes=compact/regular size=450x670 global=8,678 450x670 safe=0,0,0,0 occlusion=[391.7,21.3 37x37 active=true margins=0,0,0,0][374,-8 84x174 active=true margins=0,0,0,0] occlusion+inactive=[391.7,21.3 37x37 active=true margins=0,0,0,0][374,-8 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+134.521 f=1401 t=4072 probe sheet-large swiftui: edge=trailing classes=compact/regular size=450x670 global=8,678 450x670 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+135.054 f=1431 t=4155 probe sheet-large uikit(moved): edge=trailing classes=1/2 NOT-IN-A-WINDOW
+135.062 f=1431 t=4155 probe sheet-large swiftui: edge=trailing classes=compact/regular size=450x670 global=0,0 450x670 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+136.218 f=1500 t=4359 regions sampled every frame, unchanged since f=1
+136.885 f=1540 t=4479 ------- command: bar off
+136.892 f=1540 t=4479 probe root uikit(traits): edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=0,0 466x678
+136.893 f=1540 t=4479 probe main uikit(traits): edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=0,0 466x678
+136.899 f=1540 t=4479 probe root swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+136.931 f=1540 t=4479 probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+136.931 f=1540 t=4479 main column geometry: size=466x562 bottomSafe=34 edge=nil variant=band
+136.932 f=1540 t=4479 main column edge: nil bottomSafe=34 variant=band
+136.932 f=1540 t=4479 field moved: global top=601.8 bottom=635.8 edge=nil bottomSafe=34 focused=false
+136.967 f=1541 t=4480 root tick: window 466x678 safe=82,0,34,0 edge=trailing orientation=1 scene=0
+137.008 f=1543 t=4485 probe root swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+137.009 f=1543 t=4485 probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+137.034 f=1544 t=4489 regions changed: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] window.division=none window.division+inactive=none
+139.369 f=1684 t=4915 ------- command: dump closed-portrait bar-off main
+139.369 f=1684 t=4915 dump[closed-portrait bar-off main] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] window.division=none window.division+inactive=none
+139.369 f=1684 t=4915 dump[closed-portrait bar-off main] root hinge: closed 0 runs=1
+139.370 f=1684 t=4915 dump[closed-portrait bar-off main] probe root uikit: edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:nil asks-off < window:trailing
+139.370 f=1684 t=4915 dump[closed-portrait bar-off main] probe sidebar uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: LabHost:trailing
+139.370 f=1684 t=4915 dump[closed-portrait bar-off main] probe main uikit: edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=0,0 466x678 | chain: LabHost:nil asks-off < UINavigationController:nil < UINavigationController:nil < LabColumns:nil asks-off < UIHostingController<ModifiedConten:nil asks-off < window:trailing
+139.371 f=1684 t=4915 dump[closed-portrait bar-off main] mark ground: top=593.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=84.3 x=0..466 window=466x678
+139.371 f=1684 t=4915 dump[closed-portrait bar-off main] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=-82 endOffset=15006.3 contentEndsAtFromWindowBottom=-15004
+139.371 f=1684 t=4915 dump[closed-portrait bar-off main] mark foot: top=593.7 bottom=644 fromWindowBottom=34 topFromWindowBottom=84.3 x=0..466 window=466x678
+139.371 f=1684 t=4915 dump[closed-portrait bar-off main] mark field: top=602 bottom=636 fromWindowBottom=42 topFromWindowBottom=76 x=8..386.7 window=466x678
+139.371 f=1684 t=4915 dump[closed-portrait bar-off main] probe aside uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:trailing < UIKitNavigationController:trailing < UIHostingController<LabAsideStack>:trailing < UINavigationController:trailing
+139.372 f=1684 t=4915 dump[closed-portrait bar-off main] probe root swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+139.372 f=1684 t=4915 dump[closed-portrait bar-off main] probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+140.370 f=1744 t=5094 ------- command: sheet medium
+140.392 f=1744 t=5094 probe sheet-medium uikit(traits): edge=trailing classes=1/2 NOT-IN-A-WINDOW
+140.393 f=1744 t=5094 probe sheet-medium swiftui: edge=trailing classes=compact/regular size=0x0 global=0,0 0x0 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+140.405 f=1744 t=5094 probe sheet-medium swiftui: edge=trailing classes=compact/regular size=450x390 global=8,280 450x390 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+140.417 f=1744 t=5094 probe sheet-medium uikit(moved): edge=trailing classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=8,280 450x390
+140.420 f=1744 t=5094 probe sheet-medium uikit(traits): edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=8,280 450x390
+140.424 f=1744 t=5094 probe sheet-medium swiftui: edge=nil classes=compact/regular size=450x390 global=8,280 450x390 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+140.491 f=1744 t=5094 probe sheet-medium swiftui: edge=nil classes=compact/regular size=450x390 global=8,321.3 450x390 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+140.498 f=1744 t=5094 probe sheet-medium swiftui: edge=nil classes=compact/regular size=450x348.7 global=8,321.3 450x348.7 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+140.500 f=1744 t=5094 probe sheet-medium uikit(layout): edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=8,321.3 450x348.7
+140.535 f=1744 t=5094 probe root swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+140.536 f=1744 t=5094 probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+140.536 f=1745 t=5094 regions changed: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+141.468 f=1800 t=5231 regions sampled every frame, unchanged since f=1745
+143.269 f=1908 t=5555 ------- command: dump closed-portrait bar-off sheet-medium
+143.269 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+143.270 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] root hinge: closed 0 runs=1
+143.270 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] probe root uikit: edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:nil asks-off < window:trailing
+143.270 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] probe sidebar uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: LabHost:trailing
+143.270 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] probe main uikit: edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=0,0 466x678 | chain: LabHost:nil asks-off < UINavigationController:nil < UINavigationController:nil < LabColumns:nil asks-off < UIHostingController<ModifiedConten:nil asks-off < window:trailing
+143.270 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] mark ground: top=593.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=84.3 x=0..466 window=466x678
+143.271 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=-82 endOffset=15006.3 contentEndsAtFromWindowBottom=-15004
+143.271 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] mark foot: top=593.7 bottom=644 fromWindowBottom=34 topFromWindowBottom=84.3 x=0..466 window=466x678
+143.271 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] mark field: top=602 bottom=636 fromWindowBottom=42 topFromWindowBottom=76 x=8..386.7 window=466x678
+143.271 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] probe aside uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:trailing < UIKitNavigationController:trailing < UIHostingController<LabAsideStack>:trailing < UINavigationController:trailing
+143.272 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] probe sheet-medium uikit: edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=8,321.3 450x348.7 | chain: NavigationStackHostingController<A:nil asks-off < UIKitNavigationController:nil < PresentationHostingController<AnyV:nil < UIHostingController<ModifiedConten:nil asks-off < window:trailing
+143.272 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] probe sheet-medium swiftui: edge=nil classes=compact/regular size=450x348.7 global=8,321.3 450x348.7 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+143.273 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] probe root swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+143.273 f=1908 t=5555 dump[closed-portrait bar-off sheet-medium] probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+144.268 f=1968 t=5734 ------- command: sheet off
+144.286 f=1969 t=5736 probe sheet-medium swiftui: edge=nil classes=compact/regular size=450x348.7 global=8,670 450x348.7 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+144.313 f=1969 t=5739 probe root swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+144.313 f=1969 t=5739 probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+144.318 f=1970 t=5740 regions changed: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] window.division=none window.division+inactive=none
+144.837 f=2000 t=5810 probe sheet-medium uikit(moved): edge=nil classes=1/2 NOT-IN-A-WINDOW
+144.844 f=2000 t=5810 probe sheet-medium swiftui: edge=nil classes=compact/regular size=450x348.7 global=0,0 450x348.7 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+146.518 f=2100 t=6112 regions sampled every frame, unchanged since f=1970
+146.718 f=2112 t=6148 ------- command: sheet large
+146.730 f=2112 t=6148 probe sheet-large uikit(traits): edge=trailing classes=1/2 NOT-IN-A-WINDOW
+146.731 f=2112 t=6148 probe sheet-large swiftui: edge=trailing classes=compact/regular size=0x0 global=0,0 0x0 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+146.738 f=2112 t=6148 probe sheet-large swiftui: edge=trailing classes=compact/regular size=450x670 global=8,8 450x670 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+146.748 f=2112 t=6148 probe sheet-large swiftui: edge=trailing classes=compact/regular size=450x670 global=8,8 450x670 safe=0,0,0,0 occlusion=[391.7,21.3 37x37 active=true margins=0,0,0,0][258,-8 200x82 active=true margins=0,0,0,0] occlusion+inactive=[391.7,21.3 37x37 active=true margins=0,0,0,0][258,-8 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+146.748 f=2112 t=6148 probe sheet-large uikit(moved): edge=trailing classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=8,8 450x670
+146.750 f=2112 t=6148 probe sheet-large uikit(traits): edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=8,8 450x670
+146.777 f=2112 t=6148 probe sheet-large swiftui: edge=nil classes=compact/regular size=450x670 global=8,8 450x670 safe=0,0,0,0 occlusion=[391.7,21.3 37x37 active=true margins=0,0,0,0][258,-8 200x82 active=true margins=0,0,0,0] occlusion+inactive=[391.7,21.3 37x37 active=true margins=0,0,0,0][258,-8 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+146.817 f=2112 t=6148 probe sheet-large swiftui: edge=nil classes=compact/regular size=450x670 global=8,82 450x670 safe=0,0,0,0 occlusion=[391.7,21.3 37x37 active=true margins=0,0,0,0][258,-8 200x82 active=true margins=0,0,0,0] occlusion+inactive=[391.7,21.3 37x37 active=true margins=0,0,0,0][258,-8 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+146.822 f=2112 t=6148 probe sheet-large swiftui: edge=nil classes=compact/regular size=450x596 global=8,82 450x596 safe=0,0,0,0 occlusion=[391.7,21.3 37x37 active=true margins=0,0,0,0][258,-8 200x82 active=true margins=0,0,0,0] occlusion+inactive=[391.7,21.3 37x37 active=true margins=0,0,0,0][258,-8 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+146.822 f=2112 t=6148 probe sheet-large swiftui: edge=nil classes=compact/regular size=450x596 global=8,82 450x596 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+146.823 f=2112 t=6148 probe sheet-large uikit(layout): edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=8,82 450x596
+146.865 f=2112 t=6148 probe sheet-large swiftui: edge=nil classes=compact/regular size=450x596 global=8,82 450x596 safe=0,0,0,0 occlusion=[374,-82 84x174 active=true margins=0,0,0,0] occlusion+inactive=[374,-82 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+146.866 f=2112 t=6148 probe root swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+146.866 f=2112 t=6148 probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+146.867 f=2113 t=6149 regions changed: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+146.870 f=2113 t=6150 probe sheet-large swiftui: edge=nil classes=compact/regular size=450x596 global=8,82 450x596 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+146.870 f=2113 t=6150 probe root swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+146.870 f=2113 t=6150 probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+146.901 f=2114 t=6158 regions changed: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] window.division=none window.division+inactive=none
+149.668 f=2280 t=6630 ------- command: dump closed-portrait bar-off sheet-large
+149.668 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][266,0 200x82 active=true] window.division=none window.division+inactive=none
+149.668 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] root hinge: closed 0 runs=1
+149.668 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] probe root uikit: edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:nil asks-off < window:trailing
+149.668 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] probe sidebar uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: LabHost:trailing
+149.668 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] probe main uikit: edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=0,0 466x678 | chain: LabHost:nil asks-off < UINavigationController:nil < UINavigationController:nil < LabColumns:nil asks-off < UIHostingController<ModifiedConten:nil asks-off < window:trailing
+149.668 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] mark ground: top=593.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=84.3 x=0..466 window=466x678
+149.668 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=-82 endOffset=15006.3 contentEndsAtFromWindowBottom=-15004
+149.668 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] mark foot: top=593.7 bottom=644 fromWindowBottom=34 topFromWindowBottom=84.3 x=0..466 window=466x678
+149.669 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] mark field: top=602 bottom=636 fromWindowBottom=42 topFromWindowBottom=76 x=8..386.7 window=466x678
+149.669 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] probe aside uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:trailing < UIKitNavigationController:trailing < UIHostingController<LabAsideStack>:trailing < UINavigationController:trailing
+149.669 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] probe sheet-large uikit: edge=nil classes=1/2 window=466x678 windowSafe=82,0,34,0 frameInWindow=8,82 450x596 | chain: NavigationStackHostingController<A:nil asks-off < UIKitNavigationController:nil < PresentationHostingController<AnyV:nil < UIHostingController<ModifiedConten:nil asks-off < window:trailing
+149.669 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] probe sheet-large swiftui: edge=nil classes=compact/regular size=450x596 global=8,82 450x596 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+149.669 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] probe root swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+149.669 f=2280 t=6630 dump[closed-portrait bar-off sheet-large] probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+150.668 f=2340 t=6810 ------- command: sheet off
+150.685 f=2341 t=6812 probe sheet-large swiftui: edge=nil classes=compact/regular size=450x596 global=8,678 450x596 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+151.219 f=2371 t=6879 probe sheet-large uikit(moved): edge=nil classes=1/2 NOT-IN-A-WINDOW
+151.224 f=2371 t=6879 probe sheet-large swiftui: edge=nil classes=compact/regular size=450x596 global=0,0 450x596 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+151.701 f=2400 t=6961 regions sampled every frame, unchanged since f=2114
+153.035 f=2480 t=7203 ------- command: bar on
+153.041 f=2480 t=7203 main column geometry: size=466x504 bottomSafe=34 edge=nil variant=band
+153.042 f=2480 t=7203 probe root uikit(traits): edge=nil classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+153.042 f=2480 t=7203 probe main uikit(traits): edge=nil classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+153.045 f=2480 t=7203 probe root uikit(traits): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+153.047 f=2480 t=7203 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+153.054 f=2480 t=7203 probe main uikit(traits): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+153.064 f=2480 t=7203 probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][266,0 200x82 active=true margins=0,0,0,0] division=none division+inactive=none
+153.064 f=2480 t=7203 main column geometry: size=382x562 bottomSafe=34 edge=trailing variant=band
+153.064 f=2480 t=7203 main column edge: trailing bottomSafe=34 variant=band
+153.064 f=2480 t=7203 field moved: global top=601.8 bottom=635.8 edge=trailing bottomSafe=34 focused=false
+153.101 f=2481 t=7205 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=0
+153.102 f=2481 t=7205 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+153.102 f=2481 t=7205 probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+153.134 f=2482 t=7211 regions changed: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+154.968 f=2592 t=7545 ------- command: dump closed-portrait bar-on-again main
+154.969 f=2592 t=7545 dump[closed-portrait bar-on-again main] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+154.969 f=2592 t=7545 dump[closed-portrait bar-on-again main] root hinge: closed 0 runs=1
+154.969 f=2592 t=7545 dump[closed-portrait bar-on-again main] probe root uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:trailing < window:trailing
+154.969 f=2592 t=7545 dump[closed-portrait bar-on-again main] probe sidebar uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: LabHost:trailing
+154.970 f=2592 t=7545 dump[closed-portrait bar-on-again main] probe main uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: LabHost:trailing < UINavigationController:trailing < UINavigationController:trailing < LabColumns:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+154.970 f=2592 t=7545 dump[closed-portrait bar-on-again main] mark ground: top=593.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=84.3 x=0..382 window=466x678
+154.970 f=2592 t=7545 dump[closed-portrait bar-on-again main] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=-82 endOffset=15006.3 contentEndsAtFromWindowBottom=-15004
+154.970 f=2592 t=7545 dump[closed-portrait bar-on-again main] mark foot: top=593.7 bottom=644 fromWindowBottom=34 topFromWindowBottom=84.3 x=0..382 window=466x678
+154.970 f=2592 t=7545 dump[closed-portrait bar-on-again main] mark field: top=602 bottom=636 fromWindowBottom=42 topFromWindowBottom=76 x=8..302.7 window=466x678
+154.971 f=2592 t=7545 dump[closed-portrait bar-on-again main] probe aside uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:trailing < UIKitNavigationController:trailing < UIHostingController<LabAsideStack>:trailing < UINavigationController:trailing
+154.971 f=2592 t=7545 dump[closed-portrait bar-on-again main] probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+154.972 f=2592 t=7545 dump[closed-portrait bar-on-again main] probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+------- mac: away to Settings
+155.664 f=2633 t=7670 system: UISceneWillDeactivateNotification
+155.667 f=2634 t=7671 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=1
+156.768 f=2700 t=7867 regions sampled every frame, unchanged since f=2482
+------- mac: front again
+159.889 f=2886 t=8428 system: UISceneDidEnterBackgroundNotification
+159.896 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+160.104 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+160.141 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+160.147 viewWillTransition to 951x669 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+160.151 f=2886 t=8428 probe main uikit(traits): edge=nil classes=1/2 window=951x669 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+160.159 f=2886 t=8428 probe root swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+160.160 fold probe GeometryReader: size=951x669 fold=none
+160.160 fold probe onGeometryChange: size=951x669 fold=none
+160.162 f=2886 t=8428 probe root swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=[884.7,399.7 37x37 active=true margins=0,0,0,0][777,382 174x84 active=true margins=0,0,0,0] occlusion+inactive=[884.7,399.7 37x37 active=true margins=0,0,0,0][777,382 174x84 active=true margins=0,0,0,0] division=none division+inactive=none
+160.163 columns laid out: size=951x669 fold=none collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+160.198 f=2886 t=8428 probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+160.198 f=2886 t=8428 main column edge: nil bottomSafe=34 variant=band
+160.199 f=2886 t=8428 probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+160.202 fold probe layoutSubviews run 4: size=951x669 fold=none
+160.202 f=2886 t=8428 probe root uikit(layout): edge=trailing classes=1/2 window=951x669 windowSafe=0,0,34,84 frameInWindow=0,0 951x669
+160.210 f=2886 t=8428 probe main uikit(traits): edge=trailing classes=1/2 window=951x669 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+160.219 f=2886 t=8428 probe main swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+160.219 f=2886 t=8428 main column geometry: size=867x553 bottomSafe=34 edge=trailing variant=band
+160.219 f=2886 t=8428 main column edge: trailing bottomSafe=34 variant=band
+160.219 f=2886 t=8428 field moved: global top=592.8 bottom=626.8 edge=trailing bottomSafe=34 focused=false
+160.219 f=2886 t=8428 probe main swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=[884.7,399.7 37x37 active=true margins=0,0,0,0][777,382 174x84 active=true margins=0,0,0,0] occlusion+inactive=[884.7,399.7 37x37 active=true margins=0,0,0,0][777,382 174x84 active=true margins=0,0,0,0] division=none division+inactive=none
+160.228 f=2886 t=8428 probe main uikit(layout): edge=trailing classes=1/2 window=951x669 windowSafe=0,0,34,84 frameInWindow=0,0 951x669
+160.271 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+160.274 viewWillTransition to 466x678 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+160.281 f=2886 t=8428 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+160.281 fold probe GeometryReader: size=466x678 fold=none
+160.281 fold probe onGeometryChange: size=466x678 fold=none
+160.282 f=2886 t=8428 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+160.283 columns laid out: size=466x678 fold=none collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+160.295 f=2886 t=8428 probe main swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+160.301 fold probe layoutSubviews run 5: size=466x678 fold=none
+160.301 f=2886 t=8428 probe root uikit(layout): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+160.303 f=2886 t=8428 probe main uikit(layout): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 951x669
+160.306 f=2886 t=8428 probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+160.306 f=2886 t=8428 main column geometry: size=382x562 bottomSafe=34 edge=trailing variant=band
+160.306 f=2886 t=8428 field moved: global top=601.8 bottom=635.8 edge=trailing bottomSafe=34 focused=false
+160.314 f=2886 t=8428 probe main uikit(layout): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+160.332 f=2887 t=8428 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=2
+160.334 f=2887 t=8428 system: UISceneWillEnterForegroundNotification
+160.358 f=2887 t=8428 system: UISceneDidActivateNotification
+160.372 f=2888 t=8428 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=0
+160.394 f=2888 t=8428 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x82 active=true margins=0,0,0,0] division=none division+inactive=none
+160.395 f=2888 t=8428 probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x82 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x82 active=true margins=0,0,0,0] division=none division+inactive=none
+160.401 f=2888 t=8428 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+160.401 f=2888 t=8428 probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+162.269 f=3000 t=8732 regions sampled every frame, unchanged since f=2482
+166.001 f=3224 t=9404 ------- command: dump closed-portrait returned
+166.001 f=3224 t=9404 dump[closed-portrait returned] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+166.001 f=3224 t=9404 dump[closed-portrait returned] root hinge: closed 0 runs=1
+166.002 f=3224 t=9404 dump[closed-portrait returned] probe root uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:trailing < window:trailing
+166.002 f=3224 t=9404 dump[closed-portrait returned] probe sidebar uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: LabHost:trailing
+166.002 f=3224 t=9404 dump[closed-portrait returned] probe main uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: LabHost:trailing < UINavigationController:trailing < UINavigationController:trailing < LabColumns:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+166.002 f=3224 t=9404 dump[closed-portrait returned] mark ground: top=593.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=84.3 x=0..382 window=466x678
+166.002 f=3224 t=9404 dump[closed-portrait returned] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=-82 endOffset=15006.3 contentEndsAtFromWindowBottom=-15004
+166.002 f=3224 t=9404 dump[closed-portrait returned] mark foot: top=593.7 bottom=644 fromWindowBottom=34 topFromWindowBottom=84.3 x=0..382 window=466x678
+166.002 f=3224 t=9404 dump[closed-portrait returned] mark field: top=602 bottom=636 fromWindowBottom=42 topFromWindowBottom=76 x=8..302.7 window=466x678
+166.002 f=3224 t=9404 dump[closed-portrait returned] probe aside uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:trailing < UIKitNavigationController:trailing < UIHostingController<LabAsideStack>:trailing < UINavigationController:trailing
+166.003 f=3224 t=9404 dump[closed-portrait returned] probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+166.003 f=3224 t=9404 dump[closed-portrait returned] probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+------- mac: away to Messages
+166.615 f=3260 t=9514 system: UISceneWillDeactivateNotification
+166.620 f=3261 t=9514 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=1
+167.268 f=3300 t=9555 regions sampled every frame, unchanged since f=2482
+167.502 f=3313 t=9569 system: UISceneDidEnterBackgroundNotification
+167.507 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+167.608 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+167.728 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+167.733 viewWillTransition to 951x669 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+167.736 f=3313 t=9569 probe main uikit(traits): edge=nil classes=1/2 window=951x669 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+167.742 f=3313 t=9569 probe root swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+167.742 fold probe GeometryReader: size=951x669 fold=none
+167.742 fold probe onGeometryChange: size=951x669 fold=none
+167.743 f=3313 t=9569 probe root swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=[884.7,399.7 37x37 active=true margins=0,0,0,0][777,382 174x84 active=true margins=0,0,0,0] occlusion+inactive=[884.7,399.7 37x37 active=true margins=0,0,0,0][777,382 174x84 active=true margins=0,0,0,0] division=none division+inactive=none
+167.744 columns laid out: size=951x669 fold=none collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+167.770 f=3313 t=9569 probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+167.770 f=3313 t=9569 main column edge: nil bottomSafe=34 variant=band
+167.771 f=3313 t=9569 probe main swiftui: edge=nil classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+167.773 fold probe layoutSubviews run 6: size=951x669 fold=none
+167.774 f=3313 t=9569 probe root uikit(layout): edge=trailing classes=1/2 window=951x669 windowSafe=0,0,34,84 frameInWindow=0,0 951x669
+167.781 f=3313 t=9569 probe main uikit(traits): edge=trailing classes=1/2 window=951x669 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+167.789 f=3313 t=9569 probe main swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+167.789 f=3313 t=9569 main column geometry: size=867x553 bottomSafe=34 edge=trailing variant=band
+167.789 f=3313 t=9569 main column edge: trailing bottomSafe=34 variant=band
+167.789 f=3313 t=9569 field moved: global top=592.8 bottom=626.8 edge=trailing bottomSafe=34 focused=false
+167.790 f=3313 t=9569 probe main swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=[884.7,399.7 37x37 active=true margins=0,0,0,0][777,382 174x84 active=true margins=0,0,0,0] occlusion+inactive=[884.7,399.7 37x37 active=true margins=0,0,0,0][777,382 174x84 active=true margins=0,0,0,0] division=none division+inactive=none
+167.798 f=3313 t=9569 probe main uikit(layout): edge=trailing classes=1/2 window=951x669 windowSafe=0,0,34,84 frameInWindow=0,0 951x669
+167.976 willTransition to width class 1 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+167.978 viewWillTransition to 466x678 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+167.985 f=3313 t=9569 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=none occlusion+inactive=none division=none division+inactive=none
+167.986 fold probe GeometryReader: size=466x678 fold=none
+167.986 fold probe onGeometryChange: size=466x678 fold=none
+167.987 f=3313 t=9569 probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+167.987 columns laid out: size=466x678 fold=none collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["S1"] inspector=false
+167.996 f=3313 t=9569 probe main swiftui: edge=trailing classes=compact/regular size=951x669 global=0,0 951x669 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+168.001 fold probe layoutSubviews run 7: size=466x678 fold=none
+168.001 f=3313 t=9569 probe root uikit(layout): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+168.003 f=3313 t=9569 probe main uikit(layout): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 951x669
+168.005 f=3313 t=9569 probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+168.005 f=3313 t=9569 main column geometry: size=382x562 bottomSafe=34 edge=trailing variant=band
+168.005 f=3313 t=9569 field moved: global top=601.8 bottom=635.8 edge=trailing bottomSafe=34 focused=false
+168.012 f=3313 t=9569 probe main uikit(layout): edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678
+168.034 f=3314 t=9570 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=2
+------- mac: front again from Messages
+171.568 f=3327 t=9599 system: UISceneWillEnterForegroundNotification
+171.594 f=3328 t=9599 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=1
+171.603 f=3328 t=9607 system: UISceneDidActivateNotification
+171.617 f=3329 t=9614 root tick: window 466x678 safe=0,0,34,84 edge=trailing orientation=1 scene=0
+175.551 f=3564 t=10256 ------- command: dump closed-portrait returned from Messages
+175.551 f=3564 t=10256 dump[closed-portrait returned from Messages] root regions: reader=0,0 466x678 window=0,0 466x678 reader.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] reader.division=none reader.division+inactive=none window.occlusion=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.occlusion+inactive=[399.7,29.3 37x37 active=true][382,0 84x174 active=true] window.division=none window.division+inactive=none
+175.551 f=3564 t=10256 dump[closed-portrait returned from Messages] root hinge: closed 0 runs=1
+175.551 f=3564 t=10256 dump[closed-portrait returned from Messages] probe root uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: UIHostingController<ModifiedConten:trailing < window:trailing
+175.552 f=3564 t=10256 dump[closed-portrait returned from Messages] probe sidebar uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: LabHost:trailing
+175.552 f=3564 t=10256 dump[closed-portrait returned from Messages] probe main uikit: edge=trailing classes=1/2 window=466x678 windowSafe=0,0,34,84 frameInWindow=0,0 466x678 | chain: LabHost:trailing < UINavigationController:trailing < UINavigationController:trailing < LabColumns:trailing < UIHostingController<ModifiedConten:trailing < window:trailing
+175.552 f=3564 t=10256 dump[closed-portrait returned from Messages] mark ground: top=593.7 bottom=678 fromWindowBottom=0 topFromWindowBottom=84.3 x=0..382 window=466x678
+175.552 f=3564 t=10256 dump[closed-portrait returned from Messages] list UpdateCoalescingCollectionView: frameInWindow=0,0 466x678 content=15600 adjustedInset=82,0,84.3,0 inset=0,0,0,0 offset=-82 endOffset=15006.3 contentEndsAtFromWindowBottom=-15004
+175.552 f=3564 t=10256 dump[closed-portrait returned from Messages] mark foot: top=593.7 bottom=644 fromWindowBottom=34 topFromWindowBottom=84.3 x=0..382 window=466x678
+175.552 f=3564 t=10256 dump[closed-portrait returned from Messages] mark field: top=602 bottom=636 fromWindowBottom=42 topFromWindowBottom=76 x=8..302.7 window=466x678
+175.552 f=3564 t=10256 dump[closed-portrait returned from Messages] probe aside uikit: edge=trailing classes=1/2 NOT-IN-A-WINDOW | chain: NavigationStackHostingController<A:trailing < UIKitNavigationController:trailing < UIHostingController<LabAsideStack>:trailing < UINavigationController:trailing
+175.552 f=3564 t=10256 dump[closed-portrait returned from Messages] probe root swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none
+175.552 f=3564 t=10256 dump[closed-portrait returned from Messages] probe main swiftui: edge=trailing classes=compact/regular size=466x678 global=0,0 466x678 safe=0,0,0,0 occlusion=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] occlusion+inactive=[399.7,29.3 37x37 active=true margins=0,0,0,0][382,0 84x174 active=true margins=0,0,0,0] division=none division+inactive=none

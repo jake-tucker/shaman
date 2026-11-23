@@ -1,0 +1,2 @@
+in the switcher: app state 4
+after the card was tapped: app state 4

@@ -31,7 +31,7 @@
 
   func labLog(_ line: String) {
     #if targetEnvironment(simulator)
-      let url = URL(fileURLWithPath: "/tmp/duo725/app.log")
+      let url = URL(fileURLWithPath: "\(Foot.directory)/\(Foot.logName).log")
       let stamp = String(format: "%07.3f", Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 1000))
       let data = Data("\(stamp) \(line)\n".utf8)
       if let handle = try? FileHandle(forWritingTo: url) {
@@ -112,6 +112,7 @@
         .listRowBackground(state.path.first == "S\(n)" ? Color.accentColor.opacity(0.14) : nil)
       }
       .listStyle(.plain)
+      .background { if #available(iOS 27.1, *) { EdgeProbe(name: "sidebar").ignoresSafeArea() } }
       .navigationTitle("Listing")
       .navigationBarTitleDisplayMode(.inline)
       .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
@@ -190,6 +191,7 @@
           NavigationLink(value: n) { Text(verbatim: "Activity \(n)") }
             .accessibilityIdentifier("lab.activity.\(n)")
         }
+        .background { if #available(iOS 27.1, *) { EdgeProbe(name: "aside").ignoresSafeArea() } }
         .navigationTitle("Work")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(for: Int.self) { n in
@@ -303,6 +305,21 @@
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    /// #729: the way of standing the foot on the bottom edge that is the hosting controller's to do.
+    override func viewDidLayoutSubviews() {
+      super.viewDidLayoutSubviews()
+      guard #available(iOS 27.1, *), id.hasPrefix("S") else { return }
+      let variant = FootBus.shared.variant
+      let on =
+        variant == "c-additional"
+        || (variant == "follow-additional" && traitCollection.verticalBarEdge != .unspecified)
+      let want = on ? -(view.window?.safeAreaInsets.bottom ?? 0) : 0
+      if additionalSafeAreaInsets.bottom != want {
+        additionalSafeAreaInsets.bottom = want
+        footLog("host \(id): additional bottom inset \(Int(want)), edge \(traitCollection.verticalBarEdge.rawValue)")
+      }
+    }
   }
 
   @available(iOS 27.1, *)
@@ -350,7 +367,13 @@
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
     private func landing() -> LabHost { LabHost(id: "landing", LabLanding()) }
-    private func screen(_ id: String) -> LabHost { LabHost(id: id, LabItem(state: state, id: id)) }
+    private func screen(_ id: String) -> LabHost {
+      Foot.on ? LabHost(id: id, FootItem(state: state, id: id)) : LabHost(id: id, LabItem(state: state, id: id))
+    }
+
+    override var preferredVerticalBarBehavior: UIVerticalBarBehavior {
+      FootBus.shared.barOff ? .disabled : super.preferredVerticalBarBehavior
+    }
 
     private func ids(_ nav: UINavigationController) -> [String] {
       nav.viewControllers.map { ($0 as? LabHost)?.id ?? "\(type(of: $0))" }
@@ -801,13 +824,14 @@
             }
           }
           .background { FoldProbes().ignoresSafeArea() }
+          .modifier(FootRoot(state: state))
         }
       }
       .overlay(alignment: .bottomTrailing) {
-        Text(verbatim: state.summary)
+        Text(verbatim: Foot.on ? "" : state.summary)
           .font(.caption2)
           .padding(3)
-          .background(Color.yellow.opacity(0.8))
+          .background(Color.yellow.opacity(Foot.on ? 0 : 0.8))
           .accessibilityIdentifier("lab.state")
           .allowsHitTesting(false)
           .padding(.bottom, 70)
