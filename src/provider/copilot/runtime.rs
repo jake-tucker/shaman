@@ -12,7 +12,7 @@ use super::{
     catalog::{AUTO_MODEL_ID, model_descriptors},
     copilot_error_context, copilot_fix,
     errand::run_copilot_errand,
-    fusion_tiers::{ROUTING_TIER_DISCOVERY_TIMEOUT, routing_tier_option},
+    fusion_tiers::routing_tier_option,
     pricing::CopilotPricing,
     session::{INTERRUPT_REQUEST_TIMEOUT, selected_context_tier, start_copilot_session},
     skills::CopilotSkills,
@@ -52,7 +52,6 @@ pub struct CopilotRuntime {
     harness: SharedHarness<CopilotConnector>,
     skills: CopilotSkills,
     interrupt_request_timeout: Duration,
-    routing_tier_discovery_timeout: Duration,
     /// Shared with each Session, which reads whether its Provider still offers Routing Tiers as
     /// each of its Turns begins.
     settings: Arc<StdMutex<CopilotSettings>>,
@@ -76,7 +75,6 @@ impl CopilotRuntime {
             harness: SharedHarness::new(spec, CopilotConnector::new()),
             skills: CopilotSkills::default(),
             interrupt_request_timeout: INTERRUPT_REQUEST_TIMEOUT,
-            routing_tier_discovery_timeout: ROUTING_TIER_DISCOVERY_TIMEOUT,
             settings: Arc::new(StdMutex::new(CopilotSettings::default())),
             last_pricing: StdMutex::new(None),
         }
@@ -108,14 +106,6 @@ impl CopilotRuntime {
     /// exercise the timeout without waiting out the default.
     pub fn with_interrupt_request_timeout(mut self, timeout: Duration) -> Self {
         self.interrupt_request_timeout = timeout;
-        self
-    }
-
-    /// Bounds how long a discovery waits to learn the Routing Tiers on offer before it gives up on
-    /// them and offers `auto` without. Injectable so tests can exercise a CLI that never answers
-    /// without waiting out the default.
-    pub fn with_routing_tier_discovery_timeout(mut self, timeout: Duration) -> Self {
-        self.routing_tier_discovery_timeout = timeout;
         self
     }
 
@@ -178,18 +168,19 @@ impl ProviderRuntime for CopilotRuntime {
                 }
                 listed = handle.connection().list_models() => listed?,
             };
-            let mut models = model_descriptors(listed);
+            let mut models = model_descriptors(listed.models);
             let offers_tiers = self
                 .settings
                 .lock()
                 .expect("Copilot Settings lock is not poisoned")
                 .fusion_tiers;
+            // Copilot lists its routing tiers beside its Models, so offering them asks it nothing
+            // more. Whatever it says of them costs `auto` its option alone, never the catalog.
             if offers_tiers
                 && let Some(auto) = models
                     .iter_mut()
                     .find(|model| model.id.as_str() == AUTO_MODEL_ID)
-                && let Some(option) =
-                    routing_tier_option(&handle, self.routing_tier_discovery_timeout).await
+                && let Some(option) = listed.auto.and_then(routing_tier_option)
             {
                 auto.options.push(option);
             }

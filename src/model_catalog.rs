@@ -1276,8 +1276,8 @@ mod tests {
         assert_eq!(offered_options(&service), 0);
     }
 
-    /// An Errand never runs on a Routing Tier: it carries no assignment, on which a tier fails at
-    /// once, and a Provider's fallback or a pin naming one still gets an answer on plain Models.
+    /// An Errand never runs on a Routing Tier, which only the user chooses, and a Provider's
+    /// fallback or a pin naming one still gets an answer on plain Models.
     #[test]
     fn an_errand_never_runs_under_a_routing_tier() {
         let tiered = tiered_model(vec![routing_tier()]);

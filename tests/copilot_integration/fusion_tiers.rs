@@ -1,22 +1,22 @@
-//! The hand-written assignment that makes Copilot offer its Fusion routing tiers (ADR 0060): which
-//! Copilot Sessions carry it, and which never do. Every assertion reads the requests the CLI
-//! received, because what the `provider.copilot.fusionTiers` Setting governs is the wire.
+//! What the `provider.copilot.fusionTiers` Setting leaves on the wire as a Session opens: nothing.
+//! Copilot lists its routing tiers to whoever asks, so Shaman asserts no experiment assignment to
+//! be offered them (ADR 0082). The Setting's own helpers live here too, for `routing_tiers`, which
+//! reads what the Setting does govern.
 
 use std::{path::Path, sync::Arc};
 
 use crate::copilot_integration::support::{
-    ScriptedCopilot, connect_arm, connect_in, conversation_fixture, create_session_arm,
-    delete_session_arm, detach_session_arm, resumable_conversation_fixture, send_arm,
-    settled_session, settled_session_on, signed_in_arm,
+    ScriptedCopilot, connect_in, resumable_conversation_fixture, settled_session,
+    settled_session_on,
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 use shaman::{
     managed_client::{ManagedClient, ManagedClientConfig},
     protocol::{
-        AdmitPromptRequest, CopilotSettings, CreateSessionRequest, EffectiveSettings,
-        InitialPrompt, PromptDelivery, PromptId, ProviderSettings, SessionId, SettingMutation,
+        AdmitPromptRequest, CreateSessionRequest, InitialPrompt, PromptDelivery, PromptId,
+        SessionId, SettingMutation,
     },
-    provider::{CopilotRuntime, ProviderErrand, ProviderRuntime},
+    provider::CopilotRuntime,
     server::{self, RunningServer, ServerConfig},
 };
 
@@ -25,56 +25,9 @@ const TIMELINE: &str = r#"      event e1 assistant.message '{"messageId":"m1","c
       event e2 session.idle '{}'
 "#;
 
-/// The assignment on the wire, spelled here rather than read off Shaman so a change to what Shaman
-/// asserts to Copilot's service is a deliberate change here as well.
-fn fusion_assignment() -> Value {
-    json!({
-        "Features": [],
-        "Flights": {},
-        "Configs": [{
-            "Id": "default",
-            "Parameters": {
-                "copilot_cli_dynamic_auto_tiers": true,
-                "copilot_cli_hydrafusion_plan_v2": true,
-            },
-        }],
-        "AssignmentContext": "",
-    })
-}
-
-/// What the CLI was told in each `method` request, in the order it received them: the assignment,
-/// or `None` where the request carried no such field at all. The throwaway Session a catalog
-/// discovery opens for the Routing Tiers, with its store off, is not one of those a test here is
-/// counting: `routing_tiers` reads that one.
-fn assignments_on(requests: &[Value], method: &str) -> Vec<Option<Value>> {
-    requests
-        .iter()
-        .filter(|request| request["method"] == method)
-        .filter(|request| {
-            let params = &request["params"];
-            params["experiments"].get("assignments").is_none()
-                || params["state"]["enableCrossSessionStore"] != false
-        })
-        .map(|request| request["params"]["experiments"].get("assignments").cloned())
-        .collect()
-}
-
-pub(super) fn fusion_tiers_pinned(setting: bool) -> SettingMutation {
+fn fusion_tiers_pinned(setting: bool) -> SettingMutation {
     SettingMutation::ProviderCopilotFusionTiers {
         value: Some(setting),
-    }
-}
-
-pub(super) fn fusion_tiers_in_force() -> EffectiveSettings {
-    EffectiveSettings {
-        provider: ProviderSettings {
-            copilot: CopilotSettings {
-                fusion_tiers: true,
-                ..CopilotSettings::default()
-            },
-            ..ProviderSettings::default()
-        },
-        ..EffectiveSettings::default()
     }
 }
 
@@ -223,140 +176,23 @@ async fn created_and_resumed(
     copilot.requests()
 }
 
+/// The Setting is on from before the Session is created, and still on when a later Server resumes
+/// it: the two times an assignment could reach the CLI.
 #[tokio::test]
-async fn with_the_setting_on_create_and_resume_carry_the_assignment() {
+async fn with_the_setting_on_neither_create_nor_resume_asserts_an_experiment_assignment() {
     let requests = created_and_resumed("fusion-tiers-on", Some(true), None).await;
 
-    assert_eq!(
-        assignments_on(&requests, "session.create"),
-        [Some(fusion_assignment())]
-    );
-    assert_eq!(
-        assignments_on(&requests, "session.resume"),
-        [Some(fusion_assignment())],
-        "the pin outlives the restart, and a resume supplies the assignment again"
-    );
-}
-
-#[tokio::test]
-async fn with_the_setting_off_neither_create_nor_resume_carries_one() {
-    let requests = created_and_resumed("fusion-tiers-off", None, None).await;
-
-    assert_eq!(assignments_on(&requests, "session.create"), [None]);
-    assert_eq!(assignments_on(&requests, "session.resume"), [None]);
-}
-
-#[tokio::test]
-async fn a_resume_follows_the_setting_as_it_stands_when_the_session_reopens() {
-    let turned_off = created_and_resumed("fusion-tiers-turned-off", Some(true), Some(false)).await;
-    assert_eq!(
-        assignments_on(&turned_off, "session.create"),
-        [Some(fusion_assignment())]
-    );
-    assert_eq!(assignments_on(&turned_off, "session.resume"), [None]);
-
-    let turned_on = created_and_resumed("fusion-tiers-turned-on", None, Some(true)).await;
-    assert_eq!(assignments_on(&turned_on, "session.create"), [None]);
-    assert_eq!(
-        assignments_on(&turned_on, "session.resume"),
-        [Some(fusion_assignment())]
-    );
-}
-
-/// An assignment reaches the CLI only as a Session opens, so a change of the Setting leaves a
-/// Session already open as it was and governs the next one to open.
-#[tokio::test]
-async fn a_session_already_open_is_left_as_it_opened_when_the_setting_changes() {
-    let copilot = conversation_fixture(TIMELINE);
-    let home = Home::new("fusion-tiers-open-session");
-    let (server, client) = home.host(&copilot).await;
-
-    let open = opened_session(&client, home.workspace.path()).await;
-    pin(&client, Some(true)).await;
-    continued_session(&client, open).await;
-    let requests = copilot.requests();
-    assert_eq!(assignments_on(&requests, "session.create"), [None]);
-    assert_eq!(assignments_on(&requests, "session.resume"), []);
-
-    opened_session(&client, home.workspace.path()).await;
-    assert_eq!(
-        assignments_on(&copilot.requests(), "session.create"),
-        [None, Some(fusion_assignment())],
-        "the next Session to open carries it, without reopening the one that was open"
-    );
-
-    drop(client);
-    server.shutdown().await.expect("stop server");
-}
-
-#[tokio::test]
-async fn an_errand_never_carries_the_assignment() {
-    let copilot = ScriptedCopilot::new(&format!(
-        "{}{}{}{}{}{}",
-        connect_arm(),
-        signed_in_arm(),
-        create_session_arm(),
-        detach_session_arm(),
-        delete_session_arm(),
-        send_arm(
-            r#"      event e1 assistant.message '{"messageId":"m1","content":"{}"}'
-      event e2 session.idle '{}'
-"#
-        ),
-    ));
-    let workspace = tempfile::tempdir().expect("create valid Workspace");
-    let runtime = CopilotRuntime::new(copilot.executable());
-    runtime.apply_settings(&fusion_tiers_in_force());
-    let selection = runtime
-        .errand_selection()
-        .expect("Copilot declares its Errands' Selection");
-
-    runtime
-        .run_errand(ProviderErrand {
-            prompt: "Title this Session".to_owned(),
-            schema: json!({"type": "object"}),
-            selection,
-            execution_directory: workspace.path().to_owned(),
-        })
-        .await
-        .expect("run the Errand");
-    runtime.shutdown().await.expect("shut the runtime down");
-
-    assert_eq!(
-        assignments_on(&copilot.requests(), "session.create"),
-        [None]
-    );
-}
-
-#[tokio::test]
-async fn skill_discovery_never_carries_the_assignment() {
-    let copilot = ScriptedCopilot::new(&format!(
-        "{}{}{}{}{}{}",
-        connect_arm(),
-        signed_in_arm(),
-        create_session_arm(),
-        detach_session_arm(),
-        delete_session_arm(),
-        r#"    *'"method":"session.commands.list"'*)
-      reply '{"jsonrpc":"2.0","id":'"$id"',"result":{"commands":[]}}'
-      ;;
-    *'"method":"session.skills.list"'*)
-      reply '{"jsonrpc":"2.0","id":'"$id"',"result":{"skills":[]}}'
-      ;;
-"#,
-    ));
-    let workspace = tempfile::tempdir().expect("create valid Workspace");
-    let runtime = CopilotRuntime::new(copilot.executable());
-    runtime.apply_settings(&fusion_tiers_in_force());
-
-    runtime
-        .skill_catalog(workspace.path())
-        .await
-        .expect("discover Skills");
-    runtime.shutdown().await.expect("shut the runtime down");
-
-    assert_eq!(
-        assignments_on(&copilot.requests(), "session.create"),
-        [None]
-    );
+    for method in ["session.create", "session.resume"] {
+        let opened = requests
+            .iter()
+            .filter(|request| request["method"] == method)
+            .collect::<Vec<_>>();
+        assert!(!opened.is_empty(), "{method} was sent");
+        assert!(
+            opened.iter().all(|request| request["params"]["experiments"]
+                .get("assignments")
+                .is_none()),
+            "{method} asserts nothing to Copilot's service: {opened:?}"
+        );
+    }
 }

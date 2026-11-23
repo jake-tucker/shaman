@@ -316,16 +316,17 @@ pub fn session_models_arm() -> String {
     .to_owned()
 }
 
-/// Copilot's Auto routing metadata as a Session assigned its tiers is told it, in the CLI's order:
-/// visible tiers, one of them disabled with Copilot's reason, and two it keeps out of a picker.
+/// Copilot's Auto routing metadata as it lists it beside its Models, in the CLI's order: visible
+/// tiers, one of them disabled with Copilot's reason, and two it keeps out of a picker. The Fusion
+/// tiers carry the name Copilot asks to be told them by, as CLI 1.0.114 lists them.
 pub const AUTO_TIERS: &str = concat!(
     r#"{"defaultTier":"hydrafusion","tiers":["#,
-    r#"{"id":"balance","displayName":"Standard","type":"auto","#,
+    r#"{"id":"balance","displayName":"Standard","type":"auto","fusionTier":"standard","#,
     r#""description":"Versatile models.","status":{"enabled":true,"pickerVisible":true}},"#,
-    r#"{"id":"hydrafusion-max","displayName":"Max","type":"fusion","#,
+    r#"{"id":"hydrafusion-max","displayName":"Max","type":"fusion","fusionTier":"max","#,
     r#""description":"The most capable models.","status":{"enabled":false,"pickerVisible":true,"#,
     r#""reason":"plan","message":"Not on your plan."}},"#,
-    r#"{"id":"hydrafusion","displayName":"High","type":"fusion","#,
+    r#"{"id":"hydrafusion","displayName":"High","type":"fusion","fusionTier":"high","#,
     r#""description":"Capable models.","status":{"enabled":true}},"#,
     r#"{"id":"secret","displayName":"Secret","type":"auto","#,
     r#""description":"Hidden.","status":{"enabled":true,"pickerVisible":false}},"#,
@@ -333,31 +334,10 @@ pub const AUTO_TIERS: &str = concat!(
     r#""description":"Latency.","status":{"enabled":true,"pickerVisible":true}}]}"#,
 );
 
-/// A `session.model.list` arm answering a Session that was opened with the Fusion assignment with
-/// `auto`, and any other with none, as the CLI does. It brings a `session.create` arm that notes
-/// which Sessions carried the assignment.
-pub fn assigned_session_arms(auto: &str) -> String {
-    format!(
-        r#"    *'"method":"session.create"'*'"experiments":{{"assignments"'*|*'"method":"session.resume"'*'"experiments":{{"assignments"'*)
-      sid=$(printf '%s' "$body" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
-      : > "$COPILOT_FIXTURE_LOG.assigned-$sid"
-      reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"sessionId":"'"$sid"'"}}}}'
-      ;;
-    *'"method":"session.model.list"'*)
-      listed=$(printf '%s' "$body" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
-      if [ -e "$COPILOT_FIXTURE_LOG.assigned-$listed" ]; then
-        reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"list":[],"auto":{auto}}}}}'
-      else
-        reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"list":[]}}}}'
-      fi
-      ;;
-"#
-    )
-}
-
 /// `session.model.switchTo` and `session.model.getCurrent` arms keeping a Session's Model and tier as
 /// the CLI does: a switch naming no tier leaves it alone, and it stays even while a concrete Model is
-/// selected. A switch to `autoTier` `not-a-tier` is refused.
+/// selected. A tier asked for by its Fusion name is held, and reported, under the routing ID that
+/// name stands for. A switch to `autoTier` `not-a-tier` is refused.
 pub fn tiered_model_arms() -> String {
     r#"    *'"method":"session.model.switchTo"'*'"autoTier":"not-a-tier"'*)
       reply '{"jsonrpc":"2.0","id":'"$id"',"error":{"code":-32603,"message":"Auto preference not-a-tier is unavailable for this account"}}'
@@ -367,6 +347,9 @@ pub fn tiered_model_arms() -> String {
       case "$body" in
         *'"autoTier":null'*) rm -f "$COPILOT_FIXTURE_LOG.tier" ;;
         *'"autoTier":"'*) printf '%s' "$body" | sed -n 's/.*"autoTier":"\([^"]*\)".*/\1/p' > "$COPILOT_FIXTURE_LOG.tier" ;;
+        *'"fusionTier":"standard"'*) printf '%s' balance > "$COPILOT_FIXTURE_LOG.tier" ;;
+        *'"fusionTier":"high"'*) printf '%s' hydrafusion > "$COPILOT_FIXTURE_LOG.tier" ;;
+        *'"fusionTier":"max"'*) printf '%s' hydrafusion-max > "$COPILOT_FIXTURE_LOG.tier" ;;
       esac
       reply '{"jsonrpc":"2.0","id":'"$id"',"result":{"modelId":"switched"}}'
       ;;
@@ -501,6 +484,17 @@ pub fn models_arm(models: &str) -> String {
     format!(
         r#"    *'"method":"models.list"'*)
       reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"models":{models}}}}}'
+      ;;
+"#
+    )
+}
+
+/// A `models.list` arm answering with `models` and, beside them, `auto`: the routing tiers Copilot
+/// offers its `auto` Model, a JSON object literal.
+pub fn tiered_models_arm(models: &str, auto: &str) -> String {
+    format!(
+        r#"    *'"method":"models.list"'*)
+      reply '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"models":{models},"auto":{auto}}}}}'
       ;;
 "#
     )

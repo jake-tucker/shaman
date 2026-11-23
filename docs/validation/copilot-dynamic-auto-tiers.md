@@ -1,5 +1,7 @@
 # Copilot offers Fusion's routing tiers only to a Session assigned them
 
+_No longer so on Copilot CLI 1.0.114: see [What changed by 1.0.114](#what-changed-by-10114) at the end, and ADR 0082, which supersedes ADR 0060._
+
 Recorded 2026-11-04 against GitHub Copilot CLI 1.0.105 on macOS, driven through
 github-copilot-sdk 1.0.29-preview.5, on an `individual_pro` account. ADR 0060 records what Shaman
 decided from it.
@@ -123,3 +125,49 @@ Checked against the real CLI, with an empty CLI cache and under the logger, usin
   Shaman's own Session. The transcript of a Fusion Turn still has a known defect: a committed phase
   shows its rows twice, which is why the Setting is off by default.
 - **Windows and Linux.** Every observation above is from macOS.
+
+## What changed by 1.0.114
+
+Recorded 2026-11-23 against Copilot CLI 1.0.114 on macOS, driven through copilot-sdk 2.0.1 at
+protocol 4, on the same `individual_pro` account. ADR 0082 records what Shaman decided from it.
+
+**The tiers are listed with no assignment.** `models.list`, asked with no Session, no assignment and
+no feature flags, answered with `auto.tiers` in full, and a Session opened with nothing extra listed
+the same from `session.model.list`. Each tier now carries the Fusion name Copilot asks to be told
+it by:
+
+| `id` | `displayName` | `fusionTier` | `type` | `pickerVisible` |
+| --- | --- | --- | --- | --- |
+| `balance` (the default) | Standard | `standard` | `auto` | true |
+| `hydrafusion` | High | `high` | `fusion` | true |
+| `hydrafusion-max` | Max | `max` | `fusion` | true |
+| `fast` | Fast | none | `auto` | false |
+
+**A tier routes the same with no assignment.** The same one-word Prompt on `hydrafusion`, once with
+nothing asserted and once with the two parameters above (`copilot_auto_tier_probe hydrafusion`, the
+second under `PROBE_EXP_ASSIGNMENTS`):
+
+| Assignments | planVersion | policyVersion / ruleId | Route | totalNanoAiu |
+| --- | --- | --- | --- | --- |
+| none | 2 | `hydrafusion_v4_2026-11-10` / `solo_luna6_simple_low_reasoning` | `single`, gpt-6-luna | 121,969,750 |
+| `dynamic_auto_tiers` + `copilot_cli_hydrafusion_plan_v2` | 2 | same | `single`, gpt-6-luna | 46,042,150 |
+
+Both sent 13,920 input tokens. The second read 9,432 of them from the Prompt Cache the first had
+just written, which is the whole of the difference in cost. `session.model.getCurrent` answered
+`{"modelId":"auto","autoTier":"hydrafusion","fusionTier":"high"}` after each.
+
+**Through Shaman, asserting nothing.** `copilot_routing_tier_live` against a Server built without
+the assignment: the catalog offered Standard, High and Max 2.8s after the Setting came on, with no
+Session opened to learn them. A Turn on `hydrafusion`, asked for as Fusion tier `high`, completed
+with a Route on gpt-6-luna. `not-a-real-tier` and `efficiency` were each refused at once, and their
+Turns ran on `hydrafusion` with a Status row. The tier survived a Server restart and resume, going
+back to the default cleared it, and with the Setting off the resumed Session ran on plain Auto.
+
+### Not verified
+
+- **Which CLI version first did this.** 1.0.105 needed the assignment and 1.0.114 does not. Nothing
+  between was checked.
+- **Other plans.** The same one account. What an account with no Fusion entitlement is listed is
+  unknown.
+- **Harder work.** One-word Turns again.
+- **Windows and Linux.** Every observation is from macOS.

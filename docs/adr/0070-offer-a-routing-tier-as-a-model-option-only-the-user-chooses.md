@@ -1,5 +1,7 @@
 # Offer a Routing Tier as a Model Option only the user chooses
 
+_Amended by ADR-0082: there is no assignment any more. The tiers are read off the catalog Copilot lists rather than from a Session opened to learn them, so nothing here about a discovery Session, its deadline or its delete still holds. A Session opened with the Setting off takes a tier from its next Turn once the Setting is on, and a switch asks for a Fusion tier by the name the catalog gives it. Everything else here still governs a Routing Tier._
+
 ADR 0060 has Shaman assert the assignment that makes Copilot offer Fusion's tiers. We decided a Routing Tier is a Model Option on Copilot's `auto`, present only while `provider.copilot.fusionTiers` is on, under a new `ModelOptionRole::RoutingTier` that always goes by the ID `routing_tier`, and no other option does, so that what reads a Selection can tell one with no catalog at hand.
 
 Naming no tier already means the Provider's default, so taking that default stores none: the picker still shows it in force and the Selection text names it, a fresh Selection starts from none, and going back to it from another tier clears the one Copilot holds. So the Setting going off never has to say a Session left a tier nobody chose. The option's default is therefore always Copilot's own: where Copilot's default cannot be chosen, because it is disabled for the account or kept from a picker, `auto` offers no option at all.

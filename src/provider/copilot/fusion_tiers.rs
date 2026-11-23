@@ -1,166 +1,79 @@
-//! The experiment assignment a Copilot Session opens with to be offered Copilot's Fusion routing
-//! tiers, which the `provider.copilot.fusionTiers` Setting governs (ADR 0060), and the Routing Tier
-//! Model Option those tiers become on `auto` (ADR 0070).
+//! Copilot's Fusion routing tiers as Shaman offers and asks for them: the Routing Tier Model Option
+//! they become on `auto` while the `provider.copilot.fusionTiers` Setting is on (ADR 0070), and the
+//! name each goes by when a Session is switched onto it (ADR 0082).
 //!
-//! This assignment is hand-written. Copilot's experimentation service did not issue it, and Shaman
-//! never calls that service: a Session driven over the SDK receives no assignments from the CLI,
-//! and these parameters did not come back to any request identifying itself as Shaman. The SDK takes
-//! assignments from its integrator, so Shaman states the two it needs and nothing else
+//! Copilot lists the tiers to whoever asks for its Models, so Shaman reads them off the catalog it
+//! already fetches and asserts nothing to be offered them
 //! (docs/validation/copilot-dynamic-auto-tiers.md).
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex as StdMutex},
+};
 
 use copilot_sdk::{
-    CopilotExpAssignmentResponse, ExpConfigEntry, ExpFlagValue,
+    FusionTier,
     rpc::{AutoTierDescriptor, AutoTierMetadata, AutoTierStatus},
 };
-use tokio::{
-    sync::oneshot,
-    time::{Duration, Instant, timeout_at},
-};
 
-use super::{
-    copilot_error, copilot_error_context,
-    errand::{DiscardedSession, least_capable_session_config},
-    transport::CopilotConnection,
+use crate::protocol::{
+    ModelAvailability, ModelOptionChoice, ModelOptionChoiceId, ModelOptionDescriptor,
+    ModelOptionId, ModelOptionKind, ModelOptionRole, ROUTING_TIER_OPTION_ID,
 };
-use crate::{
-    protocol::{
-        ModelAvailability, ModelOptionChoice, ModelOptionChoiceId, ModelOptionDescriptor,
-        ModelOptionId, ModelOptionKind, ModelOptionRole, ROUTING_TIER_OPTION_ID,
-    },
-    provider::{ProviderError, harness::SharedHarnessHandle},
-};
-
-/// How long a discovery waits to learn the tiers on offer before it offers `auto` without. The CLI
-/// took 1.7s to answer its first `session.model.list`, fetching the catalog as it went
-/// (docs/validation/copilot-routing-tier-selection.md).
-pub(super) const ROUTING_TIER_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// What a failure learning the tiers is reported under in the Log.
-const DISCOVERY_CONTEXT: &str = "Copilot Routing Tier discovery failed";
 
 /// The tier the SDK calls an integrator-only latency preset, which Copilot's own picker never
 /// offers: it stays out whatever Copilot marks it.
 const FAST_TIER: &str = "fast";
 
-/// The Config the CLI reads these parameters from.
-const CONFIG_ID: &str = "default";
+/// The Fusion tier each of Copilot's routing tiers stands for, as its catalog last said, by the ID
+/// a Selection names the tier under.
+///
+/// A Selection names a tier by Copilot's routing ID, which is what Copilot reports a Session as
+/// holding everywhere it says so. Copilot is asked for a Fusion tier by the name its own CLI takes,
+/// though, and deprecates asking by ID, so a switch reads the name here. A tier the catalog gives
+/// no name, or one this SDK build cannot say, is asked for by its ID as before.
+#[derive(Clone, Debug, Default)]
+pub(super) struct FusionTierNames {
+    by_id: Arc<StdMutex<HashMap<String, FusionTier>>>,
+}
 
-/// Lists the routing tiers in `session.model.list` and lets a Session select one. Alone it routes
-/// on Fusion's older plan: planVersion 1, with no policy.
-const DYNAMIC_AUTO_TIERS: &str = "copilot_cli_dynamic_auto_tiers";
+impl FusionTierNames {
+    /// Takes the names from the catalog just listed, forgetting those of the one before.
+    pub(super) fn replace(&self, auto: Option<&AutoTierMetadata>) {
+        let named = auto
+            .into_iter()
+            .flat_map(|auto| &auto.tiers)
+            .filter_map(|tier| Some((tier.id.clone(), fusion_tier(tier)?)))
+            .collect();
+        *self
+            .by_id
+            .lock()
+            .expect("Copilot Fusion tier names lock is not poisoned") = named;
+    }
 
-/// Routes on the plan the CLI's own issued assignments route on: planVersion 2, with its policy.
-/// A one-word Prompt on `hydrafusion` cost about 36 times as much without it.
-const HYDRAFUSION_PLAN_V2: &str = "copilot_cli_hydrafusion_plan_v2";
-
-/// The assignment, with no Features or Flights to report and no context to forward, because no
-/// experiment assigned it. Other experiments stay as they are for an SDK Session: unassigned.
-pub(super) fn fusion_tier_assignment() -> CopilotExpAssignmentResponse {
-    let parameters = [DYNAMIC_AUTO_TIERS, HYDRAFUSION_PLAN_V2]
-        .map(|parameter| (parameter.to_owned(), ExpFlagValue::Bool(true)));
-    CopilotExpAssignmentResponse {
-        configs: vec![ExpConfigEntry {
-            id: CONFIG_ID.to_owned(),
-            parameters: HashMap::from(parameters),
-        }],
-        ..CopilotExpAssignmentResponse::default()
+    /// The Fusion tier the routing tier `id` stands for, where the catalog named one.
+    pub(super) fn of(&self, id: &str) -> Option<FusionTier> {
+        self.by_id
+            .lock()
+            .expect("Copilot Fusion tier names lock is not poisoned")
+            .get(id)
+            .cloned()
     }
 }
 
-/// The Routing Tier Model Option Copilot offers `auto` right now, or nothing where it offers none or
-/// could not be asked.
-///
-/// Copilot lists the tiers only to a Session, and only to one opened with the assignment, so this
-/// opens one for the purpose, least-capable as an Errand's, and discards it however this ends: it
-/// runs no Turn, costs nothing, and leaves nothing in Copilot's picker or its store. Its working
-/// directory is the system's temporary directory, so that the listing depends on no directory this
-/// Server happens to run in. Whatever goes wrong costs `auto` its option alone, never the catalog
-/// it sits in nor Copilot's Availability, because Copilot's Models are all there without it.
-///
-/// The Session lives on a task of its own, and only the wait for the answer is bounded here. A
-/// delete sent ahead of a create the CLI answers late would find nothing, and leave what the create
-/// then filed, so the discard always follows the create, however long that takes.
-pub(super) async fn routing_tier_option(
-    handle: &SharedHarnessHandle<CopilotConnection>,
-    limit: Duration,
-) -> Option<ModelOptionDescriptor> {
-    let connection = handle.connection().clone();
-    let deadline = Instant::now() + limit;
-    let (answer, answered) = oneshot::channel();
-    tokio::spawn(async move {
-        let _ = answer.send(listed_tiers(&connection, deadline).await);
-    });
-    let answered = tokio::select! {
-        biased;
-        crashed = handle.crashed() => {
-            tracing::warn!("{}", copilot_error_context(DISCOVERY_CONTEXT, crashed));
-            return None;
-        }
-        answered = timeout_at(deadline, answered) => answered,
-    };
-    match answered {
-        Ok(Ok(Ok(auto))) => auto.and_then(tier_option),
-        Ok(Ok(Err(error))) => {
-            tracing::warn!("{error}");
-            None
-        }
-        Ok(Err(_)) => {
-            tracing::warn!("{DISCOVERY_CONTEXT}: its task ended without an answer");
-            None
-        }
-        Err(_) => {
-            tracing::warn!("{DISCOVERY_CONTEXT}: the Copilot CLI did not answer within {limit:?}");
-            None
-        }
-    }
-}
-
-/// What a Session opened for the purpose is told of `auto`, by `deadline`, leaving no Session
-/// behind. A create the CLI refused may still have filed a directory under the identifier, so that
-/// is deleted too.
-async fn listed_tiers(
-    connection: &CopilotConnection,
-    deadline: Instant,
-) -> Result<Option<AutoTierMetadata>, ProviderError> {
-    let config = least_capable_session_config()
-        .with_working_directory(std::env::temp_dir())
-        .with_experiments(|experiments| experiments.with_assignments(fusion_tier_assignment()));
-    let session_id = config
-        .session_id
-        .clone()
-        .expect("a Session Shaman opens for itself is given its identifier");
-    let client = connection.client();
-    let native = match client.create_session(config).await {
-        Ok(native) => native,
-        Err(error) => {
-            if let Err(error) = client.delete_session(&session_id).await {
-                tracing::debug!("a refused Routing Tier discovery Session outlived it: {error}");
-            }
-            return Err(connection.failure(DISCOVERY_CONTEXT, error));
-        }
-    };
-    let mut session = DiscardedSession::holding(native);
-    let rpc = session.native().rpc();
-    let model = rpc.model();
-    let listed = timeout_at(deadline, model.list()).await;
-    session.discard().await;
-    match listed {
-        Ok(listed) => listed
-            .map(|listed| listed.auto)
-            .map_err(|error| connection.failure(DISCOVERY_CONTEXT, error)),
-        Err(_) => Err(copilot_error(format!(
-            "{DISCOVERY_CONTEXT}: the Copilot CLI did not list its Models in time"
-        ))),
-    }
+/// The Fusion tier `tier` stands for, as this SDK build names it.
+fn fusion_tier(tier: &AutoTierDescriptor) -> Option<FusionTier> {
+    let named = tier.fusion_tier.as_deref()?;
+    serde_json::from_value(serde_json::Value::String(named.to_owned()))
+        .ok()
+        .filter(|tier| *tier != FusionTier::Unknown)
 }
 
 /// The tiers Copilot marks visible, in its order and wording, as a Model Option, with Copilot's own
 /// default preselected. Nothing where that default cannot be chosen: naming no tier means the
 /// option's default, so preselecting another would show one in force while Copilot routes on
 /// whatever it does with none.
-fn tier_option(auto: AutoTierMetadata) -> Option<ModelOptionDescriptor> {
+pub(super) fn routing_tier_option(auto: AutoTierMetadata) -> Option<ModelOptionDescriptor> {
     let choices = auto
         .tiers
         .into_iter()
@@ -212,4 +125,62 @@ fn refusal_reason(status: &AutoTierStatus) -> Option<&str> {
         return None;
     }
     status.message.as_deref().or(status.reason.as_deref())
+}
+
+#[cfg(test)]
+mod tests {
+    use copilot_sdk::{FusionTier, rpc::AutoTierMetadata};
+    use serde_json::json;
+
+    use super::FusionTierNames;
+
+    fn catalog(tiers: serde_json::Value) -> AutoTierMetadata {
+        serde_json::from_value(json!({ "defaultTier": "balance", "tiers": tiers }))
+            .expect("Copilot's Auto metadata")
+    }
+
+    fn tier(id: &str, fusion: Option<&str>) -> serde_json::Value {
+        let mut tier = json!({
+            "id": id, "displayName": id, "type": "fusion", "description": "",
+            "status": { "enabled": true },
+        });
+        if let Some(fusion) = fusion {
+            tier["fusionTier"] = json!(fusion);
+        }
+        tier
+    }
+
+    #[test]
+    fn a_tier_is_named_as_copilots_catalog_names_it_and_by_nothing_it_cannot_say() {
+        let names = FusionTierNames::default();
+        names.replace(Some(&catalog(json!([
+            tier("balance", Some("standard")),
+            tier("hydrafusion", Some("high")),
+            tier("fast", None),
+            tier("beyond", Some("a-tier-this-build-cannot-say")),
+        ]))));
+
+        assert_eq!(names.of("balance"), Some(FusionTier::Standard));
+        assert_eq!(names.of("hydrafusion"), Some(FusionTier::High));
+        assert_eq!(names.of("fast"), None, "Copilot gave it no Fusion name");
+        assert_eq!(names.of("beyond"), None, "asked for by its ID instead");
+        assert_eq!(names.of("never-listed"), None);
+    }
+
+    #[test]
+    fn a_later_catalog_replaces_the_names_of_the_one_before() {
+        let names = FusionTierNames::default();
+        names.replace(Some(&catalog(json!([tier("hydrafusion", Some("high"))]))));
+
+        names.replace(Some(&catalog(json!([tier("renamed", Some("high"))]))));
+        assert_eq!(names.of("hydrafusion"), None);
+        assert_eq!(names.of("renamed"), Some(FusionTier::High));
+
+        names.replace(None);
+        assert_eq!(
+            names.of("renamed"),
+            None,
+            "a catalog listing no tiers names none"
+        );
+    }
 }

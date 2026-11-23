@@ -14,7 +14,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use copilot_sdk::{Client, ClientMode, ErrorKind, ProtocolErrorKind, rpc::Model};
+use copilot_sdk::{Client, ClientMode, ErrorKind, FusionTier, ProtocolErrorKind, rpc::ModelList};
 use serde::Deserialize;
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
@@ -24,6 +24,7 @@ use tokio::{
 use super::{
     concise_remote_message, copilot_error, copilot_error_context,
     event_drain::{CopilotEventDrain, EventDrainCheckpoint},
+    fusion_tiers::FusionTierNames,
     pricing::CopilotPricing,
 };
 use crate::{
@@ -80,6 +81,7 @@ impl HarnessConnector for CopilotConnector {
             event_drain,
             warning: Arc::new(OnceLock::new()),
             pricing: CopilotPricing::default(),
+            fusion_tiers: FusionTierNames::default(),
         })
     }
 
@@ -189,6 +191,9 @@ pub(super) struct CopilotConnection {
     /// projections share it so a catalog refresh changes only future recorded
     /// Costs; Turns already stamped by the store remain frozen.
     pricing: CopilotPricing,
+    /// What Copilot calls each routing tier it last listed, shared like the prices are so a
+    /// catalog refresh reaches the Sessions already open.
+    fusion_tiers: FusionTierNames,
 }
 
 /// Why this connection stopped serving requests, once it has.
@@ -213,18 +218,27 @@ impl CopilotConnection {
     ///
     /// The SDK's own `list_models` memoizes for the life of its client, and this connection outlives
     /// every catalog refresh, so this asks the CLI each time.
-    pub(super) async fn list_models(&self) -> Result<Vec<Model>, ProviderError> {
+    ///
+    /// The answer carries the routing tiers Copilot offers `auto` beside the Models themselves,
+    /// which is where Shaman learns both what to offer and what to call each tier.
+    pub(super) async fn list_models(&self) -> Result<ModelList, ProviderError> {
         self.verify_signed_in().await?;
-        let models = self
+        let listed = self
             .client
             .rpc()
             .models()
             .list()
             .await
-            .map(|listed| listed.models)
             .map_err(|error| self.failure("Copilot Model discovery failed", error))?;
-        self.pricing.replace(&models);
-        Ok(models)
+        self.pricing.replace(&listed.models);
+        self.fusion_tiers.replace(listed.auto.as_ref());
+        Ok(listed)
+    }
+
+    /// The Fusion tier Copilot's routing tier `id` stands for, as the catalog this harness
+    /// generation last listed named it.
+    pub(super) fn fusion_tier(&self, id: &str) -> Option<FusionTier> {
+        self.fusion_tiers.of(id)
     }
 
     pub(super) fn pricing(&self) -> CopilotPricing {

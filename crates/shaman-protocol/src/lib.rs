@@ -2200,9 +2200,9 @@ pub enum CodexSandboxMode {
 pub struct CopilotSettings {
     pub enabled: bool,
     pub permissions: CopilotPermissions,
-    /// Whether a conversation Session opens asserting the experiment assignment
-    /// that makes Copilot offer its Fusion routing tiers (ADR 0060). Off unless
-    /// the user turns it on.
+    /// Whether Copilot's `auto` offers its Fusion routing tiers as a Routing
+    /// Tier, and a Session may run on one (ADR 0070). Off unless the user turns
+    /// it on.
     pub fusion_tiers: bool,
 }
 

@@ -1,9 +1,7 @@
 //! A Routing Tier as a Model Option on Copilot's `auto` Model, behind the
-//! `provider.copilot.fusionTiers` Setting: what the catalog offers, what discovering it leaves on
-//! the wire, and what a Session naming one does (ADR 0070). Every assertion reads the catalog, the
-//! Transcript, or the requests the CLI received.
-
-use std::time::Duration;
+//! `provider.copilot.fusionTiers` Setting: what the catalog offers, read off the Models Copilot
+//! lists, and what a Session naming one does (ADR 0070, ADR 0082). Every assertion reads the
+//! catalog, the Transcript, or the requests the CLI received.
 
 use futures_util::StreamExt;
 use serde_json::{Value, json};
@@ -26,10 +24,10 @@ use shaman::{
 use crate::copilot_integration::{
     fusion_tiers::{Home, continued_session, pin, prompt},
     support::{
-        AUTO_TIERS, COPILOT_MODELS, ScriptedCopilot, agent_messages, assigned_session_arms,
-        connect_arm, copilot_catalog, create_session_arm, delete_session_arm, detach_session_arm,
-        models_arm, permission_decision_arm, resume_session_arm, send_arm, session_where,
-        settled_session, signed_in_arm, skills_reload_arm, tiered_model_arms,
+        AUTO_TIERS, COPILOT_MODELS, ScriptedCopilot, connect_arm, copilot_catalog,
+        create_session_arm, delete_session_arm, detach_session_arm, models_arm,
+        permission_decision_arm, resume_session_arm, send_arm, session_models_arm, session_where,
+        settled_session, signed_in_arm, skills_reload_arm, tiered_model_arms, tiered_models_arm,
     },
 };
 
@@ -46,17 +44,14 @@ fn with_fusion_tiers(fusion_tiers: bool) -> EffectiveSettings {
     }
 }
 
-/// A CLI offering `COPILOT_MODELS`, with `arms` ahead of the arms that open and close a Session.
-fn discovering_copilot(arms: &str) -> ScriptedCopilot {
-    ScriptedCopilot::new(&format!(
-        "{}{}{}{arms}{}{}{}",
-        connect_arm(),
-        signed_in_arm(),
-        models_arm(COPILOT_MODELS),
-        create_session_arm(),
-        detach_session_arm(),
-        delete_session_arm(),
-    ))
+/// A CLI listing `COPILOT_MODELS` and, beside them, `auto` as the routing tiers it offers: nothing
+/// where it lists none.
+fn listing_copilot(auto: Option<&str>) -> ScriptedCopilot {
+    let models = match auto {
+        Some(auto) => tiered_models_arm(COPILOT_MODELS, auto),
+        None => models_arm(COPILOT_MODELS),
+    };
+    ScriptedCopilot::new(&format!("{}{}{models}", connect_arm(), signed_in_arm()))
 }
 
 async fn discovered(copilot: &ScriptedCopilot, fusion_tiers: bool) -> ProviderModelDiscovery {
@@ -86,7 +81,7 @@ fn requests_of(requests: &[Value], method: &str) -> Vec<Value> {
         .collect()
 }
 
-/// Everything but the option a discovery adds: what a Setting that is off must leave as it was.
+/// Everything but the option the tiers become: what a Setting that is off must leave as it was.
 fn without_routing_tier(mut discovery: ProviderModelDiscovery) -> Vec<ModelDescriptor> {
     for model in &mut discovery.models {
         model
@@ -98,7 +93,7 @@ fn without_routing_tier(mut discovery: ProviderModelDiscovery) -> Vec<ModelDescr
 
 #[tokio::test]
 async fn with_the_setting_on_auto_offers_copilots_visible_tiers_in_its_order_and_wording() {
-    let copilot = discovering_copilot(&assigned_session_arms(AUTO_TIERS));
+    let copilot = listing_copilot(Some(AUTO_TIERS));
 
     let discovery = discovered(&copilot, true).await;
 
@@ -149,102 +144,39 @@ async fn with_the_setting_on_auto_offers_copilots_visible_tiers_in_its_order_and
     assert_eq!(*default, ModelOptionChoiceId::new("hydrafusion"));
 }
 
-/// The Session discovery opens is given nothing to work with, runs no Turn, and is gone afterwards.
+/// Copilot lists its tiers beside its Models, so learning them asks it for nothing but the catalog:
+/// no Session is opened for the purpose, with the Setting on or off.
 #[tokio::test]
-async fn discovery_runs_no_turn_and_leaves_no_session_behind() {
-    let copilot = discovering_copilot(&assigned_session_arms(AUTO_TIERS));
+async fn learning_the_tiers_opens_no_session_whatever_the_setting_says() {
+    for (fusion_tiers, offered) in [(true, 1), (false, 0)] {
+        let copilot = listing_copilot(Some(AUTO_TIERS));
 
-    discovered(&copilot, true).await;
+        let discovery = discovered(&copilot, fusion_tiers).await;
 
-    let requests = copilot.requests();
-    let created = requests_of(&requests, "session.create");
-    let [created] = created.as_slice() else {
-        panic!("one discovery Session: {created:?}");
-    };
-    assert_eq!(
-        created["experiments"]["assignments"]["Configs"][0]["Parameters"]["copilot_cli_dynamic_auto_tiers"],
-        json!(true),
-        "it needs the assignment to be offered any"
-    );
-    assert_eq!(
-        created["state"]["enableCrossSessionStore"],
-        json!(false),
-        "it stays out of the CLI's store"
-    );
-    assert_eq!(created["tools"]["availableTools"], json!([]), "no Tools");
-    assert_eq!(created["skills"]["directories"], Value::Null, "no Skills");
-    assert_eq!(created["skills"]["enabled"], json!(false), "no Skills");
-    assert!(
-        created["mcp"]["servers"].is_null(),
-        "no Broker: {}",
-        created["mcp"]["servers"]
-    );
-    assert_eq!(requests_of(&requests, "session.send"), Vec::<Value>::new());
-    assert_eq!(
-        requests_of(&requests, "session.delete")[0]["sessionId"],
-        created["sessionId"],
-        "deleted, because Copilot's own picker lists what it keeps"
-    );
-}
-
-#[tokio::test]
-async fn with_the_setting_off_auto_carries_no_option_and_no_discovery_session_opens() {
-    let copilot = discovering_copilot(&assigned_session_arms(AUTO_TIERS));
-
-    let discovery = discovered(&copilot, false).await;
-
-    assert!(auto(&discovery).options.is_empty());
-    let methods = copilot.methods();
-    for method in ["session.create", "session.model.list", "session.delete"] {
+        assert_eq!(auto(&discovery).options.len(), offered);
+        let methods = copilot.methods();
         assert!(
-            !methods.iter().any(|called| called == method),
-            "{method} was called: {methods:?}"
+            methods.iter().all(|method| !method.starts_with("session.")),
+            "with the Setting {fusion_tiers}, only the catalog was asked for: {methods:?}"
         );
     }
 }
 
+/// Whatever Copilot says of its tiers costs `auto` its option alone, never the catalog it sits in.
 #[tokio::test]
-async fn a_discovery_the_cli_refuses_or_leaves_unanswered_is_auto_with_no_option() {
-    let refused_create = r#"    *'"method":"session.create"'*)
-      reply '{"jsonrpc":"2.0","id":'"$id"',"error":{"code":-32603,"message":"no"}}'
-      ;;
-"#;
-    let refused_list = r#"    *'"method":"session.model.list"'*)
-      reply '{"jsonrpc":"2.0","id":'"$id"',"error":{"code":-32603,"message":"no"}}'
-      ;;
-"#;
-    let unanswered_create = r#"    *'"method":"session.create"'*)
-      ;;
-"#;
-    let unanswered_list = r#"    *'"method":"session.model.list"'*)
-      ;;
-"#;
-    let no_tiers = assigned_session_arms(r#"{"defaultTier":"balance","tiers":[]}"#);
-    let all_disabled = assigned_session_arms(concat!(
+async fn a_catalog_listing_no_tier_to_choose_is_auto_with_no_option() {
+    let no_tiers = r#"{"defaultTier":"balance","tiers":[]}"#;
+    let all_disabled = concat!(
         r#"{"defaultTier":"balance","tiers":[{"id":"balance","displayName":"Standard","#,
         r#""type":"auto","description":"d","status":{"enabled":false}}]}"#
-    ));
-    let flat = without_routing_tier(discovered(&discovering_copilot(""), false).await);
-    for arms in [
-        refused_create,
-        refused_list,
-        unanswered_create,
-        unanswered_list,
-        &no_tiers,
-        &all_disabled,
-    ] {
-        let copilot = discovering_copilot(arms);
-        let runtime = CopilotRuntime::new(copilot.executable())
-            .with_routing_tier_discovery_timeout(Duration::from_millis(50));
-        runtime.apply_settings(&with_fusion_tiers(true));
+    );
+    let flat = without_routing_tier(discovered(&listing_copilot(None), false).await);
+    for auto in [None, Some(no_tiers), Some(all_disabled)] {
+        let copilot = listing_copilot(auto);
 
-        let discovery = runtime
-            .list_models()
-            .await
-            .expect("a failed tier discovery fails no catalog");
+        let discovery = discovered(&copilot, true).await;
 
-        assert_eq!(discovery.models, flat, "{arms}");
-        runtime.shutdown().await.expect("shut the runtime down");
+        assert_eq!(discovery.models, flat, "{auto:?}");
     }
 }
 
@@ -259,106 +191,22 @@ async fn a_default_tier_that_cannot_be_chosen_offers_no_option() {
         r#""description":"d","status":{"enabled":true}}"#
     );
     let default_tier = |status: &str| {
-        assigned_session_arms(&format!(
+        format!(
             r#"{{"defaultTier":"balance","tiers":[{{"id":"balance","displayName":"Standard","type":"auto","description":"d","status":{status}}},{enabled}]}}"#
-        ))
+        )
     };
-    let flat = without_routing_tier(discovered(&discovering_copilot(""), false).await);
-    for arms in [
+    let flat = without_routing_tier(discovered(&listing_copilot(None), false).await);
+    for auto in [
         default_tier(r#"{"enabled":false,"message":"Not on your plan."}"#),
         default_tier(r#"{"enabled":true,"pickerVisible":false}"#),
-        assigned_session_arms(&format!(
-            r#"{{"defaultTier":"balance","tiers":[{enabled}]}}"#
-        )),
+        format!(r#"{{"defaultTier":"balance","tiers":[{enabled}]}}"#),
     ] {
-        let copilot = discovering_copilot(&arms);
+        let copilot = listing_copilot(Some(&auto));
 
         let discovery = discovered(&copilot, true).await;
 
-        assert_eq!(discovery.models, flat, "{arms}");
+        assert_eq!(discovery.models, flat, "{auto}");
     }
-}
-
-/// A Session a refused create filed anyway, and one the deadline abandoned, are not left behind.
-#[tokio::test]
-async fn a_discovery_that_gives_up_still_deletes_its_session() {
-    let unanswered_list = r#"    *'"method":"session.model.list"'*)
-      ;;
-"#;
-    let refused_create = r#"    *'"method":"session.create"'*)
-      sid=$(printf '%s' "$body" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
-      printf '%s' "$sid" > "$COPILOT_FIXTURE_LOG.refused"
-      reply '{"jsonrpc":"2.0","id":'"$id"',"error":{"code":-32603,"message":"no"}}'
-      ;;
-"#;
-    for arms in [unanswered_list, refused_create] {
-        let copilot = discovering_copilot(arms);
-        let runtime = CopilotRuntime::new(copilot.executable())
-            .with_routing_tier_discovery_timeout(Duration::from_millis(50));
-        runtime.apply_settings(&with_fusion_tiers(true));
-
-        runtime.list_models().await.expect("discover");
-
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while !copilot
-            .methods()
-            .iter()
-            .any(|method| method == "session.delete")
-        {
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "{arms} left its Session: {:?}",
-                copilot.methods()
-            );
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-        runtime.shutdown().await.expect("shut the runtime down");
-    }
-}
-
-/// The deadline passes while the CLI is still making the Session. Its delete follows the create
-/// however late that answers, because one sent ahead of it finds nothing and leaves the directory
-/// the create then files, and the SDK holding the Session's registration.
-#[tokio::test]
-async fn a_create_answered_after_the_bound_is_still_closed_and_deleted() {
-    // On a subshell, so the CLI goes on reading requests while it makes the Session.
-    let answered_late = r#"    *'"method":"session.create"'*)
-      sid=$(printf '%s' "$body" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
-      (
-        wait_for "$COPILOT_FIXTURE_RELEASE"
-        reply '{"jsonrpc":"2.0","id":'"$id"',"result":{"sessionId":"'"$sid"'"}}'
-      ) &
-      ;;
-"#;
-    let copilot = discovering_copilot(answered_late);
-    let runtime = CopilotRuntime::new(copilot.executable())
-        .with_routing_tier_discovery_timeout(Duration::from_millis(50));
-    runtime.apply_settings(&with_fusion_tiers(true));
-
-    let discovery = runtime
-        .list_models()
-        .await
-        .expect("a deadline passing fails no catalog");
-    assert!(auto(&discovery).options.is_empty());
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    assert!(
-        !copilot
-            .methods()
-            .iter()
-            .any(|method| method == "session.delete"),
-        "nothing is deleted ahead of the create: {:?}",
-        copilot.methods()
-    );
-
-    copilot.release();
-    copilot.wait_for_request("session.delete").await;
-    let methods = copilot.methods();
-    let position = |method: &str| methods.iter().position(|called| called == method);
-    assert!(
-        position("session.detach") < position("session.delete"),
-        "the Session is closed first, which releases the SDK's registration: {methods:?}"
-    );
-    runtime.shutdown().await.expect("shut the runtime down");
 }
 
 /// The CLI's report of a Turn that claimed a Fusion tier: its change of Model comes at the Turn's
@@ -382,11 +230,14 @@ fn tiered_arms(timeline: &str) -> String {
         "{}{}{}{}{}{}{}{}{}{}{}{}",
         connect_arm(),
         signed_in_arm(),
-        models_arm(COPILOT_MODELS),
-        assigned_session_arms(&AUTO_TIERS.replace(
-            r#""defaultTier":"hydrafusion""#,
-            r#""defaultTier":"balance""#
-        )),
+        tiered_models_arm(
+            COPILOT_MODELS,
+            &AUTO_TIERS.replace(
+                r#""defaultTier":"hydrafusion""#,
+                r#""defaultTier":"balance""#
+            )
+        ),
+        session_models_arm(),
         tiered_model_arms(),
         create_session_arm(),
         resume_session_arm(),
@@ -465,18 +316,27 @@ async fn turn_under(
     settled_session(client, session_id, turn_index).await
 }
 
-/// What each `session.model.switchTo` asked for: its Model, and the tier it named, which is `null`
-/// for a clearing and absent for one that leaves the tier Copilot holds alone.
+/// What each `session.model.switchTo` asked for: its Model, and the tier it named. That is
+/// [`fusion`] for a tier asked for by its Fusion name, the routing ID for one asked for by that,
+/// `null` for a clearing, and absent for a switch that leaves the tier Copilot holds alone.
 fn switches(copilot: &ScriptedCopilot) -> Vec<(String, Option<Value>)> {
     requests_of(&copilot.requests(), "session.model.switchTo")
         .iter()
         .map(|params| {
+            let named = params
+                .get("fusionTier")
+                .map(|tier| json!({ "fusion": tier }));
             (
                 params["modelId"].as_str().unwrap_or_default().to_owned(),
-                params.get("autoTier").cloned(),
+                named.or_else(|| params.get("autoTier").cloned()),
             )
         })
         .collect()
+}
+
+/// A tier asked for by the Fusion name Copilot's catalog gave it, as [`switches`] reads one.
+fn fusion(tier: &str) -> Value {
+    json!({ "fusion": tier })
 }
 
 fn switch(model: &str, tier: Option<Value>) -> (String, Option<Value>) {
@@ -532,10 +392,7 @@ async fn a_chosen_tier_reaches_copilot_and_the_selection_follows_it_there_and_ba
     assert_eq!(ran_under(&first, 0), Some(&on_auto(Some("hydrafusion"))));
     assert_eq!(first.turns[0].status, TurnStatus::Completed);
     assert_eq!(statuses(&first), Vec::<&str>::new());
-    assert_eq!(
-        switches(&copilot),
-        [switch("auto", Some(json!("hydrafusion")))]
-    );
+    assert_eq!(switches(&copilot), [switch("auto", Some(fusion("high")))]);
 
     let same = turn_under(&client, session_id, on_auto(Some("hydrafusion")), 1).await;
     assert_eq!(ran_under(&same, 1), Some(&on_auto(Some("hydrafusion"))));
@@ -572,7 +429,7 @@ async fn a_chosen_tier_reaches_copilot_and_the_selection_follows_it_there_and_ba
     assert_eq!(ran_under(&back, 5), Some(&on_auto(Some("hydrafusion"))));
     assert_eq!(
         switches(&copilot)[4..],
-        [switch("auto", Some(json!("hydrafusion")))]
+        [switch("auto", Some(fusion("high")))]
     );
     assert_eq!(
         statuses(&back),
@@ -604,11 +461,6 @@ async fn a_tier_survives_a_resume_without_being_asked_for_again() {
     assert_eq!(ran_under(&resumed, 1), Some(&on_auto(Some("hydrafusion"))));
     assert_eq!(resumed.turns[1].status, TurnStatus::Completed);
     assert_eq!(switches(&copilot).len(), 1, "Copilot still holds it");
-    assert!(
-        requests_of(&copilot.requests(), "session.resume")[0]["experiments"]["assignments"]
-            .is_object(),
-        "a resume supplies the assignment the tier needs"
-    );
 
     drop(client);
     server.shutdown().await.expect("stop replacement server");
@@ -655,8 +507,8 @@ async fn a_change_copilot_refuses_as_the_turn_claims_it_corrects_the_selection_w
     assert_eq!(
         switches(&copilot),
         [
-            switch("auto", Some(json!("hydrafusion"))),
-            switch("auto", Some(json!("hydrafusion")))
+            switch("auto", Some(fusion("high"))),
+            switch("auto", Some(fusion("high")))
         ],
         "asking again after a refusal reaches Copilot"
     );
@@ -780,8 +632,8 @@ async fn a_change_copilot_refuses_at_once_corrects_the_selection_and_fails_no_tu
     server.shutdown().await.expect("stop server");
 }
 
-/// The Setting went off while Shaman was down: Copilot still reports the tier after a resume with no
-/// assignment, and would fail every Prompt, so Shaman clears it first.
+/// The Setting went off while Shaman was down: Copilot still holds the tier after a resume and
+/// would go on routing on it, so Shaman clears it first.
 #[tokio::test]
 async fn with_the_setting_off_a_resumed_session_on_a_tier_falls_back_to_plain_auto() {
     let copilot = tiered_conversation(SETTLES);
@@ -799,10 +651,6 @@ async fn with_the_setting_off_a_resumed_session_on_a_tier_falls_back_to_plain_au
     continued_session(&client, session_id).await;
     let resumed = settled_session(&client, session_id, 1).await;
 
-    assert_eq!(
-        requests_of(&copilot.requests(), "session.resume")[0]["experiments"].get("assignments"),
-        None
-    );
     assert_eq!(resumed.turns[1].status, TurnStatus::Completed);
     assert_eq!(errors(&resumed), Vec::<&str>::new());
     assert_eq!(selected(&resumed), Some(&on_auto(None)));
@@ -852,7 +700,7 @@ async fn turning_the_setting_off_reaches_a_session_on_a_tier_at_its_next_turn() 
 }
 
 /// A Landing's remembered Selection, or a client's stale catalog, naming a tier with the Setting
-/// off: Copilot would fail a create on a tier at once, so none is ever asked for.
+/// off: Copilot would take it, so Shaman asks for none.
 #[tokio::test]
 async fn with_the_setting_off_a_new_session_naming_a_tier_runs_on_plain_auto() {
     let copilot = tiered_conversation(SETTLES);
@@ -880,10 +728,10 @@ async fn with_the_setting_off_a_new_session_naming_a_tier_runs_on_plain_auto() {
     server.shutdown().await.expect("stop server");
 }
 
-/// An assignment reaches the CLI only as a Session opens, so a Session opened with the Setting off
-/// has none to claim a tier under, even once the Setting is on, until it reopens.
+/// Nothing about a tier is fixed as a Session opens, so one opened with the Setting off takes a
+/// tier from its next Turn once the Setting is on, with no reopening.
 #[tokio::test]
-async fn a_session_opened_before_the_setting_came_on_stays_on_plain_auto_until_it_reopens() {
+async fn a_session_opened_before_the_setting_came_on_takes_a_tier_at_its_next_turn() {
     let copilot = tiered_conversation(SETTLES);
     let home = Home::new("routing-tier-opened-before");
     let (server, client) = home.host(&copilot).await;
@@ -895,9 +743,13 @@ async fn a_session_opened_before_the_setting_came_on_stays_on_plain_auto_until_i
 
     assert_eq!(chosen.turns[1].status, TurnStatus::Completed);
     assert_eq!(errors(&chosen), Vec::<&str>::new());
-    assert_eq!(selected(&chosen), Some(&on_auto(None)));
-    assert_eq!(switches(&copilot), [switch("auto", None)]);
-    assert_eq!(statuses(&chosen).len(), 1);
+    assert_eq!(selected(&chosen), Some(&on_auto(Some("hydrafusion"))));
+    assert_eq!(ran_under(&chosen, 1), Some(&on_auto(Some("hydrafusion"))));
+    assert_eq!(
+        switches(&copilot),
+        [switch("auto", None), switch("auto", Some(fusion("high")))]
+    );
+    assert_eq!(statuses(&chosen), Vec::<&str>::new());
 
     drop(client);
     server.shutdown().await.expect("stop server");
@@ -925,13 +777,6 @@ async fn with_the_setting_off_other_models_ask_for_no_tier() {
     );
     assert_eq!(statuses(&concrete_turn), Vec::<&str>::new());
     assert_eq!(statuses(&back), Vec::<&str>::new());
-    let opened = requests_of(&copilot.requests(), "session.create");
-    assert!(
-        opened
-            .iter()
-            .all(|params| params["experiments"].get("assignments").is_none()),
-        "no Session opened was told of a tier: {opened:?}"
-    );
 
     drop(client);
     server.shutdown().await.expect("stop server");
@@ -970,7 +815,7 @@ fn sessions_opened(copilot: &ScriptedCopilot) -> usize {
 }
 
 /// Turning the Setting on has the catalog offer the tiers with nobody asking for a refresh, and
-/// turning it off takes them away, without opening another Session to learn nothing.
+/// turning it off takes them away. Neither opens a Session: the tiers come with the Models.
 #[tokio::test]
 async fn changing_the_setting_refreshes_the_catalog() {
     let copilot = tiered_conversation(SETTLES);
@@ -980,16 +825,14 @@ async fn changing_the_setting_refreshes_the_catalog() {
 
     pin(&client, Some(true)).await;
     pushed_catalog_offering(&mut client, 3).await;
-    let opened = sessions_opened(&copilot);
-    assert_eq!(opened, 1, "the discovery that learned them");
 
     pin(&client, Some(false)).await;
     pushed_catalog_offering(&mut client, 0).await;
     client.refresh_models().await.expect("refresh the catalog");
     assert_eq!(
         sessions_opened(&copilot),
-        opened,
-        "with the Setting off, no refresh opens a Session"
+        0,
+        "the catalog says it all, whichever way the Setting turns"
     );
 
     drop(client);
@@ -1022,57 +865,6 @@ async fn a_catalog_remembered_with_tiers_offers_none_once_the_setting_is_off_acr
 
     drop(client);
     server.shutdown().await.expect("stop replacement server");
-}
-
-/// A discovery shares its CLI process with the Sessions on it: learning the tiers while a Turn runs
-/// takes nothing from that Turn, whose events still reach it.
-#[tokio::test]
-async fn a_discovery_on_the_harness_a_turn_is_running_on_leaves_the_turn_alone() {
-    // On a subshell, since the CLI's answers to the discovery come from the loop this would hold.
-    let held = r#"      event e1 assistant.message '{"messageId":"m1","content":"Before"}'
-      (
-        wait_for "$COPILOT_FIXTURE_RELEASE"
-        event e2 assistant.message '{"messageId":"m2","content":"After"}'
-        event e3 session.idle '{}'
-      ) &
-"#;
-    let copilot = tiered_conversation(held);
-    let home = Home::new("routing-tier-shared-harness");
-    let (server, client) = home.host(&copilot).await;
-    pin(&client, Some(true)).await;
-    let session_id = client
-        .create_session(CreateSessionRequest {
-            session_id: None,
-            preparation_id: None,
-            agent_selection: Some(on_auto(Some("hydrafusion"))),
-            execution_directory: ExecutionDirectory {
-                path: home.workspace.path().to_owned(),
-            },
-            prompt: prompt("Begin"),
-        })
-        .await
-        .expect("create Session")
-        .session
-        .id;
-    copilot.wait_for_request("session.send").await;
-
-    let opened = sessions_opened(&copilot);
-    client.refresh_models().await.expect("refresh the catalog");
-    assert!(sessions_opened(&copilot) > opened, "a discovery ran");
-    copilot.release();
-    let settled = settled_session(&client, session_id, 0).await;
-
-    assert_eq!(settled.turns[0].status, TurnStatus::Completed);
-    assert_eq!(errors(&settled), Vec::<&str>::new());
-    assert_eq!(selected(&settled), Some(&on_auto(Some("hydrafusion"))));
-    let said = agent_messages(&settled)
-        .iter()
-        .map(|message| message.content.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(said, ["Before", "After"]);
-
-    drop(client);
-    server.shutdown().await.expect("stop server");
 }
 
 /// A concrete Model takes no tier, which the update says, before a Prompt could find out.
@@ -1145,7 +937,7 @@ async fn going_back_to_copilots_default_tier_clears_the_one_copilot_holds() {
     assert_eq!(
         switches(&copilot),
         [
-            switch("auto", Some(json!("hydrafusion"))),
+            switch("auto", Some(fusion("high"))),
             switch("auto", Some(Value::Null))
         ]
     );

@@ -12,11 +12,13 @@
 //! cargo run --example copilot_auto_tier_probe -- default balance <fusion-id>
 //! ```
 //!
-//! An SDK Session receives none of the ExP assignments the interactive CLI fetches, so the flags
-//! that gate dynamic Auto tiers are the host's to supply: `PROBE_FEATURE_FLAGS` names feature flags
-//! to enable on every Session (comma-separated, e.g. `HYDRAFUSION`), and `PROBE_EXPERIMENTAL=1`
-//! enables experimental mode, and `PROBE_EXP_ASSIGNMENTS` names a JSON file holding ExP assignments
-//! in the shape the CLI caches them (the `response` of an entry in its `exp-cache.json`).
+//! An SDK Session receives none of the ExP assignments the interactive CLI fetches. CLI 1.0.114
+//! lists and routes the tiers without any (docs/validation/copilot-dynamic-auto-tiers.md), and an
+//! older one gates them on flags that are the host's to supply. To compare the two,
+//! `PROBE_FEATURE_FLAGS` names feature flags to enable on every Session (comma-separated, e.g.
+//! `HYDRAFUSION`), `PROBE_EXPERIMENTAL=1` enables experimental mode, and `PROBE_EXP_ASSIGNMENTS`
+//! names a JSON file holding ExP assignments in the shape the CLI caches them (the `response` of an
+//! entry in its `exp-cache.json`).
 //! `SHAMAN_COPILOT_PATH` names the CLI (default `copilot`).
 #[path = "support/copilot_cli.rs"]
 mod copilot_cli;

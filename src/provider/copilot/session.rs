@@ -39,7 +39,6 @@ use super::{
     broker::{broker_mcp_servers, broker_system_message},
     catalog::{AUTO_MODEL_ID, model_descriptors, tier_id},
     copilot_error, copilot_error_context,
-    fusion_tiers::fusion_tier_assignment,
     projection::{
         CopilotCorrelation, ManualCompactionAnswer, ManualCompactionAnswers, TaskRosterSource,
         provider_events,
@@ -100,9 +99,7 @@ const RESUME_CONTEXT: &str = "Copilot Session resume failed";
 /// hand the Session the Broker, when this start was handed it, in the server list Copilot takes on
 /// create and resume alike: a resume carries the token this start was handed, and a CLI process
 /// resuming the Session connects anew with the headers the resume names
-/// (docs/validation/0408-copilot-mcp-tool-timeout.md). Both carry `exp_assignments`, which the CLI
-/// wants supplied again on every resume, so what a Session runs under is what the Setting says as
-/// this start runs rather than what the Session was created with.
+/// (docs/validation/0408-copilot-mcp-tool-timeout.md).
 pub(super) async fn start_copilot_session(
     handle: SharedHarnessHandle<CopilotConnection>,
     request: ProviderSessionRequest,
@@ -113,8 +110,6 @@ pub(super) async fn start_copilot_session(
     let in_force_now = *settings
         .lock()
         .expect("Copilot Settings lock is not poisoned");
-    let exp_assignments = in_force_now.fusion_tiers.then(fusion_tier_assignment);
-    let assigned = exp_assignments.is_some();
     let permissions = match request.approval_posture.as_ref() {
         Some(crate::protocol::ApprovalPosture::Copilot { permissions }) => *permissions,
         _ => in_force_now.permissions,
@@ -159,7 +154,6 @@ pub(super) async fn start_copilot_session(
                 });
             config.mcp.servers = broker;
             config.system_message = broker_note;
-            config.experiments.assignments = exp_assignments;
             let native = until_crash(
                 &handle,
                 RESUME_CONTEXT,
@@ -192,7 +186,6 @@ pub(super) async fn start_copilot_session(
                 });
             config.mcp.servers = broker;
             config.system_message = broker_note;
-            config.experiments.assignments = exp_assignments;
             let native = until_crash(
                 &handle,
                 STARTUP_CONTEXT,
@@ -295,7 +288,6 @@ pub(super) async fn start_copilot_session(
             held_tier,
         }),
         settings,
-        assigned,
         skills,
         execution_directory,
         interrupt_request_timeout,
@@ -404,7 +396,7 @@ async fn default_selection(
             })?
         }
     };
-    model_descriptors(listed)
+    model_descriptors(listed.models)
         .iter()
         .find(|descriptor| descriptor.is_default)
         .map(ModelDescriptor::default_agent_selection)
@@ -700,9 +692,6 @@ struct CopilotSession {
     selection: StdMutex<SelectionInForce>,
     /// The Settings in force, read as each Turn begins for whether Routing Tiers are still on offer.
     settings: Arc<StdMutex<CopilotSettings>>,
-    /// Whether this Session opened with the assignment, without which Copilot fails every Prompt
-    /// on a Routing Tier. It reaches the CLI only as a Session opens.
-    assigned: bool,
     /// Whether the CLI has been asked for this Session's own Model catalog, which it judges a
     /// Model switch against: see [`CopilotSession::apply_selection`].
     session_models_listed: tokio::sync::OnceCell<()>,
@@ -783,10 +772,10 @@ impl CopilotSession {
         )))
     }
 
-    /// `requested` as this Session can be asked to run it, and what the reader is told of any
-    /// Routing Tier it cannot. Shaman clears one itself rather than let Copilot fail the Turn: a
-    /// resume with no assignment still reports its tier and each Prompt then errors, and a switch
-    /// to one fails by RPC (docs/validation/copilot-routing-tier-selection.md).
+    /// `requested` as this Session is asked to run it, and what the reader is told of any Routing
+    /// Tier it is not. Copilot would take a tier whatever the Setting says, so with the Setting off
+    /// it is Shaman that asks for none: a user who turned it off has said to stop spending on
+    /// tiers (ADR 0070).
     fn selection_on_offer(&self, requested: &AgentSelection) -> AppliedSelection {
         let as_asked = || AppliedSelection {
             selection: requested.clone(),
@@ -800,22 +789,15 @@ impl CopilotSession {
             .lock()
             .expect("Copilot Settings lock is not poisoned")
             .fusion_tiers;
-        let why = if !tiers_on {
-            format!(
-                "Copilot's Routing Tiers are turned off, so this Session runs on plain Auto \
-                 rather than Routing Tier `{tier}`."
-            )
-        } else if !self.assigned {
-            format!(
-                "This Session opened before Copilot's Routing Tiers were turned on, so it runs \
-                 on plain Auto rather than Routing Tier `{tier}` until it reopens."
-            )
-        } else {
+        if tiers_on {
             return as_asked();
-        };
+        }
         AppliedSelection {
             selection: requested.clone().without_routing_tier(),
-            why: Some(why),
+            why: Some(format!(
+                "Copilot's Routing Tiers are turned off, so this Session runs on plain Auto \
+                 rather than Routing Tier `{tier}`."
+            )),
         }
     }
 
@@ -848,6 +830,14 @@ impl CopilotSession {
             in_force.held_tier.clone()
         };
         let mut options = lower_selection_options(wanted)?;
+        // Copilot takes a Fusion tier by the name its own CLI does, and deprecates the routing ID a
+        // Selection names it under, so a tier its catalog named is asked for by that name. One it
+        // gave none, or none this build can say, is still asked for by its ID.
+        if let Some(AutoTierPreference::Tier(tier)) = &options.auto_tier
+            && let Some(fusion) = self.handle.connection().fusion_tier(tier.as_str())
+        {
+            options.auto_tier = Some(AutoTierPreference::Fusion(fusion));
+        }
         // A switch to `auto` naming no tier takes back up the one Copilot holds, which would have
         // a Selection naming none run on it.
         let clearing = wanted.model.as_str() == AUTO_MODEL_ID

@@ -181,8 +181,8 @@ pub enum SidekickAccess {
     ReadAndChange,
     /// A Sidekick reads the Setting but never changes it: one bounding what an
     /// Agent may do, one whose effect no later change can undo, or one that
-    /// asserts something to a Provider's service for the user. `why` says which,
-    /// in words that follow "since".
+    /// decides something only the user chooses. `why` says which, in words that
+    /// follow "since".
     ReadOnly { why: &'static str },
     /// A Sidekick is told nothing of the Setting, not even its value: one
     /// governing Serving or a Pairing.
@@ -2410,12 +2410,12 @@ pub const SCHEMA: &[SettingDescriptor] = &[
     SettingDescriptor {
         key: PROVIDER_COPILOT_FUSION_TIERS,
         label: "Copilot Fusion tiers",
-        description: "Whether Copilot's Auto model offers Fusion's routing tiers, by asserting from now on, on each session opened or resumed, an experiment assignment Copilot's service did not issue. Turned off, a session on a routing tier runs on plain Auto from its next turn",
+        description: "Whether Copilot's Auto model offers Fusion's routing tiers. Turned off, a session on a routing tier runs on plain Auto from its next turn",
         group: SettingGroup::Experimental,
         scope: SettingScope::Server,
         sidekick: SidekickAccess::ReadOnly {
-            why: "it asserts an experiment assignment to Copilot's service, which is the user's \
-                  to do",
+            why: "a routing tier is the user's alone to choose, and turning this off takes \
+                  sessions off the one they chose",
         },
         outside_edit: OutsideEdit::AtNextStart,
         values: SettingValues::Fixed(&[
