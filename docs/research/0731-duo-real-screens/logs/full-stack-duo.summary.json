@@ -1,0 +1,185 @@
+{
+  "result": "Failed",
+  "totalTestCount": 119,
+  "passedTests": 74,
+  "failedTests": 44,
+  "skippedTests": 1,
+  "testFailures": [
+    {
+      "test": "PairingTests/testABackSwipeGivenUpOverAScannedInvitePushesNoSecondConfirmation()",
+      "failure": "Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input App element pid: 61896\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "SubagentInterventionTests/testABarNamingASubagentByALongNameCutsTheNameShortAndKeepsReviewStopAndSendOnScreen()",
+      "failure": "XCTAssertTrue failed - the Session titled Find what holds the session lock shows"
+    },
+    {
+      "test": "NewSessionTests/testABeginningNeverAnsweredSaysItMayHaveBegunAndLeftTheLandingSaysSo()",
+      "failure": "Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input App element pid: 12221\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562369;\n}\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "PairingTests/testADeadInviteStaysWithTheServersWordsAndScanAgain()",
+      "failure": "XCTAssertTrue failed - confirm.pair"
+    },
+    {
+      "test": "NewSessionTests/testAFirstPromptBeginsASessionWhereTheOutlookStandsAndBackLeavesItListed()",
+      "failure": "Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input App element pid: 20827\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562369;\n}\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562625;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "ColdStartTests/testAnActivityOpenReturnsToItsSession()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "WorkspacePickerTests/testANewWorktreeIsMadeBeforeTheSessionStartsAndTheChoiceStartsOnTheMainOneEveryTime()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "PairingTests/testAnInviteFromAServerAlreadyHeldSaysUnderWhichNameAndReplacesIt()",
+      "failure": "Failed to get matching snapshot: No matches found for Descendants matching type TextField from input {(\n    Application, pid: 82588, label: 'Shaman'\n)}"
+    },
+    {
+      "test": "CompatibilityTests/testANoticeOutlastsASheetOverItAndGoesOnceItHasStoodOnScreen()",
+      "failure": "XCTAssertLessThan failed: (\"2026-11-23 16:31:23 +0000\") is not less than (\"2026-11-23 16:31:21 +0000\") - the sheet hid it with time to spare in its while"
+    },
+    {
+      "test": "WorkspacePickerTests/testAnUnreachableRemotesHeaderSaysSoAndItsWorkspacesStayChoosable()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "UnreachableTests/testAnUnreachableRemoteStandsAsASlimRowWhoseSheetLeadsToSettingsAndTryingAgainBringsItBack()",
+      "failure": "XCTAssertTrue failed - scrolled to \"listing.unreachable\" Button"
+    },
+    {
+      "test": "PairingTests/testAPairingNoWayAnsweredStaysWithTryAgain()",
+      "failure": "XCTAssertTrue failed - confirm.pair"
+    },
+    {
+      "test": "RelayLoginTests/testAPairingThroughARelayAloneAsksForTheLoginAndGoesOnByItselfOnceItIsDone()",
+      "failure": "XCTAssertTrue failed - trying again is offered beside the login"
+    },
+    {
+      "test": "ColdStartTests/testAPhoneThatPairsAgainLandsOnItsNewListingAndNotOnWhatItKeptBefore()",
+      "failure": "Failed to tap Button (Element at index 0): No matches found for Descendants matching type Button from input {(\n    NavigationBar, identifier: '_TtGC7SwiftUI32NavigationStackHosting'\n)}\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562625;\n}\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562369;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "WorkspacePickerTests/testAPickerSaysWhereARemoteHasYetToListItsWorkspacesAndWhereOneListsNone()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "NewSessionTests/testAPromptWrittenInsteadReplacesTheRefusedOne()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "QuestionnaireTests/testAQuestionnaireIsAnsweredAPageAtATimeAndSentWhole()",
+      "failure": "Asynchronous wait failed: Exceeded timeout of 10 seconds, with unfulfilled expectations: \"Expect predicate `label == \"Question 2 of 3\"` for object StaticText (First Match)\"."
+    },
+    {
+      "test": "ServersTests/testARemoteIsRenamedFromItsRowARefusedNameStayingBesideWhy()",
+      "failure": "XCTAssertTrue failed - the sheet closed"
+    },
+    {
+      "test": "ServersTests/testARemoteRemovedByASwipeTurnsTheOutlookToAnotherSayingSo()",
+      "failure": "XCTAssertTrue failed - the sheet closed"
+    },
+    {
+      "test": "ListingTests/testASearchAnswersWithOneFlatListEachRowKeepingItsShelfsShape()",
+      "failure": "XCTAssertTrue failed - scrolled to \"listing.settled\" Any"
+    },
+    {
+      "test": "CompatibilityTests/testAServerNewerThanTheAppIsSaidOnceInABannerBeneathTheBar()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "WorkTests/testASettledTurnsCardPushesItsWorkInOrderAndARowPushesAllOfItsActivity()",
+      "failure": "Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input App element pid: 57636\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562369;\n}\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "SidekickTests/testASidekicksTreeOpensItsSessionsHereAndOnOtherServersThroughThePhonesOwnPairing()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "SubagentInterventionTests/testASubagentsApprovalMarksTheParentsBarOnceItsOwnIsDismissedAndReviewLeadsToItsSession()",
+      "failure": "Failed to tap Button (Element at index 0): No matches found for Descendants matching type Button from input {(\n    NavigationBar, identifier: 'Working'\n)}\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562369;\n}\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "SubagentTests/testASubagentsRowPushesItsSessionToAnyDepthAndBackReturnsToTheListItWasTappedIn()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "SidekickTests/testASubsessionsRowAmongTheSidekicksWorkOpensByTheSameRule()",
+      "failure": "Failed to tap Button (Element at index 0): No matches found for Descendants matching type Button from input {(\n    NavigationBar, identifier: '_TtGC7SwiftUI32NavigationStackHosting'\n)}\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562369;\n}\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "SessionTests/testAWorkingSessionOpensFromTheListingReadsLiveAndPopsBack()",
+      "failure": "Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input App element pid: 1440\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562369;\n}\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562625;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "NewSessionTests/testLeavingARefusedBeginningKeepsItsTextAsTheDraftAndTheScreenKeepsADraftOfItsOwn()",
+      "failure": "Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input App element pid: 42097\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562369;\n}\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "NewSessionTests/testLeavingBeforeTheServerAnswersStopsNothing()",
+      "failure": "Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input App element pid: 48517\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562369;\n}\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "RelayLoginTests/testLeavingTheAppGivesTheLoginUp()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "NewSessionTests/testOnAnUnreachableRemoteTheComposerTakesADraftAndSendIsDisabled()",
+      "failure": "Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input App element pid: 54106\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562369;\n}\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562625;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "ColdStartTests/testOnlyTheAppsHalfOfASwipeAwayANewSceneStartsAtTheListingUnderEverywhere()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "PairingTests/testScanAgainAfterADeadScannedInviteReturnsToTheScanner()",
+      "failure": "XCTAssertTrue failed - confirm.pair"
+    },
+    {
+      "test": "SubagentInterventionTests/testSeveralSubagentsWaitingAreCountedAndReviewOpensTheTreeSayingWhatEachWaitsOn()",
+      "failure": "Failed to tap Button (Element at index 0): No matches found for Descendants matching type Button from input {(\n    NavigationBar, identifier: 'Working'\n)}\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562369;\n}\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "ConversationRowsTests/testShortSessionsOpenedAgainAndAgainStandEachRowBelowTheLast()",
+      "failure": "Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input App element pid: 56880\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562369;\n}\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "ColdStartTests/testTheListingsScopeAndTheNewSessionScreenAreReturnedTo()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "WorkspacePickerTests/testThePickerListsEveryRemotesWorkspacesUnderItsHeaderAndChoosingOneTurnsTheOutlookAlone()",
+      "failure": "XCTAssertEqual failed: (\"[\"workstation\", \"laptop\"]\") is not equal to (\"[\"workstation\", \"laptop\", \"homelab\"]\") - a header for each Remote"
+    },
+    {
+      "test": "PairingTests/testTheScannerPassesOverWhatIsNoInviteAndTheFirstInviteGoesToItsConfirmation()",
+      "failure": "XCTAssertTrue failed - confirm.pair"
+    },
+    {
+      "test": "ColdStartTests/testTheSessionsPushedASubagentsOverItsParentIncludedAreOpenAgainButNoSheetOrWork()",
+      "failure": "Failed to tap Button (Element at index 0): No matches found for Descendants matching type Button from input {(\n    NavigationBar, identifier: 'Working'\n)}\nPossibly caused by runtime issues:\nAutomation type mismatch: computed Button from legacy attributes vs PopUpButton from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 14;\n    \"XC_kAXXCAttributeElementBaseType\" = NSObject;\n    \"XC_kAXXCAttributeElementType\" = \"SwiftUI.AccessibilityNode\";\n    \"XC_kAXXCAttributeTraits\" = 1108101562369;\n}\nAutomation type mismatch: computed Other from legacy attributes vs Button from modern attribute. Input attributes and values: {\n    \"XC_kAXXCAttributeAutomationType\" = 9;\n    \"XC_kAXXCAttributeElementBaseType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeElementType\" = \"_UIButtonBarButton\";\n    \"XC_kAXXCAttributeTraits\" = 8724152320;\n}\nSee test report attachments for more detail."
+    },
+    {
+      "test": "ListingTests/testTheShelfShowsItsFirstRowsAndTheRestBehindShowMore()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "SubagentTests/testTheTreesSheetSwitchesBetweenItsSessionsPushingPoppingOrStayingPut()",
+      "failure": "XCTAssertEqual failed: (\"5\") is not equal to (\"7\")"
+    },
+    {
+      "test": "DraftTests/testWhatASessionsComposerHeldIsInItAfterTheAppIsEnded()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "ColdStartTests/testWhatIsGoneFallsBackToTheListingAndAScopeGoneToEverywhere()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "DraftTests/testWhatTheNewSessionScreensComposerHeldIsInItAfterTheAppIsEnded()",
+      "failure": "XCTAssertTrue failed"
+    }
+  ]
+}

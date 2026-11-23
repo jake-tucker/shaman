@@ -1,0 +1,163 @@
+Test Case '-[ShamanUITests.ApprovalTests testAnApprovalPresentsItselfTakesNoTapForAMomentAndIsAnsweredThere]' passed (29.790 seconds).
+Test Case '-[ShamanUITests.ApprovalTests testSeveralApprovalsArePresentedOldestFirstOneByOne]' passed (22.917 seconds).
+Test Case '-[ShamanUITests.ApprovalTests testSwipingAnApprovalAwayLeavesAnOrangeBarWhoseReviewBringsItBack]' passed (18.047 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ColdStartTests.swift:33: error: -[ShamanUITests.ColdStartTests testAnActivityOpenReturnsToItsSession] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.ColdStartTests testAnActivityOpenReturnsToItsSession]' failed (81.490 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ColdStartTests.swift:241: error: -[ShamanUITests.ColdStartTests testAPhoneThatPairsAgainLandsOnItsNewListingAndNotOnWhatItKeptBefore] : Failed to tap Button (Element at index 0): No matches found for Descendants matching type Button from input {(
+Test Case '-[ShamanUITests.ColdStartTests testAPhoneThatPairsAgainLandsOnItsNewListingAndNotOnWhatItKeptBefore]' failed (44.690 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ColdStartTests.swift:33: error: -[ShamanUITests.ColdStartTests testOnlyTheAppsHalfOfASwipeAwayANewSceneStartsAtTheListingUnderEverywhere] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.ColdStartTests testOnlyTheAppsHalfOfASwipeAwayANewSceneStartsAtTheListingUnderEverywhere]' failed (62.039 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ColdStartTests.swift:33: error: -[ShamanUITests.ColdStartTests testTheListingsScopeAndTheNewSessionScreenAreReturnedTo] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.ColdStartTests testTheListingsScopeAndTheNewSessionScreenAreReturnedTo]' failed (71.206 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ColdStartTests.swift:120: error: -[ShamanUITests.ColdStartTests testTheSessionsPushedASubagentsOverItsParentIncludedAreOpenAgainButNoSheetOrWork] : Failed to tap Button (Element at index 0): No matches found for Descendants matching type Button from input {(
+Test Case '-[ShamanUITests.ColdStartTests testTheSessionsPushedASubagentsOverItsParentIncludedAreOpenAgainButNoSheetOrWork]' failed (51.448 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ColdStartTests.swift:33: error: -[ShamanUITests.ColdStartTests testWhatIsGoneFallsBackToTheListingAndAScopeGoneToEverywhere] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.ColdStartTests testWhatIsGoneFallsBackToTheListingAndAScopeGoneToEverywhere]' failed (76.191 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/CompatibilityTests.swift:148: error: -[ShamanUITests.CompatibilityTests testANoticeOutlastsASheetOverItAndGoesOnceItHasStoodOnScreen] : XCTAssertLessThan failed: ("2026-11-23 16:31:23 +0000") is not less than ("2026-11-23 16:31:21 +0000") - the sheet hid it with time to spare in its while
+Test Case '-[ShamanUITests.CompatibilityTests testANoticeOutlastsASheetOverItAndGoesOnceItHasStoodOnScreen]' failed (22.073 seconds).
+Test Case '-[ShamanUITests.CompatibilityTests testARemoteRefusingTheAppStandsWhereAnUnreachableRowWouldSayingToUpdateTheApp]' passed (24.408 seconds).
+Test Case '-[ShamanUITests.CompatibilityTests testARemoteTooOldForTheAppStandsWhereAnUnreachableRowWouldSayingToUpdateShamanThere]' passed (21.253 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/CompatibilityTests.swift:126: error: -[ShamanUITests.CompatibilityTests testAServerNewerThanTheAppIsSaidOnceInABannerBeneathTheBar] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.CompatibilityTests testAServerNewerThanTheAppIsSaidOnceInABannerBeneathTheBar]' failed (25.554 seconds).
+Test Case '-[ShamanUITests.CompatibilityTests testASessionAcrossTheGapSaysWhyItCannotBeReadAndTakesNothing]' passed (13.425 seconds).
+Test Case '-[ShamanUITests.ConversationRowsTests testAnAnswerWrittenShorterOrLongerStandsAsTallAsItsWords]' passed (21.973 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ConversationRowsTests.swift:116: error: -[ShamanUITests.ConversationRowsTests testShortSessionsOpenedAgainAndAgainStandEachRowBelowTheLast] : Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, give
+Test Case '-[ShamanUITests.ConversationRowsTests testShortSessionsOpenedAgainAndAgainStandEachRowBelowTheLast]' failed (16.283 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/DraftTests.swift:41: error: -[ShamanUITests.DraftTests testWhatASessionsComposerHeldIsInItAfterTheAppIsEnded] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.DraftTests testWhatASessionsComposerHeldIsInItAfterTheAppIsEnded]' failed (78.140 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/DraftTests.swift:41: error: -[ShamanUITests.DraftTests testWhatTheNewSessionScreensComposerHeldIsInItAfterTheAppIsEnded] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.DraftTests testWhatTheNewSessionScreensComposerHeldIsInItAfterTheAppIsEnded]' failed (70.107 seconds).
+Test Case '-[ShamanUITests.ListingTests testAPhoneHoldingOneRemoteNamesNoOrigin]' passed (13.216 seconds).
+Test Case '-[ShamanUITests.ListingTests testARemoteYetToAnswerIsSaidToBeReachedAtTheFootOfTheActiveRows]' passed (12.735 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ListingTests.swift:47: error: -[ShamanUITests.ListingTests testASearchAnswersWithOneFlatListEachRowKeepingItsShelfsShape] : XCTAssertTrue failed - scrolled to "listing.settled" Any
+Test Case '-[ShamanUITests.ListingTests testASearchAnswersWithOneFlatListEachRowKeepingItsShelfsShape]' failed (33.111 seconds).
+Test Case '-[ShamanUITests.ListingTests testASearchSaysItFoundNothingWhileItGoesOnReachingARemote]' passed (13.399 seconds).
+Test Case '-[ShamanUITests.ListingTests testChoosingARemoteOrAWorkspaceNarrowsTheListingAndTurnsTheOutlookAndEverywhereTurnsNothing]' passed (43.823 seconds).
+Test Case '-[ShamanUITests.ListingTests testSeveralRemotesSessionsStandTogetherEachNamingItsOrigin]' passed (13.530 seconds).
+Test Case '-[ShamanUITests.ListingTests testSwipingARowSettlesItOntoTheShelfAndSwipingItThereBringsItBack]' passed (27.129 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ListingTests.swift:129: error: -[ShamanUITests.ListingTests testTheShelfShowsItsFirstRowsAndTheRestBehindShowMore] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.ListingTests testTheShelfShowsItsFirstRowsAndTheRestBehindShowMore]' failed (44.474 seconds).
+Test Case '-[ShamanUITests.ListingTests testTheTitleMenuOffersEverywhereThenEachRemoteWithAllOfItAndItsWorkspaces]' passed (21.551 seconds).
+Test Case '-[ShamanUITests.ListingTests testWithOneRemoteTheMenuOffersAllWorkspacesAndItsWorkspaces]' passed (18.289 seconds).
+Test Case '-[ShamanUITests.LongSessionTests testAConversationShrinkingUnderItsFootAsItOpensStandsAtItsFoot]' passed (13.953 seconds).
+Test Case '-[ShamanUITests.LongSessionTests testItFollowsAnAnswerStreamingInButLeavesAReaderWhoScrolledUp]' passed (30.477 seconds).
+Test Case '-[ShamanUITests.LongSessionTests testItOpensAtTheFootOfItsConversation]' passed (14.713 seconds).
+Test Case '-[ShamanUITests.LongSessionTests testItScrollsUpAndDownSteadily]' passed (63.164 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/NewSessionTests.swift:52: error: -[ShamanUITests.NewSessionTests testABeginningNeverAnsweredSaysItMayHaveBegunAndLeftTheLandingSaysSo] : Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given inp
+Test Case '-[ShamanUITests.NewSessionTests testABeginningNeverAnsweredSaysItMayHaveBegunAndLeftTheLandingSaysSo]' failed (25.516 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/NewSessionTests.swift:52: error: -[ShamanUITests.NewSessionTests testAFirstPromptBeginsASessionWhereTheOutlookStandsAndBackLeavesItListed] : Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given
+Test Case '-[ShamanUITests.NewSessionTests testAFirstPromptBeginsASessionWhereTheOutlookStandsAndBackLeavesItListed]' failed (32.806 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/NewSessionTests.swift:140: error: -[ShamanUITests.NewSessionTests testAPromptWrittenInsteadReplacesTheRefusedOne] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.NewSessionTests testAPromptWrittenInsteadReplacesTheRefusedOne]' failed (32.655 seconds).
+Test Case '-[ShamanUITests.NewSessionTests testARefusalReadsWhyAndTryingAgainBeginsIt]' passed (24.548 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/NewSessionTests.swift:52: error: -[ShamanUITests.NewSessionTests testLeavingARefusedBeginningKeepsItsTextAsTheDraftAndTheScreenKeepsADraftOfItsOwn] : Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Butto
+Test Case '-[ShamanUITests.NewSessionTests testLeavingARefusedBeginningKeepsItsTextAsTheDraftAndTheScreenKeepsADraftOfItsOwn]' failed (21.833 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/NewSessionTests.swift:52: error: -[ShamanUITests.NewSessionTests testLeavingBeforeTheServerAnswersStopsNothing] : Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input App element pid: 485
+Test Case '-[ShamanUITests.NewSessionTests testLeavingBeforeTheServerAnswersStopsNothing]' failed (19.483 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/NewSessionTests.swift:52: error: -[ShamanUITests.NewSessionTests testOnAnUnreachableRemoteTheComposerTakesADraftAndSendIsDisabled] : Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input A
+Test Case '-[ShamanUITests.NewSessionTests testOnAnUnreachableRemoteTheComposerTakesADraftAndSendIsDisabled]' failed (11.466 seconds).
+Test Case '-[ShamanUITests.NewSessionTests testWhereNoWorkspaceIsRememberedTheScreenAsksForOneAndSendIsDisabled]' passed (15.379 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/PairingTests.swift:241: error: -[ShamanUITests.PairingTests testABackSwipeGivenUpOverAScannedInvitePushesNoSecondConfirmation] : Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input App e
+Test Case '-[ShamanUITests.PairingTests testABackSwipeGivenUpOverAScannedInvitePushesNoSecondConfirmation]' failed (18.897 seconds).
+Test Case '-[ShamanUITests.PairingTests testACameraThatFailsSaysSoAndOffersPaste]' passed (12.514 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/PairingTests.swift:60: error: -[ShamanUITests.PairingTests testADeadInviteStaysWithTheServersWordsAndScanAgain] : XCTAssertTrue failed - confirm.pair
+Test Case '-[ShamanUITests.PairingTests testADeadInviteStaysWithTheServersWordsAndScanAgain]' failed (18.904 seconds).
+Test Case '-[ShamanUITests.PairingTests testAMalformedInviteShowsItsParseErrorOnTheConfirmationScreen]' passed (11.640 seconds).
+Test Case '-[ShamanUITests.PairingTests testAnInviteByTheLaunchEnvironmentIsConfirmedAtOnce]' passed (9.093 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/PairingTests.swift:159: error: -[ShamanUITests.PairingTests testAnInviteFromAServerAlreadyHeldSaysUnderWhichNameAndReplacesIt] : Failed to get matching snapshot: No matches found for Descendants matching type TextField from input {(
+Test Case '-[ShamanUITests.PairingTests testAnInviteFromAServerAlreadyHeldSaysUnderWhichNameAndReplacesIt]' failed (19.316 seconds).
+Test Case '-[ShamanUITests.PairingTests testAnotherServerIsPairedByScanningFromTheServersSheet]' passed (15.810 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/PairingTests.swift:60: error: -[ShamanUITests.PairingTests testAPairingNoWayAnsweredStaysWithTryAgain] : XCTAssertTrue failed - confirm.pair
+Test Case '-[ShamanUITests.PairingTests testAPairingNoWayAnsweredStaysWithTryAgain]' failed (18.645 seconds).
+Test Case '-[ShamanUITests.PairingTests testAPastedInviteIsConfirmedAndPairedAndTheRemoteIsListedWithItsWays]' passed (25.705 seconds).
+Test Case '-[ShamanUITests.PairingTests testAPhoneWithNoCameraSaysSoAndPasteStillWorks]' passed (12.607 seconds).
+Test Case '-[ShamanUITests.PairingTests testARefusedCameraSaysSoAndPointsAtSettingsAndPasteStillWorks]' passed (12.668 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/PairingTests.swift:60: error: -[ShamanUITests.PairingTests testScanAgainAfterADeadScannedInviteReturnsToTheScanner] : XCTAssertTrue failed - confirm.pair
+Test Case '-[ShamanUITests.PairingTests testScanAgainAfterADeadScannedInviteReturnsToTheScanner]' failed (19.367 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/PairingTests.swift:60: error: -[ShamanUITests.PairingTests testTheScannerPassesOverWhatIsNoInviteAndTheFirstInviteGoesToItsConfirmation] : XCTAssertTrue failed - confirm.pair
+Test Case '-[ShamanUITests.PairingTests testTheScannerPassesOverWhatIsNoInviteAndTheFirstInviteGoesToItsConfirmation]' failed (26.593 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/QuestionnaireTests.swift:96: error: -[ShamanUITests.QuestionnaireTests testAQuestionnaireIsAnsweredAPageAtATimeAndSentWhole] : Asynchronous wait failed: Exceeded timeout of 10 seconds, with unfulfilled expectations: "Expect predicate `label == "Question 2 of 3"` for object StaticText (First Match)".
+Test Case '-[ShamanUITests.QuestionnaireTests testAQuestionnaireIsAnsweredAPageAtATimeAndSentWhole]' failed (26.428 seconds).
+Test Case '-[ShamanUITests.QuestionnaireTests testSkipLeavesAQuestionUnansweredAndDeclineInTheCornerDeclinesItWhole]' passed (22.918 seconds).
+Test Case '-[ShamanUITests.QuestionnaireTests testSwipedAwayItWaitsBehindReviewWithWhatWasHalfGivenKept]' passed (36.574 seconds).
+Test Case '-[ShamanUITests.QuestionnaireTests testTheFootStaysClearOfTheKeyboardOnTheWrittenAndSecretPages]' passed (19.314 seconds).
+Test Case '-[ShamanUITests.RelayLoginTests testALoginUnderAnotherAccountReadsAsThePhoneAndTheServerUnderDifferentAccounts]' passed (14.666 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/RelayLoginTests.swift:247: error: -[ShamanUITests.RelayLoginTests testAPairingThroughARelayAloneAsksForTheLoginAndGoesOnByItselfOnceItIsDone] : XCTAssertTrue failed - trying again is offered beside the login
+Test Case '-[ShamanUITests.RelayLoginTests testAPairingThroughARelayAloneAsksForTheLoginAndGoesOnByItselfOnceItIsDone]' failed (10.025 seconds).
+Test Case '-[ShamanUITests.RelayLoginTests testARelayIsRemovedByASwipeOnceConfirmedWhichGivesUpItsLogin]' passed (15.661 seconds).
+Test Case '-[ShamanUITests.RelayLoginTests testARelayTheServerTurnsOffGoesWhileTheLoginThereStaysListed]' passed (16.019 seconds).
+Test Case '-[ShamanUITests.RelayLoginTests testARelayTheServerTurnsOnAfterPairingAppearsAsLoginNeededAndLogsIn]' passed (23.150 seconds).
+Test Case '-[ShamanUITests.RelayLoginTests testARelayWayNeedingALoginIsPairedPastByADirectWay]' passed (17.523 seconds).
+Test Case '-[ShamanUITests.RelayLoginTests testARelayWayNeedingALoginLogsInInASheetThatClosesItselfOnceTheRelayConfirms]' passed (21.727 seconds).
+Test Case '-[ShamanUITests.RelayLoginTests testARemoteOutOfReachForWantOfALoginLeadsToItAndAnswersOnceLoggedIn]' passed (20.247 seconds).
+Test Case '-[ShamanUITests.RelayLoginTests testDismissingTheLoginsSheetGivesTheLoginUp]' passed (15.865 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/RelayLoginTests.swift:148: error: -[ShamanUITests.RelayLoginTests testLeavingTheAppGivesTheLoginUp] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.RelayLoginTests testLeavingTheAppGivesTheLoginUp]' failed (31.667 seconds).
+Test Case '-[ShamanUITests.RelayLoginTests testTheCodeAndAddressStayOnScreenOnceTheAuthenticationSheetIsClosed]' passed (12.537 seconds).
+Test Case '-[ShamanUITests.ServersTests testAPhoneLeftWithNoRemoteOffersPairingAlone]' passed (20.420 seconds).
+Test Case '-[ShamanUITests.ServersTests testAPhoneWhoseOneServerRemovesItOffersPairingAloneSayingWhy]' passed (14.810 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ServersTests.swift:53: error: -[ShamanUITests.ServersTests testARemoteIsRenamedFromItsRowARefusedNameStayingBesideWhy] : XCTAssertTrue failed - the sheet closed
+Test Case '-[ShamanUITests.ServersTests testARemoteIsRenamedFromItsRowARefusedNameStayingBesideWhy]' failed (31.877 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ServersTests.swift:53: error: -[ShamanUITests.ServersTests testARemoteRemovedByASwipeTurnsTheOutlookToAnotherSayingSo] : XCTAssertTrue failed - the sheet closed
+Test Case '-[ShamanUITests.ServersTests testARemoteRemovedByASwipeTurnsTheOutlookToAnotherSayingSo]' failed (33.873 seconds).
+Test Case '-[ShamanUITests.ServersTests testAServerThatRemovesThisPhoneTurnsTheOutlookToTheRemoteTurnedTowardBefore]' passed (13.320 seconds).
+Test Case '-[ShamanUITests.ServersTests testASessionOpenOnAServerThatRemovesThisPhoneIsReadNoMore]' passed (13.807 seconds).
+Test Case '-[ShamanUITests.ServersTests testPairAnotherServerOpensThePairingScreen]' passed (16.177 seconds).
+Test Case '-[ShamanUITests.ServersTests testThisDeviceSaysANewNameReachesServersPairedFromThenOn]' passed (10.614 seconds).
+Test Case '-[ShamanUITests.SessionTests testAFailedTurnsErrorStandsOutsideItsCardAndSeveralRemotesNameTheOrigin]' passed (8.602 seconds).
+Test Case '-[ShamanUITests.SessionTests testAMonitoringSessionsBarNamesItsWatch]' passed (8.505 seconds).
+Test Case '-[ShamanUITests.SessionTests testAnActFindingTheSessionGonePopsItsScreen]' passed (16.839 seconds).
+Test Case '-[ShamanUITests.SessionTests testAPromptSentFromTheComposerStandsAtOnceAsSendingThenAsSent]' passed (20.433 seconds).
+Test Case '-[ShamanUITests.SessionTests testASendNeverAnsweredKeepsItsTextWithALineSayingItMayHaveBeenSent]' passed (18.470 seconds).
+Test Case '-[ShamanUITests.SessionTests testASendThatFailsSaysSoInABannerAndItsTextIsBackInTheComposer]' passed (18.103 seconds).
+Test Case '-[ShamanUITests.SessionTests testASessionNotYetReadIsFramedAtOnceWithAQuietMarkWhereItsConversationWillBe]' passed (9.648 seconds).
+Test Case '-[ShamanUITests.SessionTests testASessionThatIsGoneSaysSo]' passed (8.953 seconds).
+Test Case '-[ShamanUITests.SessionTests testASettledTurnReadsHowItSettledOverItsCountAndItsAnswerStandsOutside]' passed (12.567 seconds).
+Test Case '-[ShamanUITests.SessionTests testAStoppedTurnReadsHowLongItRanAndItsSteeringMessageStandsOutside]' passed (8.691 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/SessionTests.swift:70: error: -[ShamanUITests.SessionTests testAWorkingSessionOpensFromTheListingReadsLiveAndPopsBack] : Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input App element p
+Test Case '-[ShamanUITests.SessionTests testAWorkingSessionOpensFromTheListingReadsLiveAndPopsBack]' failed (16.119 seconds).
+Test Case '-[ShamanUITests.SessionTests testHoldingSendQueuesAPromptWhichWaitsAtTheFootToBeSteeredNowOrCancelled]' passed (32.816 seconds).
+Test Case '-[ShamanUITests.SessionTests testOnAnUnreachableOriginTheComposerTakesNothingAndSaysWhy]' passed (9.025 seconds).
+Test Case '-[ShamanUITests.SessionTests testStopOnASessionWorkingOnlyForAnUndeliveredPromptGivesItsTextBackAheadOfWhatIsWritten]' passed (13.000 seconds).
+Test Case '-[ShamanUITests.SessionTests testStopTakesOneTapAndTheBarGoes]' passed (14.491 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/SidekickTests.swift:95: error: -[ShamanUITests.SidekickTests testASidekicksTreeOpensItsSessionsHereAndOnOtherServersThroughThePhonesOwnPairing] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.SidekickTests testASidekicksTreeOpensItsSessionsHereAndOnOtherServersThroughThePhonesOwnPairing]' failed (29.419 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/SidekickTests.swift:146: error: -[ShamanUITests.SidekickTests testASubsessionsRowAmongTheSidekicksWorkOpensByTheSameRule] : Failed to tap Button (Element at index 0): No matches found for Descendants matching type Button from input {(
+Test Case '-[ShamanUITests.SidekickTests testASubsessionsRowAmongTheSidekicksWorkOpensByTheSameRule]' failed (18.770 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/SubagentInterventionTests.swift:47: error: -[ShamanUITests.SubagentInterventionTests testABarNamingASubagentByALongNameCutsTheNameShortAndKeepsReviewStopAndSendOnScreen] : XCTAssertTrue failed - the Session titled Find what holds the session lock shows
+Test Case '-[ShamanUITests.SubagentInterventionTests testABarNamingASubagentByALongNameCutsTheNameShortAndKeepsReviewStopAndSendOnScreen]' failed (30.713 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/SubagentInterventionTests.swift:89: error: -[ShamanUITests.SubagentInterventionTests testASubagentsApprovalMarksTheParentsBarOnceItsOwnIsDismissedAndReviewLeadsToItsSession] : Failed to tap Button (Element at index 0): No matches found for Descendants matching type Button from input {(
+Test Case '-[ShamanUITests.SubagentInterventionTests testASubagentsApprovalMarksTheParentsBarOnceItsOwnIsDismissedAndReviewLeadsToItsSession]' failed (28.382 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/SubagentInterventionTests.swift:131: error: -[ShamanUITests.SubagentInterventionTests testSeveralSubagentsWaitingAreCountedAndReviewOpensTheTreeSayingWhatEachWaitsOn] : Failed to tap Button (Element at index 0): No matches found for Descendants matching type Button from input {(
+Test Case '-[ShamanUITests.SubagentInterventionTests testSeveralSubagentsWaitingAreCountedAndReviewOpensTheTreeSayingWhatEachWaitsOn]' failed (22.085 seconds).
+Test Case '-[ShamanUITests.SubagentTests testAStopRefusedInTheTreeIsSaidOnceInTheSheetAndNotBeneathIt]' passed (16.115 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/SubagentTests.swift:118: error: -[ShamanUITests.SubagentTests testASubagentsRowPushesItsSessionToAnyDepthAndBackReturnsToTheListItWasTappedIn] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.SubagentTests testASubagentsRowPushesItsSessionToAnyDepthAndBackReturnsToTheListItWasTappedIn]' failed (31.916 seconds).
+Test Case '-[ShamanUITests.SubagentTests testATreeNotInHandIsOfferedSayingLoadingAndOneThatCannotBeReadSaysWhy]' passed (26.348 seconds).
+Test Case '-[ShamanUITests.SubagentTests testAWorkingSubagentIsStoppedByASwipeInTheTreeOrFromItsBarAskingNothing]' passed (24.246 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/SubagentTests.swift:133: error: -[ShamanUITests.SubagentTests testTheTreesSheetSwitchesBetweenItsSessionsPushingPoppingOrStayingPut] : XCTAssertEqual failed: ("5") is not equal to ("7")
+Test Case '-[ShamanUITests.SubagentTests testTheTreesSheetSwitchesBetweenItsSessionsPushingPoppingOrStayingPut]' failed (11.932 seconds).
+Test Case '-[ShamanUITests.ThisDeviceTests testABlobTheChipRefusesOffersToStartAgainUnderANewKey]' passed (18.864 seconds).
+Test Case '-[ShamanUITests.ThisDeviceTests testThatThisPhoneMustPairAgainIsSaidUntilDismissed]' passed (8.610 seconds).
+Test Case '-[ShamanUITests.ThisDeviceTests testTheFakeShowsItsScenarioWithTheVersions]' passed (7.524 seconds).
+Test Case '-[ShamanUITests.ThisDeviceTests testTheKeysFingerprintIsShownAndStaysAcrossARelaunch]' passed (26.354 seconds).
+Test Case '-[ShamanUITests.ThisDeviceTests testTheNameIsFirstOfferedAsIPhoneRefusedInTheCoresWordsAndKeptAcrossARelaunch]' passed (31.850 seconds).
+Test Case '-[ShamanUITests.ThisDeviceTests testUnderANewKeyTheNameStaysAndTheFingerprintIsTheNewKeys]' passed (32.505 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/UnreachableTests.swift:36: error: -[ShamanUITests.UnreachableTests testAnUnreachableRemoteStandsAsASlimRowWhoseSheetLeadsToSettingsAndTryingAgainBringsItBack] : XCTAssertTrue failed - scrolled to "listing.unreachable" Button
+Test Case '-[ShamanUITests.UnreachableTests testAnUnreachableRemoteStandsAsASlimRowWhoseSheetLeadsToSettingsAndTryingAgainBringsItBack]' failed (28.728 seconds).
+Test Case '-[ShamanUITests.UnreachableTests testWithNoNetworkTheSheetSaysSoAndTryingAgainSaysWhyItStillCannot]' passed (17.223 seconds).
+Test Case '-[ShamanUITests.WorkTests testACompactionPushesItsSummary]' passed (12.189 seconds).
+Test Case '-[ShamanUITests.WorkTests testARunningCommandsOutputGrowsWhileItsScreenIsUpAndScrollsSideways]' passed (21.553 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/WorkTests.swift:71: error: -[ShamanUITests.WorkTests testASettledTurnsCardPushesItsWorkInOrderAndARowPushesAllOfItsActivity] : Failed to tap Button (First Match): No matches found for first query match sequence: `Descendants matching type NavigationBar` -> `Descendants matching type Button`, given input App ele
+Test Case '-[ShamanUITests.WorkTests testASettledTurnsCardPushesItsWorkInOrderAndARowPushesAllOfItsActivity]' failed (16.813 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/WorkspacePickerTests.swift:197: error: -[ShamanUITests.WorkspacePickerTests testANewWorktreeIsMadeBeforeTheSessionStartsAndTheChoiceStartsOnTheMainOneEveryTime] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.WorkspacePickerTests testANewWorktreeIsMadeBeforeTheSessionStartsAndTheChoiceStartsOnTheMainOneEveryTime]' failed (12.103 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/WorkspacePickerTests.swift:157: error: -[ShamanUITests.WorkspacePickerTests testAnUnreachableRemotesHeaderSaysSoAndItsWorkspacesStayChoosable] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.WorkspacePickerTests testAnUnreachableRemotesHeaderSaysSoAndItsWorkspacesStayChoosable]' failed (20.211 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/WorkspacePickerTests.swift:174: error: -[ShamanUITests.WorkspacePickerTests testAPickerSaysWhereARemoteHasYetToListItsWorkspacesAndWhereOneListsNone] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.WorkspacePickerTests testAPickerSaysWhereARemoteHasYetToListItsWorkspacesAndWhereOneListsNone]' failed (19.394 seconds).
+Test Case '-[ShamanUITests.WorkspacePickerTests testAWorkspaceOutsideSourceControlOffersNoWorktreeAndABareRepositoryNoSend]' passed (26.852 seconds).
+Test Case '-[ShamanUITests.WorkspacePickerTests testThePickerIsSearchedByNameAndSaysWhereItFindsNothing]' passed (21.464 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/WorkspacePickerTests.swift:90: error: -[ShamanUITests.WorkspacePickerTests testThePickerListsEveryRemotesWorkspacesUnderItsHeaderAndChoosingOneTurnsTheOutlookAlone] : XCTAssertEqual failed: ("["workstation", "laptop"]") is not equal to ("["workstation", "laptop", "homelab"]") - a header for each Remote
+Test Case '-[ShamanUITests.WorkspacePickerTests testThePickerListsEveryRemotesWorkspacesUnderItsHeaderAndChoosingOneTurnsTheOutlookAlone]' failed (21.964 seconds).
+** TEST EXECUTE FAILED **

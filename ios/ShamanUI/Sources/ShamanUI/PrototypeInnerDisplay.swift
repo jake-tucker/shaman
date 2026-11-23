@@ -74,6 +74,8 @@ final class Proto {
 
   /// Whether the window is wide enough to tile columns: the inner display in landscape, not in portrait.
   var wide = false
+  /// PROTOTYPE #731: whether the listing is the screen to say a notice: alone on screen, or over the main view.
+  var listingSaysNotice = true
   /// Whether the third column takes the listing's place while it is shown, two columns at a time, as Apple's
   /// engineer says of Mail on a Duo; otherwise the system fits all three as it can.
   var asideHidesListing = true
@@ -83,7 +85,7 @@ final class Proto {
     func value(_ flag: String) -> String? {
       arguments.firstIndex(of: flag).flatMap { arguments.dropFirst($0 + 1).first }
     }
-    variant = value("--inner").flatMap(Variant.init) ?? .three
+    variant = Columns.stack ? .stack : value("--inner").flatMap(Variant.init) ?? .three
     empty = value("--inner-empty").flatMap(Empty.init) ?? .landing
     style = value("--inner-style").flatMap(Style.init) ?? .balanced
     pill = value("--inner-pill") != "off"
@@ -184,19 +186,31 @@ final class AsideState {
   /// Whether the reader has chosen what it shows, after which the Session's own changes leave it alone.
   var chosen = false
 
+  /// PROTOTYPE #731: what the container does as the reader's choice changes, and each Session's place in the column
+  /// while another's screen is on top.
+  @ObservationIgnored var changed: (() -> Void)?
+  struct Place {
+    var root: Root?
+    var path: [Pushed]
+    var chosen: Bool
+  }
+  @ObservationIgnored var places: [SessionRoute: Place] = [:]
+
   func show(_ root: Root) {
     self.root = root
     path = []
     chosen = true
     wanted = true
-    presented = true
+    if changed == nil { presented = true }
+    changed?()
   }
 
   /// The Session's own button: hides the column where it is up, and shows it where it is not.
   func toggle() {
     let next = !presented
     wanted = next
-    presented = next
+    if changed == nil { presented = next }
+    changed?()
   }
 }
 

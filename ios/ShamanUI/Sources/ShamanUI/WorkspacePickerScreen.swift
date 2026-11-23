@@ -8,6 +8,7 @@ import SwiftUI
 struct WorkspacePickerScreen: View {
   @State var model: WorkspacePickerModel
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.pushes) private var pushes
   @State private var query = ""
 
   var body: some View {
@@ -19,7 +20,11 @@ struct WorkspacePickerScreen: View {
               WorkspaceRowView(row: row, invalid: model.invalid?.row == row.workspace ? model.invalid?.message : nil) {
                 Task {
                   if await model.choose(row) {
-                    dismiss()
+                    if let pushes, !Columns.dismisses {
+                      pushes.pop()
+                    } else {
+                      dismiss()
+                    }
                   }
                 }
               }

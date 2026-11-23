@@ -31,11 +31,19 @@ private struct LandingView: View {
   @FocusState private var writing: Bool
   /// Whether the Workspace Picker is pushed over the screen.
   @State private var picking = false
+  @Environment(\.pushes) private var pushes
 
   var body: some View {
     ScrollView {
       if let landing = model.landing {
-        LandingMiddle(landing: landing, model: model) { picking = true }
+        LandingMiddle(landing: landing, model: model) {
+          if let pushes, !Columns.links {
+            // PROTOTYPE #731: asked of the navigation controller, where there is no stack to present within.
+            pushes.screen(AnyView(WorkspacePickerScreen(model: model.picker()).noticeBanner()))
+          } else {
+            picking = true
+          }
+        }
           .padding(.horizontal, 24)
           .padding(.vertical, 28)
           .frame(maxWidth: .infinity)

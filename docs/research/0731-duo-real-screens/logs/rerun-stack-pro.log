@@ -1,0 +1,11 @@
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ColdStartTests.swift:152: error: -[ShamanUITests.ColdStartTests testAnActivityOpenReturnsToItsSession] : XCTAssertTrue failed
+Test Case '-[ShamanUITests.ColdStartTests testAnActivityOpenReturnsToItsSession]' failed (36.969 seconds).
+Test Case '-[ShamanUITests.CompatibilityTests testANoticeOutlastsASheetOverItAndGoesOnceItHasStoodOnScreen]' passed (60.885 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ListingTests.swift:235: error: -[ShamanUITests.ListingTests testASearchAnswersWithOneFlatListEachRowKeepingItsShelfsShape] : Failed to synthesize event: Neither element nor any descendant has keyboard focus. Event dispatch snapshot: SearchField, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placehol
+Test Case '-[ShamanUITests.ListingTests testASearchAnswersWithOneFlatListEachRowKeepingItsShelfsShape]' failed (14.095 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/ListingTests.swift:265: error: -[ShamanUITests.ListingTests testASearchSaysItFoundNothingWhileItGoesOnReachingARemote] : Failed to synthesize event: Neither element nor any descendant has keyboard focus. Event dispatch snapshot: SearchField, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placeholderV
+Test Case '-[ShamanUITests.ListingTests testASearchSaysItFoundNothingWhileItGoesOnReachingARemote]' failed (12.917 seconds).
+Test Case '-[ShamanUITests.QuestionnaireTests testAQuestionnaireIsAnsweredAPageAtATimeAndSentWhole]' passed (30.599 seconds).
+/Users/jake/Projects/shaman/.worktrees/prototype-ios-duo-real-screens/ios/ShamanUITests/WorkspacePickerTests.swift:136: error: -[ShamanUITests.WorkspacePickerTests testThePickerIsSearchedByNameAndSaysWhereItFindsNothing] : Failed to synthesize event: Neither element nor any descendant has keyboard focus. Event dispatch snapshot: SearchField, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search workspace
+Test Case '-[ShamanUITests.WorkspacePickerTests testThePickerIsSearchedByNameAndSaysWhereItFindsNothing]' failed (19.352 seconds).
+** TEST EXECUTE FAILED **

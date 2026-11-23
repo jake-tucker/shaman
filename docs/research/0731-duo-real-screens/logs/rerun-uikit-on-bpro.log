@@ -1,0 +1,5 @@
+Test Case '-[ShamanUITests.ColdStartTests testAnActivityOpenReturnsToItsSession]' passed (43.072 seconds).
+Test Case '-[ShamanUITests.ListingTests testASearchAnswersWithOneFlatListEachRowKeepingItsShelfsShape]' passed (21.999 seconds).
+Test Case '-[ShamanUITests.ListingTests testASearchSaysItFoundNothingWhileItGoesOnReachingARemote]' passed (14.558 seconds).
+Test Case '-[ShamanUITests.WorkspacePickerTests testThePickerIsSearchedByNameAndSaysWhereItFindsNothing]' passed (19.225 seconds).
+** TEST EXECUTE SUCCEEDED **

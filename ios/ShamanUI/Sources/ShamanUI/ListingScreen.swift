@@ -33,13 +33,117 @@ struct ListingScreen: View {
     self.restoring = kept.scope
     self.keep = keep
     _model = State(initialValue: ListingModel(core: core))
-    _sheet = State(initialValue: invite.map(ListingSheet.pairing))
+    _sheet = State(initialValue: Columns.uikit && !Columns.stack ? nil : invite.map(ListingSheet.pairing))
+    self.invite = invite
     // Pushed at launch as a tap pushes it, where a debug build asks; otherwise what the scene kept, restored.
     let pushed: [Pushed]? =
       composing ? [.landing(LandingRoute())] : opening.map { [.session(SessionRoute(session: $0))] }
     _stack = State(
       initialValue: pushed.map { SessionStack(core: core, path: $0) }
         ?? SessionStack(core: core, restoring: kept.pushed))
+  }
+
+  /// PROTOTYPE #731: the listing as the Sidebar's own screen, hosted in its navigation controller, over the model and
+  /// the path the screen above the container holds.
+  init(
+    hosted core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?, model: ListingModel,
+    stack: SessionStack
+  ) {
+    self.core = core
+    self.appVersion = appVersion
+    self.beginsIn = beginsIn
+    self.restoring = nil
+    self.keep = { _ in }
+    self.hosted = true
+    _model = State(initialValue: model)
+    _sheet = State(initialValue: invite.map(ListingSheet.pairing))
+    _stack = State(initialValue: stack)
+  }
+
+  /// PROTOTYPE #731: whether this is the listing hosted in the Sidebar's column.
+  private var hosted = false
+  /// PROTOTYPE #731: the Invite to confirm at launch, which the hosted listing presents.
+  private var invite: String?
+  /// PROTOTYPE #731: what a hosted screen reads of the environment, which does not cross into a hosting controller
+  /// made by hand.
+  @Environment(NoticeModel.self) private var notices: NoticeModel?
+  @Environment(\.interventionArming) private var arming
+  @Environment(\.codeScanner) private var scanner
+
+  private func given(_ view: some View, _ pushes: Pushes?) -> AnyView {
+    AnyView(
+      view
+        .environment(notices)
+        .environment(\.interventionArming, arming)
+        .environment(\.codeScanner, scanner)
+        .environment(\.pushes, pushes))
+  }
+
+  /// PROTOTYPE #731: the screen over UIKit's split view, which holds what the scene keeps and follows the listing.
+  private var columnsRoot: some View {
+    RealColumnsHost(
+      stack: stack,
+      screens: RealColumns.Screens(
+        listing: {
+          given(
+            ListingScreen(
+              hosted: core, appVersion: appVersion, beginsIn: beginsIn, invite: invite, model: model, stack: stack),
+            nil)
+        },
+        pushed: { pushed, pushes in given(destination(pushed), pushes) },
+        resting: { route, pushes in
+          given(
+            NewSessionScreen(model: stack.landing(for: route), stack: stack, arrivesWriting: false).noticeBanner(),
+            pushes)
+        },
+        aside: { given(AsideRoot(stack: stack), nil) },
+        wrap: { view, pushes in given(view, pushes) })
+    )
+    .ignoresSafeArea()
+    .task { await model.follow(restoring: restoring) }
+    .onChange(of: kept, initial: true) { _, kept in keep(kept) }
+  }
+
+  /// PROTOTYPE #731: the listing in the Sidebar's column, with the sheets it presents.
+  private var hostedColumn: some View {
+    listingColumn
+      .onChange(of: model.listing?.unreachable) {
+        if case .unreachable(let remote) = sheet, model.unreachable(remote) == nil {
+          sheet = nil
+        }
+      }
+      .sheet(item: $sheet) { sheet in
+        switch sheet {
+        case .unreachable(let remote):
+          if let row = model.unreachable(remote) {
+            UnreachableSheetView(row: row, model: TryAgainModel(core: core, remote: remote)) {
+              self.sheet = nil
+            }
+          }
+        case .servers:
+          DeviceScreen(core: core, appVersion: appVersion)
+        case .pairing(let invite):
+          NavigationStack {
+            ConfirmationScreen(core: core, invite: invite) {
+              self.sheet = .servers
+            } paired: {
+              self.sheet = nil
+            }
+          }
+        }
+      }
+  }
+
+  var body: some View {
+    if Columns.uikit, !Columns.stack {
+      if hosted {
+        hostedColumn
+      } else {
+        columnsRoot
+      }
+    } else {
+      swiftUIBody
+    }
   }
 
   /// What the scene is to keep now: the scope the listing stands at, or the one it was handed back until it says, and
@@ -121,7 +225,7 @@ struct ListingScreen: View {
     }
   }
 
-  var body: some View {
+  private var swiftUIBody: some View {
     laptopped
     .task(id: proto.fold) {
       let fold = proto.fold
@@ -337,7 +441,7 @@ struct ListingScreen: View {
   /// appearing just after the width changes is passed over.
   private func listingAppeared() {
     protoLog("listing appeared width \(String(describing: width)) path \(stack.path.map(\.tag))")
-    guard proto.variant != .stack, width == .compact, !stack.path.isEmpty else { return }
+    guard proto.variant != .stack, !Columns.uikit, width == .compact, !stack.path.isEmpty else { return }
     guard Date().timeIntervalSince(settled) > 1 else { return }
     stack.path = []
   }
@@ -414,7 +518,7 @@ struct ListingScreen: View {
           .accessibilityHint("Dismisses this")
       }
     }
-    .noticeBanner(covered: sheet != nil)
+    .noticeBanner(covered: sheet != nil || (hosted && !proto.listingSaysNotice))
     .toolbar {
       ToolbarItem(placement: .principal) {
         if let listing = model.listing {
@@ -571,6 +675,8 @@ struct ListingScreen: View {
       }
       .accessibilityIdentifier("home.compose")
     }
+    // PROTOTYPE #731: as #716 decided, the last to go to the overflow menu.
+    .visibilityPriority(.high)
   }
 }
 

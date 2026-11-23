@@ -1,0 +1,4 @@
+Test Case '-[ShamanUITests.CompatibilityTests testANoticeOutlastsASheetOverItAndGoesOnceItHasStoodOnScreen]' passed (63.009 seconds).
+Test Case '-[ShamanUITests.NewSessionTests testAPromptWrittenInsteadReplacesTheRefusedOne]' passed (23.047 seconds).
+Test Case '-[ShamanUITests.QuestionnaireTests testAQuestionnaireIsAnsweredAPageAtATimeAndSentWhole]' passed (30.264 seconds).
+** TEST EXECUTE SUCCEEDED **

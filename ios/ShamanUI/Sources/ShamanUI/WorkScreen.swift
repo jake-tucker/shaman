@@ -17,7 +17,7 @@ struct TurnWorkScreen: View {
         case .row(let row):
           switch row.tap {
           case .detail(let activity):
-            NavigationLink(value: Pushed.detail(session.route, activity: activity)) {
+            PushLink(value: Pushed.detail(session.route, activity: activity)) {
               WorkRowView(row: row)
             }
             .accessibilityIdentifier("work.row")
@@ -74,7 +74,7 @@ private struct SessionRowLink: View {
   }
 
   var body: some View {
-    NavigationLink(value: Pushed.session(route)) {
+    PushLink(value: Pushed.session(route)) {
       WorkRowView(row: row)
     }
     .accessibilityIdentifier("work.row")

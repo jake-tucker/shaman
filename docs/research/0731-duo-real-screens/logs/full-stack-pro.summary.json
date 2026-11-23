@@ -1,0 +1,33 @@
+{
+  "result": "Failed",
+  "totalTestCount": 119,
+  "passedTests": 112,
+  "failedTests": 6,
+  "skippedTests": 1,
+  "testFailures": [
+    {
+      "test": "ColdStartTests/testAnActivityOpenReturnsToItsSession()",
+      "failure": "XCTAssertTrue failed"
+    },
+    {
+      "test": "CompatibilityTests/testANoticeOutlastsASheetOverItAndGoesOnceItHasStoodOnScreen()",
+      "failure": "XCTAssertLessThan failed: (\"2026-11-23 16:31:15 +0000\") is not less than (\"2026-11-23 16:31:12 +0000\") - the sheet hid it with time to spare in its while"
+    },
+    {
+      "test": "QuestionnaireTests/testAQuestionnaireIsAnsweredAPageAtATimeAndSentWhole()",
+      "failure": "XCTAssertFalse failed - it takes no tap for a moment"
+    },
+    {
+      "test": "ListingTests/testASearchAnswersWithOneFlatListEachRowKeepingItsShelfsShape()",
+      "failure": "Failed to synthesize event: Neither element nor any descendant has keyboard focus. Event dispatch snapshot: SearchField, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placeholderValue: 'Search by title', value: Search by title\nElement debug description:\nAttributes: SearchField, 0x1111eaf80, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placeholderValue: 'Search by title'\nElement subtree:\n →SearchField, 0x1111eaf80, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placeholderValue: 'Search by title'\n    Image, 0x1111ebe80, {{28.0, 128.0}, {20.7, 19.3}}, identifier: 'magnifyingglass', label: 'Search'\nPath to element:\n →Application, 0x1111e9180, pid: 16934, label: 'Shaman'\n  ↳Window (Main), 0x1111ea1c0, {{0.0, 0.0}, {402.0, 874.0}}\n   ↳Other, 0x1111ebd40, {{0.0, 0.0}, {402.0, 874.0}}\n    ↳Other, 0x1111eb700, {{0.0, 0.0}, {402.0, 874.0}}\n     ↳Other, 0x1111eb200, {{0.0, 0.0}, {402.0, 874.0}}\n      ↳Other, 0x1111eb340, {{0.0, 0.0}, {402.0, 874.0}}\n       ↳Other, 0x1111ea300, {{0.0, 0.0}, {402.0, 874.0}}\n        ↳NavigationBar, 0x1111eb0c0, {{0.0, 62.0}, {402.0, 108.0}}, identifier: 'All workspaces'\n         ↳SearchField, 0x1111eaf80, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placeholderValue: 'Search by title'\nQuery chain:\n →Find: Target Application 'com.jaketucker.shaman'\n  Output: {\n    Application, 0x11121f200, pid: 16934, label: 'Shaman'\n  }\n  ↪︎Find: Descendants matching type SearchField\n    Output: {\n      SearchField, 0x106fda440, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placeholderValue: 'Search by title'\n    }\n    ↪︎Find: First Match\n      Output: {\n        SearchField, 0x106ffcf00, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placeholderValue: 'Search by title'\n      }\n"
+    },
+    {
+      "test": "ListingTests/testASearchSaysItFoundNothingWhileItGoesOnReachingARemote()",
+      "failure": "Failed to synthesize event: Neither element nor any descendant has keyboard focus. Event dispatch snapshot: SearchField, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placeholderValue: 'Search by title', value: Search by title\nElement debug description:\nAttributes: SearchField, 0x11119ed00, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placeholderValue: 'Search by title'\nElement subtree:\n →SearchField, 0x11119ed00, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placeholderValue: 'Search by title'\n    Image, 0x11119ee40, {{28.0, 128.0}, {20.7, 19.3}}, identifier: 'magnifyingglass', label: 'Search'\nPath to element:\n →Application, 0x11119da40, pid: 21357, label: 'Shaman'\n  ↳Window (Main), 0x11119db80, {{0.0, 0.0}, {402.0, 874.0}}\n   ↳Other, 0x11119dcc0, {{0.0, 0.0}, {402.0, 874.0}}\n    ↳Other, 0x11119de00, {{0.0, 0.0}, {402.0, 874.0}}\n     ↳Other, 0x11119df40, {{0.0, 0.0}, {402.0, 874.0}}\n      ↳Other, 0x11119e080, {{0.0, 0.0}, {402.0, 874.0}}\n       ↳Other, 0x11119e300, {{0.0, 0.0}, {402.0, 874.0}}\n        ↳NavigationBar, 0x11119e440, {{0.0, 62.0}, {402.0, 108.0}}, identifier: 'Everywhere'\n         ↳SearchField, 0x11119ed00, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placeholderValue: 'Search by title'\nQuery chain:\n →Find: Target Application 'com.jaketucker.shaman'\n  Output: {\n    Application, 0x1113cfc00, pid: 21357, label: 'Shaman'\n  }\n  ↪︎Find: Descendants matching type SearchField\n    Output: {\n      SearchField, 0x1113bfac0, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placeholderValue: 'Search by title'\n    }\n    ↪︎Find: First Match\n      Output: {\n        SearchField, 0x11126ea80, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search by title', placeholderValue: 'Search by title'\n      }\n"
+    },
+    {
+      "test": "WorkspacePickerTests/testThePickerIsSearchedByNameAndSaysWhereItFindsNothing()",
+      "failure": "Failed to synthesize event: Neither element nor any descendant has keyboard focus. Event dispatch snapshot: SearchField, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search workspaces', placeholderValue: 'Search workspaces', value: Search workspaces\nElement debug description:\nAttributes: SearchField, 0x112402580, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search workspaces', placeholderValue: 'Search workspaces'\nElement subtree:\n →SearchField, 0x112402580, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search workspaces', placeholderValue: 'Search workspaces'\n    Image, 0x1124026c0, {{28.0, 128.0}, {20.7, 19.3}}, identifier: 'magnifyingglass', label: 'Search'\nPath to element:\n →Application, 0x1123cfac0, pid: 13346, label: 'Shaman'\n  ↳Window (Main), 0x1123cf840, {{0.0, 0.0}, {402.0, 874.0}}\n   ↳Other, 0x1123cf980, {{0.0, 0.0}, {402.0, 874.0}}\n    ↳Other, 0x1123cf700, {{0.0, 0.0}, {402.0, 874.0}}\n     ↳Other, 0x1123cea80, {{0.0, 0.0}, {402.0, 874.0}}\n      ↳Other, 0x1123cee40, {{0.0, 0.0}, {402.0, 874.0}}\n       ↳Other, 0x1123ced00, {{0.0, 0.0}, {402.0, 874.0}}\n        ↳NavigationBar, 0x1123cebc0, {{0.0, 62.0}, {402.0, 108.0}}, identifier: 'Begin in'\n         ↳SearchField, 0x112402580, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search workspaces', placeholderValue: 'Search workspaces'\nQuery chain:\n →Find: Target Application 'com.jaketucker.shaman'\n  Output: {\n    Application, 0x1123ce440, pid: 13346, label: 'Shaman'\n  }\n  ↪︎Find: Descendants matching type SearchField\n    Output: {\n      SearchField, 0x1113bee40, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search workspaces', placeholderValue: 'Search workspaces'\n    }\n    ↪︎Find: First Match\n      Output: {\n        SearchField, 0x1123cf200, {{16.0, 116.0}, {370.0, 44.0}}, label: 'Search workspaces', placeholderValue: 'Search workspaces'\n      }\n"
+    }
+  ]
+}

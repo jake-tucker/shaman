@@ -36,14 +36,35 @@ struct SessionScreen: View {
     return nil
   }
 
+  /// PROTOTYPE #731: the Turn whose work the Aside shows on screen, whose card is marked.
+  private var markedTurn: String? {
+    guard Columns.uikit, aside.presented, aside.owner == model.route, case .work(let turn) = aside.root else {
+      return nil
+    }
+    return turn
+  }
+
   /// What the third column shows before the reader chooses: the tree where there is one, else the last Turn's work.
   private func fillAside(appearing: Bool = false) {
     if appearing, aside.owner != model.route {
-      aside.owner = model.route
-      aside.chosen = false
-      aside.root = nil
-      aside.path = []
-      aside.presented = aside.wanted
+      if Columns.uikit {
+        // PROTOTYPE #731: each Session on the path keeps its own place in the Aside, returned as Back returns to it.
+        if let owner = aside.owner {
+          aside.places[owner] = AsideState.Place(root: aside.root, path: aside.path, chosen: aside.chosen)
+        }
+        let place = aside.places[model.route]
+        aside.owner = model.route
+        aside.chosen = place?.chosen ?? false
+        aside.root = place?.root
+        aside.path = place?.path ?? []
+        aside.changed?()
+      } else {
+        aside.owner = model.route
+        aside.chosen = false
+        aside.root = nil
+        aside.path = []
+        aside.presented = aside.wanted
+      }
     }
     // A Session's screen beneath another's leaves the column to the one on top.
     guard aside.owner == model.route else { return }
@@ -115,6 +136,11 @@ struct SessionScreen: View {
       if model.popped {
         if let stack, Proto.shared.variant != .stack, stack.path.first?.route == model.route {
           stack.path = []
+        } else if let stack, Columns.uikit, !Columns.dismisses,
+          let at = stack.path.firstIndex(where: { $0.route == model.route })
+        {
+          // PROTOTYPE #731: under a navigation controller the path is asked, not `dismiss`.
+          stack.path.removeSubrange(at...)
         } else {
           dismiss()
         }
@@ -140,26 +166,48 @@ struct SessionScreen: View {
       }
       if let tree = model.frame?.tree {
         ToolbarItem(placement: .topBarTrailing) {
-          TreeButtonView(button: tree) {
-            if asides {
-              aside.show(.tree)
-            } else {
-              showingTree = true
+          if Columns.treeBadge {
+            // PROTOTYPE #731: as #716 decided, a symbol wearing the count as its badge, so it joins a vertical bar.
+            Button {
+              if asides {
+                aside.show(.tree)
+              } else {
+                showingTree = true
+              }
+            } label: {
+              Label {
+                Text(verbatim: tree.label)
+              } icon: {
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+              }
+            }
+            .badge(tree.working.map { Text(verbatim: $0) })
+            .accessibilityIdentifier("session.tree")
+          } else {
+            TreeButtonView(button: tree) {
+              if asides {
+                aside.show(.tree)
+              } else {
+                showingTree = true
+              }
             }
           }
         }
+        .visibilityPriority(.high)
       }
-      if Proto.shared.column {
+      if Proto.shared.column, !Columns.uikit || stack?.topSession != nil {
         ToolbarItem(placement: .topBarTrailing) {
           Button {
             aside.toggle()
           } label: {
-            Label("Work and sessions", systemImage: "sidebar.trailing")
+            Label(aside.presented ? "Hide aside" : "Show aside", systemImage: "sidebar.trailing")
           }
+          .accessibilityIdentifier("session.aside")
         }
       }
     }
     .onAppear { fillAside(appearing: true) }
+    .onChange(of: markedTurn, initial: true) { _, turn in model.asideTurn = turn }
     .onChange(of: asides) { fillAside() }
     .onChange(of: lastTurn) { fillAside() }
     .onChange(of: model.frame?.tree != nil) { fillAside() }
@@ -553,7 +601,7 @@ private struct ItemView: View {
       Button {
         push(.work(route, turn: card.work))
       } label: {
-        TurnCardView(card: card)
+        TurnCardView(card: card, marked: model.asideTurn == card.work)
       }
       .buttonStyle(.plain)
       .accessibilityIdentifier("session.turn")
@@ -1023,6 +1071,8 @@ private struct AgentMessage: View {
 /// The card a Turn's work stands behind: how it settled and how long it took, or what runs now, over its count.
 private struct TurnCardView: View {
   let card: TurnCard
+  /// PROTOTYPE #731: whether the Aside shows this Turn's work.
+  var marked = false
 
   var body: some View {
     HStack(spacing: 10) {
@@ -1062,8 +1112,14 @@ private struct TurnCardView: View {
     .padding(.horizontal, 12)
     .padding(.vertical, 10)
     .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+    .overlay {
+      if marked {
+        RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 1.5)
+      }
+    }
     .padding(.trailing, 24)
     .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(marked ? .isSelected : [])
   }
 }
 
@@ -1169,6 +1225,8 @@ final class SessionModel {
   private(set) var sent = 0
   /// Whether the Session turned out gone, which pops its screen.
   private(set) var popped = false
+  /// PROTOTYPE #731: the Turn whose work the Aside shows on screen, whose card is marked.
+  var asideTurn: String?
   /// Whether a stop is under way, which dims Stop until it returns.
   private(set) var stopping = false
   /// Whether a refused beginning is being asked again, which dims its "Try again" until it returns.
@@ -1466,8 +1524,11 @@ final class SessionStack {
     didSet {
       protoLog("path \(oldValue.map(\.tag)) -> \(path.map(\.tag))")
       closeUnpushed()
+      pathChanged?()
     }
   }
+  /// PROTOTYPE #731: what the container does as the path changes, or as a new-session screen on it begins.
+  @ObservationIgnored var pathChanged: (() -> Void)?
   @ObservationIgnored private let core: any Core
   @ObservationIgnored private var models: [SessionRoute: SessionModel] = [:]
   @ObservationIgnored private var landings: [LandingRoute: NewSessionModel] = [:]
@@ -1566,6 +1627,8 @@ final class SessionStack {
       if route == rootLanding, path.isEmpty {
         path = [.landing(route)]
         rootLanding = LandingRoute()
+      } else {
+        pathChanged?()
       }
     }
     landings[route] = model
