@@ -81,6 +81,28 @@ final class PrototypeFootTests: XCTestCase {
     say("after the card was tapped: app state \(app.state.rawValue)")
   }
 
+  /// Opens the new-session screen of the app `FOOT_BUNDLE` names once the Mac says go, drags its keyboard down as
+  /// a reader does, says so and holds for a screenshot.
+  func testComposeKeyboardDown() {
+    let tag = ProcessInfo.processInfo.environment["FOOT_TAG"] ?? "messages"
+    say("waiting")
+    let go = "/tmp/duo729/\(tag).go"
+    for _ in 0..<120 where !FileManager.default.fileExists(atPath: go) { usleep(500_000) }
+    // Main's build is installed under a bundle identifier of its own (`FOOT_BUNDLE`): the test run puts this
+    // branch's build back over anything installed under the app's own.
+    let bundle = ProcessInfo.processInfo.environment["FOOT_BUNDLE"] ?? "com.jaketucker.shaman"
+    let app = XCUIApplication(bundleIdentifier: bundle)
+    app.launchArguments = ["--fake", "composing", "--compose"]
+    app.launch()
+    sleep(4)
+    lower(app)
+    let field = app.textViews.firstMatch.exists ? app.textViews.firstMatch : app.textFields.firstMatch
+    let window = app.windows.firstMatch.frame
+    say("window \(window) field \(field.frame) fromBottom=\(window.maxY - field.frame.maxY)")
+    say("ready")
+    sleep(8)
+  }
+
   func testMeasureMessages() {
     let messages = XCUIApplication(bundleIdentifier: "com.apple.MobileSMS")
     messages.activate()

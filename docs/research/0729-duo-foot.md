@@ -22,9 +22,10 @@ prototype-ios-duo-foot" (`245F8377…`, scale 3); an iPhone 18 Pro Max, "Shaman 
    container's bottom safe area on the whole screen (list and inset together), the earlier negative padding, and a
    negative `additionalSafeAreaInsets.bottom` on the hosting controller. Ignoring the safe area on the foot's content
    alone leaves a 34-point empty strip above the foot.
-5. **Apple's Messages stands its field's bottom 28 points up on the iPhone 18 Pro and on the closed Duo, and 22 points
-   up on the Duo's inner display**, whatever the window's bottom safe area is (34, or 20 on the Pro turned). It is
-   lower than the 34-point band on an ordinary iPhone too.
+5. **Apple's Messages stands its field's bottom 28 points up wherever it shows one column** (iPhone 18 Pro, Pro Max
+   upright, the closed Duo) **and 22 points up wherever it shows two** (the Duo's inner display, and the Pro Max
+   turned), whatever the window's bottom safe area is (34, or 20 on an iPhone turned). It is lower than the 34-point
+   band on an ordinary iPhone too. Today's app stands its field's box 42 points up on all of them (section 9).
 6. **The simulators' home indicator is no evidence either way**: `simctl` draws it for about two seconds after an app
    comes forward on every simulator, the iPhone 18 Pro included, and then mostly does not; on the Duo it sometimes
    stays.
@@ -276,9 +277,63 @@ pixels at **scale 3** (every display here), by the capsule's rim (`scratch/profi
   sides: 28 on a display the width of a phone, 22 on the inner display.
 - A rule that reproduces it here: the field's bottom, and its sides, stand one margin from the display's edges (the
   side's safe area or the vertical bar added on a side), the margin 28 on the outer display and an ordinary iPhone and
-  22 on the Duo's inner display. Whether Messages chooses 22 by the display, the width class or the window's size
-  cannot be told from these poses (**gap**: no Split View, no iPad).
+  22 on the Duo's inner display. Section 8 says what the 22 goes with: the iPhone 18 Pro Max turned has it too.
 - Our band variant's field stands 42 from the bottom (34 and 8 of padding); the ways in item 4 stand it at 8.
+
+## 8. Messages on the iPhone 18 Pro Max: the 22 goes with the two columns, not with the Duo
+
+A follow-up, measured the same way as item 7 (scale 3; `logs/messages-max-capsule-rows.txt`,
+`logs/messages-max-capsule-sides.txt`; crops `sheets/messages-field-max.jpg`). Turned, the Pro Max is regular width
+and Messages shows its list and the conversation side by side, as on the Duo's inner display.
+
+| Device and pose | Window's safe area t, l, b, r | Messages' layout | Field's bottom from the display's bottom | Leading: "+" button's edge | Trailing: capsule's edge from the display's edge |
+|---|---|---|---|---|---|
+| iPhone 18 Pro Max upright, 440 x 956 | 62, 0, 34, 0 | one column | **28.0** | 28 | 28 |
+| iPhone 18 Pro Max turned, both ways, 956 x 440 | 0, 62, 20, 62 | two columns, the conversation's from x 437 | **22.0** | 22 from the conversation's column | 84 (the 62 of the side's safe area, and 22) |
+
+- So Messages' 22 is not the Duo's inner display's: an ordinary iPhone has it wherever Messages stands two columns,
+  which here is wherever the width class is regular (Pro Max turned; Duo `open-portrait`, `laptop`, `open-landscape`,
+  `book`). Its 28 is wherever it stands one column (compact width: iPhone 18 Pro both ways up, Pro Max upright, the
+  closed Duo both ways up). Whether the 22 follows the width class itself or Messages' own two-column layout cannot be
+  told apart: no pose here has one without the other (**gap**).
+- The capsule is 40.3 points tall in all three. Accessibility's frame for it on the Pro Max upright gives the same 28.0
+  (`logs/messages-accessibility-max-portrait.txt`). No home indicator was drawn in these three screenshots.
+
+## 9. Where the app's own foot stands today
+
+A follow-up. **This branch's build is not today's app**: its Session screen carries the earlier prototypes, whose
+defaults already pull the field down (on the iPhone 18 Pro its box stood 8 points from the bottom). So today's numbers
+were taken from **main's own build**, `ios/build/xcode/Build/Products/Debug-iphonesimulator/Shaman.app` in main's
+checkout, built 22 November after main's last change under `ios/` (21 November) with main's tree clean; that it is
+main's current source is **inferred** from those dates. The Session screen is `--fake paired --open workstation-key/7`
+launched by `simctl`. The new-session screen is `--fake composing --compose`, which focuses its field as it appears, so
+a UI test (`testComposeKeyboardDown`) dragged the keyboard down, over a copy of main's build installed under the
+bundle identifier `com.jaketucker.shaman.main` (a test run puts this branch's build back under the app's own).
+Measured from `simctl io screenshot` pixels at scale 3 by `scratch/box.py`: the field's rounded box is its own grey
+(242, 242, 247) on the foot's lighter ground. Rows: `logs/table-real-foot.md`; crops: `sheets/real-foot.jpg`.
+
+| Device and pose | Screen | Box's bottom from the display's bottom | Box's leading edge from the display's | Box's trailing edge from the display's | Send button's trailing edge |
+|---|---|---|---|---|---|
+| iPhone 18 Pro upright, 402 x 874 | Session | **42.0** | 12.0 | 57.3 | 14.7 |
+| | new session | **42.0** | 12.0 | 57.3 | |
+| Duo `closed-portrait`, 466 x 678 | Session | **42.0** | 12.0 | 141.3 (the 84 of the vertical bar, and 57.3) | 98.7 (84 and 14.7) |
+| | new session | **42.0** | 12.0 | 141.3 | |
+| Duo `open-portrait`, 669 x 951 | Session | **42.0** | 12.0 | 57.3 | 14.7 |
+| | new session | **42.0** | 12.0 | 57.3 | |
+
+- The box is 40.0 points tall everywhere (42.0 to 82.0 from the bottom) and its ground runs unbroken to the display's
+  bottom edge, beginning 8 points above the box (90 from the bottom on the iPhone 18 Pro).
+- Today's 42 is the 34-point band and 8 of padding, the same on all three; the window's bottom safe area is 34 in all
+  three.
+- Beside Messages: Messages' field stands 14 points lower than ours on the iPhone 18 Pro and the closed Duo (28
+  against 42) and 20 lower on the Duo in `open-portrait` (22 against 42). Our box begins 12 from the leading edge
+  where Messages' "+" button begins at 28 or 22 and its capsule at 80; our send button ends 14.7 from the trailing
+  edge where Messages' capsule ends at 28 or 22.
+- Accessibility's frame for the new-session field's text (not its box) was 22 points tall with its bottom 51 from the
+  window's bottom on all three, in both builds (`logs/real-compose-accessibility.txt`): the box's 42 and 9 of its own
+  padding.
+- This branch's new-session screen measured the same as main's on all three (42.0, 12.0, 57.3 or 141.3). Its Session
+  screen was not measured on the Duo.
 
 ## Gaps
 
@@ -293,5 +348,10 @@ pixels at **scale 3** (every display here), by the capsule's rim (`scratch/profi
 - Item 1's app switcher run: the UI test's tap on the card did not return to the app (it went to the background), so
   the return was made by launching it forward. On the Pro Max the switcher was not tried.
 - Item 6: no long series on the inner display.
+- Section 8: Messages' 22 was never seen without both a regular width and two columns, so which of them it follows
+  is not known.
+- Section 9: main's build is taken to be main's current source by its date, not rebuilt; the new-session screen's
+  numbers are from that build under another bundle identifier, with the keyboard dragged down by a UI test rather than
+  never raised.
 - The Duo simulator now holds this branch's build of the app in place of whichever was installed before, and Messages
-  on it and on the iPhone 18 Pro simulator is left open on a conversation.
+  on it and on the iPhone 18 Pro and Pro Max simulators is left open on a conversation.

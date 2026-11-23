@@ -36,3 +36,37 @@ uitest() { (cd $IOS && rm -rf build/results/foot-$1.xcresult && TEST_RUNNER_FOOT
 strip() { $D/crop "$1" "${1%.png}.strip.png" $(( $2 * ${3:-3} )); echo "${1%.png}.strip.png"; }
 # sheet <name> <columns> <cell width> <png>...: a contact sheet as sheets/<name>.jpg.
 sheet() { local name=$1; shift; $D/sheet $W/$name.png "$@" && sips -s format jpeg -s formatOptions 80 $W/$name.png --out $HERE/docs/research/0729-duo-foot/sheets/$name.jpg >/dev/null; }
+MAINAPP=/Users/jake/Projects/shaman/ios/build/xcode/Build/Products/Debug-iphonesimulator/Shaman.app
+# real <tag>: on $UDID in the pose it stands in, the real app's Session screen and new-session screen (set
+# AutomaticMinimizationEnabled true first, so the new-session screen's focused field keeps its keyboard off screen), first from main's own build (built 22 Nov, after main's last change under ios/) and then from this branch's.
+real() {
+  local which app
+  for which in main branch; do
+    app=$MAINAPP; [ $which = branch ] && app=$APP
+    xcrun simctl install "$UDID" "$app"
+    xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE" --fake paired --open workstation-key/7 >/dev/null; sleep ${REALWAIT:-8}; snap real-$which-$1-session
+    xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE" --fake composing --compose >/dev/null; sleep ${REALWAIT:-8}; snap real-$which-$1-compose
+  done
+}
+# compose <tag>: on $UDID, the new-session screen with its keyboard dragged down, first from main's build (a copy
+# installed under the bundle identifier com.jaketucker.shaman.main, since a test run puts this branch's build back
+# under the app's own) and then from this branch's, by PrototypeFootTests.testComposeKeyboardDown; screenshots
+# real-<build>-<tag>-compose.png.
+MAINCOPY=$D/mainapp/Shaman.app
+maincopy() { [ -d $MAINCOPY ] && return; mkdir -p $D/mainapp && cp -R $MAINAPP $MAINCOPY && /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.jaketucker.shaman.main" $MAINCOPY/Info.plist && codesign --force --sign - $MAINCOPY >/dev/null 2>&1; }
+compose() {
+  local which t n
+  maincopy; xcrun simctl install "$UDID" "$MAINCOPY"
+  for which in main branch; do
+    t=compose-$which-$1; rm -f $D/$t.txt $D/$t.go
+    export TEST_RUNNER_FOOT_BUNDLE=com.jaketucker.shaman; [ $which = main ] && export TEST_RUNNER_FOOT_BUNDLE=com.jaketucker.shaman.main
+    (uitest $t testComposeKeyboardDown > $D/$t.out 2>&1 &)
+    n=0; until grep -q waiting $D/$t.txt 2>/dev/null || [ $n -gt 240 ]; do sleep 0.5; n=$((n+1)); done
+    touch $D/$t.go
+    n=0; until grep -q ready $D/$t.txt 2>/dev/null || [ $n -gt 120 ]; do sleep 0.5; n=$((n+1)); done
+    sleep 1; snap real-$which-$1-compose
+    until grep -q "TEST EXECUTE" $D/$t.out 2>/dev/null; do sleep 1; done
+    grep -E "keyboard|field" $D/$t.txt | cut -c1-200
+  done
+  unset TEST_RUNNER_FOOT_BUNDLE
+}
