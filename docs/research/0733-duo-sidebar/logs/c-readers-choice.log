@@ -1,0 +1,162 @@
+980.294 sidebar words ["who"]
+980.294 columns made, path []
+980.307 pose: fold none upright none
+980.308 fold changed mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=466x678 class=2/2 sidebar=off main=off primaryWidth=320 showing=--- open=0 fold=none
+980.308 pose: bottom safe area 34.0
+980.314 display mode -> 2 from mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=off main=off primaryWidth=320 showing=--- open=0 fold=none
+980.390   asked by
+        $s8ShamanUI11RealColumnsC19splitViewController_12willChangeToySo07UISplitfG0C_So0kfG11DisplayModeVtFTo+164
+        __65-[_UISplitViewControllerAdaptiveImpl _prepareTransitionToLayout:]_block_invoke+152
+        block_destroy_helper+12780
+        block_destroy_helper+13952
+        -[_UISplitViewControllerAdaptiveImpl _prepareLayout]+1916
+        -[_UISplitViewControllerAdaptiveImpl viewWillLayoutSubviews]+172
+        -[UISplitViewController viewWillLayoutSubviews]+64
+        block_destroy_helper+27220
+        block_destroy_helper+28040
+        -[UIView(CALayerDelegate) layoutSublayersOfLayer:]+1248
+        -[CALayer layoutSublayers]+324
+        _ZN2CA5Layer15perform_update_EPS0_P7CALayerjNS_17LayerUpdateReasonEPNS_11TransactionE+456
+        _ZN2CA5Layer17update_if_needed_EPNS_11TransactionENS_17LayerUpdateReasonE+600
+        _ZN2CA5Layer28layout_and_display_if_neededEPNS_11TransactionE+152
+        _ZN2CA7Context18commit_transactionEPNS_11TransactionEdPd+636
+        _ZN2CA11Transaction6commitEv+632
+980.390 willShow column 0 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=off main=off primaryWidth=320 showing=--- open=0 fold=none
+980.390 willShow column 2 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=off main=off primaryWidth=320 showing=--- open=0 fold=none
+980.486 didShow column 0 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+980.486 didShow column 2 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+980.497 nav sidebar willShow listing, toolbar items -1
+980.503 nav sidebar didShow listing mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none sidebar=["listing"] main=["resting"]
+980.517 nav main didShow resting mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none sidebar=["listing"] main=["resting"]
+980.812 columns appeared mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none sidebar=["listing"] main=["resting"]
+987.496 poke: dump | before mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+987.496 poke: after mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+------- launched flat, nothing open
+990.931 display mode -> 1 from mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+990.939   asked by
+        $s8ShamanUI11RealColumnsC19splitViewController_12willChangeToySo07UISplitfG0C_So0kfG11DisplayModeVtFTo+164
+        __65-[_UISplitViewControllerAdaptiveImpl _prepareTransitionToLayout:]_block_invoke+152
+        block_destroy_helper+12780
+        block_destroy_helper+13952
+        -[_UISplitViewControllerAdaptiveImpl _prepareLayout]+1916
+        -[_UISplitViewControllerAdaptiveImpl viewWillLayoutSubviews]+172
+        -[UISplitViewController viewWillLayoutSubviews]+64
+        block_destroy_helper+27220
+        block_destroy_helper+28040
+        -[UIView(CALayerDelegate) layoutSublayersOfLayer:]+1248
+        -[CALayer layoutSublayers]+324
+        _ZN2CA5Layer15perform_update_EPS0_P7CALayerjNS_17LayerUpdateReasonEPNS_11TransactionE+456
+        _ZN2CA5Layer17update_if_needed_EPNS_11TransactionENS_17LayerUpdateReasonE+600
+        _ZN2CA5Layer28layout_and_display_if_neededEPNS_11TransactionE+152
+        _ZN2CA7Context18commit_transactionEPNS_11TransactionEdPd+636
+        _ZN2CA11Transaction6commitEv+632
+990.939 willHide column 0 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+991.481 didHide column 0 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=-320-0 main=0-951 primaryWidth=320 showing=-M- open=0 fold=none
+994.896 poke: dump | before mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=off main=0-951 primaryWidth=320 showing=-M- open=0 fold=none
+994.896 poke: after mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=off main=0-951 primaryWidth=320 showing=-M- open=0 fold=none
+------- put away by its button
+997.656 viewWillTransition to 669x951 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=off main=0-951 primaryWidth=320 showing=-M- open=0 fold=none sidebar=["listing"] main=["resting"]
+998.106 the size transition ended, the sidebar stood before false mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=off main=0-669 primaryWidth=320 showing=-M- open=0 fold=none
+001.695 poke: dump | before mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=off main=0-669 primaryWidth=320 showing=-M- open=0 fold=none
+001.696 poke: after mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=off main=0-669 primaryWidth=320 showing=-M- open=0 fold=none
+------- turned to portrait, put away
+004.471 viewWillTransition to 951x669 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=off main=0-669 primaryWidth=320 showing=-M- open=0 fold=none sidebar=["listing"] main=["resting"]
+004.854 the size transition ended, the sidebar stood before false mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=off main=0-951 primaryWidth=320 showing=-M- open=0 fold=none
+008.495 poke: dump | before mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=off main=0-951 primaryWidth=320 showing=-M- open=0 fold=none
+008.495 poke: after mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=off main=0-951 primaryWidth=320 showing=-M- open=0 fold=none
+------- landscape, put away
+011.598 display mode -> 2 from mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=off main=0-951 primaryWidth=320 showing=-M- open=0 fold=none
+011.605   asked by
+        $s8ShamanUI11RealColumnsC19splitViewController_12willChangeToySo07UISplitfG0C_So0kfG11DisplayModeVtFTo+164
+        __65-[_UISplitViewControllerAdaptiveImpl _prepareTransitionToLayout:]_block_invoke+152
+        block_destroy_helper+12780
+        block_destroy_helper+13952
+        -[_UISplitViewControllerAdaptiveImpl _prepareLayout]+1916
+        -[_UISplitViewControllerAdaptiveImpl viewWillLayoutSubviews]+172
+        -[UISplitViewController viewWillLayoutSubviews]+64
+        block_destroy_helper+27220
+        block_destroy_helper+28040
+        -[UIView(CALayerDelegate) layoutSublayersOfLayer:]+1248
+        -[CALayer layoutSublayers]+324
+        _ZN2CA5Layer15perform_update_EPS0_P7CALayerjNS_17LayerUpdateReasonEPNS_11TransactionE+456
+        _ZN2CA5Layer17update_if_needed_EPNS_11TransactionENS_17LayerUpdateReasonE+600
+        _ZN2CA5Layer28layout_and_display_if_neededEPNS_11TransactionE+152
+        _ZN2CA7Context18commit_transactionEPNS_11TransactionEdPd+636
+        _ZN2CA11Transaction6commitEv+632
+011.606 willShow column 0 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=off main=0-951 primaryWidth=320 showing=-M- open=0 fold=none
+011.606 nav sidebar willShow listing, toolbar items 5
+011.714 nav sidebar didShow listing mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none sidebar=["listing"] main=["resting"]
+012.216 didShow column 0 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+015.495 poke: dump | before mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+015.495 poke: after mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+------- shown by its button
+018.328 viewWillTransition to 669x951 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none sidebar=["listing"] main=["resting"]
+018.328 display mode -> 1 from mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+018.342   asked by
+        $s8ShamanUI11RealColumnsC19splitViewController_12willChangeToySo07UISplitfG0C_So0kfG11DisplayModeVtFTo+164
+        __65-[_UISplitViewControllerAdaptiveImpl _prepareTransitionToLayout:]_block_invoke+152
+        block_destroy_helper+12780
+        block_destroy_helper+13952
+        -[_UISplitViewControllerAdaptiveImpl _prepareLayout]+1916
+        -[_UISplitViewControllerAdaptiveImpl _invalidateLayoutPerformingTransitionAlongsideTransitionCoordinator:]+152
+        -[_UISplitViewControllerAdaptiveImpl viewWillTransitionToSize:withTransitionCoordinator:]+136
+        $s8ShamanUI11RealColumnsC18viewWillTransition2to4withySo6CGSizeV_So016UIViewControllerG11Coordinator_ptF+1152
+        $s8ShamanUI11RealColumnsC18viewWillTransition2to4withySo6CGSizeV_So016UIViewControllerG11Coordinator_ptFTo+180
+        -[UIViewController viewWillTransitionToSize:withTransitionCoordinator:]+688
+        $s7SwiftUI19UIHostingControllerC18viewWillTransition2to4withySo6CGSizeV_So06UIViewdG11Coordinator_ptF+132
+        $s7SwiftUI19UIHostingControllerC18viewWillTransition2to4withySo6CGSizeV_So06UIViewdG11Coordinator_ptFTo+76
+        +[UIViewController _performWithoutDeferringTransitionsAllowingAnimation:actions:]+120
+        -[UIViewController(AdaptiveSizing_Internal) _window:viewWillTransitionToSize:withTransitionCoordinator:]+576
+        __59-[UIWindow _rotateToBounds:withAnimator:transitionContext:]_block_invoke+148
+        +[UIView(Animation) performWithoutAnimation:]+68
+018.342 willHide column 0 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+018.798 didHide column 0 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=-320-0 main=0-669 primaryWidth=320 showing=-M- open=0 fold=none
+018.800 the size transition ended, the sidebar stood before true mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=off main=0-669 primaryWidth=320 showing=-M- open=0 fold=none
+018.800 rest: showing the sidebar at the size transition's end mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=off main=0-669 primaryWidth=320 showing=-M- open=0 fold=none
+018.800 rest: asked mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=off main=0-669 primaryWidth=320 showing=-M- open=0 fold=none
+018.822 display mode -> 3 from mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=off main=0-669 primaryWidth=320 showing=-M- open=0 fold=none
+018.830   asked by
+        $s8ShamanUI11RealColumnsC19splitViewController_12willChangeToySo07UISplitfG0C_So0kfG11DisplayModeVtFTo+164
+        __65-[_UISplitViewControllerAdaptiveImpl _prepareTransitionToLayout:]_block_invoke+152
+        block_destroy_helper+12780
+        block_destroy_helper+13952
+        -[_UISplitViewControllerAdaptiveImpl _prepareLayout]+1916
+        -[_UISplitViewControllerAdaptiveImpl viewWillLayoutSubviews]+172
+        -[UISplitViewController viewWillLayoutSubviews]+64
+        block_destroy_helper+27220
+        block_destroy_helper+28040
+        -[UIView(CALayerDelegate) layoutSublayersOfLayer:]+1248
+        -[CALayer layoutSublayers]+324
+        _ZN2CA5Layer15perform_update_EPS0_P7CALayerjNS_17LayerUpdateReasonEPNS_11TransactionE+456
+        _ZN2CA5Layer17update_if_needed_EPNS_11TransactionENS_17LayerUpdateReasonE+600
+        _ZN2CA5Layer28layout_and_display_if_neededEPNS_11TransactionE+152
+        _ZN2CA7Context18commit_transactionEPNS_11TransactionEdPd+636
+        _ZN2CA11Transaction6commitEv+632
+018.832 nav sidebar willShow listing, toolbar items 5
+018.901 nav sidebar didShow listing mode=3 prefers=2 behavior=2 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=0-320 main=0-669 primaryWidth=320 showing=SM- open=0 fold=none sidebar=["listing"] main=["resting"]
+022.294 poke: dump | before mode=3 prefers=2 behavior=2 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=0-320 main=0-669 primaryWidth=320 showing=SM- open=0 fold=none
+022.295 poke: after mode=3 prefers=2 behavior=2 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=0-320 main=0-669 primaryWidth=320 showing=SM- open=0 fold=none
+------- turned to portrait, shown
+025.104 viewWillTransition to 951x669 mode=3 prefers=2 behavior=2 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=0-320 main=0-669 primaryWidth=320 showing=SM- open=0 fold=none sidebar=["listing"] main=["resting"]
+025.104 display mode -> 2 from mode=3 prefers=2 behavior=2 prefersBehavior=1 collapsed=false size=669x951 class=2/2 sidebar=0-320 main=0-669 primaryWidth=320 showing=SM- open=0 fold=none
+025.119   asked by
+        $s8ShamanUI11RealColumnsC19splitViewController_12willChangeToySo07UISplitfG0C_So0kfG11DisplayModeVtFTo+164
+        __65-[_UISplitViewControllerAdaptiveImpl _prepareTransitionToLayout:]_block_invoke+152
+        block_destroy_helper+12780
+        block_destroy_helper+13952
+        -[_UISplitViewControllerAdaptiveImpl _prepareLayout]+1916
+        -[_UISplitViewControllerAdaptiveImpl _invalidateLayoutPerformingTransitionAlongsideTransitionCoordinator:]+152
+        -[_UISplitViewControllerAdaptiveImpl viewWillTransitionToSize:withTransitionCoordinator:]+136
+        $s8ShamanUI11RealColumnsC18viewWillTransition2to4withySo6CGSizeV_So016UIViewControllerG11Coordinator_ptF+1152
+        $s8ShamanUI11RealColumnsC18viewWillTransition2to4withySo6CGSizeV_So016UIViewControllerG11Coordinator_ptFTo+180
+        -[UIViewController viewWillTransitionToSize:withTransitionCoordinator:]+688
+        $s7SwiftUI19UIHostingControllerC18viewWillTransition2to4withySo6CGSizeV_So06UIViewdG11Coordinator_ptF+132
+        $s7SwiftUI19UIHostingControllerC18viewWillTransition2to4withySo6CGSizeV_So06UIViewdG11Coordinator_ptFTo+76
+        +[UIViewController _performWithoutDeferringTransitionsAllowingAnimation:actions:]+120
+        -[UIViewController(AdaptiveSizing_Internal) _window:viewWillTransitionToSize:withTransitionCoordinator:]+576
+        __59-[UIWindow _rotateToBounds:withAnimator:transitionContext:]_block_invoke+148
+        +[UIView(Animation) performWithoutAnimation:]+68
+025.564 the size transition ended, the sidebar stood before true mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+029.095 poke: dump | before mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+029.095 poke: after mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=0 fold=none
+------- landscape

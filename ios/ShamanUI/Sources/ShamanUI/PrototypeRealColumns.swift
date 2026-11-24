@@ -450,9 +450,10 @@ final class RealColumns: UISplitViewController, UISplitViewControllerDelegate, U
 
   override func viewWillTransition(to size: CGSize, with coordinator: any UIViewControllerTransitionCoordinator) {
     colLog("viewWillTransition to \(Int(size.width))x\(Int(size.height)) \(where_)")
-    super.viewWillTransition(to: size, with: coordinator)
-    // PROTOTYPE #733: a Sidebar the reader put away before the turn is not asked for after it, unless `always`.
+    // PROTOTYPE #733: a Sidebar the reader put away before the turn is not asked for after it, unless `always`. Read
+    // before the split view hears of the new size, since it changes its display mode as it does.
     let stood = isCollapsed || displayMode != .secondaryOnly || SidebarC.has("always")
+    super.viewWillTransition(to: size, with: coordinator)
     coordinator.animate(alongsideTransition: nil) { [weak self] _ in
       self?.reconcile("the size transition's end")
       colLog("the size transition ended, the sidebar stood before \(stood) \(self?.state ?? "")")
