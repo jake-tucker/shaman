@@ -7,7 +7,7 @@ import PackageDescription
 let package = Package(
   name: "ShamanUI",
   defaultLocalization: "en",
-  platforms: [.iOS("27.0")],
+  platforms: [.iOS("27.1")],
   products: [.library(name: "ShamanUI", targets: ["ShamanUI"])],
   dependencies: [
     .package(path: "../ShamanCore"),

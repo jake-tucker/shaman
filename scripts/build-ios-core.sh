@@ -29,7 +29,7 @@ work="$root/target/ios-core"
 cd "$root"
 
 # Matches the app's deployment target, so the library is built for the iOS the app runs on.
-export IPHONEOS_DEPLOYMENT_TARGET=27.0
+export IPHONEOS_DEPLOYMENT_TARGET=27.1
 
 installed=$(rustup target list --installed)
 for triple in "${triples[@]}"; do
@@ -84,7 +84,7 @@ import PackageDescription
 
 let package = Package(
   name: "ShamanCore",
-  platforms: [.iOS("27.0")],
+  platforms: [.iOS("27.1")],
   products: [.library(name: "ShamanCore", targets: ["ShamanCore"])],
   targets: [
     .binaryTarget(name: "ShamanCoreFFI", path: "ShamanCoreFFI.xcframework"),
