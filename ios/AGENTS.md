@@ -267,7 +267,7 @@ well. `--stop` stops it otherwise. Run it before merging a change to pairing or 
 `--resume` starts the Server again with its records kept.
 
 **Test.** `../scripts/ios-test.sh` runs the tests and holds the table of which simulator runs which: the Pro everything,
-the closed Duo and the Pro Max a smoke test each.
+the closed Duo the whole UI suite, and the Pro Max a smoke test.
 
 ```sh
 ../scripts/ios-test.sh pro                                                  # the Pro's row
@@ -300,6 +300,17 @@ Narrow a run to what you touched, on the simulator the behaviour is held on: an 
 row's own, whether or not the row names those tests, and any other xcodebuild argument may follow. A full run, `all`,
 is owed once a ticket, before it is called done. A test that does not hold on some shape is left out of that
 simulator's row in the script; no test skips itself by shape, and there are no test plans.
+
+A UI test stands on whichever simulator the table puts it on, so it assumes neither where the bar stands nor which
+display the app is on nor how much of a screen fits it. What it needs for that is in `ShamanUITests`' `Display.swift`
+and `Reaching.swift`, and it uses nothing else in their place: `attach` and `Display.picture` for a screenshot, upright
+and of the display the app is on, as `app.screenshot()` is black on an open Duo and cut off on a turned Pro; `app.point`
+for where a drag begins and ends, and `app.window` to swipe over, as the app's own frame lies on its side on an open
+Duo; `app.back` for Back, which is in no navigation bar where the bar is vertical; `app.scrolled(to:)` before asserting
+on or tapping what stands in a list and may be further along it, given `over:` the sheet or the column where more than
+one list is on screen, and `at:` where what floats over the list covers its middle; `app.swipeSheetAway()`; and
+`app.leaveTheFront()` in place of the Home button, which does nothing on a Duo. On an open Duo in portrait the picture
+is upright in the one portrait a posed run reaches, turned right once, and on its head in the other.
 
 The script says what passed and what failed, as `xcresulttool` reads it, and where each result bundle is under
 `build/results`. Read more of one through `xcresulttool`, not the build log:

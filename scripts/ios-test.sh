@@ -33,7 +33,7 @@ simulators=(pro duo pro-max)
 row_of() {
   case "$1" in
     pro) row=(-only-testing:ShamanUIUnitTests -only-testing:ShamanTests -only-testing:ShamanUITests) ;;
-    duo) row=(-only-testing:ShamanUITests/SmokeTests) ;;
+    duo) row=(-only-testing:ShamanUITests) ;;
     pro-max) row=(-only-testing:ShamanUITests/SmokeTests) ;;
   esac
 }
