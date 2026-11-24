@@ -1,0 +1,85 @@
+505.752 sidebar words []
+505.753 columns made, path ["session(workstation-key/13)"]
+505.789 pose: fold none upright none
+505.789 fold changed mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=466x678 class=1/2 sidebar=off main=off primaryWidth=320 showing=--- open=1 fold=none
+505.789 pose: bottom safe area 34.0
+505.804 display mode -> 2 from mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=466x678 class=1/2 sidebar=off main=off primaryWidth=320 showing=--- open=1 fold=none
+505.804 collapsing, top main mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=466x678 class=1/2 sidebar=off main=off primaryWidth=320 showing=--- open=1 fold=none sidebar=["listing"] main=["session(workstation-key/13)"]
+505.804 willShow column 0 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=466x678 class=1/2 sidebar=off main=off primaryWidth=320 showing=--- open=1 fold=none
+505.815 willHide column 0 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=466x678 class=1/2 sidebar=off main=off primaryWidth=320 showing=--- open=1 fold=none
+505.815 willShow column 2 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=466x678 class=1/2 sidebar=off main=off primaryWidth=320 showing=--- open=1 fold=none
+505.818 nav sidebar willShow UINavigationController, toolbar items -1
+505.959 didHide column 0 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none
+505.960 didCollapse mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none sidebar=["listing", "UINavigationController"] main=["session(workstation-key/13)"]
+505.960 didShow column 2 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none
+505.984 nav main didShow session(workstation-key/13) mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none sidebar=["listing", "UINavigationController"] main=["session(workstation-key/13)"]
+506.317 columns appeared mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none sidebar=["listing", "UINavigationController"] main=["session(workstation-key/13)"]
+506.923 field: made
+518.754 poke: dump | before mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none
+518.755 poke: after mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none
+550.816 viewWillTransition to 951x669 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none sidebar=["listing", "UINavigationController"] main=["session(workstation-key/13)"]
+550.853 expanding, proposed mode 2 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=2/2 sidebar=0-466 main=0-466 primaryWidth=951 showing=-M- open=1 fold=none
+550.853 willShow column 0 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=2/2 sidebar=0-466 main=0-466 primaryWidth=951 showing=-M- open=1 fold=none
+550.869 nav sidebar willShow listing, toolbar items -1
+550.873 nav sidebar didShow listing mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=2/2 sidebar=0-466 main=off primaryWidth=951 showing=-M- open=1 fold=none sidebar=["listing"] main=["session(workstation-key/13)"]
+551.498 didShow column 0 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=1 fold=none
+551.498 didExpand mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=1 fold=none sidebar=["listing"] main=["session(workstation-key/13)"]
+551.498 the size transition ended, the sidebar stood before true mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=1 fold=none
+555.354 poke: dump | before mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=1 fold=none
+555.354 poke: after mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=1 fold=none
+568.294 pose: bottom safe area 264.0
+667.487 pose: bottom safe area 34.0
+679.706 pose: bottom safe area 264.0
+697.607 pose: bottom safe area 34.0
+708.082 pose: bottom safe area 227.0
+708.175 pose: bottom safe area 264.0
+750.390 pose: bottom safe area 34.0
+768.911 showing the aside at the reader
+768.912 display mode -> 1 from mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=1 fold=none
+768.912 willHide column 0 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=1 fold=none
+769.601 didHide column 0 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=-320-0 main=0-951 primaryWidth=320 showing=-MA open=1 fold=none
+773.354 poke: dump | before mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=off main=0-951 primaryWidth=320 showing=-MA open=1 fold=none
+773.355 poke: after mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=off main=0-951 primaryWidth=320 showing=-MA open=1 fold=none
+785.752 pose: bottom safe area 227.0
+785.800 pose: bottom safe area 264.0
+795.505 pose: bottom safe area 34.0
+800.662 pose: bottom safe area 264.0
+811.813 pose: bottom safe area 34.0
+817.115 pose: bottom safe area 264.0
+835.820 pose: bottom safe area 137.33333333333326
+835.922 viewWillTransition to 466x678 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=1/2 sidebar=off main=0-951 primaryWidth=320 showing=-MA open=1 fold=none sidebar=["listing"] main=["session(workstation-key/13)"]
+835.923 willHide column 4 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=1/2 sidebar=off main=0-951 primaryWidth=320 showing=-MA open=1 fold=none
+835.959 display mode -> 2 from mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=1/2 sidebar=off main=0-951 primaryWidth=320 showing=-M- open=1 fold=none
+835.959 collapsing, top main mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=1/2 sidebar=off main=0-951 primaryWidth=320 showing=-M- open=1 fold=none sidebar=["listing"] main=["session(workstation-key/13)"]
+835.961 willShow column 0 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=1/2 sidebar=off main=0-951 primaryWidth=320 showing=-M- open=1 fold=none
+835.961 willHide column 2 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=1/2 sidebar=off main=0-951 primaryWidth=320 showing=-M- open=1 fold=none
+835.968 willHide column 0 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=1/2 sidebar=off main=off primaryWidth=320 showing=-M- open=1 fold=none
+835.968 willShow column 2 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=1/2 sidebar=off main=off primaryWidth=320 showing=-M- open=1 fold=none
+835.969 pose: bottom safe area 146.33333333333326
+835.980 nav sidebar willShow UINavigationController, toolbar items -1
+836.059 didHide column 0 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none
+836.059 didHide column 4 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none
+836.060 didCollapse mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none sidebar=["listing", "UINavigationController"] main=["session(workstation-key/13)"]
+836.060 didShow column 2 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none
+836.061 the size transition ended, the sidebar stood before false mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none
+836.152 pose: bottom safe area 137.33333333333326
+836.153 pose: bottom safe area 304.0
+836.177 nav sidebar didShow UINavigationController mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none sidebar=["listing", "UINavigationController"] main=["session(workstation-key/13)"]
+888.115 pose: bottom safe area 88.66666666666663
+888.227 viewWillTransition to 951x669 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=1/2 sidebar=0-466 main=0-466 primaryWidth=466 showing=-M- open=1 fold=none sidebar=["listing", "UINavigationController"] main=["session(workstation-key/13)"]
+888.261 expanding, proposed mode 2 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=2/2 sidebar=0-466 main=0-466 primaryWidth=951 showing=-M- open=1 fold=none
+888.261 willShow column 0 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=2/2 sidebar=0-466 main=0-466 primaryWidth=951 showing=-M- open=1 fold=none
+888.272 nav sidebar willShow listing, toolbar items 5
+888.279 nav sidebar didShow listing mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=true size=466x678 class=2/2 sidebar=0-466 main=off primaryWidth=951 showing=-M- open=1 fold=none sidebar=["listing"] main=["session(workstation-key/13)"]
+888.281 pose: bottom safe area 79.66666666666663
+888.469 didShow column 0 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=1 fold=none
+888.470 didExpand mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=1 fold=none sidebar=["listing"] main=["session(workstation-key/13)"]
+888.470 showing the aside at didExpand
+888.470 showing the aside at the size transition's end
+888.470 the size transition ended, the sidebar stood before true mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=1 fold=none
+888.485 display mode -> 1 from mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=1 fold=none
+888.486 willHide column 0 mode=2 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=0-320 main=0-951 primaryWidth=320 showing=SM- open=1 fold=none
+888.512 didHide column 0 mode=1 prefers=2 behavior=1 prefersBehavior=1 collapsed=false size=951x669 class=2/2 sidebar=-320-0 main=0-951 primaryWidth=320 showing=-MA open=1 fold=none
+888.582 pose: bottom safe area 264.0
+899.018 pose: bottom safe area 34.0
+903.985 pose: bottom safe area 264.0

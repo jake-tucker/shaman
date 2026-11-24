@@ -12,6 +12,7 @@ struct QuestionnaireSheet: View {
   @Environment(\.interventionArming) private var arming
   @State private var armed = false
   @State private var detent = PresentationDetent.large
+  static let follows = ProcessInfo.processInfo.arguments.contains("--sheet-follows")
 
   var body: some View {
     let draft = model.draft(of: questionnaire)
@@ -26,6 +27,9 @@ struct QuestionnaireSheet: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityHint("Dismisses this")
         }
+        // PROTOTYPE #734: with `--sheet-follows`, the page keeps the foot of the field that holds the keyboard in view
+        // as its answer grows and as the room for the page changes, which a close, an open and a turn each do.
+        ScrollViewReader { pages in
         ScrollView {
           VStack(alignment: .leading, spacing: 12) {
             if let note = questionnaire.note {
@@ -47,6 +51,13 @@ struct QuestionnaireSheet: View {
           .padding(20)
         }
         .scrollDismissesKeyboard(.interactively)
+        .onChange(of: draft.written) {
+          if Self.follows { pages.scrollTo("questionnaire.field.foot", anchor: .bottom) }
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
+          if Self.follows { pages.scrollTo("questionnaire.field.foot", anchor: .bottom) }
+        }
+        }
         QuestionnaireFoot(questionnaire: questionnaire, question: question, draft: draft, model: model)
       }
       .navigationTitle(question?.position ?? "")
@@ -121,6 +132,7 @@ private struct QuestionPage: View {
       }
       if let field = question.field {
         AnswerFieldView(field: field, text: written)
+        Color.clear.frame(height: 1).id("questionnaire.field.foot")
       }
       if draft.readsSecret, let secret = question.secret {
         Label {

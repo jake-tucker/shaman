@@ -432,6 +432,26 @@ final class PrototypeRealTests: XCTestCase {
         said = app.staticTexts.allElementsBoundByIndex.prefix(40).map {
           "\($0.label.prefix(60))|\($0.identifier)|\(Int($0.frame.minX)),\(Int($0.frame.minY))"
         }.joined(separator: "\n")
+      case "frames":
+        // frames <identifier>...: the window, the keyboard and each element named, in the window's points, with
+        // whether it can be hit and whether it holds the keyboard. #734's: a secure field's keyboard is left out of
+        // screenshots, so its frame is the only account of it.
+        func box(_ element: XCUIElement) -> String {
+          guard element.exists else { return "absent" }
+          let frame = element.frame
+          return "\(Int(frame.minX)),\(Int(frame.minY)) \(Int(frame.width))x\(Int(frame.height)) "
+            + "to \(Int(frame.maxX)),\(Int(frame.maxY)) hittable=\(element.isHittable)"
+        }
+        var lines = ["window \(box(app.windows.firstMatch))", "keyboard \(box(app.keyboards.firstMatch))"]
+        for name in rest.split(separator: " ").map(String.init) {
+          let found = app.descendants(matching: .any).matching(identifier: name).allElementsBoundByIndex.prefix(4)
+          if found.isEmpty { lines.append("\(name) absent") }
+          for element in found {
+            let focus = (element.value(forKey: "hasKeyboardFocus") as? Bool) ?? false
+            lines.append("\(name) \(box(element)) focus=\(focus)")
+          }
+        }
+        said = lines.joined(separator: "\n")
       case "quit":
         try? FileManager.default.removeItem(atPath: command)
         return
