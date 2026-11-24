@@ -276,6 +276,26 @@ the closed Duo and the Pro Max a smoke test each.
 ../scripts/ios-test.sh pro -only-testing:ShamanUIUnitTests                  # the package's tests alone
 ```
 
+The UI tests' classes run in parallel on up to four clones of the simulator, which xcodebuild makes as the tests begin
+while the simulator itself is shut down, and which go as it ends, even where it is killed. The three simulators go one
+after another. A run narrowed to one class runs on the simulator itself, as it has nothing to run beside and clones take
+a minute to boot; so do the package's tests, and the hosted ones alone. `-parallel-testing-enabled NO` keeps any run
+there, for a test that wants the simulator as it stands or the app's container read after.
+`xcrun simctl --set testing list devices` lists the clones of every run under way on the Mac, and nothing otherwise.
+
+Times, as [#722](https://github.com/jake-tucker/shaman/issues/722) gave them on 22 November 2026, measured on the Mac
+the app is written on, at `67a9181f` and before any of this: the app's 135 tests took 41 minutes on the Pro one after
+another, and 17 with classes in parallel on four clones, where four of them failed, which have been mended since. A full
+run as that ticket laid it out, with the closed Duo's whole suite and the Pro Max's columns, came to about 40 minutes in
+parallel and an hour and a half serially, both by sum and neither run. The script says how long each run took; what a
+pass and a full run take since is still to be measured.
+
+On clones each test shares the Mac with three more, so a test that waits on a clock fails there and not alone. Look for
+what is to come and let the deadline be long, as it costs nothing where it comes; let nothing depend on how soon the
+test gets there; and wait for what an element is to say with `waitForOne` (`Waiting.swift`), not by an expectation of
+it. "Critical process SpringBoard crashed" has failed a test now and then on a clone, a different test each time, for
+a reason not found, on a Mac deep in swap: run that class again by itself before looking for it in the app.
+
 Narrow a run to what you touched, on the simulator the behaviour is held on: an `-only-testing:` takes the place of the
 row's own, whether or not the row names those tests, and any other xcodebuild argument may follow. A full run, `all`,
 is owed once a ticket, before it is called done. A test that does not hold on some shape is left out of that
@@ -306,11 +326,13 @@ swift format format --in-place --recursive Shaman ShamanUI/Package.swift ShamanU
 **The core's own tests** run with the rest of the workspace: `cargo nextest run -p shaman-thin-client`. They run on
 every platform, so keep anything iOS-only out of the crate.
 
-**CI** (`.github/workflows/ios.yml`) builds the core, lints, runs the Pro's row (`../scripts/ios-test.sh pro --ad-hoc`,
-which tests the package unsigned and the app signed ad hoc under no team, since an unsigned app cannot reach the
-Keychain), checks nothing reached `UserDefaults`, and then builds the phone's core and the app for the phone in Release,
-unsigned (`CODE_SIGNING_ALLOWED=NO`), and checks it holds no fake, on the `xcode-27` runner: the optimiser warns of what
-a debug build does not, and every warning is an error. Run the same commands to reproduce a failure.
+**CI** (`.github/workflows/ios.yml`) builds the core, lints, runs the Pro's row on the simulator itself
+(`../scripts/ios-test.sh pro --ad-hoc -parallel-testing-enabled NO`, which tests the package unsigned and the app signed
+ad hoc under no team, since an unsigned app cannot reach the Keychain), checks nothing reached `UserDefaults`, which it
+reads in the app's container there, as clones are gone with theirs, and then builds the phone's core and the app for the
+phone in Release, unsigned (`CODE_SIGNING_ALLOWED=NO`), and checks it holds no fake, on the `xcode-27` runner: the
+optimiser warns of what a debug build does not, and every warning is an error. Run the same commands to reproduce a
+failure.
 
 ## On the phone
 

@@ -74,14 +74,19 @@ jobs:
         run: scripts/build-ios-core.sh sim
 
       - name: Test
-        # The package's tests and the app's, both run whatever fails.
-        run: scripts/ios-test.sh pro --ad-hoc
+        # The package's tests and the app's, both run whatever fails. On the simulator itself and not on clones of it,
+        # which xcodebuild deletes as it ends, and what the app wrote in them, which the next step reads.
+        run: scripts/ios-test.sh pro --ad-hoc -parallel-testing-enabled NO
 
       - name: Check nothing was written to UserDefaults
         run: |
           set -euo pipefail
           udid=$(scripts/ios-simulator.sh)
-          container=$(xcrun simctl get_app_container "$udid" com.jaketucker.shaman data)
+          # Only a run on the simulator itself leaves the app there to read.
+          if ! container=$(xcrun simctl get_app_container "$udid" com.jaketucker.shaman data); then
+            echo "::error::The tests left no app on the simulator, so there is nothing to check."
+            exit 1
+          fi
           written=$(find "$container/Library/Preferences" -type f 2> /dev/null || true)
           if [ -n "$written" ]; then
             echo "::error::The app wrote to UserDefaults:"
