@@ -16,7 +16,7 @@ app's shape. Everything here is built from a terminal on a Mac with Xcode 27.2; 
 | `ShamanCore/` | The core and its generated Swift, written by `scripts/build-ios-core.sh`; ignored by git |
 | `build/` | Where the commands below put what `xcodebuild` makes; ignored by git |
 
-iOS 27.0, iPhone only, portrait only, Swift 6 language mode, English only. The bundle identifier is
+iOS 27.1, iPhone only, portrait only, Swift 6 language mode, English only. The bundle identifier is
 `com.jaketucker.shaman`.
 
 ## The rule that comes first
@@ -35,15 +35,19 @@ scripts/build-ios-core.sh sim release   # any slice with a cargo profile of your
 
 ## The loop
 
-Run everything from `ios/`. Tests are pinned to one simulator, an iPhone 18 Pro on iOS 27.2. Agents in other
-checkouts share the machine, so use a simulator of this checkout's own, by its UDID, and never `booted`:
+Run everything from `ios/`. Tests are pinned to three simulators on iOS 27.2: an iPhone 18 Pro, an iPhone Duo and an
+iPhone 18 Pro Max. Agents in other checkouts share the machine, so use simulators of this checkout's own, by UDID, and
+never `booted`:
 
 ```sh
-UDID=$(../scripts/ios-simulator.sh)
+UDID=$(../scripts/ios-simulator.sh)           # the iPhone 18 Pro
+UDID=$(../scripts/ios-simulator.sh duo)       # an iPhone Duo
+UDID=$(../scripts/ios-simulator.sh pro-max)   # an iPhone 18 Pro Max
 ```
 
-The script makes "Shaman <checkout directory>" on the iOS 27.2 runtime the first time, finds it after, and boots it.
-Delete it with `xcrun simctl delete "$UDID"` when the checkout goes. If every simulator reads unavailable,
+The script makes "Shaman <checkout directory>", or that followed by "duo" or "pro-max", the first time it is asked for,
+finds it after, and boots it. `xcrun simctl shutdown "$UDID"` once done with one, as three booted load the machine, and
+`xcrun simctl delete "$UDID"` each when the checkout goes. If every simulator reads unavailable,
 `xcrun simctl runtime scan-and-mount`. Xcode 27 has no Simulator.app; a booted simulator shows in Device Hub, and
 needs no window to run tests.
 
@@ -56,7 +60,30 @@ xcrun simctl install "$UDID" build/xcode/Build/Products/Debug-iphonesimulator/Sh
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman
 ```
 
-**Look.** `xcrun simctl io "$UDID" screenshot /tmp/shaman.png`, then read the image.
+A Duo boots closed and upright, always. Its `simctl bootstatus -b` prints "Data Migration Failed" and exits 0, which is
+how every boot of one goes, and no display is active for some seconds after it returns.
+
+**Look.** `xcrun simctl io "$UDID" screenshot /tmp/shaman.png`, then read the image. A Duo has two displays, so there
+name the one the app is on, which `devicectl` says: 1 is the outer, 3 the inner, and the one not in use is black. Run
+it again if it names none, as it does until a display is active.
+
+```sh
+DISPLAY_ID=$(xcrun devicectl device info displays --device "$UDID" -j - 2> /dev/null |
+  jq -r '.result.displays[] | select(.active) | .displayId')
+xcrun simctl io "$UDID" screenshot --display="$DISPLAY_ID" /tmp/shaman.png
+```
+
+To look at the regular layout with no window, hold the app resized on the Pro with `devicectl device appResize`, at the
+size of a Duo's inner display in portrait: it moves the app in front to a display of its own until it is interrupted.
+While the app is portrait only a size wider than tall is not filled: 951x669 gives the app 501 points and compact width.
+It shows no vertical bar and no fold, and is no test. Where it answers that resizing is not available right now, as it
+did the first time on a simulator just booted, run it again.
+
+```sh
+xcrun devicectl device appResize start --device "$UDID" --preferred-size 669x951 & RESIZING=$!
+sleep 8; xcrun simctl io "$UDID" screenshot --display=resizable /tmp/shaman.png
+kill "$RESIZING"
+```
 
 The simulator holds a hardware keyboard and minimises the software one below the screen. To see a screen with the
 software keyboard up, set it to stay up, focus a field from a UI test without typing (`typeText` minimises it again),
@@ -239,23 +266,35 @@ well. `--stop` stops it otherwise. Run it before merging a change to pairing or 
 `LivePairingTests` skips. By hand, `--stop` while the app runs has the Remote read Unreachable within a few seconds, and
 `--resume` starts the Server again with its records kept.
 
-**Test.** `ShamanUI`'s unit tests run under its own scheme; `ShamanTests` and the UI tests under the app's. A result
-bundle's path must not exist yet. The package's tests run without the Keychain, which answers a test bundle with no
-host app `errSecMissingEntitlement` (-34018), so whatever reaches the Keychain is tested in `ShamanTests`, hosted in
-the app. The Secure Enclave needs no entitlement, so the signer is tested in the package. The package's tests have no
-scene either, so what UIKit animates over frames, as the conversation's list scrolling toward a foot its rows shrank
-to, is tested in `ShamanTests` too, in a window of the app's scene.
+**Test.** `../scripts/ios-test.sh` runs the tests and holds the table of which simulator runs which: the Pro everything,
+the closed Duo and the Pro Max a smoke test each.
 
 ```sh
-(cd ShamanUI && xcodebuild test -scheme ShamanUI -destination "platform=iOS Simulator,id=$UDID" \
-  -derivedDataPath ../build/package -resultBundlePath ../build/results/package-$(date +%s).xcresult -quiet)
-xcodebuild test -project Shaman.xcodeproj -scheme Shaman -destination "platform=iOS Simulator,id=$UDID" \
-  -derivedDataPath build/xcode -resultBundlePath build/results/app-$(date +%s).xcresult -quiet
-xcrun xcresulttool get test-results summary --path build/results/<bundle>.xcresult
+../scripts/ios-test.sh pro                                                  # the Pro's row
+../scripts/ios-test.sh all                                                  # every row, one simulator after another
+../scripts/ios-test.sh duo -only-testing:ShamanUITests/SessionTests         # these tests alone, on the closed Duo
+../scripts/ios-test.sh pro -only-testing:ShamanUIUnitTests                  # the package's tests alone
 ```
 
-Narrow a run with `-only-testing:ShamanUITests/ThisDeviceTests/<test>`. Read results through `xcresulttool`, not the
-build log; `xcrun xcresulttool export attachments` pulls out screenshots a UI test attached.
+Narrow a run to what you touched, on the simulator the behaviour is held on: an `-only-testing:` takes the place of the
+row's own, whether or not the row names those tests, and any other xcodebuild argument may follow. A full run, `all`,
+is owed once a ticket, before it is called done. A test that does not hold on some shape is left out of that
+simulator's row in the script; no test skips itself by shape, and there are no test plans.
+
+The script says what passed and what failed, as `xcresulttool` reads it, and where each result bundle is under
+`build/results`. Read more of one through `xcresulttool`, not the build log:
+
+```sh
+xcrun xcresulttool get test-results tests --path build/results/<bundle>.xcresult
+xcrun xcresulttool export attachments --path build/results/<bundle>.xcresult --output-path /tmp/attachments
+```
+
+`ShamanUI`'s unit tests run under its own scheme; `ShamanTests` and the UI tests under the app's. The package's tests
+run without the Keychain, which answers a test bundle with no host app `errSecMissingEntitlement` (-34018), so whatever
+reaches the Keychain is tested in `ShamanTests`, hosted in the app. The Secure Enclave needs no entitlement, so the
+signer is tested in the package. The package's tests have no scene either, so what UIKit animates over frames, as the
+conversation's list scrolling toward a foot its rows shrank to, is tested in `ShamanTests` too, in a window of the
+app's scene.
 
 **Lint.** CI fails on any finding; `.swift-format` holds the configuration.
 
@@ -267,11 +306,11 @@ swift format format --in-place --recursive Shaman ShamanUI/Package.swift ShamanU
 **The core's own tests** run with the rest of the workspace: `cargo nextest run -p shaman-thin-client`. They run on
 every platform, so keep anything iOS-only out of the crate.
 
-**CI** (`.github/workflows/ios.yml`) runs the script, tests the package unsigned (`CODE_SIGNING_ALLOWED=NO`), builds
-and tests the app signed ad hoc under no team (`CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=`), since
-an unsigned app cannot reach the Keychain, lints, checks nothing reached `UserDefaults`, and then builds the phone's
-core and the app for the phone in Release, unsigned (`CODE_SIGNING_ALLOWED=NO`), and checks it holds no fake, on the
-`xcode-27` runner: the optimiser warns of what a debug build does not, and every warning is an error. Run the same commands to reproduce a failure.
+**CI** (`.github/workflows/ios.yml`) builds the core, lints, runs the Pro's row (`../scripts/ios-test.sh pro --ad-hoc`,
+which tests the package unsigned and the app signed ad hoc under no team, since an unsigned app cannot reach the
+Keychain), checks nothing reached `UserDefaults`, and then builds the phone's core and the app for the phone in Release,
+unsigned (`CODE_SIGNING_ALLOWED=NO`), and checks it holds no fake, on the `xcode-27` runner: the optimiser warns of what
+a debug build does not, and every warning is an error. Run the same commands to reproduce a failure.
 
 ## On the phone
 

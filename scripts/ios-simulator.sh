@@ -1,20 +1,36 @@
 #!/usr/bin/env bash
-# Prints the UDID of a simulator of this checkout's own, the iPhone 18 Pro on iOS 27.2 the app's tests are pinned to,
-# made the first time and found after, and boots it. Agents in other checkouts each have theirs, so none replaces
-# another's install of the app.
+# Prints the UDID of a simulator of this checkout's own, on the iOS 27.2 the app's tests are pinned to, made the first
+# time it is asked for and found after, and boots it. A checkout owns up to three, one of each device, and agents in
+# other checkouts each have theirs, so none replaces another's install of the app.
 #
-#   UDID=$(scripts/ios-simulator.sh [name])
+#   UDID=$(scripts/ios-simulator.sh [pro|duo|pro-max])
 #
-# The name is "Shaman <checkout directory>" unless given. Delete it with `xcrun simctl delete "$UDID"` once the
-# checkout is gone.
+# `pro`, an iPhone 18 Pro, is the default; `duo` is an iPhone Duo, which boots closed and upright, and `pro-max` an
+# iPhone 18 Pro Max. They are named "Shaman <checkout directory>", and that followed by "duo" or "pro-max". Delete one
+# with `xcrun simctl delete "$UDID"` once the checkout is gone.
 
 set -euo pipefail
 
-device="iPhone 18 Pro"
-os="27.2"
 root=$(cd "$(dirname "$0")/.." && pwd)
-name=${1:-"Shaman $(basename "$root")"}
+name="Shaman $(basename "$root")"
+os="27.2"
+case "${1:-pro}" in
+  pro) device="iPhone 18 Pro" ;;
+  duo)
+    device="iPhone Duo"
+    name="$name duo"
+    ;;
+  pro-max)
+    device="iPhone 18 Pro Max"
+    name="$name pro-max"
+    ;;
+  *)
+    echo "usage: $0 [pro|duo|pro-max]" >&2
+    exit 2
+    ;;
+esac
 
+# Found by the device, as iOS 27.2 is two runtimes: one runs a Duo alone, and the other every iPhone but a Duo.
 runtime=$(xcrun simctl list runtimes -j | jq -r --arg os "$os" --arg device "$device" '
   [.runtimes[] | select(.platform == "iOS" and .version == $os and .isAvailable)
     | select(any(.supportedDeviceTypes[]; .name == $device))][0].identifier // empty')
