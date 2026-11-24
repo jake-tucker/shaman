@@ -1,0 +1,29 @@
+334.871 columns made, path ["session(workstation-key/12)"]
+334.895 pose: fold none
+334.896 pose: bottom safe area 34.0
+334.906 display mode -> 2
+335.006 nav sidebar willShow listing, toolbar items -1
+335.009 nav sidebar didShow listing collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+335.021 nav main didShow session(workstation-key/12) collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+335.363 columns appeared collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+335.836 field: made
+343.648 display mode -> 1
+------- book, aside not shown
+348.595 viewWillTransition to 669x951 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+348.597 pose: fold 455.5-495.5 of 951.0
+356.973 columns made, path ["session(workstation-key/7)"]
+356.987 pose: fold none
+356.988 pose: bottom safe area 34.0
+356.997 display mode -> 1
+357.090 nav main didShow session(workstation-key/7) collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+357.206 columns appeared collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+357.309 pose: fold 455.5-495.5 of 951.0
+357.494 field: made
+------- two fields
+366.412 field: focus taken
+366.577 pose: bottom safe area 495.33333333333326
+366.609 field: made
+366.619 field: gone
+366.666 pose: bottom safe area 34.0
+366.723 field: made
+366.726 field: gone

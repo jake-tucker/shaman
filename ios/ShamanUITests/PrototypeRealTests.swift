@@ -382,6 +382,15 @@ final class PrototypeRealTests: XCTestCase {
             forDuration: 0.1, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: shares[1], dy: 0.5)),
             withVelocity: .slow, thenHoldForDuration: 0.4)
         }
+      case "drag":
+        // drag <from> <to>: down or up the window, as shares of its height, 0.4 of the way across.
+        let shares = rest.split(separator: " ").compactMap { Double($0) }
+        let window = app.windows.firstMatch
+        if shares.count == 2 {
+          window.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: shares[0])).press(
+            forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: shares[1])),
+            withVelocity: .slow, thenHoldForDuration: 0.3)
+        }
       case "focus":
         let found = app.descendants(matching: .any).matching(identifier: "session.composer").firstMatch
         if found.waitForExistence(timeout: 5) { found.tap() } else { said = "no composer" }

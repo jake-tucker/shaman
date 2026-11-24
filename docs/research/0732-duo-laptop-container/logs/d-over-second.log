@@ -1,0 +1,151 @@
+907.051 columns made, path ["session(workstation-key/7)"]
+907.071 pose: fold none
+907.071 pose: bottom safe area 34.0
+907.080 holder: below none of 669
+907.082 display mode -> 2
+907.190 nav sidebar willShow listing, toolbar items -1
+907.194 nav sidebar didShow listing collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+907.200 nav main didShow session(workstation-key/7) collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+907.538 columns appeared collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+907.955 field: made
+------- d-over-second open flat
+916.298 showing the aside at the reader
+916.299 display mode -> 1
+------- d-over-second aside shown beside the main view
+------- d-over-second book
+927.163 viewWillTransition to 669x951 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=true
+927.166 pose: fold 455.5-495.5 of 951.0
+927.241 holder: raising a second aside below the fold
+927.242 holder: below 495-895 of 951
+------- d-over-second laptop
+------- d-over-second an Activity pushed below
+------- d-over-second focus
+939.051 field: focus taken
+939.199 pose: bottom safe area 495.33333333333326
+939.231 holder: taking the aside below the fold away
+939.233 holder: below none of 951
+------- d-over-second keyboard dragged down
+954.033 pose: bottom safe area 488.66666666666663
+954.063 pose: bottom safe area 484.0
+954.079 pose: bottom safe area 479.33333333333326
+954.096 pose: bottom safe area 474.66666666666663
+954.112 pose: bottom safe area 470.0
+954.129 pose: bottom safe area 465.33333333333326
+954.146 pose: bottom safe area 460.66666666666663
+954.163 pose: bottom safe area 456.0
+954.179 pose: bottom safe area 451.33333333333326
+954.196 pose: bottom safe area 446.66666666666663
+954.213 pose: bottom safe area 442.0
+954.229 pose: bottom safe area 437.33333333333326
+954.246 pose: bottom safe area 432.33333333333326
+954.263 pose: bottom safe area 427.66666666666663
+954.279 pose: bottom safe area 423.0
+954.296 pose: bottom safe area 418.3333333333333
+954.313 pose: bottom safe area 413.3333333333333
+954.329 pose: bottom safe area 408.66666666666663
+954.346 pose: bottom safe area 404.0
+954.363 pose: bottom safe area 399.3333333333333
+954.379 pose: bottom safe area 394.3333333333333
+954.396 pose: bottom safe area 389.66666666666663
+954.413 pose: bottom safe area 385.0
+954.429 pose: bottom safe area 380.0
+954.446 pose: bottom safe area 375.3333333333333
+954.462 pose: bottom safe area 370.66666666666663
+954.479 pose: bottom safe area 365.66666666666663
+954.496 pose: bottom safe area 361.0
+954.513 pose: bottom safe area 356.33333333333326
+954.529 pose: bottom safe area 351.33333333333326
+954.546 pose: bottom safe area 346.66666666666663
+954.562 pose: bottom safe area 342.0
+954.579 pose: bottom safe area 337.33333333333326
+954.596 pose: bottom safe area 332.33333333333326
+954.613 pose: bottom safe area 327.66666666666663
+954.629 pose: bottom safe area 323.0
+954.646 pose: bottom safe area 313.33333333333326
+954.680 pose: bottom safe area 308.66666666666663
+954.696 pose: bottom safe area 304.0
+954.713 pose: bottom safe area 299.33333333333326
+954.729 pose: bottom safe area 294.66666666666663
+954.746 pose: bottom safe area 289.66666666666663
+954.762 pose: bottom safe area 285.0
+954.779 pose: bottom safe area 280.33333333333326
+954.796 pose: bottom safe area 275.66666666666663
+954.813 pose: bottom safe area 271.0
+954.830 pose: bottom safe area 266.33333333333326
+954.846 pose: bottom safe area 261.66666666666663
+954.862 pose: bottom safe area 257.0
+954.879 pose: bottom safe area 252.33333333333326
+954.896 pose: bottom safe area 248.0
+954.912 pose: bottom safe area 243.33333333333326
+954.929 pose: bottom safe area 238.66666666666663
+954.946 pose: bottom safe area 229.66666666666663
+954.979 pose: bottom safe area 225.0
+954.996 pose: bottom safe area 220.33333333333326
+955.013 pose: bottom safe area 216.0
+955.029 pose: bottom safe area 207.0
+955.063 pose: bottom safe area 202.66666666666663
+955.079 pose: bottom safe area 193.66666666666663
+955.113 pose: bottom safe area 185.0
+955.146 pose: bottom safe area 180.66666666666663
+955.163 pose: bottom safe area 176.33333333333326
+955.179 pose: bottom safe area 172.0
+955.196 pose: bottom safe area 167.66666666666663
+955.213 pose: bottom safe area 163.66666666666663
+955.229 pose: bottom safe area 159.33333333333326
+955.246 pose: bottom safe area 155.0
+955.262 pose: bottom safe area 151.0
+955.279 pose: bottom safe area 147.0
+955.296 pose: bottom safe area 142.66666666666663
+955.312 pose: bottom safe area 138.66666666666663
+955.329 pose: bottom safe area 134.66666666666663
+955.346 pose: bottom safe area 130.66666666666663
+955.363 pose: bottom safe area 126.66666666666663
+955.379 pose: bottom safe area 123.0
+955.396 pose: bottom safe area 119.0
+955.412 pose: bottom safe area 115.33333333333326
+955.429 pose: bottom safe area 111.33333333333326
+955.446 pose: bottom safe area 107.66666666666663
+955.463 pose: bottom safe area 104.0
+955.479 pose: bottom safe area 100.33333333333326
+955.496 pose: bottom safe area 97.0
+955.503 holder: raising a second aside below the fold
+955.509 holder: below 495-895 of 951
+955.523 pose: bottom safe area 90.0
+955.534 pose: bottom safe area 86.66666666666663
+955.563 pose: bottom safe area 83.33333333333326
+955.579 pose: bottom safe area 80.0
+955.596 pose: bottom safe area 77.0
+955.612 pose: bottom safe area 73.66666666666663
+955.629 pose: bottom safe area 68.0
+955.663 pose: bottom safe area 65.0
+955.679 pose: bottom safe area 62.33333333333326
+955.696 pose: bottom safe area 59.66666666666663
+955.713 pose: bottom safe area 57.0
+955.729 pose: bottom safe area 54.66666666666663
+955.746 pose: bottom safe area 52.33333333333326
+955.762 pose: bottom safe area 50.33333333333326
+955.779 pose: bottom safe area 48.33333333333326
+955.796 pose: bottom safe area 47.66666666666663
+956.095 pose: bottom safe area 34.0
+956.154 field: focus lost
+964.364 display mode -> 3
+964.365 nav sidebar willShow listing, toolbar items 5
+964.467 holder: taking the aside below the fold away
+964.468 holder: below none of 951
+964.490 nav sidebar didShow listing collapsed=false mode=3 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+------- d-over-second sidebar over
+968.845 display mode -> 1
+968.856 holder: raising a second aside below the fold
+968.861 holder: below 495-895 of 951
+------- d-over-second the same session chosen in the sidebar
+974.879 pose: fold none
+974.888 holder: taking the aside below the fold away
+974.889 holder: below none of 951
+------- d-over-second flat, upright
+980.104 viewWillTransition to 951x669 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+980.137 holder: below none of 669
+985.080 viewWillTransition to 669x951 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=true
+985.110 holder: below none of 951
+990.138 viewWillTransition to 951x669 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+990.161 holder: below none of 669
+------- d-over-second flat, landscape again

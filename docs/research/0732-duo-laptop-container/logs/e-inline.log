@@ -1,0 +1,101 @@
+131.587 columns made, path ["session(workstation-key/12)"]
+131.600 pose: fold none
+131.600 pose: bottom safe area 34.0
+131.609 display mode -> 2
+131.700 nav sidebar willShow listing, toolbar items -1
+131.704 nav sidebar didShow listing collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+131.915 nav main didShow session(workstation-key/12) collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+132.398 columns appeared collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+132.634 field: made
+------- e-inline open flat, the aside not shown
+141.766 display mode -> 1
+146.044 viewWillTransition to 669x951 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+146.048 pose: fold 455.5-495.5 of 951.0
+------- e-inline laptop, a tree below
+------- e-inline work chosen below
+158.467 pose: fold none
+------- e-inline flat, upright
+164.414 sync ["session(workstation-key/12)"] -> ["session(workstation-key/12)", "work"] collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+164.973 nav main didShow work collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/12)", "work"] aside=false
+164.987 field: gone
+------- e-inline a turn's work pushed in the main view
+170.218 pose: fold 455.5-495.5 of 951.0
+------- e-inline laptop, work pushed
+178.613 field: made
+179.195 nav main didShow session(workstation-key/12) collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+179.195 read back ["session(workstation-key/12)", "work"] -> ["session(workstation-key/12)"]
+------- e-inline back
+183.893 viewWillTransition to 951x669 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+183.894 display mode -> 2
+183.898 pose: fold 455.5-495.5 of 669.0
+183.898 pose: fold none
+183.945 nav sidebar willShow listing, toolbar items 5
+184.180 display mode -> 1
+189.055 viewWillTransition to 669x951 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+189.058 pose: fold 455.5-495.5 of 951.0
+193.904 viewWillTransition to 951x669 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+193.904 display mode -> 2
+193.906 pose: fold 455.5-495.5 of 669.0
+193.906 pose: fold none
+193.952 nav sidebar willShow listing, toolbar items 5
+194.141 display mode -> 1
+------- e-inline book, the aside still not shown
+200.460 display mode -> 2
+200.461 nav sidebar willShow listing, toolbar items 5
+200.553 nav sidebar didShow listing collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+------- e-inline open flat
+206.431 display mode -> 1
+210.999 viewWillTransition to 669x951 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/12)"] aside=false
+211.001 pose: fold 455.5-495.5 of 951.0
+219.430 columns made, path ["session(workstation-key/7)"]
+219.452 pose: fold 455.5-495.5 of 951.0
+219.452 pose: bottom safe area 34.0
+219.462 display mode -> 1
+219.570 nav main didShow session(workstation-key/7) collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+219.680 columns appeared collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+219.924 field: made
+------- e-inline launched in the pose
+231.575 columns made, path []
+231.589 pose: fold 455.5-495.5 of 951.0
+231.589 pose: bottom safe area 34.0
+231.596 display mode -> 1
+231.693 nav main didShow resting collapsed=false mode=1 sidebar=["listing"] main=["resting"] aside=false
+231.760 columns appeared collapsed=false mode=1 sidebar=["listing"] main=["resting"] aside=false
+------- e-inline launched in the pose, nothing open
+243.439 columns made, path ["session(workstation-key/3)"]
+243.451 pose: fold none
+243.452 pose: bottom safe area 34.0
+243.461 display mode -> 1
+243.553 nav main didShow session(workstation-key/3) collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/3)"] aside=false
+243.658 columns appeared collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/3)"] aside=false
+243.934 field: made
+243.939 pose: fold 455.5-495.5 of 951.0
+------- e-inline an approval
+256.675 columns made, path ["session(workstation-key/13)"]
+256.693 pose: fold none
+256.694 pose: bottom safe area 34.0
+256.703 display mode -> 1
+256.802 nav main didShow session(workstation-key/13) collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/13)"] aside=false
+256.907 columns appeared collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/13)"] aside=false
+257.174 field: made
+257.177 pose: fold 455.5-495.5 of 951.0
+------- e-inline a questionnaire
+266.506 viewWillTransition to 951x669 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/13)"] aside=false
+266.506 display mode -> 2
+266.512 pose: fold 455.5-495.5 of 669.0
+266.513 pose: fold none
+266.598 nav sidebar willShow listing, toolbar items -1
+266.970 display mode -> 1
+267.273 nav sidebar didShow listing collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/13)"] aside=false
+271.527 viewWillTransition to 669x951 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/13)"] aside=false
+271.545 pose: fold 455.5-495.5 of 951.0
+276.364 viewWillTransition to 951x669 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/13)"] aside=false
+276.365 display mode -> 2
+276.369 pose: fold 455.5-495.5 of 669.0
+276.370 pose: fold none
+276.427 nav sidebar willShow listing, toolbar items 5
+276.654 display mode -> 1
+276.891 nav sidebar didShow listing collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/13)"] aside=false
+281.852 display mode -> 2
+281.853 nav sidebar willShow listing, toolbar items 5
+281.928 nav sidebar didShow listing collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/13)"] aside=false
