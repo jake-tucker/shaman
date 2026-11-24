@@ -53,16 +53,18 @@ final class PairingTests: XCTestCase {
     return hostname.value as? String
   }
 
-  /// The element the confirmation screen's Form shows under `identifier`, scrolled to.
+  /// The element the confirmation screen's Form shows under `identifier`, scrolled to. The Form makes a row as it nears
+  /// the screen, so one beneath it is scrolled to before it is waited for.
   @MainActor
   private func shown(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+    XCTAssertTrue(app.navigationBars["Pair"].waitForExistence(timeout: 10), "the confirmation screen")
     let element = app.descendants(matching: .any)[identifier]
-    XCTAssertTrue(element.waitForExistence(timeout: 10), identifier)
     var swipes = 0
-    while !element.isHittable && swipes < 5 {
+    while !(element.exists && element.isHittable) && swipes < 5 {
       app.swipeUp()
       swipes += 1
     }
+    XCTAssertTrue(element.waitForExistence(timeout: 10), identifier)
     return element
   }
 
@@ -161,6 +163,8 @@ final class PairingTests: XCTestCase {
 
     replace(app.textFields["confirm.remoteName"], with: "studio")
     shown("confirm.pair", in: app).tap()
+    // The listing stands in the hierarchy beneath the sheet, so it is read once the sheet has gone.
+    XCTAssertTrue(app.navigationBars["Pair"].waitForNonExistence(timeout: 10), "paired, the sheet goes")
     let beginsIn = app.descendants(matching: .any)["home.beginsIn"]
     XCTAssertTrue(beginsIn.waitForExistence(timeout: 10))
     XCTAssertEqual(beginsIn.label, "New sessions begin in studio")

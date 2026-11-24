@@ -31,10 +31,13 @@ final class ApprovalTests: XCTestCase {
     app.descendants(matching: .any)[identifier]
   }
 
+  /// Waits until an element `identifier` names stands as `format` says.
   @MainActor
-  private func wait(for format: String, _ element: XCUIElement, timeout: TimeInterval = 10) {
-    expectation(for: NSPredicate(format: format), evaluatedWith: element)
-    waitForExpectations(timeout: timeout)
+  private func waitForOne(_ identifier: String, _ format: String, in app: XCUIApplication) {
+    XCTAssertTrue(
+      app.descendants(matching: .any).matching(identifier: identifier)
+        .waitForOne(NSPredicate(format: format)),
+      "\(identifier): \(format)")
   }
 
   /// Swipes the sheet away by its grabber, as a reader does.
@@ -73,7 +76,7 @@ final class ApprovalTests: XCTestCase {
     XCTAssertEqual(element("approval.acceptForSession", in: app).label, "Accept for session")
     attach(app, "An approval presenting itself")
 
-    wait(for: "isEnabled == true", accept)
+    waitForOne("approval.acceptOnce", "isEnabled == true", in: app)
     accept.tap()
     XCTAssertTrue(
       element("approval.deciding", in: app).waitForExistence(timeout: 2), "the sheet is dimmed until the server answers"
@@ -82,9 +85,8 @@ final class ApprovalTests: XCTestCase {
     attach(app, "A decision on its way")
 
     let sheet = element("approval.sheet", in: app)
-    wait(for: "exists == false", sheet)
-    let card = app.descendants(matching: .any).matching(identifier: "session.turn").firstMatch
-    wait(for: "label BEGINSWITH 'Working'", card)
+    XCTAssertTrue(sheet.waitForNonExistence(timeout: 20), "answered, the sheet goes")
+    waitForOne("session.turn", "label BEGINSWITH 'Working'", in: app)
     XCTAssertEqual(element("session.barWords", in: app).label, "Working")
     XCTAssertFalse(element("session.review", in: app).exists)
     attach(app, "The approval answered, its turn working again")
@@ -96,7 +98,7 @@ final class ApprovalTests: XCTestCase {
     let sheet = element("approval.sheet", in: app)
     XCTAssertTrue(sheet.waitForExistence(timeout: 10))
     swipeAway(in: app)
-    wait(for: "exists == false", sheet)
+    XCTAssertTrue(sheet.waitForNonExistence(timeout: 20), "swiped away, it goes")
 
     XCTAssertEqual(element("session.barWords", in: app).label, "Approval waiting")
     let review = element("session.review", in: app)
@@ -117,20 +119,18 @@ final class ApprovalTests: XCTestCase {
     let title = element("approval.title", in: app)
     XCTAssertTrue(title.waitForExistence(timeout: 10))
     XCTAssertEqual(title.label, "Make this file change?", "the oldest first")
-    let decline = element("approval.decline", in: app)
-    wait(for: "isEnabled == true", decline)
-    decline.tap()
+    waitForOne("approval.decline", "isEnabled == true", in: app)
+    element("approval.decline", in: app).tap()
 
-    wait(for: "label == 'Use this tool?'", title)
+    waitForOne("approval.title", "label == 'Use this tool?'", in: app)
     XCTAssertEqual(facts(in: app), ["Other tool, figma/export_variables"])
     let input = element("approval.section", in: app)
     XCTAssertTrue(input.label.hasPrefix("Input"), input.label)
     attach(app, "The next approval, presented once the first was answered")
 
-    let acceptForSession = element("approval.acceptForSession", in: app)
-    wait(for: "isEnabled == true", acceptForSession)
-    acceptForSession.tap()
-    wait(for: "exists == false", element("approval.sheet", in: app))
-    XCTAssertEqual(element("session.barWords", in: app).label, "Working")
+    waitForOne("approval.acceptForSession", "isEnabled == true", in: app)
+    element("approval.acceptForSession", in: app).tap()
+    XCTAssertTrue(element("approval.sheet", in: app).waitForNonExistence(timeout: 20), "answered, the last sheet goes")
+    waitForOne("session.barWords", "label == 'Working'", in: app)
   }
 }

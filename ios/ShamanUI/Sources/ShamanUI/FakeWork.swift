@@ -15,7 +15,7 @@
     }
 
     /// The whole of the Activity a row handed back, at once and as it changes: the running command's output grows a
-    /// line at a time.
+    /// line at a time, for minutes, so however late it is first read there is growth still to see.
     static func detail(of activity: String, in scenario: FakeConversation.Scenario?) -> AsyncStream<ActivityDetail> {
       AsyncStream { continuation in
         guard activity == running else {
@@ -23,7 +23,7 @@
           return
         }
         let growing = Task {
-          for lines in 1...testLines.count {
+          for lines in 1...400 {
             continuation.yield(runningDetail(lines: lines))
             try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled else { return }
@@ -163,21 +163,25 @@
         sections: [output(body)])
     }
 
-    /// The lines the running command writes, one at a time; the last is wider than the screen.
+    /// The lines the running command writes first, one at a time; the last is wider than the screen.
     private static let testLines = [
       "    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.21s",
       "────────────",
       " Nextest run ID 6b1c2f9e with nextest profile: default",
-      "    Starting 4 tests across 1 binary (212 tests skipped)",
+      "    Starting 396 tests across 1 binary (212 tests skipped)",
       "        PASS [   0.012s] shaman tui::qr::tests::an_invite_is_drawn_from_half_blocks",
       "        PASS [   0.014s] shaman tui::qr::tests::a_narrow_panel_says_how_wide_it_needs_to_be",
       "        PASS [   0.019s] shaman tui::qr::tests::the_quiet_zone_stands_on_every_side_of_the_code_whatever_the_theme",
     ]
 
+    /// The running command once it has written `lines` lines: those above, and then a test that passed on each.
     private static func runningDetail(lines: Int) -> ActivityDetail {
-      ActivityDetail(
+      let passed = (0..<max(0, lines - testLines.count)).map {
+        "        PASS [   0.011s] shaman tui::qr::tests::case_\($0 + 1)"
+      }
+      return ActivityDetail(
         title: "Command", facts: [fact("Command", "cargo nextest run qr", mono: true), fact("Status", "Running")],
-        sections: [output(testLines.prefix(lines).joined(separator: "\n"))])
+        sections: [output((testLines.prefix(lines) + passed).joined(separator: "\n"))])
     }
 
     private static let details: [String: ActivityDetail] = [

@@ -12,7 +12,8 @@ final class ServersTests: XCTestCase {
   @MainActor
   private func launched(_ scenario: String, _ arguments: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
-    app.launchArguments = ["--fake", scenario, "--forget-scene"] + arguments
+    // A notice stands until the test is over, however long a loaded Mac takes to look for it.
+    app.launchArguments = ["--fake", scenario, "--forget-scene", "--notice-stands", "3600"] + arguments
     app.launch()
     return app
   }

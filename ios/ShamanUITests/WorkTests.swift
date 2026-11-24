@@ -108,17 +108,23 @@ final class WorkTests: XCTestCase {
     XCTAssertTrue(element("detail.fact", holding: "Running", in: app).exists)
     let output = elements("detail.monospace", in: app).firstMatch
     XCTAssertTrue(output.waitForExistence(timeout: 5))
-    XCTAssertFalse(output.label.contains("the_quiet_zone"), "not written yet")
-    let grown = NSPredicate(format: "label CONTAINS %@", "the_quiet_zone_stands_on_every_side")
-    expectation(for: grown, evaluatedWith: output)
-    waitForExpectations(timeout: 15)
+    // What it has written by now, which depends on how long the screen took to reach, and more than that.
+    let written = output.label
+    let outputs = elements("detail.monospace", in: app)
+    XCTAssertTrue(
+      outputs.waitForOne(NSPredicate(format: "label BEGINSWITH %@ AND label != %@", written, written)), "it grows")
+    XCTAssertTrue(
+      outputs.waitForOne(NSPredicate(format: "label CONTAINS %@", "the_quiet_zone_stands_on_every_side")),
+      "to its widest line")
     attach(app, "A running command's output, grown")
 
-    // Its lines are kept whole, wider than the screen, so the output scrolls sideways.
-    let scroller = elements("detail.monospaceScroll", in: app).firstMatch
+    // Its lines are kept whole, wider than the screen, so the output scrolls sideways. Dragged by its first lines, as
+    // it may have grown past the foot of the screen.
     let before = output.frame.minX
-    scroller.swipeLeft()
-    XCTAssertLessThan(output.frame.minX, before, "swiped sideways, it moved")
+    let first = elements("detail.monospaceScroll", in: app).firstMatch
+      .coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0)).withOffset(CGVector(dx: 0, dy: 20))
+    first.press(forDuration: 0.05, thenDragTo: first.withOffset(CGVector(dx: -200, dy: 0)))
+    XCTAssertLessThan(output.frame.minX, before, "dragged sideways, it moved")
     attach(app, "A running command's output scrolled sideways")
   }
 
