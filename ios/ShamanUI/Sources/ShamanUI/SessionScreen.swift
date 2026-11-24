@@ -88,7 +88,7 @@ struct SessionScreen: View {
   }
 
   private var foot: some View {
-    SessionFoot(model: model) { opens in
+    SessionFoot(model: model, stack: stack) { opens in
       if let stack {
         let tree = stack.review(opens, over: model.route)
         if tree, asides {
@@ -786,6 +786,8 @@ private struct QueuedBubble: View {
 /// composer.
 private struct SessionFoot: View {
   @Bindable var model: SessionModel
+  /// PROTOTYPE #732: the path, whose Aside the foot draws below the fold.
+  var stack: SessionStack?
   /// Follows the bar's "Review" where it leads.
   let review: (ReviewOpens) -> Void
 
@@ -820,6 +822,10 @@ private struct SessionFoot: View {
               review($0)
             }
           }
+          // PROTOTYPE #732: the field as two views, this one above the fold, to see the focus lost.
+          if LaptopC.fieldTwo, !split, let composer = frame.composer {
+            ComposerView(composer: composer, model: model)
+          }
         }
         .padding(.leading, sides.leading)
         .padding(.trailing, sides.trailing)
@@ -829,9 +835,16 @@ private struct SessionFoot: View {
         .modifier(ProtoGround())
         VStack(spacing: 0) {
           Color.clear.frame(height: split ? laptop.band : 0)
-          Spacer(minLength: 0).frame(maxHeight: split ? .infinity : 0)
+          // PROTOTYPE #732: the Aside's content within the foot itself, between the band and the field, so that one
+          // stack lays the half below the fold out and nothing is measured.
+          ZStack {
+            if split, LaptopC.below == .inline, let stack {
+              LaptopInlineAside(stack: stack)
+            }
+          }
+          .frame(maxHeight: split ? .infinity : 0)
           VStack(spacing: 0) {
-            if let composer = frame.composer {
+            if let composer = frame.composer, !LaptopC.fieldTwo || split {
               ComposerView(composer: composer, model: model)
             }
           }
@@ -955,6 +968,8 @@ private struct BarView: View {
 private struct ComposerView: View {
   let composer: Composer
   @Bindable var model: SessionModel
+  /// PROTOTYPE #732: whether the field holds the focus, said as it changes.
+  @FocusState private var writing: Bool
 
   var body: some View {
     let empty = model.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -968,6 +983,10 @@ private struct ComposerView: View {
         .padding(.vertical, 9)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
         .accessibilityIdentifier("session.composer")
+        .focused($writing)
+        .onChange(of: writing) { _, now in colLog("field: focus \(now ? "taken" : "lost")") }
+        .onAppear { colLog("field: made") }
+        .onDisappear { colLog("field: gone") }
         if let queue = composer.queue {
           Menu {
             Button {

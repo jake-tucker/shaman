@@ -1,0 +1,18 @@
+------- TWO
+013.910 columns made, path ["session(workstation-key/7)"]
+013.935 pose: fold 458.0-498.0 of 956.0
+013.935 pose: bottom safe area 34.0
+013.943 display mode -> 2
+013.944 collapsing, top main collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+013.955 nav sidebar willShow UINavigationController, toolbar items -1
+014.019 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+014.038 nav main didShow session(workstation-key/7) collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+014.167 columns appeared collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+014.547 field: made
+022.296 field: focus taken
+022.428 pose: bottom safe area 347.0
+022.460 field: made
+022.469 field: gone
+022.511 pose: bottom safe area 34.0
+022.547 field: made
+022.549 field: gone

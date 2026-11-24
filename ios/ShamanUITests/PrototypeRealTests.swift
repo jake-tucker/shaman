@@ -335,7 +335,7 @@ final class PrototypeRealTests: XCTestCase {
   }
 
   /// Launches the app as the Mac asks (`PROTO_ARGS`) and does what it is told, one command at a time, from the file
-  /// /tmp/duo731/cmd, which it removes once done: `tap <identifier>`, `label <button's label>`, `holding <words>`
+  /// /tmp/duo732/cmd, which it removes once done: `tap <identifier>`, `label <button's label>`, `holding <words>`
   /// (taps the first element whose label holds them), `turn <left|upright>`, `back`, `swipe <from> <to>` (across the
   /// window's middle, as shares of its width), `focus`, `type <words>`, `has <identifier>`, `buttons`, `quit`.
   @MainActor
@@ -345,9 +345,9 @@ final class PrototypeRealTests: XCTestCase {
     app.launchArguments = (environment["PROTO_ARGS"] ?? "--fake paired").split(separator: " ").map(String.init)
       + ["--forget-scene"]
     app.launch()
-    let command = "/tmp/duo731/cmd"
+    let command = "/tmp/duo732/cmd"
     try? FileManager.default.removeItem(atPath: command)
-    FileManager.default.createFile(atPath: "/tmp/duo731/ready", contents: Data())
+    FileManager.default.createFile(atPath: "/tmp/duo732/ready", contents: Data())
     let deadline = Date().addingTimeInterval(2400)
     while Date() < deadline {
       guard let told = try? String(contentsOfFile: command, encoding: .utf8) else {
@@ -385,6 +385,14 @@ final class PrototypeRealTests: XCTestCase {
       case "focus":
         let found = app.descendants(matching: .any).matching(identifier: "session.composer").firstMatch
         if found.waitForExistence(timeout: 5) { found.tap() } else { said = "no composer" }
+      case "focused":
+        let field = app.descendants(matching: .any).matching(identifier: "session.composer").firstMatch
+        guard field.waitForExistence(timeout: 3) else {
+          said = "no composer"
+          break
+        }
+        let has = (field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false
+        said = "focus=\(has) keyboards=\(app.keyboards.count) field=\(Int(field.frame.minY))-\(Int(field.frame.maxY)) value=\(String(describing: field.value).prefix(60))"
       case "type":
         app.typeText(rest)
       case "has":
@@ -415,7 +423,7 @@ final class PrototypeRealTests: XCTestCase {
       default:
         said = "unknown"
       }
-      try? said.write(toFile: "/tmp/duo731/said", atomically: true, encoding: .utf8)
+      try? said.write(toFile: "/tmp/duo732/said", atomically: true, encoding: .utf8)
       try? FileManager.default.removeItem(atPath: command)
     }
   }

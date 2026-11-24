@@ -1,0 +1,68 @@
+908.915 columns made, path ["session(workstation-key/7)"]
+908.940 pose: fold 458.0-498.0 of 956.0
+908.941 pose: bottom safe area 34.0
+908.949 holder: raising the inspector's own aside below the fold
+908.950 holder: below 498-956 of 956
+908.950 display mode -> 2
+908.951 collapsing, top main collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+908.954 nav sidebar willShow UINavigationController, toolbar items -1
+909.034 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+909.114 nav main didShow session(workstation-key/7) collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+909.234 columns appeared collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+909.434 field: made
+909.435 holder: below 498-900 of 956
+------- x-over-moved upright
+915.499 viewWillTransition to 956x440 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+915.536 nav sidebar willShow listing, toolbar items -1
+915.540 nav sidebar didShow listing collapsed=true mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+915.541 pose: fold none
+915.541 pose: bottom safe area 20.0
+915.543 holder: taking the aside below the fold away
+915.545 holder: below none of 440
+916.441 didExpand collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+920.857 showing the aside at the reader
+920.858 display mode -> 1
+------- x-over-moved landscape, aside shown
+924.880 viewWillTransition to 440x956 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=true
+924.895 display mode -> 2
+924.895 collapsing, top main collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+924.908 pose: fold 458.0-498.0 of 956.0
+924.908 pose: bottom safe area 34.0
+924.909 holder: raising the inspector's own aside below the fold
+924.915 holder: below 498-900 of 956
+924.950 nav sidebar willShow UINavigationController, toolbar items -1
+925.092 nav sidebar didShow UINavigationController collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+925.422 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+------- x-over-moved upright again
+933.366 viewWillTransition to 956x440 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+933.390 nav sidebar willShow listing, toolbar items 5
+933.397 nav sidebar didShow listing collapsed=true mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+933.399 pose: fold none
+933.399 pose: bottom safe area 20.0
+933.400 holder: taking the aside below the fold away
+933.401 display mode -> 1
+933.402 holder: below none of 440
+934.016 didExpand collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=true
+------- x-over-moved landscape, pushed
+937.431 viewWillTransition to 440x956 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=true
+937.444 display mode -> 2
+937.444 collapsing, top main collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+937.454 pose: fold 458.0-498.0 of 956.0
+937.454 pose: bottom safe area 34.0
+937.455 holder: raising the inspector's own aside below the fold
+937.461 holder: below 498-900 of 956
+937.480 nav sidebar willShow UINavigationController, toolbar items -1
+937.583 nav sidebar didShow UINavigationController collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+937.918 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+------- x-over-moved upright, pushed
+------- x-over-moved focus
+943.787 field: focus taken
+943.916 pose: bottom safe area 347.0
+943.960 holder: taking the aside below the fold away
+943.962 holder: below none of 956
+950.994 pose: bottom safe area 34.0
+951.024 holder: raising the inspector's own aside below the fold
+951.031 holder: below 498-900 of 956
+952.145 pose: bottom safe area 347.0
+952.221 holder: taking the aside below the fold away
+952.223 holder: below none of 956

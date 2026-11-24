@@ -8,8 +8,8 @@
 // screens as it says it did show one.
 //
 // `--container <uikit|swiftui>` chooses the container, and `--tree-badge` the tree button #716 decided. So that the
-// UI suite runs unchanged, a simulator also reads both words from /tmp/duo731/config-<its UDID>, or
-// /tmp/duo731/config, where no argument says. Every event is a line in /tmp/duo731/app.log.
+// UI suite runs unchanged, a simulator also reads both words from /tmp/duo732/config-<its UDID>, or
+// /tmp/duo732/config, where no argument says. Every event is a line in /tmp/duo732/app.log.
 
 import ShamanCore
 import SwiftUI
@@ -27,7 +27,7 @@ enum Columns {
     #if targetEnvironment(simulator)
       let udid = ProcessInfo.processInfo.environment["SIMULATOR_UDID"] ?? ""
       for name in ["config-\(udid)", "config"] {
-        if let said = try? String(contentsOfFile: "/tmp/duo731/\(name)", encoding: .utf8) {
+        if let said = try? String(contentsOfFile: "/tmp/duo732/\(name)", encoding: .utf8) {
           words += said.split(whereSeparator: \.isWhitespace).map(String.init)
           break
         }
@@ -53,7 +53,7 @@ enum Columns {
 
 func colLog(_ line: String) {
   #if targetEnvironment(simulator)
-    let url = URL(fileURLWithPath: "/tmp/duo731/app.log")
+    let url = URL(fileURLWithPath: "/tmp/duo732/app.log")
     let stamp = String(format: "%07.3f", Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 1000))
     let data = Data("\(stamp) \(line)\n".utf8)
     if let handle = try? FileHandle(forWritingTo: url) {
@@ -143,7 +143,11 @@ final class RealColumns: UISplitViewController, UISplitViewControllerDelegate, U
   let sidebar = UINavigationController()
   let main = UINavigationController()
   private let listing: ScreenHost
-  private lazy var aside = UIHostingController(rootView: screens.aside())
+  private(set) lazy var aside: UIViewController = UIHostingController(rootView: screens.aside())
+  /// PROTOTYPE #732: told as the split view changes which columns stand, and asked whether the Aside's view
+  /// controller stands below the fold, lent to whoever lays that half out.
+  var modeChanged: (() -> Void)?
+  var lent: (() -> Bool)?
   /// How often the reader came back to the listing while it stood alone.
   private(set) var returned = 0
 
@@ -266,6 +270,11 @@ final class RealColumns: UISplitViewController, UISplitViewControllerDelegate, U
     let want = state.wanted && open && tiles
     if want {
       // The column holds the Aside only while the reader has it shown: a view controller set in it is shown.
+      if lent?() == true {
+        colLog("the aside is lent below the fold; the column waits")
+        said()
+        return
+      }
       if viewController(for: .inspector) == nil { setViewController(aside, for: .inspector) }
       if !isShowing(.inspector) {
         colLog("showing the aside at \(why)")
@@ -291,6 +300,17 @@ final class RealColumns: UISplitViewController, UISplitViewControllerDelegate, U
     let over = displayMode == .oneOverSecondary || displayMode == .twoOverSecondary
     let alone = isCollapsed || over
     if proto.listingSaysNotice != alone { proto.listingSaysNotice = alone }
+  }
+
+  /// PROTOTYPE #732: the Aside's view controller given back by whoever stood it below the fold.
+  func given() { reconcile("the aside given back") }
+
+  /// PROTOTYPE #732: a second hosted Aside, over the same state.
+  func secondAside() -> UIViewController { UIHostingController(rootView: screens.aside()) }
+
+  func splitViewController(_ svc: UISplitViewController, willChangeTo mode: UISplitViewController.DisplayMode) {
+    colLog("display mode -> \(mode.rawValue)")
+    modeChanged?()
   }
 
   // MARK: What the system says
@@ -374,9 +394,16 @@ struct RealColumnsHost: UIViewControllerRepresentable {
   let stack: SessionStack
   let screens: RealColumns.Screens
 
-  func makeUIViewController(context: Context) -> RealColumns { RealColumns(stack: stack, screens: screens) }
+  func makeUIViewController(context: Context) -> UIViewController {
+    let columns = RealColumns(stack: stack, screens: screens)
+    guard LaptopC.over else { return columns }
+    // PROTOTYPE #732: the split view in a plain container, which lays the Aside over the half below the fold.
+    return LaptopHolder(columns: columns, second: LaptopC.below == .overSecond ? columns.secondAside() : nil)
+  }
 
-  func updateUIViewController(_ controller: RealColumns, context: Context) { controller.update(screens) }
+  func updateUIViewController(_ controller: UIViewController, context: Context) {
+    ((controller as? LaptopHolder)?.columns ?? controller as? RealColumns)?.update(screens)
+  }
 }
 
 /// The Aside's column: the Session on top of the main view's, and nothing while none is open.

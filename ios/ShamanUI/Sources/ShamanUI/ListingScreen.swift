@@ -90,7 +90,14 @@ struct ListingScreen: View {
               hosted: core, appVersion: appVersion, beginsIn: beginsIn, invite: invite, model: model, stack: stack),
             nil)
         },
-        pushed: { pushed, pushes in given(destination(pushed), pushes) },
+        pushed: { pushed, pushes in
+          let footed: Bool =
+            switch pushed {
+            case .session, .landing: true
+            case .work, .detail: false
+            }
+          return given(destination(pushed).modifier(LaptopLower(stack: stack, footed: footed)), pushes)
+        },
         resting: { route, pushes in
           given(
             NewSessionScreen(model: stack.landing(for: route), stack: stack, arrivesWriting: false).noticeBanner(),
@@ -100,6 +107,13 @@ struct ListingScreen: View {
         wrap: { view, pushes in given(view, pushes) })
     )
     .ignoresSafeArea()
+    // PROTOTYPE #732: the pose and the keyboard, read above the container and handed to its screens as values.
+    .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: {
+      colLog("pose: bottom safe area \($0)")
+      ProtoL.shared.rootBottom = $0
+    }
+    .background { LaptopPoseReader() }
+    .onChange(of: stack.topSession?.route, initial: true) { _, route in ProtoL.shared.sessionUp = route != nil }
     .task { await model.follow(restoring: restoring) }
     .onChange(of: kept, initial: true) { _, kept in keep(kept) }
   }

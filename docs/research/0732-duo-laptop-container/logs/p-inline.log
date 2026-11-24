@@ -1,0 +1,30 @@
+033.238 columns made, path ["session(workstation-key/7)"]
+033.271 pose: fold none
+033.271 pose: bottom safe area 34.0
+033.281 display mode -> 2
+033.281 collapsing, top main collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+033.294 nav sidebar willShow UINavigationController, toolbar items -1
+033.366 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+033.381 nav main didShow session(workstation-key/7) collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+033.497 columns appeared collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+033.717 field: made
+040.642 sync ["session(workstation-key/7)"] -> ["session(workstation-key/7)", "work"] collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+041.205 nav main didShow work collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)", "work"] aside=false
+041.224 field: gone
+043.932 viewWillTransition to 956x440 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)", "work"] aside=false
+043.953 nav sidebar willShow listing, toolbar items -1
+043.956 nav sidebar didShow listing collapsed=true mode=2 sidebar=["listing"] main=["session(workstation-key/7)", "work"] aside=false
+043.957 pose: bottom safe area 20.0
+044.708 didExpand collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/7)", "work"] aside=false
+047.723 viewWillTransition to 440x956 collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/7)", "work"] aside=false
+047.724 display mode -> 1
+047.739 display mode -> 2
+047.739 collapsing, top main collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)", "work"] aside=false
+047.745 nav sidebar willShow UINavigationController, toolbar items -1
+047.760 nav sidebar didShow UINavigationController collapsed=false mode=1 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)", "work"] aside=false
+047.762 pose: fold 458.0-498.0 of 956.0
+047.762 pose: bottom safe area 34.0
+048.315 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)", "work"] aside=false
+053.387 field: made
+053.936 nav main didShow session(workstation-key/7) collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+053.936 read back ["session(workstation-key/7)", "work"] -> ["session(workstation-key/7)"]

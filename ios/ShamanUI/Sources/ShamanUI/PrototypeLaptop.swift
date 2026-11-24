@@ -99,7 +99,8 @@ final class ProtoL {
     func value(_ flag: String) -> String? {
       arguments.firstIndex(of: flag).flatMap { arguments.dropFirst($0 + 1).first }
     }
-    variant = value("--laptop").flatMap(Variant.init) ?? .asis
+    // PROTOTYPE #732: under the UIKit container the arrangement #718 chose is the default.
+    variant = value("--laptop").flatMap(Variant.init) ?? (Columns.uikit && !Columns.stack ? .work : .asis)
     composer = value("--laptop-composer").flatMap(Composer.init) ?? .under
     styled = value("--laptop-arrangement").flatMap(Styled.init) ?? .split
     deckComposer = value("--laptop-deck-composer").flatMap(DeckComposer.init) ?? .bottom

@@ -200,6 +200,12 @@ final class AsideState {
     self.root = root
     path = []
     chosen = true
+    // PROTOTYPE #732: below the fold a choice changes what the Aside holds and never whether it is shown beside the
+    // main view, as #726 decided.
+    if Columns.uikit, ProtoL.shared.deck != nil {
+      changed?()
+      return
+    }
     wanted = true
     if changed == nil { presented = true }
     changed?()

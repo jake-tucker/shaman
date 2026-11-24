@@ -1,0 +1,132 @@
+788.854 columns made, path []
+788.942 pose: fold none
+788.943 pose: bottom safe area 34.0
+788.957 display mode -> 2
+788.959 collapsing, top sidebar collapsed=false mode=1 sidebar=["listing"] main=["resting"] aside=false
+788.996 didCollapse collapsed=true mode=2 sidebar=["listing"] main=["resting"] aside=false
+789.020 nav sidebar willShow listing, toolbar items -1
+789.032 nav sidebar didShow listing collapsed=true mode=2 sidebar=["listing"] main=["resting"] aside=false
+789.700 columns appeared collapsed=true mode=2 sidebar=["listing"] main=["resting"] aside=false
+796.487 columns made, path ["session(workstation-key/7)"]
+796.514 pose: fold 458.0-498.0 of 956.0
+796.514 pose: bottom safe area 34.0
+796.523 display mode -> 2
+796.523 collapsing, top main collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+796.541 nav sidebar willShow UINavigationController, toolbar items -1
+796.654 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+796.671 nav main didShow session(workstation-key/7) collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+796.806 columns appeared collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+797.392 field: made
+------- x-inline upright
+804.451 viewWillTransition to 956x440 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+804.483 nav sidebar willShow listing, toolbar items -1
+804.487 nav sidebar didShow listing collapsed=true mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+804.488 pose: fold none
+804.489 pose: bottom safe area 20.0
+805.472 didExpand collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+809.978 showing the aside at the reader
+809.979 display mode -> 1
+------- x-inline landscape, aside shown
+813.947 viewWillTransition to 440x956 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=true
+813.959 display mode -> 2
+813.960 collapsing, top main collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+813.971 pose: fold 458.0-498.0 of 956.0
+813.972 pose: bottom safe area 34.0
+813.981 nav sidebar willShow UINavigationController, toolbar items -1
+814.192 nav sidebar didShow UINavigationController collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+814.523 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+------- x-inline upright again
+822.098 viewWillTransition to 956x440 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+822.127 nav sidebar willShow listing, toolbar items 5
+822.138 nav sidebar didShow listing collapsed=true mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+822.140 pose: fold none
+822.140 pose: bottom safe area 20.0
+822.822 didExpand collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+822.823 showing the aside at didExpand
+822.823 showing the aside at the size transition's end
+822.828 display mode -> 1
+------- x-inline landscape, pushed
+826.486 viewWillTransition to 440x956 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=true
+826.500 display mode -> 2
+826.500 collapsing, top main collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+826.510 pose: fold 458.0-498.0 of 956.0
+826.510 pose: bottom safe area 34.0
+826.519 nav sidebar willShow UINavigationController, toolbar items -1
+826.668 nav sidebar didShow UINavigationController collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+826.993 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+------- x-inline upright, pushed
+------- x-inline focus
+832.512 field: focus taken
+832.736 pose: bottom safe area 347.0
+840.247 pose: bottom safe area 34.0
+841.454 pose: bottom safe area 347.0
+852.984 columns made, path ["session(workstation-key/7)"]
+853.010 pose: fold 458.0-498.0 of 956.0
+853.010 pose: bottom safe area 34.0
+853.019 holder: raising a second aside below the fold
+853.020 holder: below 498-956 of 956
+853.021 display mode -> 2
+853.021 collapsing, top main collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+853.029 nav sidebar willShow UINavigationController, toolbar items -1
+853.109 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+853.190 nav main didShow session(workstation-key/7) collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+853.305 columns appeared collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+853.546 field: made
+853.547 holder: below 498-900 of 956
+------- x-over-second upright
+860.160 viewWillTransition to 956x440 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+860.199 nav sidebar willShow listing, toolbar items -1
+860.202 nav sidebar didShow listing collapsed=true mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+860.204 pose: fold none
+860.204 pose: bottom safe area 20.0
+860.205 holder: taking the aside below the fold away
+860.206 holder: below none of 440
+861.102 didExpand collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+865.543 showing the aside at the reader
+865.544 display mode -> 1
+------- x-over-second landscape, aside shown
+869.709 viewWillTransition to 440x956 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=true
+869.725 display mode -> 2
+869.725 collapsing, top main collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+869.739 pose: fold 458.0-498.0 of 956.0
+869.739 pose: bottom safe area 34.0
+869.740 holder: raising a second aside below the fold
+869.746 holder: below 498-900 of 956
+869.785 nav sidebar willShow UINavigationController, toolbar items -1
+869.944 nav sidebar didShow UINavigationController collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+870.267 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+------- x-over-second upright again
+877.711 viewWillTransition to 956x440 collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+877.739 nav sidebar willShow listing, toolbar items 5
+877.747 nav sidebar didShow listing collapsed=true mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+877.749 pose: fold none
+877.749 pose: bottom safe area 20.0
+877.751 holder: taking the aside below the fold away
+877.752 holder: below none of 440
+878.339 didExpand collapsed=false mode=2 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+878.340 showing the aside at didExpand
+878.341 showing the aside at the size transition's end
+878.342 display mode -> 1
+------- x-over-second landscape, pushed
+882.004 viewWillTransition to 440x956 collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=true
+882.019 display mode -> 2
+882.020 collapsing, top main collapsed=false mode=1 sidebar=["listing"] main=["session(workstation-key/7)"] aside=false
+882.032 pose: fold 458.0-498.0 of 956.0
+882.032 pose: bottom safe area 34.0
+882.033 holder: raising a second aside below the fold
+882.039 holder: below 498-900 of 956
+882.059 nav sidebar willShow UINavigationController, toolbar items -1
+882.162 nav sidebar didShow UINavigationController collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+882.493 didCollapse collapsed=true mode=2 sidebar=["listing", "UINavigationController"] main=["session(workstation-key/7)"] aside=false
+------- x-over-second upright, pushed
+------- x-over-second focus
+887.809 field: focus taken
+887.935 pose: bottom safe area 347.0
+887.980 holder: taking the aside below the fold away
+887.981 holder: below none of 956
+895.230 pose: bottom safe area 34.0
+895.257 holder: raising a second aside below the fold
+895.265 holder: below 498-900 of 956
+896.399 pose: bottom safe area 347.0
+896.475 holder: taking the aside below the fold away
+896.476 holder: below none of 956
