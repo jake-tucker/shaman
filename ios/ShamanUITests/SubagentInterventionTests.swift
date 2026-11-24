@@ -21,14 +21,6 @@ final class SubagentInterventionTests: XCTestCase {
   }
 
   @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
-  @MainActor
   private func elements(_ identifier: String, in app: XCUIApplication) -> XCUIElementQuery {
     app.descendants(matching: .any).matching(identifier: identifier)
   }
@@ -55,15 +47,6 @@ final class SubagentInterventionTests: XCTestCase {
     XCTAssertTrue(said.waitForExistence(timeout: 10), "the bar reads \(words)")
   }
 
-  /// Swipes the sheet away by its grabber, as a reader does.
-  @MainActor
-  private func swipeAway(in app: XCUIApplication) {
-    let grabber = app.buttons["Sheet Grabber"]
-    XCTAssertTrue(grabber.waitForExistence(timeout: 5))
-    grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-      .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.99)))
-  }
-
   @MainActor
   func testASubagentsApprovalMarksTheParentsBarOnceItsOwnIsDismissedAndReviewLeadsToItsSession() {
     let app = launched("subagentWaits")
@@ -72,21 +55,21 @@ final class SubagentInterventionTests: XCTestCase {
     let sheet = app.otherElements["approval.sheet"]
     XCTAssertTrue(sheet.waitForExistence(timeout: 10))
     XCTAssertTrue(element("approval.fact", holding: "git stash list", in: app).exists, "the parent's own")
-    swipeAway(in: app)
+    app.swipeSheetAway()
     XCTAssertTrue(sheet.waitForNonExistence(timeout: 10))
 
     // Dismissed, the Subagent's shows on the bar, and no sheet presents itself for it.
     bar("Explorer needs approval", in: app)
     XCTAssertFalse(sheet.waitForExistence(timeout: 2), "no sheet over a session for one not its own")
-    attach(app, "A subagent's approval on the parent's bar")
+    attach("A subagent's approval on the parent's bar")
 
     // Its row among the Turn's work says so.
     elements("session.turn", in: app).firstMatch.tap()
     let row = element("work.row", holding: "Explorer", in: app)
     XCTAssertTrue(row.waitForExistence(timeout: 10))
     XCTAssertTrue(row.label.contains("Needs approval"), row.label)
-    attach(app, "A subagent's row needing the reader")
-    app.navigationBars.buttons.element(boundBy: 0).tap()
+    attach("A subagent's row needing the reader")
+    app.back.tap()
 
     // Review pushes the Subagent's Session, where its sheet presents itself.
     let review = app.buttons["session.review"]
@@ -95,7 +78,7 @@ final class SubagentInterventionTests: XCTestCase {
     titled("Find what held the lock", in: app)
     XCTAssertTrue(sheet.waitForExistence(timeout: 10))
     XCTAssertTrue(element("approval.fact", holding: "rg session.lock", in: app).exists, "the Subagent's own")
-    attach(app, "A subagent's approval in its own session")
+    attach("A subagent's approval in its own session")
 
     // Answered there, the reader stays there.
     let accept = app.buttons["approval.acceptOnce"]
@@ -107,10 +90,10 @@ final class SubagentInterventionTests: XCTestCase {
     titled("Find what held the lock", in: app)
     XCTAssertFalse(sheet.waitForExistence(timeout: 2))
     XCTAssertFalse(app.buttons["session.review"].exists)
-    attach(app, "After answering in a subagent's session")
+    attach("After answering in a subagent's session")
 
     // Back at the parent, its own waits behind Review again.
-    app.navigationBars.buttons.element(boundBy: 0).tap()
+    app.back.tap()
     titled("Find what holds the session lock", in: app)
     bar("Approval waiting", in: app)
   }
@@ -121,14 +104,14 @@ final class SubagentInterventionTests: XCTestCase {
     bar("2 subagents need you", in: app)
     XCTAssertFalse(app.otherElements["approval.sheet"].exists)
     XCTAssertFalse(app.otherElements["questionnaire.sheet"].exists)
-    attach(app, "Two subagents waiting on the parent's bar")
+    attach("Two subagents waiting on the parent's bar")
 
     // Explorer's row says what waits in it and beneath it.
     elements("session.turn", in: app).firstMatch.tap()
     let row = element("work.row", holding: "Explorer", in: app)
     XCTAssertTrue(row.waitForExistence(timeout: 10))
     XCTAssertTrue(row.label.contains("Needs you"), row.label)
-    app.navigationBars.buttons.element(boundBy: 0).tap()
+    app.back.tap()
 
     app.buttons["session.review"].tap()
     let explorer = element("tree.row", holding: "Find what held the lock", in: app)
@@ -136,13 +119,13 @@ final class SubagentInterventionTests: XCTestCase {
     XCTAssertTrue(explorer.label.contains("Needs approval"), explorer.label)
     let grepper = element("tree.row", holding: "Grep the logs for the lock", in: app)
     XCTAssertTrue(grepper.label.contains("Needs an answer"), grepper.label)
-    attach(app, "The tree saying what each subagent waits on")
+    attach("The tree saying what each subagent waits on")
 
     // Chosen there, its sheet presents itself in its own Session.
     grepper.tap()
     titled("Grep the logs for the lock", in: app)
     XCTAssertTrue(app.otherElements["questionnaire.sheet"].waitForExistence(timeout: 10))
-    attach(app, "A subagent's questionnaire in its own session")
+    attach("A subagent's questionnaire in its own session")
   }
 
   /// Asserts the element `identifier` names stands whole within the screen.
@@ -150,7 +133,7 @@ final class SubagentInterventionTests: XCTestCase {
   private func onScreen(_ identifier: String, in app: XCUIApplication, _ said: String) {
     let element = elements(identifier, in: app).firstMatch
     XCTAssertTrue(element.waitForExistence(timeout: 10), "\(said) stands")
-    let screen = app.windows.firstMatch.frame
+    let screen = app.window.frame
     XCTAssertTrue(screen.contains(element.frame), "\(said) stands on screen: \(element.frame) in \(screen)")
     XCTAssertTrue(element.isHittable, "\(said) takes a tap")
   }
@@ -164,8 +147,8 @@ final class SubagentInterventionTests: XCTestCase {
     onScreen("session.review", in: app, "Review")
     onScreen("session.stop", in: app, "Stop")
     onScreen("session.send", in: app, "Send")
-    XCTAssertTrue(app.windows.firstMatch.frame.contains(words.frame), "the words are cut short within the bar")
-    attach(app, "A bar naming a subagent by a long name")
+    XCTAssertTrue(app.window.frame.contains(words.frame), "the words are cut short within the bar")
+    attach("A bar naming a subagent by a long name")
 
     // Answered in its Session, the parent waits on two; with one stopped, the bar names the one left.
     app.buttons["session.review"].tap()
@@ -175,7 +158,7 @@ final class SubagentInterventionTests: XCTestCase {
     waitForExpectations(timeout: 5)
     accept.tap()
     XCTAssertTrue(app.otherElements["approval.sheet"].waitForNonExistence(timeout: 10))
-    app.navigationBars.buttons.element(boundBy: 0).tap()
+    app.back.tap()
     titled("Find what holds the session lock", in: app)
     bar("Waiting on 2 subagents", in: app)
     app.buttons["session.tree"].tap()
@@ -193,6 +176,6 @@ final class SubagentInterventionTests: XCTestCase {
     XCTAssertTrue(waiting.waitForExistence(timeout: 10))
     onScreen("session.stop", in: app, "Stop")
     onScreen("session.send", in: app, "Send")
-    attach(app, "A bar waiting on a subagent by a long name")
+    attach("A bar waiting on a subagent by a long name")
   }
 }

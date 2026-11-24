@@ -20,14 +20,6 @@ final class PairingTests: XCTestCase {
     return app
   }
 
-  @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
   /// Pastes `text` as the user would, through the paste button.
   @MainActor
   private func paste(_ text: String, in app: XCUIApplication) {
@@ -58,14 +50,7 @@ final class PairingTests: XCTestCase {
   @MainActor
   private func shown(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
     XCTAssertTrue(app.navigationBars["Pair"].waitForExistence(timeout: 10), "the confirmation screen")
-    let element = app.descendants(matching: .any)[identifier]
-    var swipes = 0
-    while !(element.exists && element.isHittable) && swipes < 5 {
-      app.swipeUp()
-      swipes += 1
-    }
-    XCTAssertTrue(element.waitForExistence(timeout: 10), identifier)
-    return element
+    return app.scrolled(to: app.descendants(matching: .any)[identifier])
   }
 
   @MainActor
@@ -82,7 +67,7 @@ final class PairingTests: XCTestCase {
     XCTAssertFalse(app.descendants(matching: .any)["confirm.held"].exists)
     XCTAssertEqual(app.textFields["confirm.remoteName"].value as? String, "workstation", "offered from the hostname")
     XCTAssertEqual(app.textFields["confirm.deviceName"].value as? String, "iPhone")
-    attach(app, "Confirming a pasted invite")
+    attach("Confirming a pasted invite")
 
     replace(app.textFields["confirm.remoteName"], with: "desk")
     replace(app.textFields["confirm.deviceName"], with: "Pocket")
@@ -91,7 +76,7 @@ final class PairingTests: XCTestCase {
     let beginsIn = app.descendants(matching: .any)["home.beginsIn"]
     XCTAssertTrue(beginsIn.waitForExistence(timeout: 10), "the Outlook turned toward the new Remote")
     XCTAssertEqual(beginsIn.label, "New sessions begin in desk")
-    attach(app, "Landed on the new Remote")
+    attach("Landed on the new Remote")
 
     app.buttons["home.servers"].tap()
     XCTAssertTrue(app.navigationBars["Servers & device"].waitForExistence(timeout: 10))
@@ -103,7 +88,7 @@ final class PairingTests: XCTestCase {
     let notAnswering = app.descendants(matching: .any)["server.desk.way.1"]
     XCTAssertTrue(notAnswering.label.hasSuffix("not answering"), notAnswering.label)
     XCTAssertEqual(app.textFields["device.name"].value as? String, "Pocket", "the name chosen is kept")
-    attach(app, "The Remote with its ways")
+    attach("The Remote with its ways")
   }
 
   @MainActor
@@ -114,7 +99,7 @@ final class PairingTests: XCTestCase {
     XCTAssertTrue(unreadable.waitForExistence(timeout: 10))
     XCTAssertEqual(unreadable.label, "Invite must start with `shaman-`; was all of it copied?")
     XCTAssertFalse(app.buttons["confirm.pair"].exists)
-    attach(app, "A malformed invite")
+    attach("A malformed invite")
 
     app.buttons["confirm.scanAgain"].tap()
     XCTAssertTrue(app.buttons["pairing.paste"].waitForExistence(timeout: 10))
@@ -124,19 +109,21 @@ final class PairingTests: XCTestCase {
   func testAPairingNoWayAnsweredStaysWithTryAgain() {
     let app = launched("fresh")
     paste("shaman-v1-unanswered", in: app)
+    XCTAssertEqual(hostname(in: app), "workstation")
     shown("confirm.pair", in: app).tap()
     let failure = app.staticTexts["confirm.failure"]
     XCTAssertTrue(failure.waitForExistence(timeout: 10))
     XCTAssertTrue(failure.label.hasPrefix("No way this invite offers answered"), failure.label)
-    XCTAssertTrue(shown("confirm.tryAgain", in: app).exists)
     XCTAssertEqual(hostname(in: app), "workstation", "still on the confirmation screen")
-    attach(app, "No way answered")
+    XCTAssertTrue(shown("confirm.tryAgain", in: app).exists)
+    attach("No way answered")
   }
 
   @MainActor
   func testADeadInviteStaysWithTheServersWordsAndScanAgain() {
     let app = launched("fresh")
     paste("shaman-v1-dead", in: app)
+    XCTAssertEqual(hostname(in: app), "workstation")
     shown("confirm.pair", in: app).tap()
     let failure = app.staticTexts["confirm.failure"]
     XCTAssertTrue(failure.waitForExistence(timeout: 10))
@@ -158,8 +145,8 @@ final class PairingTests: XCTestCase {
     let held = app.descendants(matching: .any)["confirm.held"]
     XCTAssertTrue(held.waitForExistence(timeout: 10))
     XCTAssertTrue(held.label.contains("already paired with this server as workstation"), held.label)
-    XCTAssertEqual(app.textFields["confirm.remoteName"].value as? String, "workstation", "pre-filled")
-    attach(app, "An invite from a server already held")
+    XCTAssertEqual(shown("confirm.remoteName", in: app).value as? String, "workstation", "pre-filled")
+    attach("An invite from a server already held")
 
     replace(app.textFields["confirm.remoteName"], with: "studio")
     shown("confirm.pair", in: app).tap()
@@ -185,7 +172,7 @@ final class PairingTests: XCTestCase {
     let scan = app.buttons["pairing.scan"]
     XCTAssertTrue(scan.waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["pairing.paste"].exists, "paste is offered beside scan")
-    attach(app, "Scan and paste")
+    attach("Scan and paste")
     scan.tap()
 
     XCTAssertTrue(app.staticTexts["scan.looking"].waitForExistence(timeout: 10))
@@ -193,11 +180,11 @@ final class PairingTests: XCTestCase {
     let passedOver = app.staticTexts["scan.passedOver"]
     XCTAssertTrue(passedOver.waitForExistence(timeout: 10), "what is no invite is passed over")
     XCTAssertTrue(app.staticTexts["scan.looking"].exists, "and it keeps scanning")
-    attach(app, "Scanning past a code that is no invite")
+    attach("Scanning past a code that is no invite")
 
     XCTAssertEqual(hostname(in: app), "workstation", "the first invite read goes to its confirmation")
     XCTAssertTrue(app.staticTexts["scan.looking"].waitForNonExistence(timeout: 10), "the scanner is covered")
-    attach(app, "Confirming a scanned invite")
+    attach("Confirming a scanned invite")
     shown("confirm.pair", in: app).tap()
     let beginsIn = app.descendants(matching: .any)["home.beginsIn"]
     XCTAssertTrue(beginsIn.waitForExistence(timeout: 10))
@@ -210,6 +197,7 @@ final class PairingTests: XCTestCase {
     let scan = app.buttons["pairing.scan"]
     XCTAssertTrue(scan.waitForExistence(timeout: 10))
     scan.tap()
+    XCTAssertEqual(hostname(in: app), "workstation")
     shown("confirm.pair", in: app).tap()
     let failure = app.staticTexts["confirm.failure"]
     XCTAssertTrue(failure.waitForExistence(timeout: 10))
@@ -217,9 +205,9 @@ final class PairingTests: XCTestCase {
     shown("confirm.scanAgain", in: app).tap()
 
     XCTAssertTrue(app.staticTexts["scan.looking"].waitForExistence(timeout: 10), "back at the scanner")
-    XCTAssertTrue(shown("confirm.pair", in: app).exists, "which read the next invite")
+    XCTAssertEqual(hostname(in: app), "workstation", "which read the next invite")
     XCTAssertFalse(app.staticTexts["confirm.failure"].exists)
-    app.buttons["confirm.pair"].tap()
+    shown("confirm.pair", in: app).tap()
     XCTAssertTrue(app.descendants(matching: .any)["home.beginsIn"].waitForExistence(timeout: 10))
   }
 
@@ -234,15 +222,15 @@ final class PairingTests: XCTestCase {
     scan.tap()
     XCTAssertEqual(hostname(in: app), "workstation")
 
-    let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+    let edge = app.point(across: 0.01, down: 0.5)
     edge.press(
-      forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)),
+      forDuration: 0.05, thenDragTo: app.point(across: 0.3, down: 0.5),
       withVelocity: .slow, thenHoldForDuration: 2.5)
     XCTAssertTrue(app.descendants(matching: .any)["confirm.hostname"].waitForExistence(timeout: 5), "swipe given up")
     // The fake scanner, were it scanning while the swipe held, would have held up the next Invite a second after it
     // saw this one again.
 
-    app.navigationBars.buttons.firstMatch.tap()
+    app.back.tap()
     XCTAssertTrue(app.staticTexts["scan.looking"].waitForExistence(timeout: 10), "one back reaches the scanner")
     XCTAssertFalse(app.descendants(matching: .any)["confirm.hostname"].exists, "no second confirmation was pushed")
     XCTAssertEqual(hostname(in: app), "workstation", "the next Invite is taken")
@@ -258,7 +246,7 @@ final class PairingTests: XCTestCase {
     XCTAssertTrue(failed.waitForExistence(timeout: 10))
     XCTAssertEqual(failed.label, "The camera stopped scanning. Paste the invite instead.")
     XCTAssertFalse(app.staticTexts["scan.looking"].exists)
-    attach(app, "The camera failed")
+    attach("The camera failed")
 
     UIPasteboard.general.string = invite
     app.buttons["scan.paste"].tap()
@@ -278,7 +266,7 @@ final class PairingTests: XCTestCase {
       refused.label, "Shaman may not use the camera. Allow it in the Settings app to scan, or paste the invite.")
     XCTAssertTrue(app.buttons["pairing.openSettings"].exists)
     XCTAssertFalse(app.staticTexts["scan.looking"].exists, "no scanner opened")
-    attach(app, "The camera refused")
+    attach("The camera refused")
 
     paste(invite, in: app)
     XCTAssertEqual(hostname(in: app), "workstation")
@@ -294,7 +282,7 @@ final class PairingTests: XCTestCase {
     let unavailable = app.staticTexts["pairing.scan.unavailable"]
     XCTAssertTrue(unavailable.waitForExistence(timeout: 10))
     XCTAssertEqual(unavailable.label, "This phone has no camera that can scan. Paste the invite instead.")
-    attach(app, "No camera to scan with")
+    attach("No camera to scan with")
 
     paste(invite, in: app)
     XCTAssertEqual(hostname(in: app), "workstation")

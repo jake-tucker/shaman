@@ -17,14 +17,6 @@ final class WorkspacePickerTests: XCTestCase {
   }
 
   @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
-  @MainActor
   private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
     app.descendants(matching: .any)[identifier]
   }
@@ -52,15 +44,14 @@ final class WorkspacePickerTests: XCTestCase {
     XCTAssertEqual(elsewhere.label, "Begin somewhere else")
     elsewhere.tap()
     XCTAssertTrue(app.navigationBars["Begin in"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.cells.firstMatch.waitForExistence(timeout: 5))
   }
 
   /// Chooses the Workspace `name` on `remote` from the new-session screen, and waits on the screen standing there.
   @MainActor
   private func choose(_ remote: String, _ name: String, in app: XCUIApplication) {
     beginElsewhere(app)
-    let chosen = row(remote, name, in: app)
-    XCTAssertTrue(chosen.waitForExistence(timeout: 5))
-    chosen.tap()
+    app.scrolled(to: row(remote, name, in: app)).tap()
     let workspace = element("landing.workspace", in: app)
     let named = NSPredicate(format: "label == %@", name)
     expectation(for: named, evaluatedWith: workspace)
@@ -69,7 +60,7 @@ final class WorkspacePickerTests: XCTestCase {
 
   @MainActor
   private func back(_ app: XCUIApplication) {
-    app.navigationBars.buttons.firstMatch.tap()
+    app.back.tap()
   }
 
   @MainActor
@@ -87,8 +78,6 @@ final class WorkspacePickerTests: XCTestCase {
     beginElsewhere(app)
     let headers = app.descendants(matching: .any).matching(identifier: "picker.header")
     XCTAssertTrue(headers.firstMatch.waitForExistence(timeout: 5))
-    XCTAssertEqual(
-      headers.allElementsBoundByIndex.map(\.label), ["workstation", "laptop", "homelab"], "a header for each Remote")
     XCTAssertTrue(row("workstation", "shaman", in: app).exists)
     XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Sidekick")).firstMatch.exists)
     XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Browse")).firstMatch.exists)
@@ -98,24 +87,30 @@ final class WorkspacePickerTests: XCTestCase {
     XCTAssertFalse(row("workstation", "photo-archive", in: app).exists, "one its Server cannot read is no choice")
     archive.tap()
     XCTAssertTrue(app.navigationBars["Begin in"].exists, "and a tap on it chooses nothing")
-    attach(app, "Every remote's workspaces")
+    attach("Every remote's workspaces")
 
-    // The home lab's stand below the fold.
-    app.swipeUp()
-    XCTAssertTrue(row("homelab", "relay-infra", in: app).waitForExistence(timeout: 5))
+    // The home lab's stand further down.
+    var read: [String] = []
+    for remote in ["workstation", "laptop", "homelab"] {
+      app.scrolled(to: headers.matching(NSPredicate(format: "label == %@", remote)).firstMatch)
+      // What is drawn now begins with what of the last was still drawn.
+      let drawn = headers.allElementsBoundByIndex.map(\.label)
+      let again = (0...drawn.count).last { read.suffix($0) == drawn.prefix($0) } ?? 0
+      read += drawn.dropFirst(again)
+    }
+    XCTAssertEqual(read, ["workstation", "laptop", "homelab"], "a header for each Remote")
+    app.scrolled(to: row("homelab", "relay-infra", in: app))
     XCTAssertTrue(
       row("homelab", "home-assistant", in: app).isSelected, "the Outlook's Workspace, turned by narrowing, is ticked")
-    attach(app, "The outlook's workspace ticked")
-    XCTAssertTrue(row("laptop", "billing-api", in: app).exists)
-    row("laptop", "billing-api", in: app).tap()
+    attach("The outlook's workspace ticked")
+    app.scrolled(to: row("laptop", "billing-api", in: app)).tap()
     XCTAssertTrue(element("landing.title", in: app).waitForExistence(timeout: 5))
     XCTAssertEqual(element("landing.place", in: app).label, "laptop · billing-api")
     XCTAssertEqual(element("landing.workspace", in: app).label, "billing-api")
     XCTAssertFalse(element("landing.agent", in: app).exists, "the laptop is too old to say which Agent")
 
     beginElsewhere(app)
-    XCTAssertTrue(row("laptop", "billing-api", in: app).waitForExistence(timeout: 5))
-    XCTAssertTrue(row("laptop", "billing-api", in: app).isSelected)
+    XCTAssertTrue(app.scrolled(to: row("laptop", "billing-api", in: app)).isSelected)
     back(app)
     XCTAssertTrue(element("landing.title", in: app).waitForExistence(timeout: 5))
     back(app)
@@ -138,13 +133,13 @@ final class WorkspacePickerTests: XCTestCase {
     expectation(for: gone, evaluatedWith: row("workstation", "shaman", in: app))
     waitForExpectations(timeout: 5)
     XCTAssertTrue(row("homelab", "home-assistant", in: app).exists)
-    attach(app, "A search")
+    attach("A search")
 
     search.typeText("kernel")
     let empty = element("picker.empty", in: app)
     XCTAssertTrue(empty.waitForExistence(timeout: 5))
     XCTAssertEqual(empty.label, "No workspaces found")
-    attach(app, "A search that finds nothing")
+    attach("A search that finds nothing")
   }
 
   @MainActor
@@ -154,10 +149,10 @@ final class WorkspacePickerTests: XCTestCase {
     beginElsewhere(app)
     let header = app.descendants(matching: .any).matching(identifier: "picker.header")
       .matching(NSPredicate(format: "label CONTAINS %@", "homelab")).firstMatch
-    XCTAssertTrue(header.waitForExistence(timeout: 5))
+    app.scrolled(to: header)
     XCTAssertTrue(header.label.contains("Unreachable"), header.label)
-    attach(app, "An unreachable remote's workspaces")
-    let assistant = row("homelab", "home-assistant", in: app)
+    attach("An unreachable remote's workspaces")
+    let assistant = app.scrolled(to: row("homelab", "home-assistant", in: app))
     XCTAssertTrue(assistant.isEnabled)
     assistant.tap()
     let line = element("landing.unreachable", in: app)
@@ -171,9 +166,9 @@ final class WorkspacePickerTests: XCTestCase {
     compose(reaching)
     beginElsewhere(reaching)
     let loading = element("picker.line", in: reaching)
-    XCTAssertTrue(loading.waitForExistence(timeout: 5))
+    reaching.scrolled(to: loading)
     XCTAssertEqual(loading.label, "Loading workspaces…")
-    attach(reaching, "A remote yet to list its workspaces")
+    attach("A remote yet to list its workspaces")
     reaching.terminate()
 
     let empty = launched("emptyServer")
@@ -183,7 +178,7 @@ final class WorkspacePickerTests: XCTestCase {
     XCTAssertTrue(none.waitForExistence(timeout: 5))
     XCTAssertEqual(none.label, "No workspaces")
     XCTAssertFalse(element("picker.header", in: empty).exists, "with one Remote, no header")
-    attach(empty, "A remote that lists no workspaces")
+    attach("A remote that lists no workspaces")
   }
 
   @MainActor
@@ -193,9 +188,9 @@ final class WorkspacePickerTests: XCTestCase {
     let choice = app.segmentedControls["landing.worktree"]
     XCTAssertTrue(choice.waitForExistence(timeout: 5))
     XCTAssertTrue(choice.buttons["On main"].isSelected, "it starts on the main Worktree")
-    choice.buttons["In a new worktree"].tap()
+    app.scrolled(to: choice.buttons["In a new worktree"]).tap()
     XCTAssertTrue(choice.buttons["In a new worktree"].isSelected)
-    attach(app, "In a new worktree")
+    attach("In a new worktree")
 
     let composer = element("landing.composer", in: app)
     composer.tap()
@@ -205,10 +200,10 @@ final class WorkspacePickerTests: XCTestCase {
     XCTAssertTrue(bar.waitForExistence(timeout: 5))
     XCTAssertEqual(bar.label, "Creating worktree")
     XCTAssertFalse(element("session.stop", in: app).exists, "no Stop while it is made")
-    attach(app, "Creating worktree")
+    attach("Creating worktree")
     expectation(for: NSPredicate(format: "label == %@", "Starting"), evaluatedWith: bar)
     waitForExpectations(timeout: 10)
-    attach(app, "Starting, once the worktree is made")
+    attach("Starting, once the worktree is made")
     expectation(for: NSPredicate(format: "label == %@", "Working"), evaluatedWith: bar)
     waitForExpectations(timeout: 10)
 
@@ -225,7 +220,7 @@ final class WorkspacePickerTests: XCTestCase {
     choose("workstation", "notes", in: app)
     XCTAssertFalse(app.segmentedControls["landing.worktree"].exists, "outside source control")
     XCTAssertFalse(element("landing.workingCopy", in: app).exists)
-    attach(app, "A workspace outside source control")
+    attach("A workspace outside source control")
 
     choose("workstation", "mirror.git", in: app)
     XCTAssertFalse(app.segmentedControls["landing.worktree"].exists, "a bare repository")
@@ -236,6 +231,6 @@ final class WorkspacePickerTests: XCTestCase {
     composer.tap()
     composer.typeText("Mirror the tags")
     XCTAssertFalse(app.buttons["landing.send"].isEnabled, "it has no main worktree to begin on")
-    attach(app, "A bare repository")
+    attach("A bare repository")
   }
 }

@@ -22,14 +22,6 @@ final class RelayLoginTests: XCTestCase {
     return app
   }
 
-  @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
   /// The system's prompt to sign in through github.com, which the authentication sheet opens with.
   @MainActor
   private var prompt: XCUIElement {
@@ -45,22 +37,6 @@ final class RelayLoginTests: XCTestCase {
   private func gone(_ element: XCUIElement, within timeout: TimeInterval = 15) -> Bool {
     let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
     return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
-  }
-
-  /// `element`, scrolled to where it can be tapped above the bottom bar.
-  @MainActor
-  private func scrolled(to element: XCUIElement, in app: XCUIApplication) -> XCUIElement {
-    // The listing is lazy: a row far down stands only once scrolled to.
-    _ = app.buttons["home.servers"].waitForExistence(timeout: 10)
-    let bar = app.buttons["home.servers"]
-    let clear = { element.exists && element.isHittable && (!bar.exists || element.frame.maxY <= bar.frame.minY) }
-    var swipes = 0
-    while !clear() && swipes < 12 {
-      app.swipeUp()
-      swipes += 1
-    }
-    XCTAssertTrue(element.isHittable, "scrolled to \(element)")
-    return element
   }
 
   /// Taps the login offer `identifier` names and waits for the sheet's code, which it copies.
@@ -81,14 +57,14 @@ final class RelayLoginTests: XCTestCase {
     XCTAssertTrue(way.waitForExistence(timeout: 10))
     XCTAssertTrue(way.label.contains("login needed"), way.label)
     XCTAssertFalse(element("relay.relay.example.com", in: app).exists, "no relay is held before a login")
-    attach(app, "A relay way needing a login")
+    attach("A relay way needing a login")
 
     logIn("server.workstation.way.2.login", in: app)
     XCTAssertTrue(app.staticTexts["login.address"].label.contains("github.com/login/device"))
     XCTAssertTrue(app.buttons["login.open"].exists)
     // GitHub opens in the system's authentication sheet, beginning with its prompt.
     XCTAssertTrue(prompt.waitForExistence(timeout: 10), "the authentication sheet opens")
-    attach(app, "GitHub opened in the authentication sheet")
+    attach("GitHub opened in the authentication sheet")
 
     // The relay confirms: the authentication sheet is cancelled and the login's sheet closes itself.
     XCTAssertTrue(gone(prompt), "the authentication sheet is cancelled once the relay confirms")
@@ -98,7 +74,7 @@ final class RelayLoginTests: XCTestCase {
     XCTAssertTrue(relay.waitForExistence(timeout: 10))
     XCTAssertTrue(relay.label.contains("octocat (github)"), relay.label)
     XCTAssertTrue(relay.label.contains("logged in"), relay.label)
-    attach(app, "Logged in, the relay listed with its account")
+    attach("Logged in, the relay listed with its account")
   }
 
   @MainActor
@@ -112,7 +88,7 @@ final class RelayLoginTests: XCTestCase {
     XCTAssertTrue(app.staticTexts["login.code"].exists, "the code stays, for approving from another device")
     XCTAssertTrue(app.staticTexts["login.address"].exists)
     XCTAssertTrue(app.staticTexts["login.words"].label.contains("from another device"))
-    attach(app, "The code and address, for another device")
+    attach("The code and address, for another device")
   }
 
   @MainActor
@@ -142,13 +118,13 @@ final class RelayLoginTests: XCTestCase {
     prompt.buttons["Cancel"].tap()
     XCTAssertTrue(gone(prompt, within: 5))
 
-    XCUIDevice.shared.press(.home)
+    app.leaveTheFront()
     app.activate()
     let failed = app.staticTexts["login.failed"]
     XCTAssertTrue(failed.waitForExistence(timeout: 10))
     XCTAssertTrue(failed.label.contains("left the screen"), failed.label)
     XCTAssertTrue(app.buttons["login.again"].exists)
-    attach(app, "A login given up as the app was left")
+    attach("A login given up as the app was left")
   }
 
   @MainActor
@@ -158,7 +134,7 @@ final class RelayLoginTests: XCTestCase {
     XCTAssertTrue(relay.waitForExistence(timeout: 10))
     XCTAssertTrue(relay.label.contains("octocat (github)"), relay.label)
     XCTAssertTrue(element("server.workstation.way.2", in: app).label.contains("answering"))
-    attach(app, "The relays section")
+    attach("The relays section")
 
     relay.swipeLeft()
     let remove = app.buttons["relay.relay.example.com.remove"]
@@ -168,7 +144,7 @@ final class RelayLoginTests: XCTestCase {
     XCTAssertTrue(confirm.firstMatch.waitForExistence(timeout: 5))
     let asked = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "This phone gives up its login at"))
     XCTAssertTrue(asked.firstMatch.exists, "what removing gives up is said first")
-    attach(app, "Removing a relay asks first")
+    attach("Removing a relay asks first")
     confirm.firstMatch.tap()
 
     XCTAssertTrue(gone(relay, within: 5))
@@ -179,14 +155,16 @@ final class RelayLoginTests: XCTestCase {
   @MainActor
   func testARemoteOutOfReachForWantOfALoginLeadsToItAndAnswersOnceLoggedIn() {
     let app = launched("loginNeeded")
-    let row = scrolled(to: app.buttons["listing.unreachable"], in: app)
+    XCTAssertTrue(
+      app.descendants(matching: .any).matching(identifier: "listing.active").firstMatch.waitForExistence(timeout: 10))
+    let row = app.scrolled(to: app.buttons["listing.unreachable"])
     row.tap()
     let explanation = app.staticTexts["unreachable.explanation"]
     XCTAssertTrue(explanation.waitForExistence(timeout: 5), "the sheet explains")
     XCTAssertTrue(explanation.label.contains("needs to log in"), explanation.label)
     let offer = app.buttons["unreachable.tryAgain"]
     XCTAssertEqual(offer.label, "Log in", "trying again leads to the login")
-    attach(app, "Unreachable for want of a login")
+    attach("Unreachable for want of a login")
 
     offer.tap()
     XCTAssertTrue(app.staticTexts["login.code"].waitForExistence(timeout: 10), "the login's sheet shows its code")
@@ -198,14 +176,16 @@ final class RelayLoginTests: XCTestCase {
   @MainActor
   func testALoginUnderAnotherAccountReadsAsThePhoneAndTheServerUnderDifferentAccounts() {
     let app = launched("otherAccount")
-    let row = scrolled(to: app.buttons["listing.unreachable"], in: app)
+    XCTAssertTrue(
+      app.descendants(matching: .any).matching(identifier: "listing.active").firstMatch.waitForExistence(timeout: 10))
+    let row = app.scrolled(to: app.buttons["listing.unreachable"])
     row.tap()
     let explanation = app.staticTexts["unreachable.explanation"]
     XCTAssertTrue(explanation.waitForExistence(timeout: 5), "the sheet explains")
     XCTAssertTrue(
       explanation.label.contains("as hubot (github), and the server under another account"), explanation.label)
     XCTAssertEqual(app.buttons["unreachable.tryAgain"].label, "Log in again")
-    attach(app, "Logged in under another account")
+    attach("Logged in under another account")
   }
 
   @MainActor
@@ -215,12 +195,9 @@ final class RelayLoginTests: XCTestCase {
     XCTAssertTrue(way.waitForExistence(timeout: 10))
     XCTAssertTrue(way.label.contains("login needed"), way.label)
     XCTAssertTrue(app.buttons["confirm.way.3.login"].exists, "the way offers the login")
-    attach(app, "A relay way needing a login beside direct ways")
+    attach("A relay way needing a login beside direct ways")
 
-    app.swipeUp()
-    let pair = app.buttons["confirm.pair"]
-    XCTAssertTrue(pair.waitForExistence(timeout: 5))
-    pair.tap()
+    app.scrolled(to: app.buttons["confirm.pair"]).tap()
     XCTAssertTrue(app.buttons["home.servers"].waitForExistence(timeout: 15), "paired by a direct way, no login asked")
     app.buttons["home.servers"].tap()
     let relayed = element("server.workstation.way.2", in: app)
@@ -235,20 +212,19 @@ final class RelayLoginTests: XCTestCase {
     XCTAssertTrue(way.waitForExistence(timeout: 10))
     XCTAssertTrue(way.label.contains("login needed"), way.label)
     XCTAssertTrue(app.buttons["confirm.way.0.login"].exists, "the way offers the login")
-    attach(app, "A relay way needing a login on the confirmation screen")
+    attach("A relay way needing a login on the confirmation screen")
 
-    app.buttons["confirm.pair"].tap()
+    app.scrolled(to: app.buttons["confirm.pair"]).tap()
     let failure = app.staticTexts["confirm.failure"]
     XCTAssertTrue(failure.waitForExistence(timeout: 10))
     XCTAssertTrue(failure.label.contains("pairing goes on by itself"), failure.label)
-    attach(app, "Pairing asks for the login")
+    attach("Pairing asks for the login")
     // Trying again as it is stays: no way answers until the login is done.
-    let tryAgain = app.buttons["confirm.tryAgain"]
-    XCTAssertTrue(tryAgain.exists, "trying again is offered beside the login")
-    tryAgain.tap()
-    XCTAssertTrue(app.buttons["confirm.login"].waitForExistence(timeout: 10))
+    // It is offered beside the login.
+    app.scrolled(to: app.buttons["confirm.tryAgain"]).tap()
     XCTAssertTrue(failure.waitForExistence(timeout: 10))
-    app.buttons["confirm.login"].tap()
+    app.scrolled(to: failure)
+    app.scrolled(to: app.buttons["confirm.login"]).tap()
     XCTAssertTrue(app.staticTexts["login.code"].waitForExistence(timeout: 10))
     XCTAssertTrue(gone(app.staticTexts["login.code"]), "the login's sheet closes itself once confirmed")
 
@@ -263,12 +239,12 @@ final class RelayLoginTests: XCTestCase {
     XCTAssertTrue(direct.waitForExistence(timeout: 10))
     let relayed = element("server.workstation.way.2", in: app)
     XCTAssertFalse(relayed.exists, "no relay way before the server turns one on")
-    attach(app, "Before the server turns a relay on")
+    attach("Before the server turns a relay on")
 
     XCTAssertTrue(relayed.waitForExistence(timeout: 25), "the relay turned on appears beside the direct ways")
     XCTAssertTrue(relayed.label.contains("login needed"), relayed.label)
     XCTAssertFalse(element("relay.relay.example.com", in: app).exists, "no relay is held before a login")
-    attach(app, "A relay turned on after pairing, needing a login")
+    attach("A relay turned on after pairing, needing a login")
 
     logIn("server.workstation.way.2.login", in: app)
     XCTAssertTrue(gone(app.staticTexts["login.code"]), "the login's sheet closes itself once confirmed")
@@ -282,13 +258,13 @@ final class RelayLoginTests: XCTestCase {
     let relayed = element("server.workstation.way.2", in: app)
     XCTAssertTrue(relayed.waitForExistence(timeout: 10))
     XCTAssertTrue(relayed.label.contains("answering"), relayed.label)
-    attach(app, "Before the server turns its relay off")
+    attach("Before the server turns its relay off")
 
     XCTAssertTrue(gone(relayed, within: 25), "the relay turned off goes from the server's ways")
     XCTAssertTrue(element("server.workstation.way.1", in: app).exists, "the direct ways stay")
     let relay = element("relay.relay.example.com", in: app)
     XCTAssertTrue(relay.exists, "the login there stays")
     XCTAssertTrue(relay.label.contains("logged in"), relay.label)
-    attach(app, "The relay turned off, the login there kept")
+    attach("The relay turned off, the login there kept")
   }
 }

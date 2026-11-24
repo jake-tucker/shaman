@@ -21,14 +21,6 @@ final class LivePairingTests: XCTestCase {
   }
 
   @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
-  @MainActor
   func testAnInviteFromAScratchServerPairsReadsAndSendsAndThePairingSurvivesARelaunch() throws {
     let environment = ProcessInfo.processInfo.environment
     guard let invite = environment["SHAMAN_LIVE_INVITE"], let run = environment["SHAMAN_LIVE_RUN"],
@@ -45,21 +37,15 @@ final class LivePairingTests: XCTestCase {
     var app = launched(run, invite: invite)
     let hostname = app.descendants(matching: .any)["confirm.hostname"]
     XCTAssertTrue(hostname.waitForExistence(timeout: 10))
-    attach(app, "A scratch Server's invite")
-    let pair = app.buttons["confirm.pair"]
-    var swipes = 0
-    while !pair.isHittable && swipes < 5 {
-      app.swipeUp()
-      swipes += 1
-    }
-    pair.tap()
+    attach("A scratch Server's invite")
+    app.scrolled(to: app.buttons["confirm.pair"]).tap()
 
     let beginsIn = app.descendants(matching: .any)["home.beginsIn"]
     XCTAssertTrue(beginsIn.waitForExistence(timeout: 30), "paired, and the Outlook turned toward the Server")
     let row = app.descendants(matching: .any).matching(identifier: "listing.active").firstMatch
     XCTAssertTrue(row.waitForExistence(timeout: 15), "the scratch Server's listing was read over the Pairing")
     XCTAssertTrue(app.navigationBars["All workspaces"].exists, "one Remote held, so no Origin is named")
-    attach(app, "Paired with the scratch Server")
+    attach("Paired with the scratch Server")
 
     // The Session the script began there opens, and is read live over the Pairing.
     let paired = beginsIn.label
@@ -74,7 +60,7 @@ final class LivePairingTests: XCTestCase {
       NSPredicate(format: "identifier IN {'session.agentMessage', 'session.error', 'session.turn'}")
     ).firstMatch
     XCTAssertTrue(answered.waitForExistence(timeout: 90), "its Turn was read as it went")
-    attach(app, "A session on the scratch Server, read live")
+    attach("A session on the scratch Server, read live")
     readWork(app)
 
     // A Prompt sent from the composer goes over the Pairing, and stands as the Server holds it.
@@ -88,8 +74,8 @@ final class LivePairingTests: XCTestCase {
       .matching(NSPredicate(format: "label == %@", again)).firstMatch
     XCTAssertTrue(sent.waitForExistence(timeout: 30), "sent, it stands as the Server holds it")
     XCTAssertFalse(app.descendants(matching: .any)["banner"].exists, "and nothing failed")
-    attach(app, "A prompt sent to the scratch Server")
-    app.navigationBars.buttons.firstMatch.tap()
+    attach("A prompt sent to the scratch Server")
+    app.back.tap()
     XCTAssertTrue(beginsIn.waitForExistence(timeout: 10))
     XCTAssertEqual(beginsIn.label, "\(paired) · workspace", "opening it turned the Outlook toward its Workspace")
 
@@ -99,7 +85,7 @@ final class LivePairingTests: XCTestCase {
     menu.tap()
     let workspace = app.buttons["workspace"].firstMatch
     XCTAssertTrue(workspace.waitForExistence(timeout: 10), "the scratch Server's Workspace is offered")
-    attach(app, "The scratch Server's title menu")
+    attach("The scratch Server's title menu")
     workspace.tap()
     XCTAssertTrue(app.navigationBars["workspace"].waitForExistence(timeout: 10))
     XCTAssertTrue(row.waitForExistence(timeout: 10))
@@ -110,7 +96,7 @@ final class LivePairingTests: XCTestCase {
     let empty = app.descendants(matching: .any)["listing.empty"]
     XCTAssertTrue(empty.waitForExistence(timeout: 10))
     XCTAssertEqual(empty.label, "No sessions match")
-    attach(app, "A search of the scratch Server")
+    attach("A search of the scratch Server")
     app.buttons["Close"].firstMatch.tap()
     XCTAssertEqual(beginsIn.label, "\(paired) · workspace")
     let shown = beginsIn.label
@@ -121,7 +107,7 @@ final class LivePairingTests: XCTestCase {
     let answering = NSPredicate(format: "label ENDSWITH ', answering'")
     expectation(for: answering, evaluatedWith: way)
     waitForExpectations(timeout: 15)
-    attach(app, "The scratch Server with its way answering")
+    attach("The scratch Server with its way answering")
 
     app.terminate()
     app = launched(run)
@@ -150,8 +136,10 @@ final class LivePairingTests: XCTestCase {
     let way = app.descendants(matching: .any)["server.renamed.way.0"]
     expectation(for: NSPredicate(format: "label ENDSWITH ', answering'"), evaluatedWith: way)
     waitForExpectations(timeout: 15)
-    attach(app, "The scratch Server renamed, still answering")
-    app.navigationBars["Servers & device"].swipeDown(velocity: .fast)
+    attach("The scratch Server renamed, still answering")
+    app.navigationBars["Servers & device"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      .press(
+        forDuration: 0.1, thenDragTo: app.point(across: 0.5, down: 0.98), withVelocity: .fast, thenHoldForDuration: 0)
     let beginsIn = app.descendants(matching: .any)["home.beginsIn"]
     XCTAssertTrue(beginsIn.waitForExistence(timeout: 10))
     XCTAssertEqual(beginsIn.label, "New sessions begin in renamed · workspace", "the Outlook goes with the name")
@@ -164,7 +152,7 @@ final class LivePairingTests: XCTestCase {
     XCTAssertTrue(confirm.waitForExistence(timeout: 5))
     confirm.tap()
     XCTAssertTrue(app.buttons["pairing.paste"].waitForExistence(timeout: 15), "holding no Remote, pairing alone")
-    attach(app, "The scratch Server removed")
+    attach("The scratch Server removed")
   }
 
   /// What the new-session screen's composer held as the app left the front is in it once iOS has ended the app and it
@@ -177,9 +165,7 @@ final class LivePairingTests: XCTestCase {
     XCTAssertTrue(field.waitForExistence(timeout: 10))
     field.tap()
     field.typeText(unsent)
-    XCUIDevice.shared.press(.home)
-    XCTAssertTrue(
-      app.wait(for: .runningBackground, timeout: 10) || app.wait(for: .runningBackgroundSuspended, timeout: 5))
+    app.leaveTheFront()
     // iOS writes what the scene keeps a moment after the app leaves the front.
     _ = XCTWaiter.wait(for: [XCTestExpectation(description: "the scene kept")], timeout: 2)
     app.terminate()
@@ -191,8 +177,8 @@ final class LivePairingTests: XCTestCase {
     XCTAssertTrue(
       XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: holding, object: field)], timeout: 10) == .completed,
       "the unsent text was kept, not \(String(describing: field.value))")
-    attach(relaunched, "Unsent text kept by the live core after the app was ended")
-    relaunched.navigationBars.buttons.firstMatch.tap()
+    attach("Unsent text kept by the live core after the app was ended")
+    relaunched.back.tap()
     XCTAssertTrue(relaunched.descendants(matching: .any)["home.beginsIn"].waitForExistence(timeout: 10))
     return relaunched
   }
@@ -214,7 +200,7 @@ final class LivePairingTests: XCTestCase {
     let agent = app.descendants(matching: .any)["landing.agent"]
     XCTAssertTrue(agent.waitForExistence(timeout: 15), "the scratch Server says what a new Session would get")
     XCTAssertFalse(app.segmentedControls["landing.worktree"].exists, "its Workspace is outside source control")
-    attach(app, "The new-session screen on the scratch Server")
+    attach("The new-session screen on the scratch Server")
 
     // The Workspace Picker lists the scratch Server's Workspaces through the live core, the Outlook's ticked.
     app.buttons["landing.elsewhere"].tap()
@@ -222,7 +208,7 @@ final class LivePairingTests: XCTestCase {
     let ticked = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "workspace")).firstMatch
     XCTAssertTrue(ticked.waitForExistence(timeout: 15), "the picker lists the Workspace")
     XCTAssertTrue(ticked.isSelected, "the Outlook's Workspace is ticked")
-    attach(app, "The workspace picker on the scratch Server")
+    attach("The workspace picker on the scratch Server")
     ticked.tap()
     XCTAssertTrue(workspace.waitForExistence(timeout: 10), "chosen, back on the new-session screen")
     XCTAssertEqual(workspace.label, "workspace")
@@ -238,9 +224,9 @@ final class LivePairingTests: XCTestCase {
       .matching(NSPredicate(format: "label == %@", prompt)).firstMatch
     XCTAssertTrue(begun.waitForExistence(timeout: 30), "the scratch Server began it, and it stands in its place")
     XCTAssertFalse(app.descendants(matching: .any)["session.refused"].exists, "and it was not refused")
-    attach(app, "A session begun on the scratch Server")
+    attach("A session begun on the scratch Server")
 
-    app.navigationBars.buttons.firstMatch.tap()
+    app.back.tap()
     XCTAssertTrue(app.buttons["home.compose"].waitForExistence(timeout: 10))
     let more = NSPredicate(format: "count == %d", listed + 1)
     expectation(for: more, evaluatedWith: rows)
@@ -261,17 +247,17 @@ final class LivePairingTests: XCTestCase {
     card.tap()
     let row = app.descendants(matching: .any).matching(identifier: "work.row").firstMatch
     XCTAssertTrue(row.waitForExistence(timeout: 30), "the Turn's work crossed from the live core")
-    attach(app, "A turn's work on the scratch Server")
+    attach("A turn's work on the scratch Server")
     if row.elementType == .button {
       row.tap()
       XCTAssertTrue(
         app.descendants(matching: .any)["detail.screen"].waitForExistence(timeout: 10), "its Activity's whole")
       XCTAssertTrue(
         app.descendants(matching: .any).matching(identifier: "detail.fact").firstMatch.waitForExistence(timeout: 10))
-      attach(app, "An activity on the scratch Server")
-      app.navigationBars.buttons.firstMatch.tap()
+      attach("An activity on the scratch Server")
+      app.back.tap()
     }
-    app.navigationBars.buttons.firstMatch.tap()
+    app.back.tap()
     XCTAssertTrue(app.descendants(matching: .any)["session.composer"].waitForExistence(timeout: 10))
   }
 
@@ -288,7 +274,7 @@ final class LivePairingTests: XCTestCase {
     XCTAssertTrue(slim.label.contains("Server unreachable"), slim.label)
     XCTAssertTrue(
       app.descendants(matching: .any).matching(identifier: "listing.active").firstMatch.exists, "its rows stay")
-    attach(app, "The scratch Server stopped, read Unreachable")
+    attach("The scratch Server stopped, read Unreachable")
 
     // Tried again while it is still stopped, it says why in the banner and the sheet stays up.
     slim.tap()
@@ -298,15 +284,15 @@ final class LivePairingTests: XCTestCase {
     let banner = app.descendants(matching: .any)["banner"]
     XCTAssertTrue(banner.waitForExistence(timeout: 15), "a try that reached nothing says so")
     XCTAssertTrue(banner.label.contains("No way to the server answered"), banner.label)
-    attach(app, "The scratch Server tried again while stopped")
+    attach("The scratch Server tried again while stopped")
 
     // Started again, it answers by itself, and its row takes the sheet with it.
     try signal("resume", in: signals, awaiting: "resumed")
     XCTAssertTrue(tryAgain.waitForNonExistence(timeout: 30), "the sheet goes with the row")
     XCTAssertTrue(slim.waitForNonExistence(timeout: 30), "the Server started again answers")
-    attach(app, "The scratch Server answering again")
+    attach("The scratch Server answering again")
 
-    XCUIDevice.shared.press(.home)
+    app.leaveTheFront()
     app.activate()
     XCTAssertTrue(app.descendants(matching: .any)["home.beginsIn"].waitForExistence(timeout: 10))
     XCTAssertFalse(slim.waitForExistence(timeout: 3), "a switch away and back reads no Remote Unreachable")

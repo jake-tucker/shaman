@@ -20,14 +20,6 @@ final class SubagentTests: XCTestCase {
   }
 
   @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
-  @MainActor
   private func elements(_ identifier: String, in app: XCUIApplication) -> XCUIElementQuery {
     app.descendants(matching: .any).matching(identifier: identifier)
   }
@@ -86,10 +78,11 @@ final class SubagentTests: XCTestCase {
 
     // The row: its name over what it was asked, its outcome and duration at the right.
     let writer = element("work.row", holding: "Writer", in: app)
-    XCTAssertTrue(writer.waitForExistence(timeout: 10))
+    XCTAssertTrue(elements("work.row", in: app).firstMatch.waitForExistence(timeout: 10))
+    app.scrolled(to: writer)
     XCTAssertTrue(writer.label.contains("Draft the fix"), writer.label)
     XCTAssertTrue(writer.label.contains("Failed · 12s"), writer.label)
-    attach(app, "A turn's work with its subagents' rows")
+    attach("A turn's work with its subagents' rows")
     element("work.row", holding: "Explorer", in: app).tap()
 
     // The Subagent's Session: its Title over its name and Model, its Delegation at the left, and no composer.
@@ -101,7 +94,7 @@ final class SubagentTests: XCTestCase {
     XCTAssertFalse(app.textViews["session.composer"].exists)
     XCTAssertFalse(app.textFields["session.composer"].exists, "a subagent's session takes no prompt")
     XCTAssertTrue(app.buttons["session.stop"].exists, "its bar stands alone, with Stop")
-    attach(app, "A subagent's session")
+    attach("A subagent's session")
 
     // Its own Subagent pushes over it the same way.
     elements("session.turn", in: app).firstMatch.tap()
@@ -111,10 +104,10 @@ final class SubagentTests: XCTestCase {
     titled("Grep the logs for the lock", in: app)
     XCTAssertTrue(app.otherElements["session.bar"].waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["session.stop"].exists, "one that cannot be stopped alone offers no Stop")
-    attach(app, "A subagent that cannot be stopped alone")
+    attach("A subagent that cannot be stopped alone")
 
     // Back returns to the list it was tapped in.
-    app.navigationBars.buttons.element(boundBy: 0).tap()
+    app.back.tap()
     XCTAssertTrue(element("work.row", holding: "Grepper", in: app).waitForExistence(timeout: 10))
   }
 
@@ -129,6 +122,11 @@ final class SubagentTests: XCTestCase {
     XCTAssertTrue(top.waitForExistence(timeout: 10))
     XCTAssertTrue(button.label.contains("3 working"), "counted once read: \(button.label)")
     XCTAssertTrue(top.isSelected, "the open session is highlighted")
+    XCTAssertEqual(app.staticTexts["tree.count"].label, "6 · 3 working")
+    attach("The tree as a sheet")
+    // Every entry is drawn once the last is reached, the sheet rising as it is dragged where it does not show it.
+    app.scrolled(
+      to: element("tree.row", holding: "Review the lock's tests", in: app), over: app.otherElements["tree.sheet"])
     let rows = elements("tree.row", in: app)
     XCTAssertEqual(rows.count, 7)
     let order = (0..<rows.count).map { rows.element(boundBy: $0).label }
@@ -136,8 +134,6 @@ final class SubagentTests: XCTestCase {
     XCTAssertTrue(order[2].contains("Find what held the lock"), order[2])
     XCTAssertTrue(order[3].contains("Grep the logs for the lock"), order[3])
     XCTAssertTrue(order[4].contains("monitoring"), "a settled subagent watching reads monitoring: \(order[4])")
-    XCTAssertEqual(app.staticTexts["tree.count"].label, "6 · 3 working")
-    attach(app, "The tree as a sheet")
 
     // Chosen, an entry not on the stack is pushed.
     element("tree.row", holding: "Grep the logs for the lock", in: app).tap()
@@ -154,7 +150,7 @@ final class SubagentTests: XCTestCase {
     openTree(in: app)
     element("tree.row", holding: "Find what holds the session lock", in: app).tap()
     titled("Find what holds the session lock", in: app)
-    app.navigationBars.buttons.element(boundBy: 0).tap()
+    app.back.tap()
     XCTAssertTrue(app.navigationBars["All workspaces"].waitForExistence(timeout: 10), "nothing was left above it")
   }
 
@@ -169,7 +165,7 @@ final class SubagentTests: XCTestCase {
     let stopped = element("tree.row", holding: "haiku · Stopped", in: app)
     XCTAssertTrue(stopped.waitForExistence(timeout: 10), "stopped, without asking first")
     XCTAssertEqual(app.staticTexts["tree.count"].label, "6 · 2 working")
-    attach(app, "A subagent stopped by a swipe")
+    attach("A subagent stopped by a swipe")
 
     // From its own bar: Explorer, and what it delegated with it.
     element("tree.row", holding: "Find what held the lock", in: app).tap()
@@ -194,7 +190,7 @@ final class SubagentTests: XCTestCase {
     XCTAssertTrue(banners.firstMatch.waitForExistence(timeout: 10), "the refusal is said")
     XCTAssertTrue(banners.firstMatch.label.contains("Could not stop the subagent"), banners.firstMatch.label)
     XCTAssertEqual(banners.count, 1, "in the sheet alone")
-    attach(app, "A stop refused in the tree")
+    attach("A stop refused in the tree")
   }
 
   @MainActor
@@ -212,7 +208,7 @@ final class SubagentTests: XCTestCase {
       button.tap()
       XCTAssertTrue(elements(said, in: app).firstMatch.waitForExistence(timeout: 10), scenario)
       XCTAssertFalse(elements("tree.row", in: app).firstMatch.exists)
-      attach(app, shown)
+      attach(shown)
       app.terminate()
     }
   }

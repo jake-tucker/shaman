@@ -19,14 +19,6 @@ final class ApprovalTests: XCTestCase {
   }
 
   @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
-  @MainActor
   private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
     app.descendants(matching: .any)[identifier]
   }
@@ -38,15 +30,6 @@ final class ApprovalTests: XCTestCase {
       app.descendants(matching: .any).matching(identifier: identifier)
         .waitForOne(NSPredicate(format: format)),
       "\(identifier): \(format)")
-  }
-
-  /// Swipes the sheet away by its grabber, as a reader does.
-  @MainActor
-  private func swipeAway(in app: XCUIApplication) {
-    let grabber = app.buttons["Sheet Grabber"]
-    XCTAssertTrue(grabber.waitForExistence(timeout: 5))
-    grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-      .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.99)))
   }
 
   @MainActor
@@ -74,7 +57,7 @@ final class ApprovalTests: XCTestCase {
     XCTAssertEqual(element("approval.decline", in: app).label, "Decline")
     XCTAssertEqual(element("approval.declineAndInterrupt", in: app).label, "Decline and interrupt")
     XCTAssertEqual(element("approval.acceptForSession", in: app).label, "Accept for session")
-    attach(app, "An approval presenting itself")
+    attach("An approval presenting itself")
 
     waitForOne("approval.acceptOnce", "isEnabled == true", in: app)
     accept.tap()
@@ -82,14 +65,14 @@ final class ApprovalTests: XCTestCase {
       element("approval.deciding", in: app).waitForExistence(timeout: 2), "the sheet is dimmed until the server answers"
     )
     XCTAssertFalse(accept.isEnabled)
-    attach(app, "A decision on its way")
+    attach("A decision on its way")
 
     let sheet = element("approval.sheet", in: app)
     XCTAssertTrue(sheet.waitForNonExistence(timeout: 20), "answered, the sheet goes")
     waitForOne("session.turn", "label BEGINSWITH 'Working'", in: app)
     XCTAssertEqual(element("session.barWords", in: app).label, "Working")
     XCTAssertFalse(element("session.review", in: app).exists)
-    attach(app, "The approval answered, its turn working again")
+    attach("The approval answered, its turn working again")
   }
 
   @MainActor
@@ -97,7 +80,7 @@ final class ApprovalTests: XCTestCase {
     let app = launched("paired", opening: "workstation-key/3")
     let sheet = element("approval.sheet", in: app)
     XCTAssertTrue(sheet.waitForExistence(timeout: 10))
-    swipeAway(in: app)
+    app.swipeSheetAway()
     XCTAssertTrue(sheet.waitForNonExistence(timeout: 20), "swiped away, it goes")
 
     XCTAssertEqual(element("session.barWords", in: app).label, "Approval waiting")
@@ -106,7 +89,7 @@ final class ApprovalTests: XCTestCase {
     XCTAssertEqual(review.label, "Review")
     let card = app.descendants(matching: .any).matching(identifier: "session.turn").firstMatch
     XCTAssertTrue(card.label.contains("Waiting on you"), card.label)
-    attach(app, "An approval dismissed, waiting behind the orange bar")
+    attach("An approval dismissed, waiting behind the orange bar")
 
     review.tap()
     XCTAssertTrue(sheet.waitForExistence(timeout: 5))
@@ -126,7 +109,7 @@ final class ApprovalTests: XCTestCase {
     XCTAssertEqual(facts(in: app), ["Other tool, figma/export_variables"])
     let input = element("approval.section", in: app)
     XCTAssertTrue(input.label.hasPrefix("Input"), input.label)
-    attach(app, "The next approval, presented once the first was answered")
+    attach("The next approval, presented once the first was answered")
 
     waitForOne("approval.acceptForSession", "isEnabled == true", in: app)
     element("approval.acceptForSession", in: app).tap()

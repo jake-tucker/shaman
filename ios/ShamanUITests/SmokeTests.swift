@@ -20,13 +20,9 @@ final class SmokeTests: XCTestCase {
     let title = app.descendants(matching: .any)["session.title"]
     XCTAssertTrue(title.waitForExistence(timeout: 5))
     XCTAssertEqual(title.label, "Draw the invite as a QR code in /serve")
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = "A session opened from the listing"
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
+    attach("A session opened from the listing")
 
-    // By its identifier, as Back is not among the navigation bar's buttons where the bar stands vertically.
-    app.buttons["BackButton"].tap()
+    app.back.tap()
     XCTAssertTrue(row.waitForExistence(timeout: 5))
     XCTAssertFalse(title.exists)
   }

@@ -46,14 +46,6 @@ final class ThisDeviceTests: XCTestCase {
   }
 
   @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
-  @MainActor
   private func rename(_ app: XCUIApplication, to name: String) {
     let field = app.textFields["device.name"]
     XCTAssertTrue(field.waitForExistence(timeout: 10))
@@ -76,7 +68,7 @@ final class ThisDeviceTests: XCTestCase {
     let refusal = app.staticTexts["device.name.refusal"]
     XCTAssertTrue(refusal.waitForExistence(timeout: 10))
     XCTAssertEqual(refusal.label, "\"everywhere\" names every server at once, so nothing may be named so")
-    attach(app, "A refused name")
+    attach("A refused name")
 
     rename(app, to: "Pocket")
     XCTAssertTrue(refusal.waitForNonExistence(timeout: 10))
@@ -108,7 +100,7 @@ final class ThisDeviceTests: XCTestCase {
     let shown = fingerprint(app)
     XCTAssertEqual(shown.count, 64, shown)
     XCTAssertTrue(shown.allSatisfy(\.isHexDigit), shown)
-    attach(app, "This device with its fingerprint")
+    attach("This device with its fingerprint")
 
     app.terminate()
     app = launched(in: directory)
@@ -140,7 +132,7 @@ final class ThisDeviceTests: XCTestCase {
     let startAgain = app.buttons["key.startAgain"]
     XCTAssertTrue(startAgain.waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["This phone's key cannot be used"].exists)
-    attach(app, "A key the chip refuses")
+    attach("A key the chip refuses")
 
     startAgain.tap()
     XCTAssertEqual(fingerprint(app).count, 64)
@@ -156,7 +148,7 @@ final class ThisDeviceTests: XCTestCase {
     let said = app.staticTexts["pairAgain"]
     XCTAssertTrue(said.waitForExistence(timeout: 10))
     XCTAssertTrue(said.label.hasSuffix("Pair with each of them again."), said.label)
-    attach(app, "This phone must pair again")
+    attach("This phone must pair again")
 
     app.buttons["pairAgain.dismiss"].tap()
     XCTAssertTrue(said.waitForNonExistence(timeout: 10))

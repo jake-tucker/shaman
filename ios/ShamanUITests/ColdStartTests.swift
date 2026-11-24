@@ -29,9 +29,7 @@ final class ColdStartTests: XCTestCase {
   /// suspended app.
   @MainActor
   private func ended(_ app: XCUIApplication) {
-    XCUIDevice.shared.press(.home)
-    XCTAssertTrue(
-      app.wait(for: .runningBackground, timeout: 10) || app.wait(for: .runningBackgroundSuspended, timeout: 5))
+    app.leaveTheFront()
     // iOS writes what the scene keeps a moment after the app leaves the front.
     _ = XCTWaiter.wait(for: [XCTestExpectation(description: "the scene kept")], timeout: 2)
     app.terminate()
@@ -45,14 +43,6 @@ final class ColdStartTests: XCTestCase {
     app.launchArguments = ["--fake", scenario]
     app.launch()
     return app
-  }
-
-  @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
   }
 
   @MainActor
@@ -97,15 +87,14 @@ final class ColdStartTests: XCTestCase {
 
   @MainActor
   private func back(in app: XCUIApplication) {
-    app.navigationBars.buttons.element(boundBy: 0).tap()
+    app.back.tap()
   }
 
   @MainActor
   func testTheSessionsPushedASubagentsOverItsParentIncludedAreOpenAgainButNoSheetOrWork() {
     var app = launched("paired")
-    let row = element("listing.active", holding: "Find what holds the session lock", in: app)
-    XCTAssertTrue(row.waitForExistence(timeout: 10))
-    row.tap()
+    XCTAssertTrue(elements("listing.active", in: app).firstMatch.waitForExistence(timeout: 10))
+    app.scrolled(to: element("listing.active", holding: "Find what holds the session lock", in: app)).tap()
     titled("Find what holds the session lock", in: app)
     let card = elements("session.turn", in: app).firstMatch
     XCTAssertTrue(card.waitForExistence(timeout: 10))
@@ -129,7 +118,7 @@ final class ColdStartTests: XCTestCase {
     XCTAssertEqual(app.staticTexts["session.place"].label, "Explorer · haiku", "read afresh")
     XCTAssertTrue(elements("session.delegation", in: app).firstMatch.waitForExistence(timeout: 10))
     XCTAssertFalse(elements("tree.sheet", in: app).firstMatch.exists, "a sheet is not restored")
-    attach(app, "A subagent's session open again after a cold start")
+    attach("A subagent's session open again after a cold start")
 
     // Beneath it, its parent's Session, not the Turn's work it was pushed from; beneath that, the listing.
     back(in: app)
@@ -156,7 +145,7 @@ final class ColdStartTests: XCTestCase {
     XCTAssertTrue(card.waitForExistence(timeout: 10))
     XCTAssertFalse(elements("detail.screen", in: app).firstMatch.exists, "an Activity's screen is not restored")
     XCTAssertFalse(elements("work.list", in: app).firstMatch.exists)
-    attach(app, "A session open again after a cold start, not the activity pushed over it")
+    attach("A session open again after a cold start, not the activity pushed over it")
   }
 
   @MainActor
@@ -170,12 +159,12 @@ final class ColdStartTests: XCTestCase {
     app = relaunched(app, "several")
     XCTAssertTrue(elements("landing.screen", in: app).firstMatch.waitForExistence(timeout: 10))
     XCTAssertEqual(app.staticTexts["landing.title"].label, "New session")
-    attach(app, "The new-session screen open again after a cold start")
+    attach("The new-session screen open again after a cold start")
     back(in: app)
     listing(at: "laptop", in: app)
     XCTAssertTrue(element("listing.active", holding: "Token colours for the button palette", in: app).exists)
     XCTAssertFalse(element("listing.active", holding: "Draw the invite as a QR code", in: app).exists)
-    attach(app, "The listing narrowed to the laptop again after a cold start")
+    attach("The listing narrowed to the laptop again after a cold start")
 
     // A Workspace's scope comes back the same way, and a sheet over the listing does not.
     choose("design-system", titled: "laptop · design-system", in: app)
@@ -200,7 +189,7 @@ final class ColdStartTests: XCTestCase {
     listing(at: "All workspaces", in: app)
     XCTAssertFalse(elements("session.gone", in: app).firstMatch.exists, "back at the listing, not saying it is gone")
     XCTAssertTrue(element("listing.active", holding: "Draw the invite as a QR code", in: app).exists)
-    attach(app, "The listing under everywhere after the session and scope kept were gone")
+    attach("The listing under everywhere after the session and scope kept were gone")
   }
 
   /// Covers only the app's half of a launch after the user swipes the app away: a new scene, whose storage holds
@@ -220,19 +209,6 @@ final class ColdStartTests: XCTestCase {
     XCTAssertFalse(app.staticTexts["session.title"].exists)
   }
 
-  /// The control `identifier` names, scrolled to until it can be tapped.
-  @MainActor
-  private func shown(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
-    let element = app.descendants(matching: .any)[identifier]
-    XCTAssertTrue(element.waitForExistence(timeout: 10), identifier)
-    var swipes = 0
-    while !element.isHittable && swipes < 5 {
-      app.swipeUp()
-      swipes += 1
-    }
-    return element
-  }
-
   @MainActor
   func testAPhoneThatPairsAgainLandsOnItsNewListingAndNotOnWhatItKeptBefore() {
     // Kept while the phone held the workstation, under a scope of it.
@@ -249,11 +225,12 @@ final class ColdStartTests: XCTestCase {
     app.launchArguments = ["--fake", "fresh"]
     app.launchEnvironment["SHAMAN_INVITE"] = "shaman-v1-fake-workstation"
     app.launch()
-    shown("confirm.pair", in: app).tap()
+    XCTAssertTrue(app.descendants(matching: .any)["confirm.hostname"].waitForExistence(timeout: 10))
+    app.scrolled(to: app.buttons["confirm.pair"]).tap()
     listing(at: "All workspaces", in: app)
     XCTAssertFalse(app.staticTexts["session.title"].exists, "nothing of what was kept before is pushed")
     XCTAssertTrue(element("listing.active", holding: "Draw the invite as a QR code", in: app).exists)
-    attach(app, "Paired again, on the new listing")
+    attach("Paired again, on the new listing")
 
     // Nor does a cold start after it bring back what was kept before the phone held no Remote.
     app = relaunched(app, "paired")

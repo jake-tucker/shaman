@@ -17,14 +17,6 @@ final class NewSessionTests: XCTestCase {
   }
 
   @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
-  @MainActor
   private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
     app.descendants(matching: .any)[identifier]
   }
@@ -49,7 +41,7 @@ final class NewSessionTests: XCTestCase {
 
   @MainActor
   private func back(_ app: XCUIApplication) {
-    app.navigationBars.buttons.firstMatch.tap()
+    app.back.tap()
     XCTAssertTrue(app.buttons["home.compose"].waitForExistence(timeout: 5), "back at the listing")
   }
 
@@ -65,7 +57,7 @@ final class NewSessionTests: XCTestCase {
     XCTAssertTrue(element("landing.description", in: app).label.hasPrefix("A terminal client for coding agents"))
     XCTAssertEqual(element("landing.agent", in: app).label, "Claude · Fable 5.2 · high", "the Agent it will get")
     XCTAssertFalse(app.buttons["landing.send"].isEnabled, "nothing written yet")
-    attach(app, "The new-session screen where the Outlook stands")
+    attach("The new-session screen where the Outlook stands")
 
     write("Tidy the build warnings\nand the lint", in: app)
     XCTAssertTrue(app.buttons["landing.send"].isEnabled)
@@ -79,7 +71,7 @@ final class NewSessionTests: XCTestCase {
     XCTAssertEqual(element("session.barWords", in: app).label, "Starting")
     XCTAssertFalse(element("session.stop", in: app).exists, "no Stop while it starts")
     XCTAssertTrue(element("session.sendingMessage", in: app).exists)
-    attach(app, "Starting")
+    attach("Starting")
 
     // The real Session replaces it in place.
     let working = NSPredicate(format: "label == %@", "Working")
@@ -87,7 +79,7 @@ final class NewSessionTests: XCTestCase {
     waitForExpectations(timeout: 10)
     XCTAssertTrue(element("session.stop", in: app).exists)
     XCTAssertTrue(element("session.userMessage", in: app).exists)
-    attach(app, "The session begun, in its place")
+    attach("The session begun, in its place")
 
     back(app)
     let row = app.descendants(matching: .any).matching(identifier: "listing.active")
@@ -120,7 +112,7 @@ final class NewSessionTests: XCTestCase {
     XCTAssertTrue(refused.waitForExistence(timeout: 10))
     XCTAssertTrue(refused.label.hasPrefix("Could not create session: "), refused.label)
     XCTAssertFalse(element("session.bar", in: app).exists, "no bar once refused")
-    attach(app, "A refused beginning")
+    attach("A refused beginning")
 
     app.buttons["session.tryAgain"].tap()
     let working = NSPredicate(format: "label == %@", "Working")
@@ -183,7 +175,7 @@ final class NewSessionTests: XCTestCase {
     XCTAssertEqual(words.label, "The server did not answer, so the session may have begun")
     XCTAssertTrue(element("session.mayHaveBegun", in: app).exists, "never that it was refused")
     XCTAssertFalse(element("session.refused", in: app).exists)
-    attach(app, "A beginning never answered")
+    attach("A beginning never answered")
 
     back(app)
     compose(app)
@@ -191,7 +183,7 @@ final class NewSessionTests: XCTestCase {
     let note = element("landing.note", in: app)
     XCTAssertTrue(note.waitForExistence(timeout: 5))
     XCTAssertTrue(note.label.contains("may have begun"), note.label)
-    attach(app, "The landing after a beginning never answered")
+    attach("The landing after a beginning never answered")
   }
 
   @MainActor
@@ -204,7 +196,7 @@ final class NewSessionTests: XCTestCase {
     XCTAssertTrue(asks.label.hasPrefix("Choose a workspace to begin in"), asks.label)
     write("Tidy the build", in: app)
     XCTAssertFalse(app.buttons["landing.send"].isEnabled, "nowhere to begin")
-    attach(app, "No workspace remembered")
+    attach("No workspace remembered")
   }
 
   @MainActor
@@ -223,6 +215,6 @@ final class NewSessionTests: XCTestCase {
     write("Upgrade the add-ons", in: app)
     XCTAssertEqual(element("landing.composer", in: app).value as? String, "Upgrade the add-ons", "it takes a draft")
     XCTAssertFalse(app.buttons["landing.send"].isEnabled)
-    attach(app, "An unreachable remote")
+    attach("An unreachable remote")
   }
 }

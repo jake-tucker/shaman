@@ -16,14 +16,6 @@ final class SessionTests: XCTestCase {
   }
 
   @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
-  @MainActor
   private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
     app.descendants(matching: .any)[identifier]
   }
@@ -65,9 +57,9 @@ final class SessionTests: XCTestCase {
     let streamed = NSPredicate(format: "label CONTAINS %@", "41 columns")
     expectation(for: streamed, evaluatedWith: answer)
     waitForExpectations(timeout: 10)
-    attach(app, "A working session, its answer streamed in")
+    attach("A working session, its answer streamed in")
 
-    app.navigationBars.buttons.firstMatch.tap()
+    app.back.tap()
     XCTAssertTrue(app.navigationBars["All workspaces"].waitForExistence(timeout: 5))
     XCTAssertEqual(
       element("home.beginsIn", in: app).label, "New sessions begin in workstation · shaman",
@@ -79,7 +71,7 @@ final class SessionTests: XCTestCase {
     XCTAssertTrue(other.waitForExistence(timeout: 5))
     other.tap()
     XCTAssertEqual(element("session.place", in: app).label, "dotfiles · main")
-    app.navigationBars.buttons.firstMatch.tap()
+    app.back.tap()
     XCTAssertTrue(app.navigationBars["All workspaces"].waitForExistence(timeout: 5))
     XCTAssertEqual(element("home.beginsIn", in: app).label, "New sessions begin in workstation · shaman")
   }
@@ -92,7 +84,7 @@ final class SessionTests: XCTestCase {
     XCTAssertEqual(element("session.title", in: app).label, "Upgrade Home Assistant to 2026.11")
     XCTAssertEqual(element("session.place", in: app).label, "homelab · home-assistant · main")
     XCTAssertFalse(element("session.turn", in: app).exists)
-    attach(app, "A session framed at once, its conversation loading")
+    attach("A session framed at once, its conversation loading")
   }
 
   @MainActor
@@ -101,7 +93,7 @@ final class SessionTests: XCTestCase {
     let gone = element("session.gone", in: app)
     XCTAssertTrue(gone.waitForExistence(timeout: 10))
     XCTAssertEqual(gone.label, "This session no longer exists")
-    attach(app, "A session that is gone")
+    attach("A session that is gone")
   }
 
   @MainActor
@@ -113,7 +105,7 @@ final class SessionTests: XCTestCase {
     XCTAssertEqual(
       element("session.compaction", in: app).label, "Compacted context · 180K → 40K (automatic)")
     XCTAssertEqual(element("session.model", in: app).label, "auto · gpt-5.5")
-    attach(app, "A settled turn")
+    attach("A settled turn")
 
     // The code block is wider than the screen, so it scrolls sideways rather than wraps.
     let wide = element("session.conversation", in: app).scrollViews
@@ -124,7 +116,7 @@ final class SessionTests: XCTestCase {
     let before = content.frame.minX
     wide.swipeLeft()
     XCTAssertLessThan(content.frame.minX, before, "swiped sideways, it moved")
-    attach(app, "A settled turn's code block scrolled sideways")
+    attach("A settled turn's code block scrolled sideways")
   }
 
   @MainActor
@@ -134,7 +126,7 @@ final class SessionTests: XCTestCase {
     XCTAssertTrue(card.label.contains("Stopped after 41s"), card.label)
     let bubbles = elements("session.userMessage", in: app)
     XCTAssertTrue(bubbles.element(boundBy: bubbles.count - 1).label.hasPrefix("Sorry, carry on."))
-    attach(app, "A stopped turn")
+    attach("A stopped turn")
   }
 
   @MainActor
@@ -144,7 +136,7 @@ final class SessionTests: XCTestCase {
     XCTAssertTrue(card.label.contains("Failed after 12s"), card.label)
     XCTAssertTrue(element("session.error", in: app).label.contains("The provider stopped answering"))
     XCTAssertEqual(element("session.place", in: app).label, "laptop · billing-api · fix/rounding-v2")
-    attach(app, "A failed turn, the origin named")
+    attach("A failed turn, the origin named")
   }
 
   /// Opens the working Session from the listing, as a reader taps its row.
@@ -194,10 +186,10 @@ final class SessionTests: XCTestCase {
     XCTAssertEqual(
       (element("session.composer", in: app).value as? String) ?? "", "Steer, or hold send to queue",
       "the field empties as it is sent")
-    attach(app, "A prompt being sent")
+    attach("A prompt being sent")
     XCTAssertTrue(bubble("Give it a quiet zone too", in: app).waitForExistence(timeout: 10), "and then as sent")
     XCTAssertFalse(sending.exists)
-    attach(app, "A prompt sent")
+    attach("A prompt sent")
   }
 
   @MainActor
@@ -213,7 +205,7 @@ final class SessionTests: XCTestCase {
     XCTAssertTrue(steerNow.waitForExistence(timeout: 5))
     XCTAssertEqual(element("session.queuedText", in: app).label, "Then the changelog")
     XCTAssertTrue(element("session.cancelQueued", in: app).exists)
-    attach(app, "A queued prompt at the foot")
+    attach("A queued prompt at the foot")
     steerNow.tap()
     XCTAssertTrue(bubble("Then the changelog", in: app).waitForExistence(timeout: 5), "steered, it was said")
     XCTAssertFalse(element("session.queued", in: app).exists)
@@ -239,7 +231,7 @@ final class SessionTests: XCTestCase {
     waitFor("exists == %@", false, on: element("session.bar", in: app))
     XCTAssertTrue(lastCard(in: app).label.contains("Stopped after"), lastCard(in: app).label)
     XCTAssertEqual(element("session.composer", in: app).placeholderValue, "Message")
-    attach(app, "A turn stopped with one tap")
+    attach("A turn stopped with one tap")
   }
 
   @MainActor
@@ -252,7 +244,7 @@ final class SessionTests: XCTestCase {
     waitFor("value == %@", "Note the floor in the pairing docs\nand the changelog", on: composer)
     XCTAssertFalse(bubble("Note the floor in the pairing docs", in: app).exists, "withdrawn")
     XCTAssertFalse(element("session.bar", in: app).exists)
-    attach(app, "A withdrawn prompt back in the composer")
+    attach("A withdrawn prompt back in the composer")
   }
 
   @MainActor
@@ -266,7 +258,7 @@ final class SessionTests: XCTestCase {
     XCTAssertFalse(app.alerts.firstMatch.exists, "never an alert")
     waitFor("value == %@", "Please fail", on: element("session.composer", in: app))
     XCTAssertFalse(bubble("Please fail", in: app).exists, "its bubble went")
-    attach(app, "A failed send")
+    attach("A failed send")
   }
 
   @MainActor
@@ -279,7 +271,7 @@ final class SessionTests: XCTestCase {
     XCTAssertEqual(note.label, "The server did not answer, so this prompt may have been sent")
     XCTAssertEqual(element("banner", in: app).label, "The server did not answer")
     waitFor("value == %@", "Unanswered, this one", on: element("session.composer", in: app))
-    attach(app, "A send never answered")
+    attach("A send never answered")
   }
 
   @MainActor
@@ -297,7 +289,7 @@ final class SessionTests: XCTestCase {
     XCTAssertTrue(line.waitForExistence(timeout: 10))
     XCTAssertEqual(line.label, "homelab is unreachable. Nothing sent goes anywhere until it answers.")
     XCTAssertFalse(element("session.composer", in: app).isEnabled)
-    attach(app, "A session on an unreachable origin")
+    attach("A session on an unreachable origin")
   }
 
   @MainActor
@@ -308,6 +300,6 @@ final class SessionTests: XCTestCase {
     XCTAssertEqual(element("session.barWords", in: app).label, "Monitoring")
     XCTAssertTrue(bar.staticTexts["the nightly backup"].exists, "it names the Watch it waits on")
     XCTAssertTrue(element("session.stop", in: app).exists)
-    attach(app, "A monitoring session")
+    attach("A monitoring session")
   }
 }

@@ -22,15 +22,7 @@ final class LongSessionTests: XCTestCase {
   }
 
   @MainActor
-  private func attach(_ screenshot: XCUIScreenshot, _ name: String) {
-    let attachment = XCTAttachment(screenshot: screenshot)
-    attachment.name = name
-    attachment.lifetime = .keepAlways
-    add(attachment)
-  }
-
-  @MainActor
-  private func attach(_ text: String, _ name: String) {
+  private func attach(text: String, _ name: String) {
     let attachment = XCTAttachment(string: text)
     attachment.name = name
     attachment.lifetime = .keepAlways
@@ -40,7 +32,7 @@ final class LongSessionTests: XCTestCase {
   /// A slow drag of `points` down the screen's middle, held at its end so nothing flings.
   @MainActor
   private func drag(_ app: XCUIApplication, by points: CGFloat) {
-    let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: points > 0 ? 0.3 : 0.7))
+    let start = app.point(across: 0.5, down: points > 0 ? 0.3 : 0.7)
     start.press(
       forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: points)), withVelocity: .slow,
       thenHoldForDuration: 0.3)
@@ -56,8 +48,8 @@ final class LongSessionTests: XCTestCase {
     let app = launched(opening: "workstation-key/30")
     // Long enough for the conversation to land and every row on screen to settle, untouched.
     Thread.sleep(forTimeInterval: 4)
-    let opened = Screen(XCUIScreen.main.screenshot())
-    attach(opened.screenshot, "Opened, untouched")
+    let opened = Screen(Display.picture())
+    attach("Opened, untouched", showing: opened.picture)
     XCTAssertGreaterThan(opened.inked, 0.05, "the conversation stands on screen, not blank")
 
     let closing = app.descendants(matching: .any).matching(identifier: "session.agentMessage")
@@ -80,7 +72,7 @@ final class LongSessionTests: XCTestCase {
     let composer = app.descendants(matching: .any)["session.composer"]
     let gap = composer.frame.minY - last.frame.maxY
     if !(0...40).contains(gap) {
-      attach(XCUIScreen.main.screenshot(), said)
+      attach(said)
     }
     XCTAssertTrue((0...40).contains(gap), "\(said): the last row ends \(gap) points above the composer")
   }
@@ -101,24 +93,24 @@ final class LongSessionTests: XCTestCase {
     let app = launched(opening: "workstation-key/30")
     Thread.sleep(forTimeInterval: 2)
     var log = ""
-    var before = Screen(XCUIScreen.main.screenshot())
+    var before = Screen(Display.picture())
     var moves: [CGFloat] = []
     for (direction, steps) in [(CGFloat(1), 12), (CGFloat(-1), 6)] {
       for _ in 0..<steps {
         drag(app, by: 200 * direction)
         settle()
-        let after = Screen(XCUIScreen.main.screenshot())
+        let after = Screen(Display.picture())
         let moved = after.shift(from: before).map { -$0 }
         log += "dragged \(Int(200 * direction)): moved \(moved.map { "\(Int($0))" } ?? "beyond a screen")\n"
         moves.append(moved.map { $0 * direction } ?? .infinity)
         if moved.map({ abs($0 - 190 * direction) > 60 }) ?? true {
-          attach(before.screenshot, "Before a jump")
-          attach(after.screenshot, "After a jump")
+          attach("Before a jump", showing: before.picture)
+          attach("After a jump", showing: after.picture)
         }
         before = after
       }
     }
-    attach(log, "Moves")
+    attach(text: log, "Moves")
     // A drag of 200 points moves what is on screen by what the drag moved past the touch's slop, each time; the foot
     // and the head stop it short.
     let jumps = moves.filter { $0 > 230 || $0 < -10 }
@@ -146,11 +138,11 @@ final class LongSessionTests: XCTestCase {
     }
     // Long enough for the last drag to have come to rest, however busy the machine.
     Thread.sleep(forTimeInterval: 1.5)
-    let scrolled = Screen(XCUIScreen.main.screenshot())
+    let scrolled = Screen(Display.picture())
     Thread.sleep(forTimeInterval: 3)
-    let later = Screen(XCUIScreen.main.screenshot())
-    attach(scrolled.screenshot, "Scrolled up while it streams")
-    attach(later.screenshot, "A while later")
+    let later = Screen(Display.picture())
+    attach("Scrolled up while it streams", showing: scrolled.picture)
+    attach("A while later", showing: later.picture)
     // The block the reader is in may be set again as it grows, which moves its words by a pixel here and there.
     let moved = later.shift(from: scrolled, closely: 0.2)
     XCTAssertNotNil(moved, "what the reader scrolled to is still on screen")
@@ -160,7 +152,7 @@ final class LongSessionTests: XCTestCase {
     // What streamed in stands below, where the reader finds it.
     var reached = streamed
     for _ in 0..<10 where reached < streamed + 6 {
-      app.swipeUp(velocity: .fast)
+      app.window.swipeUp(velocity: .fast)
       reached = try self.blocks(of: app).compactMap(\.step).max() ?? 0
     }
     XCTAssertGreaterThanOrEqual(reached, streamed + 6, "it streamed on all the while")
@@ -188,18 +180,18 @@ final class LongSessionTests: XCTestCase {
   }
 }
 
-/// A screenshot of the app, read for what it shows between the navigation bar and the composer.
+/// A picture of the display the app is on, read for what it shows between the navigation bar and the composer.
 @MainActor private struct Screen {
-  let screenshot: XCUIScreenshot
+  let picture: UIImage
   /// Every other pixel row's ink, in bands across the width, from a fifth of the way down to four fifths.
   private let rows: [[Double]]
   private let scale: Double
 
-  init(_ screenshot: XCUIScreenshot) {
-    self.screenshot = screenshot
-    let image = screenshot.image.cgImage!
+  init(_ picture: UIImage) {
+    self.picture = picture
+    let image = picture.cgImage!
     // Every other pixel row is read, so a row read stands for two.
-    scale = Double(image.width) / Double(screenshot.image.size.width) / 2
+    scale = Double(image.width) / Double(picture.size.width) / 2
     let width = image.width
     let height = image.height
     let context = CGContext(

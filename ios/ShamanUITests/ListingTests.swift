@@ -16,14 +16,6 @@ final class ListingTests: XCTestCase {
   }
 
   @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
-  @MainActor
   private func rows(_ shelf: String, in app: XCUIApplication) -> XCUIElementQuery {
     app.descendants(matching: .any).matching(identifier: "listing.\(shelf)")
   }
@@ -32,20 +24,6 @@ final class ListingTests: XCTestCase {
   @MainActor
   private func row(_ shelf: String, titled title: String, in app: XCUIApplication) -> XCUIElement {
     rows(shelf, in: app).matching(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
-  }
-
-  /// Scrolls the listing until `element` can be tapped, clear of the bottom bar standing over the listing's foot.
-  @MainActor
-  private func scrolled(to element: XCUIElement, in app: XCUIApplication) -> XCUIElement {
-    let bar = app.buttons["home.servers"]
-    let clear = { element.exists && element.isHittable && (!bar.exists || element.frame.maxY <= bar.frame.minY) }
-    var swipes = 0
-    while !clear() && swipes < 12 {
-      app.swipeUp()
-      swipes += 1
-    }
-    XCTAssertTrue(element.isHittable, "scrolled to \(element)")
-    return element
   }
 
   @MainActor
@@ -64,7 +42,7 @@ final class ListingTests: XCTestCase {
     XCTAssertTrue(app.buttons["home.servers"].exists)
     XCTAssertTrue(app.buttons["home.compose"].exists)
     XCTAssertEqual(app.descendants(matching: .any)["home.beginsIn"].label, "New sessions begin in workstation")
-    attach(app, "Several servers' sessions in one listing")
+    attach("Several servers' sessions in one listing")
   }
 
   @MainActor
@@ -79,7 +57,7 @@ final class ListingTests: XCTestCase {
     }
     XCTAssertTrue(row("active", titled: "shaman", in: app).exists)
     XCTAssertEqual(app.descendants(matching: .any)["home.beginsIn"].label, "New sessions begin in workstation")
-    attach(app, "One server's sessions, naming no origin")
+    attach("One server's sessions, naming no origin")
   }
 
   @MainActor
@@ -94,22 +72,22 @@ final class ListingTests: XCTestCase {
     let settled = row("settled", titled: title, in: app)
     XCTAssertTrue(active.waitForNonExistence(timeout: 10), "gone from the active rows")
     // The shelf stands beneath every active row, further down than the listing draws at first.
-    XCTAssertTrue(scrolled(to: settled, in: app).isHittable, "settled onto the shelf")
+    XCTAssertTrue(app.scrolled(to: settled).isHittable, "settled onto the shelf")
     XCTAssertTrue(app.staticTexts["listing.settledHeader"].exists)
     XCTAssertEqual(app.staticTexts["listing.settledHeader"].label, "Settled")
-    attach(app, "A row settled onto the shelf")
+    attach("A row settled onto the shelf")
 
     // Clear of the bottom bar, so the action the swipe reveals takes the tap.
-    if settled.frame.maxY > app.frame.height * 0.75 {
-      app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
-        .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)))
+    if settled.frame.maxY > app.window.frame.height * 0.75 {
+      app.point(across: 0.5, down: 0.6)
+        .press(forDuration: 0.05, thenDragTo: app.point(across: 0.5, down: 0.45))
     }
     settled.swipeLeft()
     app.buttons["Unsettle"].tap()
     XCTAssertTrue(settled.waitForNonExistence(timeout: 10), "gone from the shelf")
     // Back at the head of the active rows, above where the shelf was scrolled to.
     for _ in 0..<3 where !active.exists {
-      app.swipeDown()
+      app.window.swipeDown()
     }
     XCTAssertTrue(active.waitForExistence(timeout: 10), "brought back among the active")
     XCTAssertFalse(settled.exists)
@@ -119,26 +97,29 @@ final class ListingTests: XCTestCase {
   func testTheShelfShowsItsFirstRowsAndTheRestBehindShowMore() {
     let app = launched("paired")
     XCTAssertTrue(rows("active", in: app).firstMatch.waitForExistence(timeout: 10))
-    let showMore = scrolled(to: app.buttons["listing.showMore"], in: app)
+    // By its words, as at the foot of the listing on a closed Duo the capsule floats over the row, which the user found
+    // fine on the phone, and takes a tap in its middle.
+    let showMore = app.scrolled(to: app.buttons["listing.showMore"], at: 0.1)
     XCTAssertEqual(showMore.label, "Show 2 more")
     let hidden = row("settled", titled: "Prune the stale worktrees", in: app)
     XCTAssertFalse(hidden.exists, "the last of the shelf stands behind Show more")
-    attach(app, "The shelf, the rest behind Show more")
+    attach("The shelf, the rest behind Show more")
 
-    showMore.tap()
-    XCTAssertTrue(hidden.waitForExistence(timeout: 10))
+    showMore.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).tap()
+    app.scrolled(to: hidden, at: 0.1)
     XCTAssertFalse(app.buttons["listing.showMore"].exists, "the shelf is whole")
   }
 
   @MainActor
   func testARemoteYetToAnswerIsSaidToBeReachedAtTheFootOfTheActiveRows() {
     let app = launched("reaching")
+    XCTAssertTrue(rows("active", in: app).firstMatch.waitForExistence(timeout: 10))
     let waiting = app.descendants(matching: .any)["listing.waiting"]
-    XCTAssertTrue(scrolled(to: waiting, in: app).exists)
+    XCTAssertTrue(app.scrolled(to: waiting).exists)
     XCTAssertTrue(waiting.label.contains("Reaching homelab…"), waiting.label)
     XCTAssertFalse(row("active", titled: "homelab ·", in: app).exists, "nothing of it is listed yet")
     XCTAssertFalse(app.descendants(matching: .any)["listing.empty"].exists)
-    attach(app, "A remote yet to answer")
+    attach("A remote yet to answer")
   }
 
   @MainActor
@@ -173,7 +154,7 @@ final class ListingTests: XCTestCase {
       let headed = app.staticTexts.matching(NSPredicate(format: "label == %@", header)).firstMatch
       XCTAssertTrue(headed.exists, "a section is headed \(header)")
     }
-    attach(app, "The title's menu with several servers")
+    attach("The title's menu with several servers")
   }
 
   @MainActor
@@ -187,7 +168,7 @@ final class ListingTests: XCTestCase {
       XCTAssertTrue(app.buttons[words].firstMatch.waitForExistence(timeout: 10), "offers \(words)")
     }
     XCTAssertFalse(app.buttons["All of workstation"].exists, "no Origin is named with one server")
-    attach(app, "The title's menu with one server")
+    attach("The title's menu with one server")
   }
 
   @MainActor
@@ -203,14 +184,14 @@ final class ListingTests: XCTestCase {
     XCTAssertFalse(row("active", titled: "Upgrade Home Assistant", in: app).exists, "another Workspace's")
     XCTAssertFalse(row("active", titled: "workstation ·", in: app).exists, "another Remote's")
     XCTAssertEqual(beginsIn(app), "New sessions begin in homelab · relay-infra")
-    attach(app, "Narrowed to a workspace, the outlook turned")
+    attach("Narrowed to a workspace, the outlook turned")
 
     choose("All of laptop", in: app)
     XCTAssertTrue(app.navigationBars["laptop"].waitForExistence(timeout: 10))
     XCTAssertTrue(row("active", titled: "laptop · design-system", in: app).waitForExistence(timeout: 10))
     XCTAssertFalse(row("active", titled: "homelab ·", in: app).exists)
     XCTAssertEqual(beginsIn(app), "New sessions begin in laptop")
-    attach(app, "Narrowed to a server, the outlook turned")
+    attach("Narrowed to a server, the outlook turned")
 
     choose("Everywhere", in: app)
     XCTAssertTrue(app.navigationBars["Everywhere"].waitForExistence(timeout: 10))
@@ -244,16 +225,16 @@ final class ListingTests: XCTestCase {
       row("active", titled: "Draw the invite as a QR code", in: app).waitForExistence(timeout: 10),
       "active rows keep their shape")
     let stale = row("settled", titled: "Prune the stale worktrees", in: app)
-    XCTAssertTrue(scrolled(to: stale, in: app).exists, "the whole shelf is searched, past Show more")
+    XCTAssertTrue(app.scrolled(to: stale).exists, "the whole shelf is searched, past Show more")
     XCTAssertFalse(app.staticTexts["listing.settledHeader"].exists, "the shelves stand down")
     XCTAssertFalse(app.buttons["listing.showMore"].exists)
-    attach(app, "A search, one flat list")
+    attach("A search, one flat list")
 
     field.typeText("nothing like it")
     let empty = app.staticTexts["listing.empty"]
     XCTAssertTrue(empty.waitForExistence(timeout: 10))
     XCTAssertEqual(empty.label, "No sessions match")
-    attach(app, "A search that finds nothing")
+    attach("A search that finds nothing")
   }
 
   @MainActor
@@ -269,6 +250,6 @@ final class ListingTests: XCTestCase {
     let waiting = app.descendants(matching: .any)["listing.waiting"]
     XCTAssertTrue(waiting.exists, "the Remote yet to answer is still said to be reached")
     XCTAssertTrue(waiting.label.contains("Reaching homelab…"), waiting.label)
-    attach(app, "A search while a remote is reached")
+    attach("A search while a remote is reached")
   }
 }

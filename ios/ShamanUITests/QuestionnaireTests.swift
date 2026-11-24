@@ -19,14 +19,6 @@ final class QuestionnaireTests: XCTestCase {
   }
 
   @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
-  @MainActor
   private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
     app.descendants(matching: .any)[identifier]
   }
@@ -45,14 +37,6 @@ final class QuestionnaireTests: XCTestCase {
   private func wait(for format: String, _ element: XCUIElement, timeout: TimeInterval = 10) {
     expectation(for: NSPredicate(format: format), evaluatedWith: element)
     waitForExpectations(timeout: timeout)
-  }
-
-  @MainActor
-  private func swipeAway(in app: XCUIApplication) {
-    let grabber = app.buttons["Sheet Grabber"]
-    XCTAssertTrue(grabber.waitForExistence(timeout: 5))
-    grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-      .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.99)))
   }
 
   /// The title of the sheet's page on show.
@@ -79,7 +63,7 @@ final class QuestionnaireTests: XCTestCase {
     XCTAssertFalse(element("questionnaire.skip", in: app).exists, "a required Question offers no Skip")
     XCTAssertEqual(next.label, "Next")
     XCTAssertFalse(element("questionnaire.back", in: app).exists)
-    attach(app, "A questionnaire presenting itself")
+    attach("A questionnaire presenting itself")
 
     wait(for: "isEnabled == true", element("questionnaire.decline", in: app))
     XCTAssertFalse(next.isEnabled, "a required Question holds Next until it is answered")
@@ -89,7 +73,7 @@ final class QuestionnaireTests: XCTestCase {
     field.tap()
     field.typeText("after lunch")
     XCTAssertTrue(staging.isSelected, "written beside the choice, both stand")
-    attach(app, "A choice with additional text beside it")
+    attach("A choice with additional text beside it")
     next.tap()
 
     // Several may be chosen; writing instead clears them, and choosing clears what was written.
@@ -105,7 +89,7 @@ final class QuestionnaireTests: XCTestCase {
     instead.tap()
     instead.typeText("the relay suites alone")
     XCTAssertFalse(unit.isSelected || soak.isSelected, "writing clears the choices")
-    attach(app, "Several choices cleared by writing instead")
+    attach("Several choices cleared by writing instead")
     unit.tap()
     XCTAssertEqual(instead.value as? String, "Or write your own", "choosing clears the text")
     XCTAssertTrue(unit.isSelected)
@@ -126,7 +110,7 @@ final class QuestionnaireTests: XCTestCase {
     next.tap()
     wait(for: "label == 'Question 3 of 3'", position(in: app))
     XCTAssertEqual(element("questionnaire.secret", in: app).label, "Answered (secret)")
-    attach(app, "A secret answered, shown again")
+    attach("A secret answered, shown again")
 
     next.tap()
     XCTAssertTrue(element("questionnaire.sending", in: app).waitForExistence(timeout: 2), "dimmed until answered")
@@ -135,7 +119,7 @@ final class QuestionnaireTests: XCTestCase {
     let card = app.descendants(matching: .any).matching(identifier: "session.turn").firstMatch
     wait(for: "label BEGINSWITH 'Working'", card)
     XCTAssertEqual(element("session.barWords", in: app).label, "Working")
-    attach(app, "The questionnaire answered, its turn working again")
+    attach("The questionnaire answered, its turn working again")
   }
 
   @MainActor
@@ -150,13 +134,13 @@ final class QuestionnaireTests: XCTestCase {
     wait(for: "label == 'Question 2 of 3'", position(in: app))
     choice("Integration", in: app).tap()
 
-    swipeAway(in: app)
+    app.swipeSheetAway()
     let sheet = element("questionnaire.sheet", in: app)
     wait(for: "exists == false", sheet)
     XCTAssertEqual(element("session.barWords", in: app).label, "Questionnaire waiting")
     let review = element("session.review", in: app)
     XCTAssertEqual(review.label, "Review")
-    attach(app, "A questionnaire dismissed, waiting behind the orange bar")
+    attach("A questionnaire dismissed, waiting behind the orange bar")
 
     review.tap()
     XCTAssertTrue(sheet.waitForExistence(timeout: 5))
@@ -164,7 +148,7 @@ final class QuestionnaireTests: XCTestCase {
     XCTAssertTrue(choice("Integration", in: app).isSelected, "half-given answers are kept")
     element("questionnaire.back", in: app).tap()
     XCTAssertTrue(choice("Local", in: app).isSelected)
-    attach(app, "Reviewed, as it was left")
+    attach("Reviewed, as it was left")
 
     // A secret written and swiped away reads as answered once reviewed, showing nothing of itself.
     next.tap()
@@ -173,13 +157,13 @@ final class QuestionnaireTests: XCTestCase {
     let secure = app.secureTextFields["questionnaire.field"]
     secure.tap()
     secure.typeText("hunter2")
-    swipeAway(in: app)
+    app.swipeSheetAway()
     wait(for: "exists == false", sheet)
     element("session.review", in: app).tap()
     XCTAssertTrue(sheet.waitForExistence(timeout: 5))
     wait(for: "label == 'Question 3 of 3'", position(in: app))
     XCTAssertEqual(element("questionnaire.secret", in: app).label, "Answered (secret)")
-    attach(app, "A secret swiped away, reviewed")
+    attach("A secret swiped away, reviewed")
   }
 
   @MainActor
@@ -204,7 +188,7 @@ final class QuestionnaireTests: XCTestCase {
     XCTAssertTrue(element("questionnaire.sheet", in: app).exists)
     XCTAssertFalse(element("questionnaire.sending", in: app).exists)
     XCTAssertFalse(element("questionnaire.secret", in: app).exists, "skipped, it holds nothing")
-    attach(app, "Skip on the last page, staying")
+    attach("Skip on the last page, staying")
     element("questionnaire.back", in: app).tap()
     wait(for: "label == 'Question 2 of 3'", position(in: app))
     XCTAssertFalse(choice("Soak", in: app).isSelected, "skipped, it holds nothing")
@@ -220,7 +204,7 @@ final class QuestionnaireTests: XCTestCase {
   @MainActor
   private func keyboardUp(in app: XCUIApplication) -> Bool {
     let keyboard = app.keyboards.firstMatch
-    let screen = app.windows.firstMatch.frame
+    let screen = app.window.frame
     let deadline = Date().addingTimeInterval(3)
     while Date() < deadline {
       if keyboard.exists, keyboard.frame.minY < screen.maxY - keyboard.frame.height / 2 {
@@ -257,12 +241,12 @@ final class QuestionnaireTests: XCTestCase {
     wait(for: "label == 'Question 2 of 3'", position(in: app))
     element("questionnaire.field", in: app).tap()
     footClearOfTheKeyboard(in: app)
-    attach(app, "A written answer, the keyboard up")
+    attach("A written answer, the keyboard up")
     next.tap()
 
     wait(for: "label == 'Question 3 of 3'", position(in: app))
     app.secureTextFields["questionnaire.field"].tap()
     footClearOfTheKeyboard(in: app)
-    attach(app, "A secret's field, the keyboard up")
+    attach("A secret's field, the keyboard up")
   }
 }

@@ -22,14 +22,6 @@ final class ConversationRowsTests: XCTestCase {
     "workstation-key/9": "Find the workspace that holds the deploy scripts",
   ]
 
-  @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
   /// The rows on screen, top first, once what they draw has had a moment to settle.
   @MainActor
   private func rows(in app: XCUIApplication) -> [(label: String, frame: CGRect)] {
@@ -53,7 +45,7 @@ final class ConversationRowsTests: XCTestCase {
     let rows = rows(in: app)
     XCTAssertGreaterThan(rows.count, 2, "\(session) shows its conversation")
     for (above, below) in zip(rows, rows.dropFirst()) where below.frame.minY < above.frame.maxY - 1 {
-      attach(app, "\(session), opening \(opening)")
+      attach("\(session), opening \(opening)")
       XCTFail(
         "\(session), opening \(opening): \(below.label) at \(below.frame) overlaps \(above.label) at \(above.frame)")
     }
@@ -92,7 +84,7 @@ final class ConversationRowsTests: XCTestCase {
         XCTAssertEqual(blocks.count, long ? 8 : 1, "\(said): a row for each of its blocks")
         for block in blocks {
           if abs(block.row.height - block.words.height) > 2 {
-            attach(app, said)
+            attach(said)
           }
           XCTAssertEqual(
             block.row.height, block.words.height, accuracy: 2,
@@ -136,7 +128,7 @@ final class ConversationRowsTests: XCTestCase {
       "workstation-key/9", "workstation-key/7", "workstation-key/7",
     ]
     for (opening, session) in order.enumerated() {
-      app.navigationBars.buttons.firstMatch.tap()
+      app.back.tap()
       let row = app.descendants(matching: .any).matching(identifier: "listing.active")
         .matching(NSPredicate(format: "label CONTAINS %@", Self.titles[session]!)).firstMatch
       XCTAssertTrue(row.waitForExistence(timeout: 10), session)

@@ -19,14 +19,6 @@ final class ServersTests: XCTestCase {
   }
 
   @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
-  @MainActor
   private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
     app.descendants(matching: .any)[identifier]
   }
@@ -50,7 +42,9 @@ final class ServersTests: XCTestCase {
   @MainActor
   private func closeSheet(_ app: XCUIApplication) {
     let bar = app.navigationBars["Servers & device"]
-    bar.swipeDown(velocity: .fast)
+    bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      .press(
+        forDuration: 0.1, thenDragTo: app.point(across: 0.5, down: 0.98), withVelocity: .fast, thenHoldForDuration: 0)
     XCTAssertTrue(gone(bar), "the sheet closed")
   }
 
@@ -84,7 +78,7 @@ final class ServersTests: XCTestCase {
     XCTAssertTrue(confirm.waitForExistence(timeout: 5))
     let asked = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "This phone removes \(remote)"))
     XCTAssertTrue(asked.firstMatch.exists, "what removing ends is said first")
-    attach(app, "Removing a server asks first")
+    attach("Removing a server asks first")
     confirm.tap()
   }
 
@@ -92,25 +86,25 @@ final class ServersTests: XCTestCase {
   func testARemoteIsRenamedFromItsRowARefusedNameStayingBesideWhy() {
     let app = launched("several")
     openSheet(app)
-    attach(app, "The servers section")
+    attach("The servers section")
 
     rename("workstation", to: "laptop", in: app)
     let refusal = app.staticTexts["server.workstation.refusal"]
     XCTAssertTrue(refusal.waitForExistence(timeout: 10))
     XCTAssertEqual(refusal.label, "This phone holds another server as laptop; choose another name")
     XCTAssertEqual(app.textFields["server.workstation"].value as? String, "laptop", "what was written stays")
-    attach(app, "A refused server name")
+    attach("A refused server name")
 
     rename("workstation", to: "studio", in: app)
     let renamed = app.textFields["server.studio"]
     XCTAssertTrue(renamed.waitForExistence(timeout: 10))
     XCTAssertTrue(gone(refusal), "nothing refused stands")
     XCTAssertEqual(renamed.value as? String, "studio")
-    attach(app, "A renamed server")
+    attach("A renamed server")
 
     closeSheet(app)
     XCTAssertEqual(element("home.beginsIn", in: app).label, "New sessions begin in studio", "the Outlook goes with it")
-    attach(app, "The listing after a rename")
+    attach("The listing after a rename")
   }
 
   @MainActor
@@ -124,11 +118,11 @@ final class ServersTests: XCTestCase {
     let said = notice(beginning: "workstation was removed", in: app)
     XCTAssertTrue(said.waitForExistence(timeout: 10))
     XCTAssertEqual(said.label, "workstation was removed. New sessions begin in laptop")
-    attach(app, "A server removed")
+    attach("A server removed")
 
     closeSheet(app)
     XCTAssertEqual(element("home.beginsIn", in: app).label, "New sessions begin in laptop")
-    attach(app, "The listing after a removal")
+    attach("The listing after a removal")
   }
 
   @MainActor
@@ -139,7 +133,7 @@ final class ServersTests: XCTestCase {
 
     XCTAssertTrue(app.buttons["pairing.paste"].waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["home.servers"].exists, "no listing stands")
-    attach(app, "A phone left with no server")
+    attach("A phone left with no server")
   }
 
   @MainActor
@@ -151,7 +145,7 @@ final class ServersTests: XCTestCase {
     pairAnother.tap()
     XCTAssertTrue(app.buttons["pairing.paste"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["Pair with a server"].exists)
-    attach(app, "Pairing another server")
+    attach("Pairing another server")
   }
 
   @MainActor
@@ -166,7 +160,7 @@ final class ServersTests: XCTestCase {
     XCTAssertEqual(
       said.label, "workstation removed this phone; pair with it again to reach it. New sessions begin in laptop")
     XCTAssertEqual(beginsIn.label, "New sessions begin in laptop", "the laptop was turned toward before it")
-    attach(app, "A server removed this phone")
+    attach("A server removed this phone")
   }
 
   @MainActor
@@ -179,7 +173,7 @@ final class ServersTests: XCTestCase {
     XCTAssertTrue(gone.waitForExistence(timeout: 20))
     XCTAssertEqual(gone.label, "This phone is no longer paired with the server this session is on")
     XCTAssertFalse(element("session.composer", in: app).exists, "nothing is offered on it")
-    attach(app, "A session on a server that removed this phone")
+    attach("A session on a server that removed this phone")
   }
 
   @MainActor
@@ -191,7 +185,7 @@ final class ServersTests: XCTestCase {
     let said = notice(beginning: "workstation removed this phone", in: app)
     XCTAssertTrue(said.waitForExistence(timeout: 10))
     XCTAssertEqual(said.label, "workstation removed this phone; pair with it again to reach it")
-    attach(app, "The one server removed this phone")
+    attach("The one server removed this phone")
   }
 
   @MainActor
@@ -199,14 +193,10 @@ final class ServersTests: XCTestCase {
     let app = launched("paired")
     openSheet(app)
     let note = app.staticTexts["device.name.note"]
-    var swipes = 0
-    while !(note.exists && note.isHittable) && swipes < 6 {
-      app.swipeUp()
-      swipes += 1
-    }
+    app.scrolled(to: note)
     XCTAssertEqual(
       note.label,
       "Servers paired from now on know this phone by this name. Those already paired keep the name they were given.")
-    attach(app, "This device")
+    attach("This device")
   }
 }

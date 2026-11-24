@@ -17,14 +17,6 @@ final class WorkTests: XCTestCase {
   }
 
   @MainActor
-  private func attach(_ app: XCUIApplication, _ name: String) {
-    let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-  }
-
-  @MainActor
   private func elements(_ identifier: String, in app: XCUIApplication) -> XCUIElementQuery {
     app.descendants(matching: .any).matching(identifier: identifier)
   }
@@ -60,15 +52,15 @@ final class WorkTests: XCTestCase {
       element("work.row", holding: "Approval · Command · Accepted once", in: app).exists,
       "a settled Approval reads as the TUI's row")
     XCTAssertTrue(element("work.row", holding: "Not shown: web search, from a newer Shaman", in: app).exists)
-    attach(app, "A settled turn's work")
+    attach("A settled turn's work")
 
     // A File Change names its paths, and nothing of what changed in them.
     element("work.row", holding: "Edited src/tui/serve_panel.rs", in: app).tap()
     XCTAssertTrue(app.navigationBars["File change"].waitForExistence(timeout: 5))
     XCTAssertTrue(element("detail.fact", holding: "src/tui/qr.rs", in: app).exists)
     XCTAssertFalse(elements("detail.monospace", in: app).firstMatch.exists, "no diff")
-    attach(app, "A file change's paths")
-    app.navigationBars.buttons.firstMatch.tap()
+    attach("A file change's paths")
+    app.back.tap()
 
     // A settled Approval opens onto what was asked and what was answered.
     element("work.row", holding: "Approval · Command", in: app).tap()
@@ -76,8 +68,8 @@ final class WorkTests: XCTestCase {
     XCTAssertTrue(element("detail.fact", holding: "cargo nextest run serve_panel", in: app).exists)
     XCTAssertTrue(element("detail.fact", holding: "Runs the tests", in: app).exists)
     XCTAssertTrue(element("detail.fact", holding: "Accepted once", in: app).exists)
-    attach(app, "A settled approval, what was asked and answered")
-    app.navigationBars.buttons.firstMatch.tap()
+    attach("A settled approval, what was asked and answered")
+    app.back.tap()
 
     // The placeholder says all there is, so it pushes nothing.
     element("work.row", holding: "Not shown", in: app).tap()
@@ -86,11 +78,11 @@ final class WorkTests: XCTestCase {
     element("work.row", holding: "cargo check", in: app).tap()
     XCTAssertTrue(app.navigationBars["Command"].waitForExistence(timeout: 5))
     XCTAssertTrue(element("detail.monospace", holding: "Finished `dev` profile", in: app).exists)
-    attach(app, "A command's output")
+    attach("A command's output")
 
-    app.navigationBars.buttons.firstMatch.tap()
+    app.back.tap()
     XCTAssertTrue(app.navigationBars["Worked for 3m 12s"].waitForExistence(timeout: 5))
-    app.navigationBars.buttons.firstMatch.tap()
+    app.back.tap()
     XCTAssertTrue(elements("session.turn", in: app).firstMatch.waitForExistence(timeout: 5), "back at the session")
   }
 
@@ -101,7 +93,7 @@ final class WorkTests: XCTestCase {
     XCTAssertTrue(app.navigationBars["Working"].waitForExistence(timeout: 5))
     let running = element("work.row", holding: "cargo nextest run qr", in: app)
     XCTAssertTrue(running.waitForExistence(timeout: 5))
-    attach(app, "A working turn's work")
+    attach("A working turn's work")
     running.tap()
 
     XCTAssertTrue(app.navigationBars["Command"].waitForExistence(timeout: 5))
@@ -116,7 +108,7 @@ final class WorkTests: XCTestCase {
     XCTAssertTrue(
       outputs.waitForOne(NSPredicate(format: "label CONTAINS %@", "the_quiet_zone_stands_on_every_side")),
       "to its widest line")
-    attach(app, "A running command's output, grown")
+    attach("A running command's output, grown")
 
     // Its lines are kept whole, wider than the screen, so the output scrolls sideways. Dragged by its first lines, as
     // it may have grown past the foot of the screen.
@@ -125,7 +117,7 @@ final class WorkTests: XCTestCase {
       .coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0)).withOffset(CGVector(dx: 0, dy: 20))
     first.press(forDuration: 0.05, thenDragTo: first.withOffset(CGVector(dx: -200, dy: 0)))
     XCTAssertLessThan(output.frame.minX, before, "dragged sideways, it moved")
-    attach(app, "A running command's output scrolled sideways")
+    attach("A running command's output scrolled sideways")
   }
 
   @MainActor
@@ -136,6 +128,6 @@ final class WorkTests: XCTestCase {
     compaction.tap()
     XCTAssertTrue(app.navigationBars["Compaction"].waitForExistence(timeout: 5))
     XCTAssertTrue(element("detail.prose", holding: "We drew the invite", in: app).exists)
-    attach(app, "A compaction's summary")
+    attach("A compaction's summary")
   }
 }
