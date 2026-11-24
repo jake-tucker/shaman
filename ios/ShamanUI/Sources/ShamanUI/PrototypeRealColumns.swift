@@ -8,8 +8,8 @@
 // screens as it says it did show one.
 //
 // `--container <uikit|swiftui>` chooses the container, and `--tree-badge` the tree button #716 decided. So that the
-// UI suite runs unchanged, a simulator also reads both words from /tmp/duo732/config-<its UDID>, or
-// /tmp/duo732/config, where no argument says. Every event is a line in /tmp/duo732/app.log.
+// UI suite runs unchanged, a simulator also reads both words from /tmp/duo733/config-<its UDID>, or
+// /tmp/duo733/config, where no argument says. Every event is a line in /tmp/duo733/app.log.
 
 import ShamanCore
 import SwiftUI
@@ -27,7 +27,7 @@ enum Columns {
     #if targetEnvironment(simulator)
       let udid = ProcessInfo.processInfo.environment["SIMULATOR_UDID"] ?? ""
       for name in ["config-\(udid)", "config"] {
-        if let said = try? String(contentsOfFile: "/tmp/duo732/\(name)", encoding: .utf8) {
+        if let said = try? String(contentsOfFile: "/tmp/duo733/\(name)", encoding: .utf8) {
           words += said.split(whereSeparator: \.isWhitespace).map(String.init)
           break
         }
@@ -53,7 +53,7 @@ enum Columns {
 
 func colLog(_ line: String) {
   #if targetEnvironment(simulator)
-    let url = URL(fileURLWithPath: "/tmp/duo732/app.log")
+    let url = URL(fileURLWithPath: "/tmp/duo733/app.log")
     let stamp = String(format: "%07.3f", Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 1000))
     let data = Data("\(stamp) \(line)\n".utf8)
     if let handle = try? FileHandle(forWritingTo: url) {
@@ -172,9 +172,14 @@ final class RealColumns: UISplitViewController, UISplitViewControllerDelegate, U
     minimumInspectorColumnWidth = Self.asideMinimum
     preferredSplitBehavior = .tile
     preferredDisplayMode = .oneBesideSecondary
+    // PROTOTYPE #733: the words that choose how the Sidebar is asked for, and the fold told to the container.
+    applySidebarWords()
+    ProtoS.shared.foldChanged = { [weak self] in self?.foldChanged() }
+    startPokes()
     stack.pathChanged = { [weak self] in
       self?.sync()
       self?.reconcile("the path")
+      self?.standSidebar("the path")
     }
     stack.aside.changed = { [weak self] in self?.reconcile("the reader") }
     colLog("columns made, path \(stack.path.map(\.tag))")
@@ -220,7 +225,7 @@ final class RealColumns: UISplitViewController, UISplitViewControllerDelegate, U
   }
 
   private var where_: String {
-    "collapsed=\(isCollapsed) mode=\(displayMode.rawValue) sidebar=\(names(sidebar)) main=\(names(main)) aside=\(isShowing(.inspector))"
+    "\(state) sidebar=\(names(sidebar)) main=\(names(main))"
   }
 
   // MARK: The path
@@ -309,8 +314,71 @@ final class RealColumns: UISplitViewController, UISplitViewControllerDelegate, U
   func secondAside() -> UIViewController { UIHostingController(rootView: screens.aside()) }
 
   func splitViewController(_ svc: UISplitViewController, willChangeTo mode: UISplitViewController.DisplayMode) {
-    colLog("display mode -> \(mode.rawValue)")
+    colLog("display mode -> \(mode.rawValue) from \(state)")
+    if SidebarC.has("who") { colLog("  asked by\n        \(Self.asked())") }
     modeChanged?()
+  }
+
+  // MARK: PROTOTYPE #733
+
+  func splitViewController(
+    _ svc: UISplitViewController, displayModeForExpandingToProposedDisplayMode proposed: UISplitViewController.DisplayMode
+  ) -> UISplitViewController.DisplayMode {
+    colLog("expanding, proposed mode \(proposed.rawValue) \(state)")
+    return proposed
+  }
+
+  func splitViewController(_ svc: UISplitViewController, willShow column: UISplitViewController.Column) {
+    colLog("willShow column \(column.rawValue) \(state)")
+  }
+
+  func splitViewController(_ svc: UISplitViewController, willHide column: UISplitViewController.Column) {
+    colLog("willHide column \(column.rawValue) \(state)")
+  }
+
+  func splitViewController(_ svc: UISplitViewController, didShow column: UISplitViewController.Column) {
+    colLog("didShow column \(column.rawValue) \(state)")
+  }
+
+  func splitViewController(_ svc: UISplitViewController, didHide column: UISplitViewController.Column) {
+    colLog("didHide column \(column.rawValue) \(state)")
+  }
+
+  func splitViewControllerInteractivePresentationGestureWillBegin(_ svc: UISplitViewController) {
+    colLog("the sidebar's gesture begins \(state)")
+  }
+
+  func splitViewControllerInteractivePresentationGestureDidEnd(_ svc: UISplitViewController) {
+    colLog("the sidebar's gesture ended \(state)")
+  }
+
+  /// Told as a fold comes or goes, above the container.
+  func foldChanged() {
+    colLog("fold changed \(state)")
+  }
+
+  /// While nothing is open the Sidebar stands, as #714 decided: asked for at a moment the system named, wherever
+  /// the system has stood the main view alone, and left alone where the reader put it away, which the split view
+  /// keeps as its preferred display mode. The system stands it over the main view where it will not tile, and puts
+  /// it away again as a Session is shown in the main view.
+  func standSidebar(_ why: String) {
+    guard !SidebarC.has("norest"), isViewLoaded, view.window != nil, !isCollapsed else { return }
+    guard stack.path.isEmpty, displayMode == .secondaryOnly, preferredDisplayMode != .secondaryOnly else { return }
+    colLog("rest: showing the sidebar at \(why) \(state)")
+    show(.primary)
+    colLog("rest: asked \(state)")
+  }
+
+  private static let asked733: Set<String> = [
+    "splitViewController:displayModeForExpandingToProposedDisplayMode:", "splitViewController:willShowColumn:",
+    "splitViewController:willHideColumn:", "splitViewController:didShowColumn:", "splitViewController:didHideColumn:",
+    "splitViewControllerInteractivePresentationGestureWillBegin:",
+    "splitViewControllerInteractivePresentationGestureDidEnd:",
+  ]
+
+  override func responds(to selector: Selector!) -> Bool {
+    if let selector, SidebarC.has("plain"), Self.asked733.contains(NSStringFromSelector(selector)) { return false }
+    return super.responds(to: selector)
   }
 
   // MARK: What the system says
@@ -319,6 +387,7 @@ final class RealColumns: UISplitViewController, UISplitViewControllerDelegate, U
     super.viewDidAppear(animated)
     colLog("columns appeared \(where_)")
     reconcile("appearing")
+    standSidebar("appearing")
   }
 
   func splitViewController(
@@ -342,6 +411,7 @@ final class RealColumns: UISplitViewController, UISplitViewControllerDelegate, U
   func splitViewControllerDidExpand(_ svc: UISplitViewController) {
     colLog("didExpand \(where_)")
     reconcile("didExpand")
+    standSidebar("didExpand")
   }
 
   func navigationController(_ nav: UINavigationController, willShow vc: UIViewController, animated: Bool) {
@@ -381,7 +451,13 @@ final class RealColumns: UISplitViewController, UISplitViewControllerDelegate, U
   override func viewWillTransition(to size: CGSize, with coordinator: any UIViewControllerTransitionCoordinator) {
     colLog("viewWillTransition to \(Int(size.width))x\(Int(size.height)) \(where_)")
     super.viewWillTransition(to: size, with: coordinator)
-    coordinator.animate(alongsideTransition: nil) { [weak self] _ in self?.reconcile("the size transition's end") }
+    // PROTOTYPE #733: a Sidebar the reader put away before the turn is not asked for after it, unless `always`.
+    let stood = isCollapsed || displayMode != .secondaryOnly || SidebarC.has("always")
+    coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+      self?.reconcile("the size transition's end")
+      colLog("the size transition ended, the sidebar stood before \(stood) \(self?.state ?? "")")
+      if stood { self?.standSidebar("the size transition's end") }
+    }
   }
 
   override func viewDidLayoutSubviews() {

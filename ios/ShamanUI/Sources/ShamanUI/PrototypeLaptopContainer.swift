@@ -5,7 +5,7 @@
 // below, going above the fold as the keyboard takes that half.
 //
 // `--laptop-container <words>` chooses how, the words joined by commas; a simulator also reads them from
-// /tmp/duo732/laptop-<its UDID>, or /tmp/duo732/laptop, where no argument says.
+// /tmp/duo733/laptop-<its UDID>, or /tmp/duo733/laptop, where no argument says.
 //
 //   inline       (the default) the Aside's content is drawn again within the screen on top of the main view, in the
 //                second part of a Session's foot or at the foot of a screen that has none: two show one state
@@ -14,9 +14,9 @@
 //   over-moved   the same, with the inspector column's own view controller taken out of its column and moved there
 //   two          the field is two views, one above the fold and one below, to see the focus lost
 //   fakefold     a fold is made up across the middle of any upright window, so an ordinary iPhone can be tried;
-//                while /tmp/duo732/nofold exists there is none
+//                while /tmp/duo733/nofold exists there is none
 //
-// Every event is a line in /tmp/duo732/app.log.
+// Every event is a line in /tmp/duo733/app.log.
 
 import ShamanCore
 import SwiftUI
@@ -38,7 +38,7 @@ enum LaptopC {
     #if targetEnvironment(simulator)
       let udid = ProcessInfo.processInfo.environment["SIMULATOR_UDID"] ?? ""
       for name in ["laptop-\(udid)", "laptop"] {
-        if let said = try? String(contentsOfFile: "/tmp/duo732/\(name)", encoding: .utf8) {
+        if let said = try? String(contentsOfFile: "/tmp/duo733/\(name)", encoding: .utf8) {
           return said.split(whereSeparator: { $0.isWhitespace || $0 == "," }).map(String.init)
         }
       }
@@ -59,6 +59,8 @@ enum LaptopC {
 struct LaptopPoseReader: View {
   private struct Read: Equatable {
     var fold: ProtoL.Fold?
+    /// PROTOTYPE #733: the fold standing upright, as in the book pose.
+    var upright: ProtoS.Upright?
   }
 
   var body: some View {
@@ -66,22 +68,30 @@ struct LaptopPoseReader: View {
     Color.clear
       .onGeometryChange(for: Read.self) { proxy in
         var fold: ProtoL.Fold?
+        var upright: ProtoS.Upright?
         if #available(iOS 27.1, *) {
+          upright = proxy.reservedRegions(kind: .division)
+            .first { $0.isActive && $0.frame.height > $0.frame.width }
+            .map { ProtoS.Upright(left: $0.frame.minX, right: $0.frame.maxX, window: proxy.size.width) }
           fold = proxy.reservedRegions(kind: .division)
             .first { $0.isActive && $0.frame.width > $0.frame.height }
             .map { ProtoL.Fold(top: $0.frame.minY, bottom: $0.frame.maxY, window: proxy.size.height) }
         }
         // A file on the Mac takes the made-up fold away, as laying the phone flat would, at the next change of size.
         if fold == nil, fake, proxy.size.height > proxy.size.width,
-          !FileManager.default.fileExists(atPath: "/tmp/duo732/nofold")
+          !FileManager.default.fileExists(atPath: "/tmp/duo733/nofold")
         {
           let middle = (proxy.size.height / 2).rounded()
           fold = ProtoL.Fold(top: middle - 20, bottom: middle + 20, window: proxy.size.height)
         }
-        return Read(fold: fold)
+        return Read(fold: fold, upright: upright)
       } action: { read in
-        colLog("pose: fold \(read.fold.map { "\($0.top)-\($0.bottom) of \($0.window)" } ?? "none")")
+        colLog(
+          "pose: fold \(read.fold.map { "\($0.top)-\($0.bottom) of \($0.window)" } ?? "none")"
+            + " upright \(read.upright.map { "\($0.left)-\($0.right) of \($0.window)" } ?? "none")")
         ProtoL.shared.fold = read.fold
+        ProtoS.shared.upright = read.upright
+        ProtoS.shared.foldChanged?()
       }
       .ignoresSafeArea()
       .allowsHitTesting(false)

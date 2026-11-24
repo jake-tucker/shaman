@@ -1,0 +1,9 @@
+Test Case '-[ShamanUITests.PrototypeRealTests testAConversationKeepsItsPlaceThroughBackAndATurn]' passed (49.097 seconds).
+Test Case '-[ShamanUITests.PrototypeRealTests testANoticeIsSaidOnce]' passed (12.978 seconds).
+Test Case '-[ShamanUITests.PrototypeRealTests testASwipeGivenUpLeavesTheSessionOpen]' passed (25.672 seconds).
+Test Case '-[ShamanUITests.PrototypeRealTests testTheAsideHoldsRealWorkThroughATurnAndAPush]' skipped (12.077 seconds).
+Test Case '-[ShamanUITests.PrototypeRealTests testThePickerPushesAndAChoicePops]' passed (16.832 seconds).
+Test Case '-[ShamanUITests.PrototypeRealTests testTurningKeepsWhatIsOpen]' passed (38.592 seconds).
+Test Case '-[ShamanUITests.PrototypeRealTests testWhatPushesAndBackStepsOneScreenAtATime]' passed (38.879 seconds).
+Test Case '-[ShamanUITests.PrototypeRealTests testWhatTheBarsCarry]' passed (25.895 seconds).
+** TEST EXECUTE SUCCEEDED **
