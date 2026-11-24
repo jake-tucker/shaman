@@ -1140,6 +1140,104 @@ private final class HeldTime: BackgroundTasks {
   }
 }
 
+/// Two scenes of the app, and what the core is told of the front as their phases change.
+@MainActor private final class TwoScenes {
+  private(set) var told: [Front.Change] = []
+  let one = NSObject()
+  let other = NSObject()
+  private var front: Front?
+
+  init() {
+    front = Front { [unowned self] in told.append($0) }
+  }
+
+  /// What is told as `scene` goes through `phases`, one after another; nil is the scene going.
+  func telling(_ scene: NSObject, _ phases: ScenePhase?...) -> [Front.Change] {
+    told = []
+    for phase in phases {
+      front?.scene(ObjectIdentifier(scene), became: phase)
+    }
+    return told
+  }
+}
+
+@Suite @MainActor struct FrontTests {
+  @Test func oneSceneGoingToTheBackgroundTellsNothingWhileTheOtherStaysActive() {
+    let scenes = TwoScenes()
+    #expect(scenes.telling(scenes.one, .inactive, .active) == [.came])
+    #expect(scenes.telling(scenes.other, .inactive, .active) == [], "the app was in front already")
+    #expect(scenes.telling(scenes.other, .inactive, .background) == [])
+    #expect(scenes.telling(scenes.other, .inactive, .active) == [], "and never left it")
+  }
+
+  @Test func bothScenesGoneIsToldOnceAndTheFirstBackIsToldOnce() {
+    let scenes = TwoScenes()
+    _ = scenes.telling(scenes.one, .inactive, .active)
+    _ = scenes.telling(scenes.other, .inactive, .active)
+
+    #expect(scenes.telling(scenes.one, .inactive) == [])
+    #expect(scenes.telling(scenes.other, .inactive) == [], "neither is active, and both are on screen")
+    #expect(scenes.telling(scenes.one, .background) == [])
+    #expect(scenes.telling(scenes.other, .background) == [.left])
+
+    #expect(scenes.telling(scenes.other, .inactive, .active) == [.came])
+    #expect(scenes.telling(scenes.one, .inactive, .active) == [])
+  }
+
+  @Test func aSceneThatGoesWithoutABackgroundHoldsTheFrontForNothing() {
+    let scenes = TwoScenes()
+    _ = scenes.telling(scenes.one, .inactive, .active)
+    _ = scenes.telling(scenes.other, .inactive, .active)
+    #expect(scenes.telling(scenes.one, nil) == [])
+    #expect(scenes.telling(scenes.other, .inactive, .background) == [.left], "the one gone is not waited for")
+    #expect(scenes.telling(scenes.other, nil) == [], "left already")
+  }
+
+  @Test func oneSceneAloneTellsAsItsOwnPhasesDo() {
+    let scenes = TwoScenes()
+    #expect(scenes.telling(scenes.one, .inactive, .active) == [.came])
+    #expect(scenes.telling(scenes.one, .inactive, .active) == [.came], "back from beneath the system's")
+    #expect(scenes.telling(scenes.one, .inactive, .background) == [.left])
+    #expect(scenes.telling(scenes.one, .inactive, .background) == [.left])
+    #expect(scenes.telling(scenes.one, .inactive, .active) == [.came])
+  }
+}
+
+@Suite @MainActor struct AppFollowerTests {
+  /// Waits until `done` holds, for as long as a moment.
+  private func until(_ done: () -> Bool) async throws {
+    for _ in 0..<300 where !done() {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(done())
+  }
+
+  @Test func backgroundTimeIsHeldWhileAnActIsUnderWayUntilTheFollowerGoes() async throws {
+    let core = FakeCore(.paired)
+    let tasks = HeldTime()
+    var made = 0
+    func make() -> any BackgroundTasks {
+      made += 1
+      return tasks
+    }
+    var follower: AppFollower? = AppFollower(scenes: NotificationCenter())
+    follower?.follow(core, tasks: make())
+    try await until { made == 1 }
+
+    let opened = core.openSession("workstation-key/1")
+    try? await opened.send("Steer it")
+    try await until { tasks.held == ["begin 1", "end 1"] }
+
+    weak let gone = follower
+    follower = nil
+    #expect(gone == nil, "nothing it follows with keeps it")
+    try await Task.sleep(for: .milliseconds(50))
+    try? await opened.send("Steer it")
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(tasks.held == ["begin 1", "end 1"])
+  }
+}
+
 @Suite @MainActor struct TryAgainModelTests {
   /// The slim row the fake's listing gives the Remote `name`.
   private func row(on core: FakeCore, _ name: String) async throws -> UnreachableRow {

@@ -338,6 +338,8 @@ If the phone is locked, stop and ask for it to be unlocked.
   the input, the rest in a banner over the screen that asked.
 - A listener the core tells of changes becomes an `AsyncStream` through `listened`, whose ending cancels the core's
   subscription.
+- What is the app's and no window's, the front, background time and the network path, is followed once by `AppFollower`,
+  which the app makes as it launches. A view tells the core nothing of its own `scenePhase`.
 - Everything the app keeps, the core keeps, in the one directory `CoreDirectory.prepare` makes and keeps out of
   backups, but for the scene's storage: what was open, as `KeptScene`, which iOS keeps for the scene and the core
   never sees. Nothing goes in `UserDefaults` or `@AppStorage`.

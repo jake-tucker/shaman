@@ -97,11 +97,12 @@ public protocol Core: AnyObject, Sendable {
   /// still does not.
   func tryAgain(_ remote: String) async throws(ActError)
 
-  /// Tells the core the app has come to the front, so it checks every Remote, keeping what answers and redialling the
-  /// rest at once.
+  /// Tells the core the app has come to the front, once however many windows it shows, so it checks every Remote,
+  /// keeping what answers and redialling the rest at once.
   func cameToFront()
 
-  /// Tells the core the app has left the front; it does nothing to its connections.
+  /// Tells the core the app has left the front, with no window left in the foreground; it does nothing to its
+  /// connections.
   func leftFront()
 
   /// Tells the core the network path changed, and whether there is one at all.

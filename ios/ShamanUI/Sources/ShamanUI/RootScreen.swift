@@ -1,6 +1,5 @@
 import ShamanCore
 import SwiftUI
-import UIKit
 
 /// What the app shows over its core: pairing alone while the phone holds no Remote, and otherwise the listing of
 /// every Remote's Sessions.
@@ -19,10 +18,6 @@ public struct RootScreen: View {
   @State private var outlook: Outlook?
   /// What the core says of its own accord, in the banner an act's failure is shown in, beneath each screen's bar.
   @State private var notices: NoticeModel
-  /// What holds iOS background time while an act is under way, kept for as long as the app is, so the time iOS takes
-  /// back is let go of.
-  @State private var backgroundTime = BackgroundTime(tasks: UIApplication.shared)
-  @Environment(\.scenePhase) private var scenePhase
   /// What the scene keeps of the listing and what is pushed over it, which iOS restores after it ends the app: a
   /// `KeptScene`, as its plain string.
   @SceneStorage("listing") private var kept = ""
@@ -63,10 +58,6 @@ public struct RootScreen: View {
     .environment(notices)
     .task { await notices.follow() }
     .task {
-      // Held while an act is under way, whatever screen asked it.
-      await backgroundTime.follow(core.actsUnderWay())
-    }
-    .task {
       for await outlook in core.outlook() {
         if self.outlook != nil {
           invite = nil
@@ -82,20 +73,6 @@ public struct RootScreen: View {
         default: break
         }
         self.outlook = outlook
-      }
-    }
-    .task {
-      for await hasPath in NetworkPath.changes() {
-        core.pathChanged(hasPath: hasPath)
-      }
-    }
-    // The core is told when the app comes to the front, so it checks every Remote, and when it leaves, when it does
-    // nothing to its connections.
-    .onChange(of: scenePhase) { _, phase in
-      switch phase {
-      case .active: core.cameToFront()
-      case .background: core.leftFront()
-      default: break
       }
     }
   }

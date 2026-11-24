@@ -107,6 +107,8 @@
     /// What the listing is narrowed to and searched for, until the fake goes.
     private let scope = Mutex(FakeScope.everywhere)
     private let query = Mutex("")
+    /// What it was told of the front, in order: true as the app came to it and false as it left.
+    let toldOfFront = Mutex<[Bool]>([])
     /// The Remotes held that read Unreachable, and why.
     private let unreachable: Mutex<[String: UnreachableHint]>
     /// The Remotes held that answer but that the phone and they no longer work together across, and which side is to
@@ -612,10 +614,13 @@
       workspacesListeners.tell(currentWorkspaces())
     }
 
-    public func cameToFront() {}
+    public func cameToFront() {
+      toldOfFront.withLock { $0.append(true) }
+    }
 
     /// Every draft is kept, and every login under way given up, as the core does both.
     public func leftFront() {
+      toldOfFront.withLock { $0.append(false) }
       acts.keepDrafts()
       let given = loggingIn.withLock { logins in
         defer { logins.removeAll() }

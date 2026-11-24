@@ -4,7 +4,17 @@ import SwiftUI
 
 @main
 struct ShamanApp: App {
-  @State private var opened = Opened.choose()
+  @State private var opened: Opened
+  /// What is followed once for the app, however many windows it shows.
+  @State private var follower: AppFollower
+
+  init() {
+    let follower = AppFollower()
+    let opened = Opened.choose()
+    opened.followed(by: follower)
+    _follower = State(initialValue: follower)
+    _opened = State(initialValue: opened)
+  }
 
   var body: some Scene {
     WindowGroup {
@@ -31,6 +41,7 @@ struct ShamanApp: App {
       case .keyRefused(let message, let directory, let item):
         KeyRefusedScreen(message: message) {
           opened = Opened.open(directory, IdentityKey.startAgain(in: item), item)
+          opened.followed(by: follower)
         }
       #if DEBUG
         case .removed(let name):
@@ -190,6 +201,13 @@ private enum Opened {
       return .failed("This phone's records could not be kept: \(error.localizedDescription)")
     }
     return open(directory, IdentityKey.find(in: item), item)
+  }
+
+  /// Has `follower` follow for the core, where there is one.
+  @MainActor func followed(by follower: AppFollower) {
+    if case .core(let core) = self {
+      follower.follow(core)
+    }
   }
 
   /// The live core in `directory`, over the key `found`, kept in `item`.
