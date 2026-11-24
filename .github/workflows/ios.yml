@@ -12,6 +12,7 @@ on:
       - "crates/shaman-thin-client/**"
       - "scripts/build-ios-core.sh"
       - "scripts/ios-simulator.sh"
+      - "scripts/ios-test.sh"
       - ".github/workflows/ios.yml"
       - "rust-toolchain.toml"
   workflow_dispatch:
@@ -72,38 +73,15 @@ jobs:
       - name: Build the core
         run: scripts/build-ios-core.sh sim
 
-      - name: Make the simulator
-        id: simulator
-        run: |
-          udid=$(scripts/ios-simulator.sh Shaman)
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
-
-      - name: Test ShamanUI
-        working-directory: ios/ShamanUI
-        env:
-          UDID: ${{ steps.simulator.outputs.udid }}
-        run: |
-          xcodebuild test -scheme ShamanUI -destination "platform=iOS Simulator,id=$UDID" \
-            -derivedDataPath ../build/package -resultBundlePath ../build/results/package.xcresult \
-            CODE_SIGNING_ALLOWED=NO -quiet
-
-      - name: Build and test the app
-        working-directory: ios
-        env:
-          UDID: ${{ steps.simulator.outputs.udid }}
-        run: |
-          # Signed ad hoc, under no team, as no Apple account is needed for: the Keychain answers an unsigned app with
-          # errSecMissingEntitlement, and the app keeps its identity key's blob there.
-          xcodebuild test -project Shaman.xcodeproj -scheme Shaman -destination "platform=iOS Simulator,id=$UDID" \
-            -derivedDataPath build/xcode -resultBundlePath build/results/app.xcresult \
-            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= -quiet
+      - name: Test
+        # The package's tests and the app's, both run whatever fails.
+        run: scripts/ios-test.sh pro --ad-hoc
 
       - name: Check nothing was written to UserDefaults
-        env:
-          UDID: ${{ steps.simulator.outputs.udid }}
         run: |
           set -euo pipefail
-          container=$(xcrun simctl get_app_container "$UDID" com.jaketucker.shaman data)
+          udid=$(scripts/ios-simulator.sh)
+          container=$(xcrun simctl get_app_container "$udid" com.jaketucker.shaman data)
           written=$(find "$container/Library/Preferences" -type f 2> /dev/null || true)
           if [ -n "$written" ]; then
             echo "::error::The app wrote to UserDefaults:"
