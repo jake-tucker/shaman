@@ -31,6 +31,7 @@ use tokio::{
 mod acts;
 mod beginning;
 mod behind;
+mod blocks;
 mod conversation;
 mod device;
 mod drafts;
@@ -49,6 +50,7 @@ mod tree;
 mod work;
 
 pub use beginning::{Landing, LandingWorkspace, WorktreeChoice};
+pub use blocks::{AgentBlock, AgentBlockKind, agent_blocks};
 pub use conversation::{ConversationItem, ItemKind, Tone, TurnCard, TurnOutcome};
 pub use device::ThisDevice;
 use device::{DeviceRecord, Records};

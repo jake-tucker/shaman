@@ -45,6 +45,11 @@ default-members = [
     "crates/shaman-thin-client",
 ]
 
+[workspace.dependencies]
+# Reads Agent-authored Markdown for the TUI's transcript and, in the thin Client's core, cuts an agent Message into its
+# blocks. Without its defaults it compiles no command-line parser.
+pulldown-cmark = { version = "0.13.4", default-features = false }
+
 [dependencies]
 shaman-build-id = { path = "crates/shaman-build-id" }
 shaman-client = { path = "crates/shaman-client" }
@@ -83,7 +88,7 @@ if-addrs = "0.15.0"
 # for thumbnails; no other decoder is compiled in (ADR 0038).
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 libsqlite3-sys = { version = "0.38.2", features = ["bundled"] }
-pulldown-cmark = "0.13.4"
+pulldown-cmark = { workspace = true, features = ["html"] }
 # Draws an Invite as a QR code for a phone to scan, in `/serve` and `shaman serve invite --qr`. Without its defaults it
 # compiles no image encoder and depends on nothing.
 qrcode = { version = "0.15.0", default-features = false, features = ["std"] }
