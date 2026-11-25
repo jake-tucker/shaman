@@ -262,6 +262,7 @@ import UIKit
       }
       try await Task.sleep(for: .milliseconds(60))
       hosted.stack.leave(session)
+      try await hosted.until { hosted.listingAlone && hosted.held == [nil] && !hosted.sidebar.isToolbarHidden }
       try await hosted.settle()
       #expect(hosted.stack.path.isEmpty)
       #expect(hosted.listingAlone)
