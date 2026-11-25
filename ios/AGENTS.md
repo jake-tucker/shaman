@@ -11,7 +11,7 @@ app's shape. Everything here is built from a terminal on a Mac with Xcode 27.2; 
 | `Shaman.xcodeproj` | The project, in Xcode 27's JSON format (`project.xcproj`) with folders synced to disk, and the shared `Shaman` scheme |
 | `Shaman/` | The `Shaman` app target: `@main`, the choice of live core or fake, the Info settings |
 | `ShamanUI/` | A local package: the views, the `Core` protocol the app reaches the core through, `LiveCore`, `FakeCore`, and the adapters around the core. Its unit tests are `ShamanUIUnitTests` |
-| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the conversation's list and the composer's foot under a ticking display link, the columns collapsing and expanding, a Session about a fold of the test's own and what Textual draws a Message's blocks as |
+| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the conversation's list and the composer's foot under a ticking display link, the columns collapsing and expanding, every screen of the main view about a fold of the test's own and what Textual draws a Message's blocks as |
 | `ShamanUITests/` | The XCUITest target |
 | `ShamanCore/` | The core and its generated Swift, written by `scripts/build-ios-core.sh`; ignored by git |
 | `build/` | Where the commands below put what `xcodebuild` makes; ignored by git |
@@ -477,14 +477,20 @@ If the phone is locked, stop and ask for it to be unlocked.
   it: the path, and a sheet.
 - How a window stands is `Pose`, which `ColumnsScreen` reads above the columns by `reads(_:)`, as the geometry changes
   and never on a clock, and `SessionStack.pose` hands down: the fold, while the device is sat like a laptop, which is a
-  reserved region that is active and wider than it is tall, and how much of the window's foot a keyboard covers. No
-  hosted screen asks for either. It is the one pose the layout knows; add none. A hosted test that stands a screen about
-  a fold sets `pose.fold` itself.
+  reserved region that is active, wider than it is tall and across the window from side to side, and how much of the
+  window's foot a keyboard covers. No hosted screen asks for either. It is the one pose the layout knows; add none.
+  Turned while partly folded, the first region read is the old size's, which lies across no more than that, and `Pose`
+  answers no fold of another height than `Columns` tells it the window is to stand, as it is told before anything is
+  laid out at the new size. A hosted test that stands a screen about a fold sets `pose.fold` itself.
 - Sat like a laptop, a Session's foot grows a second part, as tall as the half below the fold, which holds the band kept
   for the fold, the Aside and the composer's field; with a keyboard up that part is the field alone, above the fold. The
   Aside there is `AsideScreen` drawn again, in each Session's own screen and for that Session, over the Aside's one
   state. It stands whenever a Session is open, and what is chosen there goes through the same `lead(to:)` and
   `showTree()`, which turn it, push and present nothing, and leave whether it is shown beside the main view as it was.
+  Every other screen of the main view a Session is open under, a Turn's work or an Activity's whole pushed before the
+  pose came, carries the same half by `halfBelowTheFold`, the Aside of that Session in it, and ends at the fold; out of
+  the pose it stands as it would without. With nothing open nothing stands below the fold but the new-session screen's
+  field, and a screen the path does not name, as the Workspace Picker, runs on through the fold.
 - A hosted screen has no `NavigationStack` over it, so a `NavigationLink` in it is greyed out and a
   `navigationDestination` pushes nothing. The Aside has a stack of its own, in which an Activity's row is a link and a
   Session's pushes in the main view. A row that leads to a screen is a `RowButton` that writes the path, and a
