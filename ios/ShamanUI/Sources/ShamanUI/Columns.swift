@@ -62,6 +62,7 @@ final class Columns: UISplitViewController {
       self?.standAside()
     }
     stack.aside.changed = { [weak self] in self?.standAside() }
+    aside.appearing = { [stack] in stack.aside.appearances += 1 }
   }
 
   @available(*, unavailable)
@@ -304,6 +305,8 @@ final class HostedScreen: UIHostingController<AnyView> {
   var named: Pushed?
   /// The new-session screen it is, while at rest.
   var atRest: LandingRoute?
+  /// Told each time it comes on screen.
+  var appearing: (() -> Void)?
 
   init(_ screen: AnyView, named: Pushed? = nil, atRest: LandingRoute? = nil) {
     self.named = named
@@ -314,6 +317,11 @@ final class HostedScreen: UIHostingController<AnyView> {
   @available(*, unavailable)
   required init?(coder: NSCoder) {
     fatalError("made in code alone")
+  }
+
+  override func viewIsAppearing(_ animated: Bool) {
+    super.viewIsAppearing(animated)
+    appearing?()
   }
 }
 

@@ -1018,6 +1018,9 @@ final class SessionModel {
   @ObservationIgnored private var clearing: Task<Void, Never>?
   /// Told each time the frame says the Session, or the Remote it is on, is gone, until the Session has been read.
   @ObservationIgnored var whenGone: (() -> Void)?
+  /// The one reading of the conversation, and how many it is read for.
+  @ObservationIgnored private var reading: Task<Void, Never>?
+  @ObservationIgnored private var readers = 0
 
   convenience init(core: any Core, session: String, failureStands: Duration = .seconds(6)) {
     self.init(core: core, route: SessionRoute(session: session), failureStands: failureStands)
@@ -1247,17 +1250,35 @@ final class SessionModel {
     }
   }
 
-  private func followConversation() async {
-    for await change in opened.conversation() {
-      conversation.take(change)
-      if whenGone != nil, conversation.read {
-        whenGone = nil
+  /// Follows the conversation until whoever asks goes: its own screen, and the Aside, which stands while another screen
+  /// is pushed over that one. It is read once however many ask, so each change is taken in once and in order.
+  func followConversation() async {
+    readers += 1
+    if reading == nil {
+      reading = Task { [weak self, opened] in
+        for await change in opened.conversation() {
+          guard let self, !Task.isCancelled else { return }
+          conversation.take(change)
+          if whenGone != nil, conversation.read {
+            whenGone = nil
+          }
+        }
       }
+    }
+    // A stream that yields nothing, whose reading ends as this is cancelled.
+    let (never, continuation) = AsyncStream<Void>.makeStream()
+    for await _ in never {}
+    continuation.finish()
+    readers -= 1
+    if readers == 0 {
+      reading?.cancel()
+      reading = nil
     }
   }
 
-  /// The work of the Turn a card handed back, while the screen reading it is up.
-  func work(_ turn: String) -> AsyncStream<TurnWork> {
+  /// The work of the Turn a card handed back, or with none of the latest that has a card, while the screen reading it is
+  /// up.
+  func work(_ turn: String?) -> AsyncStream<TurnWork> {
     opened.work(turn)
   }
 

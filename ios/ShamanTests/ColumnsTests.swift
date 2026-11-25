@@ -12,7 +12,8 @@ import UIKit
   let columns: Columns
 
   /// The columns over a path of `open`, in a window with room for one column alone, or for several where it is `wide`.
-  init(open: [Pushed] = [], wide: Bool = false) async throws {
+  /// What is open is words alone, or, with `sessions`, a Session's own screen.
+  init(open: [Pushed] = [], wide: Bool = false, sessions: Bool = false) async throws {
     let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     window = UIWindow(windowScene: scene)
     stack = SessionStack(core: FakeCore(.paired), path: open)
@@ -21,7 +22,11 @@ import UIKit
     columns = Columns(
       stack: stack,
       screens: Columns.Screens(
-        listing: screen("Listing"), open: { screen("\($0)") },
+        listing: screen("Listing"),
+        open: { pushed in
+          guard sessions, case .session(let route) = pushed else { return screen("\(pushed)") }
+          return AnyView(SessionScreen(model: stack.model(for: route), stack: stack))
+        },
         rest: { route in
           AnyView(NewSessionScreen(model: stack.landing(for: route), stack: stack, atRest: route))
         },
@@ -412,6 +417,28 @@ import UIKit
     try await hosted.resize(wide: true)
     try await stands()
     #expect(columns.preferredDisplayMode == .oneBesideSecondary)
+  }
+
+  @Test func theAsideFollowsTheLatestTurnWhateverIsPushedOverItsSession() async throws {
+    let hosted = try await HostedColumns(open: [open], wide: true, sessions: true)
+    defer { hosted.close() }
+    let model = hosted.stack.model(for: session)
+    hosted.stack.aside.shown = true
+    try await hosted.until { hosted.columns.isShowing(.inspector) && model.conversation.latestTurn == "work" }
+    hosted.stack.path.append(work)
+    try await hosted.settle()
+    try await hosted.until { hosted.held == [open, work] }
+    model.text = "Go on"
+    await model.send()
+    try await hosted.until { model.conversation.latestTurn == "turn-sent-1" }
+    // Back, its own screen reads it on, one change after another.
+    hosted.stack.path.removeLast()
+    try await hosted.settle()
+    #expect(model.conversation.latestTurn == "turn-sent-1")
+    await model.stop()
+    model.text = "And again"
+    await model.send()
+    try await hosted.until { model.conversation.latestTurn == "turn-sent-2" }
   }
 
   @Test func theAsideHasRoomWhereColumnsStandIn690PointsOrMore() async throws {

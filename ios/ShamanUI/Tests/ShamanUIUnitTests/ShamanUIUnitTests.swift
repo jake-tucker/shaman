@@ -1069,6 +1069,64 @@ private func blockRows(_ markdown: String, of message: String = "m") -> [Convers
   }
 }
 
+/// How many readings of a conversation have begun, and how many of them have ended.
+private struct Readings: Equatable {
+  var begun = 0
+  var ended = 0
+}
+
+/// An open Session that counts how its conversation is read, and is `opened` in all else.
+private final class CountedSession: OpenedSession {
+  private let opened: any OpenedSession
+  private let counted = Mutex(Readings())
+
+  init(_ opened: any OpenedSession) {
+    self.opened = opened
+  }
+
+  var readings: Readings { counted.withLock { $0 } }
+
+  func conversation() -> AsyncStream<ConversationChange> {
+    counted.withLock { $0.begun += 1 }
+    let changes = opened.conversation()
+    return AsyncStream { continuation in
+      let reading = Task {
+        for await change in changes {
+          continuation.yield(change)
+        }
+        continuation.finish()
+      }
+      continuation.onTermination = { [weak self] _ in
+        reading.cancel()
+        self?.counted.withLock { $0.ended += 1 }
+      }
+    }
+  }
+
+  var reference: String { opened.reference }
+  func tryAgain() async throws(ActError) { try await opened.tryAgain() }
+  func frame() -> AsyncStream<SessionFrame> { opened.frame() }
+  func work(_ turn: String?) -> AsyncStream<TurnWork> { opened.work(turn) }
+  func detail(_ activity: String) -> AsyncStream<ActivityDetail> { opened.detail(activity) }
+  func tree() -> AsyncStream<SubagentTree> { opened.tree() }
+  func stopSubagent(_ session: String) async throws(ActError) { try await opened.stopSubagent(session) }
+  func close() { opened.close() }
+  func send(_ text: String) async throws(ActError) { try await opened.send(text) }
+  func queue(_ text: String) async throws(ActError) { try await opened.queue(text) }
+  func steerNow(_ prompt: String) async throws(ActError) { try await opened.steerNow(prompt) }
+  func cancelQueued(_ prompt: String) async throws(ActError) { try await opened.cancelQueued(prompt) }
+  func stop() async throws(ActError) { try await opened.stop() }
+  func decide(_ approval: String, _ decision: DecisionKind) async throws(ActError) {
+    try await opened.decide(approval, decision)
+  }
+  func answer(_ questionnaire: String, _ answers: [GivenAnswer]) async throws(ActError) {
+    try await opened.answer(questionnaire, answers)
+  }
+  func decline(_ questionnaire: String) async throws(ActError) { try await opened.decline(questionnaire) }
+  func dismiss() { opened.dismiss() }
+  func review() { opened.review() }
+}
+
 @Suite @MainActor struct AsideTests {
   private let settled = SessionRoute(session: "workstation-key/7")
   private let other = SessionRoute(session: "workstation-key/1")
@@ -1145,6 +1203,93 @@ private func blockRows(_ markdown: String, of message: String = "m") -> [Convers
     aside.push([check], latest: "next", in: settled)
     aside.push([], latest: "next", in: settled)
     #expect(aside.place(of: settled) == Aside.Place(held: "earlier-work"))
+  }
+
+  @Test func theConversationIsReadOnceForAllThatFollowItAndUntilTheLastGoes() async throws {
+    let core = FakeCore(.paired)
+    let opened = CountedSession(core.openSession("workstation-key/7"))
+    let model = SessionModel(core: core, route: SessionRoute(session: opened.reference), opened: opened)
+    let screen = Task { await model.followConversation() }
+    let aside = Task { await model.followConversation() }
+    for _ in 0..<300 where model.conversation.latestTurn == nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.conversation.latestTurn == "work")
+    #expect(opened.readings == Readings(begun: 1, ended: 0))
+    // One goes, and it is read on for the other.
+    screen.cancel()
+    await screen.value
+    model.text = "Go on"
+    await model.send()
+    for _ in 0..<300 where model.conversation.latestTurn == "work" {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.conversation.latestTurn == "turn-sent-1")
+    #expect(opened.readings == Readings(begun: 1, ended: 0))
+    // The last goes, and it is read no more, until another comes.
+    aside.cancel()
+    await aside.value
+    for _ in 0..<300 where opened.readings.ended == 0 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(opened.readings == Readings(begun: 1, ended: 1))
+    await model.stop()
+    model.text = "And again"
+    await model.send()
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(model.conversation.latestTurn == "turn-sent-1")
+    let again = Task { await model.followConversation() }
+    defer { again.cancel() }
+    for _ in 0..<300 where model.conversation.latestTurn == "turn-sent-1" {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.conversation.latestTurn == "turn-sent-2")
+    #expect(opened.readings == Readings(begun: 2, ended: 1))
+  }
+
+  @Test func withNoTurnItsWorkIsTheCoresLineUntilTheFirstBegins() async throws {
+    // Not read, read with no Turn, and the first begun.
+    let opened = FakeCore(.paired).openSession("workstation-key/11")
+    var work = opened.work(nil).makeAsyncIterator()
+    #expect(await work.next() == TurnWork(title: "", items: [], empty: "Loading"))
+    #expect(await work.next() == TurnWork(title: "", items: [], empty: "Nothing done yet"))
+    try await opened.stop()
+    let sending = Task { try await opened.send("Go on") }
+    while let next = await work.next() {
+      if next.title == "Working" { break }
+      #expect(next.empty == "Nothing done yet")
+    }
+    try await sending.value
+    // One that cannot be read says why.
+    let behind = FakeCore(.releases).openSession("laptop-key/4")
+    var said = behind.work(nil).makeAsyncIterator()
+    #expect(await said.next()?.empty?.hasPrefix("This session cannot be read yet") == true)
+  }
+
+  @Test func theSceneKeepsNothingOfIt() async throws {
+    let stack = try await read()
+    let kept = stack.kept
+    stack.aside.hasRoom = true
+    stack.lead(to: .work(settled, turn: "earlier-work"))
+    stack.lead(to: .detail(settled, activity: "compaction"))
+    #expect(stack.showTree())
+    #expect(stack.kept == kept)
+    let restored = SessionStack(core: FakeCore(.paired), restoring: kept)
+    #expect(!restored.aside.shown && restored.aside.kind == .work)
+  }
+
+  @Test func whatItHoldsChangesWhileItIsOffScreenAndIsKeptFromOneSessionToTheNext() async throws {
+    let stack = try await read()
+    stack.aside.hasRoom = true
+    #expect(stack.showTree())
+    stack.aside.shown = false
+    stack.aside.hasRoom = false
+    #expect(stack.aside.kind == .tree)
+    stack.open("workstation-key/1")
+    #expect(stack.aside.kind == .tree)
+    stack.compose()
+    stack.path = []
+    #expect(stack.aside.kind == .tree && !stack.aside.shown)
   }
 
   @Test func aCompactionsWholeIsPushedOverTheWorkItIsAt() async throws {

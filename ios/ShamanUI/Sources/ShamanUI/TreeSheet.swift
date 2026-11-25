@@ -51,6 +51,7 @@ struct TreeScreen: View {
   var saysFailures = false
   let choose: (String) -> Void
   @State private var tree: SubagentTree?
+  @Environment(\.asideAppearances) private var appearances
 
   var body: some View {
     List {
@@ -132,7 +133,9 @@ struct TreeScreen: View {
         .accessibilityElement(children: .contain)
       }
     }
-    .task(id: model.route) {
+    // Not until the Session is framed, which says whether it has a tree: the one read last stands meanwhile.
+    .task(id: Reading(what: model.frame == nil ? nil : model.route, appearances: appearances)) {
+      guard model.frame != nil else { return }
       for await tree in model.tree() {
         self.tree = tree
       }
@@ -248,6 +251,8 @@ private struct MarkerSymbol: View {
 
 #if DEBUG
   #Preview("A tree with working and settled subagents") {
-    TreeSheet(model: SessionModel(core: FakeCore(.paired), session: "workstation-key/12.1")) { _ in }
+    let model = SessionModel(core: FakeCore(.paired), session: "workstation-key/12.1")
+    TreeSheet(model: model) { _ in }
+      .task { await model.follow() }
   }
 #endif

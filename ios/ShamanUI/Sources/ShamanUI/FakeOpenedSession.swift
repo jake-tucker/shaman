@@ -469,7 +469,7 @@
     private static func begunItems(_ text: String) -> [ConversationItem] {
       [
         FakeConversation.user("prompt", text),
-        FakeConversation.card("turn-begun", .working, "Reading the workspace", nil),
+        FakeConversation.card("\(begunTurn)begun", .working, "Reading the workspace", nil),
       ]
     }
 
@@ -488,7 +488,11 @@
       }
     }
 
-    func work(_ turn: String) -> AsyncStream<TurnWork> {
+    func work(_ turn: String?) -> AsyncStream<TurnWork> {
+      guard let turn else { return latestWork() }
+      if turn.hasPrefix(Self.begunTurn) {
+        return begunWork(turn)
+      }
       if sidekick && session == FakeSidekick.top {
         return AsyncStream { $0.yield(FakeSidekick.work()) }
       }
@@ -502,6 +506,60 @@
           }
         }
         continuation.onTermination = { _ in follow.cancel() }
+      }
+    }
+
+    /// What leads the name of a Turn that a Prompt sent here began.
+    private static let begunTurn = "turn-"
+
+    /// The work of the Turn `turn`, which a Prompt sent here began: none, as its card says it stands.
+    private func begunWork(_ turn: String) -> AsyncStream<TurnWork> {
+      AsyncStream { continuation in
+        let following = Task {
+          var conversation = Conversation()
+          for await change in self.conversation() {
+            conversation.take(change)
+            let card = conversation.shown.lazy.compactMap { item in
+              if case .turn(let card) = item.kind, card.work == turn { card } else { nil }
+            }.first
+            guard let card else { continue }
+            let working = card.outcome == .working
+            continuation.yield(
+              TurnWork(
+                title: working ? "Working" : card.line, items: [],
+                empty: working ? "Nothing done yet" : "Nothing done"))
+          }
+        }
+        continuation.onTermination = { _ in following.cancel() }
+      }
+    }
+
+    /// The work of the latest Turn, or what the core says where there is none, or where the Session is not read.
+    private func latestWork() -> AsyncStream<TurnWork> {
+      AsyncStream { continuation in
+        let following = Task {
+          var conversation = Conversation()
+          for await change in self.conversation() {
+            conversation.take(change)
+            if let latest = conversation.latestTurn {
+              for await work in self.work(latest) {
+                continuation.yield(work)
+                break
+              }
+              continue
+            }
+            let unread: String? =
+              switch conversation.marks.first?.kind {
+              case .loading: "Loading"
+              case .unread(let words): words
+              default: nil
+              }
+            let gone = state.withLock { $0.frame.gone }
+            continuation.yield(
+              TurnWork(title: "", items: [], empty: unread.map { gone ?? $0 } ?? "Nothing done yet"))
+          }
+        }
+        continuation.onTermination = { _ in following.cancel() }
       }
     }
 
@@ -542,6 +600,8 @@
         state.frame.intervention = nil
         state.frame.tree = nil
       }
+      // What is said where its work would be says it too.
+      change { _ in }
     }
 
     func close() {
@@ -598,7 +658,7 @@
         }
         // A Prompt to a Session at rest begins a Turn.
         if state.withLock({ $0.frame.bar == nil }) {
-          change { $0.append(FakeConversation.card("turn-\(id)", .working, "Working", nil)) }
+          change { $0.append(FakeConversation.card("\(Self.begunTurn)\(id)", .working, "Working", nil)) }
           changeFrame { frame in
             frame.bar = Bar(kind: .working, words: "Working", since: Date(), watching: nil, stop: "Stop", review: nil)
             frame.composer = Self.composer(working: true, unreachable: nil)

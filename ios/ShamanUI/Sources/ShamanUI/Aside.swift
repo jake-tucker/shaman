@@ -37,6 +37,9 @@ final class Aside {
   @ObservationIgnored var changed: (() -> Void)?
   /// Whether it has room beside the main view, as the columns say.
   var hasRoom = false
+  /// How many times it has come on screen beside the main view, as the columns say. What is drawn of it is kept while it
+  /// is off screen, where SwiftUI starts no reading again as what is read changes, so each begins again as it comes.
+  var appearances = 0
 
   /// The Aside as it begins in a window: hidden, at work; but shown, at `kind`, where one is given.
   init(showing kind: AsideKind? = nil) {
@@ -94,9 +97,14 @@ struct AsideScreen: View {
   let stack: SessionStack
 
   var body: some View {
+    content.environment(\.asideAppearances, stack.aside.appearances)
+  }
+
+  @ViewBuilder private var content: some View {
     if let route = stack.openSession {
       let session = stack.model(for: route)
-      if stack.aside.kind == .tree, session.frame?.tree != nil {
+      // Until the Session is framed whatever stands stays, as the tree does from one Session of it to the next.
+      if stack.aside.kind == .tree, session.frame == nil || session.frame?.tree != nil {
         NavigationStack {
           TreeScreen(model: session) { chosen in
             stack.show(chosen, over: route)
@@ -110,7 +118,8 @@ struct AsideScreen: View {
   }
 }
 
-/// The work of the Turn the Aside is at in `session`.
+/// The work of the Turn the Aside is at in `session`: the latest as each begins, or the one it holds at, and a line
+/// saying so where there is no Turn.
 private struct AsideWork: View {
   let session: SessionModel
   let stack: SessionStack
@@ -124,21 +133,30 @@ private struct AsideWork: View {
         get: { aside.place(of: route).pushed },
         set: { aside.push($0, latest: latest, in: route) })
     ) {
-      Group {
-        if let turn = aside.place(of: route).held ?? latest {
-          TurnWorkScreen(session: session, turn: turn, pushSession: { stack.push($0) })
-            .id(turn)
-        } else {
-          Color(.systemBackground)
-        }
-      }
+      TurnWorkScreen(
+        session: session, turn: aside.place(of: route).held ?? latest, pushSession: { stack.push($0) }
+      )
       .navigationDestination(for: Pushed.self) { pushed in
         if case .detail(_, let activity) = pushed {
           ActivityDetailScreen(session: session, activity: activity)
         }
       }
     }
+    // The Session's own screen follows it only while it is on top.
+    .task(id: aside.appearances) { await session.followConversation() }
   }
+}
+
+extension EnvironmentValues {
+  /// How many times the Aside has come on screen, in a screen it holds.
+  @Entry var asideAppearances = 0
+}
+
+/// What a screen the Aside may hold reads, `what`, and the coming on screen it is read for: a reading begins again as
+/// either changes.
+struct Reading<What: Equatable>: Equatable {
+  let what: What
+  let appearances: Int
 }
 
 /// The button in an open Session's navigation bar that shows the Aside beside it, and takes it down.

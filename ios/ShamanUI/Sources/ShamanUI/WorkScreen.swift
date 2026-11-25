@@ -4,16 +4,21 @@ import Textual
 
 /// A Turn's work, led to by its card: every Activity in the order it happened, the Agent's Messages along the way
 /// among them, each row drawn from the one shape the core fills for every kind, and each pushing the whole of its
-/// Activity where there is more to it than its row. It crosses from the core only while it is up.
+/// Activity where there is more to it than its row. It crosses from the core only while it is up. Given another Turn, it
+/// shows the one it did until that one's work is there to show, and that from its top; with none, it shows the line the
+/// core writes where there is no Turn.
 struct TurnWorkScreen: View {
   let session: SessionModel
-  let turn: String
+  let turn: String?
   /// Pushes what a row leads to over the screen, where the columns host it; within a `NavigationStack` of its own, with
   /// none handed, each row is a link.
   var push: ((Pushed) -> Void)?
   /// Pushes the Session a row opens, where that is not where the rest are pushed, as from the Aside.
   var pushSession: ((Pushed) -> Void)?
   @State private var work: TurnWork?
+  /// The Turn whose work that is.
+  @State private var shown: String?
+  @Environment(\.asideAppearances) private var appearances
 
   var body: some View {
     List {
@@ -41,6 +46,8 @@ struct TurnWorkScreen: View {
       }
     }
     .listStyle(.plain)
+    .id(shown)
+    .accessibilityIdentifier("work.list")
     .overlay {
       if let empty = work?.empty {
         ContentUnavailableView {
@@ -55,10 +62,10 @@ struct TurnWorkScreen: View {
     }
     .navigationTitle(work?.title ?? "")
     .navigationBarTitleDisplayMode(.inline)
-    .accessibilityIdentifier("work.list")
-    .task {
+    .task(id: Reading(what: turn, appearances: appearances)) {
       for await work in session.work(turn) {
         self.work = work
+        shown = turn
       }
     }
   }
@@ -187,6 +194,7 @@ struct ActivityDetailScreen: View {
   let session: SessionModel
   let activity: String
   @State private var detail: ActivityDetail?
+  @Environment(\.asideAppearances) private var appearances
 
   var body: some View {
     ScrollView {
@@ -204,7 +212,7 @@ struct ActivityDetailScreen: View {
     .navigationTitle(detail?.title ?? "")
     .navigationBarTitleDisplayMode(.inline)
     .accessibilityIdentifier("detail.screen")
-    .task {
+    .task(id: Reading(what: activity, appearances: appearances)) {
       for await detail in session.detail(activity) {
         self.detail = detail
       }

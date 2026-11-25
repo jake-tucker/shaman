@@ -162,8 +162,9 @@ public protocol OpenedSession: AnyObject, Sendable {
   func conversation() -> AsyncStream<ConversationChange>
 
   /// The work of the Turn a card hands back, now and whole on every change, for as long as the stream is read: while
-  /// its screen is up.
-  func work(_ turn: String) -> AsyncStream<TurnWork>
+  /// its screen is up. With no Turn named it is the work of the latest Turn that has a card. Where no Turn has one, or
+  /// the Session is not read, it is no work, and a line saying so.
+  func work(_ turn: String?) -> AsyncStream<TurnWork>
 
   /// The whole of the Activity a row hands back, now and on every change, for as long as the stream is read: while
   /// its screen is up. A running command's output grows in it.
