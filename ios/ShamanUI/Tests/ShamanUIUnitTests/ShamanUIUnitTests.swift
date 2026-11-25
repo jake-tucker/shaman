@@ -1499,6 +1499,9 @@ private final class CountedSession: OpenedSession {
     #expect(stack.asideStandsBelow && stack.turnInAside(of: model) == nil)
     stack.path = [.session(settled)]
     #expect(stack.turnInAside(of: model) == "work")
+    // Under a Turn's work or an Activity's whole pushed over it too.
+    stack.path = [.session(settled), .work(settled, turn: "work"), .detail(settled, activity: "compaction")]
+    #expect(stack.asideStandsBelow && stack.turnInAside(of: model) == "work")
     stack.compose()
     #expect(!stack.asideStandsBelow, "no Session open")
     stack.path = [.session(settled)]

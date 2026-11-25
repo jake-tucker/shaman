@@ -148,13 +148,11 @@ final class SessionStack {
     }
   }
 
-  /// Whether the Aside stands below the fold, as it does on the screen of any Session open on top while no keyboard is
-  /// up, shown beside the main view or not.
+  /// Whether the Aside stands below the fold, as it does on every screen of the main view while a Session is open and
+  /// no keyboard is up, shown beside the main view or not: a Session's, and a Turn's work or an Activity's whole pushed
+  /// over one.
   var asideStandsBelow: Bool {
-    switch path.last {
-    case .session, .landing: pose.foldWithHalf != nil && openSession != nil
-    case .work, .detail, nil: false
-    }
+    pose.foldWithHalf != nil && openSession != nil
   }
 
   /// Whether the Aside is on screen, wherever it stands. Each place it may stand is said apart.

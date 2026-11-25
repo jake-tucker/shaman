@@ -8,7 +8,17 @@ extension View {
     _ held: Held?, pose: Pose?, @ViewBuilder lines: @escaping (Held) -> some View,
     @ViewBuilder field: @escaping (Held) -> some View, @ViewBuilder below: @escaping () -> some View
   ) -> some View {
-    modifier(ComposerFoot(held: held, pose: pose, lines: lines, field: field, below: below))
+    modifier(ComposerFoot(held: held, pose: pose, composes: true, lines: lines, field: field, below: below))
+  }
+
+  /// Has a screen of the main view with no composer end at the fold while `pose` says it is sat like a laptop, `below`
+  /// standing in the half below the fold as it does in a composer's foot; in every other pose it stands as it would
+  /// without.
+  func halfBelowTheFold(pose: Pose, @ViewBuilder below: @escaping () -> some View) -> some View {
+    modifier(
+      ComposerFoot(
+        held: Void?.none, pose: pose, composes: false, lines: { _ in EmptyView() }, field: { _ in EmptyView() },
+        below: below))
   }
 }
 
@@ -33,9 +43,15 @@ extension View {
 ///
 /// It keeps no sides: what the foot draws stands across its column by `readingSides`, under the conversation's words,
 /// but for what stands below the fold, which is as wide as the column.
+///
+/// A screen with no composer, as a Turn's work pushed in the main view, carries the second part alone, and only while
+/// it is sat like a laptop, so that what stands below the fold stands there as it does under a Session; out of the pose
+/// it ignores no safe area.
 private struct ComposerFoot<Held, Lines: View, Field: View, Below: View>: ViewModifier {
   let held: Held?
   let pose: Pose?
+  /// Whether it is a composer's foot, which stands as Messages' does in every pose.
+  let composes: Bool
   let lines: (Held) -> Lines
   let field: (Held) -> Field
   let below: () -> Below
@@ -80,6 +96,6 @@ private struct ComposerFoot<Held, Lines: View, Field: View, Below: View>: ViewMo
           .background(.bar)
         }
       }
-      .ignoresSafeArea(.container, edges: .bottom)
+      .ignoresSafeArea(.container, edges: composes || fold != nil ? .bottom : [])
   }
 }

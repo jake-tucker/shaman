@@ -85,8 +85,10 @@ struct ColumnsScreen: View {
   }
 }
 
-/// The screen the path names `pushed`, whose Session is opened as it is first drawn.
-private struct PushedScreen: View {
+/// The screen the path names `pushed`, whose Session is opened as it is first drawn. Sat like a laptop, a Turn's work
+/// and an Activity's whole pushed in the main view end at the fold, with the Aside of the Session they were pushed from
+/// below it, as a Session's own screen has it.
+struct PushedScreen: View {
   let pushed: Pushed
   let stack: SessionStack
 
@@ -95,10 +97,14 @@ private struct PushedScreen: View {
     case .session(let route):
       SessionScreen(model: stack.model(for: route), stack: stack)
     case .work(let route, let turn):
-      TurnWorkScreen(session: stack.model(for: route), turn: turn) { stack.push($0) }
+      let session = stack.model(for: route)
+      TurnWorkScreen(session: session, turn: turn) { stack.push($0) }
+        .halfBelowTheFold(pose: stack.pose) { AsideScreen(stack: stack, session: session) }
         .noticeBanner()
     case .detail(let route, let activity):
-      ActivityDetailScreen(session: stack.model(for: route), activity: activity)
+      let session = stack.model(for: route)
+      ActivityDetailScreen(session: session, activity: activity)
+        .halfBelowTheFold(pose: stack.pose) { AsideScreen(stack: stack, session: session) }
         .noticeBanner()
     case .landing(let route):
       NewSessionScreen(model: stack.landing(for: route), stack: stack)
