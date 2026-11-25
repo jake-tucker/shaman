@@ -20,9 +20,9 @@ use std::{
 };
 
 use shaman_protocol::{
-    Activity, ActivityStatus, ApprovalOutcome, CompactionTrigger, FileChange, Message, MessageRole,
-    PromptDelivery, PromptStatus, QuestionnaireOutcome, SessionSnapshot, SkillInvocation,
-    TranscriptItem, Turn, TurnId, TurnStatus,
+    Activity, ActivityStatus, ApprovalOutcome, CompactionTrigger, FileChange, Message, MessageId,
+    MessageRole, ModelAttribution, PromptDelivery, PromptStatus, QuestionnaireOutcome,
+    SessionSnapshot, SkillInvocation, TranscriptItem, Turn, TurnId, TurnStatus,
 };
 
 use crate::blocks::{AgentBlockKind, agent_blocks};
@@ -270,8 +270,9 @@ impl<'a> Read<'a> {
         card(turn, &work, self.directory)
     }
 
-    /// The conversation this reading makes, in reading order.
-    fn items(&self) -> Vec<ConversationItem> {
+    /// The conversation this reading makes, in reading order, its agent
+    /// Messages cut by `cuts`.
+    fn items(&self, cuts: &mut Cuts) -> Vec<ConversationItem> {
         let (entries, roles) = (&self.entries, &self.roles);
         let cards = card_positions(entries, roles, self.turns);
         let mut items = Vec::with_capacity(entries.len());
@@ -283,7 +284,7 @@ impl<'a> Read<'a> {
                 }
             }
             if let Role::Outside(_) = role {
-                items.extend(entry.items());
+                items.extend(entry.items(cuts));
             }
         }
         // A live Turn with nothing of its own in the Transcript yet stands as
@@ -306,9 +307,11 @@ impl<'a> Read<'a> {
     }
 }
 
-/// The conversation `snapshot` reads as, in reading order.
-pub(crate) fn conversation(snapshot: &SessionSnapshot) -> Vec<ConversationItem> {
-    let mut items = Read::of(snapshot).items();
+/// The conversation `snapshot` reads as, in reading order, its agent Messages
+/// cut by `cuts`.
+pub(crate) fn conversation(snapshot: &SessionSnapshot, cuts: &mut Cuts) -> Vec<ConversationItem> {
+    cuts.forget_all_but(&snapshot.messages);
+    let mut items = Read::of(snapshot).items(cuts);
     // A Prompt sent and not yet delivered stands at the foot as the Message
     // it will be; one queued behind the working Turn waits elsewhere.
     items.extend(
@@ -429,9 +432,9 @@ impl Entry<'_> {
     }
 
     /// The items an entry standing outside its card is.
-    fn items(&self) -> Vec<ConversationItem> {
+    fn items(&self, cuts: &mut Cuts) -> Vec<ConversationItem> {
         match self {
-            Self::Message(message) => message_items(message),
+            Self::Message(message) => cuts.items(message),
             Self::Activity(activity) => activity_item(activity).into_iter().collect(),
         }
     }
@@ -663,6 +666,48 @@ pub fn agent_message_items(
             },
         })
         .collect()
+}
+
+/// The items of one Session's agent Messages as they were last cut, so that
+/// those that stand are not cut again at each piece of one streaming in.
+#[derive(Default)]
+pub(crate) struct Cuts(HashMap<MessageId, Cut>);
+
+/// One agent Message's items, and all of the Message they are made from.
+struct Cut {
+    markdown: String,
+    model: Option<ModelAttribution>,
+    items: Vec<ConversationItem>,
+}
+
+impl Cuts {
+    fn items(&mut self, message: &Message) -> Vec<ConversationItem> {
+        if !matches!(message.role, MessageRole::Agent | MessageRole::Unknown) {
+            return message_items(message);
+        }
+        if let Some(cut) = self.0.get(&message.id)
+            && cut.markdown == message.content
+            && cut.model == message.model
+        {
+            return cut.items.clone();
+        }
+        let items = message_items(message);
+        let cut = Cut {
+            markdown: message.content.clone(),
+            model: message.model.clone(),
+            items: items.clone(),
+        };
+        self.0.insert(message.id, cut);
+        items
+    }
+
+    fn forget_all_but(&mut self, messages: &[Message]) {
+        let held = messages
+            .iter()
+            .map(|message| message.id)
+            .collect::<HashSet<_>>();
+        self.0.retain(|message, _| held.contains(message));
+    }
 }
 
 fn message_items(message: &Message) -> Vec<ConversationItem> {

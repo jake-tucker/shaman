@@ -179,7 +179,7 @@ impl Built {
     }
 
     fn read(&self) -> Vec<ConversationItem> {
-        conversation(&self.snapshot)
+        conversation(&self.snapshot, &mut Cuts::default())
     }
 }
 
@@ -740,6 +740,77 @@ fn a_streaming_message_changes_its_last_block_alone_and_settling_changes_none() 
     assert_eq!(grown[3].id, first[3].id);
     assert_eq!(added[..4], grown[..]);
     assert_eq!(settled, added, "nothing of it is sent again as it settles");
+}
+
+#[test]
+fn a_message_unchanged_is_not_cut_again_and_one_changed_in_any_way_is() {
+    let mut built = Built::new();
+    let turn = built.turn(TurnStatus::Completed, 1_000, Some(1_000));
+    built.user(turn, "Draw it");
+    let first = built.agent(turn, "# Drawn\n\nIn half blocks.");
+    let next = built.turn(TurnStatus::Active, 3_000, None);
+    built.user(next, "And then?");
+    built.agent(next, "One");
+    let mut cuts = Cuts::default();
+    conversation(&built.snapshot, &mut cuts);
+
+    // What is kept of the first stands, whatever it is, as the second grows.
+    cuts.0.get_mut(&first).unwrap().items.truncate(1);
+    let streaming = built.snapshot.messages.len() - 1;
+    built.snapshot.messages[streaming]
+        .content
+        .push_str("\n\nTwo");
+    assert_eq!(
+        read_as(&conversation(&built.snapshot, &mut cuts)),
+        [
+            "user: Draw it",
+            "agent: # Drawn",
+            "user: And then?",
+            "card: Working",
+            "agent: One",
+            "agent: Two",
+        ]
+    );
+
+    // Written again, longer, shorter or as long, or under another Model, it
+    // reads as it would to a reader who had kept nothing.
+    let attributed = |actual: &str| {
+        Some(ModelAttribution {
+            provider: ProviderId::new("codex"),
+            selected: ModelId::new("auto"),
+            actual: ModelId::new(actual),
+        })
+    };
+    for (content, model) in [
+        ("# Drawn\n\nIn half blocks.\n\nAnd more.", None),
+        ("# Brawn\n\nIn half blocks.\n\nAnd more.", None),
+        ("Drawn.", None),
+        ("Drawn.", attributed("gpt-5.5")),
+        ("Drawn.", attributed("gpt-5.5-mini")),
+        ("", attributed("gpt-5.5-mini")),
+        ("Drawn.", None),
+    ] {
+        let message = built
+            .snapshot
+            .messages
+            .iter_mut()
+            .find(|message| message.id == first)
+            .unwrap();
+        message.content = content.to_owned();
+        message.model = model;
+        assert_eq!(
+            conversation(&built.snapshot, &mut cuts),
+            built.read(),
+            "{content:?}"
+        );
+    }
+
+    built
+        .snapshot
+        .messages
+        .retain(|message| message.id != first);
+    assert_eq!(conversation(&built.snapshot, &mut cuts), built.read());
+    assert!(!cuts.0.contains_key(&first), "nothing of one gone is kept");
 }
 
 #[test]

@@ -785,6 +785,7 @@ fn opened(
             try_now: opening.try_now,
             listed: opening.listed,
             snapshot: None,
+            cuts: Mutex::default(),
             local: Arc::downgrade(&local),
             unreachable: opening.unreachable,
             behind: opening.behind,
@@ -1493,6 +1494,8 @@ struct Reader {
     try_now: TryNow,
     listed: Listed,
     snapshot: Option<SessionSnapshot>,
+    /// Its agent Messages as they were last cut.
+    cuts: Mutex<conversation::Cuts>,
     /// What the screen holds of its own, which its acts change, for as long
     /// as the screen holds it.
     local: Weak<watch::Sender<Local>>,
@@ -1957,7 +1960,13 @@ impl Reader {
         let local = self.local();
         let items = frame::with_outgoing(
             match (&self.snapshot, &local.provisional) {
-                (Some(snapshot), _) => conversation::conversation(snapshot),
+                (Some(snapshot), _) => conversation::conversation(
+                    snapshot,
+                    &mut self
+                        .cuts
+                        .lock()
+                        .unwrap_or_else(|poison| poison.into_inner()),
+                ),
                 (None, Some(provisional)) => frame::provisional_items(provisional),
                 // Not read, and not to be until the side behind is updated:
                 // why stands where the conversation would.
@@ -2124,6 +2133,7 @@ mod tests {
             try_now,
             listed: opening.listed,
             snapshot: None,
+            cuts: Mutex::default(),
             local: Weak::new(),
             unreachable: opening.unreachable,
             behind: opening.behind,
