@@ -126,21 +126,20 @@ final class LongSessionTests: XCTestCase {
   }
 
   @MainActor
-  func testItFollowsAnAnswerStreamingInButLeavesAReaderWhoScrolledUp() {
+  func testItFollowsAnAnswerStreamingInButLeavesAReaderWhoScrolledUp() throws {
     let app = launched(opening: "workstation-key/31")
-    let answers = app.descendants(matching: .any).matching(identifier: "session.agentMessage")
     let composer = app.descendants(matching: .any)["session.composer"]
     XCTAssertTrue(composer.waitForExistence(timeout: 10))
     Thread.sleep(forTimeInterval: 4)
-    let streaming = answers.matching(NSPredicate(format: "label BEGINSWITH %@", "Summary")).firstMatch
-    XCTAssertTrue(streaming.waitForExistence(timeout: 5))
-    let grown = streaming.label.count
-    Thread.sleep(forTimeInterval: 2)
-    XCTAssertGreaterThan(streaming.label.count, grown, "the answer is still streaming in")
-    XCTAssertTrue(streaming.isHittable)
+    let grown = try XCTUnwrap(blocks(of: app).compactMap(\.step).max(), "the answer is on screen")
+    Thread.sleep(forTimeInterval: 3)
+    let blocks = try blocks(of: app)
+    let streamed = try XCTUnwrap(blocks.compactMap(\.step).max())
+    XCTAssertGreaterThan(streamed, grown, "the answer is still streaming in, its last block on screen")
     // The bar saying the Session works stands over the composer.
     let foot = app.descendants(matching: .any)["session.bar"].frame.minY
-    XCTAssertEqual(streaming.frame.maxY, foot - 12, accuracy: 12, "it grew at the foot, which the screen followed")
+    let last = try XCTUnwrap(blocks.map(\.frame.maxY).max())
+    XCTAssertEqual(last, foot - 12, accuracy: 12, "it grew at the foot, which the screen followed")
 
     for _ in 0..<3 {
       drag(app, by: 200)
@@ -148,17 +147,44 @@ final class LongSessionTests: XCTestCase {
     // Long enough for the last drag to have come to rest, however busy the machine.
     Thread.sleep(forTimeInterval: 1.5)
     let scrolled = Screen(XCUIScreen.main.screenshot())
-    let length = streaming.label.count
     Thread.sleep(forTimeInterval: 3)
     let later = Screen(XCUIScreen.main.screenshot())
     attach(scrolled.screenshot, "Scrolled up while it streams")
     attach(later.screenshot, "A while later")
-    XCTAssertGreaterThan(streaming.label.count, length, "it streamed on all the while")
-    // The answer the reader is in is set again as it grows, which moves its words by a pixel here and there.
+    // The block the reader is in may be set again as it grows, which moves its words by a pixel here and there.
     let moved = later.shift(from: scrolled, closely: 0.2)
     XCTAssertNotNil(moved, "what the reader scrolled to is still on screen")
     // Pulled down after the answer, the reader would move by what streamed in, a line or more at a time.
     XCTAssertEqual(moved ?? .infinity, 0, accuracy: 3, "what the reader scrolled to stays where it stands")
+
+    // What streamed in stands below, where the reader finds it.
+    var reached = streamed
+    for _ in 0..<10 where reached < streamed + 6 {
+      app.swipeUp(velocity: .fast)
+      reached = try self.blocks(of: app).compactMap(\.step).max() ?? 0
+    }
+    XCTAssertGreaterThanOrEqual(reached, streamed + 6, "it streamed on all the while")
+  }
+
+  /// A block of an agent Message on screen.
+  private struct Block {
+    let label: String
+    let frame: CGRect
+
+    /// Which step of the streaming answer it is, where it is one: "Step 12: …".
+    var step: Int? {
+      label.hasPrefix("Step ") ? Int(label.dropFirst(5).prefix { $0.isNumber }) : nil
+    }
+  }
+
+  /// The blocks of agent Messages on screen, all read at one moment, as blocks come and go while an answer streams in.
+  @MainActor
+  private func blocks(of app: XCUIApplication) throws -> [Block] {
+    func blocks(in element: any XCUIElementSnapshot) -> [Block] {
+      (element.identifier == "session.agentMessage" ? [Block(label: element.label, frame: element.frame)] : [])
+        + element.children.flatMap(blocks)
+    }
+    return blocks(in: try app.snapshot())
   }
 }
 

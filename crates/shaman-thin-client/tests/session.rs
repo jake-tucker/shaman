@@ -89,7 +89,7 @@ fn read_as(items: &[ConversationItem]) -> Vec<String> {
             ItemKind::Unread { words } => format!("unread: {words}"),
             ItemKind::UserMessage { text, .. } => format!("user: {text}"),
             ItemKind::Delegation { text, from } => format!("delegation from {from}: {text}"),
-            ItemKind::AgentMessage { markdown, .. } => format!("agent: {markdown}"),
+            ItemKind::AgentBlock { markdown, .. } => format!("agent: {markdown}"),
             ItemKind::Turn { card } => format!("card: {}", card.line),
             ItemKind::Error { text } => format!("error: {text}"),
             ItemKind::Compaction { words, .. } => format!("compaction: {words}"),
@@ -263,10 +263,31 @@ async fn a_live_turn_reads_as_it_works_its_answer_streaming_and_settles_into_its
         "a streaming Message crosses alone: {items:?}"
     );
     assert_eq!(order.len(), 3);
-    let ItemKind::AgentMessage { streaming: on, .. } = &items[0].kind else {
-        panic!("the agent Message");
+    assert!(matches!(items[0].kind, ItemKind::AgentBlock { .. }));
+
+    let told = streamed.told.len();
+    say(
+        &script,
+        [ProviderEvent::AgentMessageDelta {
+            content: "\n\nIt stands 33 rows tall.".to_owned(),
+        }],
+    );
+    let streamed = reading
+        .conversation_until(|items| {
+            read_as(items)
+                .last()
+                .is_some_and(|last| last == "agent: It stands 33 rows tall.")
+        })
+        .await;
+    let ConversationChange::Changed { items, order } = &streamed.told[told] else {
+        panic!("told the change alone: {:?}", streamed.told[told]);
     };
-    assert!(on, "still arriving");
+    assert_eq!(
+        read_as(items),
+        ["agent: It stands 33 rows tall."],
+        "a streaming Message crosses as its last block alone"
+    );
+    assert_eq!(order.len(), 4);
 
     say(
         &script,
@@ -294,6 +315,7 @@ async fn a_live_turn_reads_as_it_works_its_answer_streaming_and_settles_into_its
         read_as(&settled.items)[2],
         "agent: The code is drawn in half blocks."
     );
+    assert_eq!(read_as(&settled.items)[3], "agent: It stands 33 rows tall.");
     assert_eq!(cards(&settled.items)[0].count.as_deref(), Some("1 command"));
 
     phone.shutdown();

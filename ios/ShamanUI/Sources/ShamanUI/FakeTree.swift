@@ -451,12 +451,9 @@
         stopped(member) != nil ? .stopped : member.settled?.0 == .failed ? .failed : .worked
       return [
         delegation, FakeConversation.card("work", outcome, line, "2 tools"),
-        ConversationItem(
-          id: "answer",
-          kind: .agentMessage(
-            markdown: "The backup's `pg_dump` held the lock from 02:00 until it was killed at 06:10.", model: nil,
-            streaming: false)),
       ]
+        + FakeConversation.agent(
+          "answer", "The backup's `pg_dump` held the lock from 02:00 until it was killed at 06:10.")
     }
 
     /// The work of the Turn `turn` of the Session `session` of the tree.

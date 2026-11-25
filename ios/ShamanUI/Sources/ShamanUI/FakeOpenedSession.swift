@@ -328,10 +328,10 @@
           try? await Task.sleep(for: .milliseconds(700))
           guard !Task.isCancelled else { return }
           self?.change { items in
-            items = items.map {
-              $0.id == "answer"
-                ? ConversationItem(id: "answer", kind: .agentMessage(markdown: text, model: nil, streaming: true)) : $0
-            }
+            let grown = FakeConversation.agent("answer", text)
+            guard let first = items.firstIndex(where: { $0.isBlock(of: "answer") }) else { return }
+            items.removeAll { $0.isBlock(of: "answer") }
+            items.insert(contentsOf: grown, at: first)
           }
         }
       }
@@ -825,6 +825,13 @@
         return state.shown(unreachable: unreachable)
       }
       frames.tell(frame)
+    }
+  }
+
+  extension ConversationItem {
+    /// Whether it is a block of the agent Message `message`.
+    fileprivate func isBlock(of message: String) -> Bool {
+      if case .agentBlock(message, _, _, _, _) = kind { true } else { false }
     }
   }
 #endif

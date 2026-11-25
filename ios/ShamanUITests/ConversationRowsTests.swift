@@ -60,46 +60,69 @@ final class ConversationRowsTests: XCTestCase {
   }
 
   /// In `longSession`, `/32`'s answer is written again and again: long under the Model's name, then short without it.
-  /// Each time its row comes to stand as tall as its words, neither running over what is below nor leaving anything
-  /// blank beneath them.
+  /// Each time the row of each of its blocks comes to stand as tall as its words, neither running over what is below nor
+  /// leaving anything blank beneath them.
   @MainActor
   func testAnAnswerWrittenShorterOrLongerStandsAsTallAsItsWords() throws {
     let app = XCUIApplication()
     app.launchArguments = ["--fake", "longSession", "--open", "workstation-key/32"]
     app.launch()
     let answer = app.descendants(matching: .any).matching(identifier: "session.agentMessage").firstMatch
-    let row = app.cells.containing(.any, identifier: "session.agentMessage").firstMatch
     XCTAssertTrue(answer.waitForExistence(timeout: 10))
     for round in 0..<2 {
       for (words, long) in [("short notes end here", false), ("long notes end here", true)] {
         let said = "round \(round), \(long ? "long" : "short")"
         // Measured while it is so written, which it stays a few seconds at a time: what was read while it was
         // written again is read again.
-        var measured: (row: CGRect, answer: CGRect)?
+        var measured: [Block]?
         let deadline = Date.now.addingTimeInterval(15)
         while measured == nil, Date.now < deadline {
-          guard answer.label.contains(words) else {
+          guard try blocks(of: app).last?.label.contains(words) == true else {
             Thread.sleep(forTimeInterval: 0.05)
             continue
           }
           // Past the moment a shorter row waits to be sure of what it measures.
           Thread.sleep(forTimeInterval: 0.6)
-          let frames = (row: row.frame, answer: answer.frame)
-          if answer.label.contains(words) {
-            measured = frames
+          let blocks = try blocks(of: app)
+          if blocks.last?.label.contains(words) == true {
+            measured = blocks
           }
         }
-        let frames = try XCTUnwrap(measured, "\(said): so written a while")
-        if abs(frames.row.height - frames.answer.height) > 2 {
-          attach(app, said)
+        let blocks = try XCTUnwrap(measured, "\(said): so written a while")
+        XCTAssertEqual(blocks.count, long ? 8 : 1, "\(said): a row for each of its blocks")
+        for block in blocks {
+          if abs(block.row.height - block.words.height) > 2 {
+            attach(app, said)
+          }
+          XCTAssertEqual(
+            block.row.height, block.words.height, accuracy: 2,
+            "\(said): its row stands as tall as its words, at \(block.row) for \(block.words): \(block.label)")
         }
-        XCTAssertEqual(
-          frames.row.height, frames.answer.height, accuracy: 2,
-          "\(said): its row stands as tall as its words, at \(frames.row) for \(frames.answer)")
         XCTAssertFalse(
           app.descendants(matching: .any)["session.model"].exists, "the Model's name went with the first writing again")
       }
     }
+  }
+
+  /// A block of an agent Message on screen: its words, and the row that holds them.
+  private struct Block {
+    let label: String
+    let row: CGRect
+    let words: CGRect
+  }
+
+  /// The blocks of agent Messages on screen, top first, all read at one moment, as blocks come and go while an answer is
+  /// written.
+  @MainActor
+  private func blocks(of app: XCUIApplication) throws -> [Block] {
+    func words(in element: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {
+      element.identifier == "session.agentMessage" ? [element] : element.children.flatMap(words)
+    }
+    func blocks(in element: any XCUIElementSnapshot) -> [Block] {
+      guard element.elementType == .cell else { return element.children.flatMap(blocks) }
+      return words(in: element).map { Block(label: $0.label, row: element.frame, words: $0.frame) }
+    }
+    return blocks(in: try app.snapshot()).sorted { $0.row.minY < $1.row.minY }
   }
 
   @MainActor

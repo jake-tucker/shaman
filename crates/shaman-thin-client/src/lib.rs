@@ -50,8 +50,10 @@ mod tree;
 mod work;
 
 pub use beginning::{Landing, LandingWorkspace, WorktreeChoice};
-pub use blocks::{AgentBlock, AgentBlockKind, agent_blocks};
-pub use conversation::{ConversationItem, ItemKind, Tone, TurnCard, TurnOutcome};
+pub use blocks::AgentBlockKind;
+pub use conversation::{
+    ConversationItem, ItemKind, Tone, TurnCard, TurnOutcome, agent_message_items,
+};
 pub use device::ThisDevice;
 use device::{DeviceRecord, Records};
 pub use drafts::Draft;

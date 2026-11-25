@@ -11,7 +11,7 @@ app's shape. Everything here is built from a terminal on a Mac with Xcode 27.2; 
 | `Shaman.xcodeproj` | The project, in Xcode 27's JSON format (`project.xcproj`) with folders synced to disk, and the shared `Shaman` scheme |
 | `Shaman/` | The `Shaman` app target: `@main`, the choice of live core or fake, the Info settings |
 | `ShamanUI/` | A local package: the views, the `Core` protocol the app reaches the core through, `LiveCore`, `FakeCore`, and the adapters around the core. Its unit tests are `ShamanUIUnitTests` |
-| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the conversation's list under a ticking display link |
+| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the conversation's list under a ticking display link and what Textual draws a Message's blocks as |
 | `ShamanUITests/` | The XCUITest target |
 | `ShamanCore/` | The core and its generated Swift, written by `scripts/build-ios-core.sh`; ignored by git |
 | `build/` | Where the commands below put what `xcodebuild` makes; ignored by git |
@@ -132,7 +132,7 @@ Sessions it acted on across Servers: `/21` on the workstation, `laptop-key/22` a
 workstation calls "build"), `homelab-key/23` on the home lab, which reads Unreachable to the phone, and entries on
 "attic" and "nas", which the phone is not paired with and so cannot open, and one on "mail", which the workstation names
 without its key, saying the workstation is to be updated; its card's rows open its Subsessions by the same rule. In
-`longSession` the `paired` phone also lists two long Sessions, `FakeLong`'s, of some 330 items of very uneven height,
+`longSession` the `paired` phone also lists two long Sessions, `FakeLong`'s, of some 600 items of very uneven height,
 short bubbles among long Markdown answers with code blocks and tables, Turn cards and Compactions, each item's words
 numbered so that one can be told from another: `workstation-key/30` has settled, its last item the line "That's
 everything", and in `/31` the last answer streams on for minutes. `LongSessionTests` reads them from screenshots,
@@ -368,7 +368,10 @@ If the phone is locked, stop and ask for it to be unlocked.
 - The fake and every debug-only path stay behind `#if DEBUG`.
 - `ShamanUI` depends on one package from outside, Textual, which draws an agent Message's Markdown, and through it on
   two more, swift-concurrency-extras and swiftui-math. Textual is pinned exactly, and both `Package.resolved` files,
-  which pin all three, are committed. Move them deliberately.
+  which pin all three, are committed. Move them deliberately: the conversation's list stands a Message's blocks apart by
+  Textual's own numbers, which `BlockMargins` holds a copy of and `AgentBlockHostedTests` holds to what it draws.
+- An agent Message crosses as an item for each of its top-level blocks, which the core cuts; the fake has the core cut its
+  own, by `agentMessageItems`.
 - Add a Swift file by creating it in a synced folder; the project does not list files. Change a build setting with
   `xcrun xcodeproj setting set`, and keep `Shaman.xcodeproj` committed.
 - The app's version is its own (`MARKETING_VERSION`, from 0.1.0) and its build number is set by hand. Commits under

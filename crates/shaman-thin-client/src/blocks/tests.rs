@@ -108,6 +108,23 @@ fn a_block_is_named_by_its_position_in_its_message() {
 }
 
 #[test]
+fn a_list_and_a_quotation_say_what_they_hold_at_any_depth() {
+    let holds = |markdown: &str| {
+        let mut blocks = agent_blocks("message", markdown);
+        assert_eq!(blocks.len(), 1, "{blocks:?}");
+        blocks.remove(0).holds
+    };
+    assert_eq!(holds("- tight\n- list"), []);
+    assert_eq!(holds("> words\n>\n> and more"), []);
+    assert_eq!(holds("1. a\n\n   ```\n   b\n   ```\n\n2. c"), [Code]);
+    assert_eq!(
+        holds("> # a\n>\n> - ***\n>\n> > | a |\n> > |---|\n>\n> ## b"),
+        [Heading, List, Rule, Quotation, Table]
+    );
+    assert_eq!(holds("a *word* with `code` and an ![image](shot.png)"), []);
+}
+
+#[test]
 fn a_block_keeps_the_indent_it_was_written_under() {
     assert_eq!(
         cut(" - a\n\n   - b\n\n para\n\n\tcode"),

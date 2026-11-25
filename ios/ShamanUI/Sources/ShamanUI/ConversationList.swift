@@ -10,7 +10,7 @@ import UIKit
 /// they see while they scroll up, `measured` says how far to scroll to keep it so; where the row runs on past it, as a
 /// long answer the reader is reading inside does while it streams, what they see is the row's own head, which stands.
 struct ConversationGeometry {
-  /// The space between rows, and above the first and below the last.
+  /// The space between rows but for those `gaps` names, and above the first and below the last.
   static let spacing: CGFloat = 12
   static let margin: CGFloat = 8
   /// What a row not yet drawn is guessed to measure.
@@ -25,17 +25,33 @@ struct ConversationGeometry {
   private var heights: [String: CGFloat] = [:]
   /// The rows reported shorter than they stand, with what they measure and since when.
   private var shrinking: [String: (height: CGFloat, since: TimeInterval)] = [:]
+  /// How far below the row above it each row stands, where that is not `spacing`.
+  private(set) var gaps: [String: CGFloat] = [:]
   private var tops: [CGFloat] = []
   private(set) var height: CGFloat = 0
 
-  /// Takes `ids` as the rows, in order, keeping what was measured of those still among them.
-  mutating func take(_ ids: [String]) {
-    guard ids != self.ids else { return }
+  /// Takes `ids` as the rows, in order, each as far below the one above it as `gaps` says, keeping what was measured of
+  /// those still among them. An id may leave and come back naming another block of its Message: what was measured goes
+  /// as a row leaves, so it stands at nothing but its own height. Answers how far the rows already held moved, at
+  /// `foot`, for standing closer together or further apart: the head of the first of them ending below it.
+  @discardableResult
+  mutating func take(_ ids: [String], gaps: [String: CGFloat] = [:], foot: CGFloat = 0) -> CGFloat {
+    guard ids != self.ids || gaps != self.gaps else { return 0 }
+    let seen = partition { tops[$0] + height(of: self.ids[$0]) > foot }
+    var moved: CGFloat = 0
+    if gaps != self.gaps, seen < self.ids.count {
+      let was = tops[seen]
+      self.gaps.merge(gaps) { _, now in now }
+      place()
+      moved = tops[seen] - was
+    }
     self.ids = ids
+    self.gaps = gaps
     indices = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
     heights = heights.filter { indices[$0.key] != nil }
     shrinking = shrinking.filter { indices[$0.key] != nil }
     place()
+    return moved
   }
 
   /// Forgets every height measured, as rows drawn at another width measure anew.
@@ -116,11 +132,14 @@ struct ConversationGeometry {
     tops = []
     tops.reserveCapacity(ids.count)
     var y = Self.margin
-    for id in ids {
+    for (index, id) in ids.enumerated() {
+      if index > 0 {
+        y += gaps[id] ?? Self.spacing
+      }
       tops.append(y)
-      y += height(of: id) + Self.spacing
+      y += height(of: id)
     }
-    height = ids.isEmpty ? 0 : y - Self.spacing + Self.margin
+    height = ids.isEmpty ? 0 : y + Self.margin
   }
 
   /// The first index for which `isAfter` holds, in rows ordered so that it holds from some index on.
@@ -252,6 +271,10 @@ struct ConversationList<Row: View>: UIViewRepresentable {
     view.selfSizingInvalidation = .disabled
     view.delegate = self
     self.view = view
+    view.registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { [weak self] (_: FootCollectionView, _) in
+      guard let self else { return }
+      self.place(self.geometry.ids)
+    }
     let registration = UICollectionView.CellRegistration<RowCell, String> { [weak self] cell, _, id in
       guard let self, let row = self.rows[id] else { return }
       cell.measured = { [weak self] in self?.geometry.measured(id) ?? false }
@@ -269,9 +292,9 @@ struct ConversationList<Row: View>: UIViewRepresentable {
     let ids = rows.map(\.id)
     let changed = rows.filter { row in self.rows[row.id].map { $0 != row } ?? false }.map(\.id)
     self.rows = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+    place(ids)
     var snapshot = dataSource.snapshot()
     if snapshot.itemIdentifiers != ids {
-      geometry.take(ids)
       snapshot = NSDiffableDataSourceSnapshot()
       snapshot.appendSections([0])
       snapshot.appendItems(ids)
@@ -281,6 +304,29 @@ struct ConversationList<Row: View>: UIViewRepresentable {
     }
     dataSource.apply(snapshot, animatingDifferences: false)
     view?.setNeedsLayout()
+  }
+
+  /// How far below the row above it each of the rows `ids` stands, where that is not the list's own gap: a block of an
+  /// agent Message below another of it, by as much as Textual would have them apart at the size the text is.
+  private func gaps(of ids: [String]) -> [String: CGFloat] {
+    guard let view else { return [:] }
+    let em = UIFont.preferredFont(forTextStyle: .body, compatibleWith: view.traitCollection).pointSize
+    var gaps: [String: CGFloat] = [:]
+    for (upper, lower) in zip(ids, ids.dropFirst()) {
+      if let above = rows[upper], let gap = rows[lower]?.gap(below: above) {
+        // Rounded down as each row's height is rounded up, so that a Message comes to what it would whole.
+        gaps[lower] = floor(gap * em)
+      }
+    }
+    return gaps
+  }
+
+  /// Stands the rows `ids` one below another, as far apart as each two are to be now.
+  private func place(_ ids: [String]) {
+    let moved = geometry.take(ids, gaps: gaps(of: ids), foot: view?.visibleFoot ?? 0)
+    if moved != 0 {
+      invalidate(moved: moved)
+    }
   }
 
   /// Takes what the row `id` says it measures now.
@@ -297,7 +343,12 @@ struct ConversationList<Row: View>: UIViewRepresentable {
       geometry.measured(id, at: height, foot: 0)
       return
     }
-    let moved = geometry.measured(id, at: height, foot: view.visibleFoot)
+    invalidate(moved: geometry.measured(id, at: height, foot: view.visibleFoot))
+  }
+
+  /// Lays the rows out again where they stand now, what stands at the foot of what the reader sees having `moved`.
+  private func invalidate(moved: CGFloat) {
+    guard let view else { return }
     let context = UICollectionViewLayoutInvalidationContext()
     // At the foot the list goes back to the foot; above it, what the reader sees stays where it stands.
     if moved != 0, !following {

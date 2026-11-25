@@ -89,7 +89,7 @@ fn read_as(items: &[ConversationItem]) -> Vec<String> {
             ItemKind::Loading { .. } => "loading".to_owned(),
             ItemKind::Unread { words } => format!("unread: {words}"),
             ItemKind::Delegation { .. } => "delegation".to_owned(),
-            ItemKind::AgentMessage { .. } => "agent".to_owned(),
+            ItemKind::AgentBlock { .. } => "agent".to_owned(),
             ItemKind::Turn { .. } => "card".to_owned(),
             ItemKind::Error { .. } => "error".to_owned(),
             ItemKind::Compaction { .. } => "compaction".to_owned(),

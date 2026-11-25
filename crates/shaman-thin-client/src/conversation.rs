@@ -2,12 +2,13 @@
 //! items with stable ids, each Turn's work behind one card.
 //!
 //! A user Message is a bubble, a Delegation a bubble naming the Agent that
-//! sent it, and an agent Message Markdown across the width. Each Turn's work
-//! stands behind one card that carries only its line and its count; what a
-//! Turn Fold keeps outside stands outside the card too: every user Message,
-//! steering ones included, the Turn's final agent Message, a failed Turn's
-//! Error and every Compaction. Reasoning is left out, as the schema's default
-//! leaves it, and Tool Calls are counted, as its default shows them.
+//! sent it, and an agent Message Markdown across the width, an item for each
+//! of its top-level blocks. Each Turn's work stands behind one card that
+//! carries only its line and its count; what a Turn Fold keeps outside stands
+//! outside the card too: every user Message, steering ones included, the Turn's
+//! final agent Message, a failed Turn's Error and every Compaction. Reasoning is
+//! left out, as the schema's default leaves it, and Tool Calls are counted, as
+//! its default shows them.
 //!
 //! The core writes every word here, in the TUI's words where the TUI has
 //! some, and hands Swift a small enum beside each wherever Swift picks a
@@ -20,9 +21,11 @@ use std::{
 
 use shaman_protocol::{
     Activity, ActivityStatus, ApprovalOutcome, CompactionTrigger, FileChange, Message, MessageRole,
-    MessageStatus, PromptDelivery, PromptStatus, QuestionnaireOutcome, SessionSnapshot,
-    SkillInvocation, TranscriptItem, Turn, TurnId, TurnStatus,
+    PromptDelivery, PromptStatus, QuestionnaireOutcome, SessionSnapshot, SkillInvocation,
+    TranscriptItem, Turn, TurnId, TurnStatus,
 };
+
+use crate::blocks::{AgentBlockKind, agent_blocks};
 
 /// The id the loading mark stands under, before the Session has been read.
 pub(crate) const LOADING: &str = "loading";
@@ -31,7 +34,9 @@ pub(crate) const LOADING: &str = "loading";
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct ConversationItem {
     /// What the item stands under: the same for the same Message, Activity or
-    /// Turn however often the conversation changes.
+    /// Turn however often the conversation changes. A block's names its
+    /// position in its Message, where more of the Message arriving may stand
+    /// another block.
     pub id: String,
     pub kind: ItemKind,
 }
@@ -63,14 +68,20 @@ pub enum ItemKind {
         /// The Agent that sent it.
         from: String,
     },
-    /// What the Agent said, as Markdown source, across the width.
-    AgentMessage {
+    /// One top-level block of what the Agent said, across the width.
+    AgentBlock {
+        /// The Message it is a block of, whose blocks stand one after another.
+        message: String,
+        kind: AgentBlockKind,
+        /// Each kind of block inside it, once: a list's or a quotation's,
+        /// which are taken to hold a paragraph and so never say it.
+        holds: Vec<AgentBlockKind>,
+        /// The block's own Markdown, as the Agent wrote it.
         markdown: String,
         /// The subdued line naming the Model that answered, where it differs
-        /// from the one selected: "selected · actual".
+        /// from the one selected, "selected · actual": on its Message's first
+        /// block alone.
         model: Option<String>,
-        /// Whether more of it is still arriving.
-        streaming: bool,
     },
     /// The card a Turn's work stands behind.
     Turn { card: TurnCard },
@@ -271,10 +282,8 @@ impl<'a> Read<'a> {
                     items.push(self.card_item(turn));
                 }
             }
-            if let Role::Outside(_) = role
-                && let Some(item) = entry.item()
-            {
-                items.push(item);
+            if let Role::Outside(_) = role {
+                items.extend(entry.items());
             }
         }
         // A live Turn with nothing of its own in the Transcript yet stands as
@@ -419,11 +428,11 @@ impl Entry<'_> {
         }
     }
 
-    /// The item an entry standing outside its card is.
-    fn item(&self) -> Option<ConversationItem> {
+    /// The items an entry standing outside its card is.
+    fn items(&self) -> Vec<ConversationItem> {
         match self {
-            Self::Message(message) => Some(message_item(message)),
-            Self::Activity(activity) => activity_item(activity),
+            Self::Message(message) => message_items(message),
+            Self::Activity(activity) => activity_item(activity).into_iter().collect(),
         }
     }
 }
@@ -631,7 +640,33 @@ fn count(work: &[&Activity]) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
-fn message_item(message: &Message) -> ConversationItem {
+/// The items the agent Message standing under the id `message` is, whose
+/// Markdown is `markdown`: one for each of its top-level blocks, the line
+/// `model` naming the Model that answered on the first. Exported so that a fake
+/// conversation is cut by what cuts a real one.
+#[uniffi::export]
+pub fn agent_message_items(
+    message: &str,
+    markdown: &str,
+    mut model: Option<String>,
+) -> Vec<ConversationItem> {
+    agent_blocks(message, markdown)
+        .into_iter()
+        .map(|block| ConversationItem {
+            id: block.id,
+            kind: ItemKind::AgentBlock {
+                message: message.to_owned(),
+                kind: block.kind,
+                holds: block.holds,
+                markdown: block.markdown,
+                model: model.take(),
+            },
+        })
+        .collect()
+}
+
+fn message_items(message: &Message) -> Vec<ConversationItem> {
+    let id = format!("message:{}", message.id);
     let kind = match &message.role {
         MessageRole::User => ItemKind::UserMessage {
             text: message.content.clone(),
@@ -645,20 +680,16 @@ fn message_item(message: &Message) -> ConversationItem {
                 .clone()
                 .unwrap_or_else(|| "The delegating agent".to_owned()),
         },
-        MessageRole::Agent | MessageRole::Unknown => ItemKind::AgentMessage {
-            markdown: message.content.clone(),
-            model: message
+        MessageRole::Agent | MessageRole::Unknown => {
+            let model = message
                 .model
                 .as_ref()
                 .filter(|model| model.selected != model.actual)
-                .map(|model| format!("{} · {}", model.selected, model.actual)),
-            streaming: message.status == MessageStatus::Streaming,
-        },
+                .map(|model| format!("{} · {}", model.selected, model.actual));
+            return agent_message_items(&id, &message.content, model);
+        }
     };
-    ConversationItem {
-        id: format!("message:{}", message.id),
-        kind,
-    }
+    vec![ConversationItem { id, kind }]
 }
 
 /// What a user Message carried beside its text: its `attachments` counted

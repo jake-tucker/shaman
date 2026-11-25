@@ -1,6 +1,5 @@
 import ShamanCore
 import SwiftUI
-import Textual
 
 /// A Session pushed over the listing, read live as a conversation: the Title over where it stands, the user's
 /// Messages as bubbles at the right, the Agent's as Markdown across the width, and each Turn's work behind one card.
@@ -411,8 +410,8 @@ private struct ItemView: View {
       UserBubble(text: text, note: note, sending: sending)
     case .delegation(let text, let from):
       DelegationBubble(text: text, from: from)
-    case .agentMessage(let markdown, let model, _):
-      AgentMessage(markdown: markdown, model: model)
+    case .agentBlock(_, let kind, _, let markdown, let model):
+      AgentBlockView(kind: kind, markdown: markdown, model: model)
     case .turn(let card):
       // The card pushes the Turn's work.
       Button {
@@ -824,30 +823,6 @@ private struct DelegationBubble: View {
     .padding(.trailing, 44)
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier("session.delegation")
-  }
-}
-
-/// What the Agent said, as Markdown across the width: code blocks and tables scroll sideways rather than wrap. Where
-/// another Model answered than the one selected, a subdued line above names both.
-private struct AgentMessage: View {
-  let markdown: String
-  let model: String?
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      if let model {
-        Text(verbatim: model)
-          .font(.caption)
-          .foregroundStyle(.tertiary)
-          .accessibilityIdentifier("session.model")
-      }
-      StructuredText(markdown: markdown)
-        .textual.overflowMode(.scroll)
-        .textual.tableStyle(.overflow)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    .accessibilityElement(children: .combine)
-    .accessibilityIdentifier("session.agentMessage")
   }
 }
 

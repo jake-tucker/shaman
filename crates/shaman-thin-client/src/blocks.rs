@@ -15,12 +15,16 @@ use std::ops::Range;
 use pulldown_cmark::{CodeBlockKind, Event, OffsetIter, Options, Parser, Tag, TagEnd};
 
 /// One top-level block of an agent Message.
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
-pub struct AgentBlock {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AgentBlock {
     /// What the block stands under: its Message's id, and its position in the
     /// Message counted from none, as `message:<uuid>#0`.
     pub id: String,
     pub kind: AgentBlockKind,
+    /// Each kind of block inside it, once, in the order they first come: a
+    /// list's or a quotation's, which are taken to hold a paragraph and so
+    /// never say it.
+    pub holds: Vec<AgentBlockKind>,
     /// The block's own Markdown, as the Agent wrote it, with each link
     /// definition of the Message that it uses and that stands outside it. A
     /// paragraph's own begins at a definition written straight above it.
@@ -58,8 +62,7 @@ pub enum AgentBlockKind {
 ///   wherever each stands, again at each piece of it.
 /// - A line that read as a definition may go on as a paragraph, and is then
 ///   taken from every block it was written with.
-#[uniffi::export]
-pub fn agent_blocks(message: &str, markdown: &str) -> Vec<AgentBlock> {
+pub(crate) fn agent_blocks(message: &str, markdown: &str) -> Vec<AgentBlock> {
     let mut events = Parser::new_ext(markdown, options()).into_offset_iter();
     let mut blocks = Vec::new();
     let mut above = 0;
@@ -69,6 +72,7 @@ pub fn agent_blocks(message: &str, markdown: &str) -> Vec<AgentBlock> {
             blocks.push(AgentBlock {
                 id: format!("{message}#{}", blocks.len()),
                 kind: read.kind,
+                holds: read.holds.clone(),
                 markdown: written(&read, above, markdown),
             });
         }
@@ -86,6 +90,8 @@ fn options() -> Options {
 /// One top-level block as the parser reads it in its Message.
 struct Read {
     kind: AgentBlockKind,
+    /// Each kind of block inside it.
+    holds: Vec<AgentBlockKind>,
     /// The whole lines it stands on.
     lines: Range<usize>,
     /// Whether anything of it is drawn.
@@ -106,15 +112,8 @@ struct Definition {
 
 /// Reads the block `first` begins, taking the rest of it from `events`.
 fn read(first: Event<'_>, span: Range<usize>, markdown: &str, events: &mut OffsetIter<'_>) -> Read {
-    let kind = match &first {
-        Event::Start(Tag::Heading { .. }) => AgentBlockKind::Heading,
-        Event::Start(Tag::CodeBlock(_)) => AgentBlockKind::Code,
-        Event::Start(Tag::Table(_)) => AgentBlockKind::Table,
-        Event::Start(Tag::BlockQuote(_)) => AgentBlockKind::Quotation,
-        Event::Start(Tag::List(_)) => AgentBlockKind::List,
-        Event::Rule => AgentBlockKind::Rule,
-        _ => AgentBlockKind::Paragraph,
-    };
+    let kind = kind(&first).unwrap_or(AgentBlockKind::Paragraph);
+    let mut holds = Vec::new();
     let mut lines = whole_lines(markdown, span.clone());
     let mut drawn = false;
     let mut uses: Vec<Definition> = Vec::new();
@@ -122,6 +121,12 @@ fn read(first: Event<'_>, span: Range<usize>, markdown: &str, events: &mut Offse
     let mut depth = 0_usize;
     let mut next = Some((first, span));
     while let Some((event, span)) = next {
+        if depth > 0
+            && let Some(kind) = self::kind(&event)
+            && !holds.contains(&kind)
+        {
+            holds.push(kind);
+        }
         match event {
             Event::Start(tag) => {
                 depth += 1;
@@ -161,9 +166,24 @@ fn read(first: Event<'_>, span: Range<usize>, markdown: &str, events: &mut Offse
     }
     Read {
         kind,
+        holds,
         lines,
         drawn,
         uses,
+    }
+}
+
+/// The kind of block `event` begins or is, where it is one other than a
+/// paragraph.
+fn kind(event: &Event<'_>) -> Option<AgentBlockKind> {
+    match event {
+        Event::Start(Tag::Heading { .. }) => Some(AgentBlockKind::Heading),
+        Event::Start(Tag::CodeBlock(_)) => Some(AgentBlockKind::Code),
+        Event::Start(Tag::Table(_)) => Some(AgentBlockKind::Table),
+        Event::Start(Tag::BlockQuote(_)) => Some(AgentBlockKind::Quotation),
+        Event::Start(Tag::List(_)) => Some(AgentBlockKind::List),
+        Event::Rule => Some(AgentBlockKind::Rule),
+        _ => None,
     }
 }
 

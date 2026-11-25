@@ -7,8 +7,8 @@ use std::path::PathBuf;
 
 use shaman_protocol::{
     ActivityId, Approval, ApprovalId, ApprovalSubject, CompactionRequest, Delegator, MessageId,
-    ModelAttribution, ModelId, ProviderId, SessionId, SessionTimestamp, SkillId, SkillInvocation,
-    TextSpan,
+    MessageStatus, ModelAttribution, ModelId, ProviderId, SessionId, SessionTimestamp, SkillId,
+    SkillInvocation, TextSpan,
 };
 
 use super::*;
@@ -214,7 +214,7 @@ fn read_as(items: &[ConversationItem]) -> Vec<String> {
             ItemKind::Unread { words } => format!("unread: {words}"),
             ItemKind::UserMessage { text, .. } => format!("user: {text}"),
             ItemKind::Delegation { text, from } => format!("delegation from {from}: {text}"),
-            ItemKind::AgentMessage { markdown, .. } => format!("agent: {markdown}"),
+            ItemKind::AgentBlock { markdown, .. } => format!("agent: {markdown}"),
             ItemKind::Turn { card } => format!("card: {}", card.line),
             ItemKind::Error { text } => format!("error: {text}"),
             ItemKind::Compaction { words, .. } => format!("compaction: {words}"),
@@ -321,10 +321,6 @@ fn a_live_turns_card_names_the_activity_running_now_and_its_answer_streams_outsi
             "agent: The flag is",
         ]
     );
-    let ItemKind::AgentMessage { streaming: on, .. } = &streaming[2].kind else {
-        panic!("an agent Message");
-    };
-    assert!(on, "marked as still arriving");
 
     answer.content.push_str(" `--qr`.");
     built
@@ -642,17 +638,138 @@ fn the_model_that_answered_is_named_where_it_differs_from_the_one_selected() {
         author: None,
     };
     assert_eq!(
-        message_item(&attributed("auto", "gpt-5.5")).kind,
-        ItemKind::AgentMessage {
-            markdown: "Answered.".to_owned(),
-            model: Some("auto · gpt-5.5".to_owned()),
-            streaming: false,
-        }
+        models(&message_items(&attributed("auto", "gpt-5.5"))),
+        [Some("auto · gpt-5.5")]
     );
-    assert!(matches!(
-        message_item(&attributed("gpt-5.5", "gpt-5.5")).kind,
-        ItemKind::AgentMessage { model: None, .. }
-    ));
+    assert_eq!(
+        models(&message_items(&attributed("gpt-5.5", "gpt-5.5"))),
+        [None]
+    );
+}
+
+/// The line naming the Model each agent Message's block among `items` carries.
+fn models(items: &[ConversationItem]) -> Vec<Option<&str>> {
+    items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            ItemKind::AgentBlock { model, .. } => Some(model.as_deref()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn an_agent_message_is_an_item_for_each_block_named_by_its_position() {
+    let mut built = Built::new();
+    let turn = built.turn(TurnStatus::Completed, 1_000, Some(1_000));
+    built.user(turn, "Draw it");
+    let answer = built.agent(turn, "# Drawn\n\nIn half blocks.\n\n- a\n- b\n");
+    let items = built.read();
+    let message = format!("message:{answer}");
+    assert_eq!(
+        items[1..],
+        [
+            (AgentBlockKind::Heading, "# Drawn"),
+            (AgentBlockKind::Paragraph, "In half blocks."),
+            (AgentBlockKind::List, "- a\n- b"),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(position, (kind, markdown))| ConversationItem {
+            id: format!("{message}#{position}"),
+            kind: ItemKind::AgentBlock {
+                message: message.clone(),
+                kind,
+                holds: Vec::new(),
+                markdown: markdown.to_owned(),
+                model: None,
+            },
+        })
+        .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn the_model_that_answered_is_named_on_its_messages_first_block_alone() {
+    let items = agent_message_items(
+        "message:7",
+        "[docs]: https://docs.example\n\nSee [docs].\n\nAnd more.",
+        Some("auto · gpt-5.5".to_owned()),
+    );
+    assert_eq!(read_as(&items).len(), 2);
+    assert_eq!(models(&items), [Some("auto · gpt-5.5"), None]);
+}
+
+#[test]
+fn an_agent_message_of_nothing_to_read_is_no_item() {
+    let mut built = Built::new();
+    let turn = built.turn(TurnStatus::Completed, 1_000, Some(1_000));
+    built.user(turn, "Draw it");
+    built.agent(turn, " \n\n");
+    assert_eq!(read_as(&built.read()), ["user: Draw it"]);
+}
+
+#[test]
+fn a_streaming_message_changes_its_last_block_alone_and_settling_changes_none() {
+    let mut built = Built::new();
+    let turn = built.turn(TurnStatus::Active, 1_000, None);
+    built.user(turn, "Draw it");
+    built.agent(turn, "");
+    let answer = built.snapshot.messages.len() - 1;
+    let mut stream = |content: &str, status| {
+        built.snapshot.messages[answer].content.push_str(content);
+        built.snapshot.messages[answer].status = status;
+        built.read()
+    };
+    let first = stream("# Drawn\n\nIn half", MessageStatus::Streaming);
+    let grown = stream(" blocks.", MessageStatus::Streaming);
+    let added = stream("\n\nAnd so on.", MessageStatus::Streaming);
+    let settled = stream("", MessageStatus::Completed);
+    assert_eq!(
+        read_as(&added),
+        [
+            "user: Draw it",
+            "card: Working",
+            "agent: # Drawn",
+            "agent: In half blocks.",
+            "agent: And so on.",
+        ]
+    );
+    assert_eq!(grown.len(), first.len());
+    assert_eq!(grown[..3], first[..3]);
+    assert_eq!(grown[3].id, first[3].id);
+    assert_eq!(added[..4], grown[..]);
+    assert_eq!(settled, added, "nothing of it is sent again as it settles");
+}
+
+#[test]
+fn a_tail_joining_the_block_above_it_withdraws_its_item_and_changes_that_one_alone() {
+    let mut built = Built::new();
+    let turn = built.turn(TurnStatus::Active, 1_000, None);
+    built.user(turn, "Draw it");
+    built.agent(turn, "Drawn.\n\n1. one\n\n2");
+    let apart = built.read();
+    let answer = built.snapshot.messages.len() - 1;
+    built.snapshot.messages[answer].content.push_str(". two");
+    let joined = built.read();
+    assert_eq!(
+        read_as(&apart)[2..],
+        ["agent: Drawn.", "agent: 1. one", "agent: 2"]
+    );
+    assert_eq!(
+        read_as(&joined)[2..],
+        ["agent: Drawn.", "agent: 1. one\n\n2. two"]
+    );
+    assert_eq!(joined[..3], apart[..3]);
+    assert_eq!(joined[3].id, apart[3].id);
+
+    // The next to come takes the id of the one withdrawn.
+    built.snapshot.messages[answer]
+        .content
+        .push_str("\n\nAnd so on.");
+    let on = built.read();
+    assert_eq!(on[..4], joined[..]);
+    assert_eq!(on[4].id, apart[4].id);
 }
 
 #[test]
@@ -677,7 +794,7 @@ fn a_bubble_says_what_its_message_carried_beside_its_text() {
         author: None,
     };
     assert_eq!(
-        message_item(&message).kind,
+        message_items(&message)[0].kind,
         ItemKind::UserMessage {
             text: "$review this".to_owned(),
             note: Some("review".to_owned()),
@@ -686,7 +803,7 @@ fn a_bubble_says_what_its_message_carried_beside_its_text() {
     );
     message.skill_invocations.clear();
     assert_eq!(
-        message_item(&message).kind,
+        message_items(&message)[0].kind,
         ItemKind::UserMessage {
             text: "$review this".to_owned(),
             note: None,
@@ -786,10 +903,10 @@ fn a_turn_standing_as_a_newer_server_says_is_held_open_and_a_sender_it_names_rea
         .iter()
         .find(|message| message.id == unknown)
         .unwrap();
-    assert!(matches!(
-        message_item(message).kind,
-        ItemKind::AgentMessage { .. }
-    ));
+    assert_eq!(
+        read_as(&message_items(message)),
+        ["agent: From someone unknown"]
+    );
 }
 
 #[test]

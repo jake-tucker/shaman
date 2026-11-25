@@ -50,7 +50,8 @@
           items.append(
             FakeConversation.card(
               "long-work-\(turn)-a", .stopped, "Stopped after \(turn % 50 + 9)s", "1 tool · 1 command"))
-          items.append(agent("long-aside-\(turn)", "Looking at `src/transcript/\(file(turn)).rs` first (#\(turn))."))
+          items += FakeConversation.agent(
+            "long-aside-\(turn)", "Looking at `src/transcript/\(file(turn)).rs` first (#\(turn)).")
           items.append(
             FakeConversation.user("long-steer-\(turn)", "Keep going, but skip the snapshot tests. (#\(turn))"))
         }
@@ -65,7 +66,7 @@
               id: "long-error-\(turn)", kind: .error(text: "The provider stopped answering: connection reset by peer")
             ))
         }
-        items.append(agent("long-answer-\(turn)", answer(turn) + "\n\nThat was answer #\(turn)."))
+        items += FakeConversation.agent("long-answer-\(turn)", answer(turn) + "\n\nThat was answer #\(turn).")
         if turn % 17 == 16 {
           items.append(
             ConversationItem(
@@ -77,19 +78,19 @@
       items.append(FakeConversation.user("long-last", "Last one: write up what we changed, with the numbers."))
       if streaming {
         items.append(FakeConversation.card("long-last-work", .working, "Writing the summary", "1 tool"))
-        items.append(agent("answer", streamed(0), streaming: true))
+        items += FakeConversation.agent("answer", streamed(0))
       } else {
         items.append(FakeConversation.card("long-last-work", .worked, "Worked for 2m 40s", "3 tools · 1 command"))
-        items.append(agent("long-last-answer", answer(turns)))
-        items.append(
-          agent("long-closing", "That's everything. The last item of this Session is this line.", model: nil))
+        items += FakeConversation.agent("long-last-answer", answer(turns))
+        items += FakeConversation.agent(
+          "long-closing", "That's everything. The last item of this Session is this line.")
       }
       if tail {
         // One-line answers, each of which Textual draws empty first, so that the conversation shrinks under its foot
         // as it opens.
         for turn in 0..<8 {
-          items.append(
-            agent("tail-answer-\(turn)", "Then I checked part \(turn) of it, which holds. Tail line #\(turn)."))
+          items += FakeConversation.agent(
+            "tail-answer-\(turn)", "Then I checked part \(turn) of it, which holds. Tail line #\(turn).")
         }
       }
       return items
@@ -120,12 +121,6 @@
         }
       }
       return parts.joined(separator: "\n\n")
-    }
-
-    private static func agent(_ id: String, _ markdown: String, model: String? = nil, streaming: Bool = false)
-      -> ConversationItem
-    {
-      ConversationItem(id: id, kind: .agentMessage(markdown: markdown, model: model, streaming: streaming))
     }
 
     private static let files = ["projection", "markdown", "cards", "scroll", "anchor", "heights", "rows", "layout"]

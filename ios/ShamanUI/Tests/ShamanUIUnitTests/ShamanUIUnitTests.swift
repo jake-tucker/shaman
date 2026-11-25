@@ -613,6 +613,40 @@ private final class RefusingSigner: KeySigner {
     #expect(geometry.measured("row1", at: 500, foot: 150) == 0)
   }
 
+  @Test func rowsNamedAGapStandByItAndTheRestByTheListsOwn() {
+    var geometry = geometry([40, 300, 20])
+    geometry.take(["row0", "row1", "row2"], gaps: ["row1": 27])
+    #expect(geometry.frame(of: 1, width: 1).minY == margin + 40 + 27)
+    #expect(geometry.frame(of: 2, width: 1).minY == margin + 40 + 27 + 300 + spacing)
+    #expect(geometry.height == margin + 40 + 27 + 300 + spacing + 20 + margin)
+    #expect(geometry.rows(between: 0, and: margin + 40 + 27) == 0..<1, "the gap is neither row's")
+  }
+
+  @Test func aGapChangingAboveWhatTheReaderSeesMovesItByAsMuch() {
+    var geometry = geometry([100, 100, 500])
+    let ids = geometry.ids
+    // The reader sees down to 400, inside the last row, which stands at 232.
+    #expect(geometry.take(ids, gaps: ["row1": 15], foot: 400) == 3)
+    #expect(geometry.frame(of: 2, width: 1).minY == 235)
+    // More of the last row making another kind of it as another comes beneath it.
+    #expect(geometry.take(ids + ["row3"], gaps: ["row1": 15, "row2": 27, "row3": 14], foot: 400) == 15)
+    #expect(geometry.frame(of: 3, width: 1).minY == margin + 100 + 15 + 100 + 27 + 500 + 14)
+    #expect(geometry.take(ids, gaps: ["row1": 15, "row2": 27], foot: 400) == 0, "a row leaving below moves nothing")
+    #expect(geometry.take(ids, gaps: ["row1": 15, "row2": 14], foot: 120) == 0, "nor does a gap below")
+  }
+
+  @Test func anIdThatLeavesAndComesBackNamesAnotherRowAndStandsAtNothingTheFirstMeasured() {
+    var geometry = geometry([100, 40])
+    // What joined the block above it left, some way through measuring shorter.
+    #expect(geometry.reported("row1", 20, at: 0) == nil)
+    geometry.take(["row0"])
+    #expect(geometry.reported("row1", 30, at: 0.1) == nil, "said late, by a row that left")
+    #expect(geometry.measured("row1", at: 30, foot: 0) == 0)
+    geometry.take(["row0", "row1"])
+    #expect(!geometry.measured("row1"), "another block, not yet measured")
+    #expect(geometry.settled(at: 5).isEmpty, "and nothing of the first waits")
+  }
+
   @Test func aRowNotYetMeasuredOrGrowingStandsAtWhatItMeasuresAtOnce() {
     var geometry = ConversationGeometry()
     geometry.take(["a"])
@@ -737,6 +771,147 @@ private final class RefusingSigner: KeySigner {
     view.contentOffset.y -= 300
     follower.scrollViewDidEndDragging(view, willDecelerate: false)
     #expect(!follower.following, "a screen's worth above it")
+  }
+}
+
+/// The rows of the agent Message `message`, whose Markdown is `markdown`.
+private func blockRows(_ markdown: String, of message: String = "m") -> [ConversationRow] {
+  agentMessageItems(message: message, markdown: markdown, model: nil).map { .item($0) }
+}
+
+@Suite struct BlockMarginsTests {
+  private func gaps(_ markdown: String) -> [CGFloat?] {
+    let rows = blockRows(markdown)
+    return zip(rows, rows.dropFirst()).map { $1.gap(below: $0) }
+  }
+
+  @Test func betweenTwoBlocksOfAMessageTheGapIsTheLargerOfTheUppersBottomMarginAndTheLowersTop() {
+    #expect(gaps("a\n\nb\n\n# c\n\nd") == [0.8, 1.6, 0.8])
+    #expect(gaps("a\n\n```\nb\n```\n\nc") == [0.88, 0.8])
+    #expect(gaps("a\n\n| b |\n|---|\n\nc\n\n***\n\nd") == [1.6, 1.6, 1.6, 1.6])
+  }
+
+  @Test func aQuotationsMarginsAndAListsComeUpFromWhatTheyHold() {
+    #expect(gaps("a\n\n- b\n- c\n\n> d\n\ne") == [0.8, 0.8, 0.8])
+    #expect(gaps("a\n\n- b\n\n  ```\n  c\n  ```\n\nd") == [0.88, 0.8])
+    #expect(gaps("a\n\n- b\n  > | c |\n  > |---|\n\nd") == [1.6, 1.6], "however deep")
+  }
+
+  @Test func blocksOfTwoMessagesAndRowsOfAnythingElseHaveNone() {
+    let rows = blockRows("a") + blockRows("b", of: "n") + [.item(ConversationItem(id: "e", kind: .error(text: "e")))]
+    #expect(zip(rows, rows.dropFirst()).allSatisfy { $1.gap(below: $0) == nil })
+  }
+}
+
+@Suite @MainActor struct ConversationBlockTests {
+  private func list(_ markdown: String) -> (view: FootCollectionView, follower: ConversationFollower) {
+    let (view, follower) = conversationList(rows: 0)
+    take(markdown, in: view, follower)
+    return (view, follower)
+  }
+
+  private func take(_ markdown: String, in view: FootCollectionView, _ follower: ConversationFollower) {
+    follower.take(blockRows(markdown))
+    for _ in 0..<4 {
+      view.layoutIfNeeded()
+    }
+  }
+
+  /// The heads of the rows as drawn, top first.
+  private func drawn(in view: FootCollectionView) throws -> [CGFloat] {
+    try (0..<view.numberOfItems(inSection: 0)).map {
+      try #require(view.cellForItem(at: IndexPath(item: $0, section: 0))).frame.minY
+    }
+  }
+
+  @Test func blocksStandByTextualsGapsAtWhateverSizeTheTextIs() throws {
+    let (view, follower) = list("a\n\nb\n\n# c")
+    defer { withExtendedLifetime(follower) {} }
+    let em = UIFont.preferredFont(forTextStyle: .body, compatibleWith: view.traitCollection).pointSize
+    let standing = try drawn(in: view)
+    #expect(standing[1] - standing[0] - 60 == floor(0.8 * em))
+    #expect(standing[2] - standing[1] - 60 == floor(1.6 * em))
+
+    view.traitOverrides.preferredContentSizeCategory = .accessibilityLarge
+    view.updateTraitsIfNeeded()
+    for _ in 0..<4 {
+      view.layoutIfNeeded()
+    }
+    let larger = UIFont.preferredFont(forTextStyle: .body, compatibleWith: view.traitCollection).pointSize
+    #expect(larger > em)
+    let grown = try drawn(in: view)
+    #expect(grown[1] - grown[0] - 60 == floor(0.8 * larger))
+  }
+
+  /// With a row coming at the foot in the same change, as where one piece of a Message does both, and without.
+  @Test(arguments: ["", "\n\nand one more"])
+  func whatAReaderAwayFromTheFootSeesStaysWhereItStandsAsAGapAboveItChanges(arriving: String) throws {
+    let rest = (0..<60).map { "\n\nparagraph \($0)" }.joined()
+    let (view, follower) = list("a\n\n| b |" + rest)
+    view.setContentOffset(CGPoint(x: 0, y: view.contentOffset.y - 900), animated: false)
+    for _ in 0..<4 {
+      view.layoutIfNeeded()
+    }
+    #expect(!follower.following)
+    let seen = try #require(view.indexPathsForVisibleItems.max())
+    func stands() throws -> CGFloat {
+      try #require(view.layoutAttributesForItem(at: seen)).frame.minY - view.contentOffset.y
+    }
+    let before = (stands: try stands(), offset: view.contentOffset.y)
+    let rows = follower.geometry.ids.count
+    take("a\n\n| b |\n|---|" + rest + arriving, in: view, follower)
+    #expect(follower.geometry.ids.count == rows + (arriving.isEmpty ? 0 : 1))
+    #expect(view.contentOffset.y > before.offset, "the table stands further from what is above and below it")
+    #expect(try stands() == before.stands)
+  }
+
+  @Test func aBlockComingToBeOfAnotherKindStandsByThatKindsGapThoughNothingElseMoved() throws {
+    let (view, follower) = list("a\n\n| b |")
+    let paragraph = try drawn(in: view)
+    take("a\n\n| b |\n|---|", in: view, follower)
+    let table = try drawn(in: view)
+    let em = UIFont.preferredFont(forTextStyle: .body, compatibleWith: view.traitCollection).pointSize
+    #expect(paragraph[1] - paragraph[0] - 60 == floor(0.8 * em))
+    #expect(table[1] - table[0] - 60 == floor(1.6 * em))
+  }
+
+  @Test func aTailJoiningTheBlockAboveItWithdrawsItsRowAndWhatTakesItsIdNextStandsAsItMeasures() {
+    let (view, follower) = list("a\n\n1. b\n\n2")
+    #expect(follower.geometry.ids == ["item:m#0", "item:m#1", "item:m#2"])
+    follower.report("item:m#2", 200)
+    #expect(follower.geometry.height(of: "item:m#2") == 200)
+
+    take("a\n\n1. b\n\n2. c", in: view, follower)
+    #expect(follower.geometry.ids == ["item:m#0", "item:m#1"])
+    #expect(view.numberOfItems(inSection: 0) == 2)
+    follower.report("item:m#2", 300)
+    follower.report("item:m#1", 90)
+    #expect(follower.geometry.height(of: "item:m#1") == 90, "the block above grew, at once")
+
+    take("a\n\n1. b\n\n2. c\n\nd", in: view, follower)
+    #expect(follower.geometry.ids == ["item:m#0", "item:m#1", "item:m#2"])
+    #expect(follower.geometry.height(of: "item:m#2") == 60, "measured itself, not as the row that left")
+    #expect(follower.geometry.height(of: "item:m#1") == 90, "and the block above stands as it was")
+    #expect(follower.following && view.distanceToFoot < 1, "at the foot all the while")
+  }
+}
+
+@Suite struct FakeBlocksTests {
+  /// The fake's answers stand by the core's own cut, each under its Message's id and its place in it, the Model's line
+  /// on the first alone.
+  @Test func theFakesAnswersAreCutAsTheCoreCutsThem() throws {
+    let items = FakeConversation.items(.settled).suffix(5)
+    #expect(items.map(\.id) == (0..<5).map { "answer#\($0)" })
+    let models = items.map { item -> String? in
+      if case .agentBlock(_, _, _, _, let model) = item.kind { model } else { "not a block" }
+    }
+    #expect(models == ["auto · gpt-5.5", nil, nil, nil, nil])
+  }
+
+  @Test func aStreamingAnswerGrownByABlockLeavesTheBlocksBeforeAsTheyWere() {
+    let before = FakeConversation.agent("answer", FakeLong.streamed(4))
+    let after = FakeConversation.agent("answer", FakeLong.streamed(5))
+    #expect(Array(after.dropLast()) == before, "what stood stands, and one more comes")
   }
 }
 

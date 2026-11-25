@@ -46,10 +46,8 @@
       let opening = earlier + [user("open", "Draw the invite as a QR code in /serve")]
       switch scenario {
       case .working:
-        return opening + [
-          card("work", .working, "cargo nextest run qr", "1 tool · 1 command · 1 edit"),
-          agent("answer", streamed.first ?? "", streaming: true),
-        ]
+        return opening + [card("work", .working, "cargo nextest run qr", "1 tool · 1 command · 1 edit")]
+          + agent("answer", streamed.first ?? "")
       case .settled:
         return opening + [
           card("work", .worked, "Worked for 3m 12s", "3 tools · 3 commands · 2 edits"),
@@ -57,8 +55,7 @@
             id: "compaction",
             kind: .compaction(
               words: "Compacted context · 180K → 40K (automatic)", tone: .succeeded, detail: "compaction")),
-          agent("answer", answer, model: "auto · gpt-5.5"),
-        ]
+        ] + agent("answer", answer, model: "auto · gpt-5.5")
       case .stopped:
         return opening + [
           card("work", .stopped, "Stopped after 41s", "1 tool · 1 command · 1 edit"),
@@ -76,10 +73,8 @@
         // Read from the tree it heads, as a stop there moves it.
         return []
       case .monitoring:
-        return opening + [
-          card("work", .worked, "Worked for 2m 05s", "2 commands"),
-          agent("answer", "Watching the nightly backup; I'll say when it lands."),
-        ]
+        return opening + [card("work", .worked, "Worked for 2m 05s", "2 commands")]
+          + agent("answer", "Watching the nightly backup; I'll say when it lands.")
       case .approval, .approvals:
         return [
           user("open", "Implement ADR-0078: each side states one version and accepts the other at or above its floor.")
@@ -97,8 +92,7 @@
         return [
           user("open", "Write the release notes"),
           card("work", .worked, "Worked for 40s", "1 tool"),
-          agent("answer", FakeLong.rewritten(long: true), model: "auto · gpt-5.5"),
-        ]
+        ] + agent("answer", FakeLong.rewritten(long: true), model: "auto · gpt-5.5")
       }
     }
 
@@ -205,7 +199,7 @@
     /// What the Session Working only for a Prompt not yet delivered was asked.
     static let undeliveredPrompt = "Note the floor in the pairing docs"
 
-    /// What the answer, id `answer`, of the Session whose last Turn stands as `scenario` grows to after it first
+    /// What the answer, the Message `answer`, of the Session whose last Turn stands as `scenario` grows to after it first
     /// stands, a moment apart each time.
     static func growing(_ scenario: Scenario?) -> [String] {
       switch scenario {
@@ -226,11 +220,11 @@
     ]
 
     /// A Turn before the last, settled, so the conversation reads as one with a history.
-    private static let earlier = [
-      user("earlier", "What does /serve show today?"),
-      card("earlier-work", .worked, "Worked for 1m 23s", "2 tools · 1 command"),
-      agent("earlier-answer", "`/serve` shows the **invite** as text, with a countdown beside it."),
-    ]
+    private static let earlier =
+      [
+        user("earlier", "What does /serve show today?"),
+        card("earlier-work", .worked, "Worked for 1m 23s", "2 tools · 1 command"),
+      ] + agent("earlier-answer", "`/serve` shows the **invite** as text, with a countdown beside it.")
 
     private static let answer = """
       `/serve` now offers **Draw as QR code** beneath a fresh invite.
@@ -254,10 +248,9 @@
       ConversationItem(id: id, kind: .userMessage(text: text, note: nil, sending: sending))
     }
 
-    private static func agent(_ id: String, _ markdown: String, model: String? = nil, streaming: Bool = false)
-      -> ConversationItem
-    {
-      ConversationItem(id: id, kind: .agentMessage(markdown: markdown, model: model, streaming: streaming))
+    /// The items the agent Message `id` is, cut as the core cuts one it reads.
+    static func agent(_ id: String, _ markdown: String, model: String? = nil) -> [ConversationItem] {
+      agentMessageItems(message: id, markdown: markdown, model: model)
     }
 
     static func card(_ id: String, _ outcome: TurnOutcome, _ line: String, _ count: String?)
