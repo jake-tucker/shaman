@@ -53,6 +53,9 @@ pub struct TreeButton {
     pub working: Option<String>,
     /// What the button says to a reader who cannot see it.
     pub label: String,
+    /// What the tree is titled, read or not, which is what the chooser
+    /// beneath an Aside names it by.
+    pub title: String,
 }
 
 /// The tree an open Session belongs to, as its sheet shows it.
@@ -159,17 +162,22 @@ pub(crate) enum Reading {
 
 /// What an open Session has read of its own that the tree does not say:
 /// which Provider its Agent runs on, which of the Subagents it spawned
-/// Shaman spawned through the Broker, and what waits on the reader in it and
-/// in each Subagent beneath it.
+/// Shaman spawned through the Broker, whether a Sidekick's Session heads its
+/// tree, and what waits on the reader in it and in each Subagent beneath it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Known {
     pub provider: Option<ProviderId>,
     pub brokered: Vec<SessionId>,
     pub owed: Vec<(SessionId, Owed)>,
+    /// Whether it shows its tree to be a Sidekick's, which is what heads the
+    /// tree until it is read.
+    pub sidekicks: bool,
 }
 
 impl Known {
-    pub fn of(snapshot: &SessionSnapshot) -> Self {
+    /// What `snapshot` says of its Session, on a Remote whose paths are
+    /// `paths`, once its Server has said.
+    pub fn of(snapshot: &SessionSnapshot, paths: Option<&WorkspacePaths>) -> Self {
         // A Subagent's Agent is its latest Turn's; a Session's Selection may
         // be an edit still pending.
         let provider = snapshot
@@ -209,6 +217,7 @@ impl Known {
             provider,
             brokered,
             owed,
+            sidekicks: shows_a_sidekicks_tree(snapshot, paths),
         }
     }
 }
@@ -843,10 +852,39 @@ pub(crate) fn reference(remote: &str, session_id: SessionId) -> String {
     format!("{remote}/{session_id}")
 }
 
-/// What the button the sheet is opened by says before the tree is read, or
-/// where it cannot be: that the Session has Subagents, without counting them.
-/// It heads the sheet of every tree but a Sidekick's.
+/// What a tree is headed that is no Sidekick's.
 const SUBAGENTS: &str = "Subagents";
+
+/// What a tree is headed where a Sidekick's Session heads it.
+const SESSIONS: &str = "Sessions";
+
+/// Whether `snapshot`, on a Remote whose paths are `paths`, shows its tree is
+/// headed by a Sidekick's Session: its own, which stands in the Sidekick's
+/// Workspace, once its Server's paths say which that is, or has begun a
+/// Subsession, as a Sidekick's alone does; or the one that began it. A
+/// Subsession whose Sidekick's Session was deleted heads its own tree, and a
+/// Subagent's Session names its parent and nothing of who began that, which
+/// only the tree says.
+fn shows_a_sidekicks_tree(snapshot: &SessionSnapshot, paths: Option<&WorkspacePaths>) -> bool {
+    let session = &snapshot.session;
+    session.sidekick().is_some()
+        || snapshot
+            .activities
+            .iter()
+            .any(|activity| matches!(activity, Activity::Subsession { .. }))
+        || paths.is_some_and(|paths| paths.is_sidekick_workspace(&session.workspace.path))
+}
+
+/// What a tree is headed: as it says itself, and until it is read, or where
+/// it cannot be, as the open Sessions of it show. The button its sheet is
+/// opened by says no more until then, counting nothing.
+fn titled(state: &TreeState) -> &'static str {
+    let sidekicks = match &state.reading {
+        Reading::Read(tree) => tree.top_level.sidekick,
+        _ => state.known.values().any(|known| known.sidekicks),
+    };
+    if sidekicks { SESSIONS } else { SUBAGENTS }
+}
 
 /// Whether `snapshot` shows its Session belongs to a tree with entries
 /// beneath its top-level Session: it is a Subagent's, or it has spawned
@@ -873,7 +911,8 @@ pub(crate) fn in_tree(
     let shown = snapshot.is_some_and(has_subagents);
     let uncounted = || TreeButton {
         working: None,
-        label: SUBAGENTS.to_owned(),
+        label: titled(state).to_owned(),
+        title: titled(state).to_owned(),
     };
     let Reading::Read(tree) = &state.reading else {
         return InTree {
@@ -885,7 +924,7 @@ pub(crate) fn in_tree(
     let counted = (entries(tree) > 0).then(|| {
         let count = entries(tree);
         let working = working_count(tree);
-        // A Sidekick's sheet is headed "Sessions", and counts them so.
+        // A Sidekick's tree is headed "Sessions", and counts them so.
         let noun = if tree.top_level.sidekick {
             "session"
         } else {
@@ -903,6 +942,7 @@ pub(crate) fn in_tree(
             } else {
                 counted
             },
+            title: titled(state).to_owned(),
         }
     });
     InTree {
@@ -1150,9 +1190,6 @@ const NOT_CONFIRMED: &str = "not confirmed";
 /// from its Remote, shows them.
 const NOT_ALL_SHOWN: &str = "open for all subagents";
 
-/// What a tree's sheet is headed where a Sidekick's Session heads it.
-const SESSIONS: &str = "Sessions";
-
 /// The tree's sheet, for the Session `open` on the Remote whose key is
 /// `remote`, its entries on other Servers opened through `pairings`.
 pub(crate) fn sheet(
@@ -1162,7 +1199,7 @@ pub(crate) fn sheet(
     pairings: &Pairings,
 ) -> SubagentTree {
     let empty = |loading: Option<&str>, failed: Option<String>| SubagentTree {
-        title: SUBAGENTS.to_owned(),
+        title: titled(state).to_owned(),
         count: None,
         loading: loading.map(str::to_owned),
         failed,
@@ -1221,7 +1258,7 @@ pub(crate) fn sheet(
     let count = entries(tree);
     let working = working_count(tree);
     SubagentTree {
-        title: if top.sidekick { SESSIONS } else { SUBAGENTS }.to_owned(),
+        title: titled(state).to_owned(),
         count: Some(if working > 0 {
             format!("{count} · {working} working")
         } else {

@@ -1757,7 +1757,7 @@ impl Reader {
                 attached = &mut reading => return attached,
                 Ok(()) = local.changed() => self.show(),
                 Ok(()) = attaching.changed() => self.fill_attached(),
-                Ok(()) = self.pairings.changed() => self.fill_attached(),
+                Ok(()) = self.pairings.changed() => self.take_pairings(),
                 Ok(()) = self.tree_seen.changed() => self.show_frame(),
             }
         }
@@ -1794,7 +1794,7 @@ impl Reader {
                 // A Prompt sent meanwhile stands as it is being sent.
                 Ok(()) = local.changed() => self.show(),
                 Ok(()) = attaching.changed() => self.fill_attached(),
-                Ok(()) = self.pairings.changed() => self.fill_attached(),
+                Ok(()) = self.pairings.changed() => self.take_pairings(),
                 Ok(()) = self.unreachable.changed() => self.show_frame(),
                 Ok(()) = self.tree_seen.changed() => self.show_frame(),
                 // The Remote works with the phone again, so the Session is
@@ -1846,7 +1846,7 @@ impl Reader {
                 },
                 Ok(()) = local.changed() => self.show(),
                 Ok(()) = attaching.changed() => self.fill_attached(),
-                Ok(()) = self.pairings.changed() => self.fill_attached(),
+                Ok(()) = self.pairings.changed() => self.take_pairings(),
                 Ok(()) = self.unreachable.changed() => self.show_frame(),
                 Ok(()) = self.tree_seen.changed() => self.show_frame(),
                 Ok(()) = self.behind.changed() => self.show(),
@@ -1961,11 +1961,7 @@ impl Reader {
                 self.drafts.give_back(&self.reference, &text);
             }
         }
-        // What the tree does not say of the Session, its Provider and the
-        // Subagents it spawned through the Broker, the tree is told.
-        if let (Some(snapshot), Some(tree)) = (&self.snapshot, &self.tree) {
-            tree.know(Known::of(snapshot));
-        }
+        self.tell_tree();
         self.show_frame();
         // A Prompt being sent stands at the foot even before the Session has
         // been read, beneath the loading mark.
@@ -1999,6 +1995,26 @@ impl Reader {
             *current = next;
             changed
         });
+        self.fill_attached();
+    }
+
+    /// Tells the tree what it does not say of the Session: its Provider, the
+    /// Subagents it spawned through the Broker, what waits in it, and whose
+    /// tree it shows its own to be.
+    fn tell_tree(&self) {
+        if let (Some(snapshot), Some(tree)) = (&self.snapshot, &self.tree) {
+            let pairings = self.pairings.borrow();
+            let paths = pairings
+                .by_key(&self.remote)
+                .and_then(|paired| paired.paths.as_ref());
+            tree.know(Known::of(snapshot, paths));
+        }
+    }
+
+    /// Takes what the phone's Pairings say now: its Remote's paths, and which
+    /// Sessions on other Servers the rows attached open.
+    fn take_pairings(&self) {
+        self.tell_tree();
         self.fill_attached();
     }
 
@@ -2950,19 +2966,26 @@ mod tests {
         assert_eq!(opened.frame.borrow().tree, None);
     }
 
-    /// The tree's sheet over a Session that has spawned a Subagent, read
-    /// over a Server whose tree answers as `tree` does, once the frame
-    /// offers the button that opens it, and once the sheet shows what
-    /// `shown` looks for.
-    fn sheet_over(
+    /// A Session of the Remote "desk" that has spawned a Subagent, its
+    /// snapshot as `shape` leaves it, opened over a Server whose tree answers
+    /// as `tree` does.
+    struct Spawned {
+        runtime: tokio::runtime::Runtime,
+        listings: Listings,
+        _directory: tempfile::TempDir,
+        opened: Arc<OpenSession>,
+    }
+
+    fn spawned_over(
         tree: impl Fn() -> futures_util::future::BoxFuture<
             'static,
             Result<shaman_client::TransportResponse, SessionError>,
         > + Send
         + Sync
         + 'static,
-        shown: impl Fn(&SubagentTree) -> bool,
-    ) -> (SessionFrame, SubagentTree) {
+        shape: impl Fn(&mut SessionSnapshot) + Send + Sync + 'static,
+        change: impl FnOnce(&mut crate::listing::Answered),
+    ) -> Spawned {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let session_id = Arc::new(Mutex::new(None::<SessionId>));
         let answers: Arc<Answers> = {
@@ -2988,6 +3011,7 @@ mod tests {
                             duration_ms: None,
                             delegated_at: None,
                         });
+                    shape(&mut snapshot);
                     let (more, rest) = tokio::sync::mpsc::unbounded_channel();
                     // Held open for as long as the stream is read.
                     std::mem::forget(more);
@@ -2996,9 +3020,10 @@ mod tests {
                 Box::pin(std::future::pending())
             })
         };
-        let (listings, _directory) = listings(&runtime);
-        let (desk, reference) = listed_on("desk", "Map the workspace");
+        let (listings, directory) = listings(&runtime);
+        let (mut desk, reference) = listed_on("desk", "Map the workspace");
         *session_id.lock().unwrap() = Some(desk.sessions.as_ref().unwrap()[0].id());
+        change(&mut desk);
         listings.hold_over(desk, answering(answers));
         let opened = open(
             runtime.handle(),
@@ -3021,30 +3046,62 @@ mod tests {
                 landing_note: Arc::new(watch::Sender::new(None)),
             },
         );
-        let mut frame = opened.frame.clone();
-        let framed = runtime.block_on(async {
-            tokio::time::timeout(SHOWN_WITHIN, frame.wait_for(|frame| frame.tree.is_some()))
-                .await
-                .expect("the button offered in time")
-                .expect("the frame stands")
-                .clone()
-        });
-        let kept = Arc::new(Kept(Mutex::new(None)));
-        let _subscription = opened.watch_tree(kept.clone());
-        let sheet = runtime.block_on(async {
-            tokio::time::timeout(SHOWN_WITHIN, async {
-                loop {
-                    if let Some(sheet) = kept.0.lock().unwrap().clone().filter(|sheet| shown(sheet))
-                    {
-                        return sheet;
-                    }
-                    tokio::time::sleep(Duration::from_millis(1)).await;
-                }
+        Spawned {
+            runtime,
+            listings,
+            _directory: directory,
+            opened,
+        }
+    }
+
+    impl Spawned {
+        /// The frame, once `shown` is of it.
+        fn framed(&self, shown: impl Fn(&SessionFrame) -> bool) -> SessionFrame {
+            let mut frame = self.opened.frame.clone();
+            self.runtime.block_on(async {
+                tokio::time::timeout(SHOWN_WITHIN, frame.wait_for(|frame| shown(frame)))
+                    .await
+                    .expect("framed so in time")
+                    .expect("the frame stands")
+                    .clone()
             })
-            .await
-            .expect("the sheet shown in time")
-        });
-        (framed, sheet)
+        }
+
+        /// The tree's sheet, once `shown` is of it.
+        fn sheet(&self, shown: impl Fn(&SubagentTree) -> bool) -> SubagentTree {
+            let kept = Arc::new(Kept(Mutex::new(None)));
+            let _subscription = self.opened.watch_tree(kept.clone());
+            self.runtime.block_on(async {
+                tokio::time::timeout(SHOWN_WITHIN, async {
+                    loop {
+                        if let Some(sheet) =
+                            kept.0.lock().unwrap().clone().filter(|sheet| shown(sheet))
+                        {
+                            return sheet;
+                        }
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                    }
+                })
+                .await
+                .expect("the sheet shown in time")
+            })
+        }
+    }
+
+    /// The tree's sheet over such a Session, once the frame offers the button
+    /// that opens it, and once the sheet shows what `shown` looks for.
+    fn sheet_over(
+        tree: impl Fn() -> futures_util::future::BoxFuture<
+            'static,
+            Result<shaman_client::TransportResponse, SessionError>,
+        > + Send
+        + Sync
+        + 'static,
+        shown: impl Fn(&SubagentTree) -> bool,
+    ) -> (SessionFrame, SubagentTree) {
+        let spawned = spawned_over(tree, |_| {}, |_| {});
+        let framed = spawned.framed(|frame| frame.tree.is_some());
+        (framed, spawned.sheet(shown))
     }
 
     #[test]
@@ -3057,12 +3114,41 @@ mod tests {
             framed.tree,
             Some(TreeButton {
                 working: None,
-                label: "Subagents".to_owned()
+                label: "Subagents".to_owned(),
+                title: "Subagents".to_owned()
             }),
             "offered, uncounted, before its tree is read"
         );
         assert_eq!(sheet.loading.as_deref(), Some("Loading"));
         assert!(sheet.rows.is_empty());
+    }
+
+    #[test]
+    fn a_sidekicks_tree_is_titled_so_before_it_is_read_once_its_servers_paths_say_whose_it_is() {
+        let home = "/data/sidekick";
+        let spawned = spawned_over(
+            || Box::pin(std::future::pending()),
+            move |snapshot| snapshot.session.workspace.path = home.into(),
+            |desk| desk.paths_heard = false,
+        );
+        let button = |title: &str| {
+            Some(TreeButton {
+                working: None,
+                label: title.to_owned(),
+                title: title.to_owned(),
+            })
+        };
+        // Read, the Session does not yet show whose its Workspace is.
+        let framed = spawned.framed(|frame| frame.tree.is_some());
+        assert_eq!(framed.tree, button("Subagents"));
+        spawned.listings.answer("desk", |desk| {
+            desk.paths = desk.paths.clone().with_sidekick_workspace(home.as_ref());
+            desk.paths_heard = true;
+        });
+        let framed = spawned.framed(|frame| frame.tree != button("Subagents"));
+        assert_eq!(framed.tree, button("Sessions"));
+        let sheet = spawned.sheet(|sheet| sheet.title == "Sessions");
+        assert_eq!(sheet.loading.as_deref(), Some("Loading"));
     }
 
     #[test]

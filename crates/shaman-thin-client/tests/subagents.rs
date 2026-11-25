@@ -100,7 +100,8 @@ async fn a_subagents_row_opens_its_session_and_the_tree_offers_every_session_of_
         framed.tree,
         Some(TreeButton {
             working: Some("1".to_owned()),
-            label: "1 subagent, 1 working".to_owned()
+            label: "1 subagent, 1 working".to_owned(),
+            title: "Subagents".to_owned()
         })
     );
     assert!(

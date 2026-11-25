@@ -346,11 +346,14 @@
     /// The button the tree is opened by.
     var button: TreeButton {
       // Before the tree is read the Session shows it has Subagents, but not how many work.
-      guard state.withLock({ $0.landed }) else { return TreeButton(working: nil, label: "Subagents") }
+      guard state.withLock({ $0.landed }) else {
+        return TreeButton(working: nil, label: "Subagents", title: "Subagents")
+      }
       let working = workingCount
       return TreeButton(
         working: working > 0 ? "\(working)" : nil,
-        label: working > 0 ? "\(Self.members.count) subagents, \(working) working" : "\(Self.members.count) subagents")
+        label: working > 0 ? "\(Self.members.count) subagents, \(working) working" : "\(Self.members.count) subagents",
+        title: "Subagents")
     }
 
     /// The sheet over `open`.

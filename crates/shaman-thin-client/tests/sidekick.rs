@@ -105,6 +105,14 @@ async fn a_sidekicks_tree_opens_its_sessions_here_and_on_other_servers_through_t
 
     let sidekick = row(&phone, "Plan the week").await;
     let opened = phone.open(&sidekick.session);
+    opened
+        .frame_until(|frame| {
+            frame
+                .tree
+                .as_ref()
+                .is_some_and(|button| button.title == "Sessions")
+        })
+        .await;
     let tree = opened.tree();
     let sheet = tree
         .until(|sheet| {

@@ -461,6 +461,7 @@ fn a_subagents_session_is_named_by_the_subagent_and_offers_stop_only_where_it_st
         button: Some(TreeButton {
             working: Some("1".to_owned()),
             label: "1 subagent, 1 working".to_owned(),
+            title: "Subagents".to_owned(),
         }),
         subagent: true,
         named: Some("Explorer · haiku".to_owned()),

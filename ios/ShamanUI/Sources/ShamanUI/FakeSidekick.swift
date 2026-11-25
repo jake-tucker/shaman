@@ -60,7 +60,7 @@
     }
 
     /// The button the tree is opened by.
-    static let button = TreeButton(working: "1", label: "8 sessions, 1 working")
+    static let button = TreeButton(working: "1", label: "8 sessions, 1 working", title: "Sessions")
 
     /// The glyph of a folder, which a Workspace with no Icon of its own is led by.
     private static let folder = "\u{ea83}"

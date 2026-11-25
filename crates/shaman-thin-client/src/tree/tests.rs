@@ -287,7 +287,8 @@ fn the_button_stands_only_where_the_tree_has_subagents_and_counts_those_working(
         one.button,
         Some(TreeButton {
             working: None,
-            label: "1 subagent".to_owned()
+            label: "1 subagent".to_owned(),
+            title: "Subagents".to_owned()
         })
     );
     assert!(!one.subagent, "the top-level Session is no Subagent's");
@@ -296,7 +297,8 @@ fn the_button_stands_only_where_the_tree_has_subagents_and_counts_those_working(
         two.button,
         Some(TreeButton {
             working: Some("1".to_owned()),
-            label: "2 subagents, 1 working".to_owned()
+            label: "2 subagents, 1 working".to_owned(),
+            title: "Subagents".to_owned()
         })
     );
 }
@@ -353,8 +355,7 @@ fn a_subagent_is_stopped_alone_where_brokered_or_where_its_provider_can() {
         child.session_id,
         Known {
             provider: Some(ProviderId::new("codex")),
-            brokered: Vec::new(),
-            owed: Vec::new(),
+            ..Known::default()
         },
     );
     assert!(stops(&state, child.session_id));
@@ -369,9 +370,8 @@ fn a_subagent_is_stopped_alone_where_brokered_or_where_its_provider_can() {
     state.known.insert(
         child.session_id,
         Known {
-            provider: None,
             brokered: vec![grandchild.session_id],
-            owed: Vec::new(),
+            ..Known::default()
         },
     );
     assert!(stops(&state, grandchild.session_id));
@@ -427,6 +427,7 @@ fn the_button_stands_where_the_session_shows_subagents_though_its_tree_is_not_re
     let uncounted = Some(TreeButton {
         working: None,
         label: "Subagents".to_owned(),
+        title: "Subagents".to_owned(),
     });
     let spawner = snapshot_with_subagents(None);
     let subagent = snapshot_with_subagents(Some(SessionId::new()));
@@ -695,8 +696,7 @@ async fn two_sessions_of_one_tree_opened_before_it_is_read_are_made_one_tree() {
     // What each knows of its own reaches the other.
     subagent.know(Known {
         provider: Some(ProviderId::new("codex")),
-        brokered: Vec::new(),
-        owed: Vec::new(),
+        ..Known::default()
     });
     let known = seen_until(&parent, |state| state.known.contains_key(&child.session_id)).await;
     assert_eq!(
@@ -1080,7 +1080,8 @@ fn a_subsession_belongs_to_its_sidekicks_tree_and_a_session_it_acted_on_heads_it
         framed.button,
         Some(TreeButton {
             working: Some("2".to_owned()),
-            label: "5 sessions, 2 working".to_owned()
+            label: "5 sessions, 2 working".to_owned(),
+            title: "Sessions".to_owned()
         }),
         "a Sidekick's tree counts its Sessions"
     );
@@ -1102,8 +1103,96 @@ fn the_button_stands_where_a_sidekick_has_begun_a_subsession_though_its_tree_is_
         title: "Tidy the docs".to_owned(),
         prompt: "Tidy the docs.".to_owned(),
     }];
-    let framed = in_tree(&TreeState::default(), snapshot.session.id, Some(&snapshot));
-    assert!(framed.button.is_some());
+    // A Sidekick's alone does, so its tree is titled so, whatever its Server's
+    // paths have said.
+    let state = TreeState {
+        reading: Reading::Loading,
+        known: HashMap::from([(snapshot.session.id, Known::of(&snapshot, None))]),
+    };
+    let framed = in_tree(&state, snapshot.session.id, Some(&snapshot));
+    assert_eq!(
+        framed.button.map(|button| button.title).as_deref(),
+        Some("Sessions")
+    );
+}
+
+/// What the button and the sheet over the Session `snapshot` is of head its
+/// tree by while it is read as `reading`, with what the Session has read of
+/// its own known.
+fn headed(reading: Reading, snapshot: &SessionSnapshot) -> (String, String) {
+    let paths = pairings().0[0].paths.clone();
+    let open = snapshot.session.id;
+    let state = TreeState {
+        reading,
+        known: HashMap::from([(open, Known::of(snapshot, paths.as_ref()))]),
+    };
+    let button = in_tree(&state, open, Some(snapshot)).button;
+    (
+        button.expect("the button stands").title,
+        sheet(&state, REMOTE, open, &pairings()).title,
+    )
+}
+
+#[test]
+fn a_tree_not_read_is_headed_as_the_session_shows_who_heads_it() {
+    // A Sidekick's own Session, which works in the Sidekick's Workspace.
+    let mut sidekicks_own = snapshot_with_subagents(None);
+    sidekicks_own.session.workspace.path = std::path::PathBuf::from("/data/sidekick");
+    // A Subsession that has delegated, whose tree is its Sidekick's.
+    let mut subsession = snapshot_with_subagents(None);
+    subsession.session.begun_by = Some(shaman_protocol::Author::Sidekick {
+        session_id: sidekicks_own.session.id,
+        title: "Plan the week".to_owned(),
+    });
+    let lone = snapshot_with_subagents(None);
+    // A Subagent's, opened alone: it names its parent, and only the tree who
+    // began that.
+    let subagent = snapshot_with_subagents(Some(subsession.session.id));
+    for reading in [
+        Reading::Loading,
+        Reading::Failed("Remote revoked this pairing".to_owned()),
+    ] {
+        for (snapshot, words) in [
+            (&sidekicks_own, "Sessions"),
+            (&subsession, "Sessions"),
+            (&lone, "Subagents"),
+            (&subagent, "Subagents"),
+        ] {
+            assert_eq!(
+                headed(reading.clone(), snapshot),
+                (words.to_owned(), words.to_owned())
+            );
+        }
+    }
+    // Once read, the tree says.
+    let whole = sidekicks(
+        sidekicks_own.session.id,
+        vec![entry(
+            "Explorer",
+            subsession.session.id,
+            0,
+            ActivityStatus::Active,
+        )],
+        Vec::new(),
+    );
+    assert_eq!(
+        headed(Reading::Read(Box::new(whole)), &subagent),
+        ("Sessions".to_owned(), "Sessions".to_owned())
+    );
+    // A Subsession whose Sidekick's Session is gone heads its own.
+    let own = tree(
+        subsession.session.id,
+        vec![entry(
+            "Explorer",
+            subsession.session.id,
+            0,
+            ActivityStatus::Active,
+        )],
+    );
+    assert_eq!(
+        headed(Reading::Read(Box::new(own)), &subsession),
+        ("Subagents".to_owned(), "Subagents".to_owned())
+    );
 }
 
 #[test]
