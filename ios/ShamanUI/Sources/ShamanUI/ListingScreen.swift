@@ -412,6 +412,8 @@ struct UnreachableSheetView: View {
       }
     }
     .presentationDetents([.medium])
+    // It has nothing to put in a bar down its side, which would only narrow it.
+    .toolbarVerticalBehavior(.disabled)
     .relayLogin($loggingIn, core: model.core) { _ in
       Task {
         if await model.tryAgain() {

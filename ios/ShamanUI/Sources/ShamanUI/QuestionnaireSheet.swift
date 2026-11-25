@@ -75,6 +75,8 @@ struct QuestionnaireSheet: View {
     .presentationDragIndicator(.visible)
     .presentationBackground(Color(.systemBackground))
     .interactiveDismissDisabled(sending)
+    // It pushes nothing, and "Decline" in words has no place in a bar down its side, which would only narrow it.
+    .toolbarVerticalBehavior(.disabled)
     .task(id: questionnaire.reference) {
       armed = false
       try? await Task.sleep(for: arming)

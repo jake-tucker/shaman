@@ -229,6 +229,8 @@ private struct ApprovalSheet: View {
     .presentationDragIndicator(.visible)
     .presentationBackground(Color(.systemBackground))
     .interactiveDismissDisabled(deciding)
+    // It has nothing to put in a bar down its side, which would only narrow it.
+    .toolbarVerticalBehavior(.disabled)
     .task(id: approval.reference) {
       armed = false
       try? await Task.sleep(for: arming)

@@ -116,6 +116,8 @@ struct TreeSheet: View {
     .presentationDetents([.medium, .large])
     // Opaque, so nothing of the conversation beneath reads as part of an entry.
     .presentationBackground(Color(.systemBackground))
+    // It has nothing to put in a bar down its side, which would only narrow it.
+    .toolbarVerticalBehavior(.disabled)
     .accessibilityIdentifier("tree.sheet")
     .task {
       for await tree in model.tree() {

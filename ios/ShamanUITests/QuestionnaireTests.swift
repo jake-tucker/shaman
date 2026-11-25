@@ -90,7 +90,8 @@ final class QuestionnaireTests: XCTestCase {
     instead.typeText("the relay suites alone")
     XCTAssertFalse(unit.isSelected || soak.isSelected, "writing clears the choices")
     attach("Several choices cleared by writing instead")
-    unit.tap()
+    // Over the keyboard the sheet may be too short for every choice.
+    app.scrolled(to: unit, over: element("questionnaire.sheet", in: app)).tap()
     XCTAssertEqual(instead.value as? String, "Or write your own", "choosing clears the text")
     XCTAssertTrue(unit.isSelected)
     XCTAssertTrue(element("questionnaire.skip", in: app).exists, "a Question not required offers Skip")

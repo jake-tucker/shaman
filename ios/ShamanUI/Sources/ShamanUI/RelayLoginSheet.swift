@@ -113,6 +113,8 @@ struct RelayLoginSheet: View {
         }
       }
     }
+    // It pushes nothing, and "Cancel" in words has no place in a bar down its side, which would only narrow it.
+    .toolbarVerticalBehavior(.disabled)
     .task(id: attempt) {
       if await model.follow() {
         loggedIn()
