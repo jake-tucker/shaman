@@ -11,7 +11,7 @@ app's shape. Everything here is built from a terminal on a Mac with Xcode 27.2; 
 | `Shaman.xcodeproj` | The project, in Xcode 27's JSON format (`project.xcproj`) with folders synced to disk, and the shared `Shaman` scheme |
 | `Shaman/` | The `Shaman` app target: `@main`, the choice of live core or fake, the Info settings |
 | `ShamanUI/` | A local package: the views, the `Core` protocol the app reaches the core through, `LiveCore`, `FakeCore`, and the adapters around the core. Its unit tests are `ShamanUIUnitTests` |
-| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the conversation's list under a ticking display link, the columns collapsing and expanding and what Textual draws a Message's blocks as |
+| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the conversation's list and the composer's foot under a ticking display link, the columns collapsing and expanding and what Textual draws a Message's blocks as |
 | `ShamanUITests/` | The XCUITest target |
 | `ShamanCore/` | The core and its generated Swift, written by `scripts/build-ios-core.sh`; ignored by git |
 | `build/` | Where the commands below put what `xcodebuild` makes; ignored by git |
@@ -335,8 +335,10 @@ on or tapping what stands in a list and may be further along it, given `over:` t
 than one is on screen, and `at:` where what floats over the list covers its middle; `app.swipeSheetAway()`;
 `app.leaveTheFront()` in place of the Home button, which does nothing on a Duo; and `app.write(_:over:)` to write over
 what a field holds, which waits for the field to read it, as typing is told as done before the app has taken the last of
-it. On an open Duo in portrait the picture is upright in the one portrait a posed run reaches, turned right once, and on
-its head in the other.
+it. Where the composer's field stands is asked by `fieldStands(_:aboveTheEdgeIn:_:)` and
+`fieldStandsOnTheKeyboard(in:_:)` (`Foot.swift`), the keyboard up by `-AutomaticMinimizationEnabled NO`. On an open Duo
+in portrait the picture is upright in the one portrait a posed run reaches, turned right once, and on its head in the
+other.
 
 **Posed.** What only an open Duo shows is held by a posed run, which poses this checkout's Duo through Device Hub, runs
 the tests written for that pose, one pose from start to finish, and closes it again. Run it before merging a change to
@@ -389,8 +391,8 @@ xcrun xcresulttool export attachments --path build/results/<bundle>.xcresult --o
 run without the Keychain, which answers a test bundle with no host app `errSecMissingEntitlement` (-34018), so whatever
 reaches the Keychain is tested in `ShamanTests`, hosted in the app. The Secure Enclave needs no entitlement, so the
 signer is tested in the package. The package's tests have no scene either, so what UIKit animates over frames, as the
-conversation's list scrolling toward a foot its rows shrank to, is tested in `ShamanTests` too, in a window of the
-app's scene.
+conversation's list scrolling toward a foot its rows shrank to or the composer's foot going with the keyboard, is tested
+in `ShamanTests` too, in a window of the app's scene.
 
 **Lint.** CI fails on any finding; `.swift-format` holds the configuration.
 
@@ -475,6 +477,9 @@ If the phone is locked, stop and ask for it to be unlocked.
   screen the path does not name, as the Workspace Picker, is pushed by the environment's `pushScreen` and popped by
   `dismiss`. Nor does it inherit any environment: `ColumnsScreen` hands each what it and its sheets read, so a value
   added for one to read is added there.
+- A screen with a composer stands it by `composerFoot`, which has the screen ignore the container's bottom safe area and
+  keeps the field 28 points above the display's bottom edge at compact width, 22 at regular, and 8 above a keyboard. It
+  asks for the width class and what the keyboard covers, and nothing of the home indicator, the hinge or the device.
 - The split view's preferred display mode and split behaviour are set once, as it is made; it is given no least width
   for the main view, with which it would not divide its columns at a fold; and its Sidebar's column is never hidden,
   which would write the main view alone into what is preferred.
