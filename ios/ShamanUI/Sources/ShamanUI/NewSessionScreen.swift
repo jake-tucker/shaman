@@ -3,16 +3,16 @@ import SwiftUI
 
 /// The new-session screen, which the listing's compose button pushes: the Landing, shaped as an empty open Session.
 /// The navigation bar reads "New session" over where it will begin, the middle names the Workspace, and the composer
-/// at its foot is up with the keyboard on arrival. A first Prompt turns this same screen into the Session: the
-/// Provisional Session at once, and the real one in its place once its Server answers, back still leading to the
-/// listing. "Begin somewhere else" pushes the Workspace Picker over it, and where the Workspace is a Repository the
-/// Worktree choice offers its main Worktree, chosen as the screen opens, or a new one. Where nothing can begin, as on
-/// an Unreachable Remote, a bare Repository or where no Workspace is remembered, the composer takes a draft and send
-/// is disabled.
+/// at its foot is up with the keyboard on arrival, but where the display is short, as the keyboard would cover the
+/// middle. A first Prompt turns this same screen into the Session: the Provisional Session at once, and the real one in
+/// its place once its Server answers, back still leading to the listing. "Begin somewhere else" pushes the Workspace
+/// Picker over it, and where the Workspace is a Repository the Worktree choice offers its main Worktree, chosen as the
+/// screen opens, or a new one. Where nothing can begin, as on an Unreachable Remote, a bare Repository or where no
+/// Workspace is remembered, the composer takes a draft and send is disabled.
 struct NewSessionScreen: View {
   let model: NewSessionModel
   let stack: SessionStack
-  /// Whether the keyboard is up on arrival, as beginning is writing; but not at rest, while nothing is open.
+  /// Whether the reader arrives writing, as one beginning a Session does; but not at rest, while nothing is open.
   var writing = true
 
   var body: some View {
@@ -30,6 +30,7 @@ private struct LandingView: View {
   let arrivesWriting: Bool
   @FocusState private var writing: Bool
   @Environment(\.pushScreen) private var pushScreen
+  @Environment(\.verticalSizeClass) private var height
 
   var body: some View {
     ScrollView {
@@ -80,7 +81,11 @@ private struct LandingView: View {
       }
     }
     .task { await model.follow() }
-    .onAppear { writing = arrivesWriting }
+    .onAppear {
+      if arrivesWriting, height != .compact {
+        writing = true
+      }
+    }
   }
 }
 
