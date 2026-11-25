@@ -58,6 +58,7 @@ final class SidekickTests: XCTestCase {
     titled("Plan the week", in: app)
     openTree(in: app)
     XCTAssertTrue(app.staticTexts["Sessions"].exists, "a Sidekick's tree is headed Sessions")
+    XCTAssertTrue(app.treeButtonWears("1"))
     XCTAssertEqual(app.staticTexts["tree.count"].label, "8 · 1 working")
     // Swiped up, the sheet rises to its full height, and then its entries scroll.
     let sheet = app.otherElements["tree.sheet"]

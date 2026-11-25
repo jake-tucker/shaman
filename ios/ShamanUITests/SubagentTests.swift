@@ -1,8 +1,8 @@
 import XCTest
 
 /// A Session's Subagents over the fake: a Subagent's row among a Turn's work pushes its own Session, to any depth, with
-/// no composer; the button in the navigation bar opens the tree as a sheet that switches between its Sessions; and a
-/// working Subagent is stopped from its bar or by a swipe in the tree, wherever it can be stopped alone.
+/// no composer; the button in the bar wears how many work, and opens the tree as a sheet that switches between its
+/// Sessions; and a working Subagent is stopped from its bar or by a swipe in the tree, wherever it can be stopped alone.
 final class SubagentTests: XCTestCase {
   /// The Session in `paired` whose Agent only waits on the Subagents it delegated to.
   private let delegating = "workstation-key/12"
@@ -55,7 +55,7 @@ final class SubagentTests: XCTestCase {
     XCTAssertTrue(elements("session.turn", in: app).firstMatch.waitForExistence(timeout: 10))
   }
 
-  /// Opens the tree's sheet from the navigation bar, and waits for it to land.
+  /// Opens the tree's sheet from the bar, and waits for it to land.
   @MainActor
   private func openTree(in app: XCUIApplication) {
     landed(app)
@@ -112,6 +112,26 @@ final class SubagentTests: XCTestCase {
   }
 
   @MainActor
+  func testTheTreesButtonStandsUnderBackWhereTheBarIsVerticalAndAcrossFromItWhereItIsNot() {
+    let app = launched(opening: delegating)
+    landed(app)
+    let button = app.buttons["session.tree"]
+    XCTAssertTrue(button.waitForExistence(timeout: 10))
+    let stands = button.frame
+    let back = app.back.frame
+    if app.barStandsVertically {
+      XCTAssertEqual(stands.midX, back.midX, accuracy: 2, "in the bar, with Back")
+      XCTAssertGreaterThan(stands.minY, back.maxY, "under Back")
+      XCTAssertLessThan(stands.minY - back.maxY, back.height, "with nothing between")
+    } else {
+      XCTAssertTrue(app.navigationBars.buttons["session.tree"].exists)
+      XCTAssertEqual(stands.midY, back.midY, accuracy: 2, "level with Back")
+      XCTAssertGreaterThan(stands.midX, app.staticTexts["session.title"].frame.maxX, "beyond the title")
+    }
+    attach("The tree's button in the bar")
+  }
+
+  @MainActor
   func testTheTreesSheetSwitchesBetweenItsSessionsPushingPoppingOrStayingPut() {
     let app = launched(opening: delegating)
     titled("Find what holds the session lock", in: app)
@@ -120,7 +140,8 @@ final class SubagentTests: XCTestCase {
     button.tap()
     let top = element("tree.row", holding: "Find what holds the session lock", in: app)
     XCTAssertTrue(top.waitForExistence(timeout: 10))
-    XCTAssertTrue(button.label.contains("3 working"), "counted once read: \(button.label)")
+    XCTAssertEqual(button.label, "6 subagents, 3 working", "counted once read")
+    XCTAssertTrue(app.treeButtonWears("3"), "wearing how many work")
     XCTAssertTrue(top.isSelected, "the open session is highlighted")
     XCTAssertEqual(app.staticTexts["tree.count"].label, "6 · 3 working")
     attach("The tree as a sheet")
@@ -165,6 +186,7 @@ final class SubagentTests: XCTestCase {
     let stopped = element("tree.row", holding: "haiku · Stopped", in: app)
     XCTAssertTrue(stopped.waitForExistence(timeout: 10), "stopped, without asking first")
     XCTAssertEqual(app.staticTexts["tree.count"].label, "6 · 2 working")
+    XCTAssertTrue(app.treeButtonWears("2"), "the badge follows")
     attach("A subagent stopped by a swipe")
 
     // From its own bar: Explorer, and what it delegated with it.
@@ -174,6 +196,9 @@ final class SubagentTests: XCTestCase {
     XCTAssertTrue(stop.waitForExistence(timeout: 10))
     stop.tap()
     XCTAssertTrue(app.otherElements["session.bar"].waitForNonExistence(timeout: 10), "its work stopped")
+    XCTAssertTrue(app.treeButtonWears(nil), "none works, so it wears no badge")
+    XCTAssertEqual(app.buttons["session.tree"].label, "6 subagents")
+    attach("The tree's button where no subagent works")
     openTree(in: app)
     XCTAssertTrue(element("tree.row", holding: "Grep the logs for the lock", in: app).label.contains("Stopped"))
     XCTAssertFalse(app.staticTexts["tree.count"].label.contains("working"))
@@ -205,6 +230,7 @@ final class SubagentTests: XCTestCase {
       let button = app.buttons["session.tree"]
       XCTAssertTrue(button.waitForExistence(timeout: 10))
       XCTAssertEqual(button.label, "Subagents")
+      XCTAssertTrue(app.treeButtonWears(nil), scenario)
       button.tap()
       XCTAssertTrue(elements(said, in: app).firstMatch.waitForExistence(timeout: 10), scenario)
       XCTAssertFalse(elements("tree.row", in: app).firstMatch.exists)

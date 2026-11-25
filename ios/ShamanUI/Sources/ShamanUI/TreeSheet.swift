@@ -2,22 +2,21 @@ import ShamanCore
 import SwiftUI
 
 /// The button in an open Session's navigation bar that opens the tree it belongs to, wearing how many of its
-/// Subagents work.
+/// Subagents work as a badge, where any do. A plain label, as a bar standing down the side takes no other, whose title
+/// the overflow menu and VoiceOver read.
 struct TreeButtonView: View {
   let button: TreeButton
   let open: () -> Void
 
   var body: some View {
     Button(action: open) {
-      HStack(spacing: 3) {
+      Label {
+        Text(verbatim: button.label)
+      } icon: {
         Image(systemName: "point.3.connected.trianglepath.dotted")
-        if let working = button.working {
-          Text(verbatim: working)
-            .font(.caption.weight(.semibold).monospacedDigit())
-        }
       }
     }
-    .accessibilityLabel(Text(verbatim: button.label))
+    .badge(button.working.map { Text(verbatim: $0) })
     .accessibilityIdentifier("session.tree")
   }
 }

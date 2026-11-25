@@ -5,6 +5,15 @@ extension XCUIApplication {
   /// Back, which is among the navigation bar's buttons only where the bar is horizontal.
   var back: XCUIElement { buttons["BackButton"] }
 
+  /// Whether the tree's button comes to wear `count` as its badge, or none. The system tells of a badge as the button's
+  /// value, the count and a word for what it counts: "3 items".
+  func treeButtonWears(_ count: String?) -> Bool {
+    let worn =
+      count.map { NSPredicate(format: "value BEGINSWITH %@", "\($0) ") }
+      ?? NSPredicate(format: "value == nil OR value == ''")
+    return buttons.matching(identifier: "session.tree").waitForOne(worn)
+  }
+
   /// `element`, which stands in a list, once it stands still where a tap `across` it, as a part of its width, reaches it.
   ///
   /// The list is dragged to its foot and then back to its head until it does: the one in `part`, such as a sheet or a
