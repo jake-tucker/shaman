@@ -89,6 +89,23 @@ final class SidebarTests: TurningTestCase {
   }
 
   @MainActor
+  func testWithTheSidebarPutAwayAConversationReads700PointsWideInTheMiddle() {
+    for session in ["workstation-key/1", "workstation-key/7"] {
+      let app = launched("paired", ["--open", session], turned: true)
+      columnsStand(app)
+      let conversation = element("session.conversation", in: app)
+      attach("\(session) beside the Sidebar")
+      XCTAssertLessThan(conversation.frame.width, 700)
+      app.buttons["Hide Sidebar"].firstMatch.tap()
+      XCTAssertTrue(app.buttons["listing.scope"].waitForNonExistence(timeout: 10), "the Sidebar put away")
+      conversationReads(Sides.middle, in: app, session)
+      XCTAssertGreaterThan(conversation.frame.width, 750)
+      attach("\(session), the Sidebar put away")
+      app.terminate()
+    }
+  }
+
+  @MainActor
   func testTheFieldStandsLowerBesideTheSidebarThanAlone() {
     let keyboardStays = ["-AutomaticMinimizationEnabled", "NO"]
     for (scenario, arguments, field, title) in [

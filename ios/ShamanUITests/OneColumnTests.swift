@@ -33,6 +33,8 @@ final class OneColumnTests: TurningTestCase {
     ] {
       let app = launched(scenario, arguments + keyboardStays, turned: true)
       fieldStands(28, aboveTheEdgeIn: app, field)
+      // The one column is wider than a conversation reads.
+      if field == "session.composer" { conversationReads(Sides.middle, in: app) }
       attach("\(field) turned, in one column")
       element(field, in: app).tap()
       fieldStandsOnTheKeyboard(in: app, field)

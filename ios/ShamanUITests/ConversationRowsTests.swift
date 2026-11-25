@@ -117,6 +117,29 @@ final class ConversationRowsTests: XCTestCase {
     return blocks(in: try app.snapshot()).sorted { $0.row.minY < $1.row.minY }
   }
 
+  /// The rows and what the foot holds stand by the system's margins, and 8 points from a vertical bar, where it has
+  /// none. So does the new-session screen's foot.
+  @MainActor
+  func testAConversationStandsByTheSystemsMarginsAndClearOfTheBar() {
+    let app = XCUIApplication()
+    // A Working Session, whose foot has its bar, and one whose rows run past the screen.
+    var column = CGRect.zero
+    for session in ["workstation-key/1", "workstation-key/7"] {
+      app.launchArguments = ["--fake", "paired", "--open", session, "--forget-scene"]
+      app.launch()
+      conversationReads({ app.systemMargins(of: $0) }, in: app, session)
+      column = app.descendants(matching: .any)["session.conversation"].frame
+      attach("\(session) by the system's margins")
+      app.terminate()
+    }
+    app.launchArguments = ["--fake", "composing", "--compose", "--forget-scene"]
+    app.launch()
+    XCTAssertTrue(app.buttons["landing.send"].waitForExistence(timeout: 10))
+    // Its own list runs beneath the bar, and so says nothing of its column.
+    XCTAssertEqual(composer("landing", in: app, across: column), app.systemMargins(of: column))
+    attach("The new-session screen's foot by the system's margins")
+  }
+
   @MainActor
   func testShortSessionsOpenedAgainAndAgainStandEachRowBelowTheLast() {
     let app = XCUIApplication()
