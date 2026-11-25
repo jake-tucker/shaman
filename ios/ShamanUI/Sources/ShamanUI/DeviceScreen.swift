@@ -321,11 +321,15 @@ final class DeviceModel {
     self.core = core
   }
 
-  /// Follows what the core says of this device until the screen goes.
+  /// Follows what the core says of this device until the screen goes. The core says it whole whatever of it changed, so
+  /// a name being written stays, as does why it was refused, unless the name the core holds has become another.
   func follow() async {
     for await device in core.thisDevice() {
+      if device.name != self.device?.name {
+        name = device.name
+        refusal = nil
+      }
       self.device = device
-      name = device.name
     }
   }
 
@@ -411,6 +415,12 @@ final class DeviceModel {
     defer { renaming = false }
     do {
       try await core.renameDevice(name)
+      // As the core kept it, which it may have trimmed to the name it held, and says first to whoever asks.
+      for await device in core.thisDevice() {
+        self.device = device
+        name = device.name
+        break
+      }
       refusal = nil
       failure = nil
     } catch .Invalid(let message) {

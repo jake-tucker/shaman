@@ -2333,6 +2333,87 @@ private final class RecordingBrowser: LoginBrowser {
   }
 }
 
+@Suite @MainActor struct ThisDeviceSectionTests {
+  /// Waits until `done` holds.
+  private func until(_ done: () -> Bool) async throws {
+    for _ in 0..<300 where !done() {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(done())
+  }
+
+  @Test func aNameBeingWrittenStaysAsTheCoreTellsOfSomethingElse() async throws {
+    let model = DeviceModel(core: FakeCore(.pairAgain))
+    let task = Task { await model.follow() }
+    defer { task.cancel() }
+    try await until { model.device?.pairAgain != nil }
+    #expect(model.name == model.device?.name)
+
+    model.name = "Poc"
+    await model.dismissPairAgain()
+    try await until { model.device?.pairAgain == nil }
+    #expect(model.name == "Poc")
+  }
+
+  @Test func aNameKeptReadsAsTheCoreKeptIt() async throws {
+    let base = try scratch()
+    defer { try? FileManager.default.removeItem(at: base) }
+    let core = try LiveCore(directory: try CoreDirectory.prepare(in: base), signer: try madeKey())
+    let model = DeviceModel(core: core)
+    let task = Task { await model.follow() }
+    defer { task.cancel() }
+    try await until { model.name == "iPhone" }
+
+    model.name = "Pocket"
+    await model.rename()
+    try await until { model.device?.name == "Pocket" }
+
+    model.name = "Pocket "
+    await model.rename()
+    try await until { model.name == "Pocket" }
+
+    model.name = "everywhere"
+    await model.rename()
+    #expect(model.name == "everywhere" && model.refusal != nil, "what was refused stays beside why")
+
+    // As another window would.
+    try await core.renameDevice("Pouch")
+    try await until { model.name == "Pouch" }
+    #expect(model.refusal == nil, "which was of a name no longer there")
+  }
+
+  @Test func aNameRefusedStaysWhateverTheCoreToldOfMeanwhile() async throws {
+    let model = DeviceModel(core: FakeCore(.pairAgain))
+    let task = Task { await model.follow() }
+    defer { task.cancel() }
+    try await until { model.device?.pairAgain != nil }
+
+    model.name = "everywhere"
+    let renaming = Task { await model.rename() }
+    try await until { model.renaming }
+    await model.dismissPairAgain()
+    try await until { model.device?.pairAgain == nil }
+    #expect(model.name == "everywhere")
+    await renaming.value
+    #expect(model.name == "everywhere" && model.refusal != nil)
+  }
+
+  @Test func aNameWrittenAfterOneWasKeptStaysAsTheCoreTellsOfSomethingElse() async throws {
+    let model = DeviceModel(core: FakeCore(.pairAgain))
+    let task = Task { await model.follow() }
+    defer { task.cancel() }
+    try await until { model.device?.pairAgain != nil }
+
+    model.name = " Pouch"
+    await model.rename()
+    #expect(model.name == "Pouch", "as the core kept it, once it has")
+    model.name = "Poc"
+    await model.dismissPairAgain()
+    try await until { model.device?.pairAgain == nil }
+    #expect(model.name == "Poc")
+  }
+}
+
 @Suite @MainActor struct ServersSectionTests {
   /// The model of a sheet over `core`, following its Remotes, once it holds them.
   private func following(_ core: FakeCore) async throws -> (DeviceModel, Task<Void, Never>) {

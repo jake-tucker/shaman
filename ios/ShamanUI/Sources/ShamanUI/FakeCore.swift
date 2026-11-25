@@ -806,6 +806,14 @@
     }
 
     public func renameDevice(_ name: String) async throws(ActError) {
+      try? await Task.sleep(for: .milliseconds(200))
+      let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+      if name.isEmpty {
+        throw .Invalid(message: "A name needs something other than spaces")
+      }
+      if name.lowercased() == "everywhere" {
+        throw .Invalid(message: "\"\(name)\" names every server at once, so nothing may be named so")
+      }
       change { $0.name = name }
     }
 
