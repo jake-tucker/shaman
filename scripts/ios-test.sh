@@ -6,7 +6,7 @@
 #   scripts/ios-test.sh posed open|book|laptop|portrait|all [--ad-hoc] [xcodebuild argument]...
 #
 #   scripts/ios-test.sh all                                             # every row, one simulator after another
-#   scripts/ios-test.sh pro                                             # the Pro's row: everything
+#   scripts/ios-test.sh pro                                             # the Pro's row: all but the columns' tests
 #   scripts/ios-test.sh duo -only-testing:ShamanUITests/SessionTests    # these tests alone, on the closed Duo
 #
 # An `-only-testing:` takes the place of the row's own, so it may name tests the row leaves out, while what the row
@@ -36,15 +36,28 @@ set -euo pipefail
 # The table: what each simulator runs, in xcodebuild's words. `ShamanUIUnitTests` are the package's tests; `ShamanTests`
 # and `ShamanUITests` are the app's. A test target added later is added to the Pro's row, which names every one. A test
 # that does not hold on some shape is skipped here, in that simulator's row, and never by itself.
+#
+# Two kinds of the UI tests' classes do not hold on every shape, and a class of either is named here as it is added:
+# `columns`, for which columns stand side by side, as they do on a turned Pro Max; and `turning`, which turn the
+# simulator and hold on any that turns, which a Duo does for no test.
+columns=(SidebarTests)
+turning=(TurningTests)
 simulators=(pro duo pro-max)
 row_of() {
   case "$1" in
-    pro) row=(-only-testing:ShamanUIUnitTests -only-testing:ShamanTests -only-testing:ShamanUITests) ;;
-    duo) row=(-only-testing:ShamanUITests) ;;
-    pro-max) row=(-only-testing:ShamanUITests/SmokeTests) ;;
+    pro)
+      row=(-only-testing:ShamanUIUnitTests -only-testing:ShamanTests -only-testing:ShamanUITests)
+      row+=("${columns[@]/#/-skip-testing:ShamanUITests/}")
+      ;;
+    duo)
+      row=(-only-testing:ShamanUITests)
+      row+=("${columns[@]/#/-skip-testing:ShamanUITests/}" "${turning[@]/#/-skip-testing:ShamanUITests/}")
+      ;;
+    pro-max)
+      row=("${columns[@]/#/-only-testing:ShamanUITests/}" "${turning[@]/#/-only-testing:ShamanUITests/}")
+      ;;
   esac
 }
-
 
 # The posed half of the table: what each pose of the Duo runs. Every other run skips those tests, there being no pose.
 poses=(open book laptop portrait)

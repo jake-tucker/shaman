@@ -35,6 +35,7 @@ struct ListingScreen: View {
       }
     }
     .listStyle(.plain)
+    .accessibilityIdentifier("listing.list")
     .overlay {
       if let empty = model.listing?.empty {
         ContentUnavailableView {

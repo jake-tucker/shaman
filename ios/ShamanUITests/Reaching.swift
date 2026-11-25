@@ -16,19 +16,22 @@ extension XCUIApplication {
 
   /// `element`, which stands in a list, once it stands still where a tap `across` it, as a part of its width, reaches it.
   ///
-  /// The list is dragged to its foot and then back to its head until it does: the one in `part`, such as a sheet or a
-  /// column, or the last the app shows. A list draws little more than what is on screen, so one further along need not
-  /// exist before. What is drawn later, as a screen being pushed is, is waited for first, as only the list is here.
+  /// The list is dragged to its foot and then back to its head until it does: the one in `part`, such as a sheet, or
+  /// `part` itself, such as the listing's own, or the last the app shows. A list draws little more than what is on
+  /// screen, so one further along need not exist before. What is drawn later, as a screen being pushed is, is waited for
+  /// first, as only the list is here.
   @discardableResult
   func scrolled(
     to element: XCUIElement, at across: CGFloat = 0.5, over part: XCUIElement? = nil, file: StaticString = #filePath,
     line: UInt = #line
   ) -> XCUIElement {
     let scrolls = NSPredicate(format: "label BEGINSWITH 'Vertical scroll bar'")
+    let kinds = [XCUIElement.ElementType.collectionView, .scrollView]
     let lists = (part ?? self).descendants(matching: .any).containing(scrolls).matching(
-      NSPredicate(format: "elementType IN %@", [XCUIElement.ElementType.collectionView, .scrollView].map(\.rawValue)))
-    XCTAssertTrue(lists.firstMatch.waitForExistence(timeout: 10), "a list is shown", file: file, line: line)
-    let list = lists.element(boundBy: lists.count - 1)
+      NSPredicate(format: "elementType IN %@", kinds.map(\.rawValue)))
+    let itself = part.map { $0.waitForExistence(timeout: 10) && kinds.contains($0.elementType) } ?? false
+    XCTAssertTrue(itself || lists.firstMatch.waitForExistence(timeout: 10), "a list is shown", file: file, line: line)
+    let list = itself ? part! : lists.element(boundBy: lists.count - 1)
     // A bar's button, say, which no scrolling moves.
     if element.exists {
       let name = element.identifier.isEmpty ? element.label : element.identifier
@@ -38,6 +41,8 @@ extension XCUIApplication {
     let bar = list.otherElements.matching(scrolls).firstMatch
     for (from, to) in [(0.85, 0.15), (0.15, 0.85)] {
       var stood: String?
+      // Above the listing's capsule, which takes a drag begun near it, and on a short display floats high up its list.
+      let lowest = capsuleOver(list).map { ($0.minY - 32 - bar.frame.minY) / bar.frame.height } ?? 1
       for _ in 0..<50 {
         if reaches(element, at: across, beside: bar) { return element }
         let stands = "\(bar.frame) \(bar.value ?? "")"
@@ -46,7 +51,7 @@ extension XCUIApplication {
         if stands == stood || (from < to && stands.hasSuffix(" 0%")) { break }
         stood = stands
         // Beside the bar, over the list's rows.
-        let point = { (down: Double) in bar.coordinate(withNormalizedOffset: CGVector(dx: -4, dy: down)) }
+        let point = { (down: Double) in bar.coordinate(withNormalizedOffset: CGVector(dx: -4, dy: min(down, lowest))) }
         point(from).press(forDuration: 0.05, thenDragTo: point(to), withVelocity: .slow, thenHoldForDuration: 0.2)
       }
     }
@@ -62,8 +67,7 @@ extension XCUIApplication {
     Thread.sleep(forTimeInterval: 0.1)
     guard element.exists, element.frame == frame else { return false }
     let point = CGPoint(x: frame.minX + frame.width * across, y: frame.midY)
-    let capsule = otherElements["home.beginsIn"]
-    if capsule.exists, capsule.frame.insetBy(dx: -24, dy: -24).contains(point), capsule.isHittable { return false }
+    if let capsule = capsuleOver(element), capsule.insetBy(dx: -24, dy: -24).contains(point) { return false }
     // The bar ends short of a display's corners, which a list at its foot runs on beside.
     let shown = bar.frame
     guard point.y >= shown.minY, point.y <= shown.maxY || bar.value as? String == "100%" else { return false }
@@ -87,6 +91,15 @@ extension XCUIApplication {
     XCTAssertTrue(
       written, "\(identifier) reads \(field.value ?? "nothing") and not \(text)", file: file, line: line)
     field.typeText("\n")
+  }
+
+  /// Where the listing's capsule floats over `element`, or near it, where it does and no sheet covers it.
+  private func capsuleOver(_ element: XCUIElement) -> CGRect? {
+    let capsule = otherElements["home.beginsIn"]
+    guard capsule.exists else { return nil }
+    let frame = capsule.frame
+    guard frame.insetBy(dx: -24, dy: -24).intersects(element.frame), capsule.isHittable else { return nil }
+    return frame
   }
 
   /// Swipes the sheet on top away by its grabber, as a reader does.
