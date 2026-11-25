@@ -1,16 +1,24 @@
 import ShamanCore
 import SwiftUI
 
-/// The Sessions pushed over the listing, and what is pushed over each, as its navigation stack holds them: each
-/// Session opened in the core as its screen is first drawn, and closed there once no screen of it is on the path,
-/// however it leaves. What the scene keeps of it, and a path restored from what it kept, cross as `KeptScene`'s
+/// What is open: the Session or new-session screen open, and the screens pushed over it, as one value, `path`, whichever
+/// columns stand. `Columns` has the main view hold what the path says, and writes back to it what the reader pops.
+/// Each Session is opened in the core as its screen is first drawn, and closed there once no screen of it is on the
+/// path, however it leaves. What the scene keeps of it, and a path restored from what it kept, cross as `KeptScene`'s
 /// screens.
 @MainActor @Observable
 final class SessionStack {
-  /// The screens pushed, the one on top last.
+  /// The screens open, the one on top last; none while nothing is open.
   var path: [Pushed] {
-    didSet { closeUnpushed() }
+    didSet {
+      closeUnpushed()
+      moved?()
+    }
   }
+  /// Told each time the path is written, whoever wrote it, as the columns are.
+  @ObservationIgnored var moved: (() -> Void)?
+  /// The new-session screen the main view holds at rest, while nothing is open. Not on the path, it is not open.
+  @ObservationIgnored private(set) var rest = LandingRoute()
   @ObservationIgnored private let core: any Core
   @ObservationIgnored private var models: [SessionRoute: SessionModel] = [:]
   @ObservationIgnored private var landings: [LandingRoute: NewSessionModel] = [:]
@@ -55,7 +63,12 @@ final class SessionStack {
       return model
     }
     let model = NewSessionModel(core: core)
-    model.adopted = { [weak self] begun in self?.models[begun.route] = begun }
+    model.adopted = { [weak self] begun in
+      guard let self else { return }
+      // Begun from the screen at rest, that screen is open.
+      openRest(route)
+      models[begun.route] = begun
+    }
     landings[route] = model
     return model
   }
@@ -75,22 +88,68 @@ final class SessionStack {
     return model
   }
 
+  /// Opens the Session `session` names, chosen in the listing, in place of whatever is open, read afresh; but where it
+  /// is what is open already, pops back to it.
+  func open(_ session: String) {
+    if let first = path.first, shows(first, session) {
+      path = [first]
+    } else {
+      path = [.session(SessionRoute(session: session))]
+    }
+  }
+
+  /// Opens the new-session screen afresh, in place of whatever is open.
+  func compose() {
+    path = [.landing(LandingRoute())]
+  }
+
+  /// Opens the new-session screen at rest as it stands, the same screen, where `route` is its; another rests in its
+  /// place once nothing is open again.
+  func openRest(_ route: LandingRoute) {
+    guard route == rest else { return }
+    rest = LandingRoute()
+    path = [.landing(route)]
+  }
+
+  /// Pushes `pushed` over what is open; nothing more where it is the screen on top already, as one tapped twice is.
+  func push(_ pushed: Pushed) {
+    guard path.last != pushed else { return }
+    path.append(pushed)
+  }
+
+  /// Leaves the Session pushed as `route`, which turned out gone, with whatever is pushed over it.
+  func leave(_ route: SessionRoute) {
+    guard
+      let pushed = path.firstIndex(where: {
+        switch $0 {
+        case .session(let pushed): pushed == route
+        case .landing(let landing): landings[landing]?.begun?.route == route
+        case .work, .detail: false
+        }
+      })
+    else { return }
+    path.removeSubrange(pushed...)
+  }
+
   /// Shows the Session `session` names, chosen in the tree of the Session pushed as `route`: nothing more where it is
   /// that one, popping back to it where it is on the path already, as its own screen or as the new-session screen it
   /// was begun from, and pushing it over the path where it is not.
   func show(_ session: String, over route: SessionRoute) {
     guard route.session != session else { return }
-    let pushed = path.lastIndex {
-      switch $0 {
-      case .session(let pushed): pushed.session == session
-      case .landing(let landing): landings[landing]?.begun?.session == session
-      case .work, .detail: false
-      }
-    }
-    if let pushed {
+    if let pushed = path.lastIndex(where: { shows($0, session) }) {
       path.removeSubrange(path.index(after: pushed)...)
     } else {
       path.append(.session(SessionRoute(session: session)))
+    }
+  }
+
+  /// Whether `pushed` is the screen of the Session `session` names: its own, or the new-session screen it was begun
+  /// from.
+  private func shows(_ pushed: Pushed, _ session: String) -> Bool {
+    switch pushed {
+    case .session(let route): route.session == session
+    case .landing(let landing): landings[landing]?.begun?.session == session
+    case .work, .detail: false
     }
   }
 
@@ -111,7 +170,7 @@ final class SessionStack {
   }
 
   /// Closes every Session no screen of which is on the path, a Session begun from a new-session screen standing for
-  /// as long as its screen does.
+  /// as long as its screen does. The new-session screen at rest keeps its model.
   private func closeUnpushed() {
     let landed = Set(path.compactMap { if case .landing(let route) = $0 { route } else { nil } })
     let pushed = Set(path.compactMap(\.route) + landed.compactMap { landings[$0]?.begun?.route })
@@ -119,7 +178,7 @@ final class SessionStack {
       model.close()
       models[route] = nil
     }
-    for route in landings.keys where !landed.contains(route) {
+    for route in landings.keys where !landed.contains(route) && route != rest {
       landings[route] = nil
     }
   }

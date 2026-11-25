@@ -1,115 +1,76 @@
 import ShamanCore
 import SwiftUI
 
-/// What the app shows when no Session is open: every Remote's Sessions in one flat list, active rows above the shelf
-/// of settled ones, under a title that is a menu narrowing it to a Remote or a Workspace and a field searching it by
-/// Title, and the bottom bar, with the sheet of Servers, Relays and This device behind its button. It returns to what
-/// the scene kept after a cold start, and hands the scene what to keep on each change.
+/// The listing, as `Columns` hosts it in the Sidebar's column, with the sheets it presents: every Remote's Sessions in
+/// one flat list, active rows above the shelf of settled ones, under a title that is a menu narrowing it to a Remote or
+/// a Workspace and a field searching it by Title, and the bottom bar, with the sheet of Servers, Relays and This device
+/// behind its button. The screen above the columns, `ColumnsScreen`, follows what it shows.
 struct ListingScreen: View {
   let core: any Core
   let appVersion: String
   let beginsIn: BeginsIn
-  /// The scope the scene kept, handed back to the core as the listing is first followed.
-  private let restoring: String?
-  /// Hands the scene what to keep of the listing and what is pushed over it.
-  private let keep: (KeptScene) -> Void
-  @State private var model: ListingModel
+  let model: ListingModel
+  /// What a row and the compose button open.
+  let stack: SessionStack
   @State private var sheet: ListingSheet?
-  /// The Sessions pushed over the listing, each closed in the core as its screen is popped.
-  @State private var stack: SessionStack
   /// What the search field holds, which the core is handed as it changes and keeps no longer than the core runs.
   @State private var query = ""
 
-  /// The listing over `core`, confirming `invite` where one is given, returned to what the scene kept, `kept`, which
-  /// `keep` is handed again on each change; but with the Session `opening` names pushed over it, or the new-session
-  /// screen where it is `composing`.
+  /// The listing `model` follows over `core`, confirming `invite` where one is given.
   init(
-    core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?, kept: KeptScene = KeptScene(),
-    keep: @escaping (KeptScene) -> Void = { _ in }, opening: String? = nil, composing: Bool = false
+    core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?, model: ListingModel, stack: SessionStack
   ) {
     self.core = core
     self.appVersion = appVersion
     self.beginsIn = beginsIn
-    self.restoring = kept.scope
-    self.keep = keep
-    _model = State(initialValue: ListingModel(core: core))
+    self.model = model
+    self.stack = stack
     _sheet = State(initialValue: invite.map(ListingSheet.pairing))
-    // Pushed at launch as a tap pushes it, where a debug build asks; otherwise what the scene kept, restored.
-    let pushed: [Pushed]? =
-      composing ? [.landing(LandingRoute())] : opening.map { [.session(SessionRoute(session: $0))] }
-    _stack = State(
-      initialValue: pushed.map { SessionStack(core: core, path: $0) }
-        ?? SessionStack(core: core, restoring: kept.pushed))
-  }
-
-  /// What the scene is to keep now: the scope the listing stands at, or the one it was handed back until it says, and
-  /// what is pushed over it.
-  private var kept: KeptScene {
-    KeptScene(scope: model.listing?.scope ?? restoring, pushed: stack.kept)
   }
 
   var body: some View {
-    NavigationStack(path: $stack.path) {
-      List {
-        if let listing = model.listing {
-          rows(listing)
-        }
+    List {
+      if let listing = model.listing {
+        rows(listing)
       }
-      .listStyle(.plain)
-      .overlay {
-        if let empty = model.listing?.empty {
-          ContentUnavailableView {
-            Label {
-              Text(verbatim: empty)
-                .accessibilityIdentifier("listing.empty")
-            } icon: {
-              Image(systemName: model.listing?.found == nil ? "square.and.pencil" : "magnifyingglass")
-            }
+    }
+    .listStyle(.plain)
+    .overlay {
+      if let empty = model.listing?.empty {
+        ContentUnavailableView {
+          Label {
+            Text(verbatim: empty)
+              .accessibilityIdentifier("listing.empty")
+          } icon: {
+            Image(systemName: model.listing?.found == nil ? "square.and.pencil" : "magnifyingglass")
           }
-        }
-      }
-      .navigationTitle(model.listing?.title ?? "")
-      .navigationBarTitleDisplayMode(.inline)
-      .searchable(
-        text: $query, placement: .navigationBarDrawer(displayMode: .always),
-        prompt: Text(verbatim: model.listing?.searchPrompt ?? "")
-      )
-      .onChange(of: query) { model.search(query) }
-      .safeAreaInset(edge: .top) {
-        if let failure = model.failure {
-          Banner(text: failure)
-            .onTapGesture { model.dismissFailure() }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint("Dismisses this")
-        }
-      }
-      .noticeBanner(covered: sheet != nil)
-      .toolbar {
-        ToolbarItem(placement: .principal) {
-          if let listing = model.listing {
-            ScopeMenu(listing: listing) { scope in Task { await model.narrow(scope) } }
-          }
-        }
-        bottomBar
-      }
-      .navigationDestination(for: Pushed.self) { pushed in
-        switch pushed {
-        case .session(let route):
-          SessionScreen(model: stack.model(for: route), stack: stack)
-        case .work(let route, let turn):
-          TurnWorkScreen(session: stack.model(for: route), turn: turn)
-            .noticeBanner()
-        case .detail(let route, let activity):
-          ActivityDetailScreen(session: stack.model(for: route), activity: activity)
-            .noticeBanner()
-        case .landing(let route):
-          NewSessionScreen(model: stack.landing(for: route), stack: stack)
-            .noticeBanner()
         }
       }
     }
-    .task { await model.follow(restoring: restoring) }
-    .onChange(of: kept, initial: true) { _, kept in keep(kept) }
+    .navigationTitle(model.listing?.title ?? "")
+    .navigationBarTitleDisplayMode(.inline)
+    .searchable(
+      text: $query, placement: .navigationBarDrawer(displayMode: .always),
+      prompt: Text(verbatim: model.listing?.searchPrompt ?? "")
+    )
+    .onChange(of: query) { model.search(query) }
+    .safeAreaInset(edge: .top) {
+      if let failure = model.failure {
+        Banner(text: failure)
+          .onTapGesture { model.dismissFailure() }
+          .accessibilityAddTraits(.isButton)
+          .accessibilityHint("Dismisses this")
+      }
+    }
+    .noticeBanner(covered: sheet != nil)
+    .toolbar {
+      ToolbarItem(placement: .principal) {
+        if let listing = model.listing {
+          ScopeMenu(listing: listing) { scope in Task { await model.narrow(scope) } }
+        }
+      }
+      bottomBar
+    }
     .onChange(of: model.listing?.unreachable) {
       // A Remote that answers again on its own takes its sheet with it.
       if case .unreachable(let remote) = sheet, model.unreachable(remote) == nil {
@@ -219,7 +180,9 @@ struct ListingScreen: View {
   }
 
   private func active(_ row: ActiveRow) -> some View {
-    NavigationLink(value: Pushed.session(SessionRoute(session: row.session))) {
+    RowButton {
+      stack.open(row.session)
+    } row: {
       ActiveRowView(row: row)
     }
     .accessibilityIdentifier("listing.active")
@@ -232,7 +195,9 @@ struct ListingScreen: View {
   }
 
   private func settled(_ row: SettledRow) -> some View {
-    NavigationLink(value: Pushed.session(SessionRoute(session: row.session))) {
+    RowButton {
+      stack.open(row.session)
+    } row: {
       SettledRowView(row: row)
     }
     .accessibilityIdentifier("listing.settled")
@@ -269,7 +234,7 @@ struct ListingScreen: View {
     ToolbarItem(placement: .bottomBar) {
       // The new-session screen, where the Outlook stands.
       Button {
-        stack.path.append(.landing(LandingRoute()))
+        stack.compose()
       } label: {
         Label("New session", systemImage: "square.and.pencil")
       }
@@ -696,21 +661,3 @@ extension Standing {
     }
   }
 }
-
-#if DEBUG
-  #Preview("One server") {
-    ListingScreen(
-      core: FakeCore(.paired), appVersion: "0.1.0 (1)",
-      beginsIn: BeginsIn(
-        lead: "New sessions begin in", place: "workstation", said: "New sessions begin in workstation"),
-      invite: nil)
-  }
-
-  #Preview("Several servers") {
-    ListingScreen(
-      core: FakeCore(.several), appVersion: "0.1.0 (1)",
-      beginsIn: BeginsIn(
-        lead: "New sessions begin in", place: "workstation", said: "New sessions begin in workstation"),
-      invite: nil)
-  }
-#endif

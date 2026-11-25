@@ -8,6 +8,9 @@ import Textual
 struct TurnWorkScreen: View {
   let session: SessionModel
   let turn: String
+  /// Pushes what a row leads to over the screen, where the columns host it; within a `NavigationStack` of its own, with
+  /// none handed, each row is a link.
+  var push: ((Pushed) -> Void)?
   @State private var work: TurnWork?
 
   var body: some View {
@@ -17,12 +20,9 @@ struct TurnWorkScreen: View {
         case .row(let row):
           switch row.tap {
           case .detail(let activity):
-            NavigationLink(value: Pushed.detail(session.route, activity: activity)) {
-              WorkRowView(row: row)
-            }
-            .accessibilityIdentifier("work.row")
+            WorkRowLink(row: row, pushed: .detail(session.route, activity: activity), push: push)
           case .session(let opened):
-            SessionRowLink(row: row, session: opened)
+            SessionRowLink(row: row, session: opened, push: push)
           case .nothing:
             WorkRowView(row: row)
               .accessibilityIdentifier("work.row")
@@ -63,19 +63,42 @@ struct TurnWorkScreen: View {
 }
 
 /// A row that opens a Session: a Subagent's own, pushed over the list it stands in, which back returns to. The screen
-/// it pushes is made once for the row, so the link's value holds still however often the list is drawn.
+/// it pushes is made once for the row, so what is pushed holds still however often the list is drawn or it is tapped.
 private struct SessionRowLink: View {
   let row: WorkRow
+  let push: ((Pushed) -> Void)?
   @State private var route: SessionRoute
 
-  init(row: WorkRow, session: String) {
+  init(row: WorkRow, session: String, push: ((Pushed) -> Void)?) {
     self.row = row
+    self.push = push
     _route = State(initialValue: SessionRoute(session: session))
   }
 
   var body: some View {
-    NavigationLink(value: Pushed.session(route)) {
-      WorkRowView(row: row)
+    WorkRowLink(row: row, pushed: .session(route), push: push)
+  }
+}
+
+/// A row that pushes `pushed`: by `push` where one is handed, and by the `NavigationStack` it stands in otherwise.
+private struct WorkRowLink: View {
+  let row: WorkRow
+  let pushed: Pushed
+  let push: ((Pushed) -> Void)?
+
+  var body: some View {
+    Group {
+      if let push {
+        RowButton {
+          push(pushed)
+        } row: {
+          WorkRowView(row: row)
+        }
+      } else {
+        NavigationLink(value: pushed) {
+          WorkRowView(row: row)
+        }
+      }
     }
     .accessibilityIdentifier("work.row")
   }

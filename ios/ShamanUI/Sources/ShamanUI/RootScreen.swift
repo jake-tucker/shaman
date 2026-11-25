@@ -2,7 +2,7 @@ import ShamanCore
 import SwiftUI
 
 /// What the app shows over its core: pairing alone while the phone holds no Remote, and otherwise the listing of
-/// every Remote's Sessions.
+/// every Remote's Sessions, in the columns.
 public struct RootScreen: View {
   private let core: any Core
   private let appVersion: String
@@ -48,7 +48,7 @@ public struct RootScreen: View {
       case .nowhere:
         PairingScreen(core: core, invite: invite)
       case .remote(_, let beginsIn):
-        ListingScreen(
+        ColumnsScreen(
           core: core, appVersion: appVersion, beginsIn: beginsIn, invite: invite,
           kept: restoring ? KeptScene(stored: kept) : KeptScene(), keep: { kept = $0.stored }, opening: opening,
           composing: composing)

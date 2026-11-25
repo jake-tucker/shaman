@@ -15,16 +15,15 @@ import SwiftUI
 /// has `stack` show that Session.
 struct SessionScreen: View {
   let model: SessionModel
-  /// The navigation stack the Session is pushed on, which an entry chosen in its tree is shown on.
+  /// What is open, which the Session is of, and an entry chosen in its tree is shown on.
   var stack: SessionStack?
-  @Environment(\.dismiss) private var dismiss
   @State private var showingTree = false
   /// The Session an entry of the tree handed back, shown once its sheet has gone.
   @State private var chosen: String?
 
   var body: some View {
     ConversationView(model: model) { pushed in
-      stack?.path.append(pushed)
+      stack?.push(pushed)
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       SessionFoot(model: model) { opens in
@@ -50,7 +49,7 @@ struct SessionScreen: View {
     .noticeBanner(covered: model.presented != nil || showingTree)
     .onChange(of: model.popped) {
       if model.popped {
-        dismiss()
+        stack?.leave(model.route)
       }
     }
     .overlay {

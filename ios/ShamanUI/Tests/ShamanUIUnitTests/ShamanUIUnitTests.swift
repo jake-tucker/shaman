@@ -1000,6 +1000,73 @@ private func blockRows(_ markdown: String, of message: String = "m") -> [Convers
     stack.show("workstation-key/12", over: explorer)
     #expect(stack.path == [.session(parent)])
   }
+
+  @Test func aSessionChosenInTheListingTakesThePlaceOfWhatIsOpenAndTheOneOpenIsPoppedBackTo() {
+    let stack = SessionStack(core: FakeCore(.paired))
+    stack.open("workstation-key/7")
+    let first = stack.path
+    #expect(first.compactMap(\.route).map(\.session) == ["workstation-key/7"])
+    guard case .session(let settled) = first.first else {
+      Issue.record("a Session open")
+      return
+    }
+    stack.push(.work(settled, turn: "work"))
+    // Tapped twice it is pushed once.
+    stack.push(.work(settled, turn: "work"))
+    #expect(stack.path.count == 2)
+    stack.open("workstation-key/7")
+    #expect(stack.path == first, "the same screen, read no more than it was")
+    stack.open("workstation-key/1")
+    #expect(stack.path.count == 1 && stack.path != first)
+    stack.compose()
+    guard case .landing = stack.path.first, stack.path.count == 1 else {
+      Issue.record("the new-session screen open: \(stack.path)")
+      return
+    }
+  }
+
+  @Test func aSessionGoneIsLeftWithWhatIsPushedOverIt() {
+    let stack = SessionStack(core: FakeCore(.paired))
+    let parent = SessionRoute(session: "workstation-key/12")
+    let explorer = SessionRoute(session: "workstation-key/12.1")
+    stack.path = [
+      .session(parent), .work(parent, turn: "work"), .session(explorer), .work(explorer, turn: "work"),
+    ]
+    stack.leave(explorer)
+    #expect(stack.path == [.session(parent), .work(parent, turn: "work")])
+    stack.leave(explorer)
+    #expect(stack.path.count == 2, "left already")
+    stack.leave(parent)
+    #expect(stack.path.isEmpty)
+  }
+
+  @Test func theScreenAtRestIsNotOpenUntilItIsOpenedAndThenAnotherRests() async throws {
+    let core = FakeCore(.composing)
+    let stack = SessionStack(core: core)
+    let route = stack.rest
+    let resting = stack.landing(for: route)
+    #expect(stack.path.isEmpty && stack.kept.isEmpty)
+    stack.open("workstation-key/7")
+    stack.path = []
+    #expect(stack.landing(for: route) === resting, "kept while others come and go")
+
+    // Its first Prompt opens it, and it is that Session's.
+    let following = Task { await resting.follow() }
+    defer { following.cancel() }
+    for _ in 0..<300 where resting.landing == nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    resting.text = "Map the workspace"
+    resting.send()
+    let begun = try #require(resting.begun)
+    #expect(stack.path == [.landing(route)])
+    #expect(stack.kept == [.session(begun.session)])
+    #expect(stack.model(for: begun.route) === begun, "not closed")
+    #expect(stack.rest != route)
+    // Found gone, the screen is left as any Session's is.
+    stack.leave(begun.route)
+    #expect(stack.path.isEmpty)
+  }
 }
 
 @Suite @MainActor struct SidekickTreeTests {

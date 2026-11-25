@@ -12,12 +12,14 @@ import SwiftUI
 struct NewSessionScreen: View {
   let model: NewSessionModel
   let stack: SessionStack
+  /// Whether the keyboard is up on arrival, as beginning is writing; but not at rest, while nothing is open.
+  var writing = true
 
   var body: some View {
     if let begun = model.begun {
       SessionScreen(model: begun, stack: stack)
     } else {
-      LandingView(model: model)
+      LandingView(model: model, arrivesWriting: writing)
     }
   }
 }
@@ -25,17 +27,20 @@ struct NewSessionScreen: View {
 /// The Landing as the screen draws it before the send.
 private struct LandingView: View {
   @Bindable var model: NewSessionModel
+  let arrivesWriting: Bool
   @FocusState private var writing: Bool
-  /// Whether the Workspace Picker is pushed over the screen.
-  @State private var picking = false
+  @Environment(\.pushScreen) private var pushScreen
 
   var body: some View {
     ScrollView {
       if let landing = model.landing {
-        LandingMiddle(landing: landing, model: model) { picking = true }
-          .padding(.horizontal, 24)
-          .padding(.vertical, 28)
-          .frame(maxWidth: .infinity)
+        LandingMiddle(landing: landing, model: model) {
+          // The Workspace Picker, pushed over the screen, which the path does not name.
+          pushScreen(WorkspacePickerScreen(model: model.picker()).noticeBanner())
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 28)
+        .frame(maxWidth: .infinity)
       }
     }
     .scrollDismissesKeyboard(.interactively)
@@ -74,13 +79,8 @@ private struct LandingView: View {
         .accessibilityElement(children: .contain)
       }
     }
-    .navigationDestination(isPresented: $picking) {
-      WorkspacePickerScreen(model: model.picker())
-        .noticeBanner()
-    }
     .task { await model.follow() }
-    // The keyboard is up on arrival: beginning is writing.
-    .onAppear { writing = true }
+    .onAppear { writing = arrivesWriting }
   }
 }
 

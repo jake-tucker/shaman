@@ -87,10 +87,22 @@ jobs:
             echo "::error::The tests left no app on the simulator, so there is nothing to check."
             exit 1
           fi
-          written=$(find "$container/Library/Preferences" -type f 2> /dev/null || true)
+          preferences=$(mktemp -d)
+          cp -R "$container/Library/Preferences/." "$preferences" 2> /dev/null || true
+          # UIKit's, not the app's: a split view that has stood its columns side by side keeps their widths there, and
+          # offers no way not to. A file holding that key alone holds nothing of the app's.
+          own="$preferences/com.jaketucker.shaman.plist"
+          if [ -f "$own" ] && plutil -remove 'com\.apple\.UIKit\.UISplitViewController\.Root' "$own" > /dev/null \
+            && [ "$(plutil -convert json -o - "$own")" = "{}" ]; then
+            rm "$own"
+          fi
+          written=$(find "$preferences" -type f)
           if [ -n "$written" ]; then
             echo "::error::The app wrote to UserDefaults:"
-            echo "$written"
+            while IFS= read -r file; do
+              echo "$(basename "$file"):"
+              plutil -p "$file" || true
+            done <<< "$written"
             exit 1
           fi
 
