@@ -11,6 +11,8 @@ struct QuestionnaireSheet: View {
   let model: SessionModel
   @Environment(\.interventionArming) private var arming
   @State private var armed = false
+  /// The page whose field holds the keyboard, and none where none does.
+  @FocusState private var writing: Int?
 
   var body: some View {
     let draft = model.draft(of: questionnaire)
@@ -25,27 +27,10 @@ struct QuestionnaireSheet: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityHint("Dismisses this")
         }
-        ScrollView {
-          VStack(alignment: .leading, spacing: 12) {
-            if let note = questionnaire.note {
-              Label {
-                Text(verbatim: note)
-              } icon: {
-                Image(systemName: "exclamationmark.triangle")
-              }
-              .font(.footnote)
-              .foregroundStyle(.orange)
-              .accessibilityIdentifier("questionnaire.note")
-            }
-            if let question {
-              QuestionPage(question: question, questionnaire: questionnaire, draft: draft, model: model)
-                .id(draft.page)
-            }
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(20)
-        }
-        .scrollDismissesKeyboard(.interactively)
+        QuestionnairePage(
+          questionnaire: questionnaire, question: question, draft: draft, model: model, writing: $writing
+        )
+        .id(draft.page)
         QuestionnaireFoot(questionnaire: questionnaire, question: question, draft: draft, model: model)
       }
       .navigationTitle(question?.position ?? "")
@@ -85,12 +70,76 @@ struct QuestionnaireSheet: View {
   }
 }
 
-/// One Question's page: its heading over it, its choices as cards, and the field that takes a written answer.
-private struct QuestionPage: View {
+/// A page of the sheet, scrolled by itself: the Questionnaire's note over its Question. Each page has a scroll view of
+/// its own, so that it stands at its head as it is come to and not as far down as the page before it was.
+private struct QuestionnairePage: View {
+  let questionnaire: PendingQuestionnaire
+  let question: PendingQuestion?
+  let draft: QuestionnaireDraft
+  let model: SessionModel
+  let writing: FocusState<Int?>.Binding
+  /// Whether the reader is moving the page, by a drag or by what is left of one.
+  @State private var dragged = false
+
+  var body: some View {
+    ScrollViewReader { page in
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          if let note = questionnaire.note {
+            Label {
+              Text(verbatim: note)
+            } icon: {
+              Image(systemName: "exclamationmark.triangle")
+            }
+            .font(.footnote)
+            .foregroundStyle(.orange)
+            .accessibilityIdentifier("questionnaire.note")
+          }
+          if let question {
+            QuestionView(
+              question: question, questionnaire: questionnaire, draft: draft, model: model, writing: writing)
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+      }
+      .scrollDismissesKeyboard(.interactively)
+      .onScrollPhaseChange { _, phase in
+        dragged = phase != .idle && phase != .animating
+      }
+      .onChange(of: draft.written) { _, written in
+        // Emptied by a choice taken in its place, it has nothing to keep in view, and the choice has.
+        if !written.isEmpty { keepFieldInView(page) }
+      }
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: { _ in
+        keepFieldInView(page)
+      }
+    }
+  }
+
+  /// Scrolls the page to its field's foot while the field holds the keyboard, as what is written grows it and as the
+  /// room for the page changes: the system scrolls to a field once, as it takes the keyboard. At other times the page
+  /// is left where the reader has it, or it would go to its foot as the keyboard is put down. So it is while the reader
+  /// moves it: a drag that takes the keyboard down changes the room all the way, and the page scrolled under it would
+  /// end it with the keyboard still up.
+  private func keepFieldInView(_ page: ScrollViewProxy) {
+    guard writing.wrappedValue == draft.page, !dragged else { return }
+    page.scrollTo(QuestionView.field, anchor: .bottom)
+  }
+}
+
+/// One Question: its heading over it, its choices as cards, and the field that takes a written answer.
+private struct QuestionView: View {
   let question: PendingQuestion
   let questionnaire: PendingQuestionnaire
   let draft: QuestionnaireDraft
   let model: SessionModel
+  let writing: FocusState<Int?>.Binding
+
+  /// What the field is known by, for the page to be scrolled to it.
+  static let field = "questionnaire.field"
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -118,6 +167,8 @@ private struct QuestionPage: View {
       }
       if let field = question.field {
         AnswerFieldView(field: field, text: written)
+          .focused(writing, equals: draft.page)
+          .id(Self.field)
       }
       if draft.readsSecret, let secret = question.secret {
         Label {
