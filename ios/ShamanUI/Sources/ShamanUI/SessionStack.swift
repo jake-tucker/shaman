@@ -70,7 +70,7 @@ final class SessionStack {
     model.adopted = { [weak self] begun in
       guard let self else { return }
       models[begun.route] = begun
-      // Begun from the screen at rest, that screen is open.
+      // Begun from the screen at rest without its field being touched, that screen is open.
       openRest(route)
       moved?()
     }
@@ -117,8 +117,8 @@ final class SessionStack {
     path = [.landing(LandingRoute())]
   }
 
-  /// Opens the new-session screen at rest as it stands, the same screen, where `route` is its; another rests in its
-  /// place once nothing is open again.
+  /// Opens the new-session screen at rest as it stands, the same screen, where `route` is its, as touching its field
+  /// does; another rests in its place once nothing is open again.
   func openRest(_ route: LandingRoute) {
     guard route == rest else { return }
     rest = LandingRoute()

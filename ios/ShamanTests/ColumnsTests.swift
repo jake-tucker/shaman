@@ -22,7 +22,9 @@ import UIKit
       stack: stack,
       screens: Columns.Screens(
         listing: screen("Listing"), open: { screen("\($0)") },
-        rest: { _ in AnyView(NewSessionScreen(model: stack.landing(for: stack.rest), stack: stack, writing: false)) },
+        rest: { route in
+          AnyView(NewSessionScreen(model: stack.landing(for: route), stack: stack, atRest: route))
+        },
         aside: AnyView(AsideScreen(stack: stack)), handed: { $0 }))
     size(wide: wide)
     window.rootViewController = columns
@@ -74,6 +76,21 @@ import UIKit
   func settle() async throws {
     try await Task.sleep(for: .milliseconds(700))
     try await until { self.main.transitionCoordinator == nil && self.sidebar.transitionCoordinator == nil }
+  }
+
+  /// The field of the new-session screen the main view holds, once it is drawn.
+  func field() async throws -> UIView {
+    var found: UIView?
+    try await until {
+      found = self.main.viewControllers.first.flatMap { Self.field(in: $0.view) }
+      return found != nil
+    }
+    return try #require(found)
+  }
+
+  private static func field(in view: UIView) -> UIView? {
+    if view is UITextView || view is UITextField { return view }
+    return view.subviews.lazy.compactMap { field(in: $0) }.first
   }
 
   func close() {
@@ -417,6 +434,60 @@ import UIKit
       #expect((hosted.columns.viewController(for: .inspector) != nil) == stands, "\(width)")
       #expect(hosted.columns.isShowing(.inspector) == stands, "\(width)")
     }
+  }
+
+  @Test func touchingTheFieldOfTheScreenAtRestOpensItWhereItStands() async throws {
+    let hosted = try await HostedColumns(wide: true)
+    defer { hosted.close() }
+    let resting = try #require(hosted.main.viewControllers.first as? HostedScreen)
+    let route = hosted.stack.rest
+    // At rest no change of size puts the cursor in it.
+    for wide in [false, true] {
+      try await hosted.resize(wide: wide)
+      #expect(hosted.main.viewControllers == [resting])
+      #expect(hosted.stack.path.isEmpty)
+    }
+    let field = try await hosted.field()
+    #expect(!field.isFirstResponder)
+    #expect(field.becomeFirstResponder())
+    try await hosted.until { hosted.stack.path == [.landing(route)] }
+    #expect(resting.named == .landing(route) && resting.atRest == nil)
+    for wide in [false, true] {
+      try await hosted.resize(wide: wide)
+      #expect(hosted.main.viewControllers == [resting], "no screen is made afresh")
+      #expect(try await hosted.field() === field)
+      #expect(field.isFirstResponder, "nor is the keyboard put down")
+      #expect(!hosted.listingAlone)
+    }
+    // Its keyboard put down, it stays open, and down.
+    field.resignFirstResponder()
+    for wide in [false, true, false] {
+      try await hosted.resize(wide: wide)
+      #expect(hosted.stack.path == [.landing(route)])
+      #expect(!field.isFirstResponder)
+      #expect(!hosted.listingAlone)
+    }
+    // Returned from, nothing is open, and another rests.
+    hosted.sidebar.popViewController(animated: true)
+    try await hosted.until { hosted.stack.path.isEmpty && hosted.listingAlone && hosted.held == [nil] }
+    #expect((hosted.main.viewControllers.first as? HostedScreen)?.atRest == hosted.stack.rest)
+    #expect(hosted.main.viewControllers != [resting])
+  }
+
+  @Test func composingGivesTheScreenAfresh() async throws {
+    let hosted = try await HostedColumns(wide: true)
+    defer { hosted.close() }
+    let resting = hosted.main.viewControllers
+    hosted.stack.compose()
+    try await hosted.settle()
+    #expect(hosted.held == hosted.stack.path.map(Optional.some))
+    let composed = hosted.main.viewControllers
+    #expect(composed != resting)
+    hosted.stack.compose()
+    try await hosted.settle()
+    #expect(hosted.main.viewControllers != composed, "and again over itself")
+    try await hosted.resize(wide: false)
+    #expect(!hosted.listingAlone, "it is open")
   }
 
   @Test func theListingsFootStandsWhileTheListingDoes() async throws {

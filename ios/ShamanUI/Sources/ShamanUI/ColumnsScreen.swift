@@ -65,7 +65,7 @@ struct ColumnsScreen: View {
         open: { [stack] pushed in AnyView(PushedScreen(pushed: pushed, stack: stack)) },
         rest: { [stack] route in
           AnyView(
-            NewSessionScreen(model: stack.landing(for: route), stack: stack, writing: false)
+            NewSessionScreen(model: stack.landing(for: route), stack: stack, atRest: route)
               .noticeBanner())
         },
         aside: AnyView(AsideScreen(stack: stack)),

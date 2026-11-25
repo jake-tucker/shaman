@@ -1,7 +1,8 @@
 import ShamanCore
 import SwiftUI
 
-/// The new-session screen, which the listing's compose button pushes: the Landing, shaped as an empty open Session.
+/// The new-session screen, which the listing's compose button opens, and which the main view holds at rest while nothing
+/// is open: the Landing, shaped as an empty open Session.
 /// The navigation bar reads "New session" over where it will begin, the middle names the Workspace, and the composer
 /// at its foot is up with the keyboard on arrival, but where the display is short, as the keyboard would cover the
 /// middle. A first Prompt turns this same screen into the Session: the Provisional Session at once, and the real one in
@@ -12,14 +13,19 @@ import SwiftUI
 struct NewSessionScreen: View {
   let model: NewSessionModel
   let stack: SessionStack
-  /// Whether the reader arrives writing, as one beginning a Session does; but not at rest, while nothing is open.
-  var writing = true
+  /// What the stack names it while it is at rest, nothing being open, so that the reader does not arrive writing, as
+  /// one beginning a Session does. Touching its field opens it.
+  var atRest: LandingRoute?
 
   var body: some View {
     if let begun = model.begun {
       SessionScreen(model: begun, stack: stack)
     } else {
-      LandingView(model: model, arrivesWriting: writing)
+      LandingView(model: model, arrivesWriting: atRest == nil) {
+        if let atRest {
+          stack.openRest(atRest)
+        }
+      }
     }
   }
 }
@@ -28,6 +34,8 @@ struct NewSessionScreen: View {
 private struct LandingView: View {
   @Bindable var model: NewSessionModel
   let arrivesWriting: Bool
+  /// Told as the cursor is put in the field.
+  let touched: () -> Void
   @FocusState private var writing: Bool
   @Environment(\.pushScreen) private var pushScreen
   @Environment(\.verticalSizeClass) private var height
@@ -84,6 +92,11 @@ private struct LandingView: View {
     .onAppear {
       if arrivesWriting, height != .compact {
         writing = true
+      }
+    }
+    .onChange(of: writing) {
+      if writing {
+        touched()
       }
     }
   }
