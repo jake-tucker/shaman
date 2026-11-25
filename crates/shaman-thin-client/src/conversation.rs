@@ -248,6 +248,21 @@ impl<'a> Read<'a> {
         self.turns.iter().find(|held| held.id == turn)
     }
 
+    /// The Turn whose card stands last in the conversation, where any does.
+    pub(crate) fn latest(&self) -> Option<&'a Turn> {
+        let cards = card_positions(&self.entries, &self.roles, self.turns);
+        let position = |turn: &Turn| {
+            cards
+                .iter()
+                .find(|(_, before)| before.iter().any(|held| held.id == turn.id))
+                .map_or(self.entries.len(), |(position, _)| *position)
+        };
+        self.turns
+            .iter()
+            .filter(|turn| needs_card(turn, &self.entries, &self.roles))
+            .max_by_key(|turn| position(turn))
+    }
+
     /// The work of `turn` behind its card, in the order it happened: its
     /// Activities, and the Agent's Messages along the way among them.
     pub(crate) fn work(&self, turn: TurnId) -> impl Iterator<Item = Entry<'a>> + '_ {

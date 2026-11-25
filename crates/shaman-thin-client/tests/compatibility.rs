@@ -378,6 +378,8 @@ async fn sessions_and_their_trees_across_the_gap_say_which_side_to_update_and_he
          one: update the app, and it is read as soon as it can be."
     );
     assert!(plain(words.as_str()));
+    let work = opened.latest_work();
+    work.until(|work| work.empty.as_ref() == Some(words)).await;
     let frame = opened
         .frame_until(|frame| {
             frame

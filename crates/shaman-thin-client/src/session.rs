@@ -146,8 +146,14 @@ impl OpenSession {
 
     /// Tells `listener` the work of the Turn `turn` names, as a card hands
     /// it, and again on every change, until the subscription is cancelled,
-    /// as its screen goes.
-    pub fn watch_work(&self, turn: String, listener: Arc<dyn WorkListener>) -> Arc<Subscription> {
+    /// as its screen goes. With no Turn named it is the work of the latest
+    /// Turn that has a card. Where no Turn has one, or the Session is not
+    /// read, it is no work, and a line saying so.
+    pub fn watch_work(
+        &self,
+        turn: Option<String>,
+        listener: Arc<dyn WorkListener>,
+    ) -> Arc<Subscription> {
         let (attachment, filled) = self.attached.attach(Target::Work(turn));
         self.told(attachment, filled, move |filled| {
             if let Filled::Work(work) = filled {
@@ -474,8 +480,8 @@ pub trait TreeListener: Send + Sync {
 /// What a screen pushed from an open Session attached to it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Target {
-    /// The work of the Turn named.
-    Work(String),
+    /// The work of the Turn named, or of the latest.
+    Work(Option<String>),
     /// The whole of the Activity named.
     Detail(String),
 }
@@ -489,24 +495,30 @@ enum Filled {
 
 impl Target {
     /// What it is filled with from `snapshot`, of a Session on the Remote
-    /// `remote` names, a Session it names on another Server opened through
-    /// `pairings`.
+    /// `remote` names, or why that is not read, a Session it names on another
+    /// Server opened through `pairings`.
     fn fill(
         &self,
-        snapshot: Option<&SessionSnapshot>,
+        snapshot: Result<&SessionSnapshot, &str>,
         remote: &str,
         pairings: &Pairings,
     ) -> Filled {
         match self {
-            Self::Work(turn) => Filled::Work(work::turn_work(snapshot, turn, remote, pairings)),
-            Self::Detail(activity) => Filled::Detail(work::activity_detail(snapshot, activity)),
+            Self::Work(turn) => {
+                Filled::Work(work::turn_work(snapshot, turn.as_deref(), remote, pairings))
+            }
+            Self::Detail(activity) => {
+                Filled::Detail(work::activity_detail(snapshot.ok(), activity))
+            }
         }
     }
 
     /// What it is filled with where its Session will never be read.
     fn unread(&self) -> Filled {
         match self {
-            Self::Work(_) => Filled::Work(work::gone_work()),
+            Self::Work(Some(_)) => Filled::Work(work::gone_work()),
+            // Never read for its Remote being held by none.
+            Self::Work(None) => Filled::Work(work::no_work(GONE_REMOTE)),
             Self::Detail(_) => Filled::Detail(work::gone_detail()),
         }
     }
@@ -559,8 +571,8 @@ impl Attachments {
     }
 
     /// Fills every attachment from `snapshot`, of a Session on the Remote
-    /// `remote` names, telling only those it changes.
-    fn fill(&self, snapshot: Option<&SessionSnapshot>, remote: &str, pairings: &Pairings) {
+    /// `remote` names, or why that is not read, telling only those it changes.
+    fn fill(&self, snapshot: Result<&SessionSnapshot, &str>, remote: &str, pairings: &Pairings) {
         for (target, filling) in self.held().filling.values() {
             let filled = target.fill(snapshot, remote, pairings);
             filling.send_if_modified(|current| {
@@ -1970,10 +1982,8 @@ impl Reader {
                 (None, Some(provisional)) => frame::provisional_items(provisional),
                 // Not read, and not to be until the side behind is updated:
                 // why stands where the conversation would.
-                (None, None) => match *self.behind.borrow() {
-                    Some(behind) => conversation::unread(
-                        &behind.unread(self.listed.origin.as_deref().unwrap_or("The server")),
-                    ),
+                (None, None) => match self.behind_words() {
+                    Some(words) => conversation::unread(&words),
                     None => conversation::loading(),
                 },
             },
@@ -1996,8 +2006,34 @@ impl Reader {
     /// it last read.
     fn fill_attached(&self) {
         let pairings = self.pairings.borrow().clone();
-        self.attached
-            .fill(self.snapshot.as_ref(), &self.remote, &pairings);
+        match &self.snapshot {
+            Some(snapshot) => self.attached.fill(Ok(snapshot), &self.remote, &pairings),
+            None => {
+                let words = self.unread_words();
+                self.attached.fill(Err(&words), &self.remote, &pairings);
+            }
+        }
+    }
+
+    /// What is said where the work of a Session not read would be: why it is
+    /// gone or cannot be read, that one being begun has done nothing yet, or
+    /// that it is loading.
+    fn unread_words(&self) -> String {
+        if let Some(gone) = &self.gone {
+            return gone.clone();
+        }
+        if self.local().provisional.is_some() {
+            return work::NOTHING_YET.to_owned();
+        }
+        self.behind_words()
+            .unwrap_or_else(|| work::LOADING.to_owned())
+    }
+
+    /// Why the Session is not to be read until the side behind is updated,
+    /// where either is.
+    fn behind_words(&self) -> Option<String> {
+        (*self.behind.borrow())
+            .map(|behind| behind.unread(self.listed.origin.as_deref().unwrap_or("The server")))
     }
 
     /// What keeps the Session apart for now, where anything does: its
@@ -2054,6 +2090,7 @@ impl Reader {
         // A Session gone holds its tree no more.
         self.tree = None;
         self.show_frame();
+        self.fill_attached();
         loop {
             tokio::select! {
                 changed = local.changed() => match changed {
@@ -2311,7 +2348,7 @@ mod tests {
             ]),
         )]));
         let attached = Arc::new(Attachments::default());
-        let (_, mut filled) = attached.attach(Target::Work(turn_id.to_string()));
+        let (_, mut filled) = attached.attach(Target::Work(Some(turn_id.to_string())));
         let _reader = reading(
             &runtime,
             &listings,
@@ -2801,7 +2838,8 @@ mod tests {
         listings.hold(desk);
         let attached = Arc::new(Attachments::default());
         // Attached before the reader is so much as spawned.
-        let (_, mut filled) = attached.attach(Target::Work(TurnId::new().to_string()));
+        let (_, mut filled) = attached.attach(Target::Work(Some(TurnId::new().to_string())));
+        let (_, mut latest) = attached.attach(Target::Work(None));
         let transport = Arc::new(ScriptedTransport::new(Vec::new()));
         let _reader = reading(
             &runtime,
@@ -2815,6 +2853,10 @@ mod tests {
             panic!("a Turn's work");
         };
         assert_eq!(work.empty.as_deref(), Some("Loading"), "nothing read yet");
+        let Filled::Work(latest) = filled_within(&runtime, &mut latest) else {
+            panic!("the latest Turn's work");
+        };
+        assert_eq!(latest.empty.as_deref(), Some("Loading"));
     }
 
     #[test]
@@ -2844,7 +2886,7 @@ mod tests {
         );
         let (_, mut work) = opened
             .attached
-            .attach(Target::Work(TurnId::new().to_string()));
+            .attach(Target::Work(Some(TurnId::new().to_string())));
         let Filled::Work(work) = filled_within(&runtime, &mut work) else {
             panic!("a Turn's work");
         };
@@ -2852,6 +2894,11 @@ mod tests {
             work.empty.as_deref(),
             Some("This turn is no longer in the session")
         );
+        let (_, mut latest) = opened.attached.attach(Target::Work(None));
+        let Filled::Work(latest) = filled_within(&runtime, &mut latest) else {
+            panic!("the latest Turn's work");
+        };
+        assert_eq!(latest.empty.as_deref(), Some(GONE_REMOTE));
         let (_, mut detail) = opened.attached.attach(Target::Detail(
             shaman_protocol::ActivityId::new().to_string(),
         ));
@@ -3095,7 +3142,7 @@ mod tests {
             answering(Arc::new(|_, _| Box::pin(std::future::pending()))),
         );
         let attached = || opened.attached.held().filling.len();
-        let work = opened.watch_work(TurnId::new().to_string(), Arc::new(Deaf));
+        let work = opened.watch_work(Some(TurnId::new().to_string()), Arc::new(Deaf));
         let detail = opened.watch_detail(
             shaman_protocol::ActivityId::new().to_string(),
             Arc::new(Deaf),

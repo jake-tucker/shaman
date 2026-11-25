@@ -81,9 +81,14 @@ impl Built {
     }
 
     fn work(&self, turn: TurnId) -> TurnWork {
+        self.work_of(Some(turn))
+    }
+
+    /// The work of the Turn `turn`, or of the latest.
+    fn work_of(&self, turn: Option<TurnId>) -> TurnWork {
         turn_work(
-            Some(&self.snapshot),
-            &turn.to_string(),
+            Ok(&self.snapshot),
+            turn.map(|turn| turn.to_string()).as_deref(),
             REMOTE,
             &crate::tree::Pairings::default(),
         )
@@ -225,6 +230,52 @@ fn a_turns_work_lists_its_activities_in_order_with_the_agents_messages_and_leave
 }
 
 #[test]
+fn with_no_turn_named_the_work_is_the_latest_turns_and_says_where_there_is_none() {
+    let mut built = Built::new();
+    let nothing = TurnWork {
+        title: String::new(),
+        items: Vec::new(),
+        empty: Some("Nothing done yet".to_owned()),
+    };
+    assert_eq!(built.work_of(None), nothing, "no Turn at all");
+
+    // A settled Turn that did no work has no card, and is no Turn to read.
+    let answered = built.turn(TurnStatus::Completed, Some(1_000));
+    built.message(answered, MessageRole::User, "Hello");
+    built.message(answered, MessageRole::Agent, "Hello.");
+    assert_eq!(built.work_of(None), nothing);
+
+    let first = built.turn(TurnStatus::Completed, Some(2_000));
+    built.message(first, MessageRole::User, "Go");
+    built.activity(command(first, "cargo test", ActivityStatus::Completed));
+    assert_eq!(built.work_of(None), built.work(first));
+
+    // One just begun, with nothing of its own yet, is the latest.
+    let next = built.turn(TurnStatus::Active, None);
+    assert_eq!(built.work_of(None), built.work(next));
+    assert_eq!(built.work_of(None).title, "Working");
+    built.message(next, MessageRole::User, "And again");
+    assert_eq!(built.work_of(None), built.work(next));
+}
+
+#[test]
+fn the_work_of_a_session_not_read_is_why_it_is_not() {
+    for turn in [None, Some(TurnId::new().to_string())] {
+        let work = turn_work(
+            Err("This session cannot be read yet"),
+            turn.as_deref(),
+            REMOTE,
+            &crate::tree::Pairings::default(),
+        );
+        assert_eq!((work.title.as_str(), work.items.len()), ("", 0));
+        assert_eq!(
+            work.empty.as_deref(),
+            Some("This session cannot be read yet")
+        );
+    }
+}
+
+#[test]
 fn a_live_turns_work_reads_working_or_waiting_and_says_where_it_has_done_nothing_yet() {
     let mut built = Built::new();
     let turn = built.turn(TurnStatus::Active, None);
@@ -264,8 +315,8 @@ fn a_live_turns_work_reads_working_or_waiting_and_says_where_it_has_done_nothing
 fn a_turn_not_read_yet_or_no_longer_held_says_so_and_so_does_an_activity() {
     assert_eq!(
         turn_work(
-            None,
-            &TurnId::new().to_string(),
+            Err(LOADING),
+            Some(&TurnId::new().to_string()),
             REMOTE,
             &crate::tree::Pairings::default()
         )
@@ -277,8 +328,8 @@ fn a_turn_not_read_yet_or_no_longer_held_says_so_and_so_does_an_activity() {
     for reference in [TurnId::new().to_string(), "not a turn".to_owned()] {
         assert_eq!(
             turn_work(
-                Some(&built.snapshot),
-                &reference,
+                Ok(&built.snapshot),
+                Some(&reference),
                 REMOTE,
                 &crate::tree::Pairings::default()
             )
@@ -1032,7 +1083,12 @@ fn a_subsessions_row_opens_it_where_this_phone_holds_its_server_and_says_why_not
         name: "lab".to_owned(),
         paths: Some(shaman_protocol::WorkspacePaths::default()),
     }]);
-    let work = turn_work(Some(&built.snapshot), &turn.to_string(), REMOTE, &pairings);
+    let work = turn_work(
+        Ok(&built.snapshot),
+        Some(&turn.to_string()),
+        REMOTE,
+        &pairings,
+    );
     let row = |title: &str| {
         work.items
             .iter()

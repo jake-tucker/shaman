@@ -31,12 +31,14 @@ use crate::conversation::{
 /// A Turn's work, on the screen its card pushes.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct TurnWork {
-    /// How the Turn settled and how long it took, or that it works.
+    /// How the Turn settled and how long it took, or that it works; empty
+    /// where there is none to say it of.
     pub title: String,
     /// Its work, in the order it happened.
     pub items: Vec<WorkItem>,
-    /// Said where there is no work to show: none done yet, the Session not
-    /// yet read, or the Turn no longer in it.
+    /// Said where there is no work to show: none done yet, in the Turn or in
+    /// a Session with no Turn at all, why the Session is not read, or the
+    /// Turn no longer in it.
     pub empty: Option<String>,
 }
 
@@ -124,7 +126,10 @@ pub enum BodyStyle {
 }
 
 /// Said where a Session has not been read yet.
-const LOADING: &str = "Loading";
+pub(crate) const LOADING: &str = "Loading";
+
+/// Said where a Turn, or a Session with none, has done nothing yet.
+pub(crate) const NOTHING_YET: &str = "Nothing done yet";
 
 /// Said where a Turn handed back is no longer in its Session.
 const GONE_TURN: &str = "This turn is no longer in the session";
@@ -189,25 +194,30 @@ fn subsession_opened(
     }
 }
 
-/// The work of the Turn `turn` names, as `snapshot` of a Session on the Remote
-/// `remote` names holds it, or none read yet, a Session it names on another
-/// Server opened through `pairings`.
+/// The work of the Turn `turn` names, or of the latest that has a card where
+/// it names none, as `snapshot` of a Session on the Remote `remote` names holds
+/// it, or why that is not read, a Session it names on another Server opened
+/// through `pairings`.
 pub(crate) fn turn_work(
-    snapshot: Option<&SessionSnapshot>,
-    turn: &str,
+    snapshot: Result<&SessionSnapshot, &str>,
+    turn: Option<&str>,
     remote: &str,
     pairings: &crate::tree::Pairings,
 ) -> TurnWork {
-    let Some(snapshot) = snapshot else {
-        return TurnWork {
-            title: String::new(),
-            items: Vec::new(),
-            empty: Some(LOADING.to_owned()),
-        };
+    let snapshot = match snapshot {
+        Ok(snapshot) => snapshot,
+        Err(why) => return no_work(why),
     };
     let read = Read::of(snapshot);
-    let Some(turn) = referenced::<TurnId>(turn).and_then(|turn| read.turn(turn)) else {
-        return gone_work();
+    let turn = match turn {
+        Some(turn) => match referenced::<TurnId>(turn).and_then(|turn| read.turn(turn)) {
+            Some(turn) => turn,
+            None => return gone_work(),
+        },
+        None => match read.latest() {
+            Some(turn) => turn,
+            None => return no_work(NOTHING_YET),
+        },
     };
     let card = read.card(turn);
     let title = match card.outcome {
@@ -248,7 +258,7 @@ pub(crate) fn turn_work(
         .collect::<Vec<_>>();
     let empty = items.is_empty().then(|| {
         if turn.status.is_open() {
-            "Nothing done yet".to_owned()
+            NOTHING_YET.to_owned()
         } else {
             "Nothing done".to_owned()
         }
@@ -281,10 +291,15 @@ pub(crate) fn activity_detail(
 
 /// A Turn's work where its Session will never be read.
 pub(crate) fn gone_work() -> TurnWork {
+    no_work(GONE_TURN)
+}
+
+/// No Turn's work, `why` standing in its place.
+pub(crate) fn no_work(why: &str) -> TurnWork {
     TurnWork {
         title: String::new(),
         items: Vec::new(),
-        empty: Some(GONE_TURN.to_owned()),
+        empty: Some(why.to_owned()),
     }
 }
 

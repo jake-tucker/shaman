@@ -361,6 +361,9 @@ async fn a_turns_work_and_a_running_commands_detail_cross_while_their_screens_ar
         })
         .await;
     let card = &cards(&working.items)[0];
+    let latest = reading.latest_work();
+    latest.until(|work| work.items.len() == 2).await;
+    latest.subscription.cancel();
 
     // The card pushes the Turn's work.
     let work = reading.work(&card.work);
@@ -656,8 +659,10 @@ async fn a_session_its_server_no_longer_holds_says_it_is_gone() {
     phone.listing_until(|listing| listing.empty.is_some()).await;
 
     let reading = phone.open(&format!("{}/{}", desk.fingerprint(), SessionId::new()));
+    let work = reading.latest_work();
     let frame = reading.frame_until(|frame| frame.gone.is_some()).await;
     assert_eq!(frame.gone.as_deref(), Some("This session no longer exists"));
+    work.until(|work| work.empty == frame.gone).await;
 
     let reading = phone.open("not a reference");
     assert!(reading.frame().await.gone.is_some());

@@ -1262,10 +1262,18 @@ impl Reading {
     /// Attaches the work of the Turn `turn` names, as its screen does while
     /// it is up.
     pub fn work(&self, turn: &str) -> Attached<TurnWork> {
+        self.attach_work(Some(turn.to_owned()))
+    }
+
+    /// Attaches the work of the latest Turn, or the line where there is none,
+    /// as a thin Client's Aside does while the conversation holds no Turn.
+    pub fn latest_work(&self) -> Attached<TurnWork> {
+        self.attach_work(None)
+    }
+
+    fn attach_work(&self, turn: Option<String>) -> Attached<TurnWork> {
         let (heard, told) = watch::channel(Vec::new());
-        let subscription = self
-            .session
-            .watch_work(turn.to_owned(), Arc::new(Told(heard)));
+        let subscription = self.session.watch_work(turn, Arc::new(Told(heard)));
         Attached { told, subscription }
     }
 

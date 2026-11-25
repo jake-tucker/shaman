@@ -158,6 +158,11 @@ async fn a_first_prompt_turns_the_landing_into_the_session_it_begins_where_the_o
     );
     let bubble = conversation.items[0].id.clone();
     phone.acts_until(true).await;
+    // Its work is none yet, and nothing is loading.
+    let work = reading.latest_work();
+    let none = work.until(|_| true).await;
+    assert_eq!(none.empty.as_deref(), Some("Nothing done yet"));
+    assert_eq!((none.title.as_str(), none.items.len()), ("", 0));
 
     gate.open_now();
     let frame = reading
