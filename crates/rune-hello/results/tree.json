@@ -1,0 +1,162 @@
+{
+  "accessibility": {
+    "bounds": [
+      0.0,
+      0.0,
+      320.0,
+      200.0
+    ],
+    "children": [
+      {
+        "bounds": [
+          130.4,
+          72.9,
+          59.3,
+          16.3
+        ],
+        "name": "Lights off",
+        "role": "label"
+      },
+      {
+        "actions": [
+          "click",
+          "focus"
+        ],
+        "bounds": [
+          141.0,
+          105.1,
+          38.0,
+          22.0
+        ],
+        "key": "switch",
+        "name": "Lights",
+        "role": "switch",
+        "states": [
+          "unchecked"
+        ]
+      },
+      {
+        "bounds": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "role": "status",
+        "states": [
+          "live-polite"
+        ]
+      }
+    ],
+    "name": "Hello",
+    "role": "window"
+  },
+  "anim_t": 0.0,
+  "animating": false,
+  "dark_system": true,
+  "elements": [
+    {
+      "blur": 0.0,
+      "fill": "#121314ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0",
+      "radius": 0.0,
+      "rect": [
+        0.0,
+        0.0,
+        320.0,
+        200.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#eff0f2ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#0",
+      "radius": 0.0,
+      "rect": [
+        130.38,
+        72.88,
+        59.23,
+        16.25
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Lights off",
+      "textStyle": {
+        "family": "Inter",
+        "italic": false,
+        "lineHeight": 16.25,
+        "size": 13.0,
+        "tracking": 0.0,
+        "weight": 600.0
+      }
+    },
+    {
+      "blur": 0.0,
+      "fill": "#ffffff16",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "switch",
+      "label": "Lights",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/switch",
+      "radius": 11.0,
+      "rect": [
+        141.0,
+        105.13,
+        38.0,
+        22.0
+      ],
+      "role": "switch",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#fafafaff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "knob",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/switch/knob",
+      "radius": 9.0,
+      "rect": [
+        143.0,
+        107.13,
+        18.0,
+        18.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    }
+  ],
+  "reduced_motion": false,
+  "scale": 2.0,
+  "t": 0.0,
+  "time_scale": 1.0,
+  "title": "Hello",
+  "viewport": [
+    320.0,
+    200.0
+  ],
+  "warnings": []
+}

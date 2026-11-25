@@ -1,0 +1,16 @@
+### aarch64-apple-darwin
+- `rustc 1.98.1 (48a229cea 2026-09-01)`, host `aarch64-apple-darwin`
+- PASS `build-clean` in 182s
+- debug executable: 134195416 bytes
+- PASS `build-incremental` in 4s
+- PASS `build-probe` in 4s
+- probe's debug executable: 143344760 bytes
+- PASS `test` in 3s
+- PASS `list-scenes` in 0s
+- PASS `snap-off` in 1s
+- PASS `snap-on` in 1s
+- PASS `tree` in 0s
+- PASS `snap-probe` in 2s
+- PASS `build-dist` in 608s
+- dist executable: 22109776 bytes
+- probe's dist executable, which holds kit and a 2.5 MB font: 25942192 bytes
