@@ -10,7 +10,6 @@ import UIKit
   let window: UIWindow
   private let host: UIHostingController<AnyView>
   private let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-  private var link: CADisplayLink?
   private var watched: UIView?
   /// How far above the display's bottom edge the field's box was drawn at each frame.
   private var stood: [CGFloat] = []
