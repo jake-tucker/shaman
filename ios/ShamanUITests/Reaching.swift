@@ -71,6 +71,24 @@ extension XCUIApplication {
     return element.isHittable
   }
 
+  /// Writes `text` over what the text field `identifier` holds, once it is on screen, and presses Return.
+  ///
+  /// Return is pressed, and what comes of it waited for, only once the field reads `text`: typing is told as done when
+  /// it has been sent, which on a loaded Mac is before the app has taken the last of it.
+  func write(_ text: String, over identifier: String, file: StaticString = #filePath, line: UInt = #line) {
+    let field = textFields[identifier]
+    XCTAssertTrue(field.waitForExistence(timeout: 10), file: file, line: line)
+    // At its trailing end, where what it holds ends, so every character of it is deleted.
+    field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+    let held = field.value as? String ?? ""
+    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: held.count) + text)
+    let written = textFields.matching(identifier: identifier)
+      .waitForOne(NSPredicate(format: "value == %@", text))
+    XCTAssertTrue(
+      written, "\(identifier) reads \(field.value ?? "nothing") and not \(text)", file: file, line: line)
+    field.typeText("\n")
+  }
+
   /// Swipes the sheet on top away by its grabber, as a reader does.
   func swipeSheetAway(file: StaticString = #filePath, line: UInt = #line) {
     let grabber = buttons["Sheet Grabber"]

@@ -51,12 +51,7 @@ final class ServersTests: XCTestCase {
   /// Writes `name` over the name of the Remote `remote` in its row, and keeps it.
   @MainActor
   private func rename(_ remote: String, to name: String, in app: XCUIApplication) {
-    let field = app.textFields["server.\(remote)"]
-    XCTAssertTrue(field.waitForExistence(timeout: 10))
-    // At its trailing end, where the name ends, so every character of it is deleted.
-    field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
-    let written = field.value as? String ?? ""
-    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: written.count) + name + "\n")
+    app.write(name, over: "server.\(remote)")
   }
 
   /// What the core says of its own accord, beginning `words`, wherever it stands.

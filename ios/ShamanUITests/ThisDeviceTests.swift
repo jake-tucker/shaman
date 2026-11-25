@@ -45,14 +45,17 @@ final class ThisDeviceTests: XCTestCase {
     return shown.value as? String ?? ""
   }
 
+  /// Has the core keep `name` as this device's, over one it refuses, whose refusal goes only once the other is kept.
+  /// A run of the app ended any sooner may not have kept it.
   @MainActor
   private func rename(_ app: XCUIApplication, to name: String) {
-    let field = app.textFields["device.name"]
-    XCTAssertTrue(field.waitForExistence(timeout: 10))
-    // At its trailing end, where the name ends, so every character of it is deleted.
-    field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
-    let written = field.value as? String ?? ""
-    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: written.count) + name + "\n")
+    app.write("everywhere", over: "device.name")
+    let refusal = app.staticTexts["device.name.refusal"]
+    XCTAssertTrue(refusal.waitForExistence(timeout: 10))
+    XCTAssertEqual(refusal.label, "\"everywhere\" names every server at once, so nothing may be named so")
+    attach("A refused name")
+    app.write(name, over: "device.name")
+    XCTAssertTrue(refusal.waitForNonExistence(timeout: 10))
   }
 
   @MainActor
@@ -64,14 +67,7 @@ final class ThisDeviceTests: XCTestCase {
     XCTAssertTrue(field.waitForExistence(timeout: 10))
     XCTAssertEqual(field.value as? String, "iPhone")
 
-    rename(app, to: "everywhere")
-    let refusal = app.staticTexts["device.name.refusal"]
-    XCTAssertTrue(refusal.waitForExistence(timeout: 10))
-    XCTAssertEqual(refusal.label, "\"everywhere\" names every server at once, so nothing may be named so")
-    attach("A refused name")
-
     rename(app, to: "Pocket")
-    XCTAssertTrue(refusal.waitForNonExistence(timeout: 10))
     XCTAssertEqual(field.value as? String, "Pocket")
 
     app.terminate()

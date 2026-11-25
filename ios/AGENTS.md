@@ -309,9 +309,11 @@ and of the display the app is on, as `app.screenshot()` is black on an open Duo 
 for where a drag begins and ends, and `app.window` to swipe over, as the app's own frame lies on its side on an open
 Duo; `app.back` for Back, which is in no navigation bar where the bar is vertical; `app.scrolled(to:)` before asserting
 on or tapping what stands in a list and may be further along it, given `over:` the sheet or the column where more than
-one list is on screen, and `at:` where what floats over the list covers its middle; `app.swipeSheetAway()`; and
-`app.leaveTheFront()` in place of the Home button, which does nothing on a Duo. On an open Duo in portrait the picture
-is upright in the one portrait a posed run reaches, turned right once, and on its head in the other.
+one list is on screen, and `at:` where what floats over the list covers its middle; `app.swipeSheetAway()`;
+`app.leaveTheFront()` in place of the Home button, which does nothing on a Duo; and `app.write(_:over:)` to write over
+what a field holds, which waits for the field to read it, as typing is told as done before the app has taken the last of
+it. On an open Duo in portrait the picture is upright in the one portrait a posed run reaches, turned right once, and on
+its head in the other.
 
 **Posed.** What only an open Duo shows is held by a posed run, which poses this checkout's Duo through Device Hub, runs
 the tests written for that pose, one pose from start to finish, and closes it again. Run it before merging a change to

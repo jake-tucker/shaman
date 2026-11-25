@@ -128,9 +128,7 @@ final class LivePairingTests: XCTestCase {
     app.buttons["home.servers"].tap()
     let field = app.textFields.matching(NSPredicate(format: "identifier BEGINSWITH 'server.'")).firstMatch
     XCTAssertTrue(field.waitForExistence(timeout: 10))
-    let name = field.value as? String ?? ""
-    field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
-    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: name.count) + "renamed\n")
+    app.write("renamed", over: field.identifier)
     let renamed = app.textFields["server.renamed"]
     XCTAssertTrue(renamed.waitForExistence(timeout: 10), "renamed from its row")
     let way = app.descendants(matching: .any)["server.renamed.way.0"]

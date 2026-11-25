@@ -29,14 +29,6 @@ final class PairingTests: XCTestCase {
     paste.tap()
   }
 
-  @MainActor
-  private func replace(_ field: XCUIElement, with text: String) {
-    XCTAssertTrue(field.waitForExistence(timeout: 10))
-    field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
-    let written = field.value as? String ?? ""
-    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: written.count) + text + "\n")
-  }
-
   /// The hostname the confirmation screen shows.
   @MainActor
   private func hostname(in app: XCUIApplication) -> String? {
@@ -69,8 +61,8 @@ final class PairingTests: XCTestCase {
     XCTAssertEqual(app.textFields["confirm.deviceName"].value as? String, "iPhone")
     attach("Confirming a pasted invite")
 
-    replace(app.textFields["confirm.remoteName"], with: "desk")
-    replace(app.textFields["confirm.deviceName"], with: "Pocket")
+    app.write("desk", over: "confirm.remoteName")
+    app.write("Pocket", over: "confirm.deviceName")
     shown("confirm.pair", in: app).tap()
 
     let beginsIn = app.descendants(matching: .any)["home.beginsIn"]
@@ -148,7 +140,7 @@ final class PairingTests: XCTestCase {
     XCTAssertEqual(shown("confirm.remoteName", in: app).value as? String, "workstation", "pre-filled")
     attach("An invite from a server already held")
 
-    replace(app.textFields["confirm.remoteName"], with: "studio")
+    app.write("studio", over: "confirm.remoteName")
     shown("confirm.pair", in: app).tap()
     // The listing stands in the hierarchy beneath the sheet, so it is read once the sheet has gone.
     XCTAssertTrue(app.navigationBars["Pair"].waitForNonExistence(timeout: 10), "paired, the sheet goes")
