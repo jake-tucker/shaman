@@ -50,12 +50,6 @@ extension XCUIApplication {
     let back = back.frame
     return back.midX > window.frame.maxX - 84 && !navigationBars.buttons["BackButton"].exists
   }
-
-  /// Back stands at the head of the window's leading edge, in a navigation bar.
-  var barStandsHorizontally: Bool {
-    let back = back.frame
-    return back.midY < 134 && back.midX < window.frame.midX && navigationBars.buttons["BackButton"].exists
-  }
 }
 
 /// The least a pose shows, over today's build: how the bar stands, the composer's field where Messages stands its own, a
@@ -64,9 +58,15 @@ extension XCUIApplication {
 enum PosedWalk {
   static func walk(_ pose: Pose, _ test: XCTestCase, barStandsVertically: Bool) throws {
     let app = try pose.launched(test, ["--fake", "longSession", "--open", "workstation-key/30"])
-    XCTAssertTrue(app.back.waitForExistence(timeout: 10))
-    XCTAssertEqual(app.barStandsVertically, barStandsVertically, "the bar down the side")
-    XCTAssertEqual(app.barStandsHorizontally, !barStandsVertically, "the bar across the head")
+    // The Session is the main view's root, so there is no Back; in the bar stands the Aside's button, where there is
+    // room for one, or the Sidebar's.
+    let button = app.buttons[barStandsVertically ? "session.aside" : "Show Sidebar"].firstMatch
+    XCTAssertTrue(button.waitForExistence(timeout: 10))
+    XCTAssertFalse(app.back.exists, "nothing to go back to")
+    let side = button.frame.midX > app.window.frame.maxX - 84
+    let head = button.frame.midY < 134 && button.frame.midX < app.window.frame.midX
+    XCTAssertTrue(
+      barStandsVertically ? side : head, "the bar \(barStandsVertically ? "down the side" : "across the head")")
 
     let last = app.descendants(matching: .any).matching(identifier: "session.agentMessage")
       .matching(NSPredicate(format: "label CONTAINS %@", "The last item of this Session")).firstMatch
@@ -74,7 +74,8 @@ enum PosedWalk {
     test.attach("The conversation, \(pose.rawValue)")
     test.fieldStands(22, aboveTheEdgeIn: app, "session.composer")
     let stood = last.frame.minY
-    let start = app.point(across: 0.5, down: 0.3)
+    let start = app.descendants(matching: .any)["session.conversation"]
+      .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
     start.press(
       forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 150)), withVelocity: .slow,
       thenHoldForDuration: 0.3)
