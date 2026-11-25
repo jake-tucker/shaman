@@ -1,6 +1,6 @@
 # Let a Client with no Server of its own pair as an ordinary Peer
 
-_Extended by ADR-0079, which decides how a thin Client stands at a Relay._
+_Extended by ADR-0079, which decides how a thin Client stands at a Relay. Narrowed by ADR-0083: the desktop app is never a thin Client, and is installed only where a Server is._
 
 _Amends ADR-0017's clause that a Client never dials a Remote itself, for a thin Client alone. Leaves ADR-0045 and ADR-0046 as they are: a Relay still carries bytes and holds no trust, and a Pairing is still formed only by redeeming an Invite._
 
