@@ -24,4 +24,20 @@ final class OneColumnTests: TurningTestCase {
     XCTAssertTrue(app.staticTexts["session.title"].waitForNonExistence(timeout: 10), "pushed over it")
     XCTAssertTrue(app.back.isHittable)
   }
+
+  @MainActor
+  func testTurnedTheFieldStandsAsItDoesUprightAndOnTheKeyboard() {
+    let keyboardStays = ["-AutomaticMinimizationEnabled", "NO"]
+    for (scenario, arguments, field) in [
+      ("paired", ["--open", "workstation-key/7"], "session.composer"), ("composing", ["--compose"], "landing.composer"),
+    ] {
+      let app = launched(scenario, arguments + keyboardStays, turned: true)
+      fieldStands(28, aboveTheEdgeIn: app, field)
+      attach("\(field) turned, in one column")
+      element(field, in: app).tap()
+      fieldStandsOnTheKeyboard(in: app, field)
+      attach("\(field) turned, the keyboard up")
+      app.terminate()
+    }
+  }
 }

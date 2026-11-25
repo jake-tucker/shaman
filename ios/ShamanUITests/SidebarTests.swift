@@ -87,4 +87,40 @@ final class SidebarTests: TurningTestCase {
     turn(.portrait, app)
     oneColumnStands(app, showing: "listing.scope")
   }
+
+  @MainActor
+  func testTheFieldStandsLowerBesideTheSidebarThanAlone() {
+    let keyboardStays = ["-AutomaticMinimizationEnabled", "NO"]
+    for (scenario, arguments, field, title) in [
+      ("paired", ["--open", "workstation-key/7"], "session.composer", "session.title"),
+      ("composing", ["--compose"], "landing.composer", "landing.title"),
+    ] {
+      let app = launched(scenario, arguments + keyboardStays, turned: true)
+      columnsStand(app, title: title)
+      fieldStands(22, aboveTheEdgeIn: app, field, "beside the Sidebar")
+      attach("\(field) beside the Sidebar")
+      if field == "session.composer" {
+        app.buttons["session.aside"].tap()
+        XCTAssertTrue(element("work.list", in: app).waitForExistence(timeout: 10))
+        fieldStands(22, aboveTheEdgeIn: app, field, "beside the Aside")
+        attach("\(field) beside the Aside")
+        app.buttons["session.aside"].tap()
+        columnsStand(app, title: title)
+      }
+      turn(.portrait, app)
+      fieldStands(28, aboveTheEdgeIn: app, field, "alone")
+      attach("\(field) alone")
+      turn(.landscapeRight, app)
+      columnsStand(app, title: title)
+      fieldStands(22, aboveTheEdgeIn: app, field, "beside the Sidebar again")
+      element(field, in: app).tap()
+      fieldStandsOnTheKeyboard(in: app, field)
+      attach("\(field) beside the Sidebar, the keyboard up")
+      app.terminate()
+    }
+    // And at rest.
+    let app = launched("composing", turned: true)
+    columnsStand(app, title: "landing.title")
+    fieldStands(22, aboveTheEdgeIn: app, "landing.composer", "at rest")
+  }
 }

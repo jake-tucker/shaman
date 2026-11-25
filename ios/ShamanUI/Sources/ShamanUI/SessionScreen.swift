@@ -26,8 +26,8 @@ struct SessionScreen: View {
     ConversationView(model: model) { pushed in
       stack?.lead(to: pushed)
     }
-    .safeAreaInset(edge: .bottom, spacing: 0) {
-      SessionFoot(model: model) { opens in
+    .composerFoot(model.frame.flatMap { $0.bar == nil && $0.composer == nil ? nil : $0 }) { frame in
+      SessionFoot(frame: frame, model: model) { opens in
         if let stack {
           if stack.review(opens, over: model.route) {
             showTree()
@@ -618,40 +618,36 @@ private struct QueuedBubble: View {
 /// The foot of an open Session: the line an Unreachable Origin leaves, the bar while the Session works, and the
 /// composer.
 private struct SessionFoot: View {
-  @Bindable var model: SessionModel
+  let frame: SessionFrame
+  let model: SessionModel
   /// Follows the bar's "Review" where it leads.
   let review: (ReviewOpens) -> Void
 
   var body: some View {
-    if let frame = model.frame, frame.bar != nil || frame.composer != nil {
-      VStack(spacing: 8) {
-        // Unreachable, or across a gap only updating one side bridges: the core's words say which.
-        if let line = frame.composer?.unreachable {
-          Label {
-            Text(verbatim: line)
-          } icon: {
-            Image(systemName: "exclamationmark.circle")
-          }
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .accessibilityElement(children: .combine)
-          .accessibilityIdentifier("session.unreachable")
+    VStack(spacing: 8) {
+      // Unreachable, or across a gap only updating one side bridges: the core's words say which.
+      if let line = frame.composer?.unreachable {
+        Label {
+          Text(verbatim: line)
+        } icon: {
+          Image(systemName: "exclamationmark.circle")
         }
-        if let bar = frame.bar {
-          BarView(bar: bar, stopping: model.stopping) {
-            Task { await model.stop() }
-          } review: {
-            review($0)
-          }
-        }
-        if let composer = frame.composer {
-          ComposerView(composer: composer, model: model)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("session.unreachable")
+      }
+      if let bar = frame.bar {
+        BarView(bar: bar, stopping: model.stopping) {
+          Task { await model.stop() }
+        } review: {
+          review($0)
         }
       }
-      .padding(.horizontal, 12)
-      .padding(.vertical, 8)
-      .background(.bar)
+      if let composer = frame.composer {
+        ComposerView(composer: composer, model: model)
+      }
     }
   }
 }

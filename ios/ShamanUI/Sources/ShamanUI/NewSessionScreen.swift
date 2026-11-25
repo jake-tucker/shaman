@@ -54,10 +54,8 @@ private struct LandingView: View {
     }
     .scrollDismissesKeyboard(.interactively)
     .accessibilityIdentifier("landing.screen")
-    .safeAreaInset(edge: .bottom, spacing: 0) {
-      if let landing = model.landing {
-        LandingFoot(landing: landing, model: model, writing: $writing)
-      }
+    .composerFoot(model.landing) { landing in
+      LandingFoot(landing: landing, model: model, writing: $writing)
     }
     .safeAreaInset(edge: .top) {
       if let banner = model.banner {
@@ -268,9 +266,6 @@ private struct LandingFoot: View {
           .accessibilityIdentifier("landing.invalid")
       }
     }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
-    .background(.bar)
   }
 }
 
