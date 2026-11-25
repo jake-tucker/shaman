@@ -1,7 +1,7 @@
 import ShamanCore
 import SwiftUI
 
-/// A Session pushed over the listing, read live as a conversation: the Title over where it stands, the user's
+/// A Session open, read live as a conversation: the Title over where it stands, the user's
 /// Messages as bubbles at the right, the Agent's as Markdown across the width, and each Turn's work behind one card.
 /// It appears at once with what the listing knows, a quiet loading mark standing where the conversation will be. At
 /// its foot the bar says what the work is doing, with Stop, above the composer, whose send steers a working Turn and

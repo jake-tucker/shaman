@@ -56,7 +56,7 @@ final class SessionStack {
     }
   }
 
-  /// The model of the new-session screen `route` pushed, made the first time it is asked for. The Session begun from
+  /// The model of the new-session screen `route` names, made the first time it is asked for. The Session begun from
   /// it is held as any pushed Session is, for as long as the screen is on the path.
   func landing(for route: LandingRoute) -> NewSessionModel {
     if let model = landings[route] {
@@ -184,18 +184,18 @@ final class SessionStack {
   }
 }
 
-/// A Session's screen pushed over the listing: each push its own, so the same Session pushed twice is two screens.
+/// A Session's screen, open or pushed over what is: each its own, so the same Session pushed twice is two screens.
 struct SessionRoute: Hashable {
   let session: String
   let push = UUID()
 }
 
-/// The new-session screen pushed over the listing: each push its own.
+/// The new-session screen, open or at rest: each its own.
 struct LandingRoute: Hashable {
   let push = UUID()
 }
 
-/// A screen pushed over the listing: a Session's, or a Turn's work or an Activity's whole pushed from one, which
+/// A screen the path names: a Session's, or a Turn's work or an Activity's whole pushed from one, which
 /// read through the Session `route` names for as long as they are up; or the new-session screen.
 enum Pushed: Hashable {
   case session(SessionRoute)

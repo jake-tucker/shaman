@@ -280,7 +280,7 @@ final class NewSessionModel {
   private(set) var invalid: String?
   /// Why beginning failed otherwise, in the core's words, shown over the screen.
   private(set) var banner: String?
-  /// Told of the Session begun, so the navigation stack holds it as it holds a Session pushed.
+  /// Told of the Session begun, so what is open holds it as it holds a Session pushed.
   @ObservationIgnored var adopted: ((SessionModel) -> Void)?
 
   init(core: any Core) {

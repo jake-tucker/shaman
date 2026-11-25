@@ -11,7 +11,7 @@ app's shape. Everything here is built from a terminal on a Mac with Xcode 27.2; 
 | `Shaman.xcodeproj` | The project, in Xcode 27's JSON format (`project.xcproj`) with folders synced to disk, and the shared `Shaman` scheme |
 | `Shaman/` | The `Shaman` app target: `@main`, the choice of live core or fake, the Info settings |
 | `ShamanUI/` | A local package: the views, the `Core` protocol the app reaches the core through, `LiveCore`, `FakeCore`, and the adapters around the core. Its unit tests are `ShamanUIUnitTests` |
-| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the conversation's list under a ticking display link and what Textual draws a Message's blocks as |
+| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the conversation's list under a ticking display link, the columns collapsing and expanding and what Textual draws a Message's blocks as |
 | `ShamanUITests/` | The XCUITest target |
 | `ShamanCore/` | The core and its generated Swift, written by `scripts/build-ios-core.sh`; ignored by git |
 | `build/` | Where the commands below put what `xcodebuild` makes; ignored by git |
@@ -174,7 +174,8 @@ Swift's scene storage, which iOS writes a moment after the app leaves the front 
 first listing a launch shows returns there; a phone holding no Remote forgets it, so pairing again lands on the new
 listing. To see it, open something, send the app to the background (launch another app, such as
 `com.apple.Preferences`), wait a few seconds, `xcrun simctl terminate` it and launch it again without `--open` or
-`--compose`: either replaces the kept stack with its own screen, though the kept scope still narrows the listing.
+`--compose`: either replaces the kept stack with its own screen, though the kept scope still narrows the listing. So
+does `SHAMAN_INVITE`, debug only, with the listing, which presents the Invite's confirmation.
 `--forget-scene` opens as a new scene would, and keeps afresh from there: launch with it, send the app to the background
 and end it to leave nothing behind, as `ColdStartTests` does after each test. The iOS 27.2 simulator keeps a scene's
 storage when the app is swiped away in the app switcher too, so that the launch after a swipe away starts at the listing
@@ -412,9 +413,24 @@ If the phone is locked, stop and ask for it to be unlocked.
   subscription.
 - What is the app's and no window's, the front, background time and the network path, is followed once by `AppFollower`,
   which the app makes as it launches. A view tells the core nothing of its own `scenePhase`.
+- Every iPhone's screens stand in one container, `Columns`: UIKit's split view, with a navigation controller in the
+  Sidebar's column and another in the main view's, and each screen hosted in one. `ColumnsScreen`, above it, follows
+  the listing and keeps the scene. What is open is `SessionStack.path` and nothing else: a screen is pushed, popped or
+  replaced by writing it, and what the reader pops is read back into it. That the reader has returned to the listing is
+  told only by its navigation controller having shown it alone.
+- A hosted screen has no `NavigationStack` over it, so a `NavigationLink` in it is greyed out and a
+  `navigationDestination` pushes nothing. A row that leads to a screen is a `RowButton` that writes the path, and a
+  screen the path does not name, as the Workspace Picker, is pushed by the environment's `pushScreen` and popped by
+  `dismiss`. Nor does it inherit any environment: `ColumnsScreen` hands each what it and its sheets read, so a value
+  added for one to read is added there.
+- The split view's preferred display mode and split behaviour are set once, as it is made; it is given no least width
+  for the main view, with which it would not divide its columns at a fold; and its Sidebar's column is never hidden,
+  which would write the main view alone into what is preferred.
 - Everything the app keeps, the core keeps, in the one directory `CoreDirectory.prepare` makes and keeps out of
   backups, but for the scene's storage: what was open, as `KeptScene`, which iOS keeps for the scene and the core
-  never sees. Nothing goes in `UserDefaults` or `@AppStorage`.
+  never sees. Nothing goes in `UserDefaults` or `@AppStorage`. UIKit puts one key there itself, with no way not to:
+  `com.apple.UIKit.UISplitViewController.Root`, the columns' widths, once a split view has stood them side by side. The
+  workflow's check passes over that key alone.
 - The fake and every debug-only path stay behind `#if DEBUG`.
 - `ShamanUI` depends on one package from outside, Textual, which draws an agent Message's Markdown, and through it on
   two more, swift-concurrency-extras and swiftui-math. Textual is pinned exactly, and both `Package.resolved` files,
