@@ -336,9 +336,11 @@ than one is on screen, and `at:` where what floats over the list covers its midd
 `app.leaveTheFront()` in place of the Home button, which does nothing on a Duo; and `app.write(_:over:)` to write over
 what a field holds, which waits for the field to read it, as typing is told as done before the app has taken the last of
 it. Where the composer's field stands is asked by `fieldStands(_:aboveTheEdgeIn:_:)` and
-`fieldStandsOnTheKeyboard(in:_:)` (`Foot.swift`), the keyboard up by `-AutomaticMinimizationEnabled NO`, and how far
-from its column's edges a conversation stands by `conversationReads(_:in:)` (`Reads.swift`). On an open Duo in portrait
-the picture is upright in the one portrait a posed run reaches, turned right once, and on its head in the other.
+`fieldStandsOnTheKeyboard(in:_:)` (`Foot.swift`), the keyboard up by `-AutomaticMinimizationEnabled NO`, how far
+from its column's edges a conversation stands by `conversationReads(_:in:)` (`Reads.swift`), and where it is scrolled
+to by `standing(in:)` and `stands(_:in:_:)`, to the pixel, or line by line by `lines(in:)` (`Place.swift`), which reads
+a screenshot's words as no element is a line; Vision takes a second or two over one on the simulator. On an open Duo in
+portrait the picture is upright in the one portrait a posed run reaches, turned right once, and on its head in the other.
 
 **Posed.** What only an open Duo shows is held by a posed run, which poses this checkout's Duo through Device Hub, runs
 the tests written for that pose, one pose from start to finish, and closes it again. Run it before merging a change to
@@ -506,6 +508,14 @@ If the phone is locked, stop and ask for it to be unlocked.
   asks for by `readingSides()`, as the foot itself keeps no sides. Hold in state the margins alone, never what is worked
   out from a width: SwiftUI gives that a hair more or less each time it lays the screen out, so state of it lays the
   screen out again without end.
+- A conversation keeps its place through every change of the width its rows stand across. At its foot it stays there;
+  away from it the words at the top of what the reader sees stay at the top, and a round trip returns exactly. The list
+  holds a `ConversationPlace`, taken as someone scrolls or as a row measuring anew moves what they see, and from a
+  change of width until they next scroll it stands at that place each time it is laid out. A change of size comes as
+  several changes of width, so never take the place as the width changes. `ConversationGeometry` keeps the heights
+  measured across each of the last eight widths.
+- The conversation's list draws again itself what changed on screen, and never has UIKit reconfigure an item, which it
+  passes over now and then once a change of width was animated.
 - The split view's preferred display mode and split behaviour are set once, as it is made; it is given no least width
   for the main view, with which it would not divide its columns at a fold; and its Sidebar's column is never hidden,
   which would write the main view alone into what is preferred.
