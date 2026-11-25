@@ -145,7 +145,8 @@ newer Server sent, and in `/1` the running command's output grows a line at a ti
 fake Session is asked is answered as the core would answer it, after a moment: a Prompt holding "fail" is refused, one
 holding "gone" finds the Session gone, which pops its screen, and one holding "unanswered" is never answered, so its
 text stays in the composer with the line saying it may have been sent; answers to a Questionnaire holding "fail" are
-refused.
+refused. A Prompt sent to a Session at rest, as `/7` is, begins a Turn a moment later, which does nothing until it is
+stopped, so a test sees a new Turn begin; `/11` has none until its Prompt is stopped and sent again.
 
 ```sh
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake paired --open workstation-key/1
@@ -461,9 +462,13 @@ If the phone is locked, stop and ask for it to be unlocked.
   view's inspector column hold it only while it is shown, a Session is open and it has room, as a view controller set
   there is shown at once, and takes it out before a collapse, through which the system would stand it as a sheet. It has
   room where the split view is not collapsed and the window is at least 690 points wide. `AsideScreen` draws what it
-  holds and keeps nothing, so it may be drawn wherever the Aside stands. What a conversation's row leads to and the tree
-  go through `SessionStack.lead(to:)` and `showTree()`, which choose between the Aside and what stands where there is no
-  room for it: the path, and a sheet.
+  holds and keeps nothing, so it may be drawn wherever the Aside stands. The Turn it is at is worked out as it is drawn,
+  its place holding at one or following the conversation's latest, so nothing has to run while it is off screen. SwiftUI
+  keeps what it drew then, and begins none of its tasks again as their ids change, so what a screen in it reads is a
+  `Reading`, which begins again each time the Aside comes on screen. While it stands it follows its Session's
+  conversation, as the Session's own screen does only while on top; a conversation is read once however many follow
+  it. What a conversation's row leads to and the tree go through `SessionStack.lead(to:)` and `showTree()`, which
+  choose between the Aside and what stands where there is no room for it: the path, and a sheet.
 - A hosted screen has no `NavigationStack` over it, so a `NavigationLink` in it is greyed out and a
   `navigationDestination` pushes nothing. The Aside has a stack of its own, in which an Activity's row is a link and a
   Session's pushes in the main view. A row that leads to a screen is a `RowButton` that writes the path, and a
