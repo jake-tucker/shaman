@@ -16,8 +16,8 @@ app's shape. Everything here is built from a terminal on a Mac with Xcode 27.2; 
 | `ShamanCore/` | The core and its generated Swift, written by `scripts/build-ios-core.sh`; ignored by git |
 | `build/` | Where the commands below put what `xcodebuild` makes; ignored by git |
 
-iOS 27.1, iPhone only, portrait only, Swift 6 language mode, English only. The bundle identifier is
-`com.jaketucker.shaman`.
+iOS 27.1, iPhone only, Swift 6 language mode, English only. Every iPhone turns, to either side and not upside down, and
+no device is told from another. The bundle identifier is `com.jaketucker.shaman`.
 
 ## The rule that comes first
 
@@ -73,11 +73,11 @@ DISPLAY_ID=$(xcrun devicectl device info displays --device "$UDID" -j - 2> /dev/
 xcrun simctl io "$UDID" screenshot --display="$DISPLAY_ID" /tmp/shaman.png
 ```
 
-To look at the regular layout with no window, hold the app resized on the Pro with `devicectl device appResize`, at the
-size of a Duo's inner display in portrait: it moves the app in front to a display of its own until it is interrupted.
-While the app is portrait only a size wider than tall is not filled: 951x669 gives the app 501 points and compact width.
-It shows no vertical bar and no fold, and is no test. Where it answers that resizing is not available right now, as it
-did the first time on a simulator just booted, run it again.
+A turned iPhone 18 Pro Max, 956 x 440 points, stands the columns side by side with no window, and a test turns it. To
+look at the regular layout in another size, hold the app resized on the Pro with `devicectl device appResize`, at the
+size of a Duo's inner display in portrait: it moves the app in front to a display of its own until it is interrupted. It
+shows no vertical bar and no fold, and is no test. Where it answers that resizing is not available right now, as it did
+the first time on a simulator just booted, run it again.
 
 ```sh
 xcrun devicectl device appResize start --device "$UDID" --preferred-size 669x951 & RESIZING=$!
@@ -267,8 +267,9 @@ well. `--stop` stops it otherwise. Run it before merging a change to pairing or 
 `LivePairingTests` skips. By hand, `--stop` while the app runs has the Remote read Unreachable within a few seconds, and
 `--resume` starts the Server again with its records kept.
 
-**Test.** `../scripts/ios-test.sh` runs the tests and holds the table of which simulator runs which: the Pro everything,
-the closed Duo the whole UI suite, and the Pro Max a smoke test.
+**Test.** `../scripts/ios-test.sh` runs the tests and holds the table of which simulator runs which: the Pro everything
+but the columns' tests, the closed Duo the whole UI suite but those and the ones that turn, and the Pro Max, turned, the
+columns' and the ones that turn.
 
 ```sh
 ../scripts/ios-test.sh pro                                                  # the Pro's row
@@ -297,6 +298,21 @@ test gets there; and wait for what an element is to say with `waitForOne` (`Wait
 it. "Critical process SpringBoard crashed" has failed a test now and then on a clone, a different test each time, for
 a reason not found, on a Mac deep in swap: run that class again by itself before looking for it in the app.
 
+A test that turns the simulator, or stands on the columns side by side, is a method of a `TurningTestCase`, which
+launches the app upright or `turned`, turns it (`turn`) and tells whether columns stand (`columnsStand`) or one alone
+(`oneColumnStands`). It stands in for closing and opening a Duo wherever the rule is that a change of size alone does
+nothing, as a Pro Max's width class changes each turn. Its class is named in the script's table: in `columns` where it
+holds only where columns stand side by side, or in `turning` where it holds on any iPhone that turns. A Duo runs
+neither, as no test turns one, so a class holds no test that does not turn.
+
+XCTest waits before and after each step for as many of the app's animations to have stopped as have started, or for a
+minute. As the columns collapse, a few times in a hundred and more on a loaded Mac, CoreAnimation tells of an animation
+of UIKit's own starting twice, of the edge effect where a list scrolls beneath its bars, and stopping once, so from then
+on every step waits its minute out until the app ends. No animation is running, and nothing of the app's is amiss.
+`turn` notices the first such minute and has the rest of that app's steps wait for nothing but what they look for, so
+turn by `turn` alone; the test then takes a minute longer, its log saying "App animations complete notification not
+received".
+
 Narrow a run to what you touched, on the simulator the behaviour is held on: an `-only-testing:` takes the place of the
 row's own, whether or not the row names those tests, and any other xcodebuild argument may follow. A full run, `all`,
 is owed once a ticket, before it is called done. A test that does not hold on some shape is left out of that
@@ -308,8 +324,8 @@ and `Reaching.swift`, and it uses nothing else in their place: `attach` and `Dis
 and of the display the app is on, as `app.screenshot()` is black on an open Duo and cut off on a turned Pro; `app.point`
 for where a drag begins and ends, and `app.window` to swipe over, as the app's own frame lies on its side on an open
 Duo; `app.back` for Back, which is in no navigation bar where the bar is vertical; `app.scrolled(to:)` before asserting
-on or tapping what stands in a list and may be further along it, given `over:` the sheet or the column where more than
-one list is on screen, and `at:` where what floats over the list covers its middle; `app.swipeSheetAway()`;
+on or tapping what stands in a list and may be further along it, given `over:` the sheet or the list itself where more
+than one is on screen, and `at:` where what floats over the list covers its middle; `app.swipeSheetAway()`;
 `app.leaveTheFront()` in place of the Home button, which does nothing on a Duo; and `app.write(_:over:)` to write over
 what a field holds, which waits for the field to read it, as typing is told as done before the app has taken the last of
 it. On an open Duo in portrait the picture is upright in the one portrait a posed run reaches, turned right once, and on
