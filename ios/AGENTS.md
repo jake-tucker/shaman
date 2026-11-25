@@ -101,8 +101,8 @@ scenarios are `FakeCore.Scenario`'s cases. Anything after the bundle identifier 
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake named
 ```
 
-`--open <session>` pushes the Session a listing row names over the listing at launch, so a screenshot reaches it without
-a tap. Over the fake each Session reads as one of `FakeConversation.Scenario`'s cases: in `paired`, `workstation-key/1`
+`--open <session>` opens the Session a listing row names at launch, however the columns stand, so a screenshot needs no
+tap. Over the fake each Session reads as one of `FakeConversation.Scenario`'s cases: in `paired`, `workstation-key/1`
 is a working Turn, `/7` a settled one, `/8` a stopped one, `/9` a failed one and `/11` a Session Working only for a
 Prompt not yet delivered, which Stop withdraws and gives back to the composer, `/3` waits on an Approval of a command,
 its sheet presenting itself, `/13` waits on a Questionnaire of three Questions (one choice with additional text, several
@@ -154,7 +154,7 @@ xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --
 `--aside work` or `--aside tree`, with `--open <session>` and nothing without it, shows the Aside beside that Session at
 launch, where it has room: at its latest Turn's work, or at its tree.
 
-`--compose` pushes the new-session screen over the listing at launch, as its compose button does. It begins wherever
+`--compose` opens the new-session screen at launch, however the columns stand, as its button does. It begins wherever
 the Outlook stands: in `composing`, the `paired` phone whose Outlook remembers the workstation's `shaman` Workspace, it
 offers send, and a first Prompt turns it into the Provisional Session, reading "Starting", and a moment later into the
 Session the fake began, which the listing then carries; a Prompt holding "refuse" is refused the first time it is asked,
@@ -181,9 +181,10 @@ listing. To see it, open something, send the app to the background (launch anoth
 `--compose`: either replaces the kept stack with its own screen, though the kept scope still narrows the listing. So
 does `SHAMAN_INVITE`, debug only, with the listing, which presents the Invite's confirmation.
 `--forget-scene` opens as a new scene would, and keeps afresh from there: launch with it, send the app to the background
-and end it to leave nothing behind, as `ColdStartTests` does after each test. The iOS 27.2 simulator keeps a scene's
-storage when the app is swiped away in the app switcher too, so that the launch after a swipe away starts at the listing
-under Everywhere is a check on the phone, not a test.
+and end it to leave nothing behind, as `ColdStartTests` does after each test. With nothing open no screen is kept, so a
+cold start is the listing, beside the new-session screen at rest where there is room. The iOS 27.2 simulator keeps a
+scene's storage when the app is swiped away in the app switcher too, so that the launch after a swipe away starts at the
+listing under Everywhere is a check on the phone, not a test.
 
 An Intervention presented takes no tap for a moment; `--arming-moment <seconds>` makes that moment as long as a UI test
 needs to see a tap refused before one is taken.
@@ -452,6 +453,9 @@ If the phone is locked, stop and ask for it to be unlocked.
   the listing and keeps the scene. What is open is `SessionStack.path` and nothing else: a screen is pushed, popped or
   replaced by writing it, and what the reader pops is read back into it. That the reader has returned to the listing is
   told only by its navigation controller having shown it alone.
+- While nothing is open the main view holds the new-session screen at rest, `SessionStack.rest`, which is not on the
+  path: one column shows the listing, and the scene keeps no screen. The cursor put in its field, or a first Prompt sent
+  from it, opens it (`openRest`): the hosted screen that rested is given the path's name for it, and none is made.
 - The Aside is two values, `SessionStack.aside`'s, kept while the window lives and never by the scene: what it holds,
   and whether the reader has it shown beside the main view. Neither says what is on screen. `Columns` has the split
   view's inspector column hold it only while it is shown, a Session is open and it has room, as a view controller set
