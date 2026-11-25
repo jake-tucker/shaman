@@ -2,7 +2,7 @@ import XCTest
 
 /// The Aside beside the main view, on a turned iPhone 18 Pro Max: what shows it and what it shows, that its own button
 /// alone takes it down, that while it is shown it stands in the Sidebar's place, and what becomes of what it holds as
-/// the Session or its latest Turn changes.
+/// the Session or its latest Turn changes; and the chooser beneath it, and the card it marks.
 final class AsideTests: TurningTestCase {
   /// The Session in `paired` whose Agent delegated to Subagents, and so has a tree.
   private let delegating = "workstation-key/12"
@@ -47,7 +47,7 @@ final class AsideTests: TurningTestCase {
   }
 
   /// The card of the Turn whose line reads `line`, where a tap reaches it.
-  @MainActor
+  @MainActor @discardableResult
   private func card(_ line: String, in app: XCUIApplication) -> XCUIElement {
     app.scrolled(to: element("session.turn", holding: line, in: app), over: element("session.conversation", in: app))
   }
@@ -95,6 +95,252 @@ final class AsideTests: TurningTestCase {
       element("session.conversation", in: app).frame.maxX, element("work.empty", in: app).frame.minX, file: file,
       line: line)
     XCTAssertFalse(sidebarStands(app), file: file, line: line)
+  }
+
+  /// Waits until the chooser stands beneath the Aside's list, `list`, between "Work" and the tree titled `tree`, and
+  /// marks the one `list` is of.
+  @MainActor
+  private func chooserStands(
+    _ tree: String = "Subagents", beneath list: String, in app: XCUIApplication, file: StaticString = #filePath,
+    line: UInt = #line
+  ) {
+    let (kind, other) = list == "tree.list" ? ("aside.tree", "aside.work") : ("aside.work", "aside.tree")
+    waitForOne(kind, "selected == true", in: app, file: file, line: line)
+    waitForOne(other, "selected == false", in: app, file: file, line: line)
+    let work = app.buttons["aside.work"]
+    let side = app.buttons["aside.tree"]
+    XCTAssertEqual(work.label, "Work", file: file, line: line)
+    XCTAssertEqual(side.label, tree, file: file, line: line)
+    let above = element(list, in: app)
+    XCTAssertTrue(above.waitForExistence(timeout: 10), file: file, line: line)
+    XCTAssertLessThanOrEqual(above.frame.maxY, work.frame.minY + 1, "beneath it", file: file, line: line)
+    XCTAssertGreaterThanOrEqual(work.frame.minX, above.frame.minX - 1, file: file, line: line)
+    XCTAssertLessThanOrEqual(work.frame.maxX, side.frame.minX, file: file, line: line)
+    XCTAssertTrue(work.isHittable && side.isHittable, file: file, line: line)
+  }
+
+  /// Waits until the card reading `line`, once it is on screen, is marked and no other is; or with none, that none is.
+  @MainActor
+  private func marked(
+    _ line: String?, in app: XCUIApplication, file: StaticString = #filePath, at: UInt = #line
+  ) {
+    if let line { card(line, in: app) }
+    let cards = elements("session.turn", in: app)
+    let selected = cards.matching(NSPredicate(format: "selected == true"))
+    for _ in 0..<40 {
+      if selected.count == (line == nil ? 0 : 1), line == nil || selected.firstMatch.label.contains(line!) { return }
+      RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+    }
+    XCTFail(
+      "\(line ?? "nothing") marked, and not \(selected.allElementsBoundByIndex.map(\.label))", file: file, line: at)
+  }
+
+  @MainActor
+  func testTheChooserStandsBeneathTheListOfASessionWithATreeAndGivesEitherKind() {
+    let app = launched("paired", ["--open", delegating, "--aside", "work"], turned: true)
+    titled(delegatingTitle, in: app)
+    for _ in 0..<2 {
+      // Its bar holds nothing but a title, which `asideStands` looks to.
+      asideStands(app, at: "Working")
+      chooserStands(beneath: "work.list", in: app)
+      attach("The chooser, at the work")
+      app.buttons["aside.tree"].tap()
+      asideStands(app, at: "Subagents")
+      chooserStands(beneath: "tree.list", in: app)
+      attach("The chooser, at the tree")
+      app.buttons["aside.work"].tap()
+    }
+    // The tree's last row is reached above it.
+    app.buttons["aside.tree"].tap()
+    asideStands(app, at: "Subagents")
+    let last = element("tree.row", holding: "Review the lock's tests", in: app)
+    let list = element("tree.list", in: app)
+    app.scrolled(to: last, over: list)
+    // On to its foot, the whole of the row above the chooser.
+    list.swipeUp()
+    for _ in 0..<20 where last.frame.maxY > app.buttons["aside.work"].frame.minY + 1 {
+      RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+    }
+    XCTAssertLessThanOrEqual(last.frame.maxY, app.buttons["aside.work"].frame.minY + 1)
+    attach("The tree's last row above the chooser")
+    last.tap()
+    titled("Review the lock's tests", in: app)
+    asideStands(app, at: "Subagents")
+    chooserStands(beneath: "tree.list", in: app)
+
+    // None where there is no tree, and then again, the kind being the tree still.
+    openFromTheSidebar("Draw the invite as a QR code in /serve", in: app)
+    asideStands(app, at: "Working")
+    XCTAssertTrue(app.buttons["aside.tree"].waitForNonExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["aside.work"].exists)
+    attach("No chooser")
+    openFromTheSidebar(delegatingTitle, in: app)
+    asideStands(app, at: "Subagents")
+    chooserStands(beneath: "tree.list", in: app)
+  }
+
+  @MainActor
+  func testWorkOnTheChooserIsTheOneTapBackToTheLatestTurnWhichItFollows() {
+    let app = launched("paired", ["--open", delegating, "--aside", "work"], turned: true)
+    titled(delegatingTitle, in: app)
+    asideStands(app, at: "Working")
+    app.buttons["session.stop"].tap()
+    let stopped = element("session.turn", holding: "Stopped after 3m 10s", in: app)
+    XCTAssertTrue(stopped.waitForExistence(timeout: 10))
+    beginTurn("Now the other lock", in: app)
+    waitForOne("work.empty", "label == 'Nothing done yet'", in: app)
+    let earlier = element("work.row", holding: "Explorer", in: app)
+    XCTAssertFalse(earlier.exists)
+    // From an earlier Turn, and from the tree with an earlier one held.
+    for tree in [false, true] {
+      card("Stopped after 3m 10s", in: app).tap()
+      XCTAssertTrue(earlier.waitForExistence(timeout: 10))
+      marked("Stopped after 3m 10s", in: app)
+      chooserStands(beneath: "work.list", in: app)
+      if tree {
+        app.buttons["aside.tree"].tap()
+        asideStands(app, at: "Subagents")
+      }
+      app.buttons["aside.work"].tap()
+      waitForOne("work.empty", "label == 'Nothing done yet'", in: app)
+      marked("Working", in: app)
+      XCTAssertFalse(earlier.exists)
+    }
+  }
+
+  @MainActor
+  func testTheChoosersOtherSideReadsTheTreesOwnTitle() {
+    let app = launched("sidekick", ["--open", "workstation-key/20", "--aside", "work"], turned: true)
+    XCTAssertTrue(app.buttons["aside.tree"].waitForExistence(timeout: 10))
+    chooserStands("Sessions", beneath: "work.list", in: app)
+    app.buttons["aside.tree"].tap()
+    asideStands(app, at: "Sessions")
+    chooserStands("Sessions", beneath: "tree.list", in: app)
+    attach("The chooser of a Sidekick's tree")
+    app.terminate()
+    // Also where the tree is not read, or cannot be.
+    for scenario in ["unreadTree", "unreadableTree"] {
+      let unread = launched(scenario, ["--open", delegating, "--aside", "tree"], turned: true)
+      let said = scenario == "unreadTree" ? "tree.loading" : "tree.failed"
+      XCTAssertTrue(element(said, in: unread).waitForExistence(timeout: 10))
+      chooserStands(beneath: "tree.list", in: unread)
+      unread.terminate()
+    }
+  }
+
+  @MainActor
+  func testTheCardWhoseWorkItShowsIsMarkedWhileItIsOnScreen() {
+    let app = launched("paired", ["--open", "workstation-key/7"], turned: true)
+    titled("Tidy zsh startup time", in: app)
+    card("Worked for 3m 12s", in: app)
+    marked(nil, in: app)
+    let button = app.buttons["session.aside"]
+    button.tap()
+    asideStands(app, at: "Worked for 3m 12s")
+    marked("Worked for 3m 12s", in: app)
+    attach("The marked card")
+    card("Worked for 1m 23s", in: app).tap()
+    asideStands(app, at: "Worked for 1m 23s")
+    marked("Worked for 1m 23s", in: app)
+    // With an Activity's whole pushed over that Turn's work.
+    app.scrolled(to: element("session.compaction", in: app), over: element("session.conversation", in: app)).tap()
+    asideStands(app, at: "Compaction", pushed: true)
+    XCTAssertTrue(card("Worked for 1m 23s", in: app).isSelected)
+    // Not while it is not on screen.
+    button.tap()
+    noAsideStands(app)
+    card("Worked for 1m 23s", in: app)
+    marked(nil, in: app)
+    button.tap()
+    waitForOne("session.aside", "label == 'Hide aside'", in: app)
+    marked("Worked for 1m 23s", in: app)
+    turn(.portrait, app)
+    oneColumnStands(app, showing: "session.title")
+    card("Worked for 1m 23s", in: app)
+    marked(nil, in: app)
+    turn(.landscapeLeft, app)
+    asideStands(app, at: "Compaction", pushed: true)
+    XCTAssertTrue(card("Worked for 1m 23s", in: app).isSelected)
+    card("Worked for 3m 12s", in: app).tap()
+    asideStands(app, at: "Worked for 3m 12s")
+    // It moves with the Aside to a Turn that begins.
+    beginTurn("Now the other shell", in: app)
+    asideStands(app, at: "Working")
+    marked("Working", in: app)
+  }
+
+  @MainActor
+  func testNoCardIsMarkedWhileTheTreeShowsAndEachSessionsOwnIs() {
+    let app = launched("paired", ["--open", delegating, "--aside", "tree"], turned: true)
+    titled(delegatingTitle, in: app)
+    asideStands(app, at: "Subagents")
+    XCTAssertTrue(element("session.turn", in: app).waitForExistence(timeout: 10))
+    marked(nil, in: app)
+    app.buttons["aside.work"].tap()
+    asideStands(app, at: "Working")
+    marked("2 tools", in: app)
+    attach("The marked card of a Session with a tree")
+    // Over its parent a Subagent's Session marks its own, and Back the parent's again.
+    element("work.row", holding: "Explorer", in: app).tap()
+    titled("Find what held the lock", in: app)
+    marked("1 tool", in: app)
+    app.back.tap()
+    titled(delegatingTitle, in: app)
+    marked("2 tools", in: app)
+    app.buttons["session.tree"].tap()
+    asideStands(app, at: "Subagents")
+    marked(nil, in: app)
+    // Nor for a Session with no tree, whose work shows though the kind is the tree.
+    openFromTheSidebar("Draw the invite as a QR code in /serve", in: app)
+    asideStands(app, at: "Working")
+    XCTAssertTrue(
+      elements("session.turn", in: app).waitForOne(NSPredicate(format: "selected == true")), "its work shows")
+  }
+
+  @MainActor
+  func testTappingTheMarkedCardReturnsItToTheTopOfThatTurnsWork() {
+    let app = launched("paired", ["--open", "workstation-key/7", "--aside", "work"], turned: true)
+    titled("Tidy zsh startup time", in: app)
+    let latest = "Worked for 3m 12s"
+    asideStands(app, at: latest)
+    marked(latest, in: app)
+    let list = element("work.list", in: app)
+    let head = element("work.row", holding: "Read src/tui/serve_panel.rs", in: app)
+    XCTAssertTrue(head.waitForExistence(timeout: 10))
+    let stood = head.frame.minY
+    let atItsTop = { () -> Bool in
+      for _ in 0..<40 {
+        if head.exists, abs(head.frame.minY - stood) < 1 { return true }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+      }
+      return false
+    }
+    let point = { (down: Double) in list.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: down)) }
+    point(0.85).press(forDuration: 0.05, thenDragTo: point(0.2), withVelocity: .slow, thenHoldForDuration: 0.3)
+    XCTAssertTrue(!head.exists || head.frame.minY < stood - 20, "scrolled from its top")
+    attach("Scrolled from its top")
+    card(latest, in: app).tap()
+    XCTAssertTrue(atItsTop(), "returned from further down it")
+    asideStands(app, at: latest)
+    marked(latest, in: app)
+    // From an Activity's whole, pushed from further down it.
+    app.scrolled(to: element("work.row", holding: "cargo check", in: app), over: list).tap()
+    asideStands(app, at: "Command", pushed: true)
+    card(latest, in: app).tap()
+    asideStands(app, at: latest)
+    XCTAssertTrue(atItsTop(), "returned from an Activity's whole")
+
+    // And at an earlier Turn, which it stays at.
+    let earlier = "Worked for 1m 23s"
+    card(earlier, in: app).tap()
+    asideStands(app, at: earlier)
+    app.scrolled(to: element("work.row", holding: "cargo run", in: app), over: list).tap()
+    asideStands(app, at: "Command", pushed: true)
+    marked(earlier, in: app)
+    card(earlier, in: app).tap()
+    asideStands(app, at: earlier)
+    marked(earlier, in: app)
+    XCTAssertTrue(element("work.row", holding: "Read src/tui/serve_overlay.rs", in: app).isHittable)
   }
 
   @MainActor
@@ -432,7 +678,16 @@ final class AsideTests: TurningTestCase {
     XCTAssertTrue(app.navigationBars["Working"].exists, "over the main view and the Aside, which stand beneath it")
     XCTAssertEqual(aside.frame, stood)
     XCTAssertLessThan(element("session.conversation", in: app).frame.minX, scope.frame.maxX)
+    // The Aside is on screen beneath it, and its card marked.
+    waitForOne("session.turn", "selected == true", in: app)
     attach("The Sidebar over the main view and the Aside")
+    // Put away by a tap beside it.
+    app.point(across: 0.5, down: 0.65).tap()
+    asideStands(app, at: "Working")
+    marked("2 tools", in: app)
+    app.buttons["Show Sidebar"].firstMatch.tap()
+    XCTAssertTrue(scope.waitForExistence(timeout: 10))
+    waitForOne("session.turn", "selected == true", in: app)
 
     element("listing.active", holding: "Draw the invite as a QR code in /serve", in: app).tap()
     titled("Draw the invite as a QR code in /serve", in: app)
