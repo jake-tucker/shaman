@@ -14,6 +14,9 @@ extension XCUIApplication {
     return buttons.matching(identifier: "session.tree").waitForOne(worn)
   }
 
+  /// How far around it the listing's capsule takes a touch: one 28 points above it, on a row, opened nothing.
+  private static let capsuleReach: CGFloat = 32
+
   /// `element`, which stands in a list, once it stands still where a tap `across` it, as a part of its width, reaches it.
   ///
   /// The list is dragged to its foot and then back to its head until it does: the one in `part`, such as a sheet, or
@@ -42,7 +45,7 @@ extension XCUIApplication {
     for (from, to) in [(0.85, 0.15), (0.15, 0.85)] {
       var stood: String?
       // Above the listing's capsule, which takes a drag begun near it, and on a short display floats high up its list.
-      let lowest = capsuleOver(list).map { ($0.minY - 32 - bar.frame.minY) / bar.frame.height } ?? 1
+      let lowest = capsuleOver(list).map { ($0.minY - Self.capsuleReach - bar.frame.minY) / bar.frame.height } ?? 1
       for _ in 0..<50 {
         if reaches(element, at: across, beside: bar) { return element }
         let stands = "\(bar.frame) \(bar.value ?? "")"
@@ -67,7 +70,8 @@ extension XCUIApplication {
     Thread.sleep(forTimeInterval: 0.1)
     guard element.exists, element.frame == frame else { return false }
     let point = CGPoint(x: frame.minX + frame.width * across, y: frame.midY)
-    if let capsule = capsuleOver(element), capsule.insetBy(dx: -24, dy: -24).contains(point) { return false }
+    let reach = -Self.capsuleReach
+    if let capsule = capsuleOver(element), capsule.insetBy(dx: reach, dy: reach).contains(point) { return false }
     // The bar ends short of a display's corners, which a list at its foot runs on beside.
     let shown = bar.frame
     guard point.y >= shown.minY, point.y <= shown.maxY || bar.value as? String == "100%" else { return false }
@@ -98,7 +102,8 @@ extension XCUIApplication {
     let capsule = otherElements["home.beginsIn"]
     guard capsule.exists else { return nil }
     let frame = capsule.frame
-    guard frame.insetBy(dx: -24, dy: -24).intersects(element.frame), capsule.isHittable else { return nil }
+    let reach = -Self.capsuleReach
+    guard frame.insetBy(dx: reach, dy: reach).intersects(element.frame), capsule.isHittable else { return nil }
     return frame
   }
 
