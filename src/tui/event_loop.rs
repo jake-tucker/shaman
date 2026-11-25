@@ -6664,7 +6664,7 @@ mod tests {
         .with_exit_timeout(std::time::Duration::from_millis(100));
         let mut delivery =
             super::ClipboardDelivery::default().with_timeout(std::time::Duration::ZERO);
-        let mut terminal = AnsiTranscript(String::new());
+        let terminal = AnsiTranscript(String::new());
         delivery.copy(
             &mut native,
             &ClipboardContent {
