@@ -13,7 +13,8 @@ import SwiftUI
 /// but a Session gone, which pops it. A Subagent's Session is named by the Subagent and has no composer. Where the tree
 /// the Session belongs to has Subagents, a button in the navigation bar opens it, and choosing an entry there has
 /// `stack` show that Session. Where the Aside has room beside it, the tree and what a Turn's card stands for are shown
-/// there, which a button in the bar shows and takes down; where it has none, the tree is a sheet, and the work pushed.
+/// there, which a button in the bar shows and takes down, and the card whose work is on screen there is marked; where it
+/// has none, the tree is a sheet, and the work pushed.
 struct SessionScreen: View {
   let model: SessionModel
   /// What is open, which the Session is of, and an entry chosen in its tree is shown on.
@@ -23,9 +24,9 @@ struct SessionScreen: View {
   @State private var chosen: String?
 
   var body: some View {
-    ConversationView(model: model) { pushed in
-      stack?.lead(to: pushed)
-    }
+    ConversationView(
+      model: model, turnInAside: { stack?.turnInAside(of: model) }, push: { pushed in stack?.lead(to: pushed) }
+    )
     .composerFoot(model.frame.flatMap { $0.bar == nil && $0.composer == nil ? nil : $0 }) { frame in
       SessionFoot(frame: frame, model: model) { opens in
         if let stack {
@@ -133,6 +134,8 @@ struct SessionScreen: View {
 /// Session cannot be read, stands centred where they will be.
 private struct ConversationView: View {
   let model: SessionModel
+  /// The Turn whose work the Aside is on screen at, as its card names it.
+  let turnInAside: () -> String?
   /// Pushes what a row leads to over the Session's screen.
   let push: (Pushed) -> Void
 
@@ -141,12 +144,13 @@ private struct ConversationView: View {
       model.conversation.rows.map(ConversationRow.item) + (model.frame?.queued ?? []).map(ConversationRow.queued)
     // Read here, for the rows are drawn later, as the list draws each.
     let model = model
+    let turnInAside = turnInAside
     let push = push
     GeometryReader { column in
       ConversationList(rows: rows, sent: model.sent, margins: column.readingMargins) { row in
         switch row {
         case .item(let item):
-          ItemView(item: item, route: model.route, model: model, push: push)
+          ItemView(item: item, route: model.route, model: model, turnInAside: turnInAside, push: push)
         case .queued(let queued):
           QueuedBubble(queued: queued, model: model)
         }
@@ -156,7 +160,7 @@ private struct ConversationView: View {
     }
     .overlay {
       ForEach(model.conversation.marks, id: \.id) { mark in
-        ItemView(item: mark, route: model.route, model: model, push: push)
+        ItemView(item: mark, route: model.route, model: model, turnInAside: turnInAside, push: push)
       }
     }
   }
@@ -393,12 +397,13 @@ private struct SessionHeader: View {
 }
 
 /// One item of the conversation, drawn as what it is: a Turn's card and a Compaction with more behind it `push` what
-/// they hold, over the Session `route` pushed or in the Aside, and a refused beginning offers to ask again through
-/// `model`.
+/// they hold, over the Session `route` pushed or in the Aside, the card of the Turn whose work `turnInAside` says is
+/// there wearing a selected look, and a refused beginning offers to ask again through `model`.
 private struct ItemView: View {
   let item: ConversationItem
   let route: SessionRoute
   let model: SessionModel
+  let turnInAside: () -> String?
   let push: (Pushed) -> Void
 
   var body: some View {
@@ -430,12 +435,14 @@ private struct ItemView: View {
       AgentBlockView(kind: kind, markdown: markdown, model: model)
     case .turn(let card):
       // The card leads to the Turn's work.
+      let marked = turnInAside() == card.work
       Button {
         push(.work(route, turn: card.work))
       } label: {
-        TurnCardView(card: card)
+        TurnCardView(card: card, marked: marked)
       }
       .buttonStyle(.plain)
+      .accessibilityAddTraits(marked ? .isSelected : [])
       .accessibilityIdentifier("session.turn")
     case .error(let text):
       Label {
@@ -839,9 +846,11 @@ private struct DelegationBubble: View {
   }
 }
 
-/// The card a Turn's work stands behind: how it settled and how long it took, or what runs now, over its count.
+/// The card a Turn's work stands behind: how it settled and how long it took, or what runs now, over its count. It is
+/// `marked` while that work is what the Aside shows.
 private struct TurnCardView: View {
   let card: TurnCard
+  let marked: Bool
 
   var body: some View {
     HStack(spacing: 10) {
@@ -880,7 +889,7 @@ private struct TurnCardView: View {
     .contentShape(RoundedRectangle(cornerRadius: 12))
     .padding(.horizontal, 12)
     .padding(.vertical, 10)
-    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+    .asideMark(marked, over: Color(.secondarySystemBackground), cornerRadius: 12)
     .padding(.trailing, 24)
     .accessibilityElement(children: .combine)
   }

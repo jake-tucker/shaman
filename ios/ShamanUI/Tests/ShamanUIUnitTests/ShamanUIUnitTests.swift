@@ -1297,6 +1297,77 @@ private final class CountedSession: OpenedSession {
     #expect(aside.place(of: settled) == Aside.Place(held: "earlier-work"))
   }
 
+  @Test func theChooserTurnsWhatItHoldsAndNothingOfWhereItStands() {
+    let aside = Aside()
+    let check = Pushed.detail(settled, activity: "check")
+    // Held at an earlier Turn, and at an Activity's whole, the latest is followed again.
+    aside.holdWork(of: "earlier-work", latest: "work", in: settled)
+    aside.push([check], latest: "work", in: settled)
+    aside.holdTree()
+    #expect(aside.kind == .tree)
+    aside.holdLatest("work", in: settled)
+    #expect(aside.kind == .work && aside.place(of: settled) == Aside.Place())
+    // Nor is it held at a Turn where there is none yet.
+    aside.holdTree()
+    aside.holdLatest(nil, in: settled)
+    #expect(aside.kind == .work && aside.place(of: settled) == Aside.Place())
+    #expect(!aside.shown && !aside.hasRoom && !aside.onScreen)
+  }
+
+  @Test func theTurnWhoseWorkItIsOnScreenAtIsTheOnlyOneMarked() async throws {
+    let stack = try await read()
+    let model = stack.model(for: settled)
+    stack.aside.hasRoom = true
+    stack.lead(to: .work(settled, turn: "work"))
+    #expect(stack.turnInAside(of: model) == nil, "not on screen")
+    stack.aside.standsBeside = true
+    #expect(stack.turnInAside(of: model) == "work")
+    stack.lead(to: .work(settled, turn: "earlier-work"))
+    #expect(stack.turnInAside(of: model) == "earlier-work")
+    stack.lead(to: .detail(settled, activity: "compaction"))
+    #expect(stack.turnInAside(of: model) == "earlier-work", "pushed over its work")
+    // The kind the tree's, its Session has none, so its work shows.
+    #expect(stack.showTree() && model.frame?.tree == nil)
+    #expect(stack.turnInAside(of: model) == "earlier-work")
+    // Another Session on top is the one it answers for.
+    stack.path.append(.session(other))
+    #expect(stack.turnInAside(of: model) == nil)
+    stack.path.removeLast()
+    stack.aside.standsBeside = false
+    #expect(stack.turnInAside(of: model) == nil)
+  }
+
+  @Test func noTurnIsMarkedWhileTheTreeShows() async throws {
+    let delegating = SessionRoute(session: "workstation-key/12")
+    let stack = SessionStack(core: FakeCore(.paired), path: [.session(delegating)])
+    let model = stack.model(for: delegating)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    for _ in 0..<300 where model.conversation.latestTurn == nil || model.frame?.tree == nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.frame?.tree?.title == "Subagents")
+    stack.aside.standsBeside = true
+    #expect(stack.turnInAside(of: model) == "work")
+    stack.aside.holdTree()
+    #expect(stack.asideShowsTree(of: model) && stack.turnInAside(of: model) == nil)
+  }
+
+  @Test func theTurnItIsAtAskedForAgainReturnsToTheTopOfItsWork() {
+    let aside = Aside()
+    aside.holdWork(of: "earlier-work", latest: "work", in: settled)
+    #expect(aside.returns == 0, "another Turn's begins at its top")
+    aside.holdWork(of: "earlier-work", latest: "work", in: settled)
+    #expect(aside.returns == 1)
+    aside.holdLatest("work", in: settled)
+    #expect(aside.returns == 1)
+    aside.holdWork(of: "work", latest: "work", in: settled)
+    #expect(aside.returns == 2)
+    aside.push([.detail(settled, activity: "check")], latest: "work", in: settled)
+    aside.holdWork(of: "work", latest: "work", in: settled)
+    #expect(aside.returns == 3 && aside.place(of: settled) == Aside.Place())
+  }
+
   @Test func theConversationIsReadOnceForAllThatFollowItAndUntilTheLastGoes() async throws {
     let core = FakeCore(.paired)
     let opened = CountedSession(core.openSession("workstation-key/7"))

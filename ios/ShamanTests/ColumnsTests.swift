@@ -367,11 +367,13 @@ import UIKit
       try await hosted.until { held() != nil && columns.isShowing(.inspector) }
       try await hosted.settle()
       #expect(held() != nil && columns.isShowing(.inspector))
+      #expect(aside.onScreen)
     }
     let gone = {
       try await hosted.until { held() == nil }
       try await hosted.settle()
       #expect(held() == nil && !columns.isShowing(.inspector))
+      #expect(!aside.onScreen)
     }
     #expect(columns.minimumInspectorColumnWidth == 290)
     #expect(aside.hasRoom)
@@ -395,6 +397,14 @@ import UIKit
       aside.shown = shown
       try await Task.sleep(for: .milliseconds(80))
     }
+    try await stands()
+
+    // Called over it, the Sidebar leaves it standing.
+    columns.show(.primary)
+    try await hosted.until { columns.displayMode == .oneOverSecondary }
+    try await stands()
+    columns.show(.secondary)
+    try await hosted.until { columns.displayMode == .secondaryOnly }
     try await stands()
 
     // From one Session to the next, and not while none is open.
@@ -461,6 +471,7 @@ import UIKit
       try await hosted.settle()
       #expect((hosted.columns.viewController(for: .inspector) != nil) == stands, "\(width)")
       #expect(hosted.columns.isShowing(.inspector) == stands, "\(width)")
+      #expect(hosted.stack.aside.onScreen == stands, "\(width)")
     }
   }
 

@@ -16,6 +16,8 @@ final class Aside {
 
   /// The kind of thing it holds, whichever Session is open.
   private(set) var kind: AsideKind
+  /// How many times it was asked for the Turn whose work it is at, each of which returns to the top of that work.
+  private(set) var returns = 0
   /// Each Session's place in the work, where it has one other than its latest Turn's work, following.
   private var places: [SessionRoute: Place] = [:]
 
@@ -37,6 +39,10 @@ final class Aside {
   @ObservationIgnored var changed: (() -> Void)?
   /// Whether it has room beside the main view, as the columns say.
   var hasRoom = false
+  /// Whether it stands beside the main view now, which the columns alone say.
+  var standsBeside = false
+  /// Whether it is on screen, wherever it stands. Each place it may stand is said apart, by what stands it there.
+  var onScreen: Bool { standsBeside }
   /// How many times it has come on screen beside the main view, as the columns say. What is drawn of it is kept while it
   /// is off screen, where SwiftUI starts no reading again as what is read changes, so each begins again as it comes.
   var appearances = 0
@@ -58,10 +64,23 @@ final class Aside {
   }
 
   /// Has it hold the work of the Turn `turn` of the Session open as `route`, whose latest is `latest`: following, where
-  /// that is the one.
+  /// that is the one. Where it is at that Turn already, it returns to the top of its work.
   func holdWork(of turn: String, latest: String?, in route: SessionRoute) {
     kind = .work
+    if turn == place(of: route).held ?? latest {
+      returns += 1
+    }
     places[route] = Place(held: turn == latest ? nil : turn)
+  }
+
+  /// Has it hold the work of the latest Turn, `latest` where there is one, of the Session open as `route`, following.
+  func holdLatest(_ latest: String?, in route: SessionRoute) {
+    if let latest {
+      holdWork(of: latest, latest: latest, in: route)
+    } else {
+      kind = .work
+      places[route] = nil
+    }
   }
 
   /// Has it hold the whole of an Activity of the Session open as `route`, whose latest Turn is `latest`, pushed over
@@ -91,30 +110,104 @@ final class Aside {
 }
 
 /// The Aside's content, for the Session open on top: a Turn's work, with each Activity's whole pushed within it, or the
-/// tree of Sessions, under a bar of its own that holds a title and Back. Only a Session's row pushes in the main view.
-/// It draws what `stack`'s Aside holds and keeps nothing itself, so it may be drawn wherever the Aside stands.
+/// tree of Sessions, under a bar of its own that holds a title and Back, with the chooser between the two beneath it.
+/// Only a Session's row pushes in the main view. It draws what `stack`'s Aside holds and keeps nothing itself, so it may
+/// be drawn wherever the Aside stands.
 struct AsideScreen: View {
   let stack: SessionStack
 
   var body: some View {
+    // Its coming on screen is read here, outside what is drawn: a Session begun in a new-session screen may change
+    // nothing else read here.
     content.environment(\.asideAppearances, stack.aside.appearances)
   }
 
   @ViewBuilder private var content: some View {
     if let route = stack.openSession {
       let session = stack.model(for: route)
-      // Until the Session is framed whatever stands stays, as the tree does from one Session of it to the next.
-      if stack.aside.kind == .tree, session.frame == nil || session.frame?.tree != nil {
-        NavigationStack {
-          TreeScreen(model: session) { chosen in
-            stack.show(chosen, over: route)
+      // The chooser beneath the rest and not a safe area inset over it, of which a list within takes no notice, so that
+      // its last row would stand under it.
+      VStack(spacing: 0) {
+        Group {
+          if stack.asideShowsTree(of: session) {
+            NavigationStack {
+              TreeScreen(model: session) { chosen in
+                stack.show(chosen, over: route)
+              }
+            }
+          } else {
+            AsideWork(session: session, stack: stack)
+              .id(route)
           }
         }
-      } else {
-        AsideWork(session: session, stack: stack)
-          .id(route)
+        .frame(maxHeight: .infinity)
+        AsideChooser(session: session, stack: stack)
       }
     }
+  }
+}
+
+/// The chooser beneath what the Aside holds, between its Session's work and its tree, where it has one, marking which
+/// stands. "Work" gives the latest Turn's work, following; the other side the tree, by the title the core gives it. It
+/// changes what the Aside holds and nothing of where that stands. Not a segmented picker, which would take no tap on
+/// "Work" while the work of an earlier Turn stands.
+private struct AsideChooser: View {
+  let session: SessionModel
+  let stack: SessionStack
+  /// What the tree was last titled: until the next Session is framed the chooser stands as it did.
+  @State private var title: String?
+
+  var body: some View {
+    let tree = session.frame == nil ? title : session.frame?.tree?.title
+    let showsTree = stack.asideShowsTree(of: session)
+    Group {
+      if let tree {
+        HStack(spacing: 8) {
+          choice(Text("Work"), chosen: !showsTree) {
+            stack.aside.holdLatest(session.conversation.latestTurn, in: session.route)
+          }
+          .accessibilityIdentifier("aside.work")
+          choice(Text(verbatim: tree), chosen: showsTree) {
+            stack.aside.holdTree()
+          }
+          .accessibilityIdentifier("aside.tree")
+        }
+        .padding(.horizontal, 12)
+      } else {
+        Color.clear.frame(height: 0)
+      }
+    }
+    .onChange(of: tree, initial: true) { title = tree }
+  }
+
+  private func choice(_ words: Text, chosen: Bool, choose: @escaping () -> Void) -> some View {
+    Button(action: choose) {
+      words
+        .font(.footnote.weight(.medium))
+        .lineLimit(1)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 7)
+        .asideMark(chosen, over: Color(.tertiarySystemFill), cornerRadius: 8)
+        // As tall to a tap as the chooser stands.
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityAddTraits(chosen ? .isSelected : [])
+  }
+}
+
+extension View {
+  /// Its ground, `ground`, or where it is `marked` how what the Aside is on is marked: the kind in its chooser, and the
+  /// card whose work it shows.
+  func asideMark(_ marked: Bool, over ground: Color, cornerRadius: CGFloat) -> some View {
+    let shape = RoundedRectangle(cornerRadius: cornerRadius)
+    return background(marked ? Color.accentColor.opacity(0.18) : ground, in: shape)
+      .overlay {
+        if marked {
+          shape.strokeBorder(Color.accentColor, lineWidth: 1.5)
+        }
+      }
   }
 }
 
@@ -134,7 +227,8 @@ private struct AsideWork: View {
         set: { aside.push($0, latest: latest, in: route) })
     ) {
       TurnWorkScreen(
-        session: session, turn: aside.place(of: route).held ?? latest, pushSession: { stack.push($0) }
+        session: session, turn: aside.place(of: route).held ?? latest, pushSession: { stack.push($0) },
+        returns: aside.returns
       )
       .navigationDestination(for: Pushed.self) { pushed in
         if case .detail(_, let activity) = pushed {

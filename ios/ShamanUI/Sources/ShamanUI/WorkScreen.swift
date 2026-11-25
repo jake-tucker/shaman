@@ -15,12 +15,43 @@ struct TurnWorkScreen: View {
   var push: ((Pushed) -> Void)?
   /// Pushes the Session a row opens, where that is not where the rest are pushed, as from the Aside.
   var pushSession: ((Pushed) -> Void)?
+  /// How many times its Turn was asked for again, each of which returns to the top of its work.
+  var returns = 0
   @State private var work: TurnWork?
   /// The Turn whose work that is.
   @State private var shown: String?
   @Environment(\.asideAppearances) private var appearances
 
   var body: some View {
+    ScrollViewReader { list in
+      rows.onChange(of: returns) {
+        guard let first = work?.items.first else { return }
+        withAnimation { list.scrollTo(first.id, anchor: .top) }
+      }
+    }
+    .overlay {
+      if let empty = work?.empty {
+        ContentUnavailableView {
+          Label {
+            Text(verbatim: empty)
+              .accessibilityIdentifier("work.empty")
+          } icon: {
+            Image(systemName: "list.bullet")
+          }
+        }
+      }
+    }
+    .navigationTitle(work?.title ?? "")
+    .navigationBarTitleDisplayMode(.inline)
+    .task(id: Reading(what: turn, appearances: appearances)) {
+      for await work in session.work(turn) {
+        self.work = work
+        shown = turn
+      }
+    }
+  }
+
+  private var rows: some View {
     List {
       ForEach(work?.items ?? [], id: \.id) { item in
         switch item.kind {
@@ -48,26 +79,6 @@ struct TurnWorkScreen: View {
     .listStyle(.plain)
     .id(shown)
     .accessibilityIdentifier("work.list")
-    .overlay {
-      if let empty = work?.empty {
-        ContentUnavailableView {
-          Label {
-            Text(verbatim: empty)
-              .accessibilityIdentifier("work.empty")
-          } icon: {
-            Image(systemName: "list.bullet")
-          }
-        }
-      }
-    }
-    .navigationTitle(work?.title ?? "")
-    .navigationBarTitleDisplayMode(.inline)
-    .task(id: Reading(what: turn, appearances: appearances)) {
-      for await work in session.work(turn) {
-        self.work = work
-        shown = turn
-      }
-    }
   }
 }
 

@@ -146,6 +146,19 @@ final class SessionStack {
     }
   }
 
+  /// Whether the Aside holds the tree of `session`, which is open: where that is the kind and the Session has one. Until
+  /// the Session is framed whatever stands stays, as the tree does from one Session of it to the next.
+  func asideShowsTree(of session: SessionModel) -> Bool {
+    aside.kind == .tree && (session.frame == nil || session.frame?.tree != nil)
+  }
+
+  /// The Turn whose work the Aside is on screen at, as its card names it, where `session` is the Session it answers for;
+  /// none while it shows the tree or is not on screen.
+  func turnInAside(of session: SessionModel) -> String? {
+    guard aside.onScreen, openSession == session.route, !asideShowsTree(of: session) else { return nil }
+    return aside.place(of: session.route).held ?? session.conversation.latestTurn
+  }
+
   /// Shows the tree in the Aside, where it has room. Answers whether it did: where it has none a sheet is to.
   func showTree() -> Bool {
     guard aside.hasRoom else { return false }

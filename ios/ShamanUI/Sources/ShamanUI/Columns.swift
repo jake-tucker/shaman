@@ -62,7 +62,11 @@ final class Columns: UISplitViewController {
       self?.standAside()
     }
     stack.aside.changed = { [weak self] in self?.standAside() }
-    aside.appearing = { [stack] in stack.aside.appearances += 1 }
+    aside.appearing = { [weak self] in
+      self?.stack.aside.appearances += 1
+      self?.sayStanding()
+    }
+    aside.disappeared = { [weak self] in self?.sayStanding() }
   }
 
   @available(*, unavailable)
@@ -97,6 +101,14 @@ final class Columns: UISplitViewController {
     }
   }
 
+  /// Says whether the Aside stands beside the main view, as the split view is asked now.
+  private func sayStanding() {
+    let stands = viewController(for: .inspector) === aside && isShowing(.inspector)
+    if stack.aside.standsBeside != stands {
+      stack.aside.standsBeside = stands
+    }
+  }
+
   /// Whether the Aside is to stand: the reader has it shown, a Session is open and there is room.
   private var asideIsToStand: Bool {
     stack.aside.shown && stack.openSession != nil && asideHasRoom
@@ -107,6 +119,7 @@ final class Columns: UISplitViewController {
   /// the Sidebar behind its button.
   private func standAside() {
     guard isViewLoaded, view.window != nil else { return }
+    defer { sayStanding() }
     sayRoom()
     if asideIsToStand {
       if viewController(for: .inspector) == nil {
@@ -137,6 +150,7 @@ final class Columns: UISplitViewController {
     if viewController(for: .inspector) != nil {
       setViewController(nil, for: .inspector)
     }
+    sayStanding()
   }
 
   override func viewDidAppear(_ animated: Bool) {
@@ -147,6 +161,7 @@ final class Columns: UISplitViewController {
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     sayRoom()
+    sayStanding()
   }
 
   override func viewWillTransition(to size: CGSize, with coordinator: any UIViewControllerTransitionCoordinator) {
@@ -307,6 +322,8 @@ final class HostedScreen: UIHostingController<AnyView> {
   var atRest: LandingRoute?
   /// Told each time it comes on screen.
   var appearing: (() -> Void)?
+  /// Told each time it has left the screen.
+  var disappeared: (() -> Void)?
 
   init(_ screen: AnyView, named: Pushed? = nil, atRest: LandingRoute? = nil) {
     self.named = named
@@ -322,6 +339,11 @@ final class HostedScreen: UIHostingController<AnyView> {
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)
     appearing?()
+  }
+
+  override func viewDidDisappear(_ animated: Bool) {
+    super.viewDidDisappear(animated)
+    disappeared?()
   }
 }
 
