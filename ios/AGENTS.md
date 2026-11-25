@@ -336,9 +336,9 @@ than one is on screen, and `at:` where what floats over the list covers its midd
 `app.leaveTheFront()` in place of the Home button, which does nothing on a Duo; and `app.write(_:over:)` to write over
 what a field holds, which waits for the field to read it, as typing is told as done before the app has taken the last of
 it. Where the composer's field stands is asked by `fieldStands(_:aboveTheEdgeIn:_:)` and
-`fieldStandsOnTheKeyboard(in:_:)` (`Foot.swift`), the keyboard up by `-AutomaticMinimizationEnabled NO`. On an open Duo
-in portrait the picture is upright in the one portrait a posed run reaches, turned right once, and on its head in the
-other.
+`fieldStandsOnTheKeyboard(in:_:)` (`Foot.swift`), the keyboard up by `-AutomaticMinimizationEnabled NO`, and how far
+from its column's edges a conversation stands by `conversationReads(_:in:)` (`Reads.swift`). On an open Duo in portrait
+the picture is upright in the one portrait a posed run reaches, turned right once, and on its head in the other.
 
 **Posed.** What only an open Duo shows is held by a posed run, which poses this checkout's Duo through Device Hub, runs
 the tests written for that pose, one pose from start to finish, and closes it again. Run it before merging a change to
@@ -480,6 +480,11 @@ If the phone is locked, stop and ask for it to be unlocked.
 - A screen with a composer stands it by `composerFoot`, which has the screen ignore the container's bottom safe area and
   keeps the field 28 points above the display's bottom edge at compact width, 22 at regular, and 8 above a keyboard. It
   asks for the width class and what the keyboard covers, and nothing of the home indicator, the hinge or the device.
+- A conversation reads at most 700 points wide in the middle of its column, by the container's content margins and never
+  nearer an edge than 8 points: `ReadingSides`, which the list's layout stands its rows by, and which what a foot holds
+  asks for by `readingSides()`, as the foot itself keeps no sides. Hold in state the margins alone, never what is worked
+  out from a width: SwiftUI gives that a hair more or less each time it lays the screen out, so state of it lays the
+  screen out again without end.
 - The split view's preferred display mode and split behaviour are set once, as it is made; it is given no least width
   for the main view, with which it would not divide its columns at a fold; and its Sidebar's column is never hidden,
   which would write the main view alone into what is preferred.
