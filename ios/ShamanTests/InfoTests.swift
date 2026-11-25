@@ -16,4 +16,16 @@ import Testing
     let why = info["NSCameraUsageDescription"] as? String
     #expect(why?.isEmpty == false)
   }
+
+  /// Every iPhone turns, as no device is told from another, but none is held upside down.
+  @Test func theAppTurnsToEitherSideAndNotUpsideDown() throws {
+    let held = try #require(info["UISupportedInterfaceOrientations"] as? [String])
+    #expect(
+      Set(held) == [
+        "UIInterfaceOrientationPortrait", "UIInterfaceOrientationLandscapeLeft", "UIInterfaceOrientationLandscapeRight",
+      ])
+    for device in ["iphone", "ipad"] {
+      #expect(info["UISupportedInterfaceOrientations~\(device)"] == nil)
+    }
+  }
 }
