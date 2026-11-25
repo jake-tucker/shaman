@@ -1,7 +1,8 @@
 import XCTest
 
 /// The Aside beside the main view, on a turned iPhone 18 Pro Max: what shows it and what it shows, that its own button
-/// alone takes it down, and that while it is shown it stands in the Sidebar's place.
+/// alone takes it down, that while it is shown it stands in the Sidebar's place, and what becomes of what it holds as
+/// the Session or its latest Turn changes.
 final class AsideTests: TurningTestCase {
   /// The Session in `paired` whose Agent delegated to Subagents, and so has a tree.
   private let delegating = "workstation-key/12"
@@ -49,6 +50,246 @@ final class AsideTests: TurningTestCase {
   @MainActor
   private func card(_ line: String, in app: XCUIApplication) -> XCUIElement {
     app.scrolled(to: element("session.turn", holding: line, in: app), over: element("session.conversation", in: app))
+  }
+
+  /// Opens the Session the listing's row `title` names from the Sidebar, called back over the Aside.
+  @MainActor
+  private func openFromTheSidebar(_ title: String, in app: XCUIApplication) {
+    app.buttons["Show Sidebar"].firstMatch.tap()
+    open(title, in: app)
+  }
+
+  /// Sends `text` to the open Session, at rest, which begins a Turn a moment later, as its bar says by offering Stop, and
+  /// puts the keyboard down where one is up, as it leaves the conversation no room for a card.
+  @MainActor
+  private func beginTurn(_ text: String, in app: XCUIApplication) {
+    let composer = element("session.composer", in: app)
+    composer.tap()
+    composer.typeText(text)
+    app.buttons["session.send"].tap()
+    XCTAssertTrue(app.buttons["session.stop"].waitForExistence(timeout: 20), "a Turn began")
+    let keyboard = app.keyboards.firstMatch
+    guard keyboard.exists, keyboard.frame.minY < app.window.frame.maxY - 100 else { return }
+    // From the foot of the conversation, above the bar, down over the keyboard.
+    element("session.bar", in: app).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
+      .withOffset(CGVector(dx: 0, dy: -20))
+      .press(forDuration: 0.05, thenDragTo: app.point(across: 0.3, down: 0.98))
+    XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10), "the keyboard is put down")
+  }
+
+  /// Stops the open Session's Turn.
+  @MainActor
+  private func stopTurn(in app: XCUIApplication) {
+    app.buttons["session.stop"].tap()
+    XCTAssertTrue(app.buttons["session.stop"].waitForNonExistence(timeout: 10), "stopped")
+  }
+
+  /// Waits until the Aside stands saying `words` where its work would be, under a bar that says nothing.
+  @MainActor
+  private func asideSays(
+    _ words: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+  ) {
+    waitForOne("work.empty", "label == '\(words)'", in: app, file: file, line: line)
+    waitForOne("session.aside", "label == 'Hide aside'", in: app, file: file, line: line)
+    XCTAssertLessThanOrEqual(
+      element("session.conversation", in: app).frame.maxX, element("work.empty", in: app).frame.minX, file: file,
+      line: line)
+    XCTAssertFalse(sidebarStands(app), file: file, line: line)
+  }
+
+  @MainActor
+  func testTheKindCarriesFromOneSessionToTheNextAndASessionWithNoTreeShowsItsWork() {
+    let invite = "Draw the invite as a QR code in /serve"
+    let app = launched("paired", ["--open", delegating, "--aside", "work"], turned: true)
+    titled(delegatingTitle, in: app)
+    asideStands(app, at: "Working")
+    app.buttons["session.tree"].tap()
+    asideStands(app, at: "Subagents")
+
+    // One with no tree.
+    openFromTheSidebar(invite, in: app)
+    asideStands(app, at: "Working")
+    XCTAssertTrue(element("work.row", holding: "cargo nextest run qr", in: app).waitForExistence(timeout: 10))
+    XCTAssertFalse(element("tree.row", in: app).exists)
+    attach("A session with no tree, the kind still the tree")
+    openFromTheSidebar(delegatingTitle, in: app)
+    asideStands(app, at: "Subagents")
+    waitForOne("tree.row", "label CONTAINS '\(delegatingTitle)' AND selected == true", in: app)
+
+    // A card turns the kind to work, which carries in its turn, and while no Aside is on screen.
+    element("session.turn", in: app).tap()
+    asideStands(app, at: "Working")
+    openFromTheSidebar(invite, in: app)
+    asideStands(app, at: "Working")
+    app.buttons["session.aside"].tap()
+    noAsideStands(app)
+    open(delegatingTitle, in: app)
+    app.buttons["session.aside"].tap()
+    asideStands(app, at: "Working")
+    XCTAssertTrue(element("work.row", holding: "Explorer", in: app).waitForExistence(timeout: 10))
+    app.buttons["session.tree"].tap()
+    asideStands(app, at: "Subagents")
+    app.buttons["session.aside"].tap()
+    noAsideStands(app)
+    open(invite, in: app)
+    open(delegatingTitle, in: app)
+    app.buttons["session.aside"].tap()
+    asideStands(app, at: "Subagents")
+  }
+
+  @MainActor
+  func testWithinOneTreeTheTreeStandsAndOnlyItsHighlightMoves() {
+    let app = launched("paired", ["--open", delegating, "--aside", "tree"], turned: true)
+    titled(delegatingTitle, in: app)
+    asideStands(app, at: "Subagents")
+    let last = elements("tree.row", in: app)
+    XCTAssertTrue(last.firstMatch.waitForExistence(timeout: 10))
+    // Scrolled a little from its head, where a tree drawn afresh would stand.
+    let list = element("tree.list", in: app)
+    let point = { (down: Double) in list.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: down)) }
+    point(0.8).press(forDuration: 0.05, thenDragTo: point(0.55), withVelocity: .slow, thenHoldForDuration: 0.3)
+    let explorer = element("tree.row", holding: "Find what held the lock", in: app)
+    XCTAssertTrue(explorer.isHittable)
+    let stood = explorer.frame
+    explorer.tap()
+    titled("Find what held the lock", in: app)
+    waitForOne("tree.row", "label CONTAINS 'Find what held the lock' AND selected == true", in: app)
+    XCTAssertEqual(explorer.frame, stood, "where it stood")
+    attach("The same tree, scrolled, its highlight moved")
+    app.back.tap()
+    titled(delegatingTitle, in: app)
+    waitForOne("tree.row", "label CONTAINS '\(delegatingTitle)' AND selected == true", in: app)
+    XCTAssertEqual(explorer.frame, stood)
+  }
+
+  @MainActor
+  func testItFollowsTheLatestTurnAndHoldsAtAnEarlierOneUntilTheLatestIsAskedFor() {
+    let app = launched("paired", ["--open", "workstation-key/7", "--aside", "work"], turned: true)
+    titled("Tidy zsh startup time", in: app)
+    asideStands(app, at: "Worked for 3m 12s")
+    beginTurn("Now the other shell", in: app)
+    asideStands(app, at: "Working")
+    waitForOne("work.empty", "label == 'Nothing done yet'", in: app)
+    attach("The Aside at a Turn just begun")
+    stopTurn(in: app)
+    asideStands(app, at: "Stopped after 4m 12s")
+
+    // Held at an earlier one as another begins.
+    card("Worked for 3m 12s", in: app).tap()
+    asideStands(app, at: "Worked for 3m 12s")
+    beginTurn("And fish", in: app)
+    asideStands(app, at: "Worked for 3m 12s")
+    XCTAssertTrue(element("work.row", holding: "Read src/tui/serve_panel.rs", in: app).exists)
+    attach("The Aside held at an earlier Turn")
+    // The latest Turn's card resumes following.
+    card("Working", in: app).tap()
+    asideStands(app, at: "Working")
+    stopTurn(in: app)
+    asideStands(app, at: "Stopped after 4m 12s")
+    beginTurn("And nushell", in: app)
+    asideStands(app, at: "Working")
+
+    // Held at an earlier one, another Session opened and this one again begins at its latest.
+    card("Worked for 1m 23s", in: app).tap()
+    asideStands(app, at: "Worked for 1m 23s")
+    openFromTheSidebar("Draw the invite as a QR code in /serve", in: app)
+    asideStands(app, at: "Working")
+    openFromTheSidebar("Tidy zsh startup time", in: app)
+    asideStands(app, at: "Worked for 3m 12s")
+  }
+
+  @MainActor
+  func testItFollowsAndHoldsByTheSameRulesWhileItIsOffScreen() {
+    let app = launched("paired", ["--open", "workstation-key/7", "--aside", "work"], turned: true)
+    titled("Tidy zsh startup time", in: app)
+    asideStands(app, at: "Worked for 3m 12s")
+    app.buttons["session.aside"].tap()
+    noAsideStands(app)
+    beginTurn("Now the other shell", in: app)
+    app.buttons["session.aside"].tap()
+    asideStands(app, at: "Working")
+    stopTurn(in: app)
+    asideStands(app, at: "Stopped after 4m 12s")
+    // Held, with no room for it.
+    card("Worked for 1m 23s", in: app).tap()
+    asideStands(app, at: "Worked for 1m 23s")
+    turn(.portrait, app)
+    oneColumnStands(app, showing: "session.title")
+    beginTurn("And fish", in: app)
+    turn(.landscapeLeft, app)
+    asideStands(app, at: "Worked for 1m 23s")
+  }
+
+  @MainActor
+  func testWithAnActivityPushedANewTurnChangesNothingAndBackReturnsToItsTurn() {
+    let app = launched("paired", ["--open", "workstation-key/7", "--aside", "work"], turned: true)
+    titled("Tidy zsh startup time", in: app)
+    asideStands(app, at: "Worked for 3m 12s")
+    let check = element("work.row", holding: "cargo check", in: app)
+    app.scrolled(to: check, over: element("work.list", in: app)).tap()
+    asideStands(app, at: "Command", pushed: true)
+    beginTurn("Now the other shell", in: app)
+    asideStands(app, at: "Command", pushed: true)
+    attach("An Activity's whole as a Turn began")
+    app.navigationBars["Command"].buttons["BackButton"].tap()
+    asideStands(app, at: "Worked for 3m 12s")
+    XCTAssertTrue(check.waitForExistence(timeout: 10))
+    // Held there, as at any earlier Turn.
+    stopTurn(in: app)
+    beginTurn("And fish", in: app)
+    asideStands(app, at: "Worked for 3m 12s")
+    card("Working", in: app).tap()
+    asideStands(app, at: "Working")
+  }
+
+  @MainActor
+  func testASessionWithNoTurnSaysSoAndFillsInPlaceAsTheFirstBegins() {
+    // Working only for a Prompt not yet delivered, which a stop gives back.
+    let app = launched("paired", ["--open", "workstation-key/11", "--aside", "work"], turned: true)
+    titled("Note the floor in the pairing docs", in: app)
+    asideSays("Nothing done yet", in: app)
+    XCTAssertFalse(app.buttons["session.tree"].exists)
+    attach("A session with no Turn, and the Aside")
+    let words = element("work.empty", in: app).frame
+    app.buttons["session.stop"].tap()
+    waitForOne("session.composer", "value == 'Note the floor in the pairing docs'", in: app)
+    asideSays("Nothing done yet", in: app)
+    app.buttons["session.send"].tap()
+    asideStands(app, at: "Working")
+    waitForOne("work.empty", "label == 'Nothing done yet'", in: app)
+    XCTAssertEqual(element("work.empty", in: app).frame, words, "in place")
+  }
+
+  @MainActor
+  func testASessionThatCannotBeReadSaysWhyInIt() {
+    let app = launched("releases", ["--open", "laptop-key/4", "--aside", "tree", "--notice-stands", "1"], turned: true)
+    let unread = element("session.unread", in: app)
+    XCTAssertTrue(unread.waitForExistence(timeout: 10))
+    asideSays(unread.label, in: app)
+  }
+
+  @MainActor
+  func testItIsAbsentWhileNoSessionIsOpenAndReturnsAsAFirstPromptIsSent() {
+    let app = launched("composing", ["--open", "workstation-key/7", "--aside", "work"], turned: true)
+    titled("Tidy zsh startup time", in: app)
+    asideStands(app, at: "Worked for 3m 12s")
+    app.buttons["Show Sidebar"].firstMatch.tap()
+    app.buttons["home.compose"].tap()
+    columnsStand(app, title: "landing.title")
+    let button = app.buttons["session.aside"]
+    XCTAssertFalse(button.exists)
+    XCTAssertFalse(element("work.list", in: app).exists)
+    let composer = element("landing.composer", in: app)
+    composer.tap()
+    composer.typeText("Map the workspace")
+    columnsStand(app, title: "landing.title")
+    app.buttons["landing.send"].tap()
+    // Over the Provisional Session, whose work is none yet, and then over the Session begun.
+    titled("Map the workspace", in: app)
+    asideSays("Nothing done yet", in: app)
+    attach("The Aside over a Provisional Session")
+    asideStands(app, at: "Working")
+    attach("The Aside over the Session begun")
   }
 
   @MainActor
