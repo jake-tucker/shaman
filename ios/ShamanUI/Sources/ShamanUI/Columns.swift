@@ -165,6 +165,8 @@ final class Columns: UISplitViewController {
   }
 
   override func viewWillTransition(to size: CGSize, with coordinator: any UIViewControllerTransitionCoordinator) {
+    // Turned while partly folded, the fold read of the old size is not laid out against at the new.
+    stack.pose.turns(to: size)
     super.viewWillTransition(to: size, with: coordinator)
     coordinator.animate(alongsideTransition: nil) { [weak self] _ in self?.standAside() }
   }

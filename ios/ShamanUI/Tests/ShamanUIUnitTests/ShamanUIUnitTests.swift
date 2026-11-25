@@ -1560,15 +1560,40 @@ private final class CountedSession: OpenedSession {
 @Suite @MainActor struct PoseTests {
   private let across = (frame: CGRect(x: 0, y: 455.5, width: 669, height: 40), isActive: true)
 
-  @Test func theFoldIsTheActiveRegionWiderThanItIsTall() throws {
-    let fold = try #require(Fold(among: [across], height: 951))
+  private let portrait = CGSize(width: 669, height: 951)
+  private let landscape = CGSize(width: 951, height: 669)
+
+  @Test func theFoldIsTheActiveRegionWiderThanItIsTallAcrossTheWindow() throws {
+    let fold = try #require(Fold(among: [across], in: portrait))
     #expect(fold == Fold(top: 455.5, bottom: 495.5, window: 951))
     #expect(fold.band == 40 && fold.below == 495.5)
-    #expect(Fold(among: [], height: 951) == nil)
-    #expect(Fold(among: [(across.frame, false)], height: 951) == nil, "open flat")
+    #expect(Fold(among: [], in: portrait) == nil)
+    #expect(Fold(among: [(across.frame, false)], in: portrait) == nil, "open flat")
     let book = (frame: CGRect(x: 455.5, y: 0, width: 40, height: 669), isActive: true)
-    #expect(Fold(among: [book], height: 669) == nil, "partly folded like a book")
-    #expect(Fold(among: [book, (across.frame, false), across], height: 951) == fold)
+    #expect(Fold(among: [book], in: landscape) == nil, "partly folded like a book")
+    #expect(Fold(among: [book, (across.frame, false), across], in: portrait) == fold)
+    // Turned while partly folded, the region of the window as it stood lies across no more than that.
+    #expect(Fold(among: [across], in: landscape) == nil, "the old region in the turned window")
+    #expect(Fold(among: [book], in: portrait) == nil)
+  }
+
+  @Test func aFoldOfTheWindowAsItWasTallGoesAsItTurns() {
+    let pose = Pose()
+    let fold = Fold(top: 455.5, bottom: 495.5, window: 951)
+    pose.fold = fold
+    pose.turns(to: portrait)
+    #expect(pose.fold == fold, "the same height")
+    pose.turns(to: landscape)
+    #expect(pose.fold == nil)
+    // A change of size announced and taken back, the fold read again unchanged, which tells nobody, is there again.
+    pose.turns(to: portrait)
+    #expect(pose.fold == fold)
+    pose.turns(to: landscape)
+    pose.fold = nil
+    pose.turns(to: portrait)
+    #expect(pose.fold == nil, "read as gone meanwhile")
+    pose.fold = fold
+    #expect(pose.fold == fold)
   }
 
   @Test func aKeyboardTakesTheHalfBelowTheFold() {

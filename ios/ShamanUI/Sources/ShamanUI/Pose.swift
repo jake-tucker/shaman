@@ -5,8 +5,19 @@ import SwiftUI
 /// asks on a clock. There is no pose but that one: in every other the layout is the size class's alone.
 @MainActor @Observable
 final class Pose {
-  /// The fold, while the device is sat like a laptop.
-  var fold: Fold?
+  /// The fold, while the device is sat like a laptop: the one last read, while it is of a window as tall as the window
+  /// was last told it is to stand.
+  var fold: Fold? {
+    get {
+      guard let read, let height, abs(read.window - height) > 0.5 else { return read }
+      return nil
+    }
+    set { read = newValue }
+  }
+  /// The fold as it was last read, of whatever size.
+  private var read: Fold?
+  /// How tall the window is to stand, as it was last told before a change of size; nothing until it is first told.
+  private var height: CGFloat?
   /// How much of the window's foot the system counts as a keyboard's, which is how far it lifts a screen's foot.
   private(set) var keyboard: CGFloat = 0
   /// How much of the window's bottom safe area, while a keyboard is up, is above what the system counts as its: none on
@@ -36,6 +47,15 @@ final class Pose {
   var foldWithHalf: Fold? {
     keyboardIsUp ? nil : fold
   }
+
+  /// Told the window is to stand at `size`, before anything is laid out at it: a fold read of a window as tall as it was
+  /// is not of that one, so no screen is laid out against it until the fold is read again, or the window is told it
+  /// stands as tall as that fold's once more, as where a change of size is announced and taken back.
+  func turns(to size: CGSize) {
+    if height != size.height {
+      height = size.height
+    }
+  }
 }
 
 /// A window's bottom safe area, and how much of it a keyboard covers, both from the window's bottom edge.
@@ -60,11 +80,16 @@ struct Fold: Equatable {
 }
 
 extension Fold {
-  /// The fold in a window `height` tall, among the regions the system reserves where a display divides: one that is
-  /// active and wider than it is tall. Partly folded like a book, it is taller.
-  init?(among regions: some Sequence<(frame: CGRect, isActive: Bool)>, height: CGFloat) {
-    guard let across = regions.first(where: { $0.isActive && $0.frame.width > $0.frame.height }) else { return nil }
-    self.init(top: across.frame.minY, bottom: across.frame.maxY, window: height)
+  /// The fold in a window of `size`, among the regions the system reserves where a display divides: one that is active
+  /// and wider than it is tall, lying across the window from side to side. Partly folded like a book, it is taller. Read
+  /// as the window turns, the region may be the one of the size it had, which lies across no more than that.
+  init?(among regions: some Sequence<(frame: CGRect, isActive: Bool)>, in size: CGSize) {
+    guard
+      let across = regions.first(where: {
+        $0.isActive && $0.frame.width > $0.frame.height && $0.frame.minX <= 0.5 && $0.frame.maxX >= size.width - 0.5
+      })
+    else { return nil }
+    self.init(top: across.frame.minY, bottom: across.frame.maxY, window: size.height)
   }
 }
 
@@ -74,8 +99,7 @@ extension View {
     background {
       Color.clear
         .onGeometryChange(for: Fold?.self) { window in
-          Fold(
-            among: window.reservedRegions(kind: .division).map { ($0.frame, $0.isActive) }, height: window.size.height)
+          Fold(among: window.reservedRegions(kind: .division).map { ($0.frame, $0.isActive) }, in: window.size)
         } action: {
           pose.fold = $0
         }
