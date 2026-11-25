@@ -5,7 +5,8 @@ import XCTest
 /// width, so its columns stand side by side, and collapse as it is turned back.
 ///
 /// A class of these is named in the table of `scripts/ios-test.sh`, among those of the columns, which a Pro Max alone
-/// stands, or those that turn, which a Pro runs as well. No test turns a Duo, so neither is run on one.
+/// stands, those of one column on its side, which a Pro alone does, or those that turn, which both run. No test turns a
+/// Duo, so none is run on one.
 class TurningTestCase: XCTestCase {
   /// The app whose animations XCTest miscounts, once it does.
   @MainActor private var miscounted: XCUIApplication?

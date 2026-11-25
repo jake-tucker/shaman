@@ -37,10 +37,12 @@ set -euo pipefail
 # and `ShamanUITests` are the app's. A test target added later is added to the Pro's row, which names every one. A test
 # that does not hold on some shape is skipped here, in that simulator's row, and never by itself.
 #
-# Two kinds of the UI tests' classes do not hold on every shape, and a class of either is named here as it is added:
-# `columns`, for which columns stand side by side, as they do on a turned Pro Max; and `turning`, which turn the
-# simulator and hold on any that turns, which a Duo does for no test.
-columns=(SidebarTests)
+# Three kinds of the UI tests' classes do not hold on every shape, and a class of any is named here as it is added:
+# `columns`, for which columns stand side by side, as they do on a turned Pro Max; `one_column`, for which one stands
+# alone on its side, as on a turned Pro; and `turning`, which turn the simulator and hold on any that turns, which a Duo
+# does for no test.
+columns=(AsideTests SidebarTests)
+one_column=(OneColumnTests)
 turning=(TurningTests)
 simulators=(pro duo pro-max)
 row_of() {
@@ -51,7 +53,9 @@ row_of() {
       ;;
     duo)
       row=(-only-testing:ShamanUITests)
-      row+=("${columns[@]/#/-skip-testing:ShamanUITests/}" "${turning[@]/#/-skip-testing:ShamanUITests/}")
+      for kind in "${columns[@]}" "${one_column[@]}" "${turning[@]}"; do
+        row+=("-skip-testing:ShamanUITests/$kind")
+      done
       ;;
     pro-max)
       row=("${columns[@]/#/-only-testing:ShamanUITests/}" "${turning[@]/#/-only-testing:ShamanUITests/}")

@@ -11,14 +11,16 @@ final class SidebarTests: TurningTestCase {
     XCTAssertFalse(app.back.exists, "the main view's root has nothing to go back to")
     attach("The Sidebar beside a session")
 
-    // What is pushed over it goes with it.
-    element("session.turn", in: app).tap()
-    XCTAssertTrue(element("work.list", in: app).waitForExistence(timeout: 10), "a Turn's work pushed in the main view")
-    XCTAssertTrue(app.buttons["listing.scope"].isHittable, "the Sidebar beside it")
-    XCTAssertTrue(app.back.isHittable)
-    attach("The Sidebar beside a turn's work")
+    // What is pushed over it goes with it, as a Subagent's Session from the tree in the Aside.
+    app.buttons["session.tree"].tap()
+    let explorer = element("tree.row", holding: "Find what held the lock", in: app)
+    app.scrolled(to: explorer, over: element("tree.list", in: app)).tap()
+    titled("Find what held the lock", in: app)
+    app.buttons["session.aside"].tap()
+    columnsStand(app)
+    XCTAssertTrue(app.back.isHittable, "pushed in the main view")
+    attach("The Sidebar beside a subagent's session")
     open("Port the transcript to the phone", in: app)
-    XCTAssertTrue(element("work.list", in: app).waitForNonExistence(timeout: 10))
     XCTAssertFalse(app.back.exists, "it is the root in the other's place")
 
     // Scrolled away from its foot, and opened again, it stands at its foot, as one drawn afresh does.
