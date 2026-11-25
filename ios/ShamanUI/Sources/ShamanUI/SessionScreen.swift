@@ -75,6 +75,7 @@ struct SessionScreen: View {
         ToolbarItem(placement: .topBarTrailing) {
           TreeButtonView(button: tree) { showingTree = true }
         }
+        .visibilityPriority(.high)
       }
     }
     // Presented by the frame alone: SwiftUI clears the item only when the reader swipes the sheet away, which

@@ -39,8 +39,18 @@ final class ListingTests: XCTestCase {
     XCTAssertTrue(row("active", titled: "homelab · home-assistant", in: app).exists)
     XCTAssertTrue(row("active", titled: "laptop · design-system", in: app).exists)
 
-    XCTAssertTrue(app.buttons["home.servers"].exists)
-    XCTAssertTrue(app.buttons["home.compose"].exists)
+    let servers = app.buttons["home.servers"]
+    let compose = app.buttons["home.compose"]
+    XCTAssertTrue(servers.exists)
+    XCTAssertTrue(compose.exists)
+    // At the foot, "New session" lowest where the bar is vertical and last where it is not.
+    XCTAssertGreaterThan(servers.frame.midY, app.window.frame.midY)
+    if abs(compose.frame.midX - servers.frame.midX) < 2 {
+      XCTAssertGreaterThan(compose.frame.minY, servers.frame.maxY, "lowest")
+    } else {
+      XCTAssertEqual(compose.frame.midY, servers.frame.midY, accuracy: 2, "level with it")
+      XCTAssertGreaterThan(compose.frame.minX, servers.frame.maxX, "last")
+    }
     XCTAssertEqual(app.descendants(matching: .any)["home.beginsIn"].label, "New sessions begin in workstation")
     attach("Several servers' sessions in one listing")
   }

@@ -275,6 +275,7 @@ struct ListingScreen: View {
       }
       .accessibilityIdentifier("home.compose")
     }
+    .visibilityPriority(.high)
   }
 }
 
