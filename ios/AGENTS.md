@@ -86,11 +86,12 @@ kill "$RESIZING"
 ```
 
 The simulator holds a hardware keyboard and minimises the software one below the screen. To see a screen with the
-software keyboard up, set it to stay up, focus a field from a UI test without typing (`typeText` minimises it again),
-and set it back after. iOS leaves the keyboard of a secure field out of screenshots.
+software keyboard up, launch the app with `-AutomaticMinimizationEnabled NO`, as a UI test does that types with it up:
+it stays up for that launch alone, and the simulator's own setting is left as it was. iOS leaves the keyboard of a secure
+field out of screenshots.
 
 ```sh
-xcrun simctl spawn "$UDID" defaults write com.apple.Preferences AutomaticMinimizationEnabled -bool false
+xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake paired -AutomaticMinimizationEnabled NO
 ```
 
 **The fake.** Debug builds run over `FakeCore` with canned values when launched with `--fake <scenario>`; the
