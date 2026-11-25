@@ -21,97 +21,14 @@ struct TreeButtonView: View {
   }
 }
 
-/// The tree an open Session belongs to, as a sheet: its top-level Session first, then every Subagent beneath the one
-/// that spawned it — and beneath a Sidekick's, the Sessions it has a hand in, on whichever Server — in the order the
-/// core gives, the open Session highlighted. Choosing an entry hands its Session to `choose`; one the core gives none
-/// for, on a Server this phone cannot open it on, takes no tap, and is greyed only where the core says nothing of its
-/// work is current. A working Subagent that can be stopped alone is stopped by a swipe, which asks nothing first. It
-/// crosses from the core only while it is up.
+/// The tree an open Session belongs to, as a sheet, where an act's failure is said as well.
 struct TreeSheet: View {
   let model: SessionModel
   let choose: (String) -> Void
-  @State private var tree: SubagentTree?
 
   var body: some View {
     NavigationStack {
-      List {
-        ForEach(tree?.rows ?? [], id: \.id) { row in
-          Group {
-            if let session = row.session {
-              Button {
-                choose(session)
-              } label: {
-                TreeRowView(row: row)
-              }
-              .buttonStyle(.plain)
-            } else {
-              TreeRowView(row: row)
-            }
-          }
-          .listRowBackground(row.open ? Color.accentColor.opacity(0.14) : nil)
-          .accessibilityAddTraits(row.open ? .isSelected : [])
-          .accessibilityIdentifier("tree.row")
-          .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            if let stop = row.stop, let session = row.session {
-              Button(role: .destructive) {
-                Task { await model.stopSubagent(session) }
-              } label: {
-                Label {
-                  Text(verbatim: stop)
-                } icon: {
-                  Image(systemName: "stop.fill")
-                }
-              }
-              .accessibilityIdentifier("tree.stop")
-            }
-          }
-        }
-      }
-      .listStyle(.plain)
-      .overlay {
-        if let loading = tree?.loading {
-          ProgressView {
-            Text(verbatim: loading)
-          }
-          .accessibilityElement(children: .combine)
-          .accessibilityIdentifier("tree.loading")
-        } else if let failed = tree?.failed {
-          ContentUnavailableView {
-            Label {
-              Text(verbatim: failed)
-                .accessibilityIdentifier("tree.failed")
-            } icon: {
-              Image(systemName: "exclamationmark.triangle")
-            }
-          }
-        }
-      }
-      .safeAreaInset(edge: .top) {
-        if let banner = model.banner {
-          Banner(text: banner)
-            .onTapGesture { model.dismissBanner() }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint("Dismisses this")
-        }
-      }
-      .navigationTitle(Text(verbatim: tree?.title ?? ""))
-      .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        // The count stands beneath the title, as words rather than a control.
-        ToolbarItem(placement: .principal) {
-          VStack(spacing: 1) {
-            Text(verbatim: tree?.title ?? "")
-              .font(.headline)
-            if let count = tree?.count {
-              Text(verbatim: count)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("tree.count")
-            }
-          }
-          .accessibilityElement(children: .contain)
-        }
-      }
+      TreeScreen(model: model, saysFailures: true, choose: choose)
     }
     .presentationDetents([.medium, .large])
     // Opaque, so nothing of the conversation beneath reads as part of an entry.
@@ -119,7 +36,103 @@ struct TreeSheet: View {
     // It has nothing to put in a bar down its side, which would only narrow it.
     .toolbarVerticalBehavior(.disabled)
     .accessibilityIdentifier("tree.sheet")
-    .task {
+  }
+}
+
+/// The tree an open Session belongs to, in its sheet or the Aside: its top-level Session first, then every Subagent
+/// beneath the one that spawned it — and beneath a Sidekick's, the Sessions it has a hand in, on whichever Server — in
+/// the order the core gives, the open Session highlighted. Choosing an entry hands its Session to `choose`; one the
+/// core gives none for, on a Server this phone cannot open it on, takes no tap, and is greyed only where the core says
+/// nothing of its work is current. A working Subagent that can be stopped alone is stopped by a swipe, which asks
+/// nothing first. It crosses from the core only while it is up.
+struct TreeScreen: View {
+  let model: SessionModel
+  /// Whether an act's failure is said here, as it is where nothing else on screen says it.
+  var saysFailures = false
+  let choose: (String) -> Void
+  @State private var tree: SubagentTree?
+
+  var body: some View {
+    List {
+      ForEach(tree?.rows ?? [], id: \.id) { row in
+        Group {
+          if let session = row.session {
+            Button {
+              choose(session)
+            } label: {
+              TreeRowView(row: row)
+            }
+            .buttonStyle(.plain)
+          } else {
+            TreeRowView(row: row)
+          }
+        }
+        .listRowBackground(row.open ? Color.accentColor.opacity(0.14) : nil)
+        .accessibilityAddTraits(row.open ? .isSelected : [])
+        .accessibilityIdentifier("tree.row")
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+          if let stop = row.stop, let session = row.session {
+            Button(role: .destructive) {
+              Task { await model.stopSubagent(session) }
+            } label: {
+              Label {
+                Text(verbatim: stop)
+              } icon: {
+                Image(systemName: "stop.fill")
+              }
+            }
+            .accessibilityIdentifier("tree.stop")
+          }
+        }
+      }
+    }
+    .listStyle(.plain)
+    .accessibilityIdentifier("tree.list")
+    .overlay {
+      if let loading = tree?.loading {
+        ProgressView {
+          Text(verbatim: loading)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("tree.loading")
+      } else if let failed = tree?.failed {
+        ContentUnavailableView {
+          Label {
+            Text(verbatim: failed)
+              .accessibilityIdentifier("tree.failed")
+          } icon: {
+            Image(systemName: "exclamationmark.triangle")
+          }
+        }
+      }
+    }
+    .safeAreaInset(edge: .top) {
+      if saysFailures, let banner = model.banner {
+        Banner(text: banner)
+          .onTapGesture { model.dismissBanner() }
+          .accessibilityAddTraits(.isButton)
+          .accessibilityHint("Dismisses this")
+      }
+    }
+    .navigationTitle(Text(verbatim: tree?.title ?? ""))
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      // The count stands beneath the title, as words rather than a control.
+      ToolbarItem(placement: .principal) {
+        VStack(spacing: 1) {
+          Text(verbatim: tree?.title ?? "")
+            .font(.headline)
+          if let count = tree?.count {
+            Text(verbatim: count)
+              .font(.caption.monospacedDigit())
+              .foregroundStyle(.secondary)
+              .accessibilityIdentifier("tree.count")
+          }
+        }
+        .accessibilityElement(children: .contain)
+      }
+    }
+    .task(id: model.route) {
       for await tree in model.tree() {
         self.tree = tree
       }
