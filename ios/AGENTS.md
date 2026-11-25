@@ -460,17 +460,20 @@ If the phone is locked, stop and ask for it to be unlocked.
   path: one column shows the listing, and the scene keeps no screen. The cursor put in its field, or a first Prompt sent
   from it, opens it (`openRest`): the hosted screen that rested is given the path's name for it, and none is made.
 - The Aside is two values, `SessionStack.aside`'s, kept while the window lives and never by the scene: what it holds,
-  and whether the reader has it shown beside the main view. Neither says what is on screen. `Columns` has the split
-  view's inspector column hold it only while it is shown, a Session is open and it has room, as a view controller set
-  there is shown at once, and takes it out before a collapse, through which the system would stand it as a sheet. It has
-  room where the split view is not collapsed and the window is at least 690 points wide. `AsideScreen` draws what it
-  holds and keeps nothing, so it may be drawn wherever the Aside stands. The Turn it is at is worked out as it is drawn,
-  its place holding at one or following the conversation's latest, so nothing has to run while it is off screen. SwiftUI
-  keeps what it drew then, and begins none of its tasks again as their ids change, so what a screen in it reads is a
-  `Reading`, which begins again each time the Aside comes on screen. While it stands it follows its Session's
-  conversation, as the Session's own screen does only while on top; a conversation is read once however many follow
-  it. What a conversation's row leads to and the tree go through `SessionStack.lead(to:)` and `showTree()`, which
-  choose between the Aside and what stands where there is no room for it: the path, and a sheet.
+  and whether the reader has it shown beside the main view. Neither says what is on screen, which `Aside.onScreen` does,
+  from what each place it may stand says apart: `Columns` says `standsBeside`, asking `isShowing(.inspector)`. `Columns`
+  has the split view's inspector column hold it only while it is shown, a Session is open and it has room, as a view
+  controller set there is shown at once, and takes it out before a collapse, through which the system would stand it as
+  a sheet. It has room where the split view is not collapsed and the window is at least 690 points wide. `AsideScreen`
+  draws what it holds, the chooser beneath it included, and keeps nothing, so it may be drawn wherever the Aside stands;
+  the chooser sets what it holds and never whether it is shown. The card it marks is read from
+  `SessionStack.turnInAside(of:)`. The Turn it is at is worked out as it is drawn, its place holding at one or following
+  the conversation's latest, so nothing has to run while it is off screen. SwiftUI keeps what it drew then, and begins
+  none of its tasks again as their ids change, so what a screen in it reads is a `Reading`, which begins again each time
+  the Aside comes on screen. While it stands it follows its Session's conversation, as the Session's own screen does
+  only while on top; a conversation is read once however many follow it. What a conversation's row leads to and the tree
+  go through `SessionStack.lead(to:)` and `showTree()`, which choose between the Aside and what stands where there is no
+  room for it: the path, and a sheet.
 - A hosted screen has no `NavigationStack` over it, so a `NavigationLink` in it is greyed out and a
   `navigationDestination` pushes nothing. The Aside has a stack of its own, in which an Activity's row is a link and a
   Session's pushes in the main view. A row that leads to a screen is a `RowButton` that writes the path, and a
