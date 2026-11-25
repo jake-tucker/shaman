@@ -84,11 +84,12 @@ final class PosedLaptopTests: XCTestCase {
   /// below, its own view beginning at either edge of that band.
   @MainActor
   private func fieldStandsAboveTheFold(
-    in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+    in app: XCUIApplication, _ identifier: String = "session.composer", file: StaticString = #filePath,
+    line: UInt = #line
   ) {
     let keyboard = app.otherElements["inputView"].firstMatch
     XCTAssertTrue(keyboard.waitForExistence(timeout: 10), "the software keyboard is up", file: file, line: line)
-    let composer = element("session.composer", in: app)
+    let composer = element(identifier, in: app)
     waits("the field stands above the fold, over the keyboard", in: app, file: file, line: line) {
       let ends = composer.frame.midY + 20
       return abs(band.lowerBound - 8 - ends) < 1
@@ -300,5 +301,126 @@ final class PosedLaptopTests: XCTestCase {
     backs.firstMatch.tap()
     asideStands(app, at: "Worked for 3m 12s")
     conversationEndsAtTheFold(app)
+  }
+
+  @MainActor
+  func testASubagentsSessionPushedInThePoseStandsAsAnySessionDoes() throws {
+    let app = try launched("paired", "workstation-key/12")
+    asideStands(app, at: "Working")
+    // Its row below the fold pushes it in the main view, where it stands as its parent did.
+    let row = element("work.row", holding: "Explorer", in: app)
+    app.scrolled(to: row, over: element("work.list", in: app)).tap()
+    let place = app.staticTexts["session.place"]
+    waits("the Subagent's Session is pushed in the main view", in: app) {
+      place.exists && place.label == "Explorer · haiku" && app.back.exists
+    }
+    let bar = app.navigationBars["Working"]
+    waits("its own Aside below the fold", in: app) {
+      bar.exists && bar.frame.minY >= band.upperBound - 1 && bar.buttons.count == 0
+    }
+    conversationEndsAtTheFold(app)
+    XCTAssertFalse(app.buttons["session.aside"].exists, "no button puts it away")
+    attach("A Subagent's Session sat like a laptop")
+    app.back.tap()
+    waits("its parent's Session again", in: app) { !app.back.exists && place.label != "Explorer · haiku" }
+    asideStands(app, at: "Working")
+    conversationEndsAtTheFold(app)
+  }
+
+  /// The app over the fake's `scenario` with nothing open, sat like a laptop, the main view holding the new-session
+  /// screen at rest; and the Sidebar put away, where the system stands it over that screen.
+  @MainActor
+  private func launchedWithNothingOpen(_ scenario: String) throws -> XCUIApplication {
+    let app = try Pose.laptop.launched(
+      self, ["--fake", scenario, "--forget-scene", "-AutomaticMinimizationEnabled", "NO"])
+    let composer = element("landing.composer", in: app)
+    XCTAssertTrue(composer.waitForExistence(timeout: 10))
+    if app.buttons["listing.scope"].waitForExistence(timeout: 3), app.buttons["listing.scope"].isHittable {
+      // A tap beside it puts it away.
+      app.point(across: 0.92, down: 0.3).tap()
+      XCTAssertTrue(app.buttons["listing.scope"].waitForNonExistence(timeout: 10))
+    }
+    return app
+  }
+
+  @MainActor
+  func testTheNewSessionScreensFieldStandsOnTheHalfBelowAndItsLineAboveTheFold() throws {
+    let app = try launchedWithNothingOpen("offline")
+    fieldStands(22, aboveTheEdgeIn: app, "landing.composer")
+    let line = element("landing.unreachable", in: app)
+    waits("the Unreachable line stands above the fold", in: app) {
+      line.exists && line.frame.maxY <= band.lowerBound + 1 && line.frame.maxY > band.lowerBound - 40
+    }
+    let workspace = element("landing.asks", in: app)
+    XCTAssertTrue(workspace.exists && workspace.frame.maxY <= line.frame.minY, "its middle above the line")
+    // Nothing else below the fold: no Aside, no bar, nothing but the field.
+    XCTAssertFalse(element("work.list", in: app).exists)
+    XCTAssertFalse(element("tree.list", in: app).exists)
+    let below = app.navigationBars.allElementsBoundByIndex.filter { $0.frame.minY >= band.upperBound - 1 }
+    XCTAssertTrue(below.isEmpty, "\(below)")
+    attach("Nothing open, sat like a laptop")
+
+    let composer = element("landing.composer", in: app)
+    for _ in 0..<2 {
+      composer.tap()
+      fieldStandsAboveTheFold(in: app, "landing.composer")
+      XCTAssertTrue(holdsTheKeyboard(composer), "it keeps its focus")
+      XCTAssertLessThanOrEqual(line.frame.maxY, composer.frame.midY - 20, "under its line")
+      composer.typeText("hi")
+      attach("The new-session screen's field above the fold")
+      dragTheKeyboardDown(in: app)
+      fieldStands(22, aboveTheEdgeIn: app, "landing.composer")
+    }
+  }
+
+  @MainActor
+  func testWithNothingOpenTheWorkspacePickerScrollsOnThroughTheFold() throws {
+    let app = try launchedWithNothingOpen("composing")
+    let elsewhere = app.buttons["landing.elsewhere"]
+    XCTAssertTrue(elsewhere.waitForExistence(timeout: 10))
+    elsewhere.tap()
+    let picker = element("picker.screen", in: app)
+    XCTAssertTrue(picker.waitForExistence(timeout: 10))
+    XCTAssertGreaterThanOrEqual(picker.frame.maxY, app.window.frame.maxY - 1, "to the display's foot")
+    let last = element("workspace/workstation/photo-archive", in: app)
+    app.scrolled(to: last, over: picker)
+    let rows = elements("workspace/workstation/notes", in: app).firstMatch
+    waits("its rows stand on through the fold", in: app) {
+      [last, rows].contains { $0.exists && $0.frame.minY >= band.upperBound }
+    }
+    XCTAssertFalse(element("work.list", in: app).exists, "no Aside with nothing open")
+    attach("The Workspace Picker sat like a laptop")
+  }
+
+  @MainActor
+  func testWithNothingOpenTheSidebarCalledBackRunsOnBelowTheFoldOverTheNewSessionScreen() throws {
+    let app = try launchedWithNothingOpen("composing")
+    app.buttons["Show Sidebar"].firstMatch.tap()
+    let list = app.collectionViews["listing.list"]
+    XCTAssertTrue(app.buttons["listing.scope"].waitForExistence(timeout: 10))
+    XCTAssertGreaterThan(list.frame.maxY, band.upperBound, "over both halves")
+    attach("The Sidebar over the new-session screen")
+    // Chosen from it, a Session stands as the first did.
+    let row = element("listing.active", holding: "Tidy zsh startup time", in: app)
+    app.scrolled(to: row, over: list).tap()
+    asideStands(app, at: "Worked for 3m 12s")
+    conversationEndsAtTheFold(app)
+  }
+
+  @MainActor
+  func testLaunchedInThePoseTheArrangementStandsWithNothingSaidTwice() throws {
+    for arguments in [[], ["--aside", "work"]] {
+      let app = try launched("releases", "workstation-key/7", ["--notice-stands", "60"] + arguments)
+      asideStands(app, at: "Worked for 3m 12s")
+      conversationEndsAtTheFold(app)
+      XCTAssertFalse(app.back.exists, "the Session the main view's root")
+      XCTAssertFalse(app.buttons["listing.scope"].isHittable, "the main view alone")
+      let notices = elements("notice", in: app)
+      XCTAssertTrue(notices.firstMatch.waitForExistence(timeout: 10))
+      XCTAssertEqual(notices.count, 1, "said once")
+      XCTAssertLessThanOrEqual(notices.firstMatch.frame.maxY, band.lowerBound, "beneath the main view's bar")
+      attach("Launched sat like a laptop")
+      app.terminate()
+    }
   }
 }
