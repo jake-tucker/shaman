@@ -292,17 +292,17 @@ final class NewSessionModel {
     self.core = core
   }
 
-  /// Follows the Landing, and its draft, until the screen turns into the Session or goes.
+  /// Follows the Landing, and its draft, until the screen turns into the Session or goes; and again as it returns, when
+  /// the draft may hold what another new-session screen's field was given meanwhile.
   func follow() async {
     var drafts: Task<Void, Never>?
     defer { drafts?.cancel() }
     for await landing in core.landing() {
-      let first = self.landing == nil
       if !Self.sameWorkspace(self.landing, landing) || landing.worktree == nil {
         newWorktree = false
       }
       self.landing = landing
-      if first {
+      if drafts == nil {
         take(core.draft(for: landing.draft))
         let key = landing.draft
         drafts = Task { [weak self] in await self?.followDraft(key) }

@@ -1988,6 +1988,23 @@ private final class HeldTime: BackgroundTasks {
     #expect(core.draft(for: "workstation-key/1").text == "", "a draft of its own")
   }
 
+  @Test func shownAgainTheScreenHoldsWhatItsDraftHasComeToHold() async throws {
+    let core = FakeCore(.composing)
+    let draft = FakeOpenedSession.landingDraft
+    let model = NewSessionModel(core: core)
+    var following = Task { await model.follow() }
+    try await until(model) { $0.landing != nil }
+    model.text = "half a thought"
+    following.cancel()
+    await following.value
+    // As another new-session screen's field changes it meanwhile, the draft being the one they share.
+    core.setDraft("half a thought, finished", version: core.draft(for: draft).version, for: draft)
+    #expect(model.text == "half a thought")
+    following = Task { await model.follow() }
+    defer { following.cancel() }
+    try await until(model) { $0.text == "half a thought, finished" }
+  }
+
   @Test func sendingTurnsTheScreenIntoTheSessionBegunAndEmptiesTheDraft() async throws {
     let core = FakeCore(.composing)
     let model = NewSessionModel(core: core)
