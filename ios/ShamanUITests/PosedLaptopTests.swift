@@ -1,9 +1,304 @@
 import XCTest
 
 /// The Duo sat like a laptop, partly folded and turned: run by `scripts/ios-test.sh posed laptop`.
+///
+/// What holds that it folded is where things stand about the fold, as the display open flat in the same portrait has the
+/// conversation run on to its foot, and no Aside.
 final class PosedLaptopTests: XCTestCase {
+  /// The band kept for the fold, across the window.
+  private let band: ClosedRange<CGFloat> = 455.5...495.5
+
+  /// The app over the fake's `scenario` with the Session `session` open, sat like a laptop, the software keyboard one
+  /// that stays up.
   @MainActor
-  func testTheBarStandsAcrossTheHead() throws {
-    try PosedWalk.walk(.laptop, self, barStandsVertically: false)
+  private func launched(_ scenario: String, _ session: String, _ arguments: [String] = []) throws -> XCUIApplication {
+    try Pose.laptop.launched(
+      self,
+      ["--fake", scenario, "--open", session, "--forget-scene", "-AutomaticMinimizationEnabled", "NO"] + arguments)
+  }
+
+  @MainActor
+  private func elements(_ identifier: String, in app: XCUIApplication) -> XCUIElementQuery {
+    app.descendants(matching: .any).matching(identifier: identifier)
+  }
+
+  @MainActor
+  private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+    elements(identifier, in: app).firstMatch
+  }
+
+  @MainActor
+  private func element(_ identifier: String, holding text: String, in app: XCUIApplication) -> XCUIElement {
+    elements(identifier, in: app).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+  }
+
+  /// Waits until it stands so.
+  @MainActor
+  private func waits(
+    _ said: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line, _ stands: () -> Bool
+  ) {
+    for _ in 0..<40 {
+      if stands() { return }
+      RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+    }
+    attach("Not as it should stand")
+    XCTFail(said, file: file, line: line)
+  }
+
+  /// Waits until the Aside stands below the fold, its bar reading `title`, with Back in it where it is `pushed` and
+  /// nothing else, above the field, which stands 22 points above the edge.
+  @MainActor
+  private func asideStands(
+    _ app: XCUIApplication, at title: String, pushed: Bool = false, file: StaticString = #filePath, line: UInt = #line
+  ) {
+    let bar = app.navigationBars[title]
+    waits("the Aside stands below the fold at \(title)", in: app, file: file, line: line) {
+      bar.exists && bar.frame.minY >= band.upperBound - 1 && bar.buttons.count == (pushed ? 1 : 0)
+    }
+    if pushed {
+      XCTAssertTrue(bar.buttons["BackButton"].isHittable, "its own Back", file: file, line: line)
+    }
+    fieldStands(22, aboveTheEdgeIn: app, "session.composer", file: file, line: line)
+    XCTAssertFalse(app.buttons["session.aside"].exists, "no button puts it away", file: file, line: line)
+    XCTAssertFalse(element("tree.sheet", in: app).exists, file: file, line: line)
+  }
+
+  /// Waits until the conversation, or the bar at its foot where there is one, ends where the fold begins; and with it
+  /// `atItsFoot`, until every row on screen ends there too.
+  @MainActor
+  private func conversationEndsAtTheFold(
+    _ app: XCUIApplication, atItsFoot: Bool = false, file: StaticString = #filePath, line: UInt = #line
+  ) {
+    let rows = ["session.agentMessage", "session.turn", "session.userMessage", "session.compaction"]
+    let conversation = app.collectionViews["session.conversation"]
+    waits("the conversation ends at the fold", in: app, file: file, line: line) {
+      let bar = element("session.bar", in: app)
+      let foot = bar.exists ? bar.frame.maxY : conversation.frame.maxY
+      guard foot <= band.lowerBound + 1, foot > band.lowerBound - 24 else { return false }
+      let ends = rows.flatMap { elements($0, in: app).allElementsBoundByIndex }.filter(\.isHittable).map(\.frame.maxY)
+      return !atItsFoot || (!ends.isEmpty && ends.allSatisfy { $0 <= conversation.frame.maxY + 1 })
+    }
+  }
+
+  /// Waits until the field stands just above the band kept for the fold, the software keyboard fully up over the half
+  /// below, its own view beginning at either edge of that band.
+  @MainActor
+  private func fieldStandsAboveTheFold(
+    in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+  ) {
+    let keyboard = app.otherElements["inputView"].firstMatch
+    XCTAssertTrue(keyboard.waitForExistence(timeout: 10), "the software keyboard is up", file: file, line: line)
+    let composer = element("session.composer", in: app)
+    waits("the field stands above the fold, over the keyboard", in: app, file: file, line: line) {
+      let ends = composer.frame.midY + 20
+      return abs(band.lowerBound - 8 - ends) < 1
+        && keyboard.frame.minY > band.lowerBound - 1 && keyboard.frame.minY < band.upperBound + 1
+    }
+  }
+
+  /// Drags the software keyboard down, as a reader does over the conversation.
+  @MainActor
+  private func dragTheKeyboardDown(
+    in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+  ) {
+    app.point(across: 0.5, down: 0.25).press(forDuration: 0.05, thenDragTo: app.point(across: 0.5, down: 0.98))
+    XCTAssertTrue(
+      app.keyboards.firstMatch.waitForNonExistence(timeout: 10), "its keyboard put down", file: file, line: line)
+  }
+
+  @MainActor
+  private func holdsTheKeyboard(_ element: XCUIElement) -> Bool {
+    element.value(forKey: "hasKeyboardFocus") as? Bool ?? false
+  }
+
+  @MainActor
+  func testTheConversationEndsAtTheFoldWithItsStatusLinesAndTheAsideStandsBelowOverTheField() throws {
+    for arguments in [[], ["--aside", "work"]] {
+      let app = try launched("paired", "workstation-key/1", arguments)
+      asideStands(app, at: "Working")
+      conversationEndsAtTheFold(app, atItsFoot: true)
+      attach("A working session, sat like a laptop")
+      let list = element("work.list", in: app)
+      XCTAssertGreaterThanOrEqual(list.frame.minY, band.upperBound - 1)
+      XCTAssertLessThanOrEqual(list.frame.maxY, element("session.composer", in: app).frame.midY - 20)
+      XCTAssertTrue(
+        elements("session.turn", in: app).waitForOne(NSPredicate(format: "selected == true")), "its card is marked")
+      let sidebar = app.buttons["Show Sidebar"].firstMatch
+      XCTAssertTrue(sidebar.isHittable && sidebar.frame.maxY < 134, "the bar across the head")
+      app.terminate()
+    }
+  }
+
+  @MainActor
+  func testAConversationAtItsFootIsThereAndADragMovesIt() throws {
+    let app = try launched("longSession", "workstation-key/30")
+    let last = element("session.agentMessage", holding: "The last item of this Session", in: app)
+    XCTAssertTrue(last.waitForExistence(timeout: 15))
+    asideStands(app, at: "Working")
+    conversationEndsAtTheFold(app, atItsFoot: true)
+    attach("A long conversation at its foot")
+    let stood = last.frame.minY
+    let start = app.point(across: 0.5, down: 0.2)
+    let moved = { !last.exists || !last.isHittable || last.frame.minY > stood + 50 }
+    // Again where it came before the list had landed.
+    for _ in 0..<3 where !moved() {
+      start.press(
+        forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 150)), withVelocity: .slow,
+        thenHoldForDuration: 0.3)
+    }
+    XCTAssertTrue(moved(), "the drag moved the conversation")
+    // Nothing of it stands in the fold away from its foot either.
+    XCTAssertLessThanOrEqual(app.collectionViews["session.conversation"].frame.maxY, band.lowerBound + 1)
+  }
+
+  @MainActor
+  func testTheFieldGoesAboveTheFoldWithTheKeyboardAndBackKeepingItsFocus() throws {
+    let app = try launched("paired", "workstation-key/1")
+    let composer = element("session.composer", in: app)
+    var typed = ""
+    for _ in 0..<2 {
+      asideStands(app, at: "Working")
+      composer.tap()
+      fieldStandsAboveTheFold(in: app)
+      XCTAssertTrue(holdsTheKeyboard(composer), "it keeps its focus")
+      let bar = element("session.bar", in: app)
+      XCTAssertLessThanOrEqual(bar.frame.maxY, composer.frame.midY - 20, "under the status lines")
+      XCTAssertTrue(element("work.list", in: app).waitForNonExistence(timeout: 10), "the keyboard has that half")
+      composer.typeText("hi")
+      typed += "hi"
+      XCTAssertEqual(composer.value as? String, typed)
+      XCTAssertTrue(holdsTheKeyboard(composer))
+      attach("The field above the fold, typed in")
+      dragTheKeyboardDown(in: app)
+      XCTAssertEqual(composer.value as? String, typed)
+    }
+    asideStands(app, at: "Working")
+    conversationEndsAtTheFold(app)
+    attach("The keyboard dragged down")
+  }
+
+  @MainActor
+  func testACardAndTheTreeButtonTurnTheAsideAndNeitherPushNorPresent() throws {
+    let app = try launched("paired", "workstation-key/12")
+    asideStands(app, at: "Working")
+    for _ in 0..<2 {
+      app.buttons["session.tree"].tap()
+      asideStands(app, at: "Subagents")
+      chooserStands(beneath: "tree.list", in: app)
+      attach("The tree below the fold")
+      element("session.turn", in: app).tap()
+      asideStands(app, at: "Working")
+      chooserStands(beneath: "work.list", in: app)
+      XCTAssertFalse(app.back.exists, "nothing pushed")
+    }
+    // The tree's last Session is reached above the chooser.
+    app.buttons["aside.tree"].tap()
+    asideStands(app, at: "Subagents")
+    let list = element("tree.list", in: app)
+    let last = element("tree.row", holding: "Review the lock's tests", in: app)
+    app.scrolled(to: last, over: list)
+    list.swipeUp()
+    waits("the last row stands above the chooser", in: app) {
+      last.frame.maxY <= app.buttons["aside.work"].frame.minY + 1
+    }
+    attach("The tree's last row")
+    app.buttons["aside.work"].tap()
+    asideStands(app, at: "Working")
+  }
+
+  /// The chooser stands beneath the Aside's list, `list`, above the field, marking the one `list` is of.
+  @MainActor
+  private func chooserStands(
+    beneath list: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+  ) {
+    let chosen = list == "tree.list" ? "aside.tree" : "aside.work"
+    XCTAssertTrue(
+      elements(chosen, in: app).waitForOne(NSPredicate(format: "selected == true")), chosen, file: file, line: line)
+    let above = element(list, in: app)
+    XCTAssertTrue(above.waitForExistence(timeout: 10), file: file, line: line)
+    for side in [app.buttons["aside.work"], app.buttons["aside.tree"]] {
+      XCTAssertGreaterThanOrEqual(side.frame.minY, above.frame.maxY - 1, "beneath it", file: file, line: line)
+      XCTAssertLessThanOrEqual(
+        side.frame.maxY, element("session.composer", in: app).frame.midY - 20, "over the field", file: file, line: line)
+      XCTAssertTrue(side.isHittable, file: file, line: line)
+    }
+  }
+
+  @MainActor
+  func testASessionWithNoTurnSaysSoThere() throws {
+    let app = try launched("paired", "workstation-key/11")
+    let empty = element("work.empty", in: app)
+    waits("it says nothing is done yet", in: app) {
+      empty.exists && empty.label == "Nothing done yet" && empty.frame.minY >= band.upperBound
+    }
+    fieldStands(22, aboveTheEdgeIn: app, "session.composer")
+    attach("A session with no Turn")
+  }
+
+  @MainActor
+  func testAnApprovalAtHalfHeightLandsBelowTheFoldWithTheStatusLinesInSight() throws {
+    let app = try launched("paired", "workstation-key/3")
+    let title = element("approval.title", in: app)
+    XCTAssertTrue(title.waitForExistence(timeout: 10))
+    waits("the sheet stands below the fold", in: app) { title.frame.minY >= band.upperBound - 8 }
+    attach("An approval, sat like a laptop")
+    // The system begins it 8 points inside the band.
+    let grabber = app.buttons["Sheet Grabber"]
+    XCTAssertTrue(grabber.waitForExistence(timeout: 10))
+    XCTAssertGreaterThanOrEqual(grabber.frame.minY, band.lowerBound)
+    XCTAssertTrue(element("approval.acceptOnce", in: app).isHittable)
+    let words = element("session.barWords", in: app)
+    XCTAssertTrue(words.exists, "the status lines in sight above it")
+    XCTAssertLessThanOrEqual(words.frame.maxY, band.lowerBound)
+    app.swipeSheetAway()
+    XCTAssertTrue(element("approval.sheet", in: app).waitForNonExistence(timeout: 20))
+    conversationEndsAtTheFold(app)
+    element("session.review", in: app).tap()
+    waits("and again", in: app) { title.exists && title.frame.minY >= band.upperBound - 8 }
+    XCTAssertTrue(words.exists, "the status lines in sight above it")
+    XCTAssertLessThanOrEqual(words.frame.maxY, band.lowerBound)
+    attach("An approval reviewed, the status lines above it")
+  }
+
+  /// `walk-duo.sh`'s walk, but for its ends: laying the phone flat and turning it is a person's, as no test changes a
+  /// pose.
+  @MainActor
+  func testAnActivityOpensWithinTheAsideAndStaysThroughTheKeyboardAndTheSidebar() throws {
+    let app = try launched("paired", "workstation-key/7")
+    asideStands(app, at: "Worked for 3m 12s")
+    element("work.row", holding: "Read src/serving.rs", in: app).tap()
+    let detail = element("detail.screen", in: app)
+    XCTAssertTrue(detail.waitForExistence(timeout: 10))
+    XCTAssertGreaterThanOrEqual(detail.frame.minY, band.upperBound - 1, "below the fold")
+    let backs = app.buttons.matching(identifier: "BackButton")
+    waits("pushed within the Aside, and nothing in the main view", in: app) {
+      backs.count == 1 && backs.firstMatch.frame.minY >= band.upperBound - 1
+    }
+    XCTAssertTrue(app.staticTexts["session.title"].isHittable)
+    attach("An activity within the Aside")
+
+    let composer = element("session.composer", in: app)
+    composer.tap()
+    fieldStandsAboveTheFold(in: app)
+    composer.typeText("hi")
+    XCTAssertEqual(composer.value as? String, "hi")
+    dragTheKeyboardDown(in: app)
+    fieldStands(22, aboveTheEdgeIn: app, "session.composer")
+    XCTAssertTrue(detail.waitForExistence(timeout: 10), "still pushed")
+
+    // Called back, the Sidebar covers both halves, and goes as the Session is chosen again.
+    app.buttons["Show Sidebar"].firstMatch.tap()
+    let scope = app.buttons["listing.scope"]
+    XCTAssertTrue(scope.waitForExistence(timeout: 10))
+    XCTAssertGreaterThan(app.collectionViews["listing.list"].frame.maxY, band.upperBound, "over both halves")
+    attach("The Sidebar over both halves")
+    let row = element("listing.active", holding: "Tidy zsh startup time", in: app)
+    app.scrolled(to: row, over: app.collectionViews["listing.list"]).tap()
+    XCTAssertTrue(detail.waitForExistence(timeout: 10), "as it was, the Session being the one open")
+    fieldStands(22, aboveTheEdgeIn: app, "session.composer")
+    waits("the Aside's Back alone", in: app) { backs.count == 1 && backs.firstMatch.isHittable }
+    backs.firstMatch.tap()
+    asideStands(app, at: "Worked for 3m 12s")
+    conversationEndsAtTheFold(app)
   }
 }
