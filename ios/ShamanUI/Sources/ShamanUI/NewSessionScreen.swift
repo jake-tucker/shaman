@@ -266,6 +266,7 @@ private struct LandingFoot: View {
           .accessibilityIdentifier("landing.invalid")
       }
     }
+    .readingSides()
   }
 }
 

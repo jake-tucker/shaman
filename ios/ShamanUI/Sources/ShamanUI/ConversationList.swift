@@ -61,9 +61,9 @@ struct ConversationGeometry {
     place()
   }
 
-  /// The row at `index`'s frame across `width`.
-  func frame(of index: Int, width: CGFloat) -> CGRect {
-    CGRect(x: 0, y: tops[index], width: width, height: height(of: ids[index]))
+  /// The row at `index`'s frame, across `width` from `x`.
+  func frame(of index: Int, x: CGFloat = 0, width: CGFloat) -> CGRect {
+    CGRect(x: x, y: tops[index], width: width, height: height(of: ids[index]))
   }
 
   func height(of id: String) -> CGFloat {
@@ -191,6 +191,8 @@ struct ConversationList<Row: View>: UIViewRepresentable {
   let rows: [ConversationRow]
   /// How many Prompts the composer has sent, each of which takes the list back to its foot.
   let sent: Int
+  /// The content margins of the container the list stands in, which its rows stand by.
+  let margins: EdgeInsets
   @ViewBuilder let row: (ConversationRow) -> Row
 
   func makeCoordinator() -> ConversationFollower {
@@ -226,6 +228,7 @@ struct ConversationList<Row: View>: UIViewRepresentable {
       follower.sent = sent
       follower.following = true
     }
+    follower.margins = margins
     follower.take(rows)
   }
 }
@@ -242,6 +245,14 @@ struct ConversationList<Row: View>: UIViewRepresentable {
   var geometry = ConversationGeometry()
   private(set) var rows: [String: ConversationRow] = [:]
   var sent = 0
+  /// The container's content margins, which the rows stand by at each side.
+  var margins = EdgeInsets() {
+    didSet {
+      if margins != oldValue {
+        view?.collectionViewLayout.invalidateLayout()
+      }
+    }
+  }
   /// Whether the reader stands at the foot, so that the list follows it.
   var following = true {
     didSet {
@@ -538,11 +549,13 @@ final class FootCollectionView: UICollectionView {
   }
 }
 
-/// The layout of an open conversation: its rows one above another across its width, where `ConversationGeometry`
-/// stands them.
+/// The layout of an open conversation: its rows one above another where `ConversationGeometry` stands them, across as
+/// much of its width as `ReadingSides` leaves. What is beside them scrolls it as they do.
 final class ConversationLayout: UICollectionViewLayout {
   private weak var follower: ConversationFollower?
   private var width: CGFloat = 0
+  /// Where the rows stand across that width.
+  private var sides = ReadingSides(leading: 0, trailing: 0)
 
   init(follower: ConversationFollower) {
     self.follower = follower
@@ -559,14 +572,18 @@ final class ConversationLayout: UICollectionViewLayout {
 
   override func prepare() {
     super.prepare()
-    let width = collectionView?.bounds.width ?? 0
-    if width != self.width {
+    let was = rowWidth
+    let drawn = width != 0
+    width = collectionView?.bounds.width ?? 0
+    sides = ReadingSides(across: width, margins: follower?.margins ?? EdgeInsets())
+    if drawn, rowWidth != was {
       // Drawn across another width, every row measures anew.
-      if self.width != 0 {
-        follower?.geometry.forget()
-      }
-      self.width = width
+      follower?.geometry.forget()
     }
+  }
+
+  private var rowWidth: CGFloat {
+    max(0, width - sides.leading - sides.trailing)
   }
 
   override var collectionViewContentSize: CGSize {
@@ -586,7 +603,8 @@ final class ConversationLayout: UICollectionViewLayout {
 
   private func attributes(at index: Int, in geometry: ConversationGeometry) -> UICollectionViewLayoutAttributes {
     let attributes = UICollectionViewLayoutAttributes(forCellWith: IndexPath(item: index, section: 0))
-    attributes.frame = geometry.frame(of: index, width: width)
+    let turned = collectionView?.effectiveUserInterfaceLayoutDirection == .rightToLeft
+    attributes.frame = geometry.frame(of: index, x: turned ? sides.trailing : sides.leading, width: rowWidth)
     return attributes
   }
 

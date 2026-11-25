@@ -19,6 +19,8 @@ extension View {
 /// edge the field already is, so the foot's own padding gives way by as much as it comes to, down to what it keeps over
 /// one. However the keyboard comes and goes, the field is then never lower than it rests nor nearer the keyboard than
 /// that. It is one view throughout, so it keeps its focus.
+///
+/// It keeps no sides: what the foot draws stands across its column by `readingSides`, under the conversation's words.
 private struct ComposerFoot<Held, Foot: View>: ViewModifier {
   let held: Held?
   let foot: (Held) -> Foot
@@ -36,7 +38,6 @@ private struct ComposerFoot<Held, Foot: View>: ViewModifier {
       .safeAreaInset(edge: .bottom, spacing: 0) {
         if let held {
           foot(held)
-            .padding(.horizontal, 12)
             .padding(.top, clear)
             .padding(.bottom, max(clear, stands - keyboard))
             .background(.bar)

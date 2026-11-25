@@ -774,6 +774,98 @@ private final class RefusingSigner: KeySigner {
   }
 }
 
+@Suite struct ReadingSidesTests {
+  private func sides(across width: CGFloat, _ leading: CGFloat = 20, _ trailing: CGFloat = 20) -> ReadingSides {
+    ReadingSides(across: width, margins: EdgeInsets(top: 0, leading: leading, bottom: 0, trailing: trailing))
+  }
+
+  @Test func itStandsByTheContainersMarginsAndNeverNearerAnEdgeThanEightPoints() {
+    #expect(sides(across: 402, 16, 16) == ReadingSides(leading: 16, trailing: 16))
+    #expect(sides(across: 382, 20, 0) == ReadingSides(leading: 20, trailing: 8))
+    #expect(sides(across: 382, 0, 20) == ReadingSides(leading: 8, trailing: 20))
+  }
+
+  @Test func itIsAtMost700PointsWideInTheMiddleOfItsColumnWhicheverSideTheBarStandsAt() {
+    #expect(sides(across: 740) == ReadingSides(leading: 20, trailing: 20))
+    #expect(sides(across: 832) == ReadingSides(leading: 66, trailing: 66))
+    #expect(sides(across: 867, 0, 20) == ReadingSides(leading: 83, trailing: 84), "on whole points")
+    for width: CGFloat in [831.9999999999999, 832.0000000000001] {
+      #expect(sides(across: width).leading == 66, "a hair less or more moves nothing")
+      #expect(abs(sides(across: width).trailing - 66) < 0.001)
+    }
+    for width in stride(from: CGFloat(300), through: 1200, by: 0.5) {
+      let sides = sides(across: width, 0, 20)
+      #expect(width - sides.leading - sides.trailing <= 700)
+      #expect(sides.leading >= 8 && sides.trailing >= 20)
+    }
+  }
+}
+
+@Suite @MainActor struct ConversationSidesTests {
+  private func layOut(_ view: UIView) {
+    for _ in 0..<4 {
+      view.layoutIfNeeded()
+    }
+  }
+
+  private func rows(of view: UICollectionView) -> [CGRect] {
+    view.visibleCells.map(\.frame)
+  }
+
+  @Test func theRowsStandByTheSidesAndTheListAcrossItsWholeColumn() {
+    let (view, follower) = conversationList(rows: 40)
+    #expect(rows(of: view).allSatisfy { $0.minX == 8 && $0.maxX == 392 }, "no margins, and so the least")
+    follower.margins = EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 0)
+    layOut(view)
+    #expect(!rows(of: view).isEmpty)
+    #expect(rows(of: view).allSatisfy { $0.minX == 20 && $0.maxX == 392 })
+    #expect(view.contentSize.width == 400)
+    #expect(follower.following && view.distanceToFoot < 1, "at its foot still")
+  }
+
+  @Test func rightToLeftTheLeadingSideIsTheRight() {
+    let (view, follower) = conversationList(rows: 40)
+    view.semanticContentAttribute = .forceRightToLeft
+    follower.margins = EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 0)
+    layOut(view)
+    #expect(!rows(of: view).isEmpty)
+    #expect(rows(of: view).allSatisfy { $0.minX == 8 && $0.maxX == 380 })
+  }
+
+  @Test func aListWiderThanItReadsStandsItsRowsInTheMiddle() {
+    let (view, _follower) = conversationList(rows: 40)
+    defer { withExtendedLifetime(_follower) {} }
+    view.frame.size.width = 832
+    layOut(view)
+    #expect(!rows(of: view).isEmpty)
+    #expect(rows(of: view).allSatisfy { $0.minX == 66 && $0.width == 700 })
+    #expect(rows(of: view).allSatisfy { $0.height == 60 })
+  }
+
+  @Test func theRowsMeasureAnewAsTheyComeToStandAcrossAnotherWidthAndNotOtherwise() {
+    let (view, follower) = conversationList(rows: 8)
+    follower.report("item:0", 200)
+    follower.margins = EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 0)
+    layOut(view)
+    #expect(rows(of: view).count == 8)
+    #expect(rows(of: view).allSatisfy { $0.height == 60 }, "the one that stood taller among them")
+
+    follower.report("item:0", 200)
+    follower.margins = EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 20)
+    layOut(view)
+    #expect(follower.geometry.height(of: "item:0") == 200, "as wide as it was, nearer the other side")
+    #expect(rows(of: view).allSatisfy { $0.minX == 8 && $0.maxX == 380 })
+
+    view.frame.size.width = 800
+    layOut(view)
+    #expect(rows(of: view).allSatisfy { $0.height == 60 }, "across a wider list")
+    follower.report("item:0", 200)
+    view.frame.size.width = 860
+    layOut(view)
+    #expect(follower.geometry.height(of: "item:0") == 200, "a wider list still, whose rows are 700 points across")
+  }
+}
+
 /// The rows of the agent Message `message`, whose Markdown is `markdown`.
 private func blockRows(_ markdown: String, of message: String = "m") -> [ConversationRow] {
   agentMessageItems(message: message, markdown: markdown, model: nil).map { .item($0) }

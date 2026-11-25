@@ -142,8 +142,8 @@ private struct ConversationView: View {
     // Read here, for the rows are drawn later, as the list draws each.
     let model = model
     let push = push
-    ConversationList(rows: rows, sent: model.sent) { row in
-      Group {
+    GeometryReader { column in
+      ConversationList(rows: rows, sent: model.sent, margins: column.readingMargins) { row in
         switch row {
         case .item(let item):
           ItemView(item: item, route: model.route, model: model, push: push)
@@ -151,10 +151,9 @@ private struct ConversationView: View {
           QueuedBubble(queued: queued, model: model)
         }
       }
-      .padding(.horizontal, 14)
+      // Beneath the navigation bar, which the list insets itself for; above the foot, which keeps the room it needs.
+      .ignoresSafeArea(.container, edges: .top)
     }
-    // Beneath the navigation bar, which the list insets itself for; above the foot, which keeps the room it needs.
-    .ignoresSafeArea(.container, edges: .top)
     .overlay {
       ForEach(model.conversation.marks, id: \.id) { mark in
         ItemView(item: mark, route: model.route, model: model, push: push)
@@ -649,6 +648,7 @@ private struct SessionFoot: View {
         ComposerView(composer: composer, model: model)
       }
     }
+    .readingSides()
   }
 }
 
