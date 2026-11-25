@@ -11,7 +11,7 @@ app's shape. Everything here is built from a terminal on a Mac with Xcode 27.2; 
 | `Shaman.xcodeproj` | The project, in Xcode 27's JSON format (`project.xcproj`) with folders synced to disk, and the shared `Shaman` scheme |
 | `Shaman/` | The `Shaman` app target: `@main`, the choice of live core or fake, the Info settings |
 | `ShamanUI/` | A local package: the views, the `Core` protocol the app reaches the core through, `LiveCore`, `FakeCore`, and the adapters around the core. Its unit tests are `ShamanUIUnitTests` |
-| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the conversation's list and the composer's foot under a ticking display link, the columns collapsing and expanding and what Textual draws a Message's blocks as |
+| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the conversation's list and the composer's foot under a ticking display link, the columns collapsing and expanding, a Session about a fold of the test's own and what Textual draws a Message's blocks as |
 | `ShamanUITests/` | The XCUITest target |
 | `ShamanCore/` | The core and its generated Swift, written by `scripts/build-ios-core.sh`; ignored by git |
 | `build/` | Where the commands below put what `xcodebuild` makes; ignored by git |
@@ -360,9 +360,9 @@ simulator, a Device Hub that answers nothing or does not connect the display, or
 simulator. A press answered as done may have done nothing, so after each it reads from `devicectl` which display is
 active and how the device is held. Each pose is begun from closed, so a lost "Open" is noticed. A lost "Partially Open"
 is not: neither of those, nor a window's size, tells open flat from partly open, so a test of the book or the laptop
-pose has to hold something the fold moves, or it passes on a Duo that never folded. The two there are, of how the bar
-stands, do not. Never `simctl io screenConfig power` on a Duo either: it leaves SpringBoard crashing until the simulator
-is booted again.
+pose has to hold something the fold moves, or it passes on a Duo that never folded, as the book's does, which holds how
+the bar stands alone. The laptop's hold where a Session stands about the fold. Never `simctl io screenConfig power` on a
+Duo either: it leaves SpringBoard crashing until the simulator is booted again.
 
 Several Device Hubs may run, and one that is stuck cannot be told from the rest by name, so the script addresses them by
 pid, through `../scripts/ios-device-hub.swift`. It uses one that answers, starts one where none does, quits none, and
@@ -460,20 +460,31 @@ If the phone is locked, stop and ask for it to be unlocked.
   path: one column shows the listing, and the scene keeps no screen. The cursor put in its field, or a first Prompt sent
   from it, opens it (`openRest`): the hosted screen that rested is given the path's name for it, and none is made.
 - The Aside is two values, `SessionStack.aside`'s, kept while the window lives and never by the scene: what it holds,
-  and whether the reader has it shown beside the main view. Neither says what is on screen, which `Aside.onScreen` does,
-  from what each place it may stand says apart: `Columns` says `standsBeside`, asking `isShowing(.inspector)`. `Columns`
-  has the split view's inspector column hold it only while it is shown, a Session is open and it has room, as a view
-  controller set there is shown at once, and takes it out before a collapse, through which the system would stand it as
-  a sheet. It has room where the split view is not collapsed and the window is at least 690 points wide. `AsideScreen`
-  draws what it holds, the chooser beneath it included, and keeps nothing, so it may be drawn wherever the Aside stands;
-  the chooser sets what it holds and never whether it is shown. The card it marks is read from
-  `SessionStack.turnInAside(of:)`. The Turn it is at is worked out as it is drawn, its place holding at one or following
-  the conversation's latest, so nothing has to run while it is off screen. SwiftUI keeps what it drew then, and begins
-  none of its tasks again as their ids change, so what a screen in it reads is a `Reading`, which begins again each time
-  the Aside comes on screen. While it stands it follows its Session's conversation, as the Session's own screen does
-  only while on top; a conversation is read once however many follow it. What a conversation's row leads to and the tree
-  go through `SessionStack.lead(to:)` and `showTree()`, which choose between the Aside and what stands where there is no
-  room for it: the path, and a sheet.
+  and whether the reader has it shown beside the main view. Neither says what is on screen, which
+  `SessionStack.asideIsOnScreen` does, from what each place it may stand says apart: `Columns` says `standsBeside`,
+  asking `isShowing(.inspector)`, and `asideStandsBelow` is worked out from the pose and what is open. `Columns` has the
+  split view's inspector column hold it only while it is shown, a Session is open and it has room, as a view controller
+  set there is shown at once, and takes it out before a collapse, through which the system would stand it as a sheet. It
+  has room where the split view is not collapsed and the window is at least 690 points wide. `AsideScreen` draws what it
+  holds, the chooser beneath it included, and keeps nothing, so it may be drawn wherever the Aside stands; the chooser
+  sets what it holds and never whether it is shown. The card it marks is read from `SessionStack.turnInAside(of:)`. The
+  Turn it is at is worked out as it is drawn, its place holding at one or following the conversation's latest, so
+  nothing has to run while it is off screen. SwiftUI keeps what it drew then, and begins none of its tasks again as
+  their ids change, so what a screen in it reads is a `Reading`, which begins again each time the Aside comes on screen.
+  While it stands it follows its Session's conversation, as the Session's own screen does only while on top; a
+  conversation is read once however many follow it. What a conversation's row leads to and the tree go through
+  `SessionStack.lead(to:)` and `showTree()`, which choose between the Aside and what stands where there is no room for
+  it: the path, and a sheet.
+- How a window stands is `Pose`, which `ColumnsScreen` reads above the columns by `reads(_:)`, as the geometry changes
+  and never on a clock, and `SessionStack.pose` hands down: the fold, while the device is sat like a laptop, which is a
+  reserved region that is active and wider than it is tall, and how much of the window's foot a keyboard covers. No
+  hosted screen asks for either. It is the one pose the layout knows; add none. A hosted test that stands a screen about
+  a fold sets `pose.fold` itself.
+- Sat like a laptop, a Session's foot grows a second part, as tall as the half below the fold, which holds the band kept
+  for the fold, the Aside and the composer's field; with a keyboard up that part is the field alone, above the fold. The
+  Aside there is `AsideScreen` drawn again, in each Session's own screen and for that Session, over the Aside's one
+  state. It stands whenever a Session is open, and what is chosen there goes through the same `lead(to:)` and
+  `showTree()`, which turn it, push and present nothing, and leave whether it is shown beside the main view as it was.
 - A hosted screen has no `NavigationStack` over it, so a `NavigationLink` in it is greyed out and a
   `navigationDestination` pushes nothing. The Aside has a stack of its own, in which an Activity's row is a link and a
   Session's pushes in the main view. A row that leads to a screen is a `RowButton` that writes the path, and a
@@ -482,7 +493,8 @@ If the phone is locked, stop and ask for it to be unlocked.
   added for one to read is added there.
 - A screen with a composer stands it by `composerFoot`, which has the screen ignore the container's bottom safe area and
   keeps the field 28 points above the display's bottom edge at compact width, 22 at regular, and 8 above a keyboard. It
-  asks for the width class and what the keyboard covers, and nothing of the home indicator, the hinge or the device.
+  asks for the width class, is handed the `Pose`, and asks nothing of the home indicator, the hinge or the device. Its
+  field is one view in one stack in every pose: made as two, above the fold and below, it loses the keyboard.
 - A conversation reads at most 700 points wide in the middle of its column, by the container's content margins and never
   nearer an edge than 8 points: `ReadingSides`, which the list's layout stands its rows by, and which what a foot holds
   asks for by `readingSides()`, as the foot itself keeps no sides. Hold in state the margins alone, never what is worked
