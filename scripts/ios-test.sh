@@ -41,9 +41,9 @@ set -euo pipefail
 # `columns`, for which columns stand side by side, as they do on a turned Pro Max; `one_column`, for which one stands
 # alone on its side, as on a turned Pro; and `turning`, which turn the simulator and hold on any that turns, which a Duo
 # does for no test.
-columns=(AsideTests NothingOpenTests SidebarTests)
+columns=(AsideTests NothingOpenTests PlaceBesideTests SidebarTests)
 one_column=(OneColumnTests)
-turning=(TurningTests)
+turning=(PlaceTests TurningTests)
 simulators=(pro duo pro-max)
 row_of() {
   case "$1" in
