@@ -379,13 +379,24 @@ swift format format --in-place --recursive Shaman ShamanUI/Package.swift ShamanU
 **The core's own tests** run with the rest of the workspace: `cargo nextest run -p shaman-thin-client`. They run on
 every platform, so keep anything iOS-only out of the crate.
 
-**CI** (`.github/workflows/ios.yml`) builds the core, lints, runs the Pro's row on the simulator itself
-(`../scripts/ios-test.sh pro --ad-hoc -parallel-testing-enabled NO`, which tests the package unsigned and the app signed
-ad hoc under no team, since an unsigned app cannot reach the Keychain), checks nothing reached `UserDefaults`, which it
-reads in the app's container there, as clones are gone with theirs, and then builds the phone's core and the app for the
-phone in Release, unsigned (`CODE_SIGNING_ALLOWED=NO`), and checks it holds no fake, on the `xcode-27` runner: the
-optimiser warns of what a debug build does not, and every warning is an error. Run the same commands to reproduce a
-failure.
+**CI** (`.github/workflows/ios.yml`) is a job for each simulator, one that builds for the phone and one that lints, side
+by side on the `xcode-27` runner, on pull requests that touch the app or its core and by hand. It is no gate for what
+lands on main, which the Mac's loop is. Run the same commands to reproduce a failure.
+
+- **Each simulator's job** builds the simulator's core, boots the simulator in a step of its own, runs its row on the
+  simulator itself (`../scripts/ios-test.sh <simulator> --ad-hoc -parallel-testing-enabled NO`), which tests the package
+  unsigned and the app signed ad hoc under no team, since an unsigned app cannot reach the Keychain, and checks nothing
+  reached `UserDefaults`. It runs on no clones: that check reads the app's container on the simulator, as clones are gone
+  with theirs, and it is made whether or not the tests passed. UIKit keeps the split view's column widths there itself,
+  which the check lets by. Its result bundles are the artifact `ios-test-results-<simulator>` where it fails or is
+  cancelled, as one out of time is. The Pro took 59 minutes for the app's 135 tests when last run there, and each job is
+  given what its row may come to; give a job more as its row grows.
+- **The job that builds for the phone** builds the phone's core and the app in Release, unsigned
+  (`CODE_SIGNING_ALLOWED=NO`), as the optimiser warns of what a debug build does not and every warning is an error, and
+  checks it holds no fake.
+
+No Duo has yet been seen to boot there: the image's list names one under iOS 27.2, and the step that boots it prints the
+runtimes it found.
 
 ## On the phone
 

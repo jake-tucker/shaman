@@ -1,7 +1,8 @@
 name: iOS
 
-# Builds the iOS app over its core and tests both in the simulator, the app signed ad hoc, builds it as the phone runs
-# it, and lints the Swift. It runs only where the app or its core can have changed; a change to a crate the core shares
+# Builds the iOS app over its core and tests both on each simulator scripts/ios-test.sh holds a row for, the app signed
+# ad hoc, builds it as the phone runs it, and lints the Swift: a job each, side by side, so that none waits on another or
+# is hidden by its failure. It runs only where the app or its core can have changed; a change to a crate the core shares
 # with the Server is checked for iOS by build.yml, and shows here on the next change to the app. ios/AGENTS.md holds
 # the same loop for a Mac.
 
@@ -24,19 +25,19 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  app:
-    name: Build and test
+  lint:
+    name: Lint
     # The only image with Xcode 27, which the project's format needs.
     runs-on: xcode-27
-    # The simulator's tests, then the phone's core, size-optimised with fat LTO, and the app built again in Release.
-    timeout-minutes: 90
-    defaults:
-      run:
-        shell: bash
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -47,14 +48,6 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode_27.2.app
           xcodebuild -version
-
-      - name: Install the toolchain
-        run: rustup toolchain install
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: ios
-          cache-on-failure: true
 
       - name: Lint the Swift
         # The hand-written Swift alone; ios/ShamanCore is generated.
@@ -70,20 +63,73 @@ jobs:
             exit 1
           fi
 
+  test:
+    name: Test on the ${{ matrix.device }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Minutes are what the job may take. The first run's, of the Pro alone, took 77, 59 of them the app's 135 tests
+        # one after another and 9 the package's; the UI tests have grown since and go on growing.
+        include:
+          - { simulator: pro, device: iPhone 18 Pro, minutes: 150 }
+          - { simulator: duo, device: closed iPhone Duo, minutes: 150 }
+          - { simulator: pro-max, device: iPhone 18 Pro Max, minutes: 90 }
+    runs-on: xcode-27
+    timeout-minutes: ${{ matrix.minutes }}
+    env:
+      SIMULATOR: ${{ matrix.simulator }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode 27.2
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.2.app
+          xcodebuild -version
+
+      - name: Install the toolchain
+        run: rustup toolchain install
+
+      # Each builds the simulator's core for itself, in some three minutes of nothing cached, as waiting for one job to
+      # hand it to the rest would take no less. All three build the same, so the quickest keeps it.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ios
+          cache-on-failure: true
+          save-if: ${{ matrix.simulator == 'pro-max' }}
+
       - name: Build the core
         run: scripts/build-ios-core.sh sim
 
+      - name: Boot the simulator
+        # Apart from the tests, so that a device the image lacks, or one that does not boot, is told from a test.
+        timeout-minutes: 15
+        run: |
+          xcrun simctl list runtimes
+          scripts/ios-simulator.sh "$SIMULATOR"
+
       - name: Test
-        # The package's tests and the app's, both run whatever fails. On the simulator itself and not on clones of it,
-        # which xcodebuild deletes as it ends, and what the app wrote in them, which the next step reads.
-        run: scripts/ios-test.sh pro --ad-hoc -parallel-testing-enabled NO
+        id: test
+        # The simulator's row, run whole whatever fails. On the simulator itself and not on clones of it, which
+        # xcodebuild deletes as it ends, and what the app wrote in them, which the next step reads.
+        run: scripts/ios-test.sh "$SIMULATOR" --ad-hoc -parallel-testing-enabled NO
 
       - name: Check nothing was written to UserDefaults
+        # Of what the tests wrote, whether or not they passed.
+        if: ${{ !cancelled() && (steps.test.outcome == 'success' || steps.test.outcome == 'failure') }}
+        env:
+          TESTED: ${{ steps.test.outcome }}
         run: |
           set -euo pipefail
-          udid=$(scripts/ios-simulator.sh)
+          udid=$(scripts/ios-simulator.sh "$SIMULATOR")
           # Only a run on the simulator itself leaves the app there to read.
           if ! container=$(xcrun simctl get_app_container "$udid" com.jaketucker.shaman data); then
+            # One that failed may never have built it, and has failed the job already.
+            if [ "$TESTED" != success ]; then
+              echo "The tests failed with no app installed, so there is nothing to check."
+              exit 0
+            fi
             echo "::error::The tests left no app on the simulator, so there is nothing to check."
             exit 1
           fi
@@ -106,8 +152,39 @@ jobs:
             exit 1
           fi
 
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        # A job out of time is cancelled, and so has not failed.
+        if: ${{ failure() || cancelled() }}
+        with:
+          name: ios-test-results-${{ matrix.simulator }}
+          path: ios/build/results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  release:
+    name: Build for the phone
+    runs-on: xcode-27
+    # The phone's core is size-optimised with fat LTO, and has never been built on this runner.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode 27.2
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.2.app
+          xcodebuild -version
+
+      - name: Install the toolchain
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ios
+          cache-on-failure: true
+
       - name: Build the core for the phone
-        # After the tests, as the core's package holds one slice or the other and they ran on the simulator's.
         run: scripts/build-ios-core.sh device
 
       - name: Build the app for the phone
@@ -131,11 +208,3 @@ jobs:
             echo "::error::The fake and every debug-only path stay behind #if DEBUG."
             exit 1
           fi
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: failure()
-        with:
-          name: ios-test-results
-          path: ios/build/results
-          retention-days: 7
-          if-no-files-found: ignore
