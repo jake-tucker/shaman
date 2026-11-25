@@ -1,0 +1,93 @@
+name: Rune hello
+
+# Throwaway (#768): proves Rune builds inside Shaman's workspace and can be checked without a display on every platform
+# Shaman ships for. It lives on `prototype/rune-hello` alone and is never merged.
+
+on:
+  push:
+    branches: [prototype/rune-hello]
+  workflow_dispatch:
+
+concurrency:
+  group: rune-hello-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  hello:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-24.04 }
+          - { target: aarch64-unknown-linux-gnu, runner: ubuntu-24.04-arm }
+          - { target: aarch64-apple-darwin, runner: macos-15 }
+          - { target: x86_64-pc-windows-msvc, runner: windows-2025 }
+          - { target: aarch64-pc-windows-msvc, runner: windows-11-arm }
+    env:
+      LABEL: ${{ matrix.target }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Linux runs in a bare container, so the report says exactly what had to be installed.
+      - name: Build and check in a bare container
+        if: runner.os == 'Linux'
+        run: |
+          docker run --rm -v "$PWD:/w" ubuntu:24.04 \
+            bash /w/crates/rune-hello/ci/linux-in-container.sh "$LABEL" "$(id -u):$(id -g)"
+
+      # A second bare container, holding none of the build's packages: what a machine with no display and nothing
+      # installed for one says to an executable with Rune linked in.
+      - name: Start the executables where nothing is installed
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: |
+          {
+            echo
+            echo "In a second bare \`ubuntu:24.04\`, with none of the build's packages:"
+            echo '```'
+            docker run --rm -v "$PWD/rune-out:/o:ro" ubuntu:24.04 sh -c "
+              echo '\$ ldd rune-hello (dist)'; ldd /o/rune-hello-dist-$LABEL
+              echo '\$ rune-hello --list-scenes (debug)'; /o/rune-hello-debug-$LABEL --list-scenes; echo \"exit \$?\"
+              echo '\$ rune-hello (dist, no display)'; timeout 20 /o/rune-hello-dist-$LABEL; echo \"exit \$?\"
+            " 2>&1 | cut -c1-400
+            echo '```'
+          } | tee -a "rune-out/report-$LABEL.md"
+          rm -f "rune-out/rune-hello-debug-$LABEL"
+
+      - name: Build and check
+        if: runner.os != 'Linux'
+        run: |
+          rustup toolchain install
+          bash crates/rune-hello/ci/check.sh "$LABEL" rune-out build test gpu dist
+
+      - name: Say what the runner draws with
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          "" | Add-Content "rune-out/report-$env:LABEL.md"
+          "Display adapters the runner reports: " + ((Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }) -join ", ") |
+            Add-Content "rune-out/report-$env:LABEL.md"
+
+      - name: Report
+        if: ${{ !cancelled() }}
+        run: cat "rune-out/report-$LABEL.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: rune-hello-${{ matrix.target }}
+          path: rune-out/
+          retention-days: 14
+          if-no-files-found: error
