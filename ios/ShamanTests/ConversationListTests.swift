@@ -206,4 +206,29 @@ import UIKit
     #expect(list.follower.following)
     #expect(list.view.distanceToFoot < 1)
   }
+
+  /// A change of width, animated as a column coming or going beside the list animates it, in which the last row leaves
+  /// the screen and comes back. UIKit passes that one over from then on, where it is asked to reconfigure it.
+  @Test(arguments: [false, true])
+  func aRowThatChangesAfterAChangeOfWidthIsDrawnAgain(animated: Bool) async throws {
+    let list = try await HostedList(wordRows: 13)
+    defer { list.close() }
+    let view = list.view
+    UIView.animate(withDuration: animated ? 0.35 : 0) {
+      view.frame.size.width -= 60
+      view.layoutIfNeeded()
+    }
+    try await list.frames(60)
+    let configuration = list.follower.configuration
+    var drawn: [String] = []
+    list.follower.configuration = { row in
+      drawn.append(row.id)
+      return configuration?(row) ?? UIListContentConfiguration.cell()
+    }
+    list.follower.take(
+      (0..<13).map { .item(ConversationItem(id: "\($0)", kind: .error(text: "row \($0 == 12 ? "changed" : "\($0)")"))) }
+    )
+    try await list.frames(10)
+    #expect(drawn == ["item:12"], "the one that changed, on screen at the foot")
+  }
 }

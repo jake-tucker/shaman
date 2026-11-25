@@ -288,8 +288,7 @@ struct ConversationList<Row: View>: UIViewRepresentable {
     }
     let registration = UICollectionView.CellRegistration<RowCell, String> { [weak self] cell, _, id in
       guard let self, let row = self.rows[id] else { return }
-      cell.measured = { [weak self] in self?.geometry.measured(id) ?? false }
-      cell.contentConfiguration = self.configuration?(row)
+      self.draw(row, in: cell)
     }
     dataSource = UICollectionViewDiffableDataSource(collectionView: view) { view, index, id in
       view.dequeueConfiguredReusableCell(using: registration, for: index, item: id)
@@ -297,11 +296,13 @@ struct ConversationList<Row: View>: UIViewRepresentable {
     return view
   }
 
-  /// Takes `rows` in, drawing again those that changed.
+  /// Takes `rows` in, drawing again those on screen that changed.
+  ///
+  /// The list draws them itself, as UIKit passes one over now and then where it is asked to reconfigure it: once a change
+  /// of width is animated, as a column coming or going animates it, a row that left the screen and came back within it.
   func take(_ rows: [ConversationRow]) {
     guard let dataSource else { return }
     let ids = rows.map(\.id)
-    let changed = rows.filter { row in self.rows[row.id].map { $0 != row } ?? false }.map(\.id)
     self.rows = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
     place(ids)
     var snapshot = dataSource.snapshot()
@@ -309,12 +310,31 @@ struct ConversationList<Row: View>: UIViewRepresentable {
       snapshot = NSDiffableDataSourceSnapshot()
       snapshot.appendSections([0])
       snapshot.appendItems(ids)
+      dataSource.apply(snapshot, animatingDifferences: false)
     }
-    if !changed.isEmpty {
-      snapshot.reconfigureItems(changed)
+    for cell in view?.visibleCells ?? [] {
+      drawAgain(cell)
     }
-    dataSource.apply(snapshot, animatingDifferences: false)
     view?.setNeedsLayout()
+  }
+
+  private func draw(_ row: ConversationRow, in cell: RowCell) {
+    cell.row = row
+    cell.measured = { [weak self] in self?.geometry.measured(row.id) ?? false }
+    cell.contentConfiguration = configuration?(row)
+  }
+
+  /// Draws what `cell` draws again, where its row has changed since.
+  private func drawAgain(_ cell: UICollectionViewCell) {
+    guard let cell = cell as? RowCell, let drawn = cell.row, let row = rows[drawn.id], row != drawn else { return }
+    UIView.performWithoutAnimation { draw(row, in: cell) }
+  }
+
+  func collectionView(
+    _ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath
+  ) {
+    // Drawn ahead of its coming into sight, its row may have changed in between.
+    drawAgain(cell)
   }
 
   /// How far below the row above it each of the rows `ids` stands, where that is not the list's own gap: a block of an
@@ -334,8 +354,9 @@ struct ConversationList<Row: View>: UIViewRepresentable {
 
   /// Stands the rows `ids` one below another, as far apart as each two are to be now.
   private func place(_ ids: [String]) {
+    let stood = geometry.gaps
     let moved = geometry.take(ids, gaps: gaps(of: ids), foot: view?.visibleFoot ?? 0)
-    if moved != 0 {
+    if geometry.gaps != stood {
       invalidate(moved: moved)
     }
   }
@@ -419,6 +440,8 @@ struct ConversationList<Row: View>: UIViewRepresentable {
 /// A row's cell. A row not yet measured is as tall as what it hosts measures across the list's width; one measured
 /// stands as tall as it was, and says after that what it comes to.
 final class RowCell: UICollectionViewCell {
+  /// The row this cell draws, as it draws it.
+  var row: ConversationRow?
   /// Whether the row this cell draws has been measured.
   var measured: () -> Bool = { false }
 
