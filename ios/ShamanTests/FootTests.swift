@@ -54,6 +54,12 @@ import UIKit
     view as? Kind ?? view.subviews.lazy.compactMap { first(kind, in: $0) }.first
   }
 
+  /// Every view of `Kind` in the screen.
+  func all<Kind: UIView>(_ kind: Kind.Type, in view: UIView? = nil) -> [Kind] {
+    let view = view ?? host.view!
+    return (view as? Kind).map { [$0] } ?? view.subviews.flatMap { all(kind, in: $0) }
+  }
+
   /// The composer's field, its screen having come to rest.
   func field() async throws -> UIView {
     let field = try await found(UITextView.self)
@@ -160,12 +166,19 @@ private struct Hosting: UIViewControllerRepresentable {
 
   /// Sat like a laptop, the fold where the test says, it goes the same way over the software keyboard, from under the
   /// Aside, as that gives up the half below the fold to it, and back, one view and never without its focus.
-  @Test func satLikeALaptopTheFieldGoesWithTheKeyboardFromUnderTheAside() async throws {
-    let hosted = try session()
+  /// The new-session screen's goes the same way, from the foot of the half below, where it stands with nothing above it.
+  @Test(arguments: [true, false]) func satLikeALaptopTheFieldGoesWithTheKeyboardFromTheFootOfTheHalfBelow(
+    session: Bool
+  ) async throws {
+    let hosted = try session ? self.session() : landing()
     defer { hosted.close() }
     hosted.window.traitOverrides.horizontalSizeClass = .regular
     let field = try await hosted.field()
-    let list = try await hosted.found(FootCollectionView.self)
+    // The conversation, or the new-session screen's middle.
+    let list: UIScrollView =
+      session
+      ? try await hosted.found(FootCollectionView.self)
+      : try #require(hosted.all(UIScrollView.self).first { !($0 is UITextView) })
     let height = hosted.window.bounds.height
     let fold = Fold(top: (height / 2).rounded() - 20, bottom: (height / 2).rounded() + 20, window: height)
     let ends = { list.convert(list.bounds, to: nil).maxY - list.adjustedContentInset.bottom }

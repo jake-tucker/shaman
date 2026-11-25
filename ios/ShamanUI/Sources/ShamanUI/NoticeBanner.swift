@@ -12,7 +12,7 @@ final class NoticeModel {
   /// How long a notice stands on screen before it goes by itself.
   private let stands: Duration
   /// How many banners show the notice now.
-  private var showing = 0
+  private(set) var showing = 0
   /// How long the notice has stood on screen before the banner showing it last went.
   private var stood = Duration.zero
   /// When a banner last began showing it, while one does.

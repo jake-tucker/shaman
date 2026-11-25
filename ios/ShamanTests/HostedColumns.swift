@@ -10,13 +10,24 @@ import UIKit
   let window: UIWindow
   let stack: SessionStack
   let columns: Columns
+  /// What the core says of its own accord, which the screens show, where the test asks.
+  let notices: NoticeModel?
+  private var following: Task<Void, Never>?
 
-  /// The columns over a path of `open`, in a window with room for one column alone, or for several where it is `wide`.
-  /// What is open is words alone, or, with `sessions`, a Session's own screen.
-  init(open: [Pushed] = [], wide: Bool = false, sessions: Bool = false) async throws {
+  /// The columns over a path of `open`, over the fake's `scenario`, in a window with room for one column alone, or for
+  /// several where it is `wide`, or of `size` where one is given, at regular width. What is open is words alone, or,
+  /// with `sessions`, the screens the app's columns hold, which show what the core says of its own accord where
+  /// `noticed`. `launching` is handed what is open before anything is drawn.
+  init(
+    open: [Pushed] = [], wide: Bool = false, sessions: Bool = false, scenario: FakeCore.Scenario = .paired,
+    size: CGSize? = nil, noticed: Bool = false, launching: (SessionStack) -> Void = { _ in }
+  ) async throws {
     let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     window = UIWindow(windowScene: scene)
-    stack = SessionStack(core: FakeCore(.paired), path: open)
+    let core = FakeCore(scenario)
+    stack = SessionStack(core: core, path: open)
+    let notices = noticed ? NoticeModel(core: core, stands: .seconds(600)) : nil
+    self.notices = notices
     let stack = stack
     let screen = { (words: String) in AnyView(Text(words).navigationTitle(words)) }
     columns = Columns(
@@ -24,18 +35,25 @@ import UIKit
       screens: Columns.Screens(
         listing: screen("Listing"),
         open: { pushed in
-          guard sessions, case .session(let route) = pushed else { return screen("\(pushed)") }
-          return AnyView(SessionScreen(model: stack.model(for: route), stack: stack))
+          sessions ? AnyView(PushedScreen(pushed: pushed, stack: stack)) : screen("\(pushed)")
         },
         rest: { route in
           AnyView(NewSessionScreen(model: stack.landing(for: route), stack: stack, atRest: route))
         },
-        aside: AnyView(AsideScreen(stack: stack)), handed: { $0 }))
-    size(wide: wide)
+        aside: AnyView(AsideScreen(stack: stack)), handed: { AnyView($0.environment(notices)) }))
+    if let size {
+      self.size(width: size.width, height: size.height, regular: true)
+    } else {
+      self.size(wide: wide)
+    }
+    launching(stack)
+    if let notices {
+      following = Task { await notices.follow() }
+    }
     window.rootViewController = columns
     window.windowLevel = .alert + 1
     window.makeKeyAndVisible()
-    try await until { self.columns.isCollapsed != wide }
+    try await until { self.columns.isCollapsed != (wide || size != nil) }
     try await settle()
   }
 
@@ -101,6 +119,7 @@ import UIKit
   }
 
   func close() {
+    following?.cancel()
     window.isHidden = true
   }
 }
