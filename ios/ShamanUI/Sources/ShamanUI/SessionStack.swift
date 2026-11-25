@@ -2,10 +2,10 @@ import ShamanCore
 import SwiftUI
 
 /// What is open: the Session or new-session screen open, and the screens pushed over it, as one value, `path`, whichever
-/// columns stand. `Columns` has the main view hold what the path says, and writes back to it what the reader pops.
-/// Each Session is opened in the core as its screen is first drawn, and closed there once no screen of it is on the
-/// path, however it leaves. What the scene keeps of it, and a path restored from what it kept, cross as `KeptScene`'s
-/// screens.
+/// columns stand, and the Aside beside it. `Columns` has the main view hold what the path says, and writes back to it
+/// what the reader pops. Each Session is opened in the core as its screen is first drawn, and closed there once no
+/// screen of it is on the path, however it leaves. What the scene keeps of it, and a path restored from what it kept,
+/// cross as `KeptScene`'s screens.
 @MainActor @Observable
 final class SessionStack {
   /// The screens open, the one on top last; none while nothing is open.
@@ -15,8 +15,11 @@ final class SessionStack {
       moved?()
     }
   }
-  /// Told each time the path is written, whoever wrote it, as the columns are.
+  /// Told each time the path is written, whoever wrote it, and as a Session begins in a new-session screen, as the
+  /// columns are.
   @ObservationIgnored var moved: (() -> Void)?
+  /// What stands beside what is open, or waits to.
+  let aside: Aside
   /// The new-session screen the main view holds at rest, while nothing is open. Not on the path, it is not open.
   @ObservationIgnored private(set) var rest = LandingRoute()
   @ObservationIgnored private let core: any Core
@@ -26,9 +29,10 @@ final class SessionStack {
   /// back to the listing.
   @ObservationIgnored private var restored: Set<SessionRoute> = []
 
-  init(core: any Core, path: [Pushed] = []) {
+  init(core: any Core, path: [Pushed] = [], aside: Aside = Aside()) {
     self.core = core
     self.path = path
+    self.aside = aside
   }
 
   /// The stack the scene kept, `kept`, pushed again after a cold start: each Session's screen, and the new-session
@@ -65,9 +69,10 @@ final class SessionStack {
     let model = NewSessionModel(core: core)
     model.adopted = { [weak self] begun in
       guard let self else { return }
+      models[begun.route] = begun
       // Begun from the screen at rest, that screen is open.
       openRest(route)
-      models[begun.route] = begun
+      moved?()
     }
     landings[route] = model
     return model
@@ -86,6 +91,15 @@ final class SessionStack {
     }
     models[route] = model
     return model
+  }
+
+  /// The screen of the Session open on top, which the Aside answers for, whatever of it is pushed over it; none while
+  /// no Session is open.
+  var openSession: SessionRoute? {
+    switch path.last {
+    case .landing(let route): landings[route]?.begun?.route
+    case let pushed: pushed?.route
+    }
   }
 
   /// Opens the Session `session` names, chosen in the listing, in place of whatever is open, read afresh; but where it
@@ -115,6 +129,29 @@ final class SessionStack {
   func push(_ pushed: Pushed) {
     guard path.last != pushed else { return }
     path.append(pushed)
+  }
+
+  /// Shows what a row of an open Session's conversation leads to: in the Aside, where it has room, and pushed over what
+  /// is open where it has none.
+  func lead(to pushed: Pushed) {
+    switch pushed {
+    case .work(let route, let turn) where aside.hasRoom:
+      aside.holdWork(of: turn, latest: model(for: route).conversation.latestTurn, in: route)
+      aside.shown = true
+    case .detail(let route, let activity) where aside.hasRoom:
+      aside.holdDetail(activity, latest: model(for: route).conversation.latestTurn, in: route)
+      aside.shown = true
+    default:
+      push(pushed)
+    }
+  }
+
+  /// Shows the tree in the Aside, where it has room. Answers whether it did: where it has none a sheet is to.
+  func showTree() -> Bool {
+    guard aside.hasRoom else { return false }
+    aside.holdTree()
+    aside.shown = true
+    return true
   }
 
   /// Leaves the Session pushed as `route`, which turned out gone, with whatever is pushed over it.
@@ -181,6 +218,7 @@ final class SessionStack {
     for route in landings.keys where !landed.contains(route) && route != rest {
       landings[route] = nil
     }
+    aside.keepPlaces(of: pushed)
   }
 }
 

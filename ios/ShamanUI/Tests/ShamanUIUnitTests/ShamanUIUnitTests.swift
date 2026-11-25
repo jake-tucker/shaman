@@ -1069,6 +1069,135 @@ private func blockRows(_ markdown: String, of message: String = "m") -> [Convers
   }
 }
 
+@Suite @MainActor struct AsideTests {
+  private let settled = SessionRoute(session: "workstation-key/7")
+  private let other = SessionRoute(session: "workstation-key/1")
+
+  /// A stack with the settled Session open and read, whose Turns are "earlier-work" and, the latest, "work".
+  private func read() async throws -> SessionStack {
+    let stack = SessionStack(core: FakeCore(.paired), path: [.session(settled)])
+    let model = stack.model(for: settled)
+    let following = Task { await model.follow() }
+    defer { following.cancel() }
+    for _ in 0..<300 where model.conversation.latestTurn == nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.conversation.latestTurn == "work")
+    return stack
+  }
+
+  @Test func itBeginsHiddenAtWorkOrShownAtTheKindGiven() {
+    let aside = Aside()
+    #expect(!aside.shown && aside.kind == .work)
+    let tree = Aside(showing: .tree)
+    #expect(tree.shown && tree.kind == .tree)
+    #expect(Aside(showing: .work).shown)
+  }
+
+  @Test func whereItHasRoomACardShowsItAtThatTurnAndPushesNothing() async throws {
+    let stack = try await read()
+    stack.aside.hasRoom = true
+    stack.lead(to: .work(settled, turn: "earlier-work"))
+    #expect(stack.aside.shown && stack.aside.kind == .work)
+    #expect(stack.aside.place(of: settled) == Aside.Place(held: "earlier-work"))
+    // The latest Turn's is the one it would be at unasked.
+    stack.lead(to: .work(settled, turn: "work"))
+    #expect(stack.aside.place(of: settled) == Aside.Place())
+    #expect(stack.path == [.session(settled)])
+  }
+
+  @Test func whereItHasNoRoomWhatARowLeadsToIsPushedAndTheTreeIsNotItsToShow() async throws {
+    let stack = try await read()
+    stack.lead(to: .work(settled, turn: "work"))
+    #expect(stack.path == [.session(settled), .work(settled, turn: "work")])
+    #expect(!stack.showTree())
+    stack.path.removeLast()
+    stack.lead(to: .detail(settled, activity: "compaction"))
+    #expect(stack.path == [.session(settled), .detail(settled, activity: "compaction")])
+    #expect(!stack.aside.shown && stack.aside.kind == .work)
+    #expect(stack.aside.place(of: settled) == Aside.Place())
+  }
+
+  @Test func theTreeShownAgainChangesNothingAndACardTurnsItBackToWork() async throws {
+    let stack = try await read()
+    stack.aside.hasRoom = true
+    for _ in 0..<2 {
+      #expect(stack.showTree())
+      #expect(stack.aside.shown && stack.aside.kind == .tree)
+    }
+    stack.lead(to: .work(settled, turn: "work"))
+    #expect(stack.aside.shown && stack.aside.kind == .work)
+  }
+
+  @Test func anActivityPushedInItHoldsItAtThatTurnUntilItIsPopped() {
+    let aside = Aside()
+    let check = Pushed.detail(settled, activity: "check")
+    aside.push([check], latest: "work", in: settled)
+    #expect(aside.place(of: settled) == Aside.Place(held: "work", pushed: [check]))
+    // Popped with that Turn still the latest, it follows again; with another begun meanwhile, it stays.
+    aside.push([], latest: "work", in: settled)
+    #expect(aside.place(of: settled) == Aside.Place())
+    aside.push([check], latest: "work", in: settled)
+    aside.push([], latest: "next", in: settled)
+    #expect(aside.place(of: settled) == Aside.Place(held: "work"))
+    // And over an earlier Turn's work, that Turn's.
+    aside.holdWork(of: "earlier-work", latest: "next", in: settled)
+    aside.push([check], latest: "next", in: settled)
+    aside.push([], latest: "next", in: settled)
+    #expect(aside.place(of: settled) == Aside.Place(held: "earlier-work"))
+  }
+
+  @Test func aCompactionsWholeIsPushedOverTheWorkItIsAt() async throws {
+    let stack = try await read()
+    stack.aside.hasRoom = true
+    _ = stack.showTree()
+    stack.lead(to: .detail(settled, activity: "compaction"))
+    #expect(stack.aside.shown && stack.aside.kind == .work)
+    #expect(stack.aside.place(of: settled).pushed == [.detail(settled, activity: "compaction")])
+    #expect(stack.path == [.session(settled)])
+  }
+
+  @Test func itAnswersForTheSessionOnTopAndForgetsOneThatHasGone() {
+    let stack = SessionStack(core: FakeCore(.paired))
+    #expect(stack.openSession == nil)
+    stack.compose()
+    #expect(stack.openSession == nil, "none open")
+    stack.path = [.session(settled)]
+    #expect(stack.openSession == settled)
+    stack.path.append(.work(settled, turn: "work"))
+    #expect(stack.openSession == settled, "its Turn's work pushed over it")
+    stack.aside.holdWork(of: "earlier-work", latest: "work", in: settled)
+    stack.path = [.session(settled), .session(other)]
+    #expect(stack.openSession == other)
+    #expect(stack.aside.place(of: other) == Aside.Place())
+    #expect(stack.aside.place(of: settled) == Aside.Place(held: "earlier-work"))
+    stack.path = [.session(other)]
+    #expect(stack.aside.place(of: settled) == Aside.Place(), "gone")
+  }
+
+  @Test func aSessionBegunInTheNewSessionScreenIsTheOneOpenAsTheColumnsAreTold() async throws {
+    let stack = SessionStack(core: FakeCore(.composing))
+    stack.compose()
+    guard case .landing(let route) = stack.path.first else {
+      Issue.record("the new-session screen open")
+      return
+    }
+    let landing = stack.landing(for: route)
+    let following = Task { await landing.follow() }
+    defer { following.cancel() }
+    for _ in 0..<300 where landing.landing == nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    var told: [SessionRoute?] = []
+    stack.moved = { told.append(stack.openSession) }
+    landing.text = "Map the workspace"
+    landing.send()
+    let begun = try #require(landing.begun)
+    #expect(told == [begun.route])
+    #expect(stack.model(for: begun.route) === begun)
+  }
+}
+
 @Suite @MainActor struct SidekickTreeTests {
   @Test func theSidekickChosenFromASessionOnAnotherServerOpenedOverItIsPoppedBackTo() {
     let stack = SessionStack(core: FakeCore(.sidekick))

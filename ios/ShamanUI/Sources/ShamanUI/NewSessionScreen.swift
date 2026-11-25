@@ -343,8 +343,8 @@ final class NewSessionModel {
       let opened = try core.beginSession(sent, newWorktree: newWorktree && landing.worktree != nil)
       text = ""
       let model = SessionModel(core: core, route: SessionRoute(session: opened.reference), opened: opened)
-      adopted?(model)
       begun = model
+      adopted?(model)
     } catch {
       switch error {
       case .Invalid(let message): invalid = message

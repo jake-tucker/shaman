@@ -23,7 +23,7 @@ import UIKit
       screens: Columns.Screens(
         listing: screen("Listing"), open: { screen("\($0)") },
         rest: { _ in AnyView(NewSessionScreen(model: stack.landing(for: stack.rest), stack: stack, writing: false)) },
-        handed: { $0 }))
+        aside: AnyView(AsideScreen(stack: stack)), handed: { $0 }))
     size(wide: wide)
     window.rootViewController = columns
     window.windowLevel = .alert + 1
@@ -41,9 +41,19 @@ import UIKit
 
   /// Gives the window room for one column alone, or for several.
   func size(wide: Bool) {
-    window.traitOverrides.horizontalSizeClass = wide ? .regular : .compact
-    window.frame = CGRect(x: 0, y: 0, width: wide ? 951 : 402, height: 669)
+    size(width: wide ? 951 : 402, regular: wide)
+  }
+
+  /// Gives the window `width` points, of regular width or compact. The columns are told of it as a turn tells them, as
+  /// setting a window's frame does not.
+  func size(width: CGFloat, regular: Bool) {
+    let size = CGSize(width: width, height: 669)
+    let transition = SizeTransition()
+    columns.viewWillTransition(to: size, with: transition)
+    window.traitOverrides.horizontalSizeClass = regular ? .regular : .compact
+    window.frame = CGRect(origin: .zero, size: size)
     window.layoutIfNeeded()
+    transition.end()
   }
 
   /// Gives the window room for several columns, or for one, and lets them expand or collapse.
@@ -69,6 +79,50 @@ import UIKit
   func close() {
     window.isHidden = true
   }
+}
+
+/// A window's change of size, not animated, ended when the test says.
+@MainActor private final class SizeTransition: NSObject, UIViewControllerTransitionCoordinator {
+  private var ending: [(any UIViewControllerTransitionCoordinatorContext) -> Void] = []
+
+  func end() {
+    for ended in ending { ended(self) }
+    ending = []
+  }
+
+  func animate(
+    alongsideTransition animation: ((any UIViewControllerTransitionCoordinatorContext) -> Void)?,
+    completion: ((any UIViewControllerTransitionCoordinatorContext) -> Void)?
+  ) -> Bool {
+    animation?(self)
+    if let completion { ending.append(completion) }
+    return true
+  }
+
+  func animateAlongsideTransition(
+    in view: UIView?, animation: ((any UIViewControllerTransitionCoordinatorContext) -> Void)?,
+    completion: ((any UIViewControllerTransitionCoordinatorContext) -> Void)?
+  ) -> Bool {
+    animate(alongsideTransition: animation, completion: completion)
+  }
+
+  func notifyWhenInteractionEnds(_ handler: @escaping (any UIViewControllerTransitionCoordinatorContext) -> Void) {}
+  func notifyWhenInteractionChanges(_ handler: @escaping (any UIViewControllerTransitionCoordinatorContext) -> Void) {}
+
+  var isAnimated: Bool { false }
+  var presentationStyle: UIModalPresentationStyle { .none }
+  var initiallyInteractive: Bool { false }
+  var isInterruptible: Bool { false }
+  var isInteractive: Bool { false }
+  var isCancelled: Bool { false }
+  var transitionDuration: TimeInterval { 0 }
+  var percentComplete: CGFloat { 1 }
+  var completionVelocity: CGFloat { 0 }
+  var completionCurve: UIView.AnimationCurve { .linear }
+  func viewController(forKey key: UITransitionContextViewControllerKey) -> UIViewController? { nil }
+  func view(forKey key: UITransitionContextViewKey) -> UIView? { nil }
+  var containerView: UIView { UIView() }
+  var targetTransform: CGAffineTransform { .identity }
 }
 
 @Suite(.serialized) @MainActor struct ColumnsTests {
@@ -278,6 +332,91 @@ import UIKit
     try await hosted.resize(wide: false)
     #expect(!hosted.listingAlone, "opened, it is what one column shows")
     #expect(hosted.main.viewControllers == [resting])
+  }
+
+  @Test func theAsidesColumnHoldsItOnlyWhileItIsShownWithASessionOpenAndRoom() async throws {
+    let hosted = try await HostedColumns(open: [open], wide: true)
+    defer { hosted.close() }
+    let columns = hosted.columns
+    let aside = hosted.stack.aside
+    let held = { columns.viewController(for: .inspector) }
+    let stands = {
+      try await hosted.until { held() != nil && columns.isShowing(.inspector) }
+      try await hosted.settle()
+      #expect(held() != nil && columns.isShowing(.inspector))
+    }
+    let gone = {
+      try await hosted.until { held() == nil }
+      try await hosted.settle()
+      #expect(held() == nil && !columns.isShowing(.inspector))
+    }
+    #expect(columns.minimumInspectorColumnWidth == 290)
+    #expect(aside.hasRoom)
+    #expect(held() == nil, "hidden as it begins")
+
+    aside.shown = true
+    try await stands()
+    let screen = held()
+    #expect(columns.displayMode == .secondaryOnly, "the Sidebar behind its button")
+    aside.shown = false
+    try await gone()
+    #expect(columns.displayMode == .oneBesideSecondary, "the Sidebar back beside the main view")
+
+    // Asked for as it goes, and taken down as it comes.
+    for shown in [true, false, true, false] {
+      aside.shown = shown
+      try await Task.sleep(for: .milliseconds(80))
+    }
+    try await gone()
+    for shown in [true, false, true] {
+      aside.shown = shown
+      try await Task.sleep(for: .milliseconds(80))
+    }
+    try await stands()
+
+    // From one Session to the next, and not while none is open.
+    aside.shown = true
+    try await stands()
+    hosted.stack.open("workstation-key/1")
+    try await stands()
+    hosted.stack.compose()
+    try await gone()
+    #expect(columns.displayMode == .oneBesideSecondary)
+    hosted.stack.open("workstation-key/7")
+    try await stands()
+    #expect(held() === screen)
+
+    // Nor with one column alone.
+    try await hosted.resize(wide: false)
+    try await gone()
+    #expect(hosted.columns.presentedViewController == nil, "and it stands nowhere else")
+    #expect(aside.shown)
+    try await hosted.resize(wide: true)
+    try await stands()
+    #expect(columns.preferredDisplayMode == .oneBesideSecondary)
+  }
+
+  @Test func theAsideHasRoomWhereColumnsStandIn690PointsOrMore() async throws {
+    let hosted = try await HostedColumns(open: [open], wide: true)
+    defer { hosted.close() }
+    for (width, regular, room) in [
+      (690, true, true), (689, true, false), (951, true, true), (669, true, false), (874, false, false),
+      (956, true, true),
+    ] as [(CGFloat, Bool, Bool)] {
+      hosted.size(width: width, regular: regular)
+      try await hosted.until { hosted.stack.aside.hasRoom == room }
+      try await hosted.settle()
+      #expect(hosted.stack.aside.hasRoom == room, "\(width)")
+    }
+    // Shown once, it stands wherever there is enough, the window's change of size alone bringing it back.
+    hosted.stack.aside.shown = true
+    for (width, stands) in [(669, false), (951, true), (669, false), (690, true)] as [(CGFloat, Bool)] {
+      hosted.size(width: width, regular: true)
+      try await hosted.until { (hosted.columns.viewController(for: .inspector) != nil) == stands }
+      try await hosted.settle()
+      #expect((hosted.columns.viewController(for: .inspector) != nil) == stands, "\(width)")
+      #expect(hosted.columns.isShowing(.inspector) == stands, "\(width)")
+    }
   }
 
   @Test func theListingsFootStandsWhileTheListingDoes() async throws {

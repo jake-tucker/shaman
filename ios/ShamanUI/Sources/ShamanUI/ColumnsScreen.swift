@@ -24,10 +24,11 @@ struct ColumnsScreen: View {
 
   /// The columns over `core`, confirming `invite` where one is given, returned to what the scene kept, `kept`, which
   /// `keep` is handed again on each change; but with the Session `opening` names open, or the new-session screen where
-  /// it is `composing`.
+  /// it is `composing`. With one `opening`, the Aside is shown at `aside`'s kind, where one is given.
   init(
     core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?, kept: KeptScene = KeptScene(),
-    keep: @escaping (KeptScene) -> Void = { _ in }, opening: String? = nil, composing: Bool = false
+    keep: @escaping (KeptScene) -> Void = { _ in }, opening: String? = nil, composing: Bool = false,
+    aside: AsideKind? = nil
   ) {
     self.core = core
     self.appVersion = appVersion
@@ -42,8 +43,10 @@ struct ColumnsScreen: View {
       composing
       ? [.landing(LandingRoute())]
       : opening.map { [.session(SessionRoute(session: $0))] } ?? (invite == nil ? nil : [])
+    let aside = Aside(showing: opening == nil ? nil : aside)
     _stack = State(
-      initialValue: open.map { SessionStack(core: core, path: $0) } ?? SessionStack(core: core, restoring: kept.pushed))
+      initialValue: open.map { SessionStack(core: core, path: $0, aside: aside) }
+        ?? SessionStack(core: core, restoring: kept.pushed))
   }
 
   /// What the scene is to keep now: the scope the listing stands at, or the one it was handed back until it says, and
@@ -65,6 +68,7 @@ struct ColumnsScreen: View {
             NewSessionScreen(model: stack.landing(for: route), stack: stack, writing: false)
               .noticeBanner())
         },
+        aside: AnyView(AsideScreen(stack: stack)),
         handed: { [notices, arming, scanner] screen in
           AnyView(
             screen

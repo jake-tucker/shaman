@@ -2,9 +2,9 @@ import SwiftUI
 import UIKit
 
 /// The columns every iPhone's screens stand in: UIKit's split view, the listing in its Sidebar's column and what is
-/// open in its main view's, with its inspector column for an Aside. A navigation controller stands in each of the two,
-/// and each screen is hosted in one. Where there is room for one column alone, as on an ordinary iPhone upright, the
-/// split view collapses, and what is open is pushed over the listing.
+/// open in its main view's, with its inspector column for the Aside. A navigation controller stands in each of the
+/// first two, and each screen is hosted in one. Where there is room for one column alone, as on an ordinary iPhone
+/// upright, the split view collapses, and what is open is pushed over the listing.
 ///
 /// What is open is `SessionStack.path` and nothing else. A change to it is asked of the main view's navigation
 /// controller, and what the reader pops there is read back as that controller says it did show a screen. While nothing
@@ -18,6 +18,8 @@ final class Columns: UISplitViewController {
     let open: @MainActor (Pushed) -> AnyView
     /// The new-session screen at rest.
     let rest: @MainActor (LandingRoute) -> AnyView
+    /// What the Aside holds.
+    let aside: AnyView
     /// Hands a screen what it reads of the environment, as a hosting controller made by hand inherits none of it.
     let handed: @MainActor (AnyView) -> AnyView
   }
@@ -27,6 +29,7 @@ final class Columns: UISplitViewController {
   private let sidebar = UINavigationController()
   private let main = UINavigationController()
   private let listing: HostedScreen
+  private let aside: HostedScreen
   /// The screens the path names that the main view was last asked to hold, the one on top last. Asked in the middle of
   /// a push or a pop, it holds them only once that has ended.
   private var asked: [HostedScreen] = []
@@ -39,6 +42,7 @@ final class Columns: UISplitViewController {
     self.stack = stack
     self.screens = screens
     listing = HostedScreen(screens.handed(screens.listing))
+    aside = HostedScreen(screens.handed(screens.aside))
     super.init(style: .doubleColumn)
     delegate = self
     sidebar.delegate = self
@@ -52,7 +56,12 @@ final class Columns: UISplitViewController {
     // the main view at a fold, and the mode set again then stands the one over the other (#733).
     preferredDisplayMode = .oneBesideSecondary
     preferredSplitBehavior = .tile
-    stack.moved = { [weak self] in self?.follow() }
+    minimumInspectorColumnWidth = Self.leastAside
+    stack.moved = { [weak self] in
+      self?.follow()
+      self?.standAside()
+    }
+    stack.aside.changed = { [weak self] in self?.standAside() }
   }
 
   @available(*, unavailable)
@@ -65,6 +74,83 @@ final class Columns: UISplitViewController {
   func take(_ screens: Screens) {
     self.screens = screens
     listing.rootView = screens.handed(screens.listing)
+  }
+
+  // MARK: The Aside
+
+  /// The least the main view keeps beside the Aside, and the least the Aside is given.
+  private static let leastMain: CGFloat = 400
+  private static let leastAside: CGFloat = 290
+
+  /// Whether the Aside has room beside the main view. The split view's own word is not enough: it would stand one over
+  /// the main view where the window is too narrow for both.
+  private var asideHasRoom: Bool {
+    !isCollapsed && view.bounds.width >= Self.leastMain + Self.leastAside
+  }
+
+  /// Says whether the Aside has room, as the split view stands now.
+  private func sayRoom() {
+    let room = asideHasRoom
+    if stack.aside.hasRoom != room {
+      stack.aside.hasRoom = room
+    }
+  }
+
+  /// Whether the Aside is to stand: the reader has it shown, a Session is open and there is room.
+  private var asideIsToStand: Bool {
+    stack.aside.shown && stack.openSession != nil && asideHasRoom
+  }
+
+  /// Has the inspector column hold the Aside, and show it, while it is to stand, and hold nothing otherwise, as what is
+  /// set in the column of a split view that is not collapsed is shown at once. With it shown the split view itself puts
+  /// the Sidebar behind its button.
+  private func standAside() {
+    guard isViewLoaded, view.window != nil else { return }
+    sayRoom()
+    if asideIsToStand {
+      if viewController(for: .inspector) == nil {
+        setViewController(aside, for: .inspector)
+      }
+      if !isShowing(.inspector) {
+        show(.inspector)
+      }
+    } else if isShowing(.inspector) {
+      hide(.inspector)
+      // The column gives it up once it has gone, which the split view tells its delegate nothing of.
+      guard let hiding = transitionCoordinator else { return emptyAside() }
+      hiding.animate(alongsideTransition: nil) { [weak self] _ in
+        guard let self else { return }
+        if asideIsToStand {
+          standAside()
+        } else {
+          emptyAside()
+        }
+      }
+    } else {
+      emptyAside()
+    }
+  }
+
+  /// Takes the Aside out of its column.
+  private func emptyAside() {
+    if viewController(for: .inspector) != nil {
+      setViewController(nil, for: .inspector)
+    }
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    standAside()
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    sayRoom()
+  }
+
+  override func viewWillTransition(to size: CGSize, with coordinator: any UIViewControllerTransitionCoordinator) {
+    super.viewWillTransition(to: size, with: coordinator)
+    coordinator.animate(alongsideTransition: nil) { [weak self] _ in self?.standAside() }
   }
 
   // MARK: What is open
@@ -200,6 +286,8 @@ extension Columns: UISplitViewControllerDelegate {
     _ columns: UISplitViewController, topColumnForCollapsingToProposedTopColumn proposed: UISplitViewController.Column
   ) -> UISplitViewController.Column {
     givingWay = false
+    // Alone on screen the system would stand it as a sheet.
+    emptyAside()
     return stack.path.isEmpty ? .primary : .secondary
   }
 

@@ -2,7 +2,7 @@ import ShamanCore
 import SwiftUI
 import Textual
 
-/// A Turn's work, pushed from its card: every Activity in the order it happened, the Agent's Messages along the way
+/// A Turn's work, led to by its card: every Activity in the order it happened, the Agent's Messages along the way
 /// among them, each row drawn from the one shape the core fills for every kind, and each pushing the whole of its
 /// Activity where there is more to it than its row. It crosses from the core only while it is up.
 struct TurnWorkScreen: View {
@@ -11,6 +11,8 @@ struct TurnWorkScreen: View {
   /// Pushes what a row leads to over the screen, where the columns host it; within a `NavigationStack` of its own, with
   /// none handed, each row is a link.
   var push: ((Pushed) -> Void)?
+  /// Pushes the Session a row opens, where that is not where the rest are pushed, as from the Aside.
+  var pushSession: ((Pushed) -> Void)?
   @State private var work: TurnWork?
 
   var body: some View {
@@ -22,7 +24,7 @@ struct TurnWorkScreen: View {
           case .detail(let activity):
             WorkRowLink(row: row, pushed: .detail(session.route, activity: activity), push: push)
           case .session(let opened):
-            SessionRowLink(row: row, session: opened, push: push)
+            SessionRowLink(row: row, session: opened, push: pushSession ?? push)
           case .nothing:
             WorkRowView(row: row)
               .accessibilityIdentifier("work.row")

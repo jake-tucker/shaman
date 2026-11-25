@@ -12,6 +12,8 @@ public struct RootScreen: View {
   private let opening: String?
   /// Whether the listing opens on the new-session screen, pushed over it at once.
   private let composing: Bool
+  /// The kind of thing the Aside is shown at beside that Session, where it is to be shown at launch.
+  private let aside: AsideKind?
   /// Whether what the scene kept is still to be handed to a listing: to the first one a launch shows, and never once
   /// the phone has held no Remote, nor where a debug build is asked to forget it.
   @State private var restoring: Bool
@@ -24,18 +26,19 @@ public struct RootScreen: View {
 
   /// The app over `core`, showing `appVersion` as its own version, already confirming `invite` where one is given, as
   /// one arriving by the launch environment in a debug build is, and returning to what the scene kept, but with the
-  /// Session `opening` names pushed over the listing where one is named, or the new-session screen where it is
-  /// `composing`, and as a new scene would open where it is `forgetting` what the scene kept. A notice the core gives
-  /// stands `noticeStands` before it goes by itself.
+  /// Session `opening` names pushed over the listing where one is named, with the Aside shown beside it at `aside`'s
+  /// kind where one is given, or the new-session screen where it is `composing`, and as a new scene would open where it
+  /// is `forgetting` what the scene kept. A notice the core gives stands `noticeStands` before it goes by itself.
   public init(
     core: any Core, appVersion: String, invite: String? = nil, opening: String? = nil, composing: Bool = false,
-    forgetting: Bool = false, noticeStands: Duration = .seconds(8)
+    aside: AsideKind? = nil, forgetting: Bool = false, noticeStands: Duration = .seconds(8)
   ) {
     self.core = core
     _notices = State(initialValue: NoticeModel(core: core, stands: noticeStands))
     self.appVersion = appVersion
     self.opening = opening
     self.composing = composing
+    self.aside = aside
     _restoring = State(initialValue: !forgetting)
     _invite = State(initialValue: invite)
   }
@@ -51,7 +54,7 @@ public struct RootScreen: View {
         ColumnsScreen(
           core: core, appVersion: appVersion, beginsIn: beginsIn, invite: invite,
           kept: restoring ? KeptScene(stored: kept) : KeptScene(), keep: { kept = $0.stored }, opening: opening,
-          composing: composing)
+          composing: composing, aside: aside)
       }
     }
     // Each screen shows it beneath its own bar, by `noticeBanner`.

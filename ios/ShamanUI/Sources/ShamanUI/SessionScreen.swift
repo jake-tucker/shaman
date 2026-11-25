@@ -11,8 +11,9 @@ import SwiftUI
 /// says who needs the reader, and its "Review" pushes that Subagent's Session, where its sheet presents itself, or,
 /// where several wait, opens the tree. An act's failure is a banner over the screen, or over the sheet that asked,
 /// but a Session gone, which pops it. A Subagent's Session is named by the Subagent and has no composer. Where the tree
-/// the Session belongs to has Subagents, a button in the navigation bar opens it as a sheet, and choosing an entry there
-/// has `stack` show that Session.
+/// the Session belongs to has Subagents, a button in the navigation bar opens it, and choosing an entry there has
+/// `stack` show that Session. Where the Aside has room beside it, the tree and what a Turn's card stands for are shown
+/// there, which a button in the bar shows and takes down; where it has none, the tree is a sheet, and the work pushed.
 struct SessionScreen: View {
   let model: SessionModel
   /// What is open, which the Session is of, and an entry chosen in its tree is shown on.
@@ -23,12 +24,14 @@ struct SessionScreen: View {
 
   var body: some View {
     ConversationView(model: model) { pushed in
-      stack?.push(pushed)
+      stack?.lead(to: pushed)
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       SessionFoot(model: model) { opens in
         if let stack {
-          showingTree = stack.review(opens, over: model.route)
+          if stack.review(opens, over: model.route) {
+            showTree()
+          }
         } else if opens == .interventions {
           model.review()
         }
@@ -72,9 +75,14 @@ struct SessionScreen: View {
       }
       if let tree = model.frame?.tree {
         ToolbarItem(placement: .topBarTrailing) {
-          TreeButtonView(button: tree) { showingTree = true }
+          TreeButtonView(button: tree) { showTree() }
         }
         .visibilityPriority(.high)
+      }
+      if let aside = stack?.aside, aside.hasRoom {
+        ToolbarItem(placement: .topBarTrailing) {
+          AsideButton(aside: aside)
+        }
       }
     }
     // Presented by the frame alone: SwiftUI clears the item only when the reader swipes the sheet away, which
@@ -111,6 +119,12 @@ struct SessionScreen: View {
       }
     )
     .task { await model.follow() }
+  }
+
+  /// Shows the tree the Session belongs to: in the Aside, where it has room, and as a sheet where it has none.
+  private func showTree() {
+    guard stack?.showTree() != true else { return }
+    showingTree = true
   }
 }
 
@@ -380,7 +394,8 @@ private struct SessionHeader: View {
 }
 
 /// One item of the conversation, drawn as what it is: a Turn's card and a Compaction with more behind it `push` what
-/// they hold over the Session `route` pushed, and a refused beginning offers to ask again through `model`.
+/// they hold, over the Session `route` pushed or in the Aside, and a refused beginning offers to ask again through
+/// `model`.
 private struct ItemView: View {
   let item: ConversationItem
   let route: SessionRoute
@@ -415,7 +430,7 @@ private struct ItemView: View {
     case .agentBlock(_, let kind, _, let markdown, let model):
       AgentBlockView(kind: kind, markdown: markdown, model: model)
     case .turn(let card):
-      // The card pushes the Turn's work.
+      // The card leads to the Turn's work.
       Button {
         push(.work(route, turn: card.work))
       } label: {
@@ -916,6 +931,14 @@ struct Conversation: Equatable {
   /// them.
   var read: Bool {
     !order.isEmpty && !shown.contains(where: \.isMark)
+  }
+
+  /// The latest Turn, as its card names it; none where there is no Turn.
+  var latestTurn: String? {
+    order.lazy.reversed().compactMap { id -> String? in
+      guard case .turn(let card) = items[id]?.kind else { return nil }
+      return card.work
+    }.first
   }
 
   /// Takes `change` in: the conversation whole, or the items that changed and the order every item stands in now.

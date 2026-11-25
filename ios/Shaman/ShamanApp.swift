@@ -27,7 +27,7 @@ struct ShamanApp: App {
             } else {
               RootScreen(
                 core: core, appVersion: Self.version, invite: Launch.invite, opening: Launch.opening,
-                composing: Launch.composing, forgetting: Launch.forgettingScene,
+                composing: Launch.composing, aside: Launch.aside, forgetting: Launch.forgettingScene,
                 noticeStands: Launch.noticeStands ?? .seconds(8)
               )
               .environment(\.interventionArming, Launch.arming ?? EnvironmentValues().interventionArming)
@@ -75,6 +75,14 @@ struct ShamanApp: App {
       let arguments = ProcessInfo.processInfo.arguments
       guard let flag = arguments.firstIndex(of: "--open"), arguments.indices.contains(flag + 1) else { return nil }
       return arguments[flag + 1]
+    }
+
+    /// What `--aside work` or `--aside tree` asks the Aside to be shown at beside the Session `--open` names, so a
+    /// screenshot or a UI test reaches it without a tap: that Session's latest Turn's work, or its tree.
+    static var aside: AsideKind? {
+      let arguments = ProcessInfo.processInfo.arguments
+      guard let flag = arguments.firstIndex(of: "--aside"), arguments.indices.contains(flag + 1) else { return nil }
+      return AsideKind(rawValue: arguments[flag + 1])
     }
 
     /// How long `--arming-moment <seconds>` asks an Intervention presented to take no tap for, so a UI test can see
