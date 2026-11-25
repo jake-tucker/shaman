@@ -22,6 +22,7 @@ jobs:
   hello:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -46,21 +47,20 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           docker run --rm -v "$PWD:/w" ubuntu:24.04 \
-            bash /w/crates/rune-hello/ci/linux-in-container.sh "$LABEL" "$(id -u):$(id -g)"
+            bash /w/crates/rune-hello/ci/linux-in-container.sh check "$LABEL" "$(id -u):$(id -g)"
 
       # A second bare container, holding none of the build's packages: what a machine with no display and nothing
       # installed for one says to an executable with Rune linked in.
-      - name: Start the executables where nothing is installed
+      - name: Start the debug executable where nothing is installed
         if: ${{ !cancelled() && runner.os == 'Linux' }}
         run: |
           {
             echo
-            echo "In a second bare \`ubuntu:24.04\`, with none of the build's packages:"
+            echo "The debug executable in a second bare \`ubuntu:24.04\`, with none of the build's packages:"
             echo '```'
             docker run --rm -v "$PWD/rune-out:/o:ro" ubuntu:24.04 sh -c "
-              echo '\$ ldd rune-hello (dist)'; ldd /o/rune-hello-dist-$LABEL
-              echo '\$ rune-hello --list-scenes (debug)'; /o/rune-hello-debug-$LABEL --list-scenes; echo \"exit \$?\"
-              echo '\$ rune-hello (dist, no display)'; timeout 20 /o/rune-hello-dist-$LABEL; echo \"exit \$?\"
+              echo '\$ ldd rune-hello'; ldd /o/rune-hello-debug-$LABEL
+              echo '\$ rune-hello --list-scenes'; /o/rune-hello-debug-$LABEL --list-scenes; echo \"exit \$?\"
             " 2>&1 | cut -c1-400
             echo '```'
           } | tee -a "rune-out/report-$LABEL.md"
@@ -70,7 +70,7 @@ jobs:
         if: runner.os != 'Linux'
         run: |
           rustup toolchain install
-          bash crates/rune-hello/ci/check.sh "$LABEL" rune-out build test gpu dist
+          bash crates/rune-hello/ci/check.sh "$LABEL" rune-out build test gpu
 
       - name: Say what the runner draws with
         if: ${{ !cancelled() && runner.os == 'Windows' }}
@@ -80,6 +80,41 @@ jobs:
           "Display adapters the runner reports: " + ((Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }) -join ", ") |
             Add-Content "rune-out/report-$env:LABEL.md"
 
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: rune-hello-${{ matrix.target }}
+          path: rune-out/
+          retention-days: 14
+          if-no-files-found: error
+
+      # As Shaman's releases are built: fat LTO in one codegen unit, which takes far longer than everything above.
+      - name: Build as a release is built, in a bare container
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        timeout-minutes: 100
+        run: |
+          docker run --rm -v "$PWD:/w" ubuntu:24.04 \
+            bash /w/crates/rune-hello/ci/linux-in-container.sh dist "$LABEL" "$(id -u):$(id -g)"
+
+      - name: Start the dist executable where nothing is installed
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        run: |
+          {
+            echo
+            echo "The dist executable in a second bare \`ubuntu:24.04\`, with none of the build's packages and no display:"
+            echo '```'
+            docker run --rm -v "$PWD/rune-out:/o:ro" ubuntu:24.04 sh -c "
+              echo '\$ ldd rune-hello'; ldd /o/rune-hello-dist-$LABEL
+              echo '\$ rune-hello'; timeout 20 /o/rune-hello-dist-$LABEL; echo \"exit \$?\"
+            " 2>&1 | cut -c1-600
+            echo '```'
+          } | tee -a "rune-out/report-$LABEL.md"
+
+      - name: Build as a release is built
+        if: ${{ !cancelled() && runner.os != 'Linux' }}
+        timeout-minutes: 100
+        run: bash crates/rune-hello/ci/check.sh "$LABEL" rune-out dist
+
       - name: Report
         if: ${{ !cancelled() }}
         run: cat "rune-out/report-$LABEL.md" >> "$GITHUB_STEP_SUMMARY"
@@ -87,7 +122,10 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ !cancelled() }}
         with:
-          name: rune-hello-${{ matrix.target }}
-          path: rune-out/
+          name: rune-hello-dist-${{ matrix.target }}
+          path: |
+            rune-out/report-*.md
+            rune-out/rune-hello-dist-*
+            rune-out/*-build-dist.log
           retention-days: 14
           if-no-files-found: error

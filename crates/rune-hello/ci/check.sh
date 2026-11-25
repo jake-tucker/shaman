@@ -16,6 +16,7 @@ report="$out/report-$label.md"
 exe=""
 case "$(uname -s)" in MINGW* | MSYS* | CYGWIN*) exe=.exe ;; esac
 bin="target/debug/rune-hello$exe"
+probe="target/debug/rune-probe$exe"
 failed=0
 
 note() { echo "$*" | tee -a "$report"; }
@@ -40,12 +41,28 @@ run() {
     return "$rc"
 }
 
+# limit <seconds> <command>...: kills a command that outlives its time, as a headless run left waiting on a display
+# or an adapter would, so one cannot hold a runner for hours.
+limit() {
+    local secs=$1 rc=0
+    shift
+    "$@" &
+    local pid=$!
+    (sleep "$secs" && kill -9 "$pid" 2> /dev/null) &
+    local watchdog=$!
+    wait "$pid" || rc=$?
+    kill "$watchdog" 2> /dev/null
+    return "$rc"
+}
+
 gpu() {
     local expect=$1 suffix=$2
-    run "list-scenes$suffix" "$expect" "$bin" --list-scenes
-    run "snap-off$suffix" "$expect" "$bin" --snap "$out/$label-off$suffix.png" --scale 2 --theme dark
-    run "snap-on$suffix" "$expect" "$bin" --snap "$out/$label-on$suffix.png" --scene on --scale 2 --theme dark
-    run "tree$suffix" "$expect" "$bin" --tree "$out/$label-tree$suffix.json"
+    run "list-scenes$suffix" "$expect" limit 120 "$bin" --list-scenes
+    run "snap-off$suffix" "$expect" limit 120 "$bin" --snap "$out/$label-off$suffix.png" --scale 2 --theme dark
+    run "snap-on$suffix" "$expect" limit 120 "$bin" --snap "$out/$label-on$suffix.png" --scene on --scale 2 --theme dark
+    run "tree$suffix" "$expect" limit 120 "$bin" --tree "$out/$label-tree$suffix.json"
+    # The probe: Icon Catalog glyphs from the bundled Nerd Font, above a virtual list of kit Markdown.
+    run "snap-probe$suffix" "$expect" limit 120 "$probe" --snap "$out/$label-probe$suffix.png" --scale 2 --theme dark
 }
 
 for step in "$@"; do
@@ -55,14 +72,18 @@ for step in "$@"; do
         build)
             note "### $label"
             note "- \`$(rustc --version)\`, host \`$(rustc -vV | sed -n 's/^host: //p')\`"
-            run build-clean pass cargo build --locked -p rune-hello
+            run build-clean pass cargo build --locked -p rune-hello --bin rune-hello
             [ -f "$bin" ] && note "- debug executable: $(size_of "$bin") bytes"
             # Its own source alone has changed: what a developer waits for between edits.
             echo "// touched $(date +%s)" >> crates/rune-hello/src/main.rs
-            run build-incremental pass cargo build --locked -p rune-hello
+            run build-incremental pass cargo build --locked -p rune-hello --bin rune-hello
+            # The probe adds kit, with Markdown and syntax highlighting, to what hello already built.
+            run build-probe pass cargo build --locked -p rune-hello --bin rune-probe
+            [ -f "$probe" ] && note "- probe's debug executable: $(size_of "$probe") bytes"
             ;;
         test)
-            # `Runtime::new` in a `cargo test`, which is meant to need no GPU adapter.
+            # `Runtime::new` in a `cargo test`, which is meant to need no GPU adapter: hello's own test, and the
+            # probe's, which drag a selection across two virtual rows of Markdown.
             run "test$suffix" pass cargo test --locked -p rune-hello
             ;;
         gpu) gpu pass "$suffix" ;;
@@ -72,6 +93,9 @@ for step in "$@"; do
             if [ -f "target/dist/rune-hello$exe" ]; then
                 note "- dist executable: $(size_of "target/dist/rune-hello$exe") bytes"
                 cp "target/dist/rune-hello$exe" "$out/rune-hello-dist-$label$exe"
+            fi
+            if [ -f "target/dist/rune-probe$exe" ]; then
+                note "- probe's dist executable, which holds kit and a 2.5 MB font: $(size_of "target/dist/rune-probe$exe") bytes"
             fi
             ;;
         *)
