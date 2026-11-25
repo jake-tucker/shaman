@@ -312,6 +312,45 @@ one list is on screen, and `at:` where what floats over the list covers its midd
 `app.leaveTheFront()` in place of the Home button, which does nothing on a Duo. On an open Duo in portrait the picture
 is upright in the one portrait a posed run reaches, turned right once, and on its head in the other.
 
+**Posed.** What only an open Duo shows is held by a posed run, which poses this checkout's Duo through Device Hub, runs
+the tests written for that pose, one pose from start to finish, and closes it again. Run it before merging a change to
+layout, at a Mac that is unlocked from start to finish, and never in CI.
+
+```sh
+../scripts/ios-test.sh posed open       # open flat and upright: the inner display in landscape, 951 x 669
+../scripts/ios-test.sh posed book       # partly open and upright, the same size
+../scripts/ios-test.sh posed laptop     # partly open and turned right once: the inner display in portrait, 669 x 951
+../scripts/ios-test.sh posed portrait   # open flat and turned right once, the same size
+../scripts/ios-test.sh posed all        # each in turn
+```
+
+`../scripts/ios-pose.sh <pose>` poses the Duo alone, to look at: `closed` or one of those four, and `closed` again when
+done, as what runs on the simulator next would run on it open. It presses Device Hub's buttons through accessibility, so
+the shell needs that permission (System Settings > Privacy & Security > Accessibility) and Device Hub comes to the
+front. It says why where it cannot: no permission, a locked Mac, which has no Device Hub windows, no window showing the
+simulator, a Device Hub that answers nothing or does not connect the display, or a `devicectl` that does not know the
+simulator. A press answered as done may have done nothing, so after each it reads from `devicectl` which display is
+active and how the device is held. Each pose is begun from closed, so a lost "Open" is noticed. A lost "Partially Open"
+is not: neither of those, nor a window's size, tells open flat from partly open, so a test of the book or the laptop
+pose has to hold something the fold moves, or it passes on a Duo that never folded. The two there are, of how the bar
+stands, do not. Never `simctl io screenConfig power` on a Duo either: it leaves SpringBoard crashing until the simulator
+is booted again.
+
+Several Device Hubs may run, and one that is stuck cannot be told from the rest by name, so the script addresses them by
+pid, through `../scripts/ios-device-hub.swift`. It uses one that answers, starts one where none does, quits none, and
+closes the windows it opened. Nothing scripts a Device Hub that has stuck: a person quits it.
+
+One run at a time drives Device Hub, for every checkout: `/tmp/shaman-pose.lock` is held through a posed run, and another
+waits for it, saying so. It is let go however the run ends, and one left by a process that died is taken over. Each
+posed run builds in a scratch directory of its own, `build/posed.*`, which goes as it ends, and its result bundles stand
+beside the others. It stays on the simulator itself, as clones boot closed.
+
+To add a posed test, write it in the class of its pose, `Posed<Pose>Tests`, and begin it with `Pose.<pose>.launched`,
+handing it the test and the launch arguments. That skips where the run is not of that pose, and fails saying the
+simulator is not in it where the window is not the pose's size. The app offers a test nothing of its pose, and no test
+changes it. A class more is named in that pose's row of the posed half of the script's table. Every other run skips
+them, the one skip a full run has beside `LivePairingTests`'.
+
 The script says what passed and what failed, as `xcresulttool` reads it, and where each result bundle is under
 `build/results`. Read more of one through `xcresulttool`, not the build log:
 

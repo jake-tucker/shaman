@@ -3,6 +3,7 @@
 # simulator runs which tests. Run scripts/build-ios-core.sh first.
 #
 #   scripts/ios-test.sh pro|duo|pro-max|all [--ad-hoc] [xcodebuild argument]...
+#   scripts/ios-test.sh posed open|book|laptop|portrait|all [--ad-hoc] [xcodebuild argument]...
 #
 #   scripts/ios-test.sh all                                             # every row, one simulator after another
 #   scripts/ios-test.sh pro                                             # the Pro's row: everything
@@ -21,6 +22,12 @@
 # goes with them. Pass xcodebuild's own `-parallel-testing-enabled NO` to have any run stay on the simulator, or its
 # `-parallel-testing-worker-count` or `-maximum-parallel-testing-workers` for another number of clones.
 #
+# A posed run is for a Mac, unlocked from start to finish, and never CI. It builds the app and its tests in a scratch
+# directory of its own, then has scripts/ios-pose.sh pose this checkout's Duo, hold the pose while the tests written for
+# it run, one after another on the simulator itself, and close it; `all` does so for each pose in turn. The pose is
+# named to the tests as SHAMAN_POSE in the test runner's environment. A clone boots closed, so no posed run is made on
+# clones.
+#
 # Everything chosen is run, whatever fails before it, and the script fails if any of it did, or ran no test. Result
 # bundles are written to ios/build/results, and what xcodebuild builds beside them.
 
@@ -38,14 +45,37 @@ row_of() {
   esac
 }
 
+
+# The posed half of the table: what each pose of the Duo runs. Every other run skips those tests, there being no pose.
+poses=(open book laptop portrait)
+posed_row_of() {
+  case "$1" in
+    open) row=(-only-testing:ShamanUITests/PosedOpenTests) ;;
+    book) row=(-only-testing:ShamanUITests/PosedBookTests) ;;
+    laptop) row=(-only-testing:ShamanUITests/PosedLaptopTests) ;;
+    portrait) row=(-only-testing:ShamanUITests/PosedPortraitTests) ;;
+  esac
+}
+
 usage() {
   echo "usage: $0 pro|duo|pro-max|all [--ad-hoc] [xcodebuild argument]..." >&2
+  echo "       $0 posed open|book|laptop|portrait|all [--ad-hoc] [xcodebuild argument]..." >&2
   exit 2
 }
 
+posed=false
 case "${1:-}" in
   pro | duo | pro-max) chosen=("$1") ;;
   all) chosen=("${simulators[@]}") ;;
+  posed)
+    posed=true
+    shift
+    case "${1:-}" in
+      open | book | laptop | portrait) chosen=("$1") ;;
+      all) chosen=("${poses[@]}") ;;
+      *) usage ;;
+    esac
+    ;;
   *) usage ;;
 esac
 shift
@@ -107,11 +137,18 @@ report() {
         | " in \(. / 60 | floor)m\(. % 60)s" else "" end)
       + ": \(.passedTests) passed, \(.failedTests) failed, \(.skippedTests) skipped",
     (.testFailures[] | "  \(.targetName) \(.testName): \(.failureText)")' <<< "$summary"
-  [ "$(jq .totalTestCount <<< "$summary")" -gt 0 ] || {
+  # In a posed run a test that skips is one of another pose.
+  local counted='.totalTestCount'
+  if $posed; then counted='.passedTests + .failedTests + .expectedFailures'; fi
+  [ "$(jq "$counted" <<< "$summary")" -gt 0 ] || {
     echo "No test ran." >&2
     return 1
   }
 }
+
+# Ad hoc and not unsigned: the Keychain answers an unsigned app with errSecMissingEntitlement, and the app keeps its
+# identity key's blob there.
+ad_hoc_signing=(CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=)
 
 # Runs the scheme `package` or `app` on a simulator, with what is selected of its tests.
 run() {
@@ -141,9 +178,7 @@ run() {
     if $ad_hoc; then arguments+=(CODE_SIGNING_ALLOWED=NO); fi
   else
     arguments+=(-project Shaman.xcodeproj -scheme Shaman -derivedDataPath "$build/xcode")
-    # Ad hoc and not unsigned: the Keychain answers an unsigned app with errSecMissingEntitlement, and the app keeps its
-    # identity key's blob there.
-    if $ad_hoc; then arguments+=(CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=); fi
+    if $ad_hoc; then arguments+=("${ad_hoc_signing[@]}"); fi
   fi
   echo "== $simulator, $scheme: $bundle" >&2
   (cd "$directory" && xcodebuild test "${arguments[@]}" "$@") || status=$?
@@ -152,10 +187,81 @@ run() {
   return "$status"
 }
 
+# Runs a command in ios/, in the background, so that a signal is heeded as it comes and passed on by `stop`. Bash heeds
+# one otherwise only once the command ends, and takes a command that ends by its own exit to have dealt with it.
+child=
+attend() {
+  local status=0
+  (cd "$root/ios" && exec "$@") &
+  child=$!
+  wait "$child" || status=$?
+  child=
+  return "$status"
+}
+
+stop() {
+  trap '' HUP INT TERM
+  if [ -n "$child" ]; then
+    kill -TERM "$child" 2> /dev/null || true
+    wait "$child" || true
+  fi
+  exit "$1"
+}
+
+# Builds the app and its tests once for the poses chosen, in a directory no other run shares, and runs each pose's
+# tests while the Duo holds it. Adds what failed to `failed`.
+run_posed() {
+  local udid pose argument bundle status arguments
+  for argument in "$@"; do
+    case "$argument" in
+      *parallel-testing* | -derivedDataPath | -resultBundlePath | -destination)
+        echo "A posed run stays on the checkout's Duo, and keeps what it makes by run: not $argument" >&2
+        exit 2
+        ;;
+    esac
+  done
+  mkdir -p "$build/results"
+  scratch=$(mktemp -d "$build/posed.XXXXXX")
+  # A signal ends what is run, is waited out, and ends the run whatever poses are left. Only then does the scratch
+  # directory go. Not a local of this function's, as the trap runs after it.
+  trap 'rm -rf "$scratch"' EXIT
+  trap 'stop 129' HUP
+  trap 'stop 130' INT
+  trap 'stop 143' TERM
+  if ! udid=$("$root/scripts/ios-simulator.sh" duo); then
+    failed+=("posed, the Duo of which did not boot")
+    return
+  fi
+  arguments=(-project Shaman.xcodeproj -scheme Shaman -destination "platform=iOS Simulator,id=$udid"
+    -derivedDataPath "$scratch/derived" -quiet)
+  if $ad_hoc; then arguments+=("${ad_hoc_signing[@]}"); fi
+  # Built before any pose is held, and so the lock on Device Hub.
+  if ! attend xcodebuild build-for-testing "${arguments[@]}" "$@"; then
+    failed+=("posed, which did not build")
+    return
+  fi
+  for pose in "${chosen[@]}"; do
+    posed_row_of "$pose"
+    if [ "${#only[@]}" -gt 0 ]; then row=("${only[@]}"); fi
+    bundle="$build/results/posed-$pose-$(date +%Y%m%d-%H%M%S)-$$.xcresult"
+    echo "== posed $pose: $bundle" >&2
+    status=0
+    attend env TEST_RUNNER_SHAMAN_POSE="$pose" "$root/scripts/ios-pose.sh" "$pose" -- \
+      xcodebuild test-without-building "${arguments[@]}" -resultBundlePath "$bundle" -parallel-testing-enabled NO \
+      "${row[@]}" ${skips[@]+"${skips[@]}"} "$@" || status=$?
+    if [ -d "$bundle" ] || [ "$status" = 0 ]; then report "$bundle" >&2 || status=1; fi
+    [ "$status" = 0 ] || failed+=("posed $pose")
+  done
+}
+
 # In one group, which bash reads whole before it runs any, so that an edit to this file does not reach a run going on.
 {
   failed=()
-  for simulator in "${chosen[@]}"; do
+  if $posed; then
+    run_posed ${rest[@]+"${rest[@]}"}
+    chosen=()
+  fi
+  for simulator in ${chosen[@]+"${chosen[@]}"}; do
     row_of "$simulator"
     selected=()
     for selector in "${row[@]}"; do
