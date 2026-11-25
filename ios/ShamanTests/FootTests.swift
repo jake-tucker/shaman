@@ -5,9 +5,12 @@ import UIKit
 @testable import ShamanUI
 
 /// A screen with a composer's foot in a window of the app's own scene, as tall as the display, over the software
-/// keyboard, which the simulator holding a hardware one would else minimise.
+/// keyboard, which the simulator holding a hardware one would else minimise. How the window stands is read above it, as
+/// it is above the columns: the screen is hosted in a navigation controller of its own within the one read.
 @MainActor private final class HostedFoot: NSObject {
   let window: UIWindow
+  /// How the window stands, as it is read above the screen.
+  let pose: Pose
   private let host: UIHostingController<AnyView>
   private let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
   private var watched: UIView?
@@ -16,18 +19,19 @@ import UIKit
   /// How far above that edge the keyboard last said it will stand.
   private(set) var keyboard: CGFloat = 0
 
-  init(_ screen: some View) throws {
+  init(_ screen: some View, reading pose: Pose) throws {
     // As a launch argument has it, and for this process alone.
     UserDefaults.standard.setVolatileDomain(
       arguments.merging(["AutomaticMinimizationEnabled": false]) { _, new in new },
       forName: UserDefaults.argumentDomain)
     let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     window = UIWindow(windowScene: scene)
+    self.pose = pose
     host = UIHostingController(rootView: AnyView(screen))
     super.init()
     NotificationCenter.default.addObserver(
       self, selector: #selector(rising), name: UIResponder.keyboardWillShowNotification, object: nil)
-    window.rootViewController = UINavigationController(rootViewController: host)
+    window.rootViewController = UIHostingController(rootView: Hosting(host: host).ignoresSafeArea().reads(pose))
     window.windowLevel = .alert + 1
     window.makeKeyAndVisible()
   }
@@ -87,21 +91,35 @@ import UIKit
   }
 }
 
+/// A screen's own controller in a navigation controller, as a column holds it.
+private struct Hosting: UIViewControllerRepresentable {
+  let host: UIViewController
+
+  func makeUIViewController(context: Context) -> UINavigationController {
+    UINavigationController(rootViewController: host)
+  }
+
+  func updateUIViewController(_ controller: UINavigationController, context: Context) {}
+}
+
 @Suite(.serialized) @MainActor struct FootHostedTests {
-  private func session(_ session: String = "workstation-key/7") -> AnyView {
-    AnyView(SessionScreen(model: SessionModel(core: FakeCore(.paired), session: session)))
+  private func session(_ session: String = "workstation-key/7") throws -> HostedFoot {
+    let route = SessionRoute(session: session)
+    let stack = SessionStack(core: FakeCore(.paired), path: [.session(route)])
+    return try HostedFoot(SessionScreen(model: stack.model(for: route), stack: stack), reading: stack.pose)
   }
 
   /// The new-session screen at rest, which does not arrive writing.
-  private func landing() -> AnyView {
+  private func landing() throws -> HostedFoot {
     let core = FakeCore(.composing)
     let stack = SessionStack(core: core)
-    return AnyView(NewSessionScreen(model: NewSessionModel(core: core), stack: stack, atRest: stack.rest))
+    return try HostedFoot(
+      NewSessionScreen(model: NewSessionModel(core: core), stack: stack, atRest: stack.rest), reading: stack.pose)
   }
 
   /// It rests 28 points above the edge at compact width and 22 at regular, and is one view at both.
   @Test(arguments: [false, true]) func theFieldStandsAsTheWidthClassSays(session: Bool) async throws {
-    let hosted = try HostedFoot(session ? self.session() : landing())
+    let hosted = try session ? self.session() : landing()
     defer { hosted.close() }
     hosted.window.traitOverrides.horizontalSizeClass = .compact
     let field = try await hosted.field()
@@ -115,7 +133,7 @@ import UIKit
   /// it ends: a foot that gave way before or after the keyboard moved would stand lower or higher than that for a while.
   @Test(arguments: [(true, false), (true, true), (false, false), (false, true)])
   func theFieldGoesWithTheKeyboardAndNeverJumps(session: Bool, regular: Bool) async throws {
-    let hosted = try HostedFoot(session ? self.session() : landing())
+    let hosted = try session ? self.session() : landing()
     defer { hosted.close() }
     hosted.window.traitOverrides.horizontalSizeClass = regular ? .regular : .compact
     let rests: CGFloat = regular ? 22 : 28
@@ -140,9 +158,44 @@ import UIKit
     }
   }
 
+  /// Sat like a laptop, the fold where the test says, it goes the same way over the software keyboard, from under the
+  /// Aside, as that gives up the half below the fold to it, and back, one view and never without its focus.
+  @Test func satLikeALaptopTheFieldGoesWithTheKeyboardFromUnderTheAside() async throws {
+    let hosted = try session()
+    defer { hosted.close() }
+    hosted.window.traitOverrides.horizontalSizeClass = .regular
+    let field = try await hosted.field()
+    let list = try await hosted.found(FootCollectionView.self)
+    let height = hosted.window.bounds.height
+    let fold = Fold(top: (height / 2).rounded() - 20, bottom: (height / 2).rounded() + 20, window: height)
+    let ends = { list.convert(list.bounds, to: nil).maxY - list.adjustedContentInset.bottom }
+    hosted.pose.fold = fold
+    #expect(try await hosted.field() === field)
+    for _ in 0..<2 {
+      #expect(abs(hosted.stands(field) - 22) < 0.5)
+      #expect(abs(ends() - fold.top) < 0.5, "\(ends())")
+      let up = try await hosted.frames(of: field) { #expect(field.becomeFirstResponder()) }
+      let raised = hosted.keyboard + 8
+      #expect(hosted.keyboard > 100 && hosted.pose.keyboardIsUp && abs(hosted.pose.keyboard - hosted.keyboard) < 0.5)
+      #expect(abs((up.last ?? 0) - raised) < 0.5, "\(up)")
+      #expect(up.allSatisfy { $0 > 21.5 && $0 < raised + 0.5 }, "\(up)")
+      #expect(zip(up, up.dropFirst()).allSatisfy { $1 > $0 - 0.5 }, "\(up)")
+      #expect(ends() < height - raised - 40)
+      #expect(try await hosted.field() === field)
+      #expect(field.isFirstResponder, "it keeps its focus")
+
+      let down = try await hosted.frames(of: field) { field.resignFirstResponder() }
+      #expect(abs((down.last ?? 0) - 22) < 0.5, "\(down)")
+      #expect(down.allSatisfy { $0 > 21.5 && $0 < raised + 0.5 }, "\(down)")
+      #expect(zip(down, down.dropFirst()).allSatisfy { $1 < $0 + 0.5 }, "\(down)")
+      #expect(!hosted.pose.keyboardIsUp)
+      #expect(try await hosted.field() === field)
+    }
+  }
+
   /// A Subagent's Session that has ended has no foot, and its conversation's last row rests clear of the display's edge.
   @Test func aConversationWithNoFootEndsClearOfTheEdge() async throws {
-    let hosted = try HostedFoot(session("workstation-key/12.2"))
+    let hosted = try session("workstation-key/12.2")
     defer { hosted.close() }
     let list = try await hosted.found(FootCollectionView.self)
     try await Task.sleep(for: .seconds(1))

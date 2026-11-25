@@ -1,10 +1,14 @@
 import SwiftUI
 
 extension View {
-  /// Stands what `foot` draws of `held` at the screen's foot, on its own ground, with the composer's field at its end,
-  /// and nothing while nothing is `held`.
-  func composerFoot<Held>(_ held: Held?, @ViewBuilder foot: @escaping (Held) -> some View) -> some View {
-    modifier(ComposerFoot(held: held, foot: foot))
+  /// Stands at the screen's foot, on its own ground, what `lines` draws of `held` over its composer's `field`, and
+  /// nothing while nothing is `held`. Sat like a laptop, as `pose` says, `below` stands below the fold between the two,
+  /// whatever is held.
+  func composerFoot<Held>(
+    _ held: Held?, pose: Pose?, @ViewBuilder lines: @escaping (Held) -> some View,
+    @ViewBuilder field: @escaping (Held) -> some View, @ViewBuilder below: @escaping () -> some View
+  ) -> some View {
+    modifier(ComposerFoot(held: held, pose: pose, lines: lines, field: field, below: below))
   }
 }
 
@@ -18,36 +22,63 @@ extension View {
 /// Over a keyboard the field stands by the keyboard instead. The room the keyboard takes is part of how far above the
 /// edge the field already is, so the foot's own padding gives way by as much as it comes to, down to what it keeps over
 /// one. However the keyboard comes and goes, the field is then never lower than it rests nor nearer the keyboard than
-/// that. It is one view throughout, so it keeps its focus.
+/// that. Where the window's safe area reaches further up than the keyboard, as past the band kept for a fold, it stands
+/// as far above that.
 ///
-/// It keeps no sides: what the foot draws stands across its column by `readingSides`, under the conversation's words.
-private struct ComposerFoot<Held, Foot: View>: ViewModifier {
+/// It is one stack of two parts: its lines, and then its field. Sat like a laptop with no keyboard up, the second part
+/// is as tall as the half below the fold, and begins with the band kept for the fold and what stands below it, so the
+/// screen's own content and the lines end at the fold. A keyboard takes that half, and the second part is the field
+/// alone, above the fold. The field is one view throughout, so it keeps its focus: made as two, one above the fold and
+/// one below, the keyboard never rises (#718, #732).
+///
+/// It keeps no sides: what the foot draws stands across its column by `readingSides`, under the conversation's words,
+/// but for what stands below the fold, which is as wide as the column.
+private struct ComposerFoot<Held, Lines: View, Field: View, Below: View>: ViewModifier {
   let held: Held?
-  let foot: (Held) -> Foot
+  let pose: Pose?
+  let lines: (Held) -> Lines
+  let field: (Held) -> Field
+  let below: () -> Below
   @Environment(\.horizontalSizeClass) private var width
-  /// How much of the screen's foot the keyboard covers.
-  @State private var keyboard: CGFloat = 0
 
   /// How far above the display's bottom edge Messages stands its field, the keyboard down.
   private var stands: CGFloat { width == .regular ? 22 : 28 }
-  /// How far above the keyboard the field stands, and the ground above what the foot holds.
+  /// How far above the keyboard the field stands, and the ground above each thing the foot holds.
   private let clear: CGFloat = 8
 
   func body(content: Content) -> some View {
+    let fold = pose?.foldWithHalf
+    let keyboard = pose?.keyboard ?? 0
     content
       .safeAreaInset(edge: .bottom, spacing: 0) {
-        if let held {
-          foot(held)
-            .padding(.top, clear)
-            .padding(.bottom, max(clear, stands - keyboard))
-            .background(.bar)
+        if held != nil || fold != nil {
+          VStack(spacing: 0) {
+            if let held {
+              Group(subviews: lines(held)) { lines in
+                VStack(spacing: 0) {
+                  ForEach(lines) { $0.padding(.top, clear) }
+                }
+                .padding(.bottom, fold == nil || lines.isEmpty ? 0 : clear)
+              }
+            }
+            VStack(spacing: 0) {
+              if let fold {
+                Color.clear.frame(height: fold.band)
+                below()
+                  .frame(maxWidth: .infinity, maxHeight: .infinity)
+              }
+              if let held {
+                field(held)
+                  .padding(.top, clear)
+              }
+            }
+            .padding(.bottom, max(clear + (pose?.aboveKeyboard ?? 0), stands - keyboard))
+            // Less the last of a keyboard going, which is not up and lifts it still.
+            .frame(height: fold.map { max(0, $0.below - keyboard) }, alignment: .bottom)
+            .background(fold == nil ? Color.clear : Color(.systemBackground))
+          }
+          .background(.bar)
         }
-      }
-      .onGeometryChange(for: CGFloat.self) {
-        $0.safeAreaInsets.bottom
-      } action: {
-        // Past the container's safe area, what is left is the keyboard's.
-        keyboard = $0
       }
       .ignoresSafeArea(.container, edges: .bottom)
   }

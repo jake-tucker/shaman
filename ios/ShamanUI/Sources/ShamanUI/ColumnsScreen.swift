@@ -2,8 +2,8 @@ import ShamanCore
 import SwiftUI
 
 /// What the app shows of a phone holding a Remote: the listing of every Remote's Sessions and what is open, in
-/// `Columns`. It follows the listing however the columns stand, returns to what the scene kept after a cold start, and
-/// hands the scene what to keep on each change.
+/// `Columns`. It follows the listing however the columns stand, returns to what the scene kept after a cold start, hands
+/// the scene what to keep on each change, and reads how the window stands.
 struct ColumnsScreen: View {
   let core: any Core
   let appVersion: String
@@ -79,6 +79,7 @@ struct ColumnsScreen: View {
     )
     // Each column keeps its own screens clear of the display's edges and the keyboard.
     .ignoresSafeArea()
+    .reads(stack.pose)
     .task { await model.follow(restoring: restoring) }
     .onChange(of: kept, initial: true) { _, kept in keep(kept) }
   }

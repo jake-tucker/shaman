@@ -9,7 +9,8 @@ public enum AsideKind: String, Sendable {
 
 /// The Aside as a window has it, kept while the window lives: what it holds, whether the reader has it shown beside the
 /// main view, and whether it has room there, as the columns say. The first two are each the reader's own choice, and
-/// hold wherever the Aside stands and while it stands nowhere.
+/// hold wherever the Aside stands and while it stands nowhere. Below the fold, where the device is sat like a laptop, it
+/// stands by the pose alone, which `SessionStack` says.
 @MainActor @Observable
 final class Aside {
   // MARK: What it holds
@@ -41,8 +42,6 @@ final class Aside {
   var hasRoom = false
   /// Whether it stands beside the main view now, which the columns alone say.
   var standsBeside = false
-  /// Whether it is on screen, wherever it stands. Each place it may stand is said apart, by what stands it there.
-  var onScreen: Bool { standsBeside }
   /// How many times it has come on screen beside the main view, as the columns say. What is drawn of it is kept while it
   /// is off screen, where SwiftUI starts no reading again as what is read changes, so each begins again as it comes.
   var appearances = 0
@@ -115,6 +114,9 @@ final class Aside {
 /// be drawn wherever the Aside stands.
 struct AsideScreen: View {
   let stack: SessionStack
+  /// The Session it answers for, as it does below the fold in that Session's own screen, whatever is pushed over that;
+  /// with none handed, the one open on top.
+  var session: SessionModel?
 
   var body: some View {
     // Its coming on screen is read here, outside what is drawn: a Session begun in a new-session screen may change
@@ -123,8 +125,8 @@ struct AsideScreen: View {
   }
 
   @ViewBuilder private var content: some View {
-    if let route = stack.openSession {
-      let session = stack.model(for: route)
+    if let session = session ?? stack.openSession.map(stack.model(for:)) {
+      let route = session.route
       // The chooser beneath the rest and not a safe area inset over it, of which a list within takes no notice, so that
       // its last row would stand under it.
       VStack(spacing: 0) {

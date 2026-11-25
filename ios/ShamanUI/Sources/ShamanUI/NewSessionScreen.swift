@@ -21,7 +21,7 @@ struct NewSessionScreen: View {
     if let begun = model.begun {
       SessionScreen(model: begun, stack: stack)
     } else {
-      LandingView(model: model, arrivesWriting: atRest == nil) {
+      LandingView(model: model, pose: stack.pose, arrivesWriting: atRest == nil) {
         if let atRest {
           stack.openRest(atRest)
         }
@@ -33,6 +33,7 @@ struct NewSessionScreen: View {
 /// The Landing as the screen draws it before the send.
 private struct LandingView: View {
   @Bindable var model: NewSessionModel
+  let pose: Pose
   let arrivesWriting: Bool
   /// Told as the cursor is put in the field.
   let touched: () -> Void
@@ -54,8 +55,15 @@ private struct LandingView: View {
     }
     .scrollDismissesKeyboard(.interactively)
     .accessibilityIdentifier("landing.screen")
-    .composerFoot(model.landing) { landing in
-      LandingFoot(landing: landing, model: model, writing: $writing)
+    .composerFoot(model.landing, pose: pose) { landing in
+      if let line = landing.unreachable {
+        LandingUnreachable(line: line)
+      }
+    } field: { landing in
+      LandingField(landing: landing, model: model, writing: $writing)
+    } below: {
+      // With no Session open there is nothing to stand there.
+      Spacer(minLength: 0)
     }
     .safeAreaInset(edge: .top) {
       if let banner = model.banner {
@@ -210,9 +218,27 @@ private struct LandingMiddle: View {
   }
 }
 
-/// The foot of the Landing: the line an Unreachable Remote leaves, and the composer, whose send begins the Session
-/// where the Landing offers it.
-private struct LandingFoot: View {
+/// The line an Unreachable Remote leaves, at the foot of the Landing.
+private struct LandingUnreachable: View {
+  let line: String
+
+  var body: some View {
+    Label {
+      Text(verbatim: line)
+    } icon: {
+      Image(systemName: "wifi.slash")
+    }
+    .font(.caption)
+    .foregroundStyle(.secondary)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("landing.unreachable")
+    .readingSides()
+  }
+}
+
+/// The composer at the foot of the Landing, whose send begins the Session where the Landing offers it.
+private struct LandingField: View {
   let landing: Landing
   @Bindable var model: NewSessionModel
   var writing: FocusState<Bool>.Binding
@@ -220,18 +246,6 @@ private struct LandingFoot: View {
   var body: some View {
     let empty = model.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     VStack(alignment: .leading, spacing: 8) {
-      if let line = landing.unreachable {
-        Label {
-          Text(verbatim: line)
-        } icon: {
-          Image(systemName: "wifi.slash")
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("landing.unreachable")
-      }
       HStack(alignment: .bottom, spacing: 8) {
         TextField(text: $model.text, axis: .vertical) {
           Text(verbatim: landing.placeholder)

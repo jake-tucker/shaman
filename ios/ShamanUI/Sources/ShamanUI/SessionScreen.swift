@@ -14,7 +14,8 @@ import SwiftUI
 /// the Session belongs to has Subagents, a button in the navigation bar opens it, and choosing an entry there has
 /// `stack` show that Session. Where the Aside has room beside it, the tree and what a Turn's card stands for are shown
 /// there, which a button in the bar shows and takes down, and the card whose work is on screen there is marked; where it
-/// has none, the tree is a sheet, and the work pushed.
+/// has none, the tree is a sheet, and the work pushed. Sat like a laptop, the conversation ends at the fold with the bar
+/// at its foot, and the Aside stands below the fold over the composer, whatever is shown beside.
 struct SessionScreen: View {
   let model: SessionModel
   /// What is open, which the Session is of, and an entry chosen in its tree is shown on.
@@ -27,15 +28,26 @@ struct SessionScreen: View {
     ConversationView(
       model: model, turnInAside: { stack?.turnInAside(of: model) }, push: { pushed in stack?.lead(to: pushed) }
     )
-    .composerFoot(model.frame.flatMap { $0.bar == nil && $0.composer == nil ? nil : $0 }) { frame in
-      SessionFoot(frame: frame, model: model) { opens in
-        if let stack {
-          if stack.review(opens, over: model.route) {
-            showTree()
-          }
-        } else if opens == .interventions {
-          model.review()
+    .composerFoot(model.frame.flatMap { $0.bar == nil && $0.composer == nil ? nil : $0 }, pose: stack?.pose) { frame in
+      if let line = frame.composer?.unreachable {
+        UnreachableLine(line: line)
+      }
+      if let bar = frame.bar {
+        BarView(bar: bar, stopping: model.stopping) {
+          Task { await model.stop() }
+        } review: {
+          review($0)
         }
+        .readingSides()
+      }
+    } field: { frame in
+      if let composer = frame.composer {
+        ComposerView(composer: composer, model: model)
+          .readingSides()
+      }
+    } below: {
+      if let stack {
+        AsideScreen(stack: stack, session: model)
       }
     }
     .safeAreaInset(edge: .top) {
@@ -122,7 +134,18 @@ struct SessionScreen: View {
     .task { await model.follow() }
   }
 
-  /// Shows the tree the Session belongs to: in the Aside, where it has room, and as a sheet where it has none.
+  /// Follows the bar's "Review" where it leads.
+  private func review(_ opens: ReviewOpens) {
+    if let stack {
+      if stack.review(opens, over: model.route) {
+        showTree()
+      }
+    } else if opens == .interventions {
+      model.review()
+    }
+  }
+
+  /// Shows the tree the Session belongs to: in the Aside, where it takes it, and as a sheet where it does not.
   private func showTree() {
     guard stack?.showTree() != true else { return }
     showingTree = true
@@ -621,40 +644,22 @@ private struct QueuedBubble: View {
   }
 }
 
-/// The foot of an open Session: the line an Unreachable Origin leaves, the bar while the Session works, and the
-/// composer.
-private struct SessionFoot: View {
-  let frame: SessionFrame
-  let model: SessionModel
-  /// Follows the bar's "Review" where it leads.
-  let review: (ReviewOpens) -> Void
+/// The line an Unreachable Origin leaves, at the foot of an open Session: Unreachable, or across a gap only updating one
+/// side bridges. The core's words say which.
+private struct UnreachableLine: View {
+  let line: String
 
   var body: some View {
-    VStack(spacing: 8) {
-      // Unreachable, or across a gap only updating one side bridges: the core's words say which.
-      if let line = frame.composer?.unreachable {
-        Label {
-          Text(verbatim: line)
-        } icon: {
-          Image(systemName: "exclamationmark.circle")
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("session.unreachable")
-      }
-      if let bar = frame.bar {
-        BarView(bar: bar, stopping: model.stopping) {
-          Task { await model.stop() }
-        } review: {
-          review($0)
-        }
-      }
-      if let composer = frame.composer {
-        ComposerView(composer: composer, model: model)
-      }
+    Label {
+      Text(verbatim: line)
+    } icon: {
+      Image(systemName: "exclamationmark.circle")
     }
+    .font(.caption)
+    .foregroundStyle(.secondary)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("session.unreachable")
     .readingSides()
   }
 }

@@ -1311,7 +1311,7 @@ private final class CountedSession: OpenedSession {
     aside.holdTree()
     aside.holdLatest(nil, in: settled)
     #expect(aside.kind == .work && aside.place(of: settled) == Aside.Place())
-    #expect(!aside.shown && !aside.hasRoom && !aside.onScreen)
+    #expect(!aside.shown && !aside.hasRoom && !aside.standsBeside)
   }
 
   @Test func theTurnWhoseWorkItIsOnScreenAtIsTheOnlyOneMarked() async throws {
@@ -1455,6 +1455,57 @@ private final class CountedSession: OpenedSession {
     #expect(stack.aside.kind == .tree && !stack.aside.shown)
   }
 
+  @Test func satLikeALaptopACardAndTheTreeButtonTurnItAndNeitherPushNorPresentNorHaveItShown() async throws {
+    let stack = try await read()
+    for shown in [false, true] {
+      stack.aside.shown = shown
+      for keyboard: CGFloat in [0, 495] {
+        stack.pose.fold = Fold(top: 455.5, bottom: 495.5, window: 951)
+        stack.pose.take(WindowFoot(safeArea: max(34, keyboard), keyboard: keyboard))
+        stack.lead(to: .work(settled, turn: "earlier-work"))
+        #expect(stack.aside.kind == .work && stack.aside.place(of: settled) == Aside.Place(held: "earlier-work"))
+        stack.lead(to: .detail(settled, activity: "compaction"))
+        #expect(stack.aside.place(of: settled).pushed == [.detail(settled, activity: "compaction")])
+        #expect(stack.showTree() && stack.aside.kind == .tree)
+        stack.lead(to: .work(settled, turn: "work"))
+        #expect(stack.aside.kind == .work && stack.aside.place(of: settled) == Aside.Place())
+        #expect(stack.path == [.session(settled)])
+        #expect(stack.aside.shown == shown)
+      }
+      // Laid flat, with no room beside the main view, they are as they were.
+      stack.pose.fold = nil
+      stack.pose.take(WindowFoot(safeArea: 34, keyboard: 0))
+      #expect(!stack.showTree())
+      stack.lead(to: .work(settled, turn: "work"))
+      #expect(stack.path == [.session(settled), .work(settled, turn: "work")])
+      stack.path = [.session(settled)]
+    }
+  }
+
+  @Test func satLikeALaptopItIsOnScreenBelowAnySessionOnTopWhileNoKeyboardIsUp() async throws {
+    let stack = try await read()
+    let model = stack.model(for: settled)
+    #expect(!stack.asideIsOnScreen)
+    stack.pose.fold = Fold(top: 455.5, bottom: 495.5, window: 951)
+    #expect(stack.asideIsOnScreen && stack.asideStandsBelow && !stack.aside.standsBeside && !stack.aside.shown)
+    #expect(stack.turnInAside(of: model) == "work")
+    stack.pose.take(WindowFoot(safeArea: 34, keyboard: 0))
+    #expect(stack.asideIsOnScreen)
+    stack.pose.take(WindowFoot(safeArea: 495.3, keyboard: 495.3))
+    #expect(!stack.asideIsOnScreen)
+    #expect(stack.turnInAside(of: model) == nil)
+    stack.pose.take(WindowFoot(safeArea: 34, keyboard: 0))
+    stack.path.append(.session(other))
+    #expect(stack.asideStandsBelow && stack.turnInAside(of: model) == nil)
+    stack.path = [.session(settled)]
+    #expect(stack.turnInAside(of: model) == "work")
+    stack.compose()
+    #expect(!stack.asideStandsBelow, "no Session open")
+    stack.path = [.session(settled)]
+    stack.pose.fold = nil
+    #expect(!stack.asideIsOnScreen)
+  }
+
   @Test func aCompactionsWholeIsPushedOverTheWorkItIsAt() async throws {
     let stack = try await read()
     stack.aside.hasRoom = true
@@ -1503,6 +1554,47 @@ private final class CountedSession: OpenedSession {
     let begun = try #require(landing.begun)
     #expect(told == [begun.route])
     #expect(stack.model(for: begun.route) === begun)
+  }
+}
+
+@Suite @MainActor struct PoseTests {
+  private let across = (frame: CGRect(x: 0, y: 455.5, width: 669, height: 40), isActive: true)
+
+  @Test func theFoldIsTheActiveRegionWiderThanItIsTall() throws {
+    let fold = try #require(Fold(among: [across], height: 951))
+    #expect(fold == Fold(top: 455.5, bottom: 495.5, window: 951))
+    #expect(fold.band == 40 && fold.below == 495.5)
+    #expect(Fold(among: [], height: 951) == nil)
+    #expect(Fold(among: [(across.frame, false)], height: 951) == nil, "open flat")
+    let book = (frame: CGRect(x: 455.5, y: 0, width: 40, height: 669), isActive: true)
+    #expect(Fold(among: [book], height: 669) == nil, "partly folded like a book")
+    #expect(Fold(among: [book, (across.frame, false), across], height: 951) == fold)
+  }
+
+  @Test func aKeyboardTakesTheHalfBelowTheFold() {
+    let pose = Pose()
+    let fold = Fold(top: 455.5, bottom: 495.5, window: 951)
+    #expect(pose.foldWithHalf == nil)
+    pose.fold = fold
+    #expect(!pose.keyboardIsUp && pose.foldWithHalf == fold)
+    let stands = { (safeArea: CGFloat, keyboard: CGFloat) in
+      pose.take(WindowFoot(safeArea: safeArea, keyboard: keyboard))
+      #expect(pose.keyboard == keyboard)
+    }
+    // Up where the window's bottom safe area is more than the window's own, rising or dragged down.
+    stands(34, 0)
+    #expect(!pose.keyboardIsUp && pose.foldWithHalf == fold)
+    for (safeArea, keyboard) in [(350, 350), (495.3, 495.3), (34.5, 34.5)] as [(CGFloat, CGFloat)] {
+      stands(safeArea, keyboard)
+      #expect(pose.keyboardIsUp && pose.foldWithHalf == nil && pose.aboveKeyboard == 0)
+    }
+    stands(34, 20)
+    #expect(!pose.keyboardIsUp && pose.foldWithHalf == fold && pose.aboveKeyboard == 0)
+    // And where the band kept for the fold is counted the container's, as the whole of that area's or as the rest of it.
+    stands(495.3, 455.3)
+    #expect(pose.keyboardIsUp && abs(pose.aboveKeyboard - 40) < 0.01)
+    stands(34, 0)
+    #expect(!pose.keyboardIsUp && pose.foldWithHalf == fold && pose.aboveKeyboard == 0)
   }
 }
 

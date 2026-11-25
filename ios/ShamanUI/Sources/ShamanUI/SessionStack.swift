@@ -18,8 +18,10 @@ final class SessionStack {
   /// Told each time the path is written, whoever wrote it, and as a Session begins in a new-session screen, as the
   /// columns are.
   @ObservationIgnored var moved: (() -> Void)?
-  /// What stands beside what is open, or waits to.
+  /// What stands beside what is open, or below it, or waits to.
   let aside: Aside
+  /// How the window stands, as the columns' screen reads it.
+  let pose = Pose()
   /// The new-session screen the main view holds at rest, while nothing is open. Not on the path, it is not open.
   @ObservationIgnored private(set) var rest = LandingRoute()
   @ObservationIgnored private let core: any Core
@@ -131,16 +133,45 @@ final class SessionStack {
     path.append(pushed)
   }
 
-  /// Shows what a row of an open Session's conversation leads to: in the Aside, where it has room, and pushed over what
-  /// is open where it has none.
+  /// Whether what a row of an open Session's conversation leads to and the tree are the Aside's to show: where it has
+  /// room beside the main view, and wherever the device is sat like a laptop, where it stands below the fold. With a
+  /// keyboard up there it is turned out of sight.
+  private var asideTakes: Bool {
+    aside.hasRoom || pose.fold != nil
+  }
+
+  /// Shows the Aside where it was asked to hold something. Below the fold it stands already, and whether it is shown
+  /// beside the main view is as it was.
+  private func showAside() {
+    if pose.fold == nil {
+      aside.shown = true
+    }
+  }
+
+  /// Whether the Aside stands below the fold, as it does on the screen of any Session open on top while no keyboard is
+  /// up, shown beside the main view or not.
+  var asideStandsBelow: Bool {
+    switch path.last {
+    case .session, .landing: pose.foldWithHalf != nil && openSession != nil
+    case .work, .detail, nil: false
+    }
+  }
+
+  /// Whether the Aside is on screen, wherever it stands. Each place it may stand is said apart.
+  var asideIsOnScreen: Bool {
+    aside.standsBeside || asideStandsBelow
+  }
+
+  /// Shows what a row of an open Session's conversation leads to: in the Aside, where it takes it, and pushed over what
+  /// is open where it does not.
   func lead(to pushed: Pushed) {
     switch pushed {
-    case .work(let route, let turn) where aside.hasRoom:
+    case .work(let route, let turn) where asideTakes:
       aside.holdWork(of: turn, latest: model(for: route).conversation.latestTurn, in: route)
-      aside.shown = true
-    case .detail(let route, let activity) where aside.hasRoom:
+      showAside()
+    case .detail(let route, let activity) where asideTakes:
       aside.holdDetail(activity, latest: model(for: route).conversation.latestTurn, in: route)
-      aside.shown = true
+      showAside()
     default:
       push(pushed)
     }
@@ -155,15 +186,15 @@ final class SessionStack {
   /// The Turn whose work the Aside is on screen at, as its card names it, where `session` is the Session it answers for;
   /// none while it shows the tree or is not on screen.
   func turnInAside(of session: SessionModel) -> String? {
-    guard aside.onScreen, openSession == session.route, !asideShowsTree(of: session) else { return nil }
+    guard asideIsOnScreen, openSession == session.route, !asideShowsTree(of: session) else { return nil }
     return aside.place(of: session.route).held ?? session.conversation.latestTurn
   }
 
-  /// Shows the tree in the Aside, where it has room. Answers whether it did: where it has none a sheet is to.
+  /// Shows the tree in the Aside, where it takes it. Answers whether it did: where it does not a sheet is to.
   func showTree() -> Bool {
-    guard aside.hasRoom else { return false }
+    guard asideTakes else { return false }
     aside.holdTree()
-    aside.shown = true
+    showAside()
     return true
   }
 
