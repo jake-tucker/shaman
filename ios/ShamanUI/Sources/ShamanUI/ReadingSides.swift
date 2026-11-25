@@ -19,6 +19,11 @@ extension ReadingSides {
     self.init(
       leading: max(margins.leading, Self.least, half), trailing: max(margins.trailing, Self.least, spare - half))
   }
+
+  /// What they leave of `width`.
+  func within(_ width: CGFloat) -> CGFloat {
+    max(0, width - leading - trailing)
+  }
 }
 
 extension GeometryProxy {
@@ -72,6 +77,6 @@ private struct ReadingColumn: Layout {
 
   private func within(_ width: CGFloat, _ height: CGFloat?) -> ProposedViewSize {
     let sides = ReadingSides(across: width, margins: margins)
-    return ProposedViewSize(width: max(0, width - sides.leading - sides.trailing), height: height)
+    return ProposedViewSize(width: sides.within(width), height: height)
   }
 }

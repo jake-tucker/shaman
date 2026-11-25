@@ -693,8 +693,93 @@ private final class RefusingSigner: KeySigner {
     #expect(geometry.frame(of: 1, width: 1).height == guess)
     geometry.take(["row0", "row1"])
     #expect(!geometry.measured("row0"), "it left, so what it measured went with it")
-    geometry.forget()
-    #expect(!geometry.measured("row1"))
+  }
+
+  /// What `row0` and `row1` stand at.
+  private func heights(_ geometry: ConversationGeometry) -> [CGFloat] {
+    ["row0", "row1"].map(geometry.height(of:))
+  }
+
+  @Test func whatTheRowsMeasuredAcrossAWidthStandsAgainAsItIsComeBackTo() {
+    var geometry = geometry([40, 300])
+    geometry.stand(across: 400)
+    #expect(heights(geometry) == [40, 300], "the first width it stands across")
+    #expect(geometry.reported("row1", 20, at: 0) == nil, "shorter, and waiting to be sure of it")
+    geometry.stand(across: 600)
+    #expect(heights(geometry) == [guess, guess], "measured anew")
+    #expect(geometry.settled(at: 9).isEmpty, "with nothing waiting that another width measured")
+    geometry.measured("row1", at: 200, foot: 0)
+    geometry.stand(across: 600)
+    #expect(heights(geometry) == [guess, 200], "the same width changes nothing")
+    geometry.stand(across: 400)
+    #expect(heights(geometry) == [40, 300])
+    #expect(geometry.height == margin + 40 + spacing + 300 + margin, "one below another again")
+    geometry.measured("row0", at: 60, foot: 0)
+    geometry.stand(across: 600)
+    #expect(heights(geometry) == [guess, 200])
+    geometry.stand(across: 400)
+    #expect(heights(geometry) == [60, 300], "as it last measured there")
+  }
+
+  @Test func theHeightsOfTheLastEightWidthsAreKept() {
+    var geometry = geometry([40, 300])
+    for width in 400...408 {
+      geometry.stand(across: width)
+      geometry.measured("row0", at: CGFloat(width), foot: 0)
+    }
+    geometry.stand(across: 400)
+    #expect(geometry.height(of: "row0") == 400, "eight widths on, through which it was kept")
+    // Put by again, and eight others after it.
+    for width in 500...507 {
+      geometry.stand(across: width)
+    }
+    geometry.stand(across: 508)
+    geometry.stand(across: 400)
+    #expect(!geometry.measured("row0"))
+    geometry.stand(across: 507)
+    geometry.measured("row0", at: 70, foot: 0)
+    geometry.stand(across: 508)
+    geometry.forgetOtherWidths()
+    geometry.stand(across: 507)
+    #expect(!geometry.measured("row0"), "nor what is forgotten")
+  }
+
+  @Test func aRowThatLeftHasMeasuredNothingAcrossAnyWidth() {
+    var geometry = geometry([40, 300])
+    geometry.stand(across: 400)
+    geometry.stand(across: 600)
+    geometry.take(["row1"])
+    geometry.take(["row0", "row1"])
+    geometry.stand(across: 400)
+    #expect(heights(geometry) == [guess, 300], "its id came back, naming another block")
+  }
+
+  @Test func aPlaceIsARowHowFarThroughItAndHowFarAboveItBetweenRows() throws {
+    var geometry = geometry([100, 400, 100])
+    #expect(ConversationGeometry().place(at: 0) == nil, "no rows, no place")
+    // The second row stands from 120 to 520.
+    let within = try #require(geometry.place(at: 220))
+    #expect(within == ConversationPlace(row: "row1", share: 0.25, above: 0))
+    let between = try #require(geometry.place(at: 115))
+    #expect(between == ConversationPlace(row: "row1", share: 0, above: 5))
+    let head = try #require(geometry.place(at: -60))
+    #expect(head == ConversationPlace(row: "row0", share: 0, above: 68), "pulled down past the head")
+    for (place, depth) in [(within, 220), (between, 115), (head, -60)] as [(ConversationPlace, CGFloat)] {
+      #expect(geometry.depth(of: place) == depth, "where it was taken")
+    }
+
+    geometry.measured("row0", at: 300, foot: 0)
+    geometry.measured("row1", at: 200, foot: 0)
+    // The second row stands from 320 to 520.
+    #expect(geometry.depth(of: within) == 370, "a quarter through it still")
+    #expect(geometry.depth(of: between) == 315, "five points above it still")
+    geometry.take(["row0", "row2"])
+    #expect(geometry.depth(of: within) == nil, "its row left")
+  }
+
+  @Test func whereARowHasNoHeightThePlaceIsInOneThatDoes() throws {
+    let geometry = geometry([100, 0, 100])
+    #expect(try #require(geometry.place(at: 120)).row == "row2")
   }
 }
 
