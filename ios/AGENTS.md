@@ -151,6 +151,9 @@ refused.
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake paired --open workstation-key/1
 ```
 
+`--aside work` or `--aside tree`, with `--open <session>` and nothing without it, shows the Aside beside that Session at
+launch, where it has room: at its latest Turn's work, or at its tree.
+
 `--compose` pushes the new-session screen over the listing at launch, as its compose button does. It begins wherever
 the Outlook stands: in `composing`, the `paired` phone whose Outlook remembers the workstation's `shaman` Workspace, it
 offers send, and a first Prompt turns it into the Provisional Session, reading "Starting", and a moment later into the
@@ -303,8 +306,9 @@ A test that turns the simulator, or stands on the columns side by side, is a met
 launches the app upright or `turned`, turns it (`turn`) and tells whether columns stand (`columnsStand`) or one alone
 (`oneColumnStands`). It stands in for closing and opening a Duo wherever the rule is that a change of size alone does
 nothing, as a Pro Max's width class changes each turn. Its class is named in the script's table: in `columns` where it
-holds only where columns stand side by side, or in `turning` where it holds on any iPhone that turns. A Duo runs
-neither, as no test turns one, so a class holds no test that does not turn.
+holds only where columns stand side by side, in `one_column` where it holds only where one stands alone on its side, as
+on a Pro, or in `turning` where it holds on any iPhone that turns. A Duo runs none of them, as no test turns one, so a
+class holds no test that does not turn.
 
 XCTest waits before and after each step for as many of the app's animations to have stopped as have started, or for a
 minute. As the columns collapse, a few times in a hundred and more on a loaded Mac, CoreAnimation tells of an animation
@@ -448,8 +452,17 @@ If the phone is locked, stop and ask for it to be unlocked.
   the listing and keeps the scene. What is open is `SessionStack.path` and nothing else: a screen is pushed, popped or
   replaced by writing it, and what the reader pops is read back into it. That the reader has returned to the listing is
   told only by its navigation controller having shown it alone.
+- The Aside is two values, `SessionStack.aside`'s, kept while the window lives and never by the scene: what it holds,
+  and whether the reader has it shown beside the main view. Neither says what is on screen. `Columns` has the split
+  view's inspector column hold it only while it is shown, a Session is open and it has room, as a view controller set
+  there is shown at once, and takes it out before a collapse, through which the system would stand it as a sheet. It has
+  room where the split view is not collapsed and the window is at least 690 points wide. `AsideScreen` draws what it
+  holds and keeps nothing, so it may be drawn wherever the Aside stands. What a conversation's row leads to and the tree
+  go through `SessionStack.lead(to:)` and `showTree()`, which choose between the Aside and what stands where there is no
+  room for it: the path, and a sheet.
 - A hosted screen has no `NavigationStack` over it, so a `NavigationLink` in it is greyed out and a
-  `navigationDestination` pushes nothing. A row that leads to a screen is a `RowButton` that writes the path, and a
+  `navigationDestination` pushes nothing. The Aside has a stack of its own, in which an Activity's row is a link and a
+  Session's pushes in the main view. A row that leads to a screen is a `RowButton` that writes the path, and a
   screen the path does not name, as the Workspace Picker, is pushed by the environment's `pushScreen` and popped by
   `dismiss`. Nor does it inherit any environment: `ColumnsScreen` hands each what it and its sheets read, so a value
   added for one to read is added there.
