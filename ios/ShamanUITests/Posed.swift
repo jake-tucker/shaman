@@ -58,8 +58,8 @@ extension XCUIApplication {
   }
 }
 
-/// The least a pose shows, over today's build: how the bar stands, a screenshot of the inner display, and that a drag
-/// made there by the helper moves what is under it. Each pose's tests begin with it.
+/// The least a pose shows, over today's build: how the bar stands, the composer's field where Messages stands its own, a
+/// screenshot of the inner display, and that a drag made there by the helper moves what is under it. Each pose's tests begin with it.
 @MainActor
 enum PosedWalk {
   static func walk(_ pose: Pose, _ test: XCTestCase, barStandsVertically: Bool) throws {
@@ -72,6 +72,7 @@ enum PosedWalk {
       .matching(NSPredicate(format: "label CONTAINS %@", "The last item of this Session")).firstMatch
     XCTAssertTrue(last.waitForExistence(timeout: 15))
     test.attach("The conversation, \(pose.rawValue)")
+    test.fieldStands(22, aboveTheEdgeIn: app, "session.composer")
     let stood = last.frame.minY
     let start = app.point(across: 0.5, down: 0.3)
     start.press(
