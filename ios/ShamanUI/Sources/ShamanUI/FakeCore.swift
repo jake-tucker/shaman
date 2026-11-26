@@ -886,11 +886,10 @@
     /// Forgets the Remote `row`, as its Pairing ended, by this phone's user removing it or, where `removedThere`, by
     /// its own user removing this phone: each window's Outlook that stood there turns to the Remote the phone was most
     /// recently turned toward that is still held, saying so in that window alone; where no window's stood there, the
-    /// first window says it was removed there, and where no window lives, the first to come says it.
+    /// first window says it was removed there, and where no window lives, the first to come says that alone.
     private func forget(_ row: ServerRow, removedThere: Bool) {
       let windows = windows.withLock { $0.compactMap(\.window) }
       let stoodThere = windows.map { $0.currentRemote() == row.name }
-      let phoneStoodThere = (turned.withLock { $0 }.first(where: heldNames().contains) ?? heldNames().first) == row.name
       let name = shown(row.name)
       held.withLock { $0.removeAll { $0.remote == row.remote } }
       turned.withLock { $0.removeAll { $0 == row.name } }
@@ -898,14 +897,9 @@
       acts.forgetDrafts(on: "\(row.name)-key/")
       tellServers()
       let latest = turned.withLock { $0 }.first(where: heldNames().contains) ?? heldNames().first
-      if windows.isEmpty {
-        let turnedTo = phoneStoodThere ? latest.map { "New sessions begin in \(shown($0))" } : nil
-        let why: String? =
-          removedThere
-          ? "\(name) removed this phone; pair with it again to reach it" : turnedTo.map { _ in "\(name) was removed" }
-        if let why {
-          unclaimed.withLock { $0.append(turnedTo.map { "\(why). \($0)" } ?? why) }
-        }
+      // Where no window lives, the first to come says why, and of no turn, which was not its own.
+      if windows.isEmpty, removedThere {
+        unclaimed.withLock { $0.append("\(name) removed this phone; pair with it again to reach it") }
       }
       for (window, stoodThere) in zip(windows, stoodThere) {
         window.forget(row.name, turningTo: stoodThere ? latest : nil)

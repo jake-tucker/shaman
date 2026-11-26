@@ -22,8 +22,8 @@ public struct RootScreen: View {
 
   /// A window of the app over the device's `core`, showing `appVersion` as its own version, and returning to what the
   /// scene kept, its Outlook included, but as a new scene would open where it is `forgetting` what the scene kept. The
-  /// first window drawn shows what `launch` asks, as a debug build is asked by its launch arguments, and every other
-  /// window nothing of it. A notice the core gives stands `noticeStands` before it goes by itself.
+  /// first window whose root's first task runs shows what `launch` asks, as a debug build is asked by its launch
+  /// arguments, and every other window nothing of it. A notice the core gives stands `noticeStands` before it goes by itself.
   public init(
     core: any DeviceCore, appVersion: String, launch: LaunchArguments = LaunchArguments(), forgetting: Bool = false,
     noticeStands: Duration = .seconds(8)
@@ -50,13 +50,13 @@ public struct RootScreen: View {
     }
     // Each screen shows it beneath its own bar, by `noticeBanner`.
     .environment(held.notices)
-    .task { await held.notices.follow() }
     .task {
+      handBack()
+      await held.notices.follow()
+    }
+    .task {
+      handBack()
       invite = held.launched.invite
-      // Handed back before it is first followed, so the window opens where it stood.
-      if restoring, let outlook = KeptScene(stored: kept).outlook {
-        core.restoreOutlook(outlook)
-      }
       for await outlook in core.outlook() {
         if self.outlook != nil {
           invite = nil
@@ -79,6 +79,12 @@ public struct RootScreen: View {
     }
   }
 
+  /// Hands the core the Outlook the scene kept, once, before the window's Outlook or notices are first followed, so the
+  /// window opens where it stood and says there what became of it.
+  private func handBack() {
+    held.handBack(restoring ? KeptScene(stored: kept).outlook : nil)
+  }
+
   /// Keeps `scene`, what the listing hands the scene to keep, with where the Outlook stands now.
   private func keep(_ scene: KeptScene) {
     var scene = scene
@@ -90,7 +96,8 @@ public struct RootScreen: View {
 /// A window's half of the core, asked of the device's the first time the window holding it is drawn, what the core
 /// says of its own accord in that window, in the banner an act's failure is shown in, beneath each screen's bar, and
 /// what the window was asked at launch to show. SwiftUI may make a view's state more than once and keep the first, so
-/// nothing is asked of the core, nor launch arguments claimed, as it is made, and no window is made that never stands.
+/// nothing is asked of the core, nor launch arguments claimed, as it is made, but as its root's first task runs, and no
+/// window is made that never stands.
 @MainActor final class HeldWindow {
   private let device: any DeviceCore
   private let launch: LaunchArguments
@@ -104,9 +111,21 @@ public struct RootScreen: View {
 
   private(set) lazy var core: any WindowCore = device.window()
   private(set) lazy var notices = NoticeModel(core: core, stands: noticeStands)
-  /// What this window was asked at launch to show, claimed as it is first drawn: everything where it is the first
-  /// window drawn, and nothing otherwise.
+  /// What this window was asked at launch to show, claimed as its root's first task runs: everything where it is the
+  /// first window whose root's task runs, and nothing otherwise.
   private(set) lazy var launched = launch.claimed()
+  /// Whether the Outlook the scene kept has been handed back to the core.
+  private var handedBack = false
+
+  /// Hands `outlook`, what the scene kept of the window's Outlook, back to the core, where there is one: once, however
+  /// often it is asked.
+  func handBack(_ outlook: String?) {
+    guard !handedBack else { return }
+    handedBack = true
+    if let outlook {
+      core.restoreOutlook(outlook)
+    }
+  }
 }
 
 #if DEBUG

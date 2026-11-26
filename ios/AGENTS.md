@@ -180,12 +180,12 @@ the Sessions pushed over it, or the new-session screen, in Swift's scene storage
 app leaves the front and restores at the next launch. Each window is a scene and keeps its own, and nothing keeps the
 two as a pair. The first listing a launch shows returns there, and its Outlook to where it stood, or, where that Remote
 is gone, to the Remote the phone was most recently turned toward that is still held; a phone holding no Remote forgets
-it, so pairing again lands on the new listing. To see it, open something, send the app to the background (launch another app, such as
-`com.apple.Preferences`), wait a few seconds, `xcrun simctl terminate` it and launch it again without `--open` or
-`--compose`: either replaces the kept stack with its own screen, though the kept scope still narrows the listing and
-the kept Outlook stands until the Session opened turns it. So does `SHAMAN_INVITE`, debug only, with the listing, which
-presents the Invite's confirmation. `--open`, `--compose`, `--aside` and `SHAMAN_INVITE` act in the first window drawn
-alone, which claims them from `LaunchArguments`; a window made beside it opens as a new scene would.
+it, so pairing again lands on the new listing. To see it, open something, send the app to the background (launch another
+app, such as `com.apple.Preferences`), wait a few seconds, `xcrun simctl terminate` it and launch it again without
+`--open` or `--compose`: either replaces the kept stack with its own screen, though the kept scope still narrows the
+listing and the kept Outlook stands until the Session opened turns it. So does `SHAMAN_INVITE`, debug only, with the
+listing, which presents the Invite's confirmation. `--open`, `--compose`, `--aside` and `SHAMAN_INVITE` act in the first
+window alone, the first whose root's first task runs; a window made beside it opens as a new scene would.
 `--forget-scene` opens as a new scene would, and keeps afresh from there: launch with it, send the app to the background
 and end it to leave nothing behind, as `ColdStartTests` does after each test. With nothing open no screen is kept, so a
 cold start is the listing, beside the new-session screen at rest where there is room. The iOS 27.2 simulator keeps a
@@ -240,13 +240,13 @@ xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --
 ```
 
 **Relays.** A login at a Relay opens GitHub in the system's authentication sheet (`ASWebAuthenticationSession`), over
-the window whose sheet asked for it, which the app cancels once the core says the Relay confirmed the login; a real GitHub login is a person's to do. Over the
-fake the relay confirms a login a few seconds after its code shows, or after `--login-confirms-after <seconds>`, and
-the code is always `WDJB-MJHT`. In `relayLogin` the `paired` phone's workstation is also reached through
-`relay.example.com`, where the phone holds no login, so that way reads "login needed" with "Log in"; in `relayed` the
-phone is logged in there as octocat, which the Relays section lists and a swipe removes; in `loginNeeded` the
-workstation answers by no direct way, so it reads Unreachable and its sheet's offer leads to the login; and in
-`otherAccount` the phone is logged in there as hubot, under another account than the workstation's. In
+the window whose sheet asked for it, which the app cancels once the core says the Relay confirmed the login; a real
+GitHub login is a person's to do. Over the fake the relay confirms a login a few seconds after its code shows, or after
+`--login-confirms-after <seconds>`, and the code is always `WDJB-MJHT`. In `relayLogin` the `paired` phone's workstation
+is also reached through `relay.example.com`, where the phone holds no login, so that way reads "login needed" with
+"Log in"; in `relayed` the phone is logged in there as octocat, which the Relays section lists and a swipe removes; in
+`loginNeeded` the workstation answers by no direct way, so it reads Unreachable and its sheet's offer leads to the
+login; and in `otherAccount` the phone is logged in there as hubot, under another account than the workstation's. In
 `relayTurnedOn` the `paired` workstation turns the relay on a few seconds after launch, or after
 `--relay-told-after <seconds>`, so its way appears reading "login needed", as the core follows what a Remote tells of
 the Relays it Serves through; in `relayTurnedOff` the `relayed` workstation turns it off as long after, so its way goes
@@ -261,10 +261,10 @@ confirmation; over the fake a name another Remote holds, or one the shared rule 
 removing the Remote a window's Outlook stands at turns that window's Outlook to the Remote the phone was most recently
 turned toward that is still held, which the notice banner of that window alone says, or, removing the last, leaves
 pairing alone in every window. A Pairing ended where no window's Outlook stood is said once, by one window, where there
-is anything to say: that the Remote removed this phone, or may still list it. In `removedThere` the `several` phone's workstation, where the
-Outlook stands, removes this phone a few seconds after launch, or after `--removed-after <seconds>`, so the Outlook
-turns to the laptop, saying why; in `lastRemovedThere` the `paired` phone's one server does, so it offers pairing alone,
-saying why.
+is anything to say: that the Remote removed this phone, or may still list it. In `removedThere` the `several` phone's
+workstation, where the Outlook stands, removes this phone a few seconds after launch, or after
+`--removed-after <seconds>`, so the Outlook turns to the laptop, saying why; in `lastRemovedThere` the `paired` phone's
+one server does, so it offers pairing alone, saying why.
 
 **A real Server.** `../scripts/ios-pair-scratch-server.sh` builds Shaman, starts a scratch Server of this checkout's own
 from an empty database, Serving on the Mac's addresses, makes an Invite and launches the built app with it, in a core
@@ -453,10 +453,11 @@ If the phone is locked, stop and ask for it to be unlocked.
 - The app reaches the core only through two protocols, as each window of the app is a Client of its own over the
   device's core (ADR-0084): `DeviceCore`, the device's, which the app opens once, and `WindowCore`, a window's, which
   each window's root (`RootScreen`, or `DeviceRoot` alone in a debug build) asks the device's for once, by `HeldWindow`,
-  as it is first drawn, and holds while the window lives; that root claims the launch arguments then too, the first
-  window drawn taking them all and every other none. A window's holds its Outlook, which its scene keeps and hands back
-  by `restoreOutlook`, its listing's scope, search and shelf, its Landing,
-  its Workspace Picker's search and which notices it has said, and reaches the device's by `device`; drafts are the
+  as it is first drawn, and holds while the window lives. `RootScreen` claims the launch arguments from
+  `LaunchArguments` as its first task runs, the first root to run one taking them all and every other none, and hands
+  the core back the Outlook its scene kept, by `restoreOutlook`, before following it; `DeviceRoot` claims and hands
+  back nothing. A window's holds its Outlook, its listing's scope, search and shelf, its Landing, its Workspace
+  Picker's search and which notices it has said, and reaches the device's by `device`; drafts are the
   device's, read and written through a window's. A composer's field takes the kept draft whole as it opens, and after
   that only what `Draft.taken` gives it: each Prompt the core gave back, ahead of its own text, and, shown again, the
   text kept where its own window wrote it last, never another window's typing. A Questionnaire's half-given answers

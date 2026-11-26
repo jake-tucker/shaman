@@ -1,6 +1,6 @@
 /// What a debug build is asked at launch to show, which the app's first window shows alone: the process has one set
 /// of launch arguments and launch environment however many windows it makes, and each window's root is handed the
-/// same, so the first of them to be drawn claims it and every window after shows nothing of it.
+/// same, so the first root whose first task runs claims it and every window after shows nothing of it.
 @MainActor public final class LaunchArguments {
   /// What one window is asked to show at launch.
   struct Asked: Equatable {
@@ -23,8 +23,8 @@
     asked = Asked(invite: invite, opening: opening, composing: composing, aside: aside)
   }
 
-  /// What the window asking is to show at launch: all of it for the first to ask, which a window's root does as it is
-  /// first drawn, and nothing for any window after.
+  /// What the window asking is to show at launch: all of it for the first to ask, which a window's root does as its
+  /// first task runs, and nothing for any window after.
   func claimed() -> Asked {
     defer { asked = nil }
     return asked ?? Asked()
