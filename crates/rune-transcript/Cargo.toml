@@ -1,0 +1,17 @@
+# Throwaway (#774): one Session read through `ManagedClient` from a running Server and drawn by Rune as plain rows,
+# to learn whether Rune holds a long Transcript and how a Server's events reach its view. Not shipped, not a default
+# member. `README.md` beside this says how to run it.
+[package]
+name = "rune-transcript"
+version = "0.0.0"
+edition = "2024"
+publish = false
+default-run = "rune-transcript"
+
+[dependencies]
+rune = { git = "https://github.com/anomalyco/rune", rev = "983e33b916b0da5719442d94ae04a00867c952a3", features = ["tooling"] }
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "983e33b916b0da5719442d94ae04a00867c952a3", features = ["markdown"] }
+shaman = { path = "../.." }
+anyhow = "1.0.99"
+serde_json = "1.0.143"
+tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread", "sync", "time"] }
