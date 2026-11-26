@@ -35,14 +35,15 @@ final class PosedLaptopTests: XCTestCase {
   /// Waits until it stands so.
   @MainActor
   private func waits(
-    _ said: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line, _ stands: () -> Bool
+    _ said: @autoclosure () -> String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line,
+    _ stands: () -> Bool
   ) {
     for _ in 0..<40 {
       if stands() { return }
       RunLoop.current.run(until: Date().addingTimeInterval(0.5))
     }
     attach("Not as it should stand")
-    XCTFail(said, file: file, line: line)
+    XCTFail(said(), file: file, line: line)
   }
 
   /// Waits until the Aside stands below the fold, its bar reading `title`, with Back in it where it is `pushed` and
@@ -75,13 +76,20 @@ final class PosedLaptopTests: XCTestCase {
       let bar = element("session.bar", in: app)
       let foot = bar.exists ? bar.frame.maxY : conversation.frame.maxY
       guard foot <= band.lowerBound + 1, foot > band.lowerBound - 24 else { return false }
-      let ends = rows.flatMap { elements($0, in: app).allElementsBoundByIndex }.filter(\.isHittable).map(\.frame.maxY)
+      // Those standing in the list, which a row scrolled out of it does not, nor one kept with no frame at all, which
+      // has no hittability to ask.
+      let list = conversation.frame
+      let ends = rows.flatMap { elements($0, in: app).allElementsBoundByIndex }.map(\.frame)
+        .filter { !$0.isEmpty && $0.maxY > list.minY && $0.minY < list.maxY }.map(\.maxY)
       return !atItsFoot || (!ends.isEmpty && ends.allSatisfy { $0 <= conversation.frame.maxY + 1 })
     }
   }
 
   /// Waits until the field stands just above the band kept for the fold, the software keyboard fully up over the half
-  /// below, its own view beginning at either edge of that band.
+  /// below. The window's bottom safe area then reaches the band's head, 495.3 points, and the field stands 8 above it.
+  /// What the keyboard draws begins 10 points past the band every time, but the frame its own view is told by does
+  /// not stand still from one rising to the next: it has begun at the band's head, 20 points past the band and 105
+  /// past it. So it is held below the fold, to the foot, and no longer moving.
   @MainActor
   private func fieldStandsAboveTheFold(
     in app: XCUIApplication, _ identifier: String = "session.composer", file: StaticString = #filePath,
@@ -90,10 +98,16 @@ final class PosedLaptopTests: XCTestCase {
     let keyboard = app.otherElements["inputView"].firstMatch
     XCTAssertTrue(keyboard.waitForExistence(timeout: 10), "the software keyboard is up", file: file, line: line)
     let composer = element(identifier, in: app)
-    waits("the field stands above the fold, over the keyboard", in: app, file: file, line: line) {
+    var last = CGRect.null
+    waits(
+      "the field stands above the fold, over the keyboard: the field at \(composer.frame), the keyboard at "
+        + "\(keyboard.frame)", in: app, file: file, line: line
+    ) {
       let ends = composer.frame.midY + 20
-      return abs(band.lowerBound - 8 - ends) < 1
-        && keyboard.frame.minY > band.lowerBound - 1 && keyboard.frame.minY < band.upperBound + 1
+      let stood = last
+      last = keyboard.frame
+      return abs(band.lowerBound - 8 - ends) < 1 && last == stood && last.minY > band.lowerBound - 1
+        && abs(last.maxY - app.window.frame.maxY) < 1
     }
   }
 
@@ -311,30 +325,82 @@ final class PosedLaptopTests: XCTestCase {
     questionnaireStands(onTheHalfBelow: true, in: app)
   }
 
+  /// On the half below the fold the first page's field stands beneath the sheet's foot, past its choices, and a drag
+  /// over the page there raises the sheet, as the system has a sheet below its tallest height do, before it scrolls the
+  /// page; so the field tapped is the secret's, which the last page stands in sight.
   @MainActor
   func testAQuestionnaireGoesToFullHeightAsAFieldTakesTheKeyboardWithTheKeyboardBelow() throws {
     let app = try asked()
     questionnaireStands(onTheHalfBelow: true, in: app)
+    let position = app.navigationBars.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Question '"))
+    elements("questionnaire.choice", in: app).matching(NSPredicate(format: "label BEGINSWITH 'Staging'")).firstMatch
+      .tap()
+    element("questionnaire.next", in: app).tap()
+    XCTAssertTrue(position.waitForOne(NSPredicate(format: "label == 'Question 2 of 3'")))
+    element("questionnaire.skip", in: app).tap()
+    XCTAssertTrue(position.waitForOne(NSPredicate(format: "label == 'Question 3 of 3'")))
+    questionnaireStands(onTheHalfBelow: true, in: app)
+    let field = app.secureTextFields["questionnaire.field"]
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    XCTAssertTrue(field.isHittable, "in sight on the half below")
+    attach("A questionnaire's secret, sat like a laptop")
+    field.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the software keyboard is up")
+    XCTAssertTrue(holdsTheKeyboard(field))
+    questionnaireStands(onTheHalfBelow: false, in: app)
+    field.typeText("hunter2")
+    waits("the field above the keyboard", in: app) {
+      app.keyboards.firstMatch.frame.minY >= element("questionnaire.next", in: app).frame.maxY
+    }
+    // In view, between the title's bar and the foot of the page.
+    let page = element("questionnaire.sheet", in: app).scrollViews.containing(.any, identifier: "questionnaire.field")
+      .firstMatch.frame
+    let bar = app.navigationBars.containing(.button, identifier: "questionnaire.decline").firstMatch.frame
+    XCTAssertGreaterThanOrEqual(field.frame.minY, bar.maxY, "\(field.frame) clear of the bar at \(bar)")
+    XCTAssertLessThanOrEqual(field.frame.maxY, page.maxY, "\(field.frame) clear of the page's foot at \(page)")
+    attach("A questionnaire's field focused, sat like a laptop")
+    // Put down by Return, as a drag over a page with nothing to scroll would take the sheet away, the keyboard leaves
+    // it up, where the reader may write on.
+    field.typeText("\n")
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 10), "its keyboard put down")
+    questionnaireStands(onTheHalfBelow: false, in: app)
+  }
+
+  /// The first page's written answer, which stands in sight once a long drag has raised the sheet to full height: the
+  /// field takes the keyboard, ending above "Next" and "Next" above the band, and an answer of several lines stays
+  /// above "Next" as it grows.
+  @MainActor
+  func testAQuestionnaireRaisedByADragKeepsAWrittenAnswerAboveItsFoot() throws {
+    let app = try asked()
+    questionnaireStands(onTheHalfBelow: true, in: app)
+    // From the grabber nearly to the head of the window, which a short or a slow drag let go does not reach.
+    app.point(across: 0.5, down: 0.535).press(forDuration: 0.05, thenDragTo: app.point(across: 0.5, down: 0.08))
+    questionnaireStands(onTheHalfBelow: false, in: app)
     let field = element("questionnaire.field", in: app)
+    let next = element("questionnaire.next", in: app)
     app.scrolled(to: field, over: element("questionnaire.sheet", in: app)).tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the software keyboard is up")
     XCTAssertTrue(holdsTheKeyboard(field))
     questionnaireStands(onTheHalfBelow: false, in: app)
-    field.typeText("after lunch")
-    waits("the field above the keyboard", in: app) {
-      app.keyboards.firstMatch.frame.minY >= element("questionnaire.next", in: app).frame.maxY
+    let aboveNext = { field.frame.maxY <= next.frame.minY && next.frame.maxY <= self.band.lowerBound }
+    waits("the field above Next, and Next above the band: \(field.frame), \(next.frame)", in: app, aboveNext)
+    var height = fieldInView(in: app, "focused, sat like a laptop")
+    attach("A questionnaire's written answer focused, sat like a laptop")
+    for lines in 2...4 {
+      // A line at a time, each seen as it is begun.
+      field.typeText("\n")
+      waits("at \(lines) lines, above Next: \(field.frame), \(next.frame)", in: app, aboveNext)
+      let grown = fieldInView(in: app, "at \(lines) lines, sat like a laptop")
+      XCTAssertGreaterThan(grown, height, "at \(lines) lines, a line taller")
+      height = grown
     }
-    _ = fieldInView(in: app, "focused, sat like a laptop")
-    attach("A questionnaire's field focused, sat like a laptop")
-    // Put down, the keyboard leaves it up, where the reader may write on.
-    dragTheKeyboardDown(in: app)
-    questionnaireStands(onTheHalfBelow: false, in: app)
+    attach("A questionnaire's answer of four lines, sat like a laptop")
   }
 
   /// `walk-duo.sh`'s walk, but for its ends: laying the phone flat and turning it is a person's, as no test changes a
   /// pose.
   @MainActor
-  func testAnActivityOpensWithinTheAsideAndStaysThroughTheKeyboardAndTheSidebar() throws {
+  func testAnActivityOpensWithinTheAsideAndStaysThroughTheKeyboardAndGoesAsTheSessionIsChosenAgain() throws {
     let app = try launched("paired", "workstation-key/7")
     asideStands(app, at: "Worked for 3m 12s")
     element("work.row", holding: "Read src/serving.rs", in: app).tap()
@@ -357,7 +423,8 @@ final class PosedLaptopTests: XCTestCase {
     fieldStands(22, aboveTheEdgeIn: app, "session.composer")
     XCTAssertTrue(detail.waitForExistence(timeout: 10), "still pushed")
 
-    // Called back, the Sidebar covers both halves, and goes as the Session is chosen again.
+    // Called back, the Sidebar covers both halves, and goes as the Session is chosen again, which starts afresh at its
+    // latest Turn's work, as a Session opened from the Sidebar does, and stands as the first did.
     app.buttons["Show Sidebar"].firstMatch.tap()
     let scope = app.buttons["listing.scope"]
     XCTAssertTrue(scope.waitForExistence(timeout: 10))
@@ -365,11 +432,10 @@ final class PosedLaptopTests: XCTestCase {
     attach("The Sidebar over both halves")
     let row = element("listing.active", holding: "Tidy zsh startup time", in: app)
     app.scrolled(to: row, over: app.collectionViews["listing.list"]).tap()
-    XCTAssertTrue(detail.waitForExistence(timeout: 10), "as it was, the Session being the one open")
-    fieldStands(22, aboveTheEdgeIn: app, "session.composer")
-    waits("the Aside's Back alone", in: app) { backs.count == 1 && backs.firstMatch.isHittable }
-    backs.firstMatch.tap()
+    waits("the Sidebar gone", in: app) { !scope.exists || !scope.isHittable }
     asideStands(app, at: "Worked for 3m 12s")
+    XCTAssertTrue(detail.waitForNonExistence(timeout: 10), "begun afresh")
+    XCTAssertEqual(backs.count, 0, "nothing pushed")
     conversationEndsAtTheFold(app)
   }
 
@@ -452,12 +518,11 @@ final class PosedLaptopTests: XCTestCase {
     let picker = element("picker.screen", in: app)
     XCTAssertTrue(picker.waitForExistence(timeout: 10))
     XCTAssertGreaterThanOrEqual(picker.frame.maxY, app.window.frame.maxY - 1, "to the display's foot")
-    let last = element("workspace/workstation/photo-archive", in: app)
+    // The workstation's five Workspaces run on from the head of the screen into the fold, the last of them across it,
+    // where a screen ending at the fold would end its list above the band.
+    let last = element("workspace/workstation/mirror.git", in: app)
     app.scrolled(to: last, over: picker)
-    let rows = elements("workspace/workstation/notes", in: app).firstMatch
-    waits("its rows stand on through the fold", in: app) {
-      [last, rows].contains { $0.exists && $0.frame.minY >= band.upperBound }
-    }
+    waits("its rows run on through the fold", in: app) { last.exists && last.frame.maxY > band.upperBound }
     XCTAssertFalse(element("work.list", in: app).exists, "no Aside with nothing open")
     attach("The Workspace Picker sat like a laptop")
   }
