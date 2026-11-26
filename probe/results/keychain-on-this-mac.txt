@@ -1,0 +1,89 @@
+# Each Server the scratch channel ran on this Mac (macOS 27.2.1, arm64), oldest first: its first log line and every line about its identity key.
+
+## 20261126T150805-server-17815.log
+2026-11-26T15:08:05.299483Z  INFO shaman::logging: logging initialized version="0.4.1" channel="scratch-781" pid=17815 role="server"
+2026-11-26T15:08:05.399558Z  INFO shaman::serving::identity: Server identity key is made and kept in the login keychain, as the item 32119bd4-9964-4ce3-924f-6f2861c6e42e: SHAMAN_IDENTITY_STORE=system keeps it there
+2026-11-26T15:08:05.399951Z  INFO shaman::serving: Serving listener ready address=127.0.0.1:7781
+2026-11-26T15:08:19.027640Z  INFO shaman::serving: Serving listener stopped
+2026-11-26T15:08:19.027683Z  INFO shaman::serving: Serving stopped
+
+## 20261126T150819-server-21531.log
+2026-11-26T15:08:19.074562Z  INFO shaman::logging: logging initialized version="0.4.1" channel="scratch-781" pid=21531 role="server"
+2026-11-26T15:08:19.138089Z  INFO shaman::serving::identity: Server identity key is kept in the login keychain, as the item 32119bd4-9964-4ce3-924f-6f2861c6e42e, as its marker records
+2026-11-26T15:08:19.138382Z  INFO shaman::serving: Serving listener ready address=127.0.0.1:7781
+2026-11-26T15:08:20.312932Z  INFO shaman::serving: Serving listener stopped
+2026-11-26T15:08:20.312963Z  INFO shaman::serving: Serving stopped
+
+## 20261126T150938-server-44314.log
+2026-11-26T15:09:38.077497Z  INFO shaman::logging: logging initialized version="0.4.2" channel="scratch-781" pid=44314 role="server"
+2026-11-26T15:09:38.133203Z  INFO shaman::serving::identity: Server identity key is kept in the login keychain, as the item 32119bd4-9964-4ce3-924f-6f2861c6e42e, as its marker records
+2026-11-26T15:09:38.133691Z  INFO shaman::serving: Serving listener ready address=127.0.0.1:7781
+2026-11-26T15:09:50.128071Z  INFO shaman::serving: Serving listener stopped
+2026-11-26T15:09:50.128181Z  INFO shaman::serving: Serving stopped
+
+## 20261126T150950-server-48088.log
+2026-11-26T15:09:50.450307Z  INFO shaman::logging: logging initialized version="0.4.2" channel="scratch-781" pid=48088 role="server"
+2026-11-26T15:09:50.531187Z  INFO shaman::serving::identity: Server identity key is kept in the login keychain, as the item 32119bd4-9964-4ce3-924f-6f2861c6e42e, as its marker records
+2026-11-26T15:09:50.531745Z  INFO shaman::serving: Serving listener ready address=127.0.0.1:7781
+2026-11-26T15:09:51.986365Z  INFO shaman::serving: Serving listener stopped
+2026-11-26T15:09:51.986484Z  INFO shaman::serving: Serving stopped
+
+## 20261126T151002-server-51481.log
+2026-11-26T15:10:02.227976Z  INFO shaman::logging: logging initialized version="0.4.2" channel="scratch-781" pid=51481 role="server"
+2026-11-26T15:10:07.264003Z ERROR shaman::server: could not adopt Serving settings at startup: this Server's identity key is kept in the platform credential store, the login keychain, which did not answer (it did not answer within 5s); no new key was made in its place. Unlock the login keychain, by logging in at this Mac or with `security unlock-keychain`, and try again.
+
+## 20261126T152230-server-66157.log
+2026-11-26T15:22:30.899432Z  INFO shaman::logging: logging initialized version="0.4.2" channel="scratch-781" pid=66157 role="server"
+2026-11-26T15:22:30.955074Z  INFO shaman::serving::identity: Server identity key is kept in the login keychain, as the item 32119bd4-9964-4ce3-924f-6f2861c6e42e, as its marker records
+2026-11-26T15:22:30.955504Z  INFO shaman::serving: Serving listener ready address=127.0.0.1:7781
+2026-11-26T15:22:32.578126Z  INFO shaman::serving: Serving listener stopped
+2026-11-26T15:22:32.578331Z  INFO shaman::serving: Serving stopped
+
+## 20261126T152233-server-67041.log
+2026-11-26T15:22:33.279024Z  INFO shaman::logging: logging initialized version="0.4.2" channel="scratch-781" pid=67041 role="server"
+2026-11-26T15:22:33.337739Z  INFO shaman::serving::identity: Server identity key is kept in the login keychain, as the item 32119bd4-9964-4ce3-924f-6f2861c6e42e, as its marker records
+2026-11-26T15:22:33.338245Z  INFO shaman::serving: Serving listener ready address=127.0.0.1:7781
+2026-11-26T15:22:34.866252Z  INFO shaman::serving: Serving listener stopped
+2026-11-26T15:22:34.867515Z  INFO shaman::serving: Serving stopped
+
+# What the probe app's window reported of the shaman it ran from its own bundle
+
+## report-Helpers
+ran <scratch>/app/Shaman Probe.app/Contents/Helpers/shaman server start
+Shaman server ready (pid 44314, instance 77f8342b-6bdf-42c9-933c-55e3e4ef7d4c)
+exit 0 after 146 ms
+
+## report-stop1
+ran <scratch>/app/Shaman Probe.app/Contents/Helpers/shaman server stop
+Shaman server stopped (pid 44314, instance 77f8342b-6bdf-42c9-933c-55e3e4ef7d4c)
+exit 0 after 120 ms
+
+## report-MacOS
+ran <scratch>/app/Shaman Probe.app/Contents/MacOS/shaman server start
+Shaman server ready (pid 48088, instance 9a541249-5bcf-4c8e-813b-e394b09d113b)
+exit 0 after 107 ms
+
+## report-stop2
+ran <scratch>/app/Shaman Probe.app/Contents/MacOS/shaman server stop
+Shaman server stopped (pid 48088, instance 9a541249-5bcf-4c8e-813b-e394b09d113b)
+exit 0 after 128 ms
+
+## report-n-Helpers
+ran <scratch>/stapled/Shaman Probe.app/Contents/Helpers/shaman server start
+Shaman server ready (pid 66157, instance 58a4cb20-a1ad-4658-be77-67ec70f9f41e)
+exit 0 after 453 ms
+
+## report-n-stop-Helpers
+ran <scratch>/stapled/Shaman Probe.app/Contents/Helpers/shaman server stop
+Shaman server stopped (pid 66157, instance 58a4cb20-a1ad-4658-be77-67ec70f9f41e)
+exit 0 after 184 ms
+
+## report-n-MacOS
+ran <scratch>/stapled/Shaman Probe.app/Contents/MacOS/shaman server start
+Shaman server ready (pid 67041, instance a44092cf-cc02-4b1c-8a47-61ef2a4b2553)
+exit 0 after 458 ms
+
+## report-n-stop-MacOS
+ran <scratch>/stapled/Shaman Probe.app/Contents/MacOS/shaman server stop
+Shaman server stopped (pid 67041, instance a44092cf-cc02-4b1c-8a47-61ef2a4b2553)
+exit 0 after 124 ms

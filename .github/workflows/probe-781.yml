@@ -4,9 +4,10 @@ name: Probe 781
 # itself as `ai.shaman.cli`, under a bundle id of its own, and whether the ticket staples. Nothing here is released.
 # This branch holds nothing else, so no other workflow runs on it.
 
+# It ran once, on the push that added it (run 45847051217), and its results are in probe/results. It no longer runs on
+# a push: to run it again, put back `push: { branches: [probe/781-nested-shaman-notarization] }`.
 on:
-  push:
-    branches: [probe/781-nested-shaman-notarization]
+  workflow_dispatch:
 
 permissions:
   contents: read

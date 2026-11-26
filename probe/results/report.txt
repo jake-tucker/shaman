@@ -1,0 +1,106 @@
+released shaman: b38104f012d9f1fe1b986f010ca669c2c95cc7367d6a6feb2ce0174b91797f42
+$ codesign --display --verbose=2 /Users/runner/work/_temp/probe/download/shaman-v0.4.2-aarch64-apple-darwin/shaman
+Executable=/Users/runner/work/_temp/probe/download/shaman-v0.4.2-aarch64-apple-darwin/shaman
+Identifier=ai.shaman.cli
+Format=Mach-O thin (arm64)
+CodeDirectory v=20500 size=323289 flags=0x10000(runtime) hashes=10097+2 location=embedded
+Signature size=9042
+Authority=Developer ID Application: Jake Tucker (645L89QC7B)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+Timestamp=Nov 23, 2026 at 10:17:55 AM
+Info.plist=not bound
+TeamIdentifier=645L89QC7B
+Runtime Version=15.5.0
+Sealed Resources=none
+Internal requirements count=1 size=176
+$ codesign --display --verbose=2 /Users/runner/work/_temp/probe/stage/Shaman Probe.app
+Executable=/Users/runner/work/_temp/probe/stage/Shaman Probe.app/Contents/MacOS/ShamanProbe
+Identifier=ai.shaman.desktop.probe781
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20500 size=902 flags=0x10000(runtime) hashes=21+3 location=embedded
+Signature size=9043
+Authority=Developer ID Application: Jake Tucker (645L89QC7B)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+Timestamp=Nov 26, 2026 at 3:19:45 PM
+Info.plist entries=9
+TeamIdentifier=645L89QC7B
+Runtime Version=15.5.0
+Sealed Resources version=2 rules=13 files=2
+Internal requirements count=1 size=188
+$ codesign --verify --deep --strict --verbose=2 /Users/runner/work/_temp/probe/stage/Shaman Probe.app
+--prepared:/Users/runner/work/_temp/probe/stage/Shaman Probe.app/Contents/Helpers/shaman
+--validated:/Users/runner/work/_temp/probe/stage/Shaman Probe.app/Contents/Helpers/shaman
+--prepared:/Users/runner/work/_temp/probe/stage/Shaman Probe.app/Contents/MacOS/shaman
+--validated:/Users/runner/work/_temp/probe/stage/Shaman Probe.app/Contents/MacOS/shaman
+/Users/runner/work/_temp/probe/stage/Shaman Probe.app: valid on disk
+/Users/runner/work/_temp/probe/stage/Shaman Probe.app: satisfies its Designated Requirement
+$ codesign --display --verbose=2 /Users/runner/work/_temp/probe/stage/Shaman Probe.app/Contents/Helpers/shaman
+Executable=/Users/runner/work/_temp/probe/stage/Shaman Probe.app/Contents/Helpers/shaman
+Identifier=ai.shaman.cli
+Format=Mach-O thin (arm64)
+CodeDirectory v=20500 size=323289 flags=0x10000(runtime) hashes=10097+2 location=embedded
+Signature size=9042
+Authority=Developer ID Application: Jake Tucker (645L89QC7B)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+Timestamp=Nov 23, 2026 at 10:17:55 AM
+Info.plist=not bound
+TeamIdentifier=645L89QC7B
+Runtime Version=15.5.0
+Sealed Resources=none
+Internal requirements count=1 size=176
+after signing the bundle: Contents/MacOS/shaman is byte for byte the released file
+after signing the bundle: Contents/Helpers/shaman is byte for byte the released file
+$ spctl --assess --type execute -vvv /Users/runner/work/_temp/probe/stage/Shaman Probe.app
+/Users/runner/work/_temp/probe/stage/Shaman Probe.app: rejected
+source=Unnotarized Developer ID
+origin=Developer ID Application: Jake Tucker (645L89QC7B)
+notarization of the bundle: Accepted (submission dc77601d-3078-4cda-8618-27a4cf88ea1f)
+$ xcrun stapler staple /Users/runner/work/_temp/probe/stage/Shaman Probe.app
+Processing: /Users/runner/work/_temp/probe/stage/Shaman Probe.app
+Processing: /Users/runner/work/_temp/probe/stage/Shaman Probe.app
+The staple and validate action worked!
+$ xcrun stapler validate /Users/runner/work/_temp/probe/stage/Shaman Probe.app
+Processing: /Users/runner/work/_temp/probe/stage/Shaman Probe.app
+The validate action worked!
+$ spctl --assess --type execute -vvv /Users/runner/work/_temp/probe/stage/Shaman Probe.app
+/Users/runner/work/_temp/probe/stage/Shaman Probe.app: accepted
+source=Notarized Developer ID
+origin=Developer ID Application: Jake Tucker (645L89QC7B)
+$ codesign --verify --deep --strict --verbose=2 /Users/runner/work/_temp/probe/stage/Shaman Probe.app
+--prepared:/Users/runner/work/_temp/probe/stage/Shaman Probe.app/Contents/MacOS/shaman
+--validated:/Users/runner/work/_temp/probe/stage/Shaman Probe.app/Contents/MacOS/shaman
+--prepared:/Users/runner/work/_temp/probe/stage/Shaman Probe.app/Contents/Helpers/shaman
+--validated:/Users/runner/work/_temp/probe/stage/Shaman Probe.app/Contents/Helpers/shaman
+/Users/runner/work/_temp/probe/stage/Shaman Probe.app: valid on disk
+/Users/runner/work/_temp/probe/stage/Shaman Probe.app: satisfies its Designated Requirement
+after stapling the bundle: Contents/MacOS/shaman is byte for byte the released file
+after stapling the bundle: Contents/Helpers/shaman is byte for byte the released file
+$ codesign --display --verbose=2 /Users/runner/work/shaman/shaman/out/ShamanProbe.dmg
+Executable=/Users/runner/work/shaman/shaman/out/ShamanProbe.dmg
+Identifier=ShamanProbe
+Format=disk image
+CodeDirectory v=20200 size=299 flags=0x0(none) hashes=1+6 location=embedded
+Signature size=9042
+Authority=Developer ID Application: Jake Tucker (645L89QC7B)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+Timestamp=Nov 26, 2026 at 3:20:32 PM
+Info.plist=not bound
+TeamIdentifier=645L89QC7B
+Sealed Resources=none
+Internal requirements count=1 size=172
+notarization of the image: Accepted (submission d5e4d690-bfe0-4d3d-91a0-bd431086a29b)
+$ xcrun stapler staple /Users/runner/work/shaman/shaman/out/ShamanProbe.dmg
+Processing: /Users/runner/work/shaman/shaman/out/ShamanProbe.dmg
+Processing: /Users/runner/work/shaman/shaman/out/ShamanProbe.dmg
+The staple and validate action worked!
+$ xcrun stapler validate /Users/runner/work/shaman/shaman/out/ShamanProbe.dmg
+Processing: /Users/runner/work/shaman/shaman/out/ShamanProbe.dmg
+The validate action worked!
+$ spctl --assess --type open --context context:primary-signature -vvv /Users/runner/work/shaman/shaman/out/ShamanProbe.dmg
+/Users/runner/work/shaman/shaman/out/ShamanProbe.dmg: accepted
+source=Notarized Developer ID
+origin=Developer ID Application: Jake Tucker (645L89QC7B)

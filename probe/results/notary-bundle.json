@@ -1,0 +1,49 @@
+{
+  "logFormatVersion": 1,
+  "jobId": "dc77601d-3078-4cda-8618-27a4cf88ea1f",
+  "status": "Accepted",
+  "statusSummary": "Ready for distribution",
+  "statusCode": 0,
+  "archiveFilename": "bundle.zip",
+  "uploadDate": "2026-11-26T15:19:55.546Z",
+  "sha256": "f618ddb7447e330588cbc1f009dde8370ca778c885149e50ec0104b91c098f03",
+  "ticketContents": [
+    {
+      "path": "bundle.zip/Shaman Probe.app/Contents/Helpers/shaman",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "86bdb2df8df96e797a4bc97fc701d6ca6b1c99d1",
+      "arch": "arm64"
+    },
+    {
+      "path": "bundle.zip/Shaman Probe.app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "4e725feef4ac1c6b989db4106cb66d389d151780",
+      "arch": "arm64"
+    },
+    {
+      "path": "bundle.zip/Shaman Probe.app/Contents/MacOS/shaman",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "86bdb2df8df96e797a4bc97fc701d6ca6b1c99d1",
+      "arch": "arm64"
+    },
+    {
+      "path": "bundle.zip/Shaman Probe.app/Contents/MacOS/ShamanProbe",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "4e725feef4ac1c6b989db4106cb66d389d151780",
+      "arch": "arm64"
+    },
+    {
+      "path": "bundle.zip/Shaman Probe.app/Contents/MacOS/shaman",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "86bdb2df8df96e797a4bc97fc701d6ca6b1c99d1",
+      "arch": "arm64"
+    },
+    {
+      "path": "bundle.zip/Shaman Probe.app/Contents/Helpers/shaman",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "86bdb2df8df96e797a4bc97fc701d6ca6b1c99d1",
+      "arch": "arm64"
+    }
+  ],
+  "issues": null
+}
