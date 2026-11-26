@@ -3369,3 +3369,189 @@ private final class CountedScanner {
     #expect(read == [invite])
   }
 }
+
+/// Two windows of the fake over one phone, which split as the core's do.
+@Suite struct FakeWindowTests {
+  /// Where `window`'s Outlook stands now.
+  private func outlook(of window: FakeWindow) async -> String? {
+    var outlooks = window.outlook().makeAsyncIterator()
+    guard case .remote(_, let beginsIn) = await outlooks.next() else { return nil }
+    return beginsIn.place
+  }
+
+  /// What `window`'s listing is titled now.
+  private func title(of window: FakeWindow) async -> String? {
+    var listings = window.listing().makeAsyncIterator()
+    return await listings.next()?.title
+  }
+
+  @Test func nothingDoneInOneWindowTurnsTheOthersOutlookOrNarrowsItsListing() async throws {
+    let phone = FakeCore(.several)
+    let first = try #require(phone.window() as? FakeWindow)
+    let second = try #require(phone.window() as? FakeWindow)
+    #expect(await outlook(of: first) == "workstation")
+    #expect(await outlook(of: second) == "workstation", "a new window begins where the phone was last turned")
+
+    try await first.chooseWorkspace("workspace/laptop/billing-api")
+    #expect(await outlook(of: first) == "laptop · billing-api")
+    #expect(await outlook(of: second) == "workstation")
+
+    try await second.narrowListing(FakeScope.remote("homelab").reference)
+    #expect(await title(of: second) == "homelab")
+    #expect(await outlook(of: second) == "homelab")
+    #expect(await title(of: first) == "Everywhere")
+    #expect(await outlook(of: first) == "laptop · billing-api")
+
+    let third = try #require(phone.window() as? FakeWindow)
+    #expect(await outlook(of: third) == "homelab", "the phone's latest turn, by any window")
+    #expect(await title(of: third) == "Everywhere")
+  }
+
+  @Test func aNoticeIsEachWindowsToSay() async throws {
+    let phone = FakeCore(.releases)
+    let first = try #require(phone.window() as? FakeWindow)
+    let second = try #require(phone.window() as? FakeWindow)
+    var notices = first.notices().makeAsyncIterator()
+    let said = try #require(await notices.next() ?? nil)
+    first.noticeSeen(said.id)
+    var after = first.notices().makeAsyncIterator()
+    #expect(await after.next() == .some(nil))
+    var beside = second.notices().makeAsyncIterator()
+    #expect(await beside.next()??.words == said.words, "seen in one window, it stands in the other")
+  }
+
+  @Test func oneDraftIsKeptForBothWindows() async throws {
+    let phone = FakeCore(.paired)
+    let first = try #require(phone.window() as? FakeWindow)
+    let second = try #require(phone.window() as? FakeWindow)
+    first.setDraft("Tidy the build", version: 0, for: "workstation-key/1")
+    second.setDraft("Map the docs", version: 0, for: "workstation-key/1")
+    #expect(first.draft(for: "workstation-key/1").text == "Map the docs", "whichever was written last")
+  }
+}
+
+/// Two windows' composers over one fake phone, whose drafts are the device's: each field holds its own text while it
+/// stands and never takes the other window's typing; what is kept is whichever was written last, which a field opening
+/// later starts from; and a Prompt the core gives back lands in every field of that Session, ahead of its own text.
+@Suite @MainActor struct TwoWindowsDraftTests {
+  private let working = "workstation-key/1"
+
+  private func until(_ done: @MainActor () -> Bool) async throws {
+    for _ in 0..<300 where !done() {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(done())
+  }
+
+  /// Two windows over one fake phone.
+  private func windows(_ scenario: FakeCore.Scenario) throws -> (FakeWindow, FakeWindow) {
+    let phone = FakeCore(scenario)
+    return (try #require(phone.window() as? FakeWindow), try #require(phone.window() as? FakeWindow))
+  }
+
+  @Test func aSessionsFieldNeverTakesTheOtherWindowsTypingAndBothTakeAPromptGivenBack() async throws {
+    let (first, second) = try windows(.paired)
+    let here = SessionModel(core: first, session: working)
+    let there = SessionModel(core: second, session: working)
+    var following = Task { await here.follow() }
+    let followingThere = Task { await there.follow() }
+    defer { followingThere.cancel() }
+    here.text = "Tidy the build"
+    there.text = "Map the docs"
+    #expect(here.text == "Tidy the build")
+    #expect(first.draft(for: working).text == "Map the docs", "what is kept is whichever was written last")
+
+    // Shown again, as Back from a Turn's work shows it, the field keeps its own.
+    following.cancel()
+    await following.value
+    there.text = "Map the docs again"
+    following = Task { await here.follow() }
+    defer { following.cancel() }
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(here.text == "Tidy the build")
+
+    // Stopping gives nothing back here, and takes nothing of the other's.
+    await here.stop()
+    #expect(here.text == "Tidy the build")
+
+    // A Prompt the core gives back lands ahead of each field's own text.
+    FakeCore.giveBack("One more thing", in: first, to: working)
+    try await until { here.text == "One more thing\nTidy the build" }
+    try await until { there.text == "One more thing\nMap the docs again" }
+
+    // A field opening later starts from whichever was written last.
+    let later = SessionModel(core: try #require(first.fake.window() as? FakeWindow), session: working)
+    #expect(later.text == second.draft(for: working).text)
+  }
+
+  @Test func aNewSessionFieldNeverTakesTheOtherWindowsTypingButTakesItsOwnWindowsOtherScreens() async throws {
+    let (first, second) = try windows(.composing)
+    let draft = FakeOpenedSession.landingDraft
+    let here = NewSessionModel(core: first)
+    let there = NewSessionModel(core: second)
+    var following = Task { await here.follow() }
+    let followingThere = Task { await there.follow() }
+    defer { followingThere.cancel() }
+    try await until { here.landing != nil && there.landing != nil }
+    here.text = "Tidy the build"
+    there.text = "Map the docs"
+
+    // Shown again, it keeps its own against the other window's typing.
+    following.cancel()
+    await following.value
+    following = Task { await here.follow() }
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(here.text == "Tidy the build")
+
+    // But it takes what another screen of its own window wrote meanwhile.
+    following.cancel()
+    await following.value
+    first.setDraft("Tidy the build, finished", version: first.draft(for: draft).version, for: draft)
+    following = Task { await here.follow() }
+    defer { following.cancel() }
+    try await until { here.text == "Tidy the build, finished" }
+    #expect(there.text == "Map the docs")
+  }
+
+  @Test func aQuestionnaireSheetOpeningLaterStartsFromWhateverWasHalfGivenLastAndEachHoldsItsOwn() async throws {
+    let (first, second) = try windows(.paired)
+    let waiting = "workstation-key/13"
+    let here = SessionModel(core: first, session: waiting)
+    let following = Task { await here.follow() }
+    defer { following.cancel() }
+    try await until { here.presented != nil }
+    guard case .questionnaire(let questionnaire) = try #require(here.presented).intervention else {
+      Issue.record("no Questionnaire is presented")
+      return
+    }
+    let machine = questionnaire.questions[0]
+    here.changeDraft(of: questionnaire) { $0.write("after lunch", of: machine) }
+
+    // A sheet opening later in the other window starts from it.
+    let there = SessionModel(core: second, session: waiting)
+    #expect(there.draft(of: questionnaire).written == "after lunch")
+
+    // One standing untouched, its sheet drawn again, keeps what it first read.
+    let untouched = SessionModel(core: try #require(first.fake.window() as? FakeWindow), session: waiting)
+    #expect(untouched.draft(of: questionnaire).written == "after lunch")
+    there.changeDraft(of: questionnaire) { $0.write("after tea", of: machine) }
+    #expect(untouched.draft(of: questionnaire).written == "after lunch", "drawn again, it takes nothing of the other's")
+
+    // Each sheet holds its own while it stands; one opening later starts from the last written.
+    #expect(here.draft(of: questionnaire).written == "after lunch")
+    let later = SessionModel(core: try #require(first.fake.window() as? FakeWindow), session: waiting)
+    #expect(later.draft(of: questionnaire).written == "after tea")
+  }
+}
+
+/// A window's root, which asks the device for its window once, as it is drawn.
+@Suite @MainActor struct WindowRootTests {
+  @Test func aWindowsRootMadeAgainAndAgainAsksTheDeviceForNoWindowUntilItIsDrawn() {
+    let phone = FakeCore(.paired)
+    for _ in 0..<3 {
+      _ = RootScreen(core: phone, appVersion: "0.1.0 (1)")
+    }
+    #expect(
+      phone.windowCount == 0, "SwiftUI lets go of all but the first, which is asked for its window as it is drawn")
+  }
+}

@@ -845,14 +845,17 @@ pub struct Phone {
     timings: CoreTimings,
     protocol: PairingProtocol,
     pub core: Arc<ThinClient>,
-    first: Window,
+    /// The window the app shows, where it has asked for one yet.
+    first: Option<Window>,
 }
 
 impl std::ops::Deref for Phone {
     type Target = Window;
 
     fn deref(&self) -> &Window {
-        &self.first
+        self.first
+            .as_ref()
+            .expect("the app has asked for its first window")
     }
 }
 
@@ -882,7 +885,7 @@ impl Phone {
             key,
             timings,
             protocol,
-            first: Window::of(&core),
+            first: Some(Window::of(&core)),
             core,
         }
     }
@@ -900,6 +903,15 @@ impl Phone {
     /// The phone after the app was ended and launched again.
     pub fn relaunched(self) -> Self {
         self.relaunched_after(|_| {})
+    }
+
+    /// The phone after the app was ended and launched again, its core open
+    /// and no window yet asked for, as it stands before its first scene is
+    /// made.
+    pub fn relaunched_before_a_window(self) -> Self {
+        let mut phone = self.relaunched();
+        phone.first = None;
+        phone
     }
 
     /// The phone after the app was ended, its directory changed by `change`
@@ -922,7 +934,7 @@ impl Phone {
             key,
             timings,
             protocol,
-            first: Window::of(&core),
+            first: Some(Window::of(&core)),
             core,
         }
     }
@@ -1120,6 +1132,14 @@ impl Window {
                 *heard.borrow()
             ),
         }
+    }
+
+    /// The Workspace Picker opened afresh and held open, with what it shows
+    /// now and on every change, for as long as the subscription is held.
+    pub fn hear_workspaces(&self) -> (Arc<Subscription>, watch::Receiver<Option<WorkspacePicker>>) {
+        let (sender, heard) = watch::channel(None);
+        let subscription = self.window.watch_workspaces(Arc::new(Heard(sender)));
+        (subscription, heard)
     }
 
     /// What the Workspace Picker, opened afresh, shows within `within`, where
