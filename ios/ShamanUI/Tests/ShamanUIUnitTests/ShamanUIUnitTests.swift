@@ -1109,6 +1109,32 @@ private func blockRows(_ markdown: String, of message: String = "m") -> [Convers
 }
 
 @Suite @MainActor struct SessionStackTests {
+  @Test func aNoticeIsSaidByOneScreenOfTheWindowAsTheColumnsStandAndByNoneBeneathASheet() {
+    let core = FakeWindow(.paired)
+    let waiting = SessionRoute(session: "workstation-key/3")
+    let stack = SessionStack(core: core, path: [.session(waiting)])
+    let says = { (stack.saysNotices(listing: true), stack.saysNotices(listing: false)) }
+    // Whichever screen stands in the one column: neither stands beneath the other.
+    #expect(says() == (true, true))
+    stack.noticeSaid = .listing
+    #expect(says() == (true, false), "the listing, over the main view")
+    stack.noticeSaid = .mainView
+    #expect(says() == (false, true), "the main view, the listing beside it or put away")
+    for said in [NoticeSaid.oneColumn, .listing, .mainView] {
+      stack.noticeSaid = said
+      stack.listingSheet = .servers
+      #expect(says() == (false, false), "beneath the listing's sheet, \(said)")
+      stack.listingSheet = nil
+      stack.model(for: waiting).showingTree = true
+      #expect(says() == (false, false), "beneath the tree's sheet, \(said)")
+      stack.model(for: waiting).showingTree = false
+    }
+    // Only the screen on top presents: one beneath it presents nothing, as it is not in the window.
+    stack.model(for: waiting).showingTree = true
+    stack.push(.work(waiting, turn: "work"))
+    #expect(says() == (false, true), "the tree of a Session beneath its Turn's work")
+  }
+
   @Test func aSessionIsClosedInTheCoreOnceItsScreenLeavesThePathAndNotBefore() {
     let core = FakeWindow(.paired)
     let working = SessionRoute(session: "workstation-key/1")

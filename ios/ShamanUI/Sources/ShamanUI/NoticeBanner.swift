@@ -1,10 +1,10 @@
 import ShamanCore
 import SwiftUI
 
-/// What the core says of its own accord, as the banner beneath each screen's bar shows it: each notice until it is
-/// tapped away or has stood on screen a while, when the core is told it was seen, so it shows the next and never says
-/// that one again. Its while runs only while a banner shows it, so a notice hidden beneath a sheet, or while no screen
-/// shows it, is never seen for it.
+/// What the core says of its own accord, as the banner beneath a screen's bar shows it, once in a window: each notice
+/// until it is tapped away or has stood on screen a while, when the core is told it was seen, so it shows the next and
+/// never says that one again. Its while runs only while a banner shows it, so a notice hidden beneath a sheet, or while
+/// no screen shows it, is never seen for it.
 @MainActor @Observable
 final class NoticeModel {
   private let core: any WindowCore
@@ -84,15 +84,33 @@ final class NoticeModel {
   }
 }
 
+/// Which screen of a window's columns says a notice, as `Columns` says they stand, so that it is said once.
+enum NoticeSaid {
+  /// One column stands alone, and whichever screen stands in it says it: the listing, or what is open over it.
+  case oneColumn
+  /// The listing, which stands over the main view.
+  case listing
+  /// The main view, the listing standing beside it or put away.
+  case mainView
+}
+
+extension EnvironmentValues {
+  /// Whether the screen says a notice, as the columns hosting it say. A sheet says its own, as one of the listing's
+  /// does where the main view would otherwise; the Aside never does.
+  @Entry var saysNotices = true
+}
+
 /// Shows what the core says of its own accord beneath the bar of the screen it modifies, in the banner an act's
-/// failure is shown in, quietly, where the screen is not `covered` by a sheet of its own.
+/// failure is shown in, quietly, where the screen is not `covered` by a sheet of its own and is the one in the window
+/// to say it.
 private struct NoticeBanner: ViewModifier {
   @Environment(NoticeModel.self) private var notices: NoticeModel?
+  @Environment(\.saysNotices) private var says
   let covered: Bool
 
   func body(content: Content) -> some View {
     content.safeAreaInset(edge: .top) {
-      if let notices, let notice = notices.notice, !covered {
+      if let notices, let notice = notices.notice, !covered, says {
         Banner(text: notice.words, quiet: true)
           .padding(.vertical, 4)
           .onTapGesture { notices.dismiss() }
@@ -107,7 +125,8 @@ private struct NoticeBanner: ViewModifier {
 }
 
 extension View {
-  /// Shows what the core says of its own accord beneath this screen's bar, but while a sheet of its own covers it.
+  /// Shows what the core says of its own accord beneath this screen's bar, where it is the screen in the window to say
+  /// it, but while a sheet of its own covers it.
   func noticeBanner(covered: Bool = false) -> some View {
     modifier(NoticeBanner(covered: covered))
   }

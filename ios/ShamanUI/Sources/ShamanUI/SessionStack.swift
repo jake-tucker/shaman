@@ -22,6 +22,11 @@ final class SessionStack {
   let aside: Aside
   /// How the window stands, as the columns' screen reads it.
   let pose = Pose()
+  /// Which screen of the window says a notice, as the columns say they stand.
+  var noticeSaid = NoticeSaid.oneColumn
+  /// The sheet the listing presents, while one is up: kept here, and not by the listing, as it stands over the main
+  /// view too, and the window is to know of it while the listing is out of it.
+  var listingSheet: ListingSheet?
   /// The new-session screen the main view holds at rest, while nothing is open. Not on the path, it is not open.
   @ObservationIgnored private(set) var rest = LandingRoute()
   @ObservationIgnored private let core: any WindowCore
@@ -59,6 +64,32 @@ final class SessionStack {
       case .landing(let route): landings[route]?.begun.map { .session($0.session) } ?? .landing
       case .work, .detail: nil
       }
+    }
+  }
+
+  /// Whether a sheet stands over the window, whoever presented it: the listing, or the screen on top of the main view,
+  /// an Intervention's or the tree's. A screen beneath one is not on screen. The model on top is asked for as its
+  /// screen asks for it, so that what it presents is followed even where this is read before the screen is drawn.
+  var sheetStands: Bool {
+    if listingSheet != nil { return true }
+    let top: SessionModel? =
+      switch path.last {
+      case .session(let route): model(for: route)
+      case .landing(let route): landing(for: route).begun
+      case .work, .detail, nil: nil
+      }
+    return top.map { $0.presented != nil || $0.showingTree } ?? false
+  }
+
+  /// Whether the listing says a notice, or, where it is not `listing`, a screen of the main view: once in the window,
+  /// by the listing where it stands alone or over the main view and by the main view otherwise, and by neither beneath
+  /// a sheet, which says its own where it shows one.
+  func saysNotices(listing: Bool) -> Bool {
+    guard !sheetStands else { return false }
+    switch noticeSaid {
+    case .oneColumn: return true
+    case .listing: return listing
+    case .mainView: return !listing
     }
   }
 

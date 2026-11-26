@@ -52,7 +52,7 @@ public struct RootScreen: View {
           composing: asked.composing, aside: asked.aside)
       }
     }
-    // Each screen shows it beneath its own bar, by `noticeBanner`.
+    // One screen of the window shows it beneath its bar, by `noticeBanner`, as the columns say which.
     .environment(held.notices(handingBack: handingBack))
     .task { await held.notices(handingBack: handingBack).follow() }
     .task {
@@ -89,10 +89,10 @@ public struct RootScreen: View {
 
 /// A window's half of the core, asked of the device's the first time the window holding it is drawn, handed what its
 /// scene kept of its Outlook so nothing falls between making it and handing that back, what the core
-/// says of its own accord in that window, in the banner an act's failure is shown in, beneath each screen's bar, and
-/// what the window was asked at launch to show. SwiftUI may make a view's state more than once and keep the first, so
-/// nothing is asked of the core, nor launch arguments claimed, as it is made, but as its root's first task runs, and no
-/// window is made that never stands.
+/// says of its own accord in that window, in the banner an act's failure is shown in, beneath the bar of the one screen
+/// that says it, and what the window was asked at launch to show. SwiftUI may make a view's state more than once and
+/// keep the first, so nothing is asked of the core, nor launch arguments claimed, as it is made, but as its root's
+/// first task runs, and no window is made that never stands.
 @MainActor final class HeldWindow {
   private let device: any DeviceCore
   private let launch: LaunchArguments

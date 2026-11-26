@@ -20,7 +20,6 @@ struct SessionScreen: View {
   let model: SessionModel
   /// What is open, which the Session is of, and an entry chosen in its tree is shown on.
   var stack: SessionStack?
-  @State private var showingTree = false
   /// The Session an entry of the tree handed back, shown once its sheet has gone.
   @State private var chosen: String?
 
@@ -52,7 +51,7 @@ struct SessionScreen: View {
     }
     .safeAreaInset(edge: .top) {
       // While a sheet stands, its own banner says it: an Intervention's, or the tree's.
-      if let banner = model.banner, model.presented == nil, !showingTree {
+      if let banner = model.banner, model.presented == nil, !model.showingTree {
         // On a ground of its own, so the conversation scrolling beneath does not show through.
         Banner(text: banner)
           .padding(.vertical, 4)
@@ -62,7 +61,7 @@ struct SessionScreen: View {
           .accessibilityHint("Dismisses this")
       }
     }
-    .noticeBanner(covered: model.presented != nil || showingTree)
+    .noticeBanner(covered: model.presented != nil || model.showingTree)
     .onChange(of: model.popped) {
       if model.popped {
         stack?.leave(model.route)
@@ -117,7 +116,7 @@ struct SessionScreen: View {
       }
     }
     .sheet(
-      isPresented: $showingTree,
+      isPresented: Bindable(model).showingTree,
       onDismiss: {
         if let chosen {
           self.chosen = nil
@@ -127,7 +126,7 @@ struct SessionScreen: View {
       content: {
         TreeSheet(model: model) { session in
           chosen = session
-          showingTree = false
+          model.showingTree = false
         }
       }
     )
@@ -148,7 +147,7 @@ struct SessionScreen: View {
   /// Shows the tree the Session belongs to: in the Aside, where it takes it, and as a sheet where it does not.
   private func showTree() {
     guard stack?.showTree() != true else { return }
-    showingTree = true
+    model.showingTree = true
   }
 }
 
@@ -1004,6 +1003,8 @@ final class SessionModel {
   @ObservationIgnored private var draftVersion: UInt64
   /// An act's failure, in the core's words, shown over the screen.
   private(set) var banner: String?
+  /// Whether its screen shows the tree as a sheet, as it does where the Aside does not take it.
+  var showingTree = false
   /// What the core refused of the input, shown beside it.
   private(set) var invalid: String?
   /// How many Prompts the composer has sent or queued, each of which takes the conversation back to its foot.

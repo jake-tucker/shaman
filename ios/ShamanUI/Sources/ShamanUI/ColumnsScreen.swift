@@ -8,8 +8,6 @@ struct ColumnsScreen: View {
   let core: any WindowCore
   let appVersion: String
   let beginsIn: BeginsIn
-  /// The Invite the listing confirms at once, where one is given.
-  private let invite: String?
   /// The scope the scene kept, handed back to the core as the listing is first followed.
   private let restoring: String?
   /// Hands the scene what to keep of the listing and what is open.
@@ -33,7 +31,6 @@ struct ColumnsScreen: View {
     self.core = core
     self.appVersion = appVersion
     self.beginsIn = beginsIn
-    self.invite = invite
     self.restoring = kept.scope
     self.keep = keep
     _model = State(initialValue: ListingModel(core: core))
@@ -44,9 +41,10 @@ struct ColumnsScreen: View {
       ? [.landing(LandingRoute())]
       : opening.map { [.session(SessionRoute(session: $0))] } ?? (invite == nil ? nil : [])
     let aside = Aside(showing: opening == nil ? nil : aside)
-    _stack = State(
-      initialValue: open.map { SessionStack(core: core, path: $0, aside: aside) }
-        ?? SessionStack(core: core, restoring: kept.pushed))
+    let stack =
+      open.map { SessionStack(core: core, path: $0, aside: aside) } ?? SessionStack(core: core, restoring: kept.pushed)
+    stack.listingSheet = invite.map(ListingSheet.pairing)
+    _stack = State(initialValue: stack)
   }
 
   /// What the scene is to keep now: the scope the listing stands at, or the one it was handed back until it says, and
@@ -60,8 +58,7 @@ struct ColumnsScreen: View {
       stack: stack,
       screens: Columns.Screens(
         listing: AnyView(
-          ListingScreen(
-            core: core, appVersion: appVersion, beginsIn: beginsIn, invite: invite, model: model, stack: stack)),
+          ListingScreen(core: core, appVersion: appVersion, beginsIn: beginsIn, model: model, stack: stack)),
         open: { [stack] pushed in AnyView(PushedScreen(pushed: pushed, stack: stack)) },
         rest: { [stack] route in
           AnyView(

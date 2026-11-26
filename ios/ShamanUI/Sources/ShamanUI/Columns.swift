@@ -9,6 +9,9 @@ import UIKit
 /// What is open is `SessionStack.path` and nothing else. A change to it is asked of the main view's navigation
 /// controller, and what the reader pops there is read back as that controller says it did show a screen. While nothing
 /// is open the main view holds the new-session screen at rest.
+///
+/// A notice is said once in the window: by the listing where it stands alone or over the main view, and by the main
+/// view otherwise, as the columns say in `SessionStack.noticeSaid`. The Aside never says one.
 final class Columns: UISplitViewController {
   /// The screens the columns hold, and what each is handed.
   struct Screens {
@@ -41,8 +44,8 @@ final class Columns: UISplitViewController {
   init(stack: SessionStack, screens: Screens) {
     self.stack = stack
     self.screens = screens
-    listing = HostedScreen(screens.handed(screens.listing))
-    aside = HostedScreen(screens.handed(screens.aside))
+    listing = HostedScreen(screens.handed(Self.said(screens.listing, listing: true, in: stack)))
+    aside = HostedScreen(screens.handed(AnyView(screens.aside.environment(\.saysNotices, false))))
     super.init(style: .doubleColumn)
     delegate = self
     sidebar.delegate = self
@@ -78,7 +81,23 @@ final class Columns: UISplitViewController {
   /// the listing is drawn again with it, its state kept, and what is open is as it was made.
   func take(_ screens: Screens) {
     self.screens = screens
-    listing.rootView = screens.handed(screens.listing)
+    listing.rootView = screens.handed(Self.said(screens.listing, listing: true, in: stack))
+  }
+
+  // MARK: Notices
+
+  /// `screen`, saying a notice where the listing does, where it is the `listing`, or where the main view does.
+  private static func said(_ screen: AnyView, listing: Bool, in stack: SessionStack) -> AnyView {
+    AnyView(Saying(stack: stack, listing: listing, screen: screen))
+  }
+
+  /// Says which screen says a notice, as the split view stands, or is to stand in `mode` where one is given.
+  private func sayWhoSays(_ mode: DisplayMode? = nil) {
+    let said: NoticeSaid =
+      isCollapsed ? .oneColumn : (mode ?? displayMode) == .oneOverSecondary ? .listing : .mainView
+    if stack.noticeSaid != said {
+      stack.noticeSaid = said
+    }
   }
 
   // MARK: The Aside
@@ -162,6 +181,7 @@ final class Columns: UISplitViewController {
     super.viewDidLayoutSubviews()
     sayRoom()
     sayStanding()
+    sayWhoSays()
   }
 
   override func viewWillTransition(to size: CGSize, with coordinator: any UIViewControllerTransitionCoordinator) {
@@ -186,7 +206,9 @@ final class Columns: UISplitViewController {
       guard let self else { return }
       main.pushViewController(host(screen), animated: true)
     }
-    return HostedScreen(AnyView(screens.handed(screen).environment(\.pushScreen, push)), named: named, atRest: atRest)
+    return HostedScreen(
+      AnyView(screens.handed(Self.said(screen, listing: false, in: stack)).environment(\.pushScreen, push)),
+      named: named, atRest: atRest)
   }
 
   /// The screens the path names that the main view holds now.
@@ -309,10 +331,30 @@ extension Columns: UISplitViewControllerDelegate {
     return stack.path.isEmpty ? .primary : .secondary
   }
 
+  func splitViewController(_ columns: UISplitViewController, willChangeTo mode: DisplayMode) {
+    sayWhoSays(mode)
+  }
+
+  func splitViewControllerDidCollapse(_ columns: UISplitViewController) {
+    sayWhoSays()
+  }
+
   func splitViewControllerDidExpand(_ columns: UISplitViewController) {
+    sayWhoSays()
     givingWay = false
     // Expanding as the listing is being returned to, the main view is to rest beside it.
     follow()
+  }
+}
+
+/// A screen the columns host, told whether it says a notice as they stand: the listing, or one of the main view's.
+private struct Saying: View {
+  let stack: SessionStack
+  let listing: Bool
+  let screen: AnyView
+
+  var body: some View {
+    screen.environment(\.saysNotices, stack.saysNotices(listing: listing))
   }
 }
 

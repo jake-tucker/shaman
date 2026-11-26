@@ -12,22 +12,13 @@ struct ListingScreen: View {
   let model: ListingModel
   /// What a row and the compose button open.
   let stack: SessionStack
-  @State private var sheet: ListingSheet?
+  /// The sheet the listing presents, while one is up, which the stack keeps.
+  private var sheet: ListingSheet? {
+    get { stack.listingSheet }
+    nonmutating set { stack.listingSheet = newValue }
+  }
   /// What the search field holds, which the core is handed as it changes and keeps no longer than the core runs.
   @State private var query = ""
-
-  /// The listing `model` follows over `core`, confirming `invite` where one is given.
-  init(
-    core: any WindowCore, appVersion: String, beginsIn: BeginsIn, invite: String?, model: ListingModel,
-    stack: SessionStack
-  ) {
-    self.core = core
-    self.appVersion = appVersion
-    self.beginsIn = beginsIn
-    self.model = model
-    self.stack = stack
-    _sheet = State(initialValue: invite.map(ListingSheet.pairing))
-  }
 
   var body: some View {
     List {
@@ -79,26 +70,31 @@ struct ListingScreen: View {
         sheet = nil
       }
     }
-    .sheet(item: $sheet) { sheet in
-      switch sheet {
-      case .unreachable(let remote):
-        // The sheet follows the Remote's row as the core changes it, so what it says may be in the way stays true.
-        if let row = model.unreachable(remote) {
-          UnreachableSheetView(row: row, model: TryAgainModel(core: core, remote: remote)) {
-            self.sheet = nil
+    // Kept by the stack, as the sheet stands over the main view too, which says no notice beneath it, even while the
+    // listing is out of the window. It says its own where it shows one.
+    .sheet(item: Bindable(stack).listingSheet) { sheet in
+      Group {
+        switch sheet {
+        case .unreachable(let remote):
+          // The sheet follows the Remote's row as the core changes it, so what it says may be in the way stays true.
+          if let row = model.unreachable(remote) {
+            UnreachableSheetView(row: row, model: TryAgainModel(core: core, remote: remote)) {
+              self.sheet = nil
+            }
           }
-        }
-      case .servers:
-        DeviceScreen(core: core, appVersion: appVersion)
-      case .pairing(let invite):
-        NavigationStack {
-          ConfirmationScreen(core: core, invite: invite) {
-            self.sheet = .servers
-          } paired: {
-            self.sheet = nil
+        case .servers:
+          DeviceScreen(core: core, appVersion: appVersion)
+        case .pairing(let invite):
+          NavigationStack {
+            ConfirmationScreen(core: core, invite: invite) {
+              self.sheet = .servers
+            } paired: {
+              self.sheet = nil
+            }
           }
         }
       }
+      .environment(\.saysNotices, true)
     }
   }
 
@@ -247,7 +243,7 @@ struct ListingScreen: View {
 }
 
 /// A sheet over the listing.
-private enum ListingSheet: Hashable, Identifiable {
+enum ListingSheet: Hashable, Identifiable {
   case servers
   /// The offer to try the Unreachable Remote it names again.
   case unreachable(String)

@@ -16,8 +16,9 @@ import UIKit
 
   /// The columns over a path of `open`, over the fake's `scenario`, in a window with room for one column alone, or for
   /// several where it is `wide`, or of `size` where one is given, at regular width. What is open is words alone, or,
-  /// with `sessions`, the screens the app's columns hold, which show what the core says of its own accord where
-  /// `noticed`. `launching` is handed what is open before anything is drawn.
+  /// with `sessions`, the screens the app's columns hold. Where `noticed` they show what the core says of its own
+  /// accord, as do the listing's words and the screen at rest. `launching` is handed what is open before anything is
+  /// drawn.
   init(
     open: [Pushed] = [], wide: Bool = false, sessions: Bool = false, scenario: FakeCore.Scenario = .paired,
     size: CGSize? = nil, noticed: Bool = false, launching: (SessionStack) -> Void = { _ in }
@@ -33,12 +34,13 @@ import UIKit
     columns = Columns(
       stack: stack,
       screens: Columns.Screens(
-        listing: screen("Listing"),
+        listing: noticed ? AnyView(Text("Listing").navigationTitle("Listing").noticeBanner()) : screen("Listing"),
         open: { pushed in
           sessions ? AnyView(PushedScreen(pushed: pushed, stack: stack)) : screen("\(pushed)")
         },
         rest: { route in
-          AnyView(NewSessionScreen(model: stack.landing(for: route), stack: stack, atRest: route))
+          let screen = NewSessionScreen(model: stack.landing(for: route), stack: stack, atRest: route)
+          return noticed ? AnyView(screen.noticeBanner()) : AnyView(screen)
         },
         aside: AnyView(AsideScreen(stack: stack)), handed: { AnyView($0.environment(notices)) }))
     if let size {

@@ -366,6 +366,83 @@ import UIKit
     }
   }
 
+  @Test func aNoticeIsSaidOnceByTheListingAloneOrOverTheMainViewAndByTheMainViewOtherwise() async throws {
+    let hosted = try await HostedColumns(open: [open], wide: true, sessions: true, scenario: .releases, noticed: true)
+    defer { hosted.close() }
+    let columns = hosted.columns
+    let stack = hosted.stack
+    let notices = try #require(hosted.notices)
+    let standing = { (how: String) in
+      "\(how): \(stack.noticeSaid), shown \(notices.showing), \(columns.displayMode.rawValue)"
+    }
+    let saidOnce = { (said: NoticeSaid, how: String) in
+      try await hosted.until({ stack.noticeSaid == said && notices.showing == 1 }, standing(how))
+      try await hosted.settle()
+      #expect(stack.noticeSaid == said, "\(standing(how))")
+      #expect(notices.showing == 1, "\(standing(how))")
+      #expect(notices.notice != nil, "\(standing(how))")
+    }
+    let saidNowhere = { (how: String) in
+      try await hosted.until({ stack.sheetStands && notices.showing == 0 }, standing(how))
+      try await hosted.settle()
+      #expect(notices.showing == 0, "\(standing(how))")
+      #expect(notices.notice != nil, "\(standing(how))")
+    }
+    try await saidOnce(.mainView, "by the Session beside the Sidebar")
+    stack.aside.shown = true
+    try await hosted.until { columns.displayMode == .secondaryOnly }
+    try await saidOnce(.mainView, "by the Session, the Sidebar put away")
+    columns.show(.primary)
+    try await hosted.until { columns.displayMode == .oneOverSecondary }
+    try await saidOnce(.listing, "by the listing over the Session")
+    columns.show(.secondary)
+    try await hosted.until { columns.displayMode == .secondaryOnly }
+    try await saidOnce(.mainView, "by the Session, the Sidebar put away again")
+
+    // A sheet the listing presents stands over the main view too, which says nothing beneath it, and says it again as
+    // the sheet goes, however the columns stand by then: put away, collapsed, or beside.
+    stack.listingSheet = .servers
+    try await saidNowhere("beneath the listing's sheet, the Sidebar put away")
+    stack.listingSheet = nil
+    try await saidOnce(.mainView, "by the Session once the listing's sheet goes, the Sidebar put away")
+    stack.aside.shown = false
+    try await hosted.until { columns.displayMode == .oneBesideSecondary }
+    stack.listingSheet = .servers
+    try await saidNowhere("beneath the listing's sheet beside the Sidebar")
+    try await hosted.resize(wide: false)
+    try await saidNowhere("beneath the listing's sheet, collapsed")
+    stack.listingSheet = nil
+    try await saidOnce(.oneColumn, "by the Session over the listing once the listing's sheet goes")
+    try await hosted.resize(wide: true)
+    try await saidOnce(.mainView, "by the Session beside the Sidebar again")
+
+    // So does a sheet the main view presents, an Intervention's, wherever the listing stands.
+    let waiting = SessionRoute(session: "workstation-key/3")
+    stack.path = [.session(waiting)]
+    try await hosted.until { stack.model(for: waiting).presented != nil }
+    try await saidNowhere("beneath the Session's own sheet beside the Sidebar")
+    stack.aside.shown = true
+    try await hosted.until { columns.displayMode == .secondaryOnly }
+    columns.show(.primary)
+    try await hosted.until { columns.displayMode == .oneOverSecondary }
+    try await saidNowhere("beneath the Session's own sheet, the listing over it")
+    stack.model(for: waiting).dismissInterventions()
+    try await saidOnce(.listing, "by the listing over the Session once its sheet goes")
+    columns.show(.secondary)
+    try await hosted.until { columns.displayMode == .secondaryOnly }
+    stack.aside.shown = false
+    stack.path = []
+    try await saidOnce(.mainView, "by the screen at rest beside the Sidebar")
+
+    // With one column alone, whichever screen stands in it.
+    try await hosted.resize(wide: false)
+    try await saidOnce(.oneColumn, "by the listing alone")
+    stack.path = [open]
+    try await saidOnce(.oneColumn, "by the Session over the listing")
+    stack.path = []
+    try await saidOnce(.oneColumn, "by the listing returned to")
+  }
+
   @Test func touchingTheFieldOfTheScreenAtRestOpensItWhereItStands() async throws {
     let hosted = try await HostedColumns(wide: true)
     defer { hosted.close() }
