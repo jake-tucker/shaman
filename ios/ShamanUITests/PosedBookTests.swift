@@ -82,17 +82,31 @@ final class PosedBookTests: XCTestCase {
     nothingStandsInTheFold(app, file: file, line: line)
   }
 
-  /// Fails where anything the app shows of words or buttons, where a tap reaches it, stands in the band.
+  /// Fails where the app draws anything in the band but its grounds: any pixel darker than 240 of 255, where the band
+  /// reads 246 or lighter, so that it catches words, a status word in its colour (an orange one reads 163), a chevron
+  /// (178 to 191), a symbol, a tint or a hairline. It reads the picture, as a row's frame is its cell's, which runs on
+  /// into the band to the middle of the fold where the system divides the columns, while what the row draws keeps 40
+  /// points from there.
   @MainActor
   private func nothingStandsInTheFold(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-    let inner = band.lowerBound + 1...band.upperBound - 1
-    let words = app.staticTexts.allElementsBoundByIndex + app.buttons.allElementsBoundByIndex
-    let inTheFold = words.filter(\.isHittable).filter {
-      $0.frame.maxX > inner.lowerBound && $0.frame.minX < inner.upperBound
-    }
-    XCTAssertTrue(
-      inTheFold.isEmpty, "in the fold: \(inTheFold.map { $0.identifier.isEmpty ? $0.label : $0.identifier })",
-      file: file, line: line)
+    let picture = Display.picture()
+    let pixels = picture.cgImage!
+    let scale = CGFloat(pixels.width) / app.window.frame.width
+    let width = pixels.width
+    let height = pixels.height
+    let context = CGContext(
+      data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
+      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
+    context.draw(pixels, in: CGRect(x: 0, y: 0, width: width, height: height))
+    let gray = UnsafeRawBufferPointer(start: context.data!, count: width * height)
+    let columns =
+      Int(((band.lowerBound + 1) * scale).rounded(.up))..<Int(((band.upperBound - 1) * scale).rounded(.down))
+    let drawn = (0..<height).flatMap { row in columns.map { (row, $0) } }.filter { gray[$0.0 * width + $0.1] < 240 }
+    guard let first = drawn.first else { return }
+    attach("Drawn in the fold", showing: picture)
+    XCTFail(
+      "drawn in the fold: \(drawn.count) pixels, the first at \(Int(CGFloat(first.1) / scale)) across and "
+        + "\(Int(CGFloat(first.0) / scale)) down", file: file, line: line)
   }
 
   @MainActor
@@ -119,10 +133,15 @@ final class PosedBookTests: XCTestCase {
       self, ["--fake", "paired", "--open", "workstation-key/7", "--aside", "work", "--forget-scene"])
     let main = app.descendants(matching: .any)["session.conversation"]
     let aside = app.descendants(matching: .any)["work.list"]
+    // Both lists read as not hittable here though they stand in sight, as the pictures show, so a row of each stands
+    // for its list.
+    let card = app.buttons["session.turn"].firstMatch
+    let row = app.buttons["work.row"].firstMatch
     let scope = app.buttons["listing.scope"]
     waits("the main view and the Aside divide at the fold") {
-      main.exists && main.isHittable && main.frame.minX < band.lowerBound && main.frame.maxX <= band.upperBound
-        && aside.exists && aside.isHittable && band.contains(aside.frame.minX)
+      main.exists && card.exists && card.isHittable && main.frame.minX < band.lowerBound
+        && main.frame.maxX <= band.upperBound && aside.exists && row.exists && row.isHittable
+        && band.contains(aside.frame.minX)
         && aside.frame.maxX > band.upperBound + 200 && !(scope.exists && scope.isHittable)
     }
     XCTAssertEqual(app.buttons["session.aside"].firstMatch.label, "Hide aside")
