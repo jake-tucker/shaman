@@ -1733,6 +1733,19 @@ private final class CountedSession: OpenedSession {
     #expect(Fold(among: [book], in: portrait) == nil)
   }
 
+  @Test func partlyFoldedLikeABookTheFoldIsTheActiveRegionTallerThanItIsWideFromHeadToFoot() throws {
+    let book = (frame: CGRect(x: 455.5, y: 0, width: 40, height: 669), isActive: true)
+    let fold = try #require(BookFold(among: [book], in: landscape))
+    #expect(fold == BookFold(leading: 455.5, window: 951))
+    #expect(fold.after == 495.5)
+    #expect(BookFold(among: [], in: landscape) == nil)
+    #expect(BookFold(among: [(book.frame, false)], in: landscape) == nil, "open flat")
+    #expect(BookFold(among: [across], in: portrait) == nil, "sat like a laptop")
+    #expect(BookFold(among: [across, (book.frame, false), book], in: landscape) == fold)
+    // Turned while partly folded, the region of the window as it stood stands from head to foot of no more than that.
+    #expect(BookFold(among: [book], in: portrait) == nil, "the old region in the turned window")
+  }
+
   @Test func aFoldOfTheWindowAsItWasTallGoesAsItTurns() {
     let pose = Pose()
     let fold = Fold(top: 455.5, bottom: 495.5, window: 951)

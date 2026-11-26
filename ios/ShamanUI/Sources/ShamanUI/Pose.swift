@@ -2,9 +2,13 @@ import SwiftUI
 
 /// How a window stands: about the fold, where its device is sat like a laptop, and over a keyboard. It is read once,
 /// above the columns, as the window's geometry changes, and handed down; no hosted screen asks for either, and nothing
-/// asks on a clock. There is no pose but that one: in every other the layout is the size class's alone.
+/// asks on a clock. There is no pose but that one for the columns: in every other the layout is the size class's alone.
+/// Pairing, which stands outside them, reads it the same way at its own root, and reads the fold of the book pose too.
 @MainActor @Observable
 final class Pose {
+  /// The fold, while the device is partly folded like a book: the one last read, where it is read, which only pairing
+  /// does.
+  var book: BookFold?
   /// The fold, while the device is sat like a laptop: the one last read, while it is of a window as tall as the window
   /// was last told it is to stand.
   var fold: Fold? {
@@ -93,13 +97,40 @@ extension Fold {
   }
 }
 
+/// The fold standing across a window from head to foot, as the device partly folded like a book has it: the band the
+/// system keeps for it, with a half before it, at the leading side, and a half after.
+struct BookFold: Equatable {
+  /// How far from the window's leading edge the band begins.
+  let leading: CGFloat
+  /// How wide the window is.
+  let window: CGFloat
+
+  /// How wide the half after is, from where the band begins.
+  var after: CGFloat { max(0, window - leading) }
+}
+
+extension BookFold {
+  /// The fold in a window of `size`, among the regions the system reserves where a display divides: one that is active
+  /// and taller than it is wide, standing across the window from head to foot. Read as the window turns, the region may
+  /// be the one of the size it had, which stands across no more than that.
+  init?(among regions: some Sequence<(frame: CGRect, isActive: Bool)>, in size: CGSize) {
+    guard
+      let down = regions.first(where: {
+        $0.isActive && $0.frame.height > $0.frame.width && $0.frame.minY <= 0.5
+          && $0.frame.maxY >= size.height - 0.5
+      })
+    else { return nil }
+    self.init(leading: down.frame.minX, window: size.width)
+  }
+}
+
 extension View {
   /// Has `pose` say how the window this fills stands, as its geometry changes.
   func reads(_ pose: Pose) -> some View {
     background {
       Color.clear
         .onGeometryChange(for: Fold?.self) { window in
-          Fold(among: window.reservedRegions(kind: .division).map { ($0.frame, $0.isActive) }, in: window.size)
+          Fold(among: window.divisions, in: window.size)
         } action: {
           pose.fold = $0
         }
@@ -116,5 +147,28 @@ extension View {
           .ignoresSafeArea(.container, edges: .bottom)
       }
     }
+  }
+}
+
+extension View {
+  /// Has `pose` say too where the fold of the book pose stands in the window this fills, as its geometry changes, for
+  /// pairing, which keeps to one side of it. The columns need nothing of it.
+  func readsTheBooksFold(_ pose: Pose) -> some View {
+    background {
+      Color.clear
+        .onGeometryChange(for: BookFold?.self) { window in
+          BookFold(among: window.divisions, in: window.size)
+        } action: {
+          pose.book = $0
+        }
+        .ignoresSafeArea()
+    }
+  }
+}
+
+extension GeometryProxy {
+  /// The regions the system reserves where the display divides, and whether each is active.
+  fileprivate var divisions: [(frame: CGRect, isActive: Bool)] {
+    reservedRegions(kind: .division).map { ($0.frame, $0.isActive) }
   }
 }
