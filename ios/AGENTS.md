@@ -11,7 +11,7 @@ app's shape. Everything here is built from a terminal on a Mac with Xcode 27.2; 
 | `Shaman.xcodeproj` | The project, in Xcode 27's JSON format (`project.xcproj`) with folders synced to disk, and the shared `Shaman` scheme |
 | `Shaman/` | The `Shaman` app target: `@main`, the choice of live core or fake, the Info settings |
 | `ShamanUI/` | A local package: the views, the `DeviceCore` and `WindowCore` protocols the app reaches the core through, `LiveCore` and `LiveWindow`, `FakeCore` and `FakeWindow`, and the adapters around the core. Its unit tests are `ShamanUIUnitTests` |
-| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the window a login's authentication sheet stands over, the conversation's list and the composer's foot under a ticking display link, the columns collapsing and expanding, every screen of the main view and pairing at the root about a fold of the test's own, and what Textual draws a Message's blocks as |
+| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the window a login's authentication sheet stands over, the conversation's list and the composer's foot under a ticking display link, the columns collapsing and expanding, every screen of the main view, a Questionnaire's height and pairing at the root about a fold of the test's own, and what Textual draws a Message's blocks as |
 | `ShamanUITests/` | The XCUITest target |
 | `ShamanCore/` | The core and its generated Swift, written by `scripts/build-ios-core.sh`; ignored by git |
 | `build/` | Where the commands below put what `xcodebuild` makes; ignored by git |
@@ -524,6 +524,9 @@ If the phone is locked, stop and ask for it to be unlocked.
   pose came, carries the same half by `halfBelowTheFold`, the Aside of that Session in it, and ends at the fold; out of
   the pose it stands as it would without. With nothing open nothing stands below the fold but the new-session screen's
   field, and a screen the path does not name, as the Workspace Picker, runs on through the fold.
+  A Questionnaire's sheet, handed the `Pose` by the Session's screen, is offered the half below the fold there too, and
+  chooses its own height as the fold comes and goes and as a field of it takes the keyboard: the one thing a change of
+  pose moves on purpose. An Approval's is left where the reader put it.
 - A hosted screen has no `NavigationStack` over it, so a `NavigationLink` in it is greyed out and a
   `navigationDestination` pushes nothing. The Aside has a stack of its own, in which an Activity's row is a link and a
   Session's pushes in the main view. A row that leads to a screen is a `RowButton` that writes the path, and a
