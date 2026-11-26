@@ -11,7 +11,7 @@ use rune_kit::{IconButton, IconButtonVariant, Kit, TextInput};
 
 use crate::data::{self, REMOTES, Scope, Session};
 use crate::parts::{self, glyph};
-use crate::{App, Variant, ms};
+use crate::{App, Density, Variant, ms};
 
 pub fn view(s: &App, k: &Kit, leading: f32, trailing: f32, layer: &mut Vec<El>) -> El {
     let aside_toggle = IconButton::new(&shell::INSPECTOR)
@@ -153,10 +153,11 @@ fn sidebar(s: &App, k: &Kit, layer: &mut Vec<El>) -> El {
     let all = data::listed(s.scope, s.outlook, query);
     let mut list = col().key("sessions").w_full().px(6.0).pb(8.0).gap(1.0);
     for x in all.iter().filter(|x| !x.settled) {
-        list = list.child(if s.variant == Variant::D {
-            mixed_row(s, x, k)
-        } else {
-            active_row(s, x, k)
+        list = list.child(match (s.variant, s.density) {
+            (Variant::D, _) | (Variant::E, Density::Balanced) => mixed_row(s, x, k),
+            (Variant::E, Density::Detailed) => detailed_row(s, x, k),
+            (Variant::E, Density::Compact) => crate::variant_c::line(s, x, k),
+            _ => active_row(s, x, k),
         });
     }
     if s.scope == Scope::Everywhere && query.is_empty() {
@@ -197,6 +198,14 @@ fn sidebar(s: &App, k: &Kit, layer: &mut Vec<El>) -> El {
                 .on_press(|s: &mut App| s.shelf = usize::MAX),
             );
         }
+    }
+    // One line leaves the rest of a row's readings to a card beside it while the pointer rests there.
+    if s.variant == Variant::E && s.density == Density::Compact {
+        layer.extend(
+            s.hover
+                .and_then(data::session)
+                .map(|x| crate::variant_c::detail(x, k)),
+        );
     }
     let body = col().key("sidebar-a").w_full().h_full().child(head).child(
         col()
@@ -272,6 +281,69 @@ fn active_row(s: &App, x: &'static Session, k: &Kit) -> El {
     press(k.interactive(built), x)
 }
 
+/// Variant e's row of three lines, as the TUI lays it out: the Workspace and the right slot, then the Icon and Title
+/// with the line to themselves, then the Checkout State. The open Session's row is filled.
+fn detailed_row(s: &App, x: &'static Session, k: &Kit) -> El {
+    let c = &k.c;
+    let standing = parts::standing_color(x, k);
+    let subdued = parts::out_of_reach(x) || x.unreadable;
+    let rail = el()
+        .w(3.0)
+        .self_stretch()
+        .radius(1.5)
+        .fill(standing.unwrap_or(c.bg_base.alpha(0.0)));
+    let mut place = row().grow(1.0).min_w(0.0).gap(5.0).center_y();
+    if x.remote.is_some() {
+        place = place.child(glyph(shaman_icons::MONITOR, 11.0, c.icon_muted));
+    }
+    place = place.child(
+        text(parts::place(x))
+            .font(k.ty.small)
+            .color(c.text_muted)
+            .truncate(),
+    );
+    let first = row()
+        .gap(8.0)
+        .center_y()
+        .child(place)
+        .children((!x.unreadable).then(|| {
+            text(parts::standing_word(x))
+                .font(k.ty.small)
+                .color(standing.unwrap_or(c.text_faint))
+        }));
+    let second = row()
+        .gap(6.0)
+        .center_y()
+        .child(parts::session_icon(x, 14.0, c.icon_base))
+        .child(parts::title(x, k.ty.ui_medium, c.text_base));
+    let third = parts::checkout(x, 11.0, c.text_faint, k.ty.small).unwrap_or_else(|| el().h(15.0));
+    let mut built = row()
+        .key(format!("row-{}", x.id))
+        .w_full()
+        .gap(8.0)
+        .py(6.0)
+        .pl(2.0)
+        .pr(8.0)
+        .radius(k.radius.md)
+        .child(rail)
+        .child(
+            col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(2.0)
+                .child(first)
+                .child(second)
+                .child(third),
+        );
+    if s.open == Some(x.id) {
+        built = built.fill(c.layer_03);
+    }
+    if subdued {
+        built = built.opacity(0.5);
+    }
+    press(k.interactive(built), x)
+}
+
 /// Variant d's active row: the Icon and Title on a line of their own, and beneath them where the Session works and its
 /// right slot, all behind the Rail. The open Session's row is filled, since under a pointer a row is also hovered.
 fn mixed_row(s: &App, x: &'static Session, k: &Kit) -> El {
@@ -327,12 +399,14 @@ fn mixed_row(s: &App, x: &'static Session, k: &Kit) -> El {
 /// A settled row: slim, with no Rail.
 fn shelf_row(s: &App, x: &'static Session, k: &Kit) -> El {
     let c = &k.c;
-    let ink = if s.open == Some(x.id) {
+    let open = s.open == Some(x.id);
+    let filled = open && matches!(s.variant, Variant::D | Variant::E);
+    let ink = if open && !filled {
         c.text_accent
     } else {
         c.text_muted
     };
-    let built = row()
+    let mut built = row()
         .key(format!("row-{}", x.id))
         .w_full()
         .h(26.0)
@@ -349,6 +423,9 @@ fn shelf_row(s: &App, x: &'static Session, k: &Kit) -> El {
                 .child(text(x.title).font(k.ty.ui).color(ink).truncate()),
         )
         .child(text(x.age).font(k.ty.small).color(c.text_faint));
+    if filled {
+        built = built.fill(c.layer_03);
+    }
     press(k.interactive(built), x)
 }
 

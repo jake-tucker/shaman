@@ -349,7 +349,7 @@ fn sidebar(s: &App, k: &Kit, layer: &mut Vec<El>) -> El {
 }
 
 /// A row, active or settled: one line.
-fn line(s: &App, x: &'static Session, k: &Kit) -> El {
+pub fn line(s: &App, x: &'static Session, k: &Kit) -> El {
     let c = &k.c;
     let open = s.open == Some(x.id);
     let subdued = parts::out_of_reach(x) || x.unreadable || x.settled;
@@ -415,7 +415,7 @@ fn line(s: &App, x: &'static Session, k: &Kit) -> El {
 }
 
 /// What the row leaves out, beside it while the pointer rests there.
-fn detail(x: &Session, k: &Kit) -> El {
+pub fn detail(x: &Session, k: &Kit) -> El {
     let c = &k.c;
     let mut card = col()
         .key("detail")

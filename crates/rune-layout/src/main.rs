@@ -1,6 +1,6 @@
 //! Throwaway (#775): how the desktop app's window is laid out and how Sessions are listed in it.
 //!
-//! Four variants of one window on fake data, in Rune's default light and dark themes. Each keeps the TUI's three parts
+//! Five variants of one window on fake data, in Rune's default light and dark themes. Each keeps the TUI's three parts
 //! (the Sidebar, the main view, the Aside) and disagrees about what a window does with them:
 //!
 //! - `a`, flat panes: the TUI's Sidebar as it stands, three-line rows with a Rail, the selector under the search box.
@@ -10,6 +10,9 @@
 //!   one-line rows whose detail comes on hover.
 //! - `d`, the mix: a's window with a row of two lines, which keeps every reading the TUI's row has and gives the Title
 //!   a line to itself. It was drawn after the other three, as the one to argue with.
+//! - `e`, what was chosen: a's window, with a row of three lines (`detailed`), two (`balanced`) or one (`compact`) as a
+//!   Setting would choose, the right slot on the first line of three as the TUI has it, and the open Session's row
+//!   filled. ⌥↑ and ⌥↓ change how many lines.
 //!
 //! `cargo run -p rune-layout -- b` opens variant b; ⌥← and ⌥→, or the bar at the bottom, switch variants. Add `windows`
 //! or `linux` to draw that platform's window controls in place of the Mac's. Every state is a scene:
@@ -36,10 +39,11 @@ pub enum Variant {
     B,
     C,
     D,
+    E,
 }
 
 impl Variant {
-    const ALL: [Variant; 4] = [Variant::A, Variant::B, Variant::C, Variant::D];
+    const ALL: [Variant; 5] = [Variant::A, Variant::B, Variant::C, Variant::D, Variant::E];
 
     fn name(self) -> &'static str {
         match self {
@@ -47,11 +51,37 @@ impl Variant {
             Variant::B => "B (a card, two-line rows)",
             Variant::C => "C (a title bar, one-line rows)",
             Variant::D => "D (the mix: flat panes, two-line rows behind a Rail)",
+            Variant::E => "E (chosen: a's window, rows of three, two or one line)",
         }
     }
 
     fn step(self, by: usize) -> Variant {
         let at = Self::ALL.iter().position(|v| *v == self).unwrap_or(0);
+        Self::ALL[(at + by) % Self::ALL.len()]
+    }
+}
+
+/// How many lines an active row takes in variant e: what a Setting of the desktop app would choose.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Density {
+    Detailed,
+    Balanced,
+    Compact,
+}
+
+impl Density {
+    const ALL: [Density; 3] = [Density::Detailed, Density::Balanced, Density::Compact];
+
+    fn name(self) -> &'static str {
+        match self {
+            Density::Detailed => "detailed",
+            Density::Balanced => "balanced",
+            Density::Compact => "compact",
+        }
+    }
+
+    fn step(self, by: usize) -> Density {
+        let at = Self::ALL.iter().position(|d| *d == self).unwrap_or(0);
         Self::ALL[(at + by) % Self::ALL.len()]
     }
 }
@@ -71,6 +101,7 @@ const SHELF_OPENING: usize = 6;
 pub struct App {
     pub variant: Variant,
     pub platform: Platform,
+    pub density: Density,
     /// Whether the window controls are drawn by the prototype: in a picture, and where the platform is not this one.
     pub drawn: bool,
     pub pill: bool,
@@ -149,6 +180,8 @@ fn init() -> App {
         Variant::C
     } else if has("d") {
         Variant::D
+    } else if has("e") {
+        Variant::E
     } else {
         Variant::A
     };
@@ -163,6 +196,13 @@ fn init() -> App {
     let mut app = App {
         variant,
         platform,
+        density: if has("compact") {
+            Density::Compact
+        } else if has("balanced") {
+            Density::Balanced
+        } else {
+            Density::Detailed
+        },
         drawn: headless || platform != Platform::Mac || !cfg!(target_os = "macos"),
         pill: !headless || has("pill"),
         win_w: asked_size().map_or(SIZE.0, |s| s.0),
@@ -190,7 +230,7 @@ fn init() -> App {
 /// The height of the band each variant keeps at the top of the window, and how far down it starts.
 fn band(v: Variant) -> (f32, f32) {
     match v {
-        Variant::A | Variant::C | Variant::D => (48.0, 0.0),
+        Variant::A | Variant::C | Variant::D | Variant::E => (48.0, 0.0),
         Variant::B => (48.0, 8.0),
     }
 }
@@ -205,7 +245,9 @@ fn view(s: &App, cx: &mut Cx<App>) -> El {
         cx.titlebar_inset()
     };
     let body = match s.variant {
-        Variant::A | Variant::D => variant_a::view(s, &k, leading, room.trailing, &mut layer),
+        Variant::A | Variant::D | Variant::E => {
+            variant_a::view(s, &k, leading, room.trailing, &mut layer)
+        }
         Variant::B => variant_b::view(s, &k, leading, room.trailing, &mut layer),
         Variant::C => variant_c::view(s, &k, leading, room.trailing, &mut layer),
     };
@@ -240,8 +282,13 @@ fn switcher(s: &App, k: &Kit) -> El {
             .build(k)
     };
     let state = format!(
-        "{}  ·  {:.0} pt  ·  {} in {}",
+        "{}{}  ·  {:.0} pt  ·  {} in {}",
         s.variant.name(),
+        if s.variant == Variant::E {
+            format!(", {}", s.density.name())
+        } else {
+            String::new()
+        },
         s.win_w,
         parts::scope_name(s.scope),
         data::machine(s.outlook)
@@ -276,6 +323,14 @@ fn on_key(s: &mut App, ev: &KeyEvent, _: &mut Tx) -> bool {
     }
     if ev.is_command('i') && ev.mods.alt {
         s.aside.toggle();
+        return true;
+    }
+    if ev.mods.alt && matches!(ev.key, Key::Up | Key::Down) {
+        s.density = s.density.step(if ev.key == Key::Up {
+            Density::ALL.len() - 1
+        } else {
+            1
+        });
         return true;
     }
     if ev.mods.alt && matches!(ev.key, Key::Left | Key::Right) {

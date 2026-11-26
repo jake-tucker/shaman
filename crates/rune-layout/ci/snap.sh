@@ -42,6 +42,24 @@ done
 for v in "${variants[@]}"; do
     [ "$v" = c ] && snap c-hover c mac $wide light hover
 done
+# What was chosen: a's window with a row of three lines, two or one.
+chosen() {
+    local name=$1 density=$2 platform=$3 size=$4 theme=$5 scene=${6:-}
+    local args=(e "$density" "$platform" --snap "$out/$name.png" --size "$size" --theme "$theme" --scale 2)
+    [ -n "$scene" ] && args+=(--scene "$scene")
+    "$bin" "${args[@]}" > /dev/null 2>&1 || echo "FAILED $name" >&2
+}
+for d in detailed balanced compact; do
+    chosen "e-$d-open" $d mac $wide light
+    chosen "e-$d-open-dark" $d mac $wide dark
+    chosen "e-$d-everywhere" $d mac $wide light everywhere
+    chosen "e-$d-everywhere-dark" $d mac $wide dark everywhere
+    chosen "e-$d-turned" $d mac $wide light turned
+    chosen "e-$d-open-960" $d mac 960x720 light
+    chosen "e-$d-open-windows" $d windows $wide light
+    chosen "e-$d-open-linux" $d linux $wide light
+done
+chosen e-compact-hover compact mac $wide light hover
 ls "$out" | wc -l
 
 # One page that sets the variants side by side, state by state.
@@ -61,6 +79,15 @@ states = [
     ("open-windows", "Windows' caption buttons"), ("open-linux", "Linux, under the system's frame"),
 ]
 rows = []
+chosen = [("open", "Chosen: a Session open"), ("open-dark", "Chosen: dark"), ("everywhere", "Chosen: Everywhere"),
+          ("everywhere-dark", "Chosen: Everywhere, dark"), ("turned", "Chosen: the Outlook turned toward a Remote"),
+          ("open-960", "Chosen: 960 pt"), ("open-windows", "Chosen: Windows"), ("open-linux", "Chosen: Linux")]
+for state, title in chosen:
+    cells = "".join(
+        f'<figure><a href="e-{d}-{state}.png"><img loading="lazy" src="e-{d}-{state}.png"></a><figcaption>{d}</figcaption></figure>'
+        for d in ("detailed", "balanced", "compact") if os.path.exists(os.path.join(out, f"e-{d}-{state}.png")))
+    if cells:
+        rows.append(f"<h2>{title}</h2><div class=row>{cells}</div>")
 for state, title in states:
     cells = "".join(
         f'<figure><a href="{v}-{state}.png"><img loading="lazy" src="{v}-{state}.png"></a><figcaption>{v}</figcaption></figure>'
