@@ -173,6 +173,14 @@ final class LiveWindow: WindowCore {
     window.searchListing(text: text)
   }
 
+  public func keptOutlook() -> String? {
+    window.keptOutlook()
+  }
+
+  public func restoreOutlook(_ kept: String) {
+    window.restoreOutlook(kept: kept)
+  }
+
   public func draft(for session: String) -> Draft {
     window.draft(session: session)
   }

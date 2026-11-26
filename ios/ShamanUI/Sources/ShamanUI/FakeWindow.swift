@@ -160,6 +160,25 @@
       tellListing()
     }
 
+    /// Where the Outlook stands, as `<remote>-key`, followed by `/<workspace>` where it stands in one, as the core keeps
+    /// the Remote by its key.
+    public func keptOutlook() -> String? {
+      guard let remote = currentRemote() else { return nil }
+      return ["\(remote)-key", turnedWorkspace.withLock { $0[remote] }].compactMap(\.self).joined(separator: "/")
+    }
+
+    public func restoreOutlook(_ kept: String) {
+      let parts = kept.split(separator: "/", maxSplits: 1).map(String.init)
+      guard let key = parts.first, let remote = fake.heldNames().first(where: { "\($0)-key" == key }) else { return }
+      // Turned in this window alone: the phone keeps nothing of it.
+      turned.withLock { turned in
+        turned.removeAll { $0 == remote }
+        turned.insert(remote, at: 0)
+      }
+      turnedWorkspace.withLock { $0[remote] = parts.count > 1 ? parts[1] : nil }
+      turnedOutlook()
+    }
+
     /// Tells this window's listing's listeners what it shows now.
     func tellListing() {
       listingListeners.tell(currentListing())

@@ -146,6 +146,15 @@ public protocol WindowCore: AnyObject, Sendable {
   /// Searches the listing by Title; an empty text searches for nothing.
   func searchListing(_ text: String)
 
+  /// What the scene is to keep of where this window's Outlook stands now, its Remote and the Workspace it stands in,
+  /// as a plain string handed back by `restoreOutlook` after a cold start; none while it stands nowhere.
+  func keptOutlook() -> String?
+
+  /// Turns this window's Outlook back to where the scene kept it, as it hands it back after a cold start, keeping
+  /// nothing as the phone's latest turn. One whose Remote is no longer held turns nothing, so the window stands at the
+  /// Remote the phone was most recently turned toward that is still held.
+  func restoreOutlook(_ kept: String)
+
   /// The unsent text of the composer of the Session `session` names, asked for when its screen appears, with the
   /// version of it each change is handed back with.
   func draft(for session: String) -> Draft

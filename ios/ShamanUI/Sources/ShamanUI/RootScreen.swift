@@ -5,43 +5,32 @@ import SwiftUI
 /// listing of every Remote's Sessions, in the columns. It is the window's root, which asks the device's core for the
 /// window's own half once, as it is first drawn, and holds it while the window lives.
 public struct RootScreen: View {
-  /// This window's half of the core, a Client of its own, and what it says of its own accord.
+  /// This window's half of the core, a Client of its own, what it says of its own accord, and what it was asked at
+  /// launch to show.
   @State private var held: HeldWindow
   private var core: any WindowCore { held.core }
   private let appVersion: String
   /// The Invite the first screen shown confirms at once, and no screen after it.
   @State private var invite: String?
-  /// The Session the listing opens on, pushed over it at once.
-  private let opening: String?
-  /// Whether the listing opens on the new-session screen, pushed over it at once.
-  private let composing: Bool
-  /// The kind of thing the Aside is shown at beside that Session, where it is to be shown at launch.
-  private let aside: AsideKind?
   /// Whether what the scene kept is still to be handed to a listing: to the first one a launch shows, and never once
   /// the phone has held no Remote, nor where a debug build is asked to forget it.
   @State private var restoring: Bool
   @State private var outlook: Outlook?
-  /// What the scene keeps of the listing and what is pushed over it, which iOS restores after it ends the app: a
-  /// `KeptScene`, as its plain string.
+  /// What the scene keeps of where the Outlook stands, the listing and what is pushed over it, which iOS restores after
+  /// it ends the app: a `KeptScene`, as its plain string.
   @SceneStorage("listing") private var kept = ""
 
-  /// A window of the app over the device's `core`, showing `appVersion` as its own version, already confirming
-  /// `invite` where one is given, as one arriving by the launch environment in a debug build is, and returning to what
-  /// the scene kept, but with the Session `opening` names pushed over the listing where one is named, with the Aside
-  /// shown beside it at `aside`'s kind where one is given, or the new-session screen where it is `composing`, and as a
-  /// new scene would open where it is `forgetting` what the scene kept. A notice the core gives stands `noticeStands`
-  /// before it goes by itself.
+  /// A window of the app over the device's `core`, showing `appVersion` as its own version, and returning to what the
+  /// scene kept, its Outlook included, but as a new scene would open where it is `forgetting` what the scene kept. The
+  /// first window drawn shows what `launch` asks, as a debug build is asked by its launch arguments, and every other
+  /// window nothing of it. A notice the core gives stands `noticeStands` before it goes by itself.
   public init(
-    core: any DeviceCore, appVersion: String, invite: String? = nil, opening: String? = nil, composing: Bool = false,
-    aside: AsideKind? = nil, forgetting: Bool = false, noticeStands: Duration = .seconds(8)
+    core: any DeviceCore, appVersion: String, launch: LaunchArguments = LaunchArguments(), forgetting: Bool = false,
+    noticeStands: Duration = .seconds(8)
   ) {
-    _held = State(initialValue: HeldWindow(over: core, noticeStands: noticeStands))
+    _held = State(initialValue: HeldWindow(over: core, launch: launch, noticeStands: noticeStands))
     self.appVersion = appVersion
-    self.opening = opening
-    self.composing = composing
-    self.aside = aside
     _restoring = State(initialValue: !forgetting)
-    _invite = State(initialValue: invite)
   }
 
   public var body: some View {
@@ -52,16 +41,22 @@ public struct RootScreen: View {
       case .nowhere:
         PairingScreen(core: core, invite: invite)
       case .remote(_, let beginsIn):
+        let asked = held.launched
         ColumnsScreen(
           core: core, appVersion: appVersion, beginsIn: beginsIn, invite: invite,
-          kept: restoring ? KeptScene(stored: kept) : KeptScene(), keep: { kept = $0.stored }, opening: opening,
-          composing: composing, aside: aside)
+          kept: restoring ? KeptScene(stored: kept) : KeptScene(), keep: { keep($0) }, opening: asked.opening,
+          composing: asked.composing, aside: asked.aside)
       }
     }
     // Each screen shows it beneath its own bar, by `noticeBanner`.
     .environment(held.notices)
     .task { await held.notices.follow() }
     .task {
+      invite = held.launched.invite
+      // Handed back before it is first followed, so the window opens where it stood.
+      if restoring, let outlook = KeptScene(stored: kept).outlook {
+        core.restoreOutlook(outlook)
+      }
       for await outlook in core.outlook() {
         if self.outlook != nil {
           invite = nil
@@ -77,26 +72,41 @@ public struct RootScreen: View {
         default: break
         }
         self.outlook = outlook
+        if case .remote = outlook {
+          keep(KeptScene(stored: kept))
+        }
       }
     }
   }
+
+  /// Keeps `scene`, what the listing hands the scene to keep, with where the Outlook stands now.
+  private func keep(_ scene: KeptScene) {
+    var scene = scene
+    scene.outlook = core.keptOutlook()
+    kept = scene.stored
+  }
 }
 
-/// A window's half of the core, asked of the device's the first time the window holding it is drawn, and what the core
-/// says of its own accord in that window, in the banner an act's failure is shown in, beneath each screen's bar.
-/// SwiftUI may make a view's state more than once and keep the first, so nothing is asked of the core as it is made,
-/// and no window is made that never stands.
+/// A window's half of the core, asked of the device's the first time the window holding it is drawn, what the core
+/// says of its own accord in that window, in the banner an act's failure is shown in, beneath each screen's bar, and
+/// what the window was asked at launch to show. SwiftUI may make a view's state more than once and keep the first, so
+/// nothing is asked of the core, nor launch arguments claimed, as it is made, and no window is made that never stands.
 @MainActor final class HeldWindow {
   private let device: any DeviceCore
+  private let launch: LaunchArguments
   private let noticeStands: Duration
 
-  init(over device: any DeviceCore, noticeStands: Duration = .seconds(8)) {
+  init(over device: any DeviceCore, launch: LaunchArguments = LaunchArguments(), noticeStands: Duration = .seconds(8)) {
     self.device = device
+    self.launch = launch
     self.noticeStands = noticeStands
   }
 
   private(set) lazy var core: any WindowCore = device.window()
   private(set) lazy var notices = NoticeModel(core: core, stands: noticeStands)
+  /// What this window was asked at launch to show, claimed as it is first drawn: everything where it is the first
+  /// window drawn, and nothing otherwise.
+  private(set) lazy var launched = launch.claimed()
 }
 
 #if DEBUG

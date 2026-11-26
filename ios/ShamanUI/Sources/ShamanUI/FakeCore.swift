@@ -885,8 +885,8 @@
 
     /// Forgets the Remote `row`, as its Pairing ended, by this phone's user removing it or, where `removedThere`, by
     /// its own user removing this phone: each window's Outlook that stood there turns to the Remote the phone was most
-    /// recently turned toward that is still held, saying so in that window; where no window lives, the first to come
-    /// says it.
+    /// recently turned toward that is still held, saying so in that window alone; where no window's stood there, the
+    /// first window says it was removed there, and where no window lives, the first to come says it.
     private func forget(_ row: ServerRow, removedThere: Bool) {
       let windows = windows.withLock { $0.compactMap(\.window) }
       let stoodThere = windows.map { $0.currentRemote() == row.name }
@@ -913,8 +913,10 @@
         window.endSessions(on: row.name)
         window.turnedOutlook()
         window.tellListing()
+        // A window whose Outlook stood elsewhere says nothing.
+        guard stoodThere else { continue }
         var turnedTo: String?
-        if stoodThere, case .remote(_, let beginsIn) = window.outlookNow() {
+        if case .remote(_, let beginsIn) = window.outlookNow() {
           turnedTo = beginsIn.said
         }
         let why: String? =
@@ -923,6 +925,10 @@
         if let why {
           window.say(turnedTo.map { "\(why). \($0)" } ?? why)
         }
+      }
+      // Where no window's stood there, the first window says once that its Remote removed this phone.
+      if removedThere, !stoodThere.contains(true), let first = windows.first {
+        first.say("\(name) removed this phone; pair with it again to reach it")
       }
     }
 

@@ -1,8 +1,8 @@
 import XCTest
 
 /// A cold start over the fake: after iOS ends the app while it is suspended, the next launch returns to what was open,
-/// fetched afresh, through what the scene kept: the listing's scope and the Sessions pushed over it, a Subagent's over
-/// its parent included, or the new-session screen. Sheets and the screens of a Turn's work and an Activity are not
+/// fetched afresh, through what the scene kept: where the window's Outlook stood, the listing's scope and the Sessions
+/// pushed over it, a Subagent's over its parent included, or the new-session screen. Sheets and the screens of a Turn's work and an Activity are not
 /// restored, and what is gone falls back to the listing, or to Everywhere for a scope.
 final class ColdStartTests: XCTestCase {
   override func setUp() {
@@ -173,6 +173,38 @@ final class ColdStartTests: XCTestCase {
     app = relaunched(app, "several")
     listing(at: "laptop · design-system", in: app)
     XCTAssertFalse(app.staticTexts["Servers & device"].firstMatch.exists, "a sheet is not restored")
+  }
+
+  /// Waits until the listing's capsule says new Sessions begin in `place`, where the Outlook stands.
+  @MainActor
+  private func begins(in place: String, in app: XCUIApplication) {
+    let beginsIn = app.descendants(matching: .any)["home.beginsIn"]
+    XCTAssertTrue(beginsIn.waitForExistence(timeout: 10), "the listing's capsule shows")
+    let said = NSPredicate(format: "label == %@", "New sessions begin in \(place)")
+    XCTAssertTrue(
+      XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: said, object: beginsIn)], timeout: 10) == .completed,
+      "new sessions begin in \(place), not as \(beginsIn.label) says")
+  }
+
+  @MainActor
+  func testTheOutlookIsReturnedToBesideTheScopeAndOneWhoseRemoteIsGoneFallsToTheLatestHeld() {
+    var app = launched("several")
+    begins(in: "workstation", in: app)
+    // A Workspace chosen turns the Outlook toward it; Everywhere chosen after turns nothing.
+    choose("All of laptop", titled: "laptop", in: app)
+    choose("design-system", titled: "laptop · design-system", in: app)
+    choose("Everywhere", titled: "Everywhere", in: app)
+    begins(in: "laptop · design-system", in: app)
+
+    app = relaunched(app, "several")
+    listing(at: "Everywhere", in: app)
+    begins(in: "laptop · design-system", in: app)
+    attach("The Outlook kept by the scene after a cold start, the listing under everywhere")
+
+    // The `paired` phone holds no laptop: the Outlook stands where that phone was last turned.
+    app = relaunched(app, "paired")
+    listing(at: "All workspaces", in: app)
+    begins(in: "workstation", in: app)
   }
 
   @MainActor

@@ -11,14 +11,28 @@ public protocol LoginBrowser: AnyObject {
 
   /// Closes what was opened, where it is still open.
   func close()
+
+  /// Stands what it opens over `window`, the window of the sheet that asked for the login.
+  func anchor(to window: UIWindow)
+}
+
+extension LoginBrowser {
+  public func anchor(to window: UIWindow) {}
 }
 
 /// The system's authentication sheet: GitHub opened inside the app, so the app is never left while a login waits on a
 /// connection a suspended app would lose. Nothing calls back to it; it is closed once the Relay confirms the login, and
-/// its user may close it sooner and approve the code from another device.
+/// its user may close it sooner and approve the code from another device. It stands over the window that asked, where
+/// the app shows several, not over whichever is key.
 @MainActor
 public final class WebLoginBrowser: NSObject, LoginBrowser {
   private var session: ASWebAuthenticationSession?
+  /// The window of the sheet that asked for the login, while it stands.
+  private weak var window: UIWindow?
+
+  public func anchor(to window: UIWindow) {
+    self.window = window
+  }
 
   public func open(_ url: URL) {
     close()
@@ -38,6 +52,9 @@ public final class WebLoginBrowser: NSObject, LoginBrowser {
 extension WebLoginBrowser: ASWebAuthenticationPresentationContextProviding {
   public nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
     MainActor.assumeIsolated {
+      if let window {
+        return window
+      }
       let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
       let windows = scenes.flatMap(\.windows)
       if let key = windows.first(where: \.isKeyWindow) ?? windows.first {
@@ -45,6 +62,36 @@ extension WebLoginBrowser: ASWebAuthenticationPresentationContextProviding {
       }
       // The app shows a sheet only from a window, so there is one by the time this is asked.
       return UIWindow(windowScene: scenes[0])
+    }
+  }
+}
+
+/// Tells `found` of the window it is drawn in, each time it comes to stand in one.
+private struct WindowReader: UIViewRepresentable {
+  let found: @MainActor (UIWindow) -> Void
+
+  func makeUIView(context: Context) -> Reader {
+    Reader(found: found)
+  }
+
+  func updateUIView(_ view: Reader, context: Context) {}
+
+  final class Reader: UIView {
+    private let found: @MainActor (UIWindow) -> Void
+
+    init(found: @escaping @MainActor (UIWindow) -> Void) {
+      self.found = found
+      super.init(frame: .zero)
+      isUserInteractionEnabled = false
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func didMoveToWindow() {
+      super.didMoveToWindow()
+      if let window {
+        found(window)
+      }
     }
   }
 }
@@ -115,6 +162,8 @@ struct RelayLoginSheet: View {
     }
     // It pushes nothing, and "Cancel" in words has no place in a bar down its side, which would only narrow it.
     .toolbarVerticalBehavior(.disabled)
+    // The system's sheet stands over the window this one stands in, the window that asked.
+    .background(WindowReader { model.anchor(to: $0) })
     .task(id: attempt) {
       if await model.follow() {
         loggedIn()
@@ -228,6 +277,11 @@ final class RelayLoginModel {
     guard case .waiting(_, let code, _, _, _, _) = login else { return }
     copy(code)
     copied = true
+  }
+
+  /// Stands the system's sheet the address is opened in over `window`, the sheet's own.
+  func anchor(to window: UIWindow) {
+    browser.anchor(to: window)
   }
 
   /// Opens the address the code is entered at again.

@@ -7,6 +7,11 @@ struct ShamanApp: App {
   @State private var opened: Opened
   /// What is followed once for the app, however many windows it shows.
   @State private var follower: AppFollower
+  #if DEBUG
+    /// What the launch arguments ask the first window drawn to show, handed to every window's root.
+    @State private var launch = LaunchArguments(
+      invite: Launch.invite, opening: Launch.opening, composing: Launch.composing, aside: Launch.aside)
+  #endif
 
   init() {
     let follower = AppFollower()
@@ -26,8 +31,7 @@ struct ShamanApp: App {
               DeviceRoot(core: core, appVersion: Self.version)
             } else {
               RootScreen(
-                core: core, appVersion: Self.version, invite: Launch.invite, opening: Launch.opening,
-                composing: Launch.composing, aside: Launch.aside, forgetting: Launch.forgettingScene,
+                core: core, appVersion: Self.version, launch: launch, forgetting: Launch.forgettingScene,
                 noticeStands: Launch.noticeStands ?? .seconds(8)
               )
               .environment(\.interventionArming, Launch.arming ?? EnvironmentValues().interventionArming)

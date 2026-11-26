@@ -2786,6 +2786,13 @@ private final class HeldTime: BackgroundTasks {
     )
     #expect(KeptScene(stored: kept.stored) == kept)
     #expect(KeptScene(stored: KeptScene(pushed: [.landing]).stored).pushed == [.landing])
+    let outlook = KeptScene(outlook: "laptop-key/billing-api", scope: "everywhere")
+    #expect(KeptScene(stored: outlook.stored) == outlook, "the Outlook beside the scope")
+  }
+
+  @Test func whatAnEarlierBuildKeptOfNoOutlookIsReadWithNone() {
+    let kept = KeptScene(stored: #"{"scope":"remote/laptop-key","pushed":[]}"#)
+    #expect(kept == KeptScene(scope: "remote/laptop-key"))
   }
 
   @Test func aNewSceneOrOneKeptByAnotherBuildKeepsNothing() {
@@ -3407,6 +3414,35 @@ private final class CountedScanner {
     #expect(await title(of: third) == "Everywhere")
   }
 
+  @Test func aWindowIsHandedBackTheOutlookItsSceneKeptAndOneWhoseRemoteIsGoneFallsToTheLatestHeld() async throws {
+    let phone = FakeCore(.several)
+    let first = try #require(phone.window() as? FakeWindow)
+    try await first.chooseWorkspace("workspace/laptop/billing-api")
+    let kept = try #require(first.keptOutlook())
+
+    let relaunched = try #require(FakeCore(.several).window() as? FakeWindow)
+    relaunched.restoreOutlook(kept)
+    #expect(await outlook(of: relaunched) == "laptop · billing-api")
+
+    let elsewhere = try #require(FakeCore(.paired).window() as? FakeWindow)
+    elsewhere.restoreOutlook(kept)
+    #expect(await outlook(of: elsewhere) == "workstation", "the laptop is not held there")
+  }
+
+  @Test func aRemovalIsSaidOnlyInTheWindowWhoseOutlookStoodThere() async throws {
+    let phone = FakeCore(.several)
+    let first = try #require(phone.window() as? FakeWindow)
+    let second = try #require(phone.window() as? FakeWindow)
+    try await second.narrowListing(FakeScope.remote("laptop").reference)
+    try await phone.removeRemote(FakeCore.fingerprint(of: "laptop"))
+    #expect(
+      await outlook(of: second) == "workstation", "turned to the Remote the phone was most recently turned toward")
+    var there = second.notices().makeAsyncIterator()
+    #expect(await there.next()??.words == "laptop was removed. New sessions begin in workstation")
+    var elsewhere = first.notices().makeAsyncIterator()
+    #expect(await elsewhere.next() == .some(nil), "a window whose Outlook stood elsewhere says nothing")
+  }
+
   @Test func aNoticeIsEachWindowsToSay() async throws {
     let phone = FakeCore(.releases)
     let first = try #require(phone.window() as? FakeWindow)
@@ -3545,6 +3581,26 @@ private final class CountedScanner {
 }
 
 /// A window's root, which asks the device for its window once, as it is drawn.
+@Suite @MainActor struct LaunchArgumentsTests {
+  @Test func whatALaunchAsksIsShownInTheFirstWindowDrawnAlone() {
+    let phone = FakeCore(.paired)
+    let launch = LaunchArguments(
+      invite: "shaman-v1-fake-workstation", opening: "workstation-key/1", composing: true, aside: .tree)
+    // SwiftUI may make a root and let it go before it is drawn: made first, it claims nothing.
+    let neverDrawn = HeldWindow(over: phone, launch: launch)
+    let first = HeldWindow(over: phone, launch: launch)
+    let second = HeldWindow(over: phone, launch: launch)
+
+    #expect(
+      first.launched
+        == LaunchArguments.Asked(
+          invite: "shaman-v1-fake-workstation", opening: "workstation-key/1", composing: true, aside: .tree))
+    #expect(first.launched.opening == "workstation-key/1", "claimed once, and kept by the window that claimed it")
+    #expect(second.launched == LaunchArguments.Asked(), "a window drawn after shows nothing of it")
+    #expect(neverDrawn.launched == LaunchArguments.Asked())
+  }
+}
+
 @Suite @MainActor struct WindowRootTests {
   @Test func aWindowsRootMadeAgainAndAgainAsksTheDeviceForNoWindowUntilItIsDrawn() {
     let phone = FakeCore(.paired)
