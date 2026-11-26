@@ -402,12 +402,14 @@ impl ThinClientWindow {
     /// keeping nothing as the phone's latest turn, so a window made after
     /// still begins where the phone was last turned. One whose Remote is no
     /// longer held turns nothing: the window stands at the Remote the phone
-    /// was most recently turned toward that is still held.
+    /// was most recently turned toward that is still held; where its
+    /// Pairing ended as no window lived, this window says so, and where it
+    /// now stands.
     pub fn restore_outlook(&self, kept: String) {
-        self.device
-            .inner
-            .remotes
-            .restore(&self.window.outlook, &kept);
+        let inner = &self.device.inner;
+        if let Some(remote) = inner.remotes.restore(&self.window.outlook, &kept) {
+            inner.handed_back(&self.window, &remote);
+        }
     }
 
     /// Searches this window's listing by Title for `text`, while the window

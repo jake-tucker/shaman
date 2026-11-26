@@ -385,13 +385,6 @@ impl Remotes {
         Self::stands(&self.held(), &window.lock(), &phone)
     }
 
-    /// Where the phone was last turned, by any window, among the Remotes held:
-    /// where a new window's Outlook would stand.
-    pub fn phone_outlook(&self) -> Outlook {
-        let phone = self.lock_turned();
-        Self::outlook_of(Self::stands(&self.held(), &phone, &phone))
-    }
-
     /// The Outlook standing at `standing`, or nowhere.
     fn outlook_of(standing: Option<(String, Option<RememberedWorkspace>)>) -> Outlook {
         standing.map_or(Outlook::Nowhere, |(name, workspace)| Outlook::Remote {
@@ -461,17 +454,17 @@ impl Remotes {
     /// keeping nothing as the phone's latest turn. One whose Remote is no
     /// longer held, or that this build cannot read, turns nothing, so the
     /// window stands where a new one begins, at the Remote the phone was
-    /// most recently turned toward that is still held.
-    pub fn restore(&self, window: &WindowOutlook, kept: &str) {
-        let Ok(kept) = serde_json::from_str::<KeptOutlook>(kept) else {
-            return;
-        };
+    /// most recently turned toward that is still held. Answers the
+    /// fingerprint of the Remote's key `kept` names, held or not, where it
+    /// can be read.
+    pub fn restore(&self, window: &WindowOutlook, kept: &str) -> Option<String> {
+        let kept = serde_json::from_str::<KeptOutlook>(kept).ok()?;
         let Some(stored) = self
             .held()
             .into_iter()
             .find(|stored| stored.remote.fingerprint == kept.remote)
         else {
-            return;
+            return Some(kept.remote);
         };
         {
             let name = stored.remote.name;
@@ -483,6 +476,7 @@ impl Remotes {
             };
         }
         self.refresh();
+        Some(kept.remote)
     }
 
     /// Turns `window`'s Outlook toward the Remote of the Session `listed`

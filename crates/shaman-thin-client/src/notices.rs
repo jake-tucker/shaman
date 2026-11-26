@@ -48,8 +48,13 @@ struct Device {
     /// Every window's notices, told each Remote found newer.
     windows: Vec<Weak<Window>>,
     /// What was said while no window stood, which the first window to stand
-    /// says, and no other.
-    unclaimed: Vec<String>,
+    /// says, and no other, each by the token it was said under.
+    unclaimed: Vec<(u64, String)>,
+    /// Where each said once has been said, by its token: the window and the
+    /// notice, so it can be withdrawn.
+    said_once: Vec<(u64, Weak<Window>, u64)>,
+    /// The token of the next said once.
+    next_once: u64,
 }
 
 /// What one window is yet to say, and of which Remotes it has said it.
@@ -152,9 +157,12 @@ impl Notices {
     }
 
     /// Says `words` once, in one window: in the oldest window that stands,
-    /// or, where none stands yet, in the first to stand.
-    pub fn say_unclaimed(&self, words: String) {
+    /// or, where none stands yet, in the first to stand. Answers the token
+    /// it can be withdrawn by.
+    pub fn say_unclaimed(&self, words: String) -> u64 {
         let mut device = self.lock();
+        device.next_once += 1;
+        let token = device.next_once;
         device.windows.retain(|window| window.strong_count() > 0);
         let standing = device
             .windows
@@ -162,9 +170,41 @@ impl Notices {
             .filter_map(Weak::upgrade)
             .find(|window| window.stands.load(std::sync::atomic::Ordering::Acquire));
         match standing {
-            Some(window) => WindowNotices { inner: window }.say(words),
-            None => device.unclaimed.push(words),
+            Some(window) => Self::say_once(&mut device, token, &window, words),
+            None => device.unclaimed.push((token, words)),
         }
+        token
+    }
+
+    /// Withdraws what was said once under `token`: unsaid where no window
+    /// has said it yet, and taken from the window that said it where it has
+    /// not been seen there.
+    pub fn withdraw(&self, token: u64) {
+        let mut device = self.lock();
+        device
+            .unclaimed
+            .retain(|(unclaimed, _)| *unclaimed != token);
+        let said = device
+            .said_once
+            .iter()
+            .position(|(said, _, _)| *said == token);
+        if let Some(said) = said {
+            let (_, window, id) = device.said_once.remove(said);
+            if let Some(window) = window.upgrade() {
+                WindowNotices { inner: window }.seen(id);
+            }
+        }
+    }
+
+    fn say_once(device: &mut Device, token: u64, window: &Arc<Window>, words: String) {
+        let id = WindowNotices {
+            inner: window.clone(),
+        }
+        .say(words);
+        device
+            .said_once
+            .retain(|(_, window, _)| window.strong_count() > 0);
+        device.said_once.push((token, Arc::downgrade(window), id));
     }
 
     /// Hears that `window` stands, as it first follows its notices: the
@@ -175,8 +215,8 @@ impl Notices {
             .inner
             .stands
             .store(true, std::sync::atomic::Ordering::Release);
-        for words in std::mem::take(&mut device.unclaimed) {
-            window.say(words);
+        for (token, words) in std::mem::take(&mut device.unclaimed) {
+            Self::say_once(&mut device, token, &window.inner, words);
         }
     }
 
@@ -204,20 +244,19 @@ impl WindowNotices {
         self.wait(&mut held, words);
     }
 
-    /// Says `words`, after whatever is waiting to be said.
-    pub fn say(&self, words: String) {
+    /// Says `words`, after whatever is waiting to be said, answering the
+    /// notice's id.
+    pub fn say(&self, words: String) -> u64 {
         let mut held = self.lock();
-        self.wait(&mut held, words);
+        self.wait(&mut held, words)
     }
 
-    fn wait(&self, held: &mut Held, words: String) {
+    fn wait(&self, held: &mut Held, words: String) -> u64 {
         held.next += 1;
-        let notice = Notice {
-            id: held.next,
-            words,
-        };
-        held.waiting.push_back(notice);
+        let id = held.next;
+        held.waiting.push_back(Notice { id, words });
         self.show(held);
+        id
     }
 
     /// Swift has seen the notice `id` names: the next waiting is shown.

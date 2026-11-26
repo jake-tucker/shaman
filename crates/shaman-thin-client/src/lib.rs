@@ -197,6 +197,9 @@ pub(crate) struct Inner {
     windows: Mutex<Vec<Weak<window::Window>>>,
     /// How many windows the core has handed out.
     windows_made: std::sync::atomic::AtomicU64,
+    /// Each Pairing that ended while no window lived, for a window whose
+    /// scene kept its Outlook there to say.
+    ended_unclaimed: Mutex<Vec<EndedUnclaimed>>,
     timings: CoreTimings,
 }
 
@@ -572,6 +575,7 @@ impl ThinClient {
             trees,
             windows: Mutex::default(),
             windows_made: std::sync::atomic::AtomicU64::new(0),
+            ended_unclaimed: Mutex::default(),
             timings,
         });
         for name in inner.remotes.names() {
@@ -785,13 +789,11 @@ impl Inner {
                 .any(|relay| relay == address)
     }
 
-    /// Whether the phone's own Outlook stands at `stored`, where a new window
-    /// would begin, and every window that lives, each with whether its
-    /// Outlook stands there.
+    /// Every window that lives, each with whether its Outlook stands at
+    /// `stored`.
     fn windows_at(&self, stored: &shaman_pairing::StoredRemote) -> StoodThere {
         let at = |outlook: &Outlook| matches!(outlook, Outlook::Remote { name, .. } if *name == stored.remote.name);
         StoodThere {
-            phone: at(&self.remotes.phone_outlook()),
             windows: self
                 .windows
                 .lock()
@@ -935,6 +937,25 @@ impl Inner {
         stood_there: StoodThere,
     ) {
         let name = stored.remote.name.clone();
+        // No window lives to have stood there: why it ended is said once,
+        // turning nothing, by the first window to stand, unless a window whose
+        // scene kept its Outlook there is handed it back, which says it in its
+        // place, with where it then stands. It is kept before anything is
+        // awaited, so a window handed back meanwhile finds it.
+        if stood_there.windows.is_empty() {
+            let said = ending
+                .words(&name, None)
+                .map(|words| self.listing.notices().say_unclaimed(words));
+            self.ended_unclaimed
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .push(EndedUnclaimed {
+                    fingerprint: stored.remote.fingerprint.clone(),
+                    name: name.clone(),
+                    ending,
+                    said,
+                });
+        }
         let forgotten = name.clone();
         let shown = self
             .change_record_shown(move |record| record.forget(&forgotten))
@@ -948,30 +969,53 @@ impl Inner {
         self.half_answers.forget_remote(&stored.remote.fingerprint);
         self.remotes.forget_ways(&name);
         self.remotes.forget_turned(&name);
-        let turned = |there: bool, outlook: &Outlook| match outlook {
-            Outlook::Remote { begins_in, .. } if there => Some(begins_in.said.clone()),
-            _ => None,
-        };
         // A window whose Outlook stood elsewhere is turned by nothing and says
-        // nothing. Where no window's stood there, what the phone is still to
-        // hear, that the Remote removed it or may still list it, is said once,
-        // by one window, as it is where no window lives yet.
+        // nothing, and no window says a turn that is not its own. Where no
+        // window's stood there, what the phone is still to hear, that the
+        // Remote removed it or may still list it, is said once, by one window.
+        // Where no window lived, it was kept as it was forgotten, above.
         if stood_there.windows.iter().any(|(_, there)| *there) {
             for (window, _) in stood_there.windows.iter().filter(|(_, there)| *there) {
-                let turned = turned(true, &window.outlook.outlook().borrow());
+                let turned = match &*window.outlook.outlook().borrow() {
+                    Outlook::Remote { begins_in, .. } => Some(begins_in.said.clone()),
+                    Outlook::Nowhere => None,
+                };
                 if let Some(words) = ending.words(&name, turned.as_deref()) {
                     window.notices.say(words);
                 }
             }
-        } else {
-            let turned = if stood_there.windows.is_empty() {
-                turned(stood_there.phone, &self.remotes.phone_outlook())
-            } else {
-                None
-            };
-            if let Some(words) = ending.words(&name, turned.as_deref()) {
-                self.listing.notices().say_unclaimed(words);
-            }
+        } else if !stood_there.windows.is_empty()
+            && let Some(words) = ending.words(&name, None)
+        {
+            self.listing.notices().say_unclaimed(words);
+        }
+    }
+
+    /// Hears that `window`'s Outlook was handed back where its scene kept it,
+    /// at the Remote whose key's fingerprint is `remote`: where that Remote's
+    /// Pairing ended as no window lived, and it has not been paired again,
+    /// the window says why, and where its Outlook now stands, in place of
+    /// what another window was given to say of it.
+    fn handed_back(&self, window: &window::Window, remote: &str) {
+        if self.held_remote(remote).is_some() {
+            return;
+        }
+        let mut ended = self
+            .ended_unclaimed
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let Some(ended) = ended.iter_mut().find(|ended| ended.fingerprint == remote) else {
+            return;
+        };
+        if let Some(said) = ended.said.take() {
+            self.listing.notices().withdraw(said);
+        }
+        let turned = match &*window.outlook.outlook().borrow() {
+            Outlook::Remote { begins_in, .. } => Some(begins_in.said.clone()),
+            Outlook::Nowhere => None,
+        };
+        if let Some(words) = ended.ending.words(&ended.name, turned.as_deref()) {
+            window.notices.say(words);
         }
     }
 
@@ -1042,10 +1086,19 @@ impl Inner {
     }
 }
 
-/// Where the Outlooks stood as a Pairing ended: the phone's own, and each
-/// window's that lives.
+/// A Pairing that ended while no window lived: the Remote, by its key's
+/// fingerprint and its name, how it ended, and the token what was said of it
+/// once, by the first window to stand, goes by, until a window whose scene
+/// kept its Outlook there says it in its place.
+struct EndedUnclaimed {
+    fingerprint: String,
+    name: String,
+    ending: remotes::Ending,
+    said: Option<u64>,
+}
+
+/// Where the Outlooks stood as a Pairing ended: each window's that lives.
 struct StoodThere {
-    phone: bool,
     windows: Vec<(Arc<window::Window>, bool)>,
 }
 
