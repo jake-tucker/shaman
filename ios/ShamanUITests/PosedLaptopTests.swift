@@ -261,6 +261,76 @@ final class PosedLaptopTests: XCTestCase {
     attach("An approval reviewed, the status lines above it")
   }
 
+  /// The app with `/13` open, its Questionnaire presenting itself, once it takes taps. That it goes down as the phone is
+  /// sat down with it up, and up as the phone is laid flat, is held by `LaptopHostedTests.Sheets` about a fold of the
+  /// test's own, and on the phone by the spec's check 38, as no test changes a pose.
+  @MainActor
+  private func asked() throws -> XCUIApplication {
+    let app = try launched("paired", "workstation-key/13", ["--arming-moment", "0.6"])
+    let decline = element("questionnaire.decline", in: app)
+    XCTAssertTrue(decline.waitForExistence(timeout: 10))
+    XCTAssertTrue(elements("questionnaire.decline", in: app).waitForOne(NSPredicate(format: "isEnabled == true")))
+    return app
+  }
+
+  /// Waits until the Questionnaire's sheet stands on the half below the fold, its top 8 points past the band kept for
+  /// the fold, Decline clear of it and the status lines in sight above it; or, where not, at full height, across the
+  /// fold.
+  @MainActor
+  private func questionnaireStands(
+    onTheHalfBelow below: Bool, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+  ) {
+    let sheet = element("questionnaire.sheet", in: app)
+    waits(
+      below ? "the sheet stands on the half below the fold" : "the sheet stands at full height", in: app,
+      file: file, line: line
+    ) {
+      sheet.exists
+        && (below ? abs(sheet.frame.minY - band.upperBound - 8) <= 1 : sheet.frame.minY < band.lowerBound - 300)
+    }
+    guard below else { return }
+    let decline = element("questionnaire.decline", in: app)
+    XCTAssertGreaterThanOrEqual(
+      decline.frame.minY, band.upperBound, "Decline clear of the fold", file: file, line: line)
+    XCTAssertTrue(decline.isHittable, file: file, line: line)
+    XCTAssertTrue(element("questionnaire.next", in: app).isHittable, file: file, line: line)
+    let words = element("session.barWords", in: app)
+    XCTAssertTrue(words.exists, "the status lines in sight above it", file: file, line: line)
+    XCTAssertLessThanOrEqual(words.frame.maxY, band.lowerBound, file: file, line: line)
+  }
+
+  @MainActor
+  func testAQuestionnaireStandsOnTheHalfBelowTheFoldWithDeclineClearOfIt() throws {
+    let app = try asked()
+    questionnaireStands(onTheHalfBelow: true, in: app)
+    attach("A questionnaire, sat like a laptop")
+    // Swiped away and reviewed, it is presented in the pose again.
+    app.swipeSheetAway()
+    XCTAssertTrue(element("questionnaire.sheet", in: app).waitForNonExistence(timeout: 20))
+    element("session.review", in: app).tap()
+    questionnaireStands(onTheHalfBelow: true, in: app)
+  }
+
+  @MainActor
+  func testAQuestionnaireGoesToFullHeightAsAFieldTakesTheKeyboardWithTheKeyboardBelow() throws {
+    let app = try asked()
+    questionnaireStands(onTheHalfBelow: true, in: app)
+    let field = element("questionnaire.field", in: app)
+    app.scrolled(to: field, over: element("questionnaire.sheet", in: app)).tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the software keyboard is up")
+    XCTAssertTrue(holdsTheKeyboard(field))
+    questionnaireStands(onTheHalfBelow: false, in: app)
+    field.typeText("after lunch")
+    waits("the field above the keyboard", in: app) {
+      app.keyboards.firstMatch.frame.minY >= element("questionnaire.next", in: app).frame.maxY
+    }
+    _ = fieldInView(in: app, "focused, sat like a laptop")
+    attach("A questionnaire's field focused, sat like a laptop")
+    // Put down, the keyboard leaves it up, where the reader may write on.
+    dragTheKeyboardDown(in: app)
+    questionnaireStands(onTheHalfBelow: false, in: app)
+  }
+
   /// `walk-duo.sh`'s walk, but for its ends: laying the phone flat and turning it is a person's, as no test changes a
   /// pose.
   @MainActor
