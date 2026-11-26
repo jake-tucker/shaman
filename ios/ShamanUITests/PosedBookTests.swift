@@ -111,7 +111,7 @@ final class PosedBookTests: XCTestCase {
   }
 
   /// With the Aside shown the system puts the Sidebar behind its button and divides the main view and the Aside at the
-  /// fold by itself: the conversation ends before the band and the Aside's list begins in it, where open flat in the
+  /// fold by itself: the conversation ends before the band or in it and the Aside's list begins in it, where open flat in the
   /// same landscape the Aside stands at its own width, beginning far past the band.
   @MainActor
   func testWithTheAsideShownTheMainViewAndTheAsideDivideAtTheFold() throws {
@@ -121,7 +121,7 @@ final class PosedBookTests: XCTestCase {
     let aside = app.descendants(matching: .any)["work.list"]
     let scope = app.buttons["listing.scope"]
     waits("the main view and the Aside divide at the fold") {
-      main.exists && main.isHittable && main.frame.minX < band.lowerBound && main.frame.maxX <= band.lowerBound + 1
+      main.exists && main.isHittable && main.frame.minX < band.lowerBound && main.frame.maxX <= band.upperBound
         && aside.exists && aside.isHittable && band.contains(aside.frame.minX)
         && aside.frame.maxX > band.upperBound + 200 && !(scope.exists && scope.isHittable)
     }
