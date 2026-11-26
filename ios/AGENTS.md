@@ -11,7 +11,7 @@ app's shape. Everything here is built from a terminal on a Mac with Xcode 27.2; 
 | `Shaman.xcodeproj` | The project, in Xcode 27's JSON format (`project.xcproj`) with folders synced to disk, and the shared `Shaman` scheme |
 | `Shaman/` | The `Shaman` app target: `@main`, the choice of live core or fake, the Info settings |
 | `ShamanUI/` | A local package: the views, the `DeviceCore` and `WindowCore` protocols the app reaches the core through, `LiveCore` and `LiveWindow`, `FakeCore` and `FakeWindow`, and the adapters around the core. Its unit tests are `ShamanUIUnitTests` |
-| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the window a login's authentication sheet stands over, the conversation's list and the composer's foot under a ticking display link, the columns collapsing and expanding, every screen of the main view, a Questionnaire's height and pairing at the root about a fold of the test's own, and what Textual draws a Message's blocks as |
+| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the window a login's authentication sheet stands over, the conversation's list and the composer's foot under a ticking display link, the columns collapsing and expanding, every screen of the main view, a Questionnaire's height and pairing at the root about a fold of the test's own, the Sidebar asked for over the main view where it stands alone, and what Textual draws a Message's blocks as |
 | `ShamanUITests/` | The XCUITest target |
 | `ShamanCore/` | The core and its generated Swift, written by `scripts/build-ios-core.sh`; ignored by git |
 | `build/` | Where the commands below put what `xcodebuild` makes; ignored by git |
@@ -377,9 +377,10 @@ simulator, a Device Hub that answers nothing or does not connect the display, or
 simulator. A press answered as done may have done nothing, so after each it reads from `devicectl` which display is
 active and how the device is held. Each pose is begun from closed, so a lost "Open" is noticed. A lost "Partially Open"
 is not: neither of those, nor a window's size, tells open flat from partly open, so a test of the book or the laptop
-pose has to hold something the fold moves, or it passes on a Duo that never folded, as the book's does, which holds how
-the bar stands alone. The laptop's hold where a Session stands about the fold. Never `simctl io screenConfig power` on a
-Duo either: it leaves SpringBoard crashing until the simulator is booted again.
+pose has to hold something the fold moves, or it passes on a Duo that never folded, as the book's first does, which
+holds how the bar stands alone. The book's others hold where the columns divide, and the laptop's where a Session
+stands about the fold. Never `simctl io screenConfig power` on a Duo either: it leaves SpringBoard crashing until the
+simulator is booted again.
 
 Several Device Hubs may run, and one that is stuck cannot be told from the rest by name, so the script addresses them by
 pid, through `../scripts/ios-device-hub.swift`. It uses one that answers, starts one where none does, quits none, and
@@ -552,7 +553,15 @@ If the phone is locked, stop and ask for it to be unlocked.
   passes over now and then once a change of width was animated.
 - The split view's preferred display mode and split behaviour are set once, as it is made; it is given no least width
   for the main view, with which it would not divide its columns at a fold; and its Sidebar's column is never hidden,
-  which would write the main view alone into what is preferred.
+  which would write the main view alone into what is preferred. Folded like a book it divides the Sidebar and the main
+  view at the fold by itself, and `Columns` hears nothing of that fold.
+- Where the split view stands the main view alone while nothing is open, as on the inner display in portrait, `Columns`
+  asks for the Sidebar's column (`show(.primary)`), and the system stands it over the dimmed new-session screen. It asks
+  only where it is not collapsed and its display mode is the main view alone, at four moments: as it appears, as it says
+  it did expand, as a size transition ends and as the path empties. At the end of a size transition it asks only where
+  the Sidebar stood before it, read before the split view hears of the new size, so a Sidebar put away by its own
+  button, which the system keeps, stays away through a turn. It goes as something opens, with nothing asked, or as the
+  reader taps beside it, and is never stood over a touched new-session screen, which is open.
 - Everything the app keeps, the core keeps, in the one directory `CoreDirectory.prepare` makes and keeps out of
   backups, but for the scene's storage: what was open, as `KeptScene`, which iOS keeps for the scene and the core
   never sees. Nothing goes in `UserDefaults` or `@AppStorage`. UIKit puts one key there itself, with no way not to:
