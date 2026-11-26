@@ -33,6 +33,8 @@ pub(crate) struct Window {
     pub(crate) landing_note: Arc<watch::Sender<Option<String>>>,
     /// What its Workspace Picker is searched for, until it is opened again.
     pub(crate) workspace_query: watch::Sender<String>,
+    /// Whether it was handed back an Outlook its scene kept, as it was made.
+    pub(crate) handed_back: bool,
 }
 
 /// One window of the app over the device's core, which it holds open.
@@ -75,6 +77,7 @@ impl ThinClientWindow {
     /// seen. Each window says each for itself.
     pub fn watch_notices(&self, listener: Arc<dyn NoticeListener>) -> Arc<Subscription> {
         // Followed, the window stands, and says what was said as none stood.
+        self.device.inner.stands(&self.window);
         self.device
             .inner
             .listing
@@ -391,25 +394,10 @@ impl ThinClientWindow {
     /// What the scene is to keep of where this window's Outlook stands now,
     /// its Remote and the Workspace it stands in there, as a plain string
     /// Swift keeps beside the listing's scope and hands back by
-    /// [`Self::restore_outlook`] after a cold start; none while the phone
+    /// [`ThinClient::window`] after a cold start; none while the phone
     /// holds no Remote. It changes only as the Outlook does.
     pub fn kept_outlook(&self) -> Option<String> {
         self.device.inner.remotes.kept(&self.window.outlook)
-    }
-
-    /// Turns this window's Outlook back to where `kept` says it stood, as
-    /// Swift kept it in scene state and hands it back after a cold start,
-    /// keeping nothing as the phone's latest turn, so a window made after
-    /// still begins where the phone was last turned. One whose Remote is no
-    /// longer held turns nothing: the window stands at the Remote the phone
-    /// was most recently turned toward that is still held; where its
-    /// Pairing ended as no window lived, this window says so, and where it
-    /// now stands.
-    pub fn restore_outlook(&self, kept: String) {
-        let inner = &self.device.inner;
-        if let Some(remote) = inner.remotes.restore(&self.window.outlook, &kept) {
-            inner.handed_back(&self.window, &remote);
-        }
     }
 
     /// Searches this window's listing by Title for `text`, while the window

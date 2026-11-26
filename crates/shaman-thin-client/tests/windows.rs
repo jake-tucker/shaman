@@ -527,15 +527,15 @@ async fn a_pairing_ended_before_any_window_is_said_by_the_first_window_that_stan
         .await;
 
     // A window made and never shown, as SwiftUI may make one and let it go,
-    // takes nothing; the first to stand says it, handed back no Outlook kept
-    // there, so of no turn, which was not its own.
+    // takes nothing; the first to stand says it, and where it now stands, as
+    // it was handed back nothing and began where the phone stood, there.
     let never = phone.another_window();
     let first = phone.another_window();
     let said = first.notice_until(Option::is_some).await.expect("said");
     drop(never);
     assert_eq!(
         said.words,
-        "desk removed this phone; pair with it again to reach it"
+        "desk removed this phone; pair with it again to reach it. New sessions begin in lab"
     );
     assert_eq!(first.outlook().await, outlook("lab", None));
     let second = phone.another_window();
@@ -590,16 +590,14 @@ async fn each_window_is_handed_back_its_kept_outlook_and_scope_and_one_whose_rem
     // own scope, whatever the phone was last turned toward.
     drop(other);
     let phone = phone.relaunched_before_a_window();
-    let here = phone.another_window();
-    let there = phone.another_window();
     assert_eq!(
-        here.outlook().await,
+        phone.another_window().outlook().await,
         outlook("lab", Some("notes")),
         "a window begins where the phone was last turned"
     );
-    here.window.restore_outlook(kept_here.clone());
+    let here = phone.window_kept(&kept_here);
     here.window.restore_listing(scope_here);
-    there.window.restore_outlook(kept_there);
+    let there = phone.window_kept(&kept_there);
     there.window.restore_listing(scope_there);
     assert_eq!(here.outlook().await, outlook("desk", Some("shaman")));
     assert_eq!(
@@ -631,8 +629,7 @@ async fn each_window_is_handed_back_its_kept_outlook_and_scope_and_one_whose_rem
     phone.core.remove_remote(desk_row).await.expect("removed");
     drop((here, there));
     let phone = phone.relaunched_before_a_window();
-    let here = phone.another_window();
-    here.window.restore_outlook(kept_here);
+    let here = phone.window_kept(&kept_here);
     here.window.restore_listing(shaman);
     assert_eq!(here.outlook().await, outlook("lab", Some("notes")));
     assert_eq!(
@@ -643,10 +640,10 @@ async fn each_window_is_handed_back_its_kept_outlook_and_scope_and_one_whose_rem
     );
 
     // What the scene kept of no Outlook this build reads turns nothing.
-    here.window.restore_outlook("not an outlook".to_owned());
-    assert_eq!(here.outlook().await, outlook("lab", Some("notes")));
+    let unread = phone.window_kept("not an outlook");
+    assert_eq!(unread.outlook().await, outlook("lab", Some("notes")));
 
-    drop(here);
+    drop((here, unread));
     phone.shutdown();
     desk.shutdown().await;
     lab.shutdown().await;
@@ -811,11 +808,13 @@ async fn a_pairing_ended_before_any_window_is_said_by_the_window_whose_kept_outl
     // The attic's window stands first, and says nothing of a turn not its
     // own; the desk's, handed back after, turns and says where it now
     // stands, and the attic's says nothing at all.
-    let at_attic = phone.another_window();
-    at_attic.window.restore_outlook(kept_attic);
-    at_attic.notice_until(Option::is_some).await;
-    let at_desk = phone.another_window();
-    at_desk.window.restore_outlook(kept_desk);
+    let at_attic = phone.window_kept(&kept_attic);
+    let first = at_attic.notice_until(Option::is_some).await.expect("said");
+    assert_eq!(
+        first.words,
+        "desk removed this phone; pair with it again to reach it"
+    );
+    let at_desk = phone.window_kept(&kept_desk);
     let said = at_desk.notice_until(Option::is_some).await.expect("said");
     assert_eq!(
         said.words,
@@ -860,16 +859,17 @@ async fn a_kept_outlook_finds_its_remote_renamed_and_stands_in_the_workspace_it_
         .expect("renamed");
     drop(bare);
     let phone = phone.relaunched_before_a_window();
-    let here = phone.another_window();
-    assert_eq!(here.outlook().await, outlook("studio", Some("shaman")));
-    here.window.restore_outlook(kept_bare);
+    assert_eq!(
+        phone.another_window().outlook().await,
+        outlook("studio", Some("shaman"))
+    );
+    let here = phone.window_kept(&kept_bare);
     assert_eq!(
         here.outlook().await,
         outlook("studio", None),
         "in no Workspace, as it was kept"
     );
-    let there = phone.another_window();
-    there.window.restore_outlook(kept_shaman);
+    let there = phone.window_kept(&kept_shaman);
     assert_eq!(there.outlook().await, outlook("studio", Some("shaman")));
 
     drop((here, there));

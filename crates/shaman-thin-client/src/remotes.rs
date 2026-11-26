@@ -385,6 +385,13 @@ impl Remotes {
         Self::stands(&self.held(), &window.lock(), &phone)
     }
 
+    /// Where the phone was last turned, by any window, among the Remotes held:
+    /// where a new window's Outlook would stand.
+    pub fn phone_outlook(&self) -> Outlook {
+        let phone = self.lock_turned();
+        Self::outlook_of(Self::stands(&self.held(), &phone, &phone))
+    }
+
     /// The Outlook standing at `standing`, or nowhere.
     fn outlook_of(standing: Option<(String, Option<RememberedWorkspace>)>) -> Outlook {
         standing.map_or(Outlook::Nowhere, |(name, workspace)| Outlook::Remote {

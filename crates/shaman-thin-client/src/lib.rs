@@ -219,8 +219,15 @@ impl ThinClient {
     /// begins where the phone was last turned, by any window, at the
     /// Workspace remembered there, its listing at Everywhere, its Landing
     /// saying what the Landing's draft kept says, and it says for itself
-    /// every notice there is to say. It lives for as long as Swift holds it.
-    pub fn window(self: Arc<Self>) -> Arc<ThinClientWindow> {
+    /// every notice there is to say; or, handed `kept`, what its scene kept
+    /// of its Outlook, as Swift hands it back after a cold start, standing
+    /// there, as [`ThinClientWindow::kept_outlook`] says. Handed back, an
+    /// Outlook is not kept as the phone's latest turn, and one whose Remote
+    /// is no longer held turns nothing, so the window stands at the Remote
+    /// the phone was most recently turned toward that is still held; where
+    /// that Remote's Pairing ended as no window lived, the window says so,
+    /// and where it now stands. It lives for as long as Swift holds it.
+    pub fn window(self: Arc<Self>, kept: Option<String>) -> Arc<ThinClientWindow> {
         let inner = &self.inner;
         // A beginning whose answer never came, as the app was last ended or
         // in another window, may have begun.
@@ -237,7 +244,13 @@ impl ThinClient {
             notices: inner.listing.notices().window(),
             landing_note: Arc::new(watch::Sender::new(landing_note)),
             workspace_query: watch::Sender::new(String::new()),
+            handed_back: kept.is_some(),
         });
+        // Handed back as it is made, so nothing that ends meanwhile finds it
+        // standing elsewhere.
+        if let Some(remote) = kept.and_then(|kept| inner.remotes.restore(&window.outlook, &kept)) {
+            inner.handed_back(&window, &remote);
+        }
         {
             let mut windows = inner
                 .windows
@@ -789,11 +802,13 @@ impl Inner {
                 .any(|relay| relay == address)
     }
 
-    /// Every window that lives, each with whether its Outlook stands at
-    /// `stored`.
+    /// Whether the phone's own Outlook stands at `stored`, where a new window
+    /// would begin, and every window that lives, each with whether its
+    /// Outlook stands there.
     fn windows_at(&self, stored: &shaman_pairing::StoredRemote) -> StoodThere {
         let at = |outlook: &Outlook| matches!(outlook, Outlook::Remote { name, .. } if *name == stored.remote.name);
         StoodThere {
+            phone: at(&self.remotes.phone_outlook()),
             windows: self
                 .windows
                 .lock()
@@ -937,15 +952,10 @@ impl Inner {
         stood_there: StoodThere,
     ) {
         let name = stored.remote.name.clone();
-        // No window lives to have stood there: why it ended is said once,
-        // turning nothing, by the first window to stand, unless a window whose
-        // scene kept its Outlook there is handed it back, which says it in its
-        // place, with where it then stands. It is kept before anything is
-        // awaited, so a window handed back meanwhile finds it.
+        // No window lives to have stood there: it is kept, before anything is
+        // awaited, so a window made meanwhile finds it, for the window whose
+        // scene kept its Outlook there to say, or else the first to stand.
         if stood_there.windows.is_empty() {
-            let said = ending
-                .words(&name, None)
-                .map(|words| self.listing.notices().say_unclaimed(words));
             self.ended_unclaimed
                 .lock()
                 .unwrap_or_else(|poison| poison.into_inner())
@@ -953,7 +963,9 @@ impl Inner {
                     fingerprint: stored.remote.fingerprint.clone(),
                     name: name.clone(),
                     ending,
-                    said,
+                    phone_stood_there: stood_there.phone,
+                    told: false,
+                    said: None,
                 });
         }
         let forgotten = name.clone();
@@ -993,29 +1005,65 @@ impl Inner {
 
     /// Hears that `window`'s Outlook was handed back where its scene kept it,
     /// at the Remote whose key's fingerprint is `remote`: where that Remote's
-    /// Pairing ended as no window lived, and it has not been paired again,
-    /// the window says why, and where its Outlook now stands, in place of
-    /// what another window was given to say of it.
+    /// Pairing ended as no window lived, the window says why, and where its
+    /// Outlook now stands, in place of what the first window to stand said.
     fn handed_back(&self, window: &window::Window, remote: &str) {
-        if self.held_remote(remote).is_some() {
+        let mut ended = self.ended_unclaimed();
+        let Some(ended) = ended.iter_mut().find(|ended| ended.fingerprint == remote) else {
             return;
+        };
+        ended.told = true;
+        if let Some((said, id)) = ended.said.take()
+            && let Some(said) = said.upgrade()
+        {
+            said.notices.seen(id);
         }
+        if let Some(words) = ended
+            .ending
+            .words(&ended.name, Self::turned(window).as_deref())
+        {
+            window.notices.say(words);
+        }
+    }
+
+    /// Hears that `window` stands, as it follows its notices: the first to
+    /// stand says why each Pairing that ended as no window lived ended, where
+    /// no window handed back an Outlook kept there has; with where it stands
+    /// only where that turn was its own, as it was handed back nothing and
+    /// begins where the phone stood, which was there.
+    fn stands(&self, window: &Arc<window::Window>) {
+        let mut ended = self.ended_unclaimed();
+        for ended in ended.iter_mut().filter(|ended| !ended.told) {
+            ended.told = true;
+            let turned = (!window.handed_back && ended.phone_stood_there)
+                .then(|| Self::turned(window))
+                .flatten();
+            if let Some(words) = ended.ending.words(&ended.name, turned.as_deref()) {
+                ended.said = Some((Arc::downgrade(window), window.notices.say(words)));
+            }
+        }
+    }
+
+    /// Each Pairing that ended as no window lived, but those whose Remote is
+    /// held again, paired since, which no window says.
+    fn ended_unclaimed(&self) -> std::sync::MutexGuard<'_, Vec<EndedUnclaimed>> {
         let mut ended = self
             .ended_unclaimed
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        let Some(ended) = ended.iter_mut().find(|ended| ended.fingerprint == remote) else {
-            return;
-        };
-        if let Some(said) = ended.said.take() {
-            self.listing.notices().withdraw(said);
-        }
-        let turned = match &*window.outlook.outlook().borrow() {
+        let held = self.remotes.held();
+        ended.retain(|ended| {
+            held.iter()
+                .all(|stored| stored.remote.fingerprint != ended.fingerprint)
+        });
+        ended
+    }
+
+    /// Where `window`'s Outlook stands, as a turn toward it is said.
+    fn turned(window: &window::Window) -> Option<String> {
+        match &*window.outlook.outlook().borrow() {
             Outlook::Remote { begins_in, .. } => Some(begins_in.said.clone()),
             Outlook::Nowhere => None,
-        };
-        if let Some(words) = ended.ending.words(&ended.name, turned.as_deref()) {
-            window.notices.say(words);
         }
     }
 
@@ -1087,18 +1135,23 @@ impl Inner {
 }
 
 /// A Pairing that ended while no window lived: the Remote, by its key's
-/// fingerprint and its name, how it ended, and the token what was said of it
-/// once, by the first window to stand, goes by, until a window whose scene
-/// kept its Outlook there says it in its place.
+/// fingerprint and its name, how it ended, and whether the phone's own
+/// Outlook stood there; whether a window has said it, and the window and
+/// notice the first to stand said it in, until a window whose scene kept its
+/// Outlook there says it in its place.
 struct EndedUnclaimed {
     fingerprint: String,
     name: String,
     ending: remotes::Ending,
-    said: Option<u64>,
+    phone_stood_there: bool,
+    told: bool,
+    said: Option<(Weak<window::Window>, u64)>,
 }
 
-/// Where the Outlooks stood as a Pairing ended: each window's that lives.
+/// Where the Outlooks stood as a Pairing ended: the phone's own, and each
+/// window's that lives.
 struct StoodThere {
+    phone: bool,
     windows: Vec<(Arc<window::Window>, bool)>,
 }
 
@@ -1804,10 +1857,10 @@ mod tests {
         let key = TestKey::new();
         let core = writing_drafts_after(directory.path(), &key, Duration::from_millis(20));
         core.clone()
-            .window()
+            .window(None)
             .set_draft(landing(), "Tidy".to_owned(), 0);
         core.clone()
-            .window()
+            .window(None)
             .set_draft(landing(), "Tidy the build".to_owned(), 0);
         let drafts = directory.path().join(drafts::DRAFTS_FILE);
         let deadline = std::time::Instant::now() + HEARD_WITHIN;
@@ -1819,7 +1872,7 @@ mod tests {
 
         let core = opened(directory.path(), &key);
         assert_eq!(
-            core.clone().window().draft(landing()),
+            core.clone().window(None).draft(landing()),
             Draft {
                 text: "Tidy the build".to_owned(),
                 version: 0,
@@ -1835,24 +1888,24 @@ mod tests {
         let key = TestKey::new();
         let core = writing_drafts_after(directory.path(), &key, Duration::from_secs(3_600));
         core.clone()
-            .window()
+            .window(None)
             .set_draft(landing(), "still typing".to_owned(), 0);
         ended(core);
         let core = writing_drafts_after(directory.path(), &key, Duration::from_secs(3_600));
         assert_eq!(
-            core.clone().window().draft(landing()).text,
+            core.clone().window(None).draft(landing()).text,
             "",
             "ended before a moment passed"
         );
 
         core.clone()
-            .window()
+            .window(None)
             .set_draft(landing(), "Tidy the build".to_owned(), 0);
         core.left_front();
         ended(core);
         assert_eq!(
             opened(directory.path(), &key)
-                .window()
+                .window(None)
                 .draft(landing())
                 .text,
             "Tidy the build"
@@ -1880,11 +1933,11 @@ mod tests {
         keep(serde_json::json!({"text": "a new one", "remote": "desk-key"}));
         let core = opened(directory.path(), &key);
         assert_eq!(
-            core.clone().window().draft(session.clone()),
+            core.clone().window(None).draft(session.clone()),
             Draft::default()
         );
         assert_eq!(
-            core.clone().window().draft(landing()),
+            core.clone().window(None).draft(landing()),
             Draft::default(),
             "the Landing's, written where the Outlook stood at a Remote not held"
         );
@@ -1893,7 +1946,7 @@ mod tests {
         keep(serde_json::json!({"text": "a new one"}));
         let core = opened(directory.path(), &key);
         assert_eq!(
-            core.clone().window().draft(landing()).text,
+            core.clone().window(None).draft(landing()).text,
             "a new one",
             "written for no Remote"
         );
@@ -1905,20 +1958,20 @@ mod tests {
         let (lost, new) = (TestKey::new(), TestKey::new());
         let core = opened(directory.path(), &lost);
         core.clone()
-            .window()
+            .window(None)
             .set_draft(landing(), "half a thought".to_owned(), 0);
         core.left_front();
         drop(core);
         assert_eq!(
             opened(directory.path(), &lost)
-                .window()
+                .window(None)
                 .draft(landing())
                 .text,
             "half a thought"
         );
 
         let core = opened(directory.path(), &new);
-        assert_eq!(core.clone().window().draft(landing()), Draft::default());
+        assert_eq!(core.clone().window(None).draft(landing()), Draft::default());
         assert!(!directory.path().join(drafts::DRAFTS_FILE).exists());
     }
 

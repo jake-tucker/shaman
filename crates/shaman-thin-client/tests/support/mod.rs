@@ -895,6 +895,14 @@ impl Phone {
         Window::of(&self.core)
     }
 
+    /// A window of the app handed back `kept`, what its scene kept of its
+    /// Outlook, as a window is after a cold start.
+    pub fn window_kept(&self, kept: &str) -> Window {
+        Window {
+            window: self.core.clone().window(Some(kept.to_owned())),
+        }
+    }
+
     /// The directory the core keeps everything in.
     pub fn directory(&self) -> &std::path::Path {
         self.directory.path()
@@ -1038,7 +1046,7 @@ impl Window {
     /// A window of the app over `core`.
     fn of(core: &Arc<ThinClient>) -> Self {
         Self {
-            window: core.clone().window(),
+            window: core.clone().window(None),
         }
     }
 
