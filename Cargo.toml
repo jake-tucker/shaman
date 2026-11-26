@@ -28,6 +28,7 @@ members = [
     "crates/shaman-thin-client",
     # Throwaway (#768): Rune's hello. A member so it shares the lock file and the patches; not a default member.
     "crates/rune-hello",
+    "crates/rune-layout",
 ]
 # The Relay, the protocol it shares with the Server, the protocol every Client shares with the Server, the readers and
 # commands every Client reads a Server with, the redeeming side of a Pairing and the schema of its wire, the text and
