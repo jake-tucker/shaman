@@ -3,8 +3,8 @@ import XCTest
 /// The Duo partly folded like a book: run by `scripts/ios-test.sh posed book`.
 ///
 /// What holds that it folded is where things stand about the fold: the split view divides the Sidebar and the main view
-/// there by itself, as open flat in the same landscape the Sidebar is 320 points wide, and pairing keeps to the leading
-/// half.
+/// there by itself, as open flat in the same landscape the Sidebar is 320 points wide, and the main view and the Aside,
+/// and pairing keeps to the leading half.
 final class PosedBookTests: XCTestCase {
   /// The band kept for the fold, from head to foot of the window.
   private let band: ClosedRange<CGFloat> = 455.5...495.5
@@ -79,6 +79,12 @@ final class PosedBookTests: XCTestCase {
       list.exists && list.isHittable && band.contains(list.frame.maxX) && main.exists && main.isHittable
         && main.frame.minX > band.upperBound
     }
+    nothingStandsInTheFold(app, file: file, line: line)
+  }
+
+  /// Fails where anything the app shows of words or buttons, where a tap reaches it, stands in the band.
+  @MainActor
+  private func nothingStandsInTheFold(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
     let inner = band.lowerBound + 1...band.upperBound - 1
     let words = app.staticTexts.allElementsBoundByIndex + app.buttons.allElementsBoundByIndex
     let inTheFold = words.filter(\.isHittable).filter {
@@ -102,5 +108,25 @@ final class PosedBookTests: XCTestCase {
     let app = try Pose.book.launched(self, ["--fake", "paired", "--forget-scene"])
     dividedAtTheFold(app, title: "landing.title")
     attach("The book pose: the listing and the new-session screen, divided at the fold")
+  }
+
+  /// With the Aside shown the system puts the Sidebar behind its button and divides the main view and the Aside at the
+  /// fold by itself: the conversation ends before the band and the Aside's list begins in it, where open flat in the
+  /// same landscape the Aside stands at its own width, beginning far past the band.
+  @MainActor
+  func testWithTheAsideShownTheMainViewAndTheAsideDivideAtTheFold() throws {
+    let app = try Pose.book.launched(
+      self, ["--fake", "paired", "--open", "workstation-key/7", "--aside", "work", "--forget-scene"])
+    let main = app.descendants(matching: .any)["session.conversation"]
+    let aside = app.descendants(matching: .any)["work.list"]
+    let scope = app.buttons["listing.scope"]
+    waits("the main view and the Aside divide at the fold") {
+      main.exists && main.isHittable && main.frame.minX < band.lowerBound && main.frame.maxX <= band.lowerBound + 1
+        && aside.exists && aside.isHittable && band.contains(aside.frame.minX)
+        && aside.frame.maxX > band.upperBound + 200 && !(scope.exists && scope.isHittable)
+    }
+    XCTAssertEqual(app.buttons["session.aside"].firstMatch.label, "Hide aside")
+    nothingStandsInTheFold(app)
+    attach("The book pose: a session and the Aside, divided at the fold")
   }
 }

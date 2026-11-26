@@ -345,4 +345,35 @@ import UIKit
       hosted.close()
     }
   }
+
+  @Test func foldedLikeABookWithTheAsideShownTheContainerSetsAndShowsNothingAsTheFoldComesAndGoes() async throws {
+    // The split view divides the main view and the Aside at the book's fold by itself too, the inspector's least width
+    // of 290 being less than the half after the fold. Handed it, the container sets nothing, nor takes the Aside down.
+    let fold = BookFold(leading: 455.5, window: Self.landscape.width)
+    let hosted = try await HostedColumns(open: [open], size: Self.landscape)
+    defer { hosted.close() }
+    hosted.stack.aside.shown = true
+    try await hosted.until { hosted.columns.isShowing(.inspector) }
+    try await stands(.secondaryOnly, in: hosted, "the Sidebar behind its button beside the Aside")
+    let stood = Stood(hosted)
+    #expect(stood.aside && stood.showing == [false, true, true])
+    let least = hosted.columns.minimumInspectorColumnWidth
+    let most = hosted.columns.maximumInspectorColumnWidth
+    let width = hosted.columns.preferredInspectorColumnWidth
+    let share = hosted.columns.preferredInspectorColumnWidthFraction
+    for told in [fold, nil, fold, nil] {
+      hosted.stack.pose.book = told
+      hosted.columns.view.setNeedsLayout()
+      hosted.columns.view.layoutIfNeeded()
+      try await hosted.settle()
+      let said = "the fold \(told.map { "\($0)" } ?? "gone")"
+      #expect(Stood(hosted) == stood, "\(said)")
+      #expect(hosted.columns.minimumInspectorColumnWidth == least, "\(said)")
+      #expect(hosted.columns.maximumInspectorColumnWidth == most, "\(said)")
+      #expect(hosted.columns.preferredInspectorColumnWidth == width, "\(said)")
+      #expect(hosted.columns.preferredInspectorColumnWidthFraction == share, "\(said)")
+      #expect(hosted.stack.aside.shown, "\(said)")
+      #expect(hosted.stack.path == [open])
+    }
+  }
 }
