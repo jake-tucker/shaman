@@ -28,7 +28,8 @@
 # named to the tests as SHAMAN_POSE in the test runner's environment. A clone boots closed, so no posed run is made on
 # clones.
 #
-# Everything chosen is run, whatever fails before it, and the script fails if any of it did, or ran no test. Result
+# Everything chosen is run, whatever fails before it, and the script fails if any of it did, or ran no test. A run whose
+# test runner never started, so that no test ran, is run once more. Result
 # bundles are written to ios/build/results, and what xcodebuild builds beside them.
 
 set -euo pipefail
@@ -171,8 +172,8 @@ ad_hoc_signing=(CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=)
 run() {
   local scheme=$1 simulator=$2 udid=$3 status=0
   shift 3
-  local bundle="$build/results/$simulator-$scheme-$(date +%Y%m%d-%H%M%S)-$$.xcresult"
-  local arguments=(-destination "platform=iOS Simulator,id=$udid" -resultBundlePath "$bundle" -quiet)
+  local bundle
+  local arguments=(-destination "platform=iOS Simulator,id=$udid" -quiet)
   local directory="$root/ios" argument parallel=0 enabling=true counting=true
   for argument in "$@"; do
     case "$argument" in
@@ -197,11 +198,28 @@ run() {
     arguments+=(-project Shaman.xcodeproj -scheme Shaman -derivedDataPath "$build/xcode")
     if $ad_hoc; then arguments+=("${ad_hoc_signing[@]}"); fi
   fi
-  echo "== $simulator, $scheme: $bundle" >&2
-  (cd "$directory" && xcodebuild test "${arguments[@]}" "$@") || status=$?
-  # A build that fails may leave no bundle to read.
-  if [ -d "$bundle" ] || [ "$status" = 0 ]; then report "$bundle" >&2 || status=1; fi
+  local tries
+  for tries in 1 2; do
+    status=0
+    bundle="$build/results/$simulator-$scheme-$(date +%Y%m%d-%H%M%S)-$$.xcresult"
+    echo "== $simulator, $scheme: $bundle" >&2
+    (cd "$directory" && xcodebuild test "${arguments[@]}" -resultBundlePath "$bundle" "$@") || status=$?
+    # A build that fails may leave no bundle to read.
+    if [ -d "$bundle" ] || [ "$status" = 0 ]; then report "$bundle" >&2 || status=1; fi
+    if [ "$status" = 0 ] || [ "$tries" = 2 ] || ! runner_failed "$bundle"; then break; fi
+    echo "The test runner never ran, so no test did: trying once more." >&2
+  done
   return "$status"
+}
+
+# Whether the run in the bundle failed before any test ran, its test runner never started: as on the workflow's
+# runner, which has mounted the simulator's runtime afresh while xcodebuild built, and left it no runtime to install
+# the runner on. Nothing was tested, so it is tried again.
+runner_failed() {
+  [ -d "$1" ] || return 1
+  xcrun xcresulttool get test-results summary --path "$1" 2> /dev/null | jq -e '
+    .passedTests == 0 and (.testFailures | length > 0)
+      and all(.testFailures[]; .testName | endswith("encountered an error"))' > /dev/null
 }
 
 # Runs a command in ios/, in the background, so that a signal is heeded as it comes and passed on by `stop`. Bash heeds
