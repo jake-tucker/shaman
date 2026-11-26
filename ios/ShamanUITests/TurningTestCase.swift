@@ -24,14 +24,16 @@ class TurningTestCase: XCTestCase {
     }
   }
 
-  /// The app over the fake's `scenario`, as a new scene opens it, launched on its side where `turned`.
+  /// The app over the fake's `scenario`, as a new scene opens it, launched on its side where `turned`, with
+  /// `environment` in its launch environment.
   @MainActor
   func launched(
-    _ scenario: String = "paired", _ arguments: [String] = [], turned: Bool = false, file: StaticString = #filePath,
-    line: UInt = #line
+    _ scenario: String = "paired", _ arguments: [String] = [], turned: Bool = false,
+    environment: [String: String] = [:], file: StaticString = #filePath, line: UInt = #line
   ) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchArguments = ["--fake", scenario, "--forget-scene"] + arguments
+    app.launchEnvironment.merge(environment) { _, given in given }
     XCUIDevice.shared.orientation = turned ? .landscapeLeft : .portrait
     app.launch()
     stands(turned: turned, app, file: file, line: line)
