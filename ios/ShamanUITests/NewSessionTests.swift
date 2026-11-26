@@ -11,7 +11,8 @@ final class NewSessionTests: XCTestCase {
   @MainActor
   private func launched(_ scenario: String, _ arguments: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
-    app.launchArguments = ["--fake", scenario] + arguments
+    // As a new scene opens, so that the Outlook is the scenario's, and not one an earlier test's scene kept.
+    app.launchArguments = ["--fake", scenario, "--forget-scene"] + arguments
     app.launch()
     return app
   }
