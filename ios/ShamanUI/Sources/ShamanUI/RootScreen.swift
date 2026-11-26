@@ -91,8 +91,9 @@ public struct RootScreen: View {
 /// scene kept of its Outlook so nothing falls between making it and handing that back, what the core
 /// says of its own accord in that window, in the banner an act's failure is shown in, beneath the bar of the one screen
 /// that says it, and what the window was asked at launch to show. SwiftUI may make a view's state more than once and
-/// keep the first, so nothing is asked of the core, nor launch arguments claimed, as it is made, but as its root's
-/// first task runs, and no window is made that never stands.
+/// keep the first, so nothing is asked of the core, nor launch arguments claimed, as it is made: the window's half of
+/// the core is asked for as its root's body is first drawn, and the launch arguments are claimed as its root's first
+/// task runs, so no window is made, nor arguments claimed, for a root that never stands.
 @MainActor final class HeldWindow {
   private let device: any DeviceCore
   private let launch: LaunchArguments
