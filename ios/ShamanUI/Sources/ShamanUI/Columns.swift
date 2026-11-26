@@ -43,6 +43,8 @@ final class Columns: UISplitViewController {
   private var givingWay = false
   /// Whether anything was open as the path was last written.
   private var wasOpen: Bool
+  /// Whether the Sidebar is to be asked for once what moves now has ended.
+  private var sidebarOwed = false
 
   init(stack: SessionStack, screens: Screens) {
     self.stack = stack
@@ -189,13 +191,38 @@ final class Columns: UISplitViewController {
   /// puts it away again as something opens, or as the reader taps beside it. It is never stood over a field that holds
   /// the keyboard, as the screen at rest is open once its field is touched. Asked only at the four moments the system
   /// names, as the columns appear, expand and end a change of size and as the path empties, so a Sidebar put away
-  /// stays away until the next.
+  /// stays away until the next. Not from under anything moving, as the Aside going, a push or a pop, or a sheet over
+  /// the columns going: once it has ended, where it is still to be asked for then.
   private func standSidebar() {
-    guard isViewLoaded, view.window != nil, !isCollapsed, stack.path.isEmpty, displayMode == .secondaryOnly else {
+    guard isViewLoaded, view.window != nil else { return }
+    if let moving {
+      guard !sidebarOwed else { return }
+      sidebarOwed = true
+      moving.animate(alongsideTransition: nil) { [weak self] _ in
+        guard let self else { return }
+        sidebarOwed = false
+        standSidebar()
+      }
       return
     }
+    guard !isCollapsed, stack.path.isEmpty, displayMode == .secondaryOnly else { return }
+    #if DEBUG
+      askingForTheSidebar?()
+    #endif
     show(.primary)
   }
+
+  /// What moves in the columns now, or over them: the split view itself, either column's navigation controller, or a
+  /// sheet over them.
+  private var moving: (any UIViewControllerTransitionCoordinator)? {
+    transitionCoordinator ?? main.transitionCoordinator ?? sidebar.transitionCoordinator
+      ?? presentedViewController?.transitionCoordinator
+  }
+
+  #if DEBUG
+    /// Told just before the Sidebar is asked for, for a test to read what moves then.
+    var askingForTheSidebar: (() -> Void)?
+  #endif
 
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)

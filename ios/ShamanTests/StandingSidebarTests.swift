@@ -142,6 +142,60 @@ import UIKit
     #expect(!hosted.columns.isShowing(.inspector))
   }
 
+  /// Each time the Sidebar is asked for, whether anything moved then: the split view, either column's navigation
+  /// controller, or a sheet over them.
+  private func asks(_ hosted: HostedColumns) -> () -> [Bool] {
+    var asked: [Bool] = []
+    let columns = hosted.columns
+    columns.askingForTheSidebar = {
+      let sheet = columns.presentedViewController?.transitionCoordinator
+      asked.append(
+        columns.transitionCoordinator != nil || hosted.main.transitionCoordinator != nil
+          || hosted.sidebar.transitionCoordinator != nil || sheet != nil)
+    }
+    return { asked }
+  }
+
+  @Test func itIsAskedForOnlyOnceWhatMovesHasEndedAndThenWhereItStillIsToBe() async throws {
+    // As the path empties with the Aside shown, which goes then: beside the screen at rest, with nothing asked.
+    let beside = try await HostedColumns(open: [open], size: Self.landscape)
+    let besideAsked = asks(beside)
+    beside.stack.aside.shown = true
+    try await beside.until { beside.columns.isShowing(.inspector) }
+    try await stands(.secondaryOnly, in: beside, "beside the Aside")
+    beside.stack.path = []
+    try await stands(.oneBesideSecondary, in: beside, "closed")
+    #expect(besideAsked() == [], "the Aside's going stood it beside")
+    beside.close()
+
+    // In the middle of a push in the main view, of a screen the path does not name, as a turn to portrait ends; and as
+    // a sheet over the columns goes: over the screen at rest once that has ended.
+    let hosted = try await HostedColumns(size: Self.landscape)
+    defer { hosted.close() }
+    let asked = asks(hosted)
+    try await stands(.oneBesideSecondary, in: hosted)
+    let turned = hosted.sizing(width: Self.portrait.width, height: Self.portrait.height, regular: true)
+    try await hosted.settle()
+    hosted.main.pushViewController(UIViewController(), animated: true)
+    #expect(hosted.main.transitionCoordinator != nil, "in the middle of the push")
+    turned()
+    try await stands(.oneOverSecondary, in: hosted, "turned in the middle of a push")
+    #expect(asked() == [false])
+    hosted.main.popViewController(animated: false)
+
+    hosted.stack.open("workstation-key/7")
+    try await stands(.secondaryOnly, in: hosted, "a Session alone")
+    let sheet = UIViewController()
+    hosted.columns.present(sheet, animated: false)
+    try await hosted.settle()
+    sheet.dismiss(animated: true)
+    #expect(hosted.columns.presentedViewController?.transitionCoordinator != nil, "the sheet going")
+    hosted.stack.path = []
+    try await stands(.oneOverSecondary, in: hosted, "closed as the sheet goes")
+    #expect(hosted.columns.presentedViewController == nil)
+    #expect(asked() == [false, false], "nothing moved as it was asked for")
+  }
+
   @Test func putAwayItStaysAwayUntilTheNextMomentAndATapsAwayIsNotKeptThroughATurn() async throws {
     let hosted = try await HostedColumns(size: Self.portrait)
     defer { hosted.close() }
