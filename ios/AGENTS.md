@@ -11,7 +11,7 @@ app's shape. Everything here is built from a terminal on a Mac with Xcode 27.2; 
 | `Shaman.xcodeproj` | The project, in Xcode 27's JSON format (`project.xcproj`) with folders synced to disk, and the shared `Shaman` scheme |
 | `Shaman/` | The `Shaman` app target: `@main`, the choice of live core or fake, the Info settings |
 | `ShamanUI/` | A local package: the views, the `DeviceCore` and `WindowCore` protocols the app reaches the core through, `LiveCore` and `LiveWindow`, `FakeCore` and `FakeWindow`, and the adapters around the core. Its unit tests are `ShamanUIUnitTests` |
-| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the conversation's list and the composer's foot under a ticking display link, the columns collapsing and expanding, every screen of the main view about a fold of the test's own and what Textual draws a Message's blocks as |
+| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the window a login's authentication sheet stands over, the conversation's list and the composer's foot under a ticking display link, the columns collapsing and expanding, every screen of the main view about a fold of the test's own and what Textual draws a Message's blocks as |
 | `ShamanUITests/` | The XCUITest target |
 | `ShamanCore/` | The core and its generated Swift, written by `scripts/build-ios-core.sh`; ignored by git |
 | `build/` | Where the commands below put what `xcodebuild` makes; ignored by git |
@@ -175,13 +175,17 @@ the home lab's Workspaces are "Loading workspaces…", in `unreachable` its head
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake composing --compose
 ```
 
-**A cold start.** The app keeps the listing's scope and the Sessions pushed over it, or the new-session screen, in
-Swift's scene storage, which iOS writes a moment after the app leaves the front and restores at the next launch. The
-first listing a launch shows returns there; a phone holding no Remote forgets it, so pairing again lands on the new
-listing. To see it, open something, send the app to the background (launch another app, such as
+**A cold start.** The app keeps where the window's Outlook stands, its Remote and Workspace, the listing's scope and
+the Sessions pushed over it, or the new-session screen, in Swift's scene storage, which iOS writes a moment after the
+app leaves the front and restores at the next launch. Each window is a scene and keeps its own, and nothing keeps the
+two as a pair. The first listing a launch shows returns there, and its Outlook to where it stood, or, where that Remote
+is gone, to the Remote the phone was most recently turned toward that is still held; a phone holding no Remote forgets
+it, so pairing again lands on the new listing. To see it, open something, send the app to the background (launch another app, such as
 `com.apple.Preferences`), wait a few seconds, `xcrun simctl terminate` it and launch it again without `--open` or
-`--compose`: either replaces the kept stack with its own screen, though the kept scope still narrows the listing. So
-does `SHAMAN_INVITE`, debug only, with the listing, which presents the Invite's confirmation.
+`--compose`: either replaces the kept stack with its own screen, though the kept scope still narrows the listing and
+the kept Outlook stands until the Session opened turns it. So does `SHAMAN_INVITE`, debug only, with the listing, which
+presents the Invite's confirmation. `--open`, `--compose`, `--aside` and `SHAMAN_INVITE` act in the first window drawn
+alone, which claims them from `LaunchArguments`; a window made beside it opens as a new scene would.
 `--forget-scene` opens as a new scene would, and keeps afresh from there: launch with it, send the app to the background
 and end it to leave nothing behind, as `ColdStartTests` does after each test. With nothing open no screen is kept, so a
 cold start is the listing, beside the new-session screen at rest where there is room. The iOS 27.2 simulator keeps a
@@ -235,8 +239,8 @@ xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --
   --scan https://example.com --scan shaman-v1-fake-workstation
 ```
 
-**Relays.** A login at a Relay opens GitHub in the system's authentication sheet (`ASWebAuthenticationSession`), which
-the app cancels once the core says the Relay confirmed the login; a real GitHub login is a person's to do. Over the
+**Relays.** A login at a Relay opens GitHub in the system's authentication sheet (`ASWebAuthenticationSession`), over
+the window whose sheet asked for it, which the app cancels once the core says the Relay confirmed the login; a real GitHub login is a person's to do. Over the
 fake the relay confirms a login a few seconds after its code shows, or after `--login-confirms-after <seconds>`, and
 the code is always `WDJB-MJHT`. In `relayLogin` the `paired` phone's workstation is also reached through
 `relay.example.com`, where the phone holds no login, so that way reads "login needed" with "Log in"; in `relayed` the
@@ -254,9 +258,10 @@ xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --
 
 **Servers.** A Remote is renamed by writing over its name in its row of the sheet, and removed by a swipe and a
 confirmation; over the fake a name another Remote holds, or one the shared rule refuses, is refused beside it, and
-removing the Remote the Outlook stands at turns the Outlook to the Remote the phone was most recently turned toward that
-is still held, which the notice banner
-says, or, removing the last, leaves pairing alone. In `removedThere` the `several` phone's workstation, where the
+removing the Remote a window's Outlook stands at turns that window's Outlook to the Remote the phone was most recently
+turned toward that is still held, which the notice banner of that window alone says, or, removing the last, leaves
+pairing alone in every window. A Pairing ended where no window's Outlook stood is said once, by one window, where there
+is anything to say: that the Remote removed this phone, or may still list it. In `removedThere` the `several` phone's workstation, where the
 Outlook stands, removes this phone a few seconds after launch, or after `--removed-after <seconds>`, so the Outlook
 turns to the laptop, saying why; in `lastRemovedThere` the `paired` phone's one server does, so it offers pairing alone,
 saying why.
@@ -448,7 +453,9 @@ If the phone is locked, stop and ask for it to be unlocked.
 - The app reaches the core only through two protocols, as each window of the app is a Client of its own over the
   device's core (ADR-0084): `DeviceCore`, the device's, which the app opens once, and `WindowCore`, a window's, which
   each window's root (`RootScreen`, or `DeviceRoot` alone in a debug build) asks the device's for once, by `HeldWindow`,
-  as it is first drawn, and holds while the window lives. A window's holds its Outlook, its listing's scope, search and shelf, its Landing,
+  as it is first drawn, and holds while the window lives; that root claims the launch arguments then too, the first
+  window drawn taking them all and every other none. A window's holds its Outlook, which its scene keeps and hands back
+  by `restoreOutlook`, its listing's scope, search and shelf, its Landing,
   its Workspace Picker's search and which notices it has said, and reaches the device's by `device`; drafts are the
   device's, read and written through a window's. A composer's field takes the kept draft whole as it opens, and after
   that only what `Draft.taken` gives it: each Prompt the core gave back, ahead of its own text, and, shown again, the
