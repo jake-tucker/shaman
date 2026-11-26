@@ -42,7 +42,7 @@ async fn pair(phone: &Phone, server: &ServingServer, name: &str) {
         .invite(vec![Way::Direct(server.serving_address())])
         .await;
     let paired = phone
-        .core
+        .window
         .confirm_pairing(invite, name.to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(
@@ -278,7 +278,7 @@ async fn pairing_across_a_gap_is_refused_naming_the_side_to_update_and_keeps_not
     ] {
         let phone = Phone::speaking(support::timings(), protocol);
         let refused = phone
-            .core
+            .window
             .confirm_pairing(invite().await, "desk".to_owned(), "Pocket".to_owned())
             .await;
         let PairingOutcome::Failed { message, again } = refused else {
@@ -490,7 +490,7 @@ async fn a_server_sending_what_this_build_does_not_know_is_said_once_to_be_newer
         "The server runs a newer Shaman; some things may not show"
     );
     assert!(plain(&said.words));
-    phone.core.notice_seen(said.id);
+    phone.window.notice_seen(said.id);
     server.send_unknown_change(session).await;
     phone.notice_until(Option::is_none).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

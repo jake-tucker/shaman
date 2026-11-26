@@ -1,7 +1,10 @@
 //! The thin Client's core: everything the iOS app is but its screen (ADR-0080).
 //!
 //! Swift makes one [`ThinClient`] from a directory in the app's container and
-//! the signer of this phone's identity key, and reaches everything through it.
+//! the signer of this phone's identity key: the device's core, opened once
+//! however many windows the app shows. Each window asks it for a
+//! [`ThinClientWindow`], a Client of its own over it, and reaches through
+//! that what it holds for itself.
 //! What a screen shows crosses as a finished model, whole on every change, to
 //! a listener Swift hands in, which hears the current value at once; an act is
 //! an async call that returns once it is done, with nothing but success, what
@@ -16,7 +19,7 @@ use std::{
     collections::HashMap,
     fmt,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
     time::Duration,
 };
 
@@ -29,6 +32,7 @@ use tokio::{
 };
 
 mod acts;
+mod answers;
 mod beginning;
 mod behind;
 mod blocks;
@@ -47,8 +51,10 @@ mod relays;
 mod remotes;
 mod session;
 mod tree;
+mod window;
 mod work;
 
+pub use answers::{HalfAnswered, HalfAnsweredPage};
 pub use beginning::{Landing, LandingWorkspace, WorktreeChoice};
 pub use blocks::AgentBlockKind;
 pub use conversation::{
@@ -56,7 +62,7 @@ pub use conversation::{
 };
 pub use device::ThisDevice;
 use device::{DeviceRecord, Records};
-pub use drafts::Draft;
+pub use drafts::{Draft, GivenBack};
 pub use frame::{Bar, BarKind, Composer, QueuedPrompt, Review, ReviewOpens, SessionFrame};
 pub use identity::{KeySigner, SignError};
 pub use intervention::{
@@ -80,6 +86,7 @@ pub use session::{
     TreeListener, WorkListener,
 };
 pub use tree::{Place, SubagentTree, TreeButton, TreeRow};
+pub use window::ThinClientWindow;
 pub use work::{
     ActivityDetail, BodyStyle, DetailSection, Fact, Tap, TurnWork, WorkItem, WorkKind, WorkRow,
 };
@@ -145,7 +152,8 @@ impl Default for CoreTimings {
     }
 }
 
-/// The core of one thin Client, kept in one directory.
+/// The device's core of a thin Client, kept in one directory: what is the
+/// phone's, one however many windows it shows.
 #[derive(uniffi::Object)]
 pub struct ThinClient {
     /// Every act and every listener runs here, so nothing Swift calls needs
@@ -172,21 +180,23 @@ pub(crate) struct Inner {
     /// for before its Server is a Remote.
     invited_relays: Mutex<Vec<String>>,
     remotes: Remotes,
-    /// Every Remote's Sessions, merged into the one listing.
+    /// Every Remote's Sessions, merged into the one listing each window
+    /// narrows as it will.
     listing: Listings,
     /// Held through each pairing, so one pairing at a time is made.
     pairing: AsyncMutex<()>,
     /// Each composer's unsent text, kept in the directory.
     drafts: drafts::Drafts,
+    /// What was half given each Questionnaire, for the core's life.
+    half_answers: answers::HalfAnswers,
     /// The acts under way, which Swift holds background time for.
     acts: acts::Acts,
     /// The trees the open Sessions belong to, each read once.
     trees: tree::Trees,
-    /// What the Landing says of a Session begun from it and left before its
-    /// Server was seen holding it.
-    landing_note: Arc<watch::Sender<Option<String>>>,
-    /// What the Workspace Picker is searched for, until it is opened again.
-    workspace_query: watch::Sender<String>,
+    /// Every window the core has handed out, while it lives.
+    windows: Mutex<Vec<Weak<window::Window>>>,
+    /// How many windows the core has handed out.
+    windows_made: std::sync::atomic::AtomicU64,
     timings: CoreTimings,
 }
 
@@ -200,6 +210,40 @@ impl ThinClient {
     #[uniffi::constructor]
     pub fn open(directory: String, signer: Arc<dyn KeySigner>) -> Result<Arc<Self>, OpenError> {
         Self::open_with(directory, signer, CoreTimings::default())
+    }
+
+    /// A window of the app, a Client of its own over this core: its Outlook
+    /// begins where the phone was last turned, by any window, at the
+    /// Workspace remembered there, its listing at Everywhere, its Landing
+    /// saying what the Landing's draft kept says, and it says for itself
+    /// every notice there is to say. It lives for as long as Swift holds it.
+    pub fn window(self: Arc<Self>) -> Arc<ThinClientWindow> {
+        let inner = &self.inner;
+        // A beginning whose answer never came, as the app was last ended or
+        // in another window, may have begun.
+        let landing_note = inner
+            .drafts
+            .maybe_sent(beginning::LANDING_DRAFT)
+            .then(|| beginning::MAYBE_BEGUN_LEFT.to_owned());
+        let window = Arc::new(window::Window {
+            id: inner
+                .windows_made
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            outlook: inner.remotes.window(),
+            view: inner.listing.view(),
+            notices: inner.listing.notices().window(),
+            landing_note: Arc::new(watch::Sender::new(landing_note)),
+            workspace_query: watch::Sender::new(String::new()),
+        });
+        {
+            let mut windows = inner
+                .windows
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            windows.retain(|window| window.strong_count() > 0);
+            windows.push(Arc::downgrade(&window));
+        }
+        ThinClientWindow::new(self, window)
     }
 
     /// Tells `listener` what "This device" shows now, and again on every
@@ -218,36 +262,32 @@ impl ThinClient {
         })
     }
 
-    /// Tells `listener` where the Outlook stands now, and again on every
-    /// change, until the subscription is cancelled.
-    pub fn watch_outlook(&self, listener: Arc<dyn OutlookListener>) -> Arc<Subscription> {
-        self.watch(self.inner.remotes.outlook(), move |outlook| {
-            listener.changed(outlook);
-        })
+    /// What was last half given the Questionnaire `questionnaire` of the
+    /// Session `session` names, by a sheet of it in any window, where
+    /// anything was: what a sheet opening starts from.
+    pub fn half_answered(&self, session: String, questionnaire: String) -> Option<HalfAnswered> {
+        self.inner.half_answers.get(&session, &questionnaire)
     }
 
-    /// Tells `listener` what the listing shows now, and again on every
-    /// change, until the subscription is cancelled.
-    pub fn watch_listing(&self, listener: Arc<dyn ListingListener>) -> Arc<Subscription> {
-        self.watch(self.inner.listing.listing(), move |listing| {
-            listener.changed(listing);
-        })
+    /// Keeps `answers` as what was last half given the Questionnaire
+    /// `questionnaire` of the Session `session` names, for as long as the
+    /// core runs and never in its directory.
+    pub fn keep_half_answered(
+        &self,
+        session: String,
+        questionnaire: String,
+        answers: HalfAnswered,
+    ) {
+        self.inner
+            .half_answers
+            .keep(&session, &questionnaire, answers);
     }
 
-    /// Tells `listener` what the core says of its own accord now, beside what
-    /// an act's failure says, and again on every change, until the
-    /// subscription is cancelled: shown in the banner an act's failure is,
-    /// until Swift says, by [`Self::notice_seen`], that it was seen.
-    pub fn watch_notices(&self, listener: Arc<dyn NoticeListener>) -> Arc<Subscription> {
-        self.watch(self.inner.listing.notices().shown(), move |notice| {
-            listener.changed(notice);
-        })
-    }
-
-    /// Hears that the notice `id` names has been seen, so the next is shown.
-    /// It is never said again.
-    pub fn notice_seen(&self, id: u64) {
-        self.inner.listing.notices().seen(id);
+    /// Forgets what was half given the Questionnaire `questionnaire` of the
+    /// Session `session` names, as it is answered, declined or waits no
+    /// more.
+    pub fn forget_half_answered(&self, session: String, questionnaire: String) {
+        self.inner.half_answers.forget(&session, &questionnaire);
     }
 
     /// Tells `listener` whether any act is under way now, and again each
@@ -259,273 +299,6 @@ impl ThinClient {
         })
     }
 
-    /// The unsent text of the composer of the Session `session` names, or of
-    /// the Landing's under the key it names, asked for when its screen
-    /// appears, with the version of it Swift hands back with each change:
-    /// kept from one run to the next.
-    pub fn draft(&self, session: String) -> Draft {
-        self.inner.drafts.get(&session)
-    }
-
-    /// Holds `text`, written over the version `version` of the draft, as the
-    /// unsent text of the composer of the Session `session` names. Text the
-    /// core gave back since that version stands ahead of it, and the
-    /// draft's listeners are told. It is written to the directory a moment
-    /// after the last change, and as the app leaves the front.
-    pub fn set_draft(&self, session: String, text: String, version: u64) {
-        // The Landing's is written for the Remote the Outlook stands at, and
-        // dropped with it.
-        let remote = (session == beginning::LANDING_DRAFT)
-            .then(|| self.inner.remotes.standing())
-            .flatten()
-            .and_then(|(remote, _)| self.inner.listing.fingerprint(&remote));
-        self.inner.drafts.set_for(&session, text, version, remote);
-    }
-
-    /// Tells `listener` the draft of the composer of the Session `session`
-    /// names now, and again each time the core changes it on its own: a
-    /// Prompt whose send failed, or that a stop withdrew, given back ahead of
-    /// what is written, which the field is to take.
-    pub fn watch_draft(
-        &self,
-        session: String,
-        listener: Arc<dyn DraftListener>,
-    ) -> Arc<Subscription> {
-        self.watch(self.inner.drafts.changes(&session), move |held| {
-            listener.changed(held.draft());
-        })
-    }
-
-    /// Tells `listener` what the Landing shows now, where the Outlook
-    /// stands, and again on every change, until the subscription is
-    /// cancelled.
-    pub fn watch_landing(&self, listener: Arc<dyn LandingListener>) -> Arc<Subscription> {
-        let inner = self.inner.clone();
-        let mut outlook = inner.remotes.outlook();
-        let mut moved = inner.listing.moved();
-        let mut noted = inner.landing_note.subscribe();
-        let task = self.runtime().spawn(async move {
-            // Held for as long as the Landing is answered, so a Workspace is
-            // resolved for it only while it is up.
-            let _up = inner.listing.landing_up();
-            let mut told = None;
-            let mut asked = None;
-            loop {
-                outlook.borrow_and_update();
-                moved.borrow_and_update();
-                noted.borrow_and_update();
-                // What a new Session would get, and what its Workspace may
-                // begin on, are read again as the screen opens and as it
-                // turns elsewhere; and as the Remote comes back, by its
-                // reader.
-                let standing = inner.remotes.standing();
-                if standing != asked {
-                    if let Some((remote, _)) = &standing
-                        && asked.as_ref().is_none_or(|(was, _)| was != remote)
-                    {
-                        inner.listing.ask_for_agent(remote);
-                    }
-                    inner
-                        .listing
-                        .aim_landing(standing.as_ref().and_then(|(remote, workspace)| {
-                            workspace
-                                .as_ref()
-                                .map(|workspace| (remote.as_str(), workspace.path.as_path()))
-                        }));
-                    asked = standing;
-                }
-                let landing = inner.landing();
-                if told.as_ref() != Some(&landing) {
-                    listener.changed(landing.clone());
-                    told = Some(landing);
-                }
-                tokio::select! {
-                    changed = outlook.changed() => if changed.is_err() { break },
-                    changed = moved.changed() => if changed.is_err() { break },
-                    changed = noted.changed() => if changed.is_err() { break },
-                }
-            }
-        });
-        Subscription::of(task)
-    }
-
-    /// Tells `listener` what the Workspace Picker shows now, searched for
-    /// nothing, and again on every change, until the subscription is
-    /// cancelled: every Remote's Workspaces, the Outlook's ticked.
-    pub fn watch_workspaces(&self, listener: Arc<dyn WorkspacesListener>) -> Arc<Subscription> {
-        let inner = self.inner.clone();
-        // Each time the picker opens, it opens unsearched, and asks every
-        // Remote for its Workspaces afresh.
-        inner.workspace_query.send_replace(String::new());
-        inner.listing.ask_for_workspaces();
-        let mut outlook = inner.remotes.outlook();
-        let mut moved = inner.listing.moved();
-        let mut query = inner.workspace_query.subscribe();
-        let task = self.runtime().spawn(async move {
-            let mut told = None;
-            loop {
-                outlook.borrow_and_update();
-                moved.borrow_and_update();
-                let searched = query.borrow_and_update().clone();
-                let standing = inner.remotes.standing();
-                let picker = inner.listing.workspaces(
-                    standing.as_ref().and_then(|(remote, workspace)| {
-                        workspace
-                            .as_ref()
-                            .map(|workspace| (remote.as_str(), workspace.path.as_path()))
-                    }),
-                    &searched,
-                );
-                if told.as_ref() != Some(&picker) {
-                    listener.changed(picker.clone());
-                    told = Some(picker);
-                }
-                tokio::select! {
-                    changed = outlook.changed() => if changed.is_err() { break },
-                    changed = moved.changed() => if changed.is_err() { break },
-                    changed = query.changed() => if changed.is_err() { break },
-                }
-            }
-        });
-        Subscription::of(task)
-    }
-
-    /// Searches the Workspace Picker by name for `text`, until it is opened
-    /// again; an empty one searches for nothing.
-    pub fn search_workspaces(&self, text: String) {
-        self.inner.workspace_query.send_replace(text);
-    }
-
-    /// Turns the Outlook toward the Workspace a row of the Workspace Picker
-    /// hands back, so the next Session begins there, leaving the listing's
-    /// scope where it was. Refused where its Server cannot read it.
-    pub async fn choose_workspace(&self, workspace: String) -> Result<(), ActError> {
-        let turn = self.inner.listing.choosing(&workspace)?;
-        let inner = self.inner.clone();
-        self.run(async move {
-            inner
-                .change_record_shown(move |record| record.turn(&turn.remote, turn.workspace))
-                .await
-        })
-        .await?
-    }
-
-    /// Begins a Session with the Prompt `text` where the Outlook stands, on
-    /// its Workspace's main Worktree or, where `new_worktree`, in a new one
-    /// its Server prepares first, under an identity the core chooses, and
-    /// opens it at once as the Provisional Session for the Landing's screen
-    /// to turn into: until its Server answers with the Session it made,
-    /// which replaces it in place, or refuses it, which stands in its
-    /// conversation. The beginning goes on whatever becomes of the screen,
-    /// as an act under way. Refused at once where nothing is written, where
-    /// no Workspace is remembered for the Outlook's Remote, where it is a
-    /// bare Repository, or where a new Worktree is asked of a Workspace the
-    /// Landing offers none in.
-    pub fn begin_session(
-        &self,
-        text: String,
-        new_worktree: bool,
-    ) -> Result<Arc<OpenSession>, ActError> {
-        let text = text.trim().to_owned();
-        if text.is_empty() {
-            return Err(ActError::Invalid {
-                message: "Write something to send".to_owned(),
-            });
-        }
-        let Some((remote, workspace)) = self.inner.remotes.standing() else {
-            return Err(ActError::Gone {
-                message: "This phone is paired with no server to begin a session on".to_owned(),
-            });
-        };
-        let Some(workspace) = workspace else {
-            let origin_named = self.inner.remotes.names().len() > 1;
-            return Err(ActError::Invalid {
-                message: beginning::asks(origin_named.then_some(remote.as_str())),
-            });
-        };
-        let Some(fingerprint) = self.inner.listing.fingerprint(&remote) else {
-            return Err(ActError::Gone {
-                message: frame::GONE_REMOTE.to_owned(),
-            });
-        };
-        let session_id = shaman_protocol::SessionId::new();
-        let reference = format!("{fingerprint}/{session_id}");
-        let origin = self
-            .inner
-            .listing
-            .opening(&reference)
-            .and_then(|opening| opening.listed.origin);
-        let place = origin
-            .into_iter()
-            .chain([workspace.name.clone()])
-            .collect::<Vec<_>>()
-            .join(" · ");
-        let landing = self.inner.landing();
-        if let Some(working_copy) = landing.working_copy {
-            return Err(ActError::Invalid {
-                message: working_copy,
-            });
-        }
-        if new_worktree && landing.worktree.is_none() {
-            return Err(ActError::Invalid {
-                message: "No new worktree can be made in this workspace".to_owned(),
-            });
-        }
-        // Kept in the Landing's draft until its Server answers with the
-        // Session, so it is there the next run should the app end first.
-        let sent =
-            self.inner
-                .drafts
-                .sending(beginning::LANDING_DRAFT, &text, Some(fingerprint.clone()));
-        // Its own composer's draft is not dropped by a listing that does not
-        // hold it yet.
-        self.inner.drafts.beginning(&reference);
-        let provisional =
-            beginning::Provisional::new(session_id, workspace.path.clone(), text, place)
-                .sent_from_landing(sent);
-        let provisional = if new_worktree {
-            provisional.in_new_worktree()
-        } else {
-            provisional
-        };
-        // A Session begun anew says nothing more of one left before.
-        self.inner.landing_note.send_replace(None);
-        Ok(session::begin(
-            self.runtime().handle(),
-            &self.inner.listing,
-            &reference,
-            self.pacing(),
-            self.asked(),
-            provisional,
-        ))
-    }
-
-    /// Opens the Session `session` names for a screen pushed to read it,
-    /// framed at once by what the listing knows of it, and turns the Outlook
-    /// toward its Origin and Workspace. Closing it cancels nothing on the
-    /// Server.
-    pub fn open_session(&self, session: String) -> Arc<OpenSession> {
-        if let Some(opening) = self.inner.listing.opening(&session) {
-            let inner = self.inner.clone();
-            let listed = opening.listed;
-            self.runtime().spawn(async move {
-                let turned = inner
-                    .change_record_shown(move |record| record.turn_toward(&listed))
-                    .await;
-                if let Err(error) = turned {
-                    tracing::warn!("the Outlook was turned and not kept: {error}");
-                }
-            });
-        }
-        session::open(
-            self.runtime().handle(),
-            &self.inner.listing,
-            &session,
-            self.pacing(),
-            self.asked(),
-        )
-    }
-
     /// Sets the Session `session` names aside as done for now.
     pub async fn settle(&self, session: String) -> Result<(), ActError> {
         self.settling(session, true).await
@@ -534,45 +307,6 @@ impl ThinClient {
     /// Brings the Session `session` names back among the active.
     pub async fn unsettle(&self, session: String) -> Result<(), ActError> {
         self.settling(session, false).await
-    }
-
-    /// Brings up the next of the settled shelf's rows, until the core is
-    /// opened again.
-    pub fn show_more_settled(&self) {
-        self.inner.listing.show_more();
-    }
-
-    /// Narrows the listing to the scope `scope` names, as a choice of the
-    /// menu its title opens carries it, until the core is opened again; one
-    /// naming no Remote held narrows it to Everywhere. A Remote or a
-    /// Workspace chosen turns the Outlook toward it, so that is where the
-    /// next Session begins, and Everywhere turns nothing.
-    pub async fn narrow_listing(&self, scope: String) -> Result<(), ActError> {
-        let Some(turn) = self.inner.listing.narrow(&scope) else {
-            return Ok(());
-        };
-        let inner = self.inner.clone();
-        self.run(async move {
-            inner
-                .change_record_shown(move |record| record.turn(&turn.remote, turn.workspace))
-                .await
-        })
-        .await?
-    }
-
-    /// Narrows the listing to the scope `scope` names, as Swift kept it from
-    /// a listing in scene state and hands it back after a cold start, and
-    /// turns nothing. A scope that is gone narrows it to Everywhere: one
-    /// naming a Remote not held, or a Workspace its Remote no longer offers
-    /// once it has said what it offers; until then it stands as handed back.
-    pub fn restore_listing(&self, scope: String) {
-        self.inner.listing.restore(&scope);
-    }
-
-    /// Searches the listing by Title for `text`, until the core is opened
-    /// again; an empty one searches for nothing.
-    pub fn search_listing(&self, text: String) {
-        self.inner.listing.search(&text);
     }
 
     /// Hears that the app has come to the front: every Remote is checked,
@@ -668,8 +402,9 @@ impl ThinClient {
     /// its Pairing: the Remote is asked to withdraw this phone's Peer, and
     /// one that does not answer within a moment is forgotten here all the
     /// same, which is said. Its drafts and what was remembered for it go
-    /// with it, and the Outlook, where it stood there, turns to the Remote
-    /// turned toward before it, saying so, or to none.
+    /// with it, and each window's Outlook that stood there turns to the
+    /// Remote the phone was most recently turned toward that is still held,
+    /// saying so in that window, or to none.
     pub async fn remove_remote(&self, remote: String) -> Result<(), ActError> {
         let inner = self.inner.clone();
         self.run(async move { inner.remove_remote(&remote).await })
@@ -745,31 +480,6 @@ impl ThinClient {
     pub fn read_invite(&self, invite: String) -> InviteReading {
         pairing::read(&self.inner, &invite)
     }
-
-    /// Pairs with the Server `invite` is from, naming it `remote_name` and
-    /// this phone `device_name`, and turns the Outlook toward it; where this
-    /// phone holds that Server already, the new Pairing replaces the old.
-    /// Keeps dialling for a few seconds while no way answers, and keeps
-    /// nothing where it fails.
-    pub async fn confirm_pairing(
-        &self,
-        invite: String,
-        remote_name: String,
-        device_name: String,
-    ) -> PairingOutcome {
-        let inner = self.inner.clone();
-        let under_way = self.inner.acts.begin();
-        let confirmed = self.run(async move {
-            let _under_way = under_way;
-            pairing::confirm(&inner, &invite, &remote_name, &device_name).await
-        });
-        confirmed
-            .await
-            .unwrap_or_else(|error| PairingOutcome::Failed {
-                message: error.to_string(),
-                again: TryInstead::TryAgain,
-            })
-    }
 }
 
 impl ThinClient {
@@ -842,11 +552,6 @@ impl ThinClient {
         );
         listing.follow(&remotes.held());
         let trees = tree::Trees::new(runtime.handle().clone(), listing.notices());
-        // A beginning whose answer never came, as the app was last ended, may
-        // have begun.
-        let landing_note = drafts
-            .maybe_sent(beginning::LANDING_DRAFT)
-            .then(|| beginning::MAYBE_BEGUN_LEFT.to_owned());
         let inner = Arc::new(Inner {
             records,
             record: AsyncMutex::new(record),
@@ -863,9 +568,10 @@ impl ThinClient {
                 acts::Acts::settling_with(move || drafts.write_now())
             },
             drafts,
+            half_answers: answers::HalfAnswers::default(),
             trees,
-            landing_note: Arc::new(watch::Sender::new(landing_note)),
-            workspace_query: watch::Sender::new(String::new()),
+            windows: Mutex::default(),
+            windows_made: std::sync::atomic::AtomicU64::new(0),
             timings,
         });
         for name in inner.remotes.names() {
@@ -946,11 +652,12 @@ impl ThinClient {
         }
     }
 
-    /// What the core hands each open Session for its acts.
-    fn asked(&self) -> session::Asked {
+    /// What the core hands each Session `window` opens for its acts.
+    fn asked(&self, window: &window::Window) -> session::Asked {
         let pacing = self.pacing();
         session::Asked {
             drafts: self.inner.drafts.clone(),
+            half_answers: self.inner.half_answers.clone(),
             acts: self.inner.acts.clone(),
             asking: acts::Asking {
                 initial_backoff: pacing.initial_backoff,
@@ -961,7 +668,7 @@ impl ThinClient {
                     + self.inner.timings.redeemer.handshake_timeout * 2,
             },
             trees: self.inner.trees.clone(),
-            landing_note: self.inner.landing_note.clone(),
+            landing_note: window.landing_note.clone(),
         }
     }
 
@@ -1078,11 +785,25 @@ impl Inner {
                 .any(|relay| relay == address)
     }
 
-    /// Whether the Outlook stands at `stored`.
-    fn outlook_at(&self, stored: &shaman_pairing::StoredRemote) -> bool {
-        self.remotes
-            .standing()
-            .is_some_and(|(name, _)| name == stored.remote.name)
+    /// Whether the phone's own Outlook stands at `stored`, where a new window
+    /// would begin, and every window that lives, each with whether its
+    /// Outlook stands there.
+    fn windows_at(&self, stored: &shaman_pairing::StoredRemote) -> StoodThere {
+        let at = |outlook: &Outlook| matches!(outlook, Outlook::Remote { name, .. } if *name == stored.remote.name);
+        StoodThere {
+            phone: at(&self.remotes.phone_outlook()),
+            windows: self
+                .windows
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .iter()
+                .filter_map(Weak::upgrade)
+                .map(|window| {
+                    let there = at(&window.outlook.outlook().borrow());
+                    (window, there)
+                })
+                .collect(),
+        }
     }
 
     /// The Remote held, its Pairing made, whose key's fingerprint is
@@ -1125,6 +846,8 @@ impl Inner {
                 },
             })?;
         let (from, to) = (was.clone(), name.to_owned());
+        // Each window remembers of it what it remembered, under its new name.
+        self.remotes.rename_turned(&was, name);
         // Renamed, it is renamed wherever it is shown, kept or not: a record
         // that could not be written now is written whole by the next change.
         let shown = self
@@ -1151,7 +874,7 @@ impl Inner {
     async fn remove_remote(&self, remote: &str) -> Result<(), ActError> {
         let _pairing = self.pairing.lock().await;
         let stored = self.held_remote(remote).ok_or_else(remotes::gone)?;
-        let stood_there = self.outlook_at(&stored);
+        let stood_there = self.windows_at(&stored);
         let removal = self
             .redeemer
             .remove_remote(&stored.remote.name)
@@ -1184,7 +907,7 @@ impl Inner {
         else {
             return;
         };
-        let stood_there = self.outlook_at(&stored);
+        let stood_there = self.windows_at(&stored);
         if let Err(failure) = self.redeemer.delete_remote(name) {
             tracing::warn!(
                 "{name} ended its pairing and was not forgotten: {}",
@@ -1198,14 +921,16 @@ impl Inner {
 
     /// Forgets everything held of `stored`, whose record is gone, as its
     /// Pairing ended by `ending`: what was remembered for it, its drafts,
-    /// its Sessions and its ways, turning the Outlook, where it stood
-    /// there, as `stood_there` says, to the Remote turned toward before it,
-    /// and saying so.
+    /// its Sessions and its ways, turning each window's Outlook that stood
+    /// there, as `stood_there` says of each window, to the Remote the phone
+    /// was most recently turned toward that is still held, and saying so in
+    /// that window. Where no window lives, it is said by the first to come,
+    /// as the phone's own Outlook stood.
     async fn forgotten(
         &self,
         stored: &shaman_pairing::StoredRemote,
         ending: remotes::Ending,
-        stood_there: bool,
+        stood_there: StoodThere,
     ) {
         let name = stored.remote.name.clone();
         let forgotten = name.clone();
@@ -1218,19 +943,30 @@ impl Inner {
         // Following the Remotes held drops its drafts, the Landing's among
         // them where it was written for it.
         self.listing.follow(&self.remotes.held());
+        self.half_answers.forget_remote(&stored.remote.fingerprint);
         self.remotes.forget_ways(&name);
-        let turned = match &*self.remotes.outlook().borrow() {
-            Outlook::Remote { begins_in, .. } if stood_there => Some(begins_in.said.clone()),
+        self.remotes.forget_turned(&name);
+        let turned = |there: bool, outlook: &Outlook| match outlook {
+            Outlook::Remote { begins_in, .. } if there => Some(begins_in.said.clone()),
             _ => None,
         };
-        if let Some(words) = ending.words(&name, turned.as_deref()) {
-            self.listing.notices().say(words);
+        if stood_there.windows.is_empty() {
+            let turned = turned(stood_there.phone, &self.remotes.phone_outlook());
+            if let Some(words) = ending.words(&name, turned.as_deref()) {
+                self.listing.notices().say_unclaimed(words);
+            }
+        }
+        for (window, there) in stood_there.windows {
+            let turned = turned(there, &window.outlook.outlook().borrow());
+            if let Some(words) = ending.words(&name, turned.as_deref()) {
+                window.notices.say(words);
+            }
         }
     }
 
-    /// The Landing where the Outlook stands now.
-    fn landing(&self) -> Landing {
-        let standing = self.remotes.standing();
+    /// The Landing of `window`, where its Outlook stands now.
+    fn landing(&self, window: &window::Window) -> Landing {
+        let standing = self.remotes.standing(&window.outlook);
         let known =
             standing
                 .as_ref()
@@ -1245,13 +981,13 @@ impl Inner {
                 .as_ref()
                 .map(|(remote, workspace)| (remote.as_str(), workspace.as_ref())),
             &known,
-            self.landing_note.borrow().clone(),
+            window.landing_note.borrow().clone(),
         )
     }
 
     /// Changes the thin Client's own file by `change`, keeping it before
-    /// "This device" and the Outlook are told: where it cannot be kept,
-    /// nothing changes.
+    /// "This device" and every window's Outlook are told: where it cannot be
+    /// kept, nothing changes.
     async fn change_record(
         &self,
         change: impl FnOnce(&mut DeviceRecord) + Send + 'static,
@@ -1260,7 +996,8 @@ impl Inner {
     }
 
     /// Changes the thin Client's own file by `change`, telling "This device"
-    /// and the Outlook whether or not it could be kept, as what the change
+    /// and every window's Outlook whether or not it could be kept, as what
+    /// the change
     /// records has been done already: where it could not, it is held, and
     /// kept by the next change, which writes the file whole.
     async fn change_record_shown(
@@ -1292,6 +1029,13 @@ impl Inner {
         }
         kept
     }
+}
+
+/// Where the Outlooks stood as a Pairing ended: the phone's own, and each
+/// window's that lives.
+struct StoodThere {
+    phone: bool,
+    windows: Vec<(Arc<window::Window>, bool)>,
 }
 
 /// Hears what "This device" shows, at once and on every change.
@@ -1995,8 +1739,12 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let key = TestKey::new();
         let core = writing_drafts_after(directory.path(), &key, Duration::from_millis(20));
-        core.set_draft(landing(), "Tidy".to_owned(), 0);
-        core.set_draft(landing(), "Tidy the build".to_owned(), 0);
+        core.clone()
+            .window()
+            .set_draft(landing(), "Tidy".to_owned(), 0);
+        core.clone()
+            .window()
+            .set_draft(landing(), "Tidy the build".to_owned(), 0);
         let drafts = directory.path().join(drafts::DRAFTS_FILE);
         let deadline = std::time::Instant::now() + HEARD_WITHIN;
         while !drafts.exists() {
@@ -2007,10 +1755,12 @@ mod tests {
 
         let core = opened(directory.path(), &key);
         assert_eq!(
-            core.draft(landing()),
+            core.clone().window().draft(landing()),
             Draft {
                 text: "Tidy the build".to_owned(),
-                version: 0
+                version: 0,
+                given: Vec::new(),
+                written_here: true,
             }
         );
     }
@@ -2020,20 +1770,27 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let key = TestKey::new();
         let core = writing_drafts_after(directory.path(), &key, Duration::from_secs(3_600));
-        core.set_draft(landing(), "still typing".to_owned(), 0);
+        core.clone()
+            .window()
+            .set_draft(landing(), "still typing".to_owned(), 0);
         ended(core);
         let core = writing_drafts_after(directory.path(), &key, Duration::from_secs(3_600));
         assert_eq!(
-            core.draft(landing()).text,
+            core.clone().window().draft(landing()).text,
             "",
             "ended before a moment passed"
         );
 
-        core.set_draft(landing(), "Tidy the build".to_owned(), 0);
+        core.clone()
+            .window()
+            .set_draft(landing(), "Tidy the build".to_owned(), 0);
         core.left_front();
         ended(core);
         assert_eq!(
-            opened(directory.path(), &key).draft(landing()).text,
+            opened(directory.path(), &key)
+                .window()
+                .draft(landing())
+                .text,
             "Tidy the build"
         );
     }
@@ -2058,9 +1815,12 @@ mod tests {
 
         keep(serde_json::json!({"text": "a new one", "remote": "desk-key"}));
         let core = opened(directory.path(), &key);
-        assert_eq!(core.draft(session.clone()), Draft::default());
         assert_eq!(
-            core.draft(landing()),
+            core.clone().window().draft(session.clone()),
+            Draft::default()
+        );
+        assert_eq!(
+            core.clone().window().draft(landing()),
             Draft::default(),
             "the Landing's, written where the Outlook stood at a Remote not held"
         );
@@ -2069,7 +1829,7 @@ mod tests {
         keep(serde_json::json!({"text": "a new one"}));
         let core = opened(directory.path(), &key);
         assert_eq!(
-            core.draft(landing()).text,
+            core.clone().window().draft(landing()).text,
             "a new one",
             "written for no Remote"
         );
@@ -2080,16 +1840,21 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let (lost, new) = (TestKey::new(), TestKey::new());
         let core = opened(directory.path(), &lost);
-        core.set_draft(landing(), "half a thought".to_owned(), 0);
+        core.clone()
+            .window()
+            .set_draft(landing(), "half a thought".to_owned(), 0);
         core.left_front();
         drop(core);
         assert_eq!(
-            opened(directory.path(), &lost).draft(landing()).text,
+            opened(directory.path(), &lost)
+                .window()
+                .draft(landing())
+                .text,
             "half a thought"
         );
 
         let core = opened(directory.path(), &new);
-        assert_eq!(core.draft(landing()), Draft::default());
+        assert_eq!(core.clone().window().draft(landing()), Draft::default());
         assert!(!directory.path().join(drafts::DRAFTS_FILE).exists());
     }
 

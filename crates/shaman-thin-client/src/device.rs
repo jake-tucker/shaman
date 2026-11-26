@@ -70,12 +70,13 @@ pub(crate) struct DeviceRecord {
     /// Whether the phone is yet to be told it must pair again.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pair_again: bool,
-    /// The Remotes, by name, in the order they were last turned toward, the
-    /// latest first: the Outlook stands at the first still held.
+    /// The Remotes, by name, in the order they were last turned toward by any
+    /// window, the latest first: a new window's Outlook stands at the first
+    /// still held.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub turned: Vec<String>,
-    /// The Workspace last turned toward on each Remote, by the Remote's
-    /// name: where a Session begun there begins.
+    /// The Workspace last turned toward on each Remote by any window, by the
+    /// Remote's name: where a Session begun there in a new window begins.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub workspaces: BTreeMap<String, RememberedWorkspace>,
 }
@@ -99,22 +100,6 @@ impl DeviceRecord {
             turned: Vec::new(),
             workspaces: BTreeMap::new(),
         }
-    }
-
-    /// Turns the Outlook toward the Remote of the Session `listed` speaks
-    /// of, first among those turned toward. Its Workspace becomes the one
-    /// remembered for that Remote, or, only where none is remembered, the
-    /// Session's own.
-    pub fn turn_toward(&mut self, listed: &crate::listing::Listed) {
-        let workspace = listed
-            .workspace
-            .as_ref()
-            .filter(|_| !self.workspaces.contains_key(&listed.remote))
-            .map(|(path, name)| RememberedWorkspace {
-                path: path.clone(),
-                name: name.clone(),
-            });
-        self.turn(&listed.remote, workspace);
     }
 
     /// Turns the Outlook toward the Remote `remote`, first among those

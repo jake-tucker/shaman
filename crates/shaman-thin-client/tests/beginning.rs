@@ -25,7 +25,7 @@ async fn paired_through(desk: &ServingServer, gate: &Gate) -> Phone {
     let invite = desk.invite(vec![Way::Direct(gate.address())]).await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -361,12 +361,12 @@ async fn leaving_a_refused_beginning_discards_it_and_keeps_its_text_as_the_landi
     let holder = tempfile::tempdir().expect("make the Workspaces' directory");
     let phone = refusing(&desk, &gate, &holder).await;
     let landing = phone.landing_until(|_| true).await;
-    assert_eq!(phone.core.draft(landing.draft.clone()).text, "");
+    assert_eq!(phone.window.draft(landing.draft.clone()).text, "");
 
     let reading = phone.begin("Tidy the build");
     reading.conversation_until(refused).await;
     drop(reading);
-    let draft = phone.core.draft(landing.draft.clone());
+    let draft = phone.window.draft(landing.draft.clone());
     assert_eq!(draft.text, "Tidy the build");
     assert_eq!(draft.version, 1, "given back, as Swift is told");
 
@@ -397,9 +397,9 @@ async fn on_an_unreachable_remote_the_landing_takes_a_draft_and_offers_no_send()
 
     // Its composer keeps a draft of its own.
     phone
-        .core
+        .window
         .set_draft(landing.draft.clone(), "Half a thought".to_owned(), 0);
-    assert_eq!(phone.core.draft(landing.draft).text, "Half a thought");
+    assert_eq!(phone.window.draft(landing.draft).text, "Half a thought");
 
     gate.open_now();
     phone.core.came_to_front();
@@ -421,8 +421,9 @@ async fn where_no_workspace_is_remembered_the_landing_asks_for_one_and_nothing_b
     let asks = landing.asks.expect("it asks for a Workspace");
     assert!(asks.starts_with("Choose a workspace to begin in"), "{asks}");
     assert!(!landing.can_send);
-    let Err(ActError::Invalid { message }) =
-        phone.core.begin_session("Tidy the build".to_owned(), false)
+    let Err(ActError::Invalid { message }) = phone
+        .window
+        .begin_session("Tidy the build".to_owned(), false)
     else {
         panic!("began with nowhere to begin");
     };
@@ -430,7 +431,8 @@ async fn where_no_workspace_is_remembered_the_landing_asks_for_one_and_nothing_b
 
     let holder = tempfile::tempdir().expect("make the Workspaces' directory");
     remember(&phone, &desk, &workspace(&holder, WORKING), WORKING).await;
-    let Err(ActError::Invalid { .. }) = phone.core.begin_session("  \n ".to_owned(), false) else {
+    let Err(ActError::Invalid { .. }) = phone.window.begin_session("  \n ".to_owned(), false)
+    else {
         panic!("began with nothing written");
     };
 
@@ -464,7 +466,7 @@ async fn hurried(desk: &ServingServer, gate: &Gate, holder: &tempfile::TempDir) 
     let invite = desk.invite(vec![Way::Direct(gate.address())]).await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -557,7 +559,7 @@ async fn a_beginning_left_while_it_may_have_begun_keeps_its_text_and_the_landing
     let note = landing.note.expect("a note");
     assert!(note.contains("may have begun"), "{note}");
     assert_eq!(
-        phone.core.draft(landing.draft.clone()).text,
+        phone.window.draft(landing.draft.clone()).text,
         "Tidy the build"
     );
 
@@ -589,7 +591,7 @@ async fn an_app_ended_while_a_refusal_stands_keeps_its_text_and_never_says_it_ma
 
     let landing = phone.landing_until(|_| true).await;
     assert_eq!(
-        phone.core.draft(landing.draft.clone()).text,
+        phone.window.draft(landing.draft.clone()).text,
         "Tidy the build",
         "kept"
     );
@@ -634,7 +636,7 @@ async fn a_beginning_that_may_have_begun_still_may_have_once_a_later_asking_is_n
     let phone = phone.relaunched();
     let landing = phone.landing_until(|_| true).await;
     assert_eq!(
-        phone.core.draft(landing.draft.clone()).text,
+        phone.window.draft(landing.draft.clone()).text,
         "Tidy the build"
     );
     let note = landing.note.expect("a note");
@@ -658,7 +660,7 @@ async fn leaving_a_beginning_not_carried_after_it_may_have_begun_says_it_may_hav
     let note = landing.note.expect("a note");
     assert!(note.contains("may have begun"), "{note}");
     assert_eq!(
-        phone.core.draft(landing.draft.clone()).text,
+        phone.window.draft(landing.draft.clone()).text,
         "Tidy the build"
     );
 
@@ -678,10 +680,14 @@ async fn a_refusal_arriving_once_the_screen_has_gone_gives_its_text_back_to_the_
     let reading = phone.begin("Tidy the build");
     reading.frame().await;
     drop(reading);
-    assert_eq!(phone.core.draft(draft.clone()).text, "", "not yet answered");
+    assert_eq!(
+        phone.window.draft(draft.clone()).text,
+        "",
+        "not yet answered"
+    );
     gate.open_now();
     tokio::time::timeout(support::PROGRESS_DEADLINE, async {
-        while phone.core.draft(draft.clone()).text != "Tidy the build" {
+        while phone.window.draft(draft.clone()).text != "Tidy the build" {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
     })
@@ -737,7 +743,7 @@ async fn where_the_server_holds_the_session_already_the_screen_turns_into_it() {
         read_as(&conversation.items)
     );
     assert_eq!(
-        phone.core.draft(reference.clone()).text,
+        phone.window.draft(reference.clone()).text,
         "Tidy the build",
         "back in the composer"
     );
@@ -784,7 +790,7 @@ async fn a_prompt_written_instead_once_the_first_began_the_session_goes_back_as_
         frame.composer.expect("a composer").note.as_deref(),
         Some("The session had begun with its first prompt, so this one was not sent")
     );
-    assert_eq!(phone.core.draft(reference.clone()).text, "Trim the shell");
+    assert_eq!(phone.window.draft(reference.clone()).text, "Trim the shell");
     assert_eq!(
         desk.read(session_id(&reference))
             .await

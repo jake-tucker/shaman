@@ -26,7 +26,7 @@ async fn pair(phone: &Phone, server: &ServingServer, name: &str) {
         .invite(vec![Way::Direct(server.serving_address())])
         .await;
     let paired = phone
-        .core
+        .window
         .confirm_pairing(invite, name.to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(
@@ -132,7 +132,7 @@ async fn choose(phone: &Phone, remote: Option<&str>, name: &str) -> Landing {
         .expect("offered")
         .workspace
         .clone();
-    phone.core.choose_workspace(chosen).await.expect("chosen");
+    phone.window.choose_workspace(chosen).await.expect("chosen");
     phone
         .landing_until(|landing| {
             landing
@@ -204,7 +204,7 @@ async fn the_picker_lists_every_remotes_workspaces_and_choosing_one_turns_the_ou
         .scope
         .clone();
     phone
-        .core
+        .window
         .narrow_listing(lab_whole)
         .await
         .expect("narrowed");
@@ -280,7 +280,7 @@ async fn a_workspace_whose_server_cannot_read_it_is_dimmed_and_cannot_be_chosen(
         Some("Unavailable: its directory is gone")
     );
     let refused = phone
-        .core
+        .window
         .choose_workspace(archive.workspace.clone())
         .await
         .expect_err("refused");
@@ -328,7 +328,7 @@ async fn the_worktree_choice_names_the_main_worktree_and_a_workspace_outside_one
     assert_eq!(landing.working_copy, None);
     assert!(landing.can_send);
     let refused = phone
-        .core
+        .window
         .begin_session("Gather more".to_owned(), true)
         .err()
         .expect("refused");
@@ -341,7 +341,7 @@ async fn the_worktree_choice_names_the_main_worktree_and_a_workspace_outside_one
     assert_eq!(landing.worktree, None, "a bare Repository");
     assert!(!landing.can_send, "it has no main Worktree to begin on");
     let refused = phone
-        .core
+        .window
         .begin_session("Mirror the tags".to_owned(), false)
         .err()
         .expect("refused");
@@ -376,7 +376,7 @@ async fn a_session_begun_in_a_new_worktree_has_it_prepared_first() {
     let invite = desk.invite(vec![Way::Direct(gate.address())]).await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
             .await,
         PairingOutcome::Paired { .. }

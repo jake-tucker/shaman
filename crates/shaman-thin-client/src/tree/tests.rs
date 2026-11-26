@@ -574,7 +574,8 @@ async fn a_change_a_newer_server_sent_on_a_tree_is_passed_over_and_its_remote_sa
     let remote = Remote::new(tree(top, vec![child]));
     let notices = Notices::default();
     let trees = Trees::new(Handle::current(), notices.clone());
-    let mut shown = notices.shown();
+    let window = notices.window();
+    let mut shown = window.shown();
 
     let held = trees.hold(REMOTE, top, &remote.commands, never_apart());
     seen_until(&held, is_read).await;
@@ -591,7 +592,7 @@ async fn a_change_a_newer_server_sent_on_a_tree_is_passed_over_and_its_remote_sa
         said.words,
         "The server runs a newer Shaman; some things may not show"
     );
-    notices.seen(said.id);
+    window.seen(said.id);
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert_eq!(*shown.borrow(), None, "said once, for both");
     assert!(is_read(&held.seen().borrow()), "the tree reads on");

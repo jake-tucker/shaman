@@ -19,7 +19,7 @@ use support::{Gate, Phone, ServingServer};
 async fn pair_by(phone: &Phone, server: &ServingServer, way: Way, name: &str) {
     let invite = server.invite(vec![way]).await;
     let paired = phone
-        .core
+        .window
         .confirm_pairing(invite, name.to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(
@@ -108,7 +108,7 @@ async fn a_remote_renamed_keeps_its_pairing_and_what_was_remembered_for_it() {
         .await;
     let session = row(&phone, "Map the workspace").await;
     phone
-        .core
+        .window
         .set_draft(session.clone(), "half a thought".to_owned(), 0);
     // Opening it turns the Outlook toward desk and its Workspace.
     drop(phone.open(&session));
@@ -154,7 +154,7 @@ async fn a_remote_renamed_keeps_its_pairing_and_what_was_remembered_for_it() {
         .await;
     assert_eq!(listing.active.len(), 1);
     assert_eq!(
-        phone.core.draft(session.clone()).text,
+        phone.window.draft(session.clone()).text,
         "half a thought",
         "a draft is the Session's, whatever its Remote is called"
     );
@@ -252,10 +252,10 @@ async fn removing_a_remote_withdraws_its_peer_and_forgets_it_with_its_drafts_and
     let on_desk = row(&phone, "Map the workspace").await;
     let on_lab = row(&phone, "Tidy the build").await;
     phone
-        .core
+        .window
         .set_draft(on_desk.clone(), "half a thought".to_owned(), 0);
     phone
-        .core
+        .window
         .set_draft(on_lab.clone(), "another".to_owned(), 0);
     // lab, then desk, were turned toward: desk is where the Outlook stands.
     drop(phone.open(&on_lab));
@@ -271,7 +271,7 @@ async fn removing_a_remote_withdraws_its_peer_and_forgets_it_with_its_drafts_and
     // stands.
     let landing = phone.landing_until(|_| true).await.draft;
     phone
-        .core
+        .window
         .set_draft(landing.clone(), "Begin on the desk".to_owned(), 0);
 
     let removal = &phone
@@ -313,10 +313,18 @@ async fn removing_a_remote_withdraws_its_peer_and_forgets_it_with_its_drafts_and
         [("Tidy the build", "notes")],
         "naming no Origin beside no other"
     );
-    assert_eq!(phone.core.draft(on_desk.clone()).text, "", "its draft goes");
-    assert_eq!(phone.core.draft(on_lab).text, "another", "another's stays");
     assert_eq!(
-        phone.core.draft(landing).text,
+        phone.window.draft(on_desk.clone()).text,
+        "",
+        "its draft goes"
+    );
+    assert_eq!(
+        phone.window.draft(on_lab).text,
+        "another",
+        "another's stays"
+    );
+    assert_eq!(
+        phone.window.draft(landing).text,
         "",
         "the new-session screen's, written for it, goes too"
     );
@@ -330,7 +338,7 @@ async fn removing_a_remote_withdraws_its_peer_and_forgets_it_with_its_drafts_and
         Some(("desk", "desk")),
         "no Workspace remembered for it"
     );
-    assert_eq!(phone.core.draft(on_desk).text, "");
+    assert_eq!(phone.window.draft(on_desk).text, "");
 
     desk.shutdown().await;
     lab.shutdown().await;
@@ -408,7 +416,7 @@ async fn a_pairing_its_server_ends_turns_the_outlook_to_the_remote_turned_toward
         .await;
     let on_desk = row(&phone, "Map the workspace").await;
     phone
-        .core
+        .window
         .set_draft(on_desk.clone(), "half a thought".to_owned(), 0);
     phone
         .outlook_until(|outlook| standing(outlook) == Some(("desk", "desk")))
@@ -429,7 +437,7 @@ async fn a_pairing_its_server_ends_turns_the_outlook_to_the_remote_turned_toward
     phone
         .listing_until(|listing| listing.active.is_empty())
         .await;
-    assert_eq!(phone.core.draft(on_desk).text, "", "its draft goes");
+    assert_eq!(phone.window.draft(on_desk).text, "", "its draft goes");
 
     desk.shutdown().await;
     lab.shutdown().await;

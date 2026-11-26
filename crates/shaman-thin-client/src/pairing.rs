@@ -197,10 +197,11 @@ pub(crate) fn read(inner: &Inner, text: &str) -> InviteReading {
 
 /// Confirms the pairing `text` invites to, naming the Remote `remote_name`
 /// and this phone `device_name`: redeems it, replacing any Remote of the
-/// same Server, keeps the phone's name and turns the Outlook toward the
-/// Remote. Nothing is kept where it fails.
+/// same Server, keeps the phone's name and turns the Outlook of `window`,
+/// which asked, toward the Remote. Nothing is kept where it fails.
 pub(crate) async fn confirm(
     inner: &Arc<Inner>,
+    window: &crate::window::Window,
     text: &str,
     remote_name: &str,
     device_name: &str,
@@ -281,19 +282,25 @@ pub(crate) async fn confirm(
     };
     let name = remote.name.clone();
     let turned = name.clone();
+    // The Server is the one it was, so whatever each window remembered of it
+    // under its old name it remembers under its new; and the window that
+    // paired turns toward it.
+    if let Some(replaced) = &replaced {
+        inner.remotes.rename_turned(replaced, &name);
+    }
+    let standing = inner.remotes.turn(&window.outlook, &name, None);
     // The Pairing is made, so it is shown as made, kept or not: a record
     // that could not be written now is written whole by the next change.
     let shown = inner
         .change_record_shown(move |record| {
             record.name = device_name;
-            // The Server is the one it was, so where the Workspace last
-            // turned toward on it is remembered under its old name, it is
-            // remembered under its new.
+            // Where the Workspace last turned toward on it is remembered
+            // under its old name, it is remembered under its new.
             let remembered = replaced
                 .as_ref()
                 .and_then(|replaced| record.workspaces.remove(replaced));
             record.turned.retain(|held| Some(held) != replaced.as_ref());
-            record.turn(&turned, remembered);
+            record.turn(&turned, standing.or(remembered));
         })
         .await;
     if let Err(error) = shown {

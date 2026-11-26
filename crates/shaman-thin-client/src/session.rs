@@ -788,6 +788,7 @@ fn opened(
             attached: attached.clone(),
             gone: None,
             drafts: asked.drafts.clone(),
+            half_answers: asked.half_answers.clone(),
             reading: reading.clone(),
             listings: listings.clone(),
             pairings: listings.pairings(),
@@ -833,6 +834,8 @@ fn opened(
 /// holds the one it belongs to among.
 pub(crate) struct Asked {
     pub drafts: Drafts,
+    /// What was half given each Questionnaire.
+    pub half_answers: crate::answers::HalfAnswers,
     pub acts: Acts,
     pub asking: Asking,
     pub trees: Trees,
@@ -1494,6 +1497,9 @@ struct Reader {
     gone: Option<String>,
     /// Where a Prompt a stop withdrew goes back to.
     drafts: Drafts,
+    /// What was half given each Questionnaire, which goes as one stops
+    /// waiting.
+    half_answers: crate::answers::HalfAnswers,
     /// Whether the Session's stream is still read.
     reading: Arc<AtomicBool>,
     listings: Listings,
@@ -1577,7 +1583,7 @@ enum Ended {
 
 impl Reader {
     async fn read(mut self) {
-        let mut listing = self.listings.listing();
+        let mut listing = self.listings.moved();
         // Where the screen holds nothing of its own, nothing it holds moves.
         let mut local = self.local.upgrade().map_or_else(
             || watch::channel(Local::default()).1,
@@ -1655,7 +1661,7 @@ impl Reader {
     async fn await_beginning(
         &mut self,
         seeing: watch::Sender<TreeState>,
-        listing: &mut watch::Receiver<crate::Listing>,
+        listing: &mut watch::Receiver<u64>,
         local: &mut watch::Receiver<Local>,
         attaching: &mut watch::Receiver<u64>,
     ) -> Result<(), String> {
@@ -1770,7 +1776,7 @@ impl Reader {
     async fn back_off(
         &mut self,
         retry_in: Duration,
-        listing: &mut watch::Receiver<crate::Listing>,
+        listing: &mut watch::Receiver<u64>,
         local: &mut watch::Receiver<Local>,
         attaching: &mut watch::Receiver<u64>,
     ) -> Result<(), String> {
@@ -1814,7 +1820,7 @@ impl Reader {
     async fn follow(
         &mut self,
         mut subscription: SessionSubscription,
-        listing: &mut watch::Receiver<crate::Listing>,
+        listing: &mut watch::Receiver<u64>,
         local: &mut watch::Receiver<Local>,
         attaching: &mut watch::Receiver<u64>,
     ) -> Ended {
@@ -2077,6 +2083,12 @@ impl Reader {
             self.cut(),
             &in_tree,
         );
+        // What was half given a Questionnaire that waits no more goes, however
+        // it stopped waiting, in this window or elsewhere.
+        if self.snapshot.is_some() {
+            self.half_answers
+                .keep_waiting(&self.reference, &frame.waiting);
+        }
         self.frame.send_if_modified(|current| {
             let changed = *current != frame;
             *current = frame;
@@ -2170,6 +2182,7 @@ mod tests {
             attached,
             gone: None,
             drafts: Drafts::default(),
+            half_answers: crate::answers::HalfAnswers::default(),
             reading: Arc::new(AtomicBool::new(true)),
             listings: listings.clone(),
             pairings: listings.pairings(),
@@ -2374,7 +2387,8 @@ mod tests {
             attached,
         );
 
-        let mut notices = listings.notices().shown();
+        let window = listings.notices().window();
+        let mut notices = window.shown();
         let said = runtime.block_on(async {
             tokio::time::timeout(SHOWN_WITHIN, notices.wait_for(Option::is_some))
                 .await
@@ -2387,7 +2401,7 @@ mod tests {
             said.words,
             "The server runs a newer Shaman; some things may not show"
         );
-        listings.notices().seen(said.id);
+        window.seen(said.id);
         assert_eq!(*notices.borrow(), None, "said once, for both changes");
 
         let work = runtime.block_on(async {
@@ -2623,6 +2637,7 @@ mod tests {
             pacing,
             Asked {
                 drafts: drafts.clone(),
+                half_answers: crate::answers::HalfAnswers::default(),
                 acts: Acts::default(),
                 asking: Asking {
                     initial_backoff: Duration::from_millis(1),
@@ -2790,6 +2805,7 @@ mod tests {
             },
             Asked {
                 drafts: drafts.clone(),
+                half_answers: crate::answers::HalfAnswers::default(),
                 acts: Acts::default(),
                 asking: Asking {
                     initial_backoff: Duration::from_millis(1),
@@ -2889,6 +2905,7 @@ mod tests {
             },
             Asked {
                 drafts: Drafts::default(),
+                half_answers: crate::answers::HalfAnswers::default(),
                 acts: Acts::default(),
                 asking: Asking {
                     initial_backoff: Duration::from_millis(1),
@@ -2947,6 +2964,7 @@ mod tests {
             },
             Asked {
                 drafts: Drafts::default(),
+                half_answers: crate::answers::HalfAnswers::default(),
                 acts: Acts::default(),
                 asking: Asking {
                     initial_backoff: Duration::from_millis(1),
@@ -3035,6 +3053,7 @@ mod tests {
             },
             Asked {
                 drafts: Drafts::default(),
+                half_answers: crate::answers::HalfAnswers::default(),
                 acts: Acts::default(),
                 asking: Asking {
                     initial_backoff: Duration::from_millis(1),

@@ -47,7 +47,7 @@ async fn serving_through(channel: &str, relay: &TestRelay) -> (ServingServer, Ga
 async fn pair(phone: &Phone, desk: &ServingServer, ways: Vec<Way>) -> PairingOutcome {
     let invite = desk.invite(ways).await;
     phone
-        .core
+        .window
         .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
         .await
 }
@@ -104,7 +104,7 @@ async fn a_relay_way_with_no_login_reads_login_needed_and_pairing_goes_on_by_a_d
     assert_eq!(read.ways[1].login, login);
 
     let outcome = phone
-        .core
+        .window
         .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(
@@ -285,7 +285,7 @@ async fn pairing_through_a_relay_alone_asks_for_the_login_and_goes_on_once_it_is
     let _read = phone.core.read_invite(invite.clone());
 
     let outcome = phone
-        .core
+        .window
         .confirm_pairing(invite.clone(), "desk".to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(
@@ -308,7 +308,7 @@ async fn pairing_through_a_relay_alone_asks_for_the_login_and_goes_on_once_it_is
 
     phone.logged_in(&relay, "octocat").await;
     let outcome = phone
-        .core
+        .window
         .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(outcome, paired(), "the same Invite pairs once logged in");
@@ -337,7 +337,7 @@ async fn pairing_waits_on_a_login_only_while_its_invite_lives() {
     let _read = phone.core.read_invite(invite.clone());
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite.clone(), "desk".to_owned(), "Pocket".to_owned())
             .await,
         PairingOutcome::LoginNeeded { .. }
@@ -346,7 +346,7 @@ async fn pairing_waits_on_a_login_only_while_its_invite_lives() {
     tokio::time::sleep_until(issued + life).await;
     phone.logged_in(&relay, "octocat").await;
     let outcome = phone
-        .core
+        .window
         .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
         .await;
     assert!(
@@ -604,7 +604,7 @@ async fn the_relay_is_dialled_at_once_where_every_direct_way_fails_and_a_moment_
         let paired = tokio::time::timeout(
             Duration::from_secs(20),
             phone
-                .core
+                .window
                 .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned()),
         )
         .await
@@ -651,7 +651,7 @@ async fn a_pairing_refused_for_different_accounts_says_so_and_offers_to_log_in_a
     phone.logged_in(&relay, "hubot").await;
 
     let outcome = phone
-        .core
+        .window
         .confirm_pairing(invite.clone(), "desk".to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(
@@ -673,7 +673,7 @@ async fn a_pairing_refused_for_different_accounts_says_so_and_offers_to_log_in_a
 
     phone.logged_in(&relay, "octocat").await;
     let outcome = phone
-        .core
+        .window
         .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(outcome, paired());
@@ -696,7 +696,7 @@ async fn a_pairing_refused_for_a_lapsed_login_asks_for_it_again() {
     relay.admit("octocat", false).await;
 
     let outcome = phone
-        .core
+        .window
         .confirm_pairing(invite.clone(), "desk".to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(
@@ -726,7 +726,7 @@ async fn a_pairing_refused_for_a_lapsed_login_asks_for_it_again() {
     relay.admit("octocat", true).await;
     phone.logged_in(&relay, "octocat").await;
     let outcome = phone
-        .core
+        .window
         .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(outcome, paired());
@@ -756,7 +756,7 @@ async fn a_pairing_that_needs_a_login_may_be_tried_again_by_a_direct_way() {
     gate.cut(Cut::Refusing);
 
     let outcome = phone
-        .core
+        .window
         .confirm_pairing(invite.clone(), "desk".to_owned(), "Pocket".to_owned())
         .await;
     let PairingOutcome::LoginNeeded { try_again, .. } = outcome else {
@@ -767,7 +767,7 @@ async fn a_pairing_that_needs_a_login_may_be_tried_again_by_a_direct_way() {
 
     gate.mend();
     let outcome = phone
-        .core
+        .window
         .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(outcome, paired(), "tried again, the direct way pairs");
@@ -1050,7 +1050,7 @@ async fn pairing_through_a_relay_alone_follows_a_relay_turned_on_later() {
     phone.logged_in(&first, "octocat").await;
     assert_eq!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
             .await,
         paired()
@@ -1176,7 +1176,7 @@ async fn the_phone_keeps_no_connection_to_a_relay_and_asks_none_for_the_accounts
     phone.logged_in(&relay, "octocat").await;
     assert_eq!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
             .await,
         paired()

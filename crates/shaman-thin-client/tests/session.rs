@@ -45,7 +45,7 @@ async fn pair(phone: &Phone, server: &ServingServer, name: &str) {
         .invite(vec![Way::Direct(server.serving_address())])
         .await;
     let paired = phone
-        .core
+        .window
         .confirm_pairing(invite, name.to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(
@@ -907,7 +907,7 @@ async fn a_queued_prompt_waits_at_the_foot_and_is_steered_now_or_cancelled() {
         .expect("held");
     assert_eq!(cancelled.status, shaman::protocol::PromptStatus::Cancelled);
     assert_eq!(
-        phone.core.draft(row.session.clone()).text,
+        phone.window.draft(row.session.clone()).text,
         "",
         "a cancelled Prompt is not owed back"
     );
@@ -929,12 +929,12 @@ async fn stop_on_a_session_working_only_for_a_prompt_not_yet_delivered_gives_its
     let frame = reading.frame_until(|frame| frame.bar.is_some()).await;
     assert_eq!(frame.bar.map(|bar| bar.words).as_deref(), Some("Working"));
     phone
-        .core
+        .window
         .set_draft(row.session.clone(), "and the docs".to_owned(), 0);
 
     reading.session.stop().await.expect("stopped");
     assert_eq!(
-        phone.core.draft(row.session.clone()).text,
+        phone.window.draft(row.session.clone()).text,
         "Tidy the build\nand the docs",
         "ahead of anything already written there"
     );
@@ -960,14 +960,14 @@ async fn a_send_that_fails_goes_from_the_conversation_and_its_text_goes_back_to_
     let reading = phone.open(&row.session);
     reading.conversation_until(failed_turn).await;
     phone
-        .core
+        .window
         .set_draft(row.session.clone(), "written meanwhile".to_owned(), 0);
 
     desk.delete(session).await;
     let failed = reading.session.send("One more thing".to_owned()).await;
     assert!(matches!(failed, Err(ActError::Gone { .. })), "{failed:?}");
     assert_eq!(
-        phone.core.draft(row.session.clone()).text,
+        phone.window.draft(row.session.clone()).text,
         "One more thing\nwritten meanwhile"
     );
     // Its bubble goes.
@@ -991,7 +991,7 @@ async fn on_an_unreachable_origin_a_send_waits_marked_as_sending_and_goes_when_i
     let invite = desk.invite(vec![Way::Direct(gate.address())]).await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -1095,7 +1095,7 @@ async fn opened_through(
     let invite = desk.invite(vec![Way::Direct(gate.address())]).await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -1144,7 +1144,10 @@ async fn a_send_still_dialling_when_its_bound_passes_was_not_sent_and_its_text_g
             message: "The server did not answer in time".to_owned()
         })
     );
-    assert_eq!(phone.core.draft(row.session.clone()).text, "One more thing");
+    assert_eq!(
+        phone.window.draft(row.session.clone()).text,
+        "One more thing"
+    );
     assert_eq!(
         reading
             .frame()
@@ -1202,7 +1205,7 @@ async fn a_send_delivered_whose_answer_is_lost_is_not_sent_again_and_says_it_may
         })
     );
     assert_eq!(
-        phone.core.draft(row.session.clone()).text,
+        phone.window.draft(row.session.clone()).text,
         "One more thing",
         "its text stays in the composer"
     );
@@ -1313,7 +1316,7 @@ async fn scripted_through(
     let invite = desk.invite(vec![Way::Direct(gate.address())]).await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -1845,13 +1848,31 @@ async fn a_questionnaire_declined_is_declined_whole() {
     let desk = ServingServer::start("thin-questionnaire-decline").await;
     let gate = Gate::open(desk.serving_address()).await;
     let holder = tempfile::tempdir().expect("make the Workspaces' directory");
-    let (phone, session, _row, reading, script) =
+    let (phone, session, row, reading, script) =
         scripted_through(&desk, &gate, &holder, "Run the tests somewhere").await;
     let asked = where_and_token();
     ask_questionnaire(&script, &asked);
     reading
         .frame_until(|frame| presents_questionnaire(frame, &asked))
         .await;
+    // Half given in a sheet first, which the core keeps until it waits no
+    // more.
+    let half = shaman_thin_client::HalfAnswered {
+        page: 0,
+        pages: vec![shaman_thin_client::HalfAnsweredPage {
+            text: "the lab".to_owned(),
+            ..Default::default()
+        }],
+    };
+    phone
+        .core
+        .keep_half_answered(row.session.clone(), asked.id.to_string(), half.clone());
+    assert_eq!(
+        phone
+            .core
+            .half_answered(row.session.clone(), asked.id.to_string()),
+        Some(half)
+    );
 
     reading
         .session
@@ -1867,8 +1888,15 @@ async fn a_questionnaire_declined_is_declined_whole() {
         QuestionnaireOutcome::Declined
     );
     reading
-        .frame_until(|frame| frame.intervention.is_none())
+        .frame_until(|frame| frame.intervention.is_none() && frame.waiting.is_empty())
         .await;
+    assert_eq!(
+        phone
+            .core
+            .half_answered(row.session.clone(), asked.id.to_string()),
+        None,
+        "what was half given goes as it waits no more"
+    );
 
     phone.shutdown();
     desk.shutdown().await;

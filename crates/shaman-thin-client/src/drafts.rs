@@ -5,9 +5,17 @@
 //! What the core puts back is text it took away: a Prompt whose send failed, or
 //! one an interrupt withdrew, which stands ahead of anything written meanwhile.
 //! That is the one change the core makes on its own, and it always wins: each
-//! is a new version, which the core tells Swift of, and a change Swift hands in
-//! written over an older version has what was given back since kept ahead of
-//! it, however many keystrokes reach the core before Swift hears.
+//! is a new version, which the core tells Swift of with the text given back at
+//! it, and a change Swift hands in written over an older version has what was
+//! given back since kept ahead of it, however many keystrokes reach the core
+//! before Swift hears.
+//!
+//! A draft is the device's, one however many windows show its composer
+//! (ADR-0084). Each field holds its own text while it stands: told of what was
+//! given back, it puts that ahead of its own text, and it is told whether the
+//! text kept was last written in its own window, so that a screen shown again
+//! takes what another screen of that window wrote and never another window's
+//! typing. What is kept is whichever was written last.
 //!
 //! Every draft is kept as its text in one file of the core's directory,
 //! written a moment after the last change, at once as an answer changes it,
@@ -44,19 +52,54 @@ pub(crate) const DRAFTS_FILE: &str = "drafts.json";
 
 /// A composer's draft as Swift holds it: its text, and the version of it the
 /// core last told of, which Swift hands back with each change.
-#[derive(Clone, Debug, Default, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct Draft {
     pub text: String,
     pub version: u64,
+    /// The text the core gave back at each of the latest versions, oldest
+    /// first: a field puts each given back above the version it holds ahead
+    /// of its own text, the latest first.
+    pub given: Vec<GivenBack>,
+    /// Whether `text` was last written in the window asking, or in none this
+    /// run: a field shown again takes it only then.
+    pub written_here: bool,
 }
+
+impl Default for Draft {
+    /// An empty draft, which no window wrote.
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            version: 0,
+            given: Vec::new(),
+            written_here: true,
+        }
+    }
+}
+
+/// Text the core gave back to a composer, at the version it made.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct GivenBack {
+    pub version: u64,
+    pub text: String,
+}
+
+/// How many of the latest Prompts given back a draft tells of.
+pub(crate) const GIVEN_TOLD: usize = 16;
 
 /// One composer's draft as the core holds it.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Held {
     text: String,
     version: u64,
-    /// The text given back at each version Swift may not have heard of yet.
+    /// The text given back at each of the latest versions, which a field may
+    /// not have heard of yet.
     given: Vec<(u64, String)>,
+    /// The window that last wrote it, where one has this run.
+    by: Option<u64>,
+    /// The latest version each writer has written over, by its window, so
+    /// that what was given back is owed to a writer only until it caught up.
+    heard: HashMap<Option<u64>, u64>,
     /// The Prompts taken from it and on their way, kept ahead of its text
     /// until their Server answers.
     sending: Vec<OnItsWay>,
@@ -84,11 +127,20 @@ struct OnItsWay {
 }
 
 impl Held {
-    /// The draft as Swift holds it.
-    pub fn draft(&self) -> Draft {
+    /// The draft as a field of the window `window` is told it.
+    pub fn draft_for(&self, window: Option<u64>) -> Draft {
         Draft {
             text: self.text.clone(),
             version: self.version,
+            given: self
+                .given
+                .iter()
+                .map(|(version, text)| GivenBack {
+                    version: *version,
+                    text: text.clone(),
+                })
+                .collect(),
+            written_here: self.by.is_none() || self.by == window,
         }
     }
 
@@ -113,6 +165,7 @@ impl Held {
     fn dropped(&mut self) {
         self.text.clear();
         self.given.clear();
+        self.heard.clear();
         self.sending.clear();
         self.remote = None;
         self.maybe_sent = false;
@@ -233,9 +286,17 @@ impl Drafts {
         self.shared.write();
     }
 
-    /// The draft of the composer `key` names, empty where it has none.
+    /// The draft of the composer `key` names, empty where it has none, as
+    /// no window asks for it.
+    #[cfg(test)]
     pub fn get(&self, key: &str) -> Draft {
-        self.of(key).borrow().draft()
+        self.get_for(key, None)
+    }
+
+    /// The draft of the composer `key` names as the window `window` is
+    /// told it.
+    pub fn get_for(&self, key: &str, window: Option<u64>) -> Draft {
+        self.of(key).borrow().draft_for(window)
     }
 
     /// Whether what the composer `key` names holds may have been sent
@@ -253,7 +314,7 @@ impl Drafts {
     /// [`Self::set_for`] for a composer whose key names its Remote.
     #[cfg(test)]
     pub fn set(&self, key: &str, text: String, seen: u64) {
-        self.set_for(key, text, seen, None);
+        self.set_for(key, text, seen, None, None);
     }
 
     /// Holds `text`, written over the version `seen` of the draft, as the
@@ -262,10 +323,20 @@ impl Drafts {
     /// key names no Remote, it is written for the one `remote` names by its
     /// key, as the Landing's is written for where the Outlook stands; emptied,
     /// it is written for none, and what it held is no longer said to have
-    /// maybe been sent.
-    pub fn set_for(&self, key: &str, text: String, seen: u64, remote: Option<String>) {
+    /// maybe been sent. It was written in the window `by`, where one wrote it.
+    pub fn set_for(
+        &self,
+        key: &str,
+        text: String,
+        seen: u64,
+        remote: Option<String>,
+        by: Option<u64>,
+    ) {
         self.of(key).send_if_modified(|held| {
             held.touched = Some(Instant::now());
+            held.by = by;
+            let seen = held.heard.get(&by).map_or(seen, |heard| seen.max(*heard));
+            held.heard.insert(by, seen);
             let unseen = held
                 .given
                 .iter()
@@ -273,7 +344,8 @@ impl Drafts {
                 .map(|(_, given)| given.clone())
                 .collect::<Vec<_>>();
             let told = if unseen.is_empty() {
-                held.given.clear();
+                // What was given back stays told of: another window's field
+                // may not have heard of it yet.
                 held.text = text;
                 // Swift's own change: it holds it already.
                 false
@@ -552,6 +624,9 @@ async fn write_behind(shared: Arc<Shared>, after: Duration) {
 fn give(held: &mut Held, text: &str) {
     held.version += 1;
     held.given.push((held.version, text.to_owned()));
+    if held.given.len() > GIVEN_TOLD {
+        held.given.remove(0);
+    }
     held.text = ahead(text, &held.text);
     held.touched = Some(Instant::now());
 }
@@ -582,6 +657,59 @@ mod tests {
     }
 
     #[test]
+    fn each_window_is_told_whether_it_wrote_the_draft_last_and_what_was_given_back_since() {
+        let drafts = Drafts::default();
+        let (first, second) = (Some(1), Some(2));
+        drafts.set_for("desk/1", "Tidy the build".to_owned(), 0, None, first);
+        drafts.set_for("desk/1", "Map the docs".to_owned(), 0, None, second);
+        assert_eq!(drafts.get_for("desk/1", first).text, "Map the docs");
+        assert!(
+            !drafts.get_for("desk/1", first).written_here,
+            "the other wrote it last"
+        );
+        assert!(drafts.get_for("desk/1", second).written_here);
+
+        drafts.give_back("desk/1", "One more thing");
+        let told = drafts.get_for("desk/1", first);
+        assert_eq!(told.version, 1);
+        assert_eq!(
+            told.given,
+            [GivenBack {
+                version: 1,
+                text: "One more thing".to_owned()
+            }]
+        );
+        // One window taking it in and writing over it leaves it told to the
+        // other, which may not have heard of it yet.
+        drafts.set_for(
+            "desk/1",
+            "One more thing\nMap the docs".to_owned(),
+            1,
+            None,
+            second,
+        );
+        assert_eq!(drafts.get_for("desk/1", first).given.len(), 1);
+        drafts.set_for("desk/1", "Tidy the build".to_owned(), 0, None, first);
+        assert_eq!(
+            drafts.get_for("desk/1", first).text,
+            "One more thing\nTidy the build",
+            "written over a version older than what was given back, it stands ahead"
+        );
+    }
+
+    #[test]
+    fn what_is_told_of_given_back_text_is_its_latest_few() {
+        let drafts = Drafts::default();
+        for given in 0..40 {
+            drafts.give_back("desk/1", &format!("prompt {given}"));
+        }
+        let told = drafts.get("desk/1");
+        assert_eq!(told.version, 40);
+        assert_eq!(told.given.len(), GIVEN_TOLD);
+        assert_eq!(told.given.last().map(|given| given.version), Some(40));
+    }
+
+    #[test]
     fn text_given_back_stands_ahead_of_anything_written_since() {
         let drafts = Drafts::default();
         drafts.give_back("desk/1", "Tidy the build");
@@ -589,7 +717,12 @@ mod tests {
             drafts.get("desk/1"),
             Draft {
                 text: "Tidy the build".to_owned(),
-                version: 1
+                version: 1,
+                given: vec![GivenBack {
+                    version: 1,
+                    text: "Tidy the build".to_owned(),
+                },],
+                written_here: true,
             }
         );
 
@@ -649,7 +782,7 @@ mod tests {
     async fn swift_is_told_only_of_what_the_core_changes_on_its_own() {
         let drafts = Drafts::default();
         let mut changes = drafts.changes("desk/1");
-        assert_eq!(changes.borrow_and_update().draft().text, "");
+        assert_eq!(changes.borrow_and_update().draft_for(None).text, "");
 
         drafts.set("desk/1", "typed".to_owned(), 0);
         tokio::task::yield_now().await;
@@ -661,17 +794,22 @@ mod tests {
         drafts.give_back("desk/1", "Tidy the build");
         changes.changed().await.unwrap();
         assert_eq!(
-            changes.borrow_and_update().draft(),
+            changes.borrow_and_update().draft_for(None),
             Draft {
                 text: "Tidy the build\ntyped".to_owned(),
-                version: 1
+                version: 1,
+                given: vec![GivenBack {
+                    version: 1,
+                    text: "Tidy the build".to_owned(),
+                },],
+                written_here: true,
             }
         );
 
         drafts.set("desk/1", "typed!".to_owned(), 0);
         changes.changed().await.unwrap();
         assert_eq!(
-            changes.borrow_and_update().draft().text,
+            changes.borrow_and_update().draft_for(None).text,
             "Tidy the build\ntyped!",
             "a change over an older version is told back with what was given"
         );
@@ -756,7 +894,9 @@ mod tests {
             reopened.get(&session),
             Draft {
                 text: "half a thought".to_owned(),
-                version: 0
+                version: 0,
+                given: Vec::new(),
+                written_here: true,
             }
         );
 
@@ -868,7 +1008,12 @@ mod tests {
             drafts.get(landing),
             Draft {
                 text: "Tidy the whole build".to_owned(),
-                version: 1
+                version: 1,
+                given: vec![GivenBack {
+                    version: 1,
+                    text: "Tidy the whole build".to_owned(),
+                },],
+                written_here: true,
             }
         );
         drafts.write_now();
@@ -1101,7 +1246,13 @@ mod tests {
         let drafts = Drafts::open(directory.path(), NEVER, &tokio::runtime::Handle::current());
         let landing = beginning_key();
         drafts.keep_remotes(&["desk".to_owned(), "lab".to_owned()]);
-        drafts.set_for(landing, "for the lab".to_owned(), 0, Some("lab".to_owned()));
+        drafts.set_for(
+            landing,
+            "for the lab".to_owned(),
+            0,
+            Some("lab".to_owned()),
+            None,
+        );
         // The Outlook turns toward the desk, and nothing more is written.
         drafts.keep_remotes(&["desk".to_owned(), "lab".to_owned()]);
         drafts.write_now();
@@ -1123,6 +1274,7 @@ mod tests {
             "for the desk".to_owned(),
             0,
             Some("desk".to_owned()),
+            None,
         );
         drafts.keep_remotes(&["desk".to_owned()]);
         assert_eq!(drafts.get(landing).text, "for the desk");

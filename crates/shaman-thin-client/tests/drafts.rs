@@ -28,7 +28,7 @@ async fn pair_through(phone: &Phone, server: &ServingServer, gate: &Gate, name: 
     let invite = server.invite(vec![Way::Direct(gate.address())]).await;
     assert_eq!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, name.to_owned(), "Pocket".to_owned())
             .await,
         PairingOutcome::Paired {
@@ -93,8 +93,10 @@ impl DraftListener for Told {
 /// Swift sending what the composer of `key` holds: the field empties as the
 /// send begins.
 fn emptied(phone: &Phone, key: &str) {
-    let version = phone.core.draft(key.to_owned()).version;
-    phone.core.set_draft(key.to_owned(), String::new(), version);
+    let version = phone.window.draft(key.to_owned()).version;
+    phone
+        .window
+        .set_draft(key.to_owned(), String::new(), version);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -113,10 +115,10 @@ async fn a_sessions_draft_is_there_the_next_run_and_an_unreachable_remote_drops_
     let kept_one = (kept_one, listed(&phone, "Map the workspace").await);
     let deleted = (deleted, listed(&phone, "Tidy the dotfiles").await);
     phone
-        .core
+        .window
         .set_draft(kept_one.1.clone(), "half a thought".to_owned(), 0);
     phone
-        .core
+        .window
         .set_draft(deleted.1.clone(), "another thought".to_owned(), 0);
     phone.core.left_front();
     assert_eq!(
@@ -131,23 +133,28 @@ async fn a_sessions_draft_is_there_the_next_run_and_an_unreachable_remote_drops_
     desk.delete(deleted.0).await;
     let phone = phone.relaunched();
     assert_eq!(
-        phone.core.draft(kept_one.1.clone()),
+        phone.window.draft(kept_one.1.clone()),
         Draft {
             text: "half a thought".to_owned(),
-            version: 0
+            version: 0,
+            given: Vec::new(),
+            written_here: true,
         }
     );
     phone
         .listing_until(|listing| !listing.unreachable.is_empty())
         .await;
     assert_eq!(
-        phone.core.draft(deleted.1.clone()).text,
+        phone.window.draft(deleted.1.clone()).text,
         "another thought",
         "an Unreachable Remote drops nothing"
     );
     phone.core.left_front();
     let phone = phone.relaunched();
-    assert_eq!(phone.core.draft(deleted.1.clone()).text, "another thought");
+    assert_eq!(
+        phone.window.draft(deleted.1.clone()).text,
+        "another thought"
+    );
 
     // Once it answers, its listing holds one Session and not the other.
     gate.open_now();
@@ -158,8 +165,11 @@ async fn a_sessions_draft_is_there_the_next_run_and_an_unreachable_remote_drops_
                 && !lists(listing, &deleted.1)
         })
         .await;
-    assert_eq!(phone.core.draft(deleted.1.clone()), Draft::default());
-    assert_eq!(phone.core.draft(kept_one.1.clone()).text, "half a thought");
+    assert_eq!(phone.window.draft(deleted.1.clone()), Draft::default());
+    assert_eq!(
+        phone.window.draft(kept_one.1.clone()).text,
+        "half a thought"
+    );
     phone.core.left_front();
     assert_eq!(kept(phone.directory(), &deleted.1), None);
     assert_eq!(
@@ -185,7 +195,7 @@ async fn a_draft_whose_session_is_deleted_while_it_is_open_is_dropped_and_not_pu
     let reference = listed(&phone, "Map the workspace").await;
     let reading = phone.open(&reference);
     let told = Arc::new(Told(Mutex::default()));
-    let _subscription = phone.core.watch_draft(reference.clone(), told.clone());
+    let _subscription = phone.window.watch_draft(reference.clone(), told.clone());
     tokio::time::timeout(support::PROGRESS_DEADLINE, async {
         while told.0.lock().unwrap().is_empty() {
             tokio::time::sleep(Duration::from_millis(2)).await;
@@ -194,7 +204,7 @@ async fn a_draft_whose_session_is_deleted_while_it_is_open_is_dropped_and_not_pu
     .await
     .expect("told at once");
     phone
-        .core
+        .window
         .set_draft(reference.clone(), "half a thought".to_owned(), 0);
 
     desk.delete(session).await;
@@ -204,7 +214,7 @@ async fn a_draft_whose_session_is_deleted_while_it_is_open_is_dropped_and_not_pu
     // A listing asked before the draft was written does not speak for it;
     // the one asked as the deletion is heard does.
     tokio::time::timeout(support::PROGRESS_DEADLINE, async {
-        while !phone.core.draft(reference.clone()).text.is_empty() {
+        while !phone.window.draft(reference.clone()).text.is_empty() {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
     })
@@ -237,7 +247,7 @@ async fn a_prompt_is_kept_in_its_draft_until_its_server_answers_and_dropped_once
     let reading = phone.open(&reference);
     reading.frame_until(|frame| frame.bar.is_some()).await;
     phone
-        .core
+        .window
         .set_draft(reference.clone(), "and the docs".to_owned(), 0);
 
     // Sent while no way answers: it waits, and the app is ended meanwhile.
@@ -271,7 +281,7 @@ async fn a_prompt_is_kept_in_its_draft_until_its_server_answers_and_dropped_once
     let phone = phone.relaunched();
     assert!(sending.await.expect("the send ends").is_err());
     assert_eq!(
-        phone.core.draft(reference.clone()).text,
+        phone.window.draft(reference.clone()).text,
         "and the docs",
         "its text is in the composer the next run"
     );
@@ -287,7 +297,7 @@ async fn a_prompt_is_kept_in_its_draft_until_its_server_answers_and_dropped_once
         .expect("sent and answered");
     phone.core.left_front();
     assert_eq!(kept(phone.directory(), &reference), None, "answered");
-    assert_eq!(phone.core.draft(reference.clone()).text, "");
+    assert_eq!(phone.window.draft(reference.clone()).text, "");
 
     drop(reading);
     desk.shutdown().await;
@@ -311,7 +321,7 @@ async fn a_prompt_sent_from_the_landing_is_kept_in_its_draft_until_its_session_i
     let landing = phone.landing_until(|landing| landing.can_send).await;
     let key = landing.draft;
     phone
-        .core
+        .window
         .set_draft(key.clone(), "Tidy the build".to_owned(), 0);
 
     // Begun while no way answers, and the app is ended meanwhile.
@@ -325,7 +335,7 @@ async fn a_prompt_sent_from_the_landing_is_kept_in_its_draft_until_its_session_i
     );
     drop(reading);
     let phone = phone.relaunched();
-    assert_eq!(phone.core.draft(key.clone()).text, "Tidy the build");
+    assert_eq!(phone.window.draft(key.clone()).text, "Tidy the build");
 
     gate.open_now();
     phone.landing_until(|landing| landing.can_send).await;
@@ -367,10 +377,10 @@ async fn the_drafts_of_a_remote_no_longer_held_are_dropped_and_no_others() {
         listed(&phone, "In the lab").await,
     );
     phone
-        .core
+        .window
         .set_draft(on_desk.clone(), "for the desk".to_owned(), 0);
     phone
-        .core
+        .window
         .set_draft(in_lab.clone(), "for the lab".to_owned(), 0);
     // The Landing's is written where the Outlook stands, at the lab, paired
     // last; the Outlook turning toward the desk drops nothing.
@@ -379,14 +389,14 @@ async fn the_drafts_of_a_remote_no_longer_held_are_dropped_and_no_others() {
         .outlook_until(|outlook| matches!(outlook, Outlook::Remote { name, .. } if name == "lab"))
         .await;
     phone
-        .core
+        .window
         .set_draft(landing.clone(), "to begin in the lab".to_owned(), 0);
     drop(phone.open(&on_desk));
     phone
         .outlook_until(|outlook| matches!(outlook, Outlook::Remote { name, .. } if name == "desk"))
         .await;
     assert_eq!(
-        phone.core.draft(landing.clone()).text,
+        phone.window.draft(landing.clone()).text,
         "to begin in the lab"
     );
     phone.core.left_front();
@@ -402,13 +412,13 @@ async fn the_drafts_of_a_remote_no_longer_held_are_dropped_and_no_others() {
             .collect::<Vec<_>>();
         std::fs::write(&path, serde_json::to_vec(&held).unwrap()).unwrap();
     });
-    assert_eq!(phone.core.draft(in_lab.clone()), Draft::default());
+    assert_eq!(phone.window.draft(in_lab.clone()), Draft::default());
     assert_eq!(
-        phone.core.draft(landing.clone()),
+        phone.window.draft(landing.clone()),
         Draft::default(),
         "the Landing's, written for the lab"
     );
-    assert_eq!(phone.core.draft(on_desk.clone()).text, "for the desk");
+    assert_eq!(phone.window.draft(on_desk.clone()).text, "for the desk");
     phone.core.left_front();
     assert_eq!(kept(phone.directory(), &in_lab), None);
     assert_eq!(kept(phone.directory(), &landing), None);
@@ -467,7 +477,7 @@ async fn a_prompt_answered_after_the_app_left_the_front_is_not_in_its_composer_t
     phone.acts_until(false).await;
     drop(reading);
     let phone = phone.relaunched();
-    assert_eq!(phone.core.draft(reference.clone()), Draft::default());
+    assert_eq!(phone.window.draft(reference.clone()), Draft::default());
 
     desk.shutdown().await;
     phone.shutdown();
@@ -498,7 +508,7 @@ async fn a_draft_written_in_a_session_being_begun_is_not_dropped_by_a_listing_th
         })
         .await;
     phone
-        .core
+        .window
         .set_draft(provisional.clone(), "Tidy the whole build".to_owned(), 0);
 
     // The Remote answers with a listing asked since, which does not hold it.
@@ -507,13 +517,13 @@ async fn a_draft_written_in_a_session_being_begun_is_not_dropped_by_a_listing_th
     listed(&phone, "Asked meanwhile").await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert_eq!(
-        phone.core.draft(provisional.clone()).text,
+        phone.window.draft(provisional.clone()).text,
         "Tidy the whole build"
     );
 
     // Left, it is discarded unmade, and its own composer's draft with it.
     reading.session.close();
-    assert_eq!(phone.core.draft(provisional), Draft::default());
+    assert_eq!(phone.window.draft(provisional), Draft::default());
 
     drop(reading);
     desk.shutdown().await;
@@ -557,7 +567,7 @@ async fn a_prompt_that_may_have_been_sent_says_so_the_next_run_until_it_is_sent_
         note(&frame).as_deref(),
         Some("The server did not answer, so this prompt may have been sent")
     );
-    assert_eq!(phone.core.draft(reference.clone()).text, "One more thing");
+    assert_eq!(phone.window.draft(reference.clone()).text, "One more thing");
 
     reading.frame_until(|frame| frame.bar.is_none()).await;
     emptied(&phone, &reference);

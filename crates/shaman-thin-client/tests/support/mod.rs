@@ -42,8 +42,8 @@ use shaman_thin_client::{
     CoreTimings, DetailListener, DeviceListener, DeviceLogin, DeviceLoginListener, FrameListener,
     KeySigner, Landing, LandingListener, Listing, ListingListener, Notice, NoticeListener,
     OpenSession, Outlook, OutlookListener, Servers, ServersListener, SessionFrame, SignError,
-    SubagentTree, Subscription, ThinClient, ThisDevice, TreeListener, TurnWork, WorkListener,
-    WorkspacePicker, WorkspacesListener,
+    SubagentTree, Subscription, ThinClient, ThinClientWindow, ThisDevice, TreeListener, TurnWork,
+    WorkListener, WorkspacePicker, WorkspacesListener,
 };
 use tokio::{
     net::TcpListener,
@@ -836,13 +836,29 @@ impl KeySigner for TestKey {
     }
 }
 
-/// A phone: nothing but the core, kept in a directory of its own.
+/// A phone: nothing but the core, kept in a directory of its own, and the
+/// one window the app shows on it, which it stands for as a phone does with
+/// one window.
 pub struct Phone {
     directory: tempfile::TempDir,
     key: Arc<TestKey>,
     timings: CoreTimings,
     protocol: PairingProtocol,
     pub core: Arc<ThinClient>,
+    first: Window,
+}
+
+impl std::ops::Deref for Phone {
+    type Target = Window;
+
+    fn deref(&self) -> &Window {
+        &self.first
+    }
+}
+
+/// A window of the app on a phone, a Client of its own over its core.
+pub struct Window {
+    pub window: Arc<ThinClientWindow>,
 }
 
 impl Phone {
@@ -866,8 +882,14 @@ impl Phone {
             key,
             timings,
             protocol,
+            first: Window::of(&core),
             core,
         }
+    }
+
+    /// Another window of the app, as a person makes one beside the first.
+    pub fn another_window(&self) -> Window {
+        Window::of(&self.core)
     }
 
     /// The directory the core keeps everything in.
@@ -889,7 +911,9 @@ impl Phone {
             timings,
             protocol,
             core,
+            first,
         } = self;
+        drop(first);
         drop(core);
         change(directory.path());
         let core = open(&directory, &key, timings, protocol);
@@ -898,23 +922,8 @@ impl Phone {
             key,
             timings,
             protocol,
+            first: Window::of(&core),
             core,
-        }
-    }
-
-    /// What the core says of its own accord once it says what `shown` looks
-    /// for.
-    pub async fn notice_until(&self, shown: impl Fn(&Option<Notice>) -> bool) -> Option<Notice> {
-        let (sender, mut heard) = watch::channel(None);
-        let _subscription = self.core.watch_notices(Arc::new(Heard(sender)));
-        let heard = timeout(
-            PROGRESS_DEADLINE,
-            heard.wait_for(|notice| notice.as_ref().is_some_and(&shown)),
-        )
-        .await;
-        match heard {
-            Ok(Ok(notice)) => notice.clone().expect("heard"),
-            _ => panic!("the core never said what was looked for"),
         }
     }
 
@@ -926,27 +935,6 @@ impl Phone {
     /// The fingerprint a Serving Server knows this phone by.
     pub fn fingerprint(&self) -> String {
         shaman_pairing::fingerprint(&self.key.public_key())
-    }
-
-    pub async fn outlook(&self) -> Outlook {
-        let (sender, mut heard) = watch::channel(None);
-        let _subscription = self.core.watch_outlook(Arc::new(Heard(sender)));
-        heard_at_once(&mut heard).await
-    }
-
-    /// Where the Outlook stands once it stands where `shown` looks for.
-    pub async fn outlook_until(&self, shown: impl Fn(&Outlook) -> bool) -> Outlook {
-        let (sender, mut heard) = watch::channel(None);
-        let _subscription = self.core.watch_outlook(Arc::new(Heard(sender)));
-        let heard = timeout(
-            PROGRESS_DEADLINE,
-            heard.wait_for(|outlook| outlook.as_ref().is_some_and(&shown)),
-        )
-        .await;
-        match heard {
-            Ok(Ok(outlook)) => outlook.clone().expect("heard"),
-            _ => panic!("the Outlook never stood where it was looked for"),
-        }
     }
 
     pub async fn device(&self) -> ThisDevice {
@@ -1014,21 +1002,6 @@ impl Phone {
             .await
     }
 
-    /// What the listing shows once it shows what `shown` looks for.
-    pub async fn listing_until(&self, shown: impl Fn(&Listing) -> bool) -> Listing {
-        let (sender, mut heard) = watch::channel(None);
-        let _subscription = self.core.watch_listing(Arc::new(Heard(sender)));
-        let heard = timeout(
-            PROGRESS_DEADLINE,
-            heard.wait_for(|listing| listing.as_ref().is_some_and(&shown)),
-        )
-        .await;
-        match heard {
-            Ok(Ok(listing)) => listing.clone().expect("heard"),
-            _ => panic!("the listing never showed what was looked for"),
-        }
-    }
-
     /// Whether an act is under way, once it is as `wanted` says.
     pub async fn acts_until(&self, wanted: bool) {
         let (sender, mut heard) = watch::channel(None);
@@ -1042,10 +1015,77 @@ impl Phone {
         .expect("heard");
     }
 
+    pub fn shutdown(self) {
+        drop(self.first);
+        drop(self.core);
+        drop(self.directory);
+    }
+}
+
+impl Window {
+    /// A window of the app over `core`.
+    fn of(core: &Arc<ThinClient>) -> Self {
+        Self {
+            window: core.clone().window(),
+        }
+    }
+
+    /// What the core says of its own accord once it says what `shown` looks
+    /// for.
+    pub async fn notice_until(&self, shown: impl Fn(&Option<Notice>) -> bool) -> Option<Notice> {
+        let (sender, mut heard) = watch::channel(None);
+        let _subscription = self.window.watch_notices(Arc::new(Heard(sender)));
+        let heard = timeout(
+            PROGRESS_DEADLINE,
+            heard.wait_for(|notice| notice.as_ref().is_some_and(&shown)),
+        )
+        .await;
+        match heard {
+            Ok(Ok(notice)) => notice.clone().expect("heard"),
+            _ => panic!("the core never said what was looked for"),
+        }
+    }
+
+    pub async fn outlook(&self) -> Outlook {
+        let (sender, mut heard) = watch::channel(None);
+        let _subscription = self.window.watch_outlook(Arc::new(Heard(sender)));
+        heard_at_once(&mut heard).await
+    }
+
+    /// Where the Outlook stands once it stands where `shown` looks for.
+    pub async fn outlook_until(&self, shown: impl Fn(&Outlook) -> bool) -> Outlook {
+        let (sender, mut heard) = watch::channel(None);
+        let _subscription = self.window.watch_outlook(Arc::new(Heard(sender)));
+        let heard = timeout(
+            PROGRESS_DEADLINE,
+            heard.wait_for(|outlook| outlook.as_ref().is_some_and(&shown)),
+        )
+        .await;
+        match heard {
+            Ok(Ok(outlook)) => outlook.clone().expect("heard"),
+            _ => panic!("the Outlook never stood where it was looked for"),
+        }
+    }
+
+    /// What the listing shows once it shows what `shown` looks for.
+    pub async fn listing_until(&self, shown: impl Fn(&Listing) -> bool) -> Listing {
+        let (sender, mut heard) = watch::channel(None);
+        let _subscription = self.window.watch_listing(Arc::new(Heard(sender)));
+        let heard = timeout(
+            PROGRESS_DEADLINE,
+            heard.wait_for(|listing| listing.as_ref().is_some_and(&shown)),
+        )
+        .await;
+        match heard {
+            Ok(Ok(listing)) => listing.clone().expect("heard"),
+            _ => panic!("the listing never showed what was looked for"),
+        }
+    }
+
     /// What the Landing shows once it shows what `shown` looks for.
     pub async fn landing_until(&self, shown: impl Fn(&Landing) -> bool) -> Landing {
         let (sender, mut heard) = watch::channel(None);
-        let _subscription = self.core.watch_landing(Arc::new(Heard(sender)));
+        let _subscription = self.window.watch_landing(Arc::new(Heard(sender)));
         let heard = timeout(
             PROGRESS_DEADLINE,
             heard.wait_for(|landing| landing.as_ref().is_some_and(&shown)),
@@ -1065,8 +1105,8 @@ impl Phone {
         shown: impl Fn(&WorkspacePicker) -> bool,
     ) -> WorkspacePicker {
         let (sender, mut heard) = watch::channel(None);
-        let _subscription = self.core.watch_workspaces(Arc::new(Heard(sender)));
-        self.core.search_workspaces(query.to_owned());
+        let _subscription = self.window.watch_workspaces(Arc::new(Heard(sender)));
+        self.window.search_workspaces(query.to_owned());
         let found = timeout(
             PROGRESS_DEADLINE,
             heard.wait_for(|picker| picker.as_ref().is_some_and(&shown)),
@@ -1090,7 +1130,7 @@ impl Phone {
         shown: impl Fn(&WorkspacePicker) -> bool,
     ) -> Option<WorkspacePicker> {
         let (sender, mut heard) = watch::channel(None);
-        let _subscription = self.core.watch_workspaces(Arc::new(Heard(sender)));
+        let _subscription = self.window.watch_workspaces(Arc::new(Heard(sender)));
         timeout(
             within,
             heard.wait_for(|picker| picker.as_ref().is_some_and(&shown)),
@@ -1104,7 +1144,7 @@ impl Phone {
     /// the Landing's send does, and reads it as its screen turns into it.
     pub fn begin(&self, text: &str) -> Reading {
         let session = self
-            .core
+            .window
             .begin_session(text.to_owned(), false)
             .expect("a Session begun");
         Self::reading(session)
@@ -1114,7 +1154,7 @@ impl Phone {
     /// a new Worktree, as the Landing's send does with that chosen.
     pub fn begin_in_new_worktree(&self, text: &str) -> Reading {
         let session = self
-            .core
+            .window
             .begin_session(text.to_owned(), true)
             .expect("a Session begun");
         Self::reading(session)
@@ -1122,7 +1162,7 @@ impl Phone {
 
     /// Opens the Session `reference` names, as a screen pushed to read it.
     pub fn open(&self, reference: &str) -> Reading {
-        Self::reading(self.core.open_session(reference.to_owned()))
+        Self::reading(self.window.open_session(reference.to_owned()))
     }
 
     fn reading(session: Arc<OpenSession>) -> Reading {
@@ -1137,11 +1177,6 @@ impl Phone {
             conversation,
             _subscriptions: [frame_subscription, conversation_subscription],
         }
-    }
-
-    pub fn shutdown(self) {
-        drop(self.core);
-        drop(self.directory);
     }
 }
 

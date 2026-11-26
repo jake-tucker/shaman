@@ -20,7 +20,7 @@ async fn pair(phone: &Phone, server: &ServingServer, name: &str) {
         .invite(vec![Way::Direct(server.serving_address())])
         .await;
     let paired = phone
-        .core
+        .window
         .confirm_pairing(invite, name.to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(
@@ -310,7 +310,7 @@ async fn narrowing_turns_the_outlook_which_is_kept_and_the_scope_is_not() {
     // A Workspace chosen narrows the listing and turns the Outlook there.
     let dotfiles = choice(&listing, "dotfiles").expect("offered");
     phone
-        .core
+        .window
         .narrow_listing(dotfiles.scope)
         .await
         .expect("narrowed");
@@ -321,20 +321,20 @@ async fn narrowing_turns_the_outlook_which_is_kept_and_the_scope_is_not() {
     assert_eq!(phone.outlook().await, outlook("desk", Some("dotfiles")));
 
     // A search answers within it.
-    phone.core.search_listing("ZSH".to_owned());
+    phone.window.search_listing("ZSH".to_owned());
     let searched = phone.listing_until(|listing| listing.found.is_some()).await;
     let found = searched.found.expect("found");
     assert!(
         matches!(&found[..], [FoundRow::Active { row }] if row.title == "Tidy zsh"),
         "{found:?}"
     );
-    phone.core.search_listing(String::new());
+    phone.window.search_listing(String::new());
 
     // Another Workspace of the same Remote takes the place of the one
     // remembered for it.
     let shaman = choice(&listing, "shaman").expect("offered");
     phone
-        .core
+        .window
         .narrow_listing(shaman.scope)
         .await
         .expect("narrowed");
@@ -347,7 +347,7 @@ async fn narrowing_turns_the_outlook_which_is_kept_and_the_scope_is_not() {
     // A Remote chosen turns the Outlook toward it, its Workspace as it was.
     let lab_whole = choice(&listing, "All of lab").expect("offered");
     phone
-        .core
+        .window
         .narrow_listing(lab_whole.scope)
         .await
         .expect("narrowed");
@@ -360,7 +360,7 @@ async fn narrowing_turns_the_outlook_which_is_kept_and_the_scope_is_not() {
     // Everywhere turns nothing.
     let everywhere = choice(&listing, "Everywhere").expect("offered");
     phone
-        .core
+        .window
         .narrow_listing(everywhere.scope)
         .await
         .expect("widened");
@@ -371,7 +371,7 @@ async fn narrowing_turns_the_outlook_which_is_kept_and_the_scope_is_not() {
 
     // The Outlook and each Remote's Workspace are kept; the scope is not.
     phone
-        .core
+        .window
         .narrow_listing(choice(&listing, "All of desk").expect("offered").scope)
         .await
         .expect("narrowed");
@@ -410,7 +410,7 @@ async fn a_scope_handed_back_after_a_cold_start_narrows_the_listing_again_and_tu
     // What the listing says it is narrowed to is what Swift keeps.
     let dotfiles = choice(&listing, "dotfiles").expect("offered");
     phone
-        .core
+        .window
         .narrow_listing(dotfiles.scope.clone())
         .await
         .expect("narrowed");
@@ -420,7 +420,7 @@ async fn a_scope_handed_back_after_a_cold_start_narrows_the_listing_again_and_tu
         .scope;
     assert_eq!(kept, dotfiles.scope);
     phone
-        .core
+        .window
         .narrow_listing(choice(&listing, "All of lab").expect("offered").scope)
         .await
         .expect("narrowed");
@@ -429,7 +429,7 @@ async fn a_scope_handed_back_after_a_cold_start_narrows_the_listing_again_and_tu
     // Handed back at once, before desk has answered the phone launched
     // again, the scope stands as it was kept until desk says what it offers.
     let phone = phone.relaunched();
-    phone.core.restore_listing(kept.clone());
+    phone.window.restore_listing(kept.clone());
     assert_eq!(phone.listing_until(|_| true).await.scope, kept);
     let restored = phone
         .listing_until(|listing| listing.title == "desk · dotfiles" && !listing.active.is_empty())
@@ -449,7 +449,7 @@ async fn a_scope_handed_back_after_a_cold_start_narrows_the_listing_again_and_tu
 
     // A Remote's whole is handed back as it was kept.
     phone
-        .core
+        .window
         .restore_listing(choice(&restored, "All of desk").expect("offered").scope);
     let whole = phone.listing_until(|listing| listing.title == "desk").await;
     assert_eq!(titles(&whole), ["Tidy zsh", "Map the workspace"]);
@@ -479,13 +479,13 @@ async fn a_scope_handed_back_that_is_gone_narrows_the_listing_to_everywhere() {
 
     // A Remote this phone no longer holds is gone at once.
     phone
-        .core
+        .window
         .restore_listing("remote/a-server-never-paired".to_owned());
     let everywhere = phone.listing_until(|_| true).await;
     assert_eq!(everywhere.scope, "everywhere");
     assert_eq!(everywhere.title, "Everywhere");
     phone
-        .core
+        .window
         .restore_listing("workspace/a-server-never-paired/1".to_owned());
     assert_eq!(phone.listing_until(|_| true).await.scope, "everywhere");
 
@@ -496,7 +496,7 @@ async fn a_scope_handed_back_that_is_gone_narrows_the_listing_to_everywhere() {
         shaman.rsplit('/').next().expect("a Workspace named"),
         "a-workspace-gone",
     );
-    phone.core.restore_listing(elsewhere);
+    phone.window.restore_listing(elsewhere);
     let fallen = phone
         .listing_until(|listing| listing.scope == "everywhere" && listing.active.len() == 2)
         .await;
@@ -511,7 +511,7 @@ async fn a_scope_handed_back_that_is_gone_narrows_the_listing_to_everywhere() {
     );
 
     // Anything that is no scope at all is Everywhere too.
-    phone.core.restore_listing("not a scope".to_owned());
+    phone.window.restore_listing("not a scope".to_owned());
     assert_eq!(phone.listing_until(|_| true).await.scope, "everywhere");
 
     phone.shutdown();
@@ -531,7 +531,7 @@ async fn a_remote_paired_again_under_a_new_name_keeps_the_workspace_remembered_f
         .listing_until(|listing| choice(listing, "shaman").is_some())
         .await;
     phone
-        .core
+        .window
         .narrow_listing(choice(&listing, "shaman").expect("offered").scope)
         .await
         .expect("narrowed");
@@ -554,7 +554,7 @@ async fn a_remote_paired_again_under_a_new_name_keeps_the_workspace_remembered_f
 async fn pair_through(phone: &Phone, desk: &ServingServer, address: &Gate) {
     let invite = desk.invite(vec![Way::Direct(address.address())]).await;
     let paired = phone
-        .core
+        .window
         .confirm_pairing(invite, "desk".to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(

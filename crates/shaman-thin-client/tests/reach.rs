@@ -60,7 +60,7 @@ fn timings(hold: Duration) -> CoreTimings {
 async fn pair_through(phone: &Phone, server: &ServingServer, gate: &Gate, name: &str) {
     let invite = server.invite(vec![Way::Direct(gate.address())]).await;
     let paired = phone
-        .core
+        .window
         .confirm_pairing(invite, name.to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(
@@ -407,7 +407,7 @@ impl ListingListener for Watching {
 /// Watches every listing `phone` tells from now on.
 fn watch_for_unreachable(phone: &Phone) -> (Arc<Watching>, Arc<Subscription>) {
     let watching = Arc::new(Watching(AtomicBool::new(false)));
-    let subscription = phone.core.watch_listing(watching.clone());
+    let subscription = phone.window.watch_listing(watching.clone());
     (watching, subscription)
 }
 

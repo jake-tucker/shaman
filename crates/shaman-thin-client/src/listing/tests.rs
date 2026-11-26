@@ -73,7 +73,7 @@ pub(crate) fn remote(name: &str, sessions: Vec<SessionSummary>) -> Answered {
         relay_hint: None,
         agent: None,
         models: None,
-        resolved: None,
+        resolved: Vec::new(),
     }
 }
 
@@ -675,6 +675,7 @@ pub(crate) fn listings(runtime: &tokio::runtime::Runtime) -> (Listings, tempfile
 fn a_row_held_past_its_settling_is_not_made_again_and_again() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let (listings, _directory) = listings(&runtime);
+    let view = listings.view();
     let now = SessionTimestamp::now();
     let mut sidekick = session("Sidekick", "Sidekick", 0, now.0 - 9 * DAY);
     sidekick.created_at = SessionTimestamp(1);
@@ -693,7 +694,7 @@ fn a_row_held_past_its_settling_is_not_made_again_and_again() {
         "made {} times while nothing changed",
         listings.renders() - made
     );
-    assert_eq!(titles(&listings.listing().borrow().active), ["Sidekick"]);
+    assert_eq!(titles(&view.listing().borrow().active), ["Sidekick"]);
 }
 
 #[test]
@@ -724,11 +725,12 @@ fn a_session_left_alone_settles_onto_the_shelf_as_it_comes_to_be() {
         Duration::from_secs(3),
         crate::drafts::Drafts::default(),
     );
+    let view = listings.view();
     let now = SessionTimestamp::now();
     listings.hold(remote("desk", vec![session("Quiet", "shaman", 1, now.0)]));
-    assert_eq!(titles(&listings.listing().borrow().active), ["Quiet"]);
+    assert_eq!(titles(&view.listing().borrow().active), ["Quiet"]);
 
-    let mut listing = listings.listing();
+    let mut listing = view.listing();
     runtime
         .block_on(async {
             tokio::time::timeout(
@@ -1212,13 +1214,14 @@ fn only_a_remote_in_scope_yet_to_answer_is_said_to_be_reached() {
 fn narrowing_says_what_the_outlook_turns_toward_and_everywhere_turns_nothing() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let (listings, _directory) = listings(&runtime);
+    let view = listings.view();
     for remote in desk_and_lab() {
         listings.hold(remote);
     }
-    let listing = listings.listing().borrow().clone();
+    let listing = view.listing().borrow().clone();
 
     assert_eq!(
-        listings.narrow(&choice(&listing, "dotfiles").scope),
+        view.narrow(&choice(&listing, "dotfiles").scope),
         Some(Turn {
             remote: "desk".to_owned(),
             workspace: Some(RememberedWorkspace {
@@ -1227,28 +1230,28 @@ fn narrowing_says_what_the_outlook_turns_toward_and_everywhere_turns_nothing() {
             }),
         })
     );
-    assert_eq!(listings.listing().borrow().title, "desk · dotfiles");
+    assert_eq!(view.listing().borrow().title, "desk · dotfiles");
     assert_eq!(
-        listings.narrow(&choice(&listing, "All of lab").scope),
+        view.narrow(&choice(&listing, "All of lab").scope),
         Some(Turn {
             remote: "lab".to_owned(),
             workspace: None,
         })
     );
-    assert_eq!(listings.listing().borrow().title, "lab");
-    assert_eq!(listings.narrow("everywhere"), None);
-    assert_eq!(listings.listing().borrow().title, "Everywhere");
+    assert_eq!(view.listing().borrow().title, "lab");
+    assert_eq!(view.narrow("everywhere"), None);
+    assert_eq!(view.listing().borrow().title, "Everywhere");
     assert_eq!(
-        listings.narrow("remote/gone-key"),
+        view.narrow("remote/gone-key"),
         None,
         "nothing to turn toward"
     );
 
-    listings.search("upgrade");
-    let found = listings.listing().borrow().found.clone().expect("found");
+    view.search("upgrade");
+    let found = view.listing().borrow().found.clone().expect("found");
     assert_eq!(found.len(), 1);
-    listings.search("");
-    assert_eq!(listings.listing().borrow().found, None);
+    view.search("");
+    assert_eq!(view.listing().borrow().found, None);
 }
 
 #[test]
@@ -1297,6 +1300,7 @@ fn a_workspace_no_longer_offered_widens_the_scope_to_its_remote() {
 fn narrowing_to_a_workspace_no_longer_offered_turns_the_outlook_toward_its_remote_alone() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let (listings, _directory) = listings(&runtime);
+    let view = listings.view();
     for remote in desk_and_lab() {
         listings.hold(remote);
     }
@@ -1305,13 +1309,13 @@ fn narrowing_to_a_workspace_no_longer_offered_turns_the_outlook_toward_its_remot
         workspace: workspace_id("gone"),
     };
     assert_eq!(
-        listings.narrow(&gone.reference()),
+        view.narrow(&gone.reference()),
         Some(Turn {
             remote: "desk".to_owned(),
             workspace: None,
         })
     );
-    assert_eq!(listings.listing().borrow().title, "desk");
+    assert_eq!(view.listing().borrow().title, "desk");
 }
 
 /// `answered` as a Remote held that has yet to answer.
@@ -1343,6 +1347,7 @@ fn answer(listings: &Listings, answered: Answered) {
 fn a_scope_handed_back_is_held_until_its_remote_says_what_it_offers() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let (listings, _directory) = listings(&runtime);
+    let view = listings.view();
     let [desk, lab] = desk_and_lab();
     listings.hold(unanswered(&desk));
     listings.hold(lab);
@@ -1351,14 +1356,14 @@ fn a_scope_handed_back_is_held_until_its_remote_says_what_it_offers() {
         workspace: workspace_id("dotfiles"),
     };
 
-    listings.restore(&dotfiles.reference());
-    let held = listings.listing().borrow().clone();
+    view.restore(&dotfiles.reference());
+    let held = view.listing().borrow().clone();
     assert_eq!(held.scope, dotfiles.reference(), "held as handed back");
     assert_eq!(held.title, "desk", "titled by its Remote until it answers");
     assert_eq!(held.waiting.as_deref(), Some("Reaching desk…"));
 
     answer(&listings, desk);
-    let restored = listings.listing().borrow().clone();
+    let restored = view.listing().borrow().clone();
     assert_eq!(restored.scope, dotfiles.reference());
     assert_eq!(restored.title, "desk · dotfiles");
     assert_eq!(titles(&restored.active), ["Tidy zsh"]);
@@ -1368,6 +1373,7 @@ fn a_scope_handed_back_is_held_until_its_remote_says_what_it_offers() {
 fn a_workspace_narrowed_to_while_its_remote_has_yet_to_answer_is_not_held() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let (listings, _directory) = listings(&runtime);
+    let view = listings.view();
     let [desk, lab] = desk_and_lab();
     listings.hold(unanswered(&desk));
     listings.hold(lab);
@@ -1377,8 +1383,8 @@ fn a_workspace_narrowed_to_while_its_remote_has_yet_to_answer_is_not_held() {
     };
 
     // Only a scope handed back after a cold start waits on its Remote.
-    listings.narrow(&dotfiles.reference());
-    let narrowed = listings.listing().borrow().clone();
+    view.narrow(&dotfiles.reference());
+    let narrowed = view.listing().borrow().clone();
     assert_eq!(narrowed.scope, "remote/desk-key");
     assert_eq!(narrowed.title, "desk");
 }
@@ -1387,14 +1393,15 @@ fn a_workspace_narrowed_to_while_its_remote_has_yet_to_answer_is_not_held() {
 fn a_scope_handed_back_that_is_gone_is_everywhere_and_turns_nothing() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let (listings, _directory) = listings(&runtime);
+    let view = listings.view();
     let [desk, lab] = desk_and_lab();
     listings.hold(unanswered(&desk));
     listings.hold(lab);
 
     // A Remote not held is gone at once.
     for gone in ["remote/gone-key", "workspace/gone-key/shaman", "nowhere"] {
-        listings.restore(gone);
-        assert_eq!(listings.listing().borrow().scope, "everywhere", "{gone}");
+        view.restore(gone);
+        assert_eq!(view.listing().borrow().scope, "everywhere", "{gone}");
     }
 
     // A Workspace no longer offered is gone once its Remote answers, and
@@ -1404,10 +1411,10 @@ fn a_scope_handed_back_that_is_gone_is_everywhere_and_turns_nothing() {
         fingerprint: "desk-key".to_owned(),
         workspace: workspace_id("gone"),
     };
-    listings.restore(&gone.reference());
-    assert_eq!(listings.listing().borrow().scope, gone.reference());
+    view.restore(&gone.reference());
+    assert_eq!(view.listing().borrow().scope, gone.reference());
     answer(&listings, desk.clone());
-    let fallen = listings.listing().borrow().clone();
+    let fallen = view.listing().borrow().clone();
     assert_eq!(fallen.scope, "everywhere");
     assert_eq!(fallen.title, "Everywhere");
     assert_eq!(fallen.active.len(), 3);
@@ -1415,7 +1422,7 @@ fn a_scope_handed_back_that_is_gone_is_everywhere_and_turns_nothing() {
     // Judged once: the Workspace offered again later finds the listing
     // everywhere still.
     answer(&listings, with_workspaces(desk, &["shaman", "gone"]));
-    assert_eq!(listings.listing().borrow().scope, "everywhere");
+    assert_eq!(view.listing().borrow().scope, "everywhere");
 }
 
 /// The Remote `name` reading Unreachable as `why` says, its last answer
@@ -1643,15 +1650,16 @@ async fn what_the_landing_shows_is_not_asked_again_once_refused_until_it_is_want
     asker.abort();
 }
 
-/// The path the Remote `name` resolves for a Landing, where it resolves one.
-fn landing_path(listings: &Listings, name: &str) -> Option<PathBuf> {
+/// The paths the Remote `name` resolves for the Landings up.
+fn landing_paths(listings: &Listings, name: &str) -> Vec<PathBuf> {
     listings
         .shared
         .lock()
         .remotes
         .iter()
         .find(|followed| followed.answered.name == name)
-        .and_then(|followed| followed.landing_path.lock().unwrap().clone())
+        .map(|followed| followed.landing_paths.lock().unwrap().clone())
+        .unwrap_or_default()
 }
 
 #[test]
@@ -1664,21 +1672,55 @@ fn a_workspace_is_resolved_only_on_the_remote_the_landing_stands_at_and_only_whi
     let assistant = root().join("work").join("home-assistant");
 
     let up = listings.landing_up();
-    listings.aim_landing(Some(("desk", &shaman)));
-    assert_eq!(landing_path(&listings, "desk"), Some(shaman.clone()));
-    assert_eq!(landing_path(&listings, "lab"), None);
+    up.aim(Some(("desk", &shaman)));
+    assert_eq!(
+        landing_paths(&listings, "desk"),
+        std::slice::from_ref(&shaman)
+    );
+    assert_eq!(landing_paths(&listings, "lab"), [] as [PathBuf; 0]);
 
     // The Outlook turns to the lab: the desk resolves nothing more.
-    listings.aim_landing(Some(("lab", &assistant)));
-    assert_eq!(landing_path(&listings, "desk"), None);
-    assert_eq!(landing_path(&listings, "lab"), Some(assistant.clone()));
+    up.aim(Some(("lab", &assistant)));
+    assert_eq!(landing_paths(&listings, "desk"), [] as [PathBuf; 0]);
+    assert_eq!(
+        landing_paths(&listings, "lab"),
+        std::slice::from_ref(&assistant)
+    );
 
     // A second Landing goes; the first is still up.
     drop(listings.landing_up());
-    assert_eq!(landing_path(&listings, "lab"), Some(assistant));
+    assert_eq!(landing_paths(&listings, "lab"), [assistant]);
 
     drop(up);
-    assert_eq!(landing_path(&listings, "lab"), None, "no Landing is up");
+    assert_eq!(
+        landing_paths(&listings, "lab"),
+        [] as [PathBuf; 0],
+        "no Landing is up"
+    );
+}
+
+#[test]
+fn two_windows_landings_on_one_remote_each_have_their_own_workspace_resolved() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let (listings, _directory) = listings(&runtime);
+    listings.hold(remote("desk", Vec::new()));
+    let shaman = root().join("work").join("shaman");
+    let dotfiles = root().join("work").join("dotfiles");
+
+    let (first, second) = (listings.landing_up(), listings.landing_up());
+    first.aim(Some(("desk", &shaman)));
+    second.aim(Some(("desk", &dotfiles)));
+    assert_eq!(
+        landing_paths(&listings, "desk"),
+        [dotfiles.clone(), shaman.clone()]
+    );
+
+    drop(second);
+    assert_eq!(
+        landing_paths(&listings, "desk"),
+        [shaman],
+        "the first's stays"
+    );
 }
 
 fn workspace_listing(run: u128, changes: u64, names: &[&str]) -> WorkspaceListing {
@@ -1810,7 +1852,8 @@ fn a_change_a_newer_servers_catalog_sent_is_passed_over_and_the_remote_said_newe
         },
     ));
 
-    let mut notices = listings.notices().shown();
+    let window = listings.notices().window();
+    let mut notices = window.shown();
     let said = runtime.block_on(async {
         tokio::time::timeout(Duration::from_secs(5), notices.wait_for(Option::is_some))
             .await
@@ -1823,7 +1866,7 @@ fn a_change_a_newer_servers_catalog_sent_is_passed_over_and_the_remote_said_newe
         said.words,
         "The server runs a newer Shaman; some things may not show"
     );
-    listings.notices().seen(said.id);
+    window.seen(said.id);
     std::thread::sleep(Duration::from_millis(50));
     assert_eq!(*notices.borrow(), None, "said once, for both");
     reader.abort();

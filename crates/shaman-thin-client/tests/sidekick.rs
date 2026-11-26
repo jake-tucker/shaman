@@ -20,7 +20,7 @@ use support::{Cut, Gate, Phone, ServingServer, WORKING};
 async fn pair_through(phone: &Phone, server: &ServingServer, way: Way, name: &str) {
     let invite = server.invite(vec![way]).await;
     let paired = phone
-        .core
+        .window
         .confirm_pairing(invite, name.to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(

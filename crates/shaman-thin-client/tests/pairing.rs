@@ -147,7 +147,7 @@ async fn pairing_names_both_sides_turns_the_outlook_and_survives_a_relaunch() {
     let phone = Phone::new();
 
     let paired = phone
-        .core
+        .window
         .confirm_pairing(invite, format!(" {DESK} "), "Pocket".to_owned())
         .await;
     assert_eq!(
@@ -226,7 +226,7 @@ async fn pairing_keeps_dialling_until_a_way_answers() {
         opening.open_now();
     });
     let paired = phone
-        .core
+        .window
         .confirm_pairing(invite, DESK.to_owned(), "iPhone".to_owned())
         .await;
     assert_eq!(
@@ -249,7 +249,7 @@ async fn a_pairing_no_way_answers_fails_offering_to_try_again_and_keeps_nothing(
 
     let began = tokio::time::Instant::now();
     let failed = phone
-        .core
+        .window
         .confirm_pairing(invite.clone(), DESK.to_owned(), "Pocket".to_owned())
         .await;
     let PairingOutcome::Failed { message, again } = failed else {
@@ -275,7 +275,7 @@ async fn a_pairing_no_way_answers_fails_offering_to_try_again_and_keeps_nothing(
     // The Invite was never spent, so trying again with it pairs.
     gate.open_now();
     let paired = phone
-        .core
+        .window
         .confirm_pairing(invite, DESK.to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(
@@ -297,7 +297,7 @@ async fn a_spent_invite_fails_in_the_servers_words_offering_to_scan_again() {
     let first = Phone::new();
     assert!(matches!(
         first
-            .core
+            .window
             .confirm_pairing(invite.clone(), DESK.to_owned(), "iPhone".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -305,7 +305,7 @@ async fn a_spent_invite_fails_in_the_servers_words_offering_to_scan_again() {
 
     let second = Phone::new();
     let failed = second
-        .core
+        .window
         .confirm_pairing(invite, DESK.to_owned(), "iPhone".to_owned())
         .await;
     assert_eq!(
@@ -329,7 +329,7 @@ async fn names_either_side_would_not_keep_are_refused_beside_them_dialling_nothi
     let phone = Phone::new();
 
     let refused = phone
-        .core
+        .window
         .confirm_pairing(invite.clone(), DESK.to_owned(), "everywhere".to_owned())
         .await;
     assert!(
@@ -337,7 +337,7 @@ async fn names_either_side_would_not_keep_are_refused_beside_them_dialling_nothi
         "{refused:?}"
     );
     let refused = phone
-        .core
+        .window
         .confirm_pairing(invite, "  ".to_owned(), "iPhone".to_owned())
         .await;
     assert!(
@@ -358,7 +358,7 @@ async fn an_invite_from_a_server_already_held_says_so_and_replaces_its_pairing()
         .await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(first, DESK.to_owned(), "iPhone".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -377,7 +377,7 @@ async fn an_invite_from_a_server_already_held_says_so_and_replaces_its_pairing()
     assert!(held.contains("replaces"), "{held}");
 
     let paired = phone
-        .core
+        .window
         .confirm_pairing(again, "studio".to_owned(), "iPhone".to_owned())
         .await;
     assert_eq!(
@@ -411,7 +411,7 @@ async fn an_invite_from_a_server_already_held_says_so_and_replaces_its_pairing()
         .await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(third, "studio".to_owned(), "iPhone".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -430,7 +430,7 @@ async fn a_failed_pairing_with_a_server_already_held_keeps_the_pairing_it_had() 
         .await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(first, DESK.to_owned(), "iPhone".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -439,7 +439,7 @@ async fn a_failed_pairing_with_a_server_already_held_keeps_the_pairing_it_had() 
     let unanswered = server.invite(vec![Way::Direct(gate.address())]).await;
 
     let failed = phone
-        .core
+        .window
         .confirm_pairing(unanswered, "studio".to_owned(), "iPhone".to_owned())
         .await;
     assert!(
@@ -483,7 +483,7 @@ async fn a_link_local_way_is_shown_and_never_dialled() {
 
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, DESK.to_owned(), "iPhone".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -522,7 +522,7 @@ async fn an_invite_offering_only_a_link_local_way_offers_to_scan_again() {
     assert_eq!(read.ways.len(), 1, "{:?}", read.ways);
 
     let failed = phone
-        .core
+        .window
         .confirm_pairing(invite, DESK.to_owned(), "iPhone".to_owned())
         .await;
     assert_eq!(
@@ -549,7 +549,7 @@ async fn a_way_that_does_not_answer_reads_as_not_answering() {
     let phone = Phone::new();
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, DESK.to_owned(), "iPhone".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -593,7 +593,7 @@ async fn a_slow_way_answering_late_leaves_the_outlook_at_the_remote_paired_since
         .await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, "first".to_owned(), "iPhone".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -603,7 +603,7 @@ async fn a_slow_way_answering_late_leaves_the_outlook_at_the_remote_paired_since
         .await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, "second".to_owned(), "iPhone".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -647,7 +647,7 @@ async fn a_pairing_made_whose_record_cannot_be_kept_is_shown_paired_and_kept_by_
     std::fs::write(record.join("in the way"), b"").unwrap();
 
     let paired = phone
-        .core
+        .window
         .confirm_pairing(invite, DESK.to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(
@@ -690,7 +690,7 @@ async fn a_remote_whose_commit_never_landed_is_dropped_as_the_core_opens() {
     let phone = Phone::new();
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, DESK.to_owned(), "iPhone".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -727,7 +727,7 @@ async fn what_a_replaced_pairings_slow_way_says_is_not_shown_of_the_pairing_in_i
         .await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, DESK.to_owned(), "iPhone".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -738,7 +738,7 @@ async fn what_a_replaced_pairings_slow_way_says_is_not_shown_of_the_pairing_in_i
     let invite = server.invite(vec![Way::Direct(after.address())]).await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, DESK.to_owned(), "iPhone".to_owned())
             .await,
         PairingOutcome::Paired { .. }
@@ -771,16 +771,17 @@ async fn a_pairing_under_way_is_not_shown_and_one_whose_commit_fails_leaves_what
         .await;
     assert!(matches!(
         phone
-            .core
+            .window
             .confirm_pairing(invite, DESK.to_owned(), "iPhone".to_owned())
             .await,
         PairingOutcome::Paired { .. }
     ));
     let once = Gate::once(server.serving_address()).await;
     let invite = server.invite(vec![Way::Direct(once.address())]).await;
-    let core = phone.core.clone();
+    let window = phone.window.clone();
     let pairing = tokio::spawn(async move {
-        core.confirm_pairing(invite, "studio".to_owned(), "iPhone".to_owned())
+        window
+            .confirm_pairing(invite, "studio".to_owned(), "iPhone".to_owned())
             .await
     });
 
@@ -852,7 +853,7 @@ async fn an_invite_from_a_newer_shaman_says_to_update_the_app_read_or_confirmed(
         };
         assert_eq!(message, words);
         let failed = phone
-            .core
+            .window
             .confirm_pairing(newer, DESK.to_owned(), "iPhone".to_owned())
             .await;
         assert_eq!(

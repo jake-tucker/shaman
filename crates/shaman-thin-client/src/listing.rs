@@ -11,7 +11,9 @@
 //! The listing is narrowed by a scope and searched by Title, both handed in
 //! by Swift and neither kept from one run to the next: the core answers with
 //! the rows narrowed, filtered and ordered, and with the menu the screen's
-//! title opens, each choice carrying the scope Swift hands back.
+//! title opens, each choice carrying the scope Swift hands back. What every
+//! Remote answered is the device's, read once; the scope, the search and how
+//! much of the shelf is up are each window's, a [`ListingView`] of it.
 //!
 //! A Remote that reads Unreachable keeps the rows it last gave, dimmed, and
 //! stands as a slim row of its own at the foot of the active ones, offering
@@ -32,7 +34,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, Weak,
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -512,10 +514,10 @@ pub(crate) struct Answered {
     /// Its Model Catalog, which names that Agent, or none before its Session
     /// catalog has first carried one.
     pub models: Option<ModelCatalog>,
-    /// The Workspace at the path the Landing last asked to have resolved, as
-    /// the Remote resolved it: its Worktrees and whether a Session may begin
-    /// on its main one.
-    pub resolved: Option<(PathBuf, ResolvedWorkspace)>,
+    /// The Workspaces at the paths the Landings up last asked to have
+    /// resolved, as the Remote resolved them: their Worktrees and whether a
+    /// Session may begin on the main one.
+    pub resolved: Vec<(PathBuf, ResolvedWorkspace)>,
 }
 
 impl Answered {
@@ -1238,7 +1240,9 @@ struct Shared {
     hold: Duration,
     /// How long a Session is left alone before it settles on its own.
     settle_after: Duration,
-    shown: watch::Sender<Listing>,
+    /// Counts the windows' views and the Landings' aims, each known by its
+    /// count.
+    counted: AtomicU64,
     /// Moves on each time the listing is made, so what is drawn from what
     /// a Remote last answered beside it is drawn again.
     moved: watch::Sender<u64>,
@@ -1254,8 +1258,6 @@ struct Shared {
     /// Told whenever the next moment a Session settles by being left alone
     /// may have moved.
     settling: Notify,
-    /// How many Landings are up.
-    landings: AtomicUsize,
     /// Each composer's draft, which a Session absent from a listing its
     /// Remote answered with, or a Remote no longer followed, drops.
     drafts: Drafts,
@@ -1265,11 +1267,22 @@ struct Shared {
 struct State {
     /// The Remotes followed, in the order paired.
     remotes: Vec<Followed>,
+    /// Each window's view of the listing.
+    views: Vec<View>,
+    /// Where each Landing up would begin a Session, by its count: the
+    /// Remote, by name, and the Workspace's path on it.
+    aims: Vec<(u64, String, PathBuf)>,
+    next_settling: Option<SessionTimestamp>,
+}
+
+/// One window's view of the listing: how it is narrowed and how much of the
+/// shelf is up, while the window lives, and the listing that makes.
+struct View {
+    id: u64,
     /// How many of the shelf's rows are on show.
     on_show: usize,
-    /// How the listing is narrowed, until the core is opened again.
     narrowing: Narrowing,
-    next_settling: Option<SessionTimestamp>,
+    shown: watch::Sender<Listing>,
 }
 
 /// One Remote the listing follows, and what it last answered.
@@ -1283,9 +1296,9 @@ struct Followed {
     commands: SessionCommands,
     /// Told to ask the Remote again which Agent a new Session would get.
     agent_wanted: Arc<Notify>,
-    /// The Workspace the Landing would begin in on this Remote, by its path,
-    /// and what tells the Remote to resolve it again.
-    landing_path: Arc<Mutex<Option<PathBuf>>>,
+    /// The Workspaces the Landings up would begin in on this Remote, by
+    /// their paths, and what tells the Remote to resolve them again.
+    landing_paths: Arc<Mutex<Vec<PathBuf>>>,
     resolve_wanted: Arc<Notify>,
     /// Its catalog's reader and its listing's asker, which go with it.
     _readers: Readers,
@@ -1316,13 +1329,6 @@ impl Listings {
         hold: Duration,
         drafts: Drafts,
     ) -> Self {
-        let (listing, _) = present(
-            &[],
-            SessionTimestamp::now(),
-            SHELF_OPENING,
-            settle_after,
-            &Narrowing::default(),
-        );
         let pairings = watch::Sender::new(Pairings::default());
         let notices = Notices::new(pairings.subscribe());
         let shared = Arc::new(Shared {
@@ -1333,17 +1339,13 @@ impl Listings {
             network: Network::default(),
             hold,
             settle_after,
+            counted: AtomicU64::new(0),
             renders: AtomicU64::new(0),
-            shown: watch::Sender::new(listing),
             moved: watch::Sender::new(0),
             pairings,
             notices,
-            state: Mutex::new(State {
-                on_show: SHELF_OPENING,
-                ..State::default()
-            }),
+            state: Mutex::default(),
             settling: Notify::new(),
-            landings: AtomicUsize::new(0),
             drafts,
             ended: Mutex::default(),
         });
@@ -1351,8 +1353,30 @@ impl Listings {
         Self { shared }
     }
 
-    pub fn listing(&self) -> watch::Receiver<Listing> {
-        self.shared.shown.subscribe()
+    /// A window's view of the listing, at Everywhere, searched for nothing
+    /// and with the shelf opening on its first rows, until it goes.
+    pub fn view(&self) -> ListingView {
+        let id = self.shared.counted.fetch_add(1, Ordering::Relaxed);
+        let (listing, _) = present(
+            &self.shared.answered(),
+            SessionTimestamp::now(),
+            SHELF_OPENING,
+            self.shared.settle_after,
+            &Narrowing::default(),
+        );
+        let shown = watch::Sender::new(listing);
+        self.shared.lock().views.push(View {
+            id,
+            on_show: SHELF_OPENING,
+            narrowing: Narrowing::default(),
+            shown: shown.clone(),
+        });
+        self.shared.render();
+        ListingView {
+            id,
+            listings: self.clone(),
+            shown,
+        }
     }
 
     /// The Remotes this phone holds a Pairing with, now and on every change.
@@ -1450,68 +1474,9 @@ impl Listings {
                 })
                 .collect();
         }
+        // A Remote read afresh resolves what the Landings up aim at on it.
+        self.aim(None);
         shared.render();
-    }
-
-    /// Brings up the next of the shelf's settled rows.
-    pub fn show_more(&self) {
-        self.shared.lock().on_show += SHELF_BATCH;
-        self.shared.render();
-    }
-
-    /// Narrows the listing to the scope `reference` names, or to Everywhere
-    /// where it names no Remote held; and what that turns the Outlook
-    /// toward, which Everywhere turns toward nothing.
-    pub fn narrow(&self, reference: &str) -> Option<Turn> {
-        let turn = {
-            let mut state = self.shared.lock();
-            let answered = state
-                .remotes
-                .iter()
-                .map(|followed| &followed.answered)
-                .cloned()
-                .collect::<Vec<_>>();
-            let scope = Scope::of(reference).within(&answered, false);
-            let turn = scope.remote(&answered).map(|remote| Turn {
-                remote: remote.name.clone(),
-                workspace: match &scope {
-                    Scope::Workspace { workspace, .. } => remote
-                        .offered_workspaces()
-                        .into_iter()
-                        .find(|offered| offered.id == *workspace)
-                        .map(|offered| RememberedWorkspace {
-                            path: offered.path.clone(),
-                            name: remote.paths.workspace_name(offered),
-                        }),
-                    Scope::Everywhere | Scope::Remote { .. } => None,
-                },
-            });
-            state.narrowing.scope = scope;
-            state.narrowing.unjudged = false;
-            turn
-        };
-        self.shared.render();
-        turn
-    }
-
-    /// Narrows the listing to the scope `reference` names, as Swift kept it
-    /// and hands it back after a cold start, turning nothing: held as it is
-    /// while its Remote has yet to say what it offers, and Everywhere where
-    /// it is gone.
-    pub fn restore(&self, reference: &str) {
-        {
-            let mut state = self.shared.lock();
-            state.narrowing.scope = Scope::of(reference);
-            state.narrowing.unjudged = true;
-        }
-        self.shared.render();
-    }
-
-    /// Searches the listing by Title for `query`, until the core is opened
-    /// again; an empty one searches for nothing.
-    pub fn search(&self, query: &str) {
-        query.clone_into(&mut self.shared.lock().narrowing.query);
-        self.shared.render();
     }
 
     /// Checks every Remote followed, as the app comes to the front or the
@@ -1739,33 +1704,37 @@ impl Listings {
         }
     }
 
-    /// Has the Remote `name` resolve its Workspace at `path`, as the Landing
-    /// would begin a Session there — as it opens, as it turns to that
-    /// Workspace, and again as the Remote comes back — and every other Remote
-    /// resolve nothing more; or, given none, has no Remote resolve anything,
-    /// as where the Landing stands in no Workspace or none is up.
-    pub fn aim_landing(&self, at: Option<(&str, &Path)>) {
-        for followed in &self.shared.lock().remotes {
-            let wanted = at
-                .filter(|(name, _)| *name == followed.answered.name)
-                .map(|(_, path)| path.to_owned());
-            let asked = wanted.is_some();
-            *followed
-                .landing_path
-                .lock()
-                .unwrap_or_else(|poison| poison.into_inner()) = wanted;
-            if asked {
-                followed.resolve_wanted.notify_one();
-            }
+    /// Holds that a Landing is up, until what it answers goes: it has a
+    /// Remote resolve the Workspace it would begin in as it aims there, and
+    /// once it goes no Remote resolves anything more for it.
+    pub fn landing_up(&self) -> LandingUp {
+        LandingUp {
+            id: self.shared.counted.fetch_add(1, Ordering::Relaxed),
+            listings: self.clone(),
         }
     }
 
-    /// Holds that a Landing is up, until what it answers goes: once none is,
-    /// no Remote resolves a Workspace for one any more.
-    pub fn landing_up(&self) -> LandingUp {
-        self.shared.landings.fetch_add(1, Ordering::AcqRel);
-        LandingUp {
-            listings: self.clone(),
+    /// Has each Remote resolve the Workspace of each Landing up that aims at
+    /// it, and nothing more: the one `asked` is told to resolve them again,
+    /// as the Landing it names has just aimed there.
+    fn aim(&self, asked: Option<&str>) {
+        let state = self.shared.lock();
+        for followed in &state.remotes {
+            let mut wanted = state
+                .aims
+                .iter()
+                .filter(|(_, name, _)| *name == followed.answered.name)
+                .map(|(_, _, path)| path.clone())
+                .collect::<Vec<_>>();
+            wanted.sort();
+            wanted.dedup();
+            *followed
+                .landing_paths
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner()) = wanted;
+            if asked == Some(followed.answered.name.as_str()) {
+                followed.resolve_wanted.notify_one();
+            }
         }
     }
 
@@ -1872,8 +1841,8 @@ impl Listings {
                 listed,
                 remote
                     .resolved
-                    .as_ref()
-                    .filter(|(path, _)| Some(path.as_path()) == workspace)
+                    .iter()
+                    .find(|(path, _)| Some(path.as_path()) == workspace)
                     .map(|(_, resolved)| resolved),
             ),
         }
@@ -1924,14 +1893,122 @@ impl Listings {
 
 /// That a Landing is up, held for as long as it is.
 pub(crate) struct LandingUp {
+    id: u64,
     listings: Listings,
+}
+
+impl LandingUp {
+    /// Has the Remote `name` resolve its Workspace at `path`, as this Landing
+    /// would begin a Session there — as it opens, as it turns to that
+    /// Workspace, and again as the Remote comes back — and no Remote resolve
+    /// anything more for it elsewhere; or, given none, has no Remote resolve
+    /// anything for it, as where it stands in no Workspace.
+    pub fn aim(&self, at: Option<(&str, &Path)>) {
+        {
+            let mut state = self.listings.shared.lock();
+            state.aims.retain(|(id, _, _)| *id != self.id);
+            if let Some((name, path)) = at {
+                state.aims.push((self.id, name.to_owned(), path.to_owned()));
+            }
+        }
+        self.listings.aim(at.map(|(name, _)| name));
+    }
 }
 
 impl Drop for LandingUp {
     fn drop(&mut self) {
-        if self.listings.shared.landings.fetch_sub(1, Ordering::AcqRel) == 1 {
-            self.listings.aim_landing(None);
+        self.listings
+            .shared
+            .lock()
+            .aims
+            .retain(|(id, _, _)| *id != self.id);
+        self.listings.aim(None);
+    }
+}
+
+/// One window's view of the listing, while the window lives: its scope, its
+/// search and how much of the shelf is up.
+pub(crate) struct ListingView {
+    id: u64,
+    listings: Listings,
+    shown: watch::Sender<Listing>,
+}
+
+impl ListingView {
+    /// The listing as this window narrows it, now and on every change.
+    pub fn listing(&self) -> watch::Receiver<Listing> {
+        self.shown.subscribe()
+    }
+
+    /// Changes this view by `change`, and shows the listing again.
+    fn change(&self, change: impl FnOnce(&mut View)) {
+        {
+            let mut state = self.listings.shared.lock();
+            if let Some(view) = state.views.iter_mut().find(|view| view.id == self.id) {
+                change(view);
+            }
         }
+        self.listings.shared.render();
+    }
+
+    /// Brings up the next of the shelf's settled rows.
+    pub fn show_more(&self) {
+        self.change(|view| view.on_show += SHELF_BATCH);
+    }
+
+    /// Narrows the listing to the scope `reference` names, or to Everywhere
+    /// where it names no Remote held; and what that turns the Outlook
+    /// toward, which Everywhere turns toward nothing.
+    pub fn narrow(&self, reference: &str) -> Option<Turn> {
+        let answered = self.listings.shared.answered();
+        let mut turn = None;
+        self.change(|view| {
+            let scope = Scope::of(reference).within(&answered, false);
+            turn = scope.remote(&answered).map(|remote| Turn {
+                remote: remote.name.clone(),
+                workspace: match &scope {
+                    Scope::Workspace { workspace, .. } => remote
+                        .offered_workspaces()
+                        .into_iter()
+                        .find(|offered| offered.id == *workspace)
+                        .map(|offered| RememberedWorkspace {
+                            path: offered.path.clone(),
+                            name: remote.paths.workspace_name(offered),
+                        }),
+                    Scope::Everywhere | Scope::Remote { .. } => None,
+                },
+            });
+            view.narrowing.scope = scope;
+            view.narrowing.unjudged = false;
+        });
+        turn
+    }
+
+    /// Narrows the listing to the scope `reference` names, as Swift kept it
+    /// and hands it back after a cold start, turning nothing: held as it is
+    /// while its Remote has yet to say what it offers, and Everywhere where
+    /// it is gone.
+    pub fn restore(&self, reference: &str) {
+        self.change(|view| {
+            view.narrowing.scope = Scope::of(reference);
+            view.narrowing.unjudged = true;
+        });
+    }
+
+    /// Searches the listing by Title for `query`, while the window lives;
+    /// an empty one searches for nothing.
+    pub fn search(&self, query: &str) {
+        self.change(|view| query.clone_into(&mut view.narrowing.query));
+    }
+}
+
+impl Drop for ListingView {
+    fn drop(&mut self) {
+        self.listings
+            .shared
+            .lock()
+            .views
+            .retain(|view| view.id != self.id);
     }
 }
 
@@ -2024,7 +2101,7 @@ impl Listings {
             reach,
             commands: SessionCommands::new(reaching, self.shared.timings),
             agent_wanted: Arc::new(Notify::new()),
-            landing_path: Arc::default(),
+            landing_paths: Arc::default(),
             resolve_wanted: Arc::new(Notify::new()),
             _readers: Readers(Vec::new()),
         });
@@ -2066,6 +2143,15 @@ impl Shared {
         self.state
             .lock()
             .unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    /// What every Remote followed last answered.
+    fn answered(&self) -> Vec<Answered> {
+        self.lock()
+            .remotes
+            .iter()
+            .map(|followed| followed.answered.clone())
+            .collect()
     }
 
     /// The name, transport and reach of every Remote followed.
@@ -2115,7 +2201,7 @@ impl Shared {
         let wanted = Arc::new(Notify::new());
         let agent_wanted = Arc::new(Notify::new());
         let resolve_wanted = Arc::new(Notify::new());
-        let landing_path: Arc<Mutex<Option<PathBuf>>> = Arc::default();
+        let landing_paths: Arc<Mutex<Vec<PathBuf>>> = Arc::default();
         let generation = stored.generation;
         reach.settle();
         let reading = self.runtime.spawn(follow_reach(
@@ -2170,50 +2256,54 @@ impl Shared {
         let shared = Arc::downgrade(self);
         let resolution_taker = name.clone();
         let resolving = commands.clone();
-        let resolved_path = landing_path.clone();
+        let resolved_paths = landing_paths.clone();
         let resolver = self.runtime.spawn(ask_when_wanted(
             resolve_wanted.clone(),
             transport.try_now(),
             self.timings,
             move || {
                 let commands = resolving.clone();
-                let path = resolved_path
+                let paths = resolved_paths
                     .lock()
                     .unwrap_or_else(|poison| poison.into_inner())
                     .clone();
                 async move {
                     // No Landing wants it any more: nothing is asked.
-                    let Some(path) = path else {
+                    if paths.is_empty() {
                         return Ok(None);
-                    };
-                    let resolved = commands
-                        .resolve_workspace(ResolveWorkspaceRequest {
-                            checkout_id: None,
-                            remembered_execution_directory: None,
-                            workspace_id: None,
-                            base: None,
-                            path: path.clone(),
-                        })
-                        .await;
-                    match resolved {
-                        Ok(resolved) => Ok(Some((path, Some(resolved)))),
-                        // Refused, as a directory gone is: the Landing names
-                        // what the listing says of it, and nothing more.
-                        Err(error) if acts::refused(&error) => {
-                            tracing::debug!("{} was not resolved: {error:#}", path.display());
-                            Ok(Some((path, None)))
-                        }
-                        Err(error) => Err(error),
                     }
+                    let mut resolved = Vec::new();
+                    for path in paths {
+                        let answered = commands
+                            .resolve_workspace(ResolveWorkspaceRequest {
+                                checkout_id: None,
+                                remembered_execution_directory: None,
+                                workspace_id: None,
+                                base: None,
+                                path: path.clone(),
+                            })
+                            .await;
+                        match answered {
+                            Ok(workspace) => resolved.push((path, workspace)),
+                            // Refused, as a directory gone is: the Landing
+                            // names what the listing says of it, and nothing
+                            // more.
+                            Err(error) if acts::refused(&error) => {
+                                tracing::debug!("{} was not resolved: {error:#}", path.display());
+                            }
+                            Err(error) => return Err(error),
+                        }
+                    }
+                    Ok(Some(resolved))
                 }
             },
             move |resolved| {
                 let Some(shared) = shared.upgrade() else {
                     return false;
                 };
-                if let Some((path, resolved)) = resolved {
+                if let Some(resolved) = resolved {
                     shared.change(&resolution_taker, generation, |answered| {
-                        answered.resolved = resolved.map(|resolved| (path, resolved));
+                        answered.resolved = resolved;
                     });
                 }
                 true
@@ -2258,14 +2348,14 @@ impl Shared {
                 relay_hint: None,
                 agent: None,
                 models: None,
-                resolved: None,
+                resolved: Vec::new(),
             },
             generation,
             transport,
             reach,
             commands,
             agent_wanted,
-            landing_path,
+            landing_paths,
             resolve_wanted,
             _readers: Readers(vec![reading, reader, asker, agent_asker, resolver]),
         }
@@ -2309,14 +2399,26 @@ impl Shared {
                 .iter()
                 .map(|followed| followed.answered.clone())
                 .collect::<Vec<_>>();
-            state.narrowing.judge(&answered);
-            let (listing, next) = present(
-                &answered,
-                SessionTimestamp::now(),
-                state.on_show,
-                self.settle_after,
-                &state.narrowing,
-            );
+            let now = SessionTimestamp::now();
+            // When a Session next settles is the same whatever narrows the
+            // listing, and wanted only while a window shows it.
+            let mut next = None;
+            for view in &mut state.views {
+                view.narrowing.judge(&answered);
+                let (listing, settling) = present(
+                    &answered,
+                    now,
+                    view.on_show,
+                    self.settle_after,
+                    &view.narrowing,
+                );
+                next = settling;
+                view.shown.send_if_modified(|shown| {
+                    let changed = *shown != listing;
+                    *shown = listing;
+                    changed
+                });
+            }
             let pairings = Pairings(
                 answered
                     .iter()
@@ -2334,11 +2436,6 @@ impl Shared {
             });
             self.renders.fetch_add(1, Ordering::Relaxed);
             self.moved.send_modify(|moved| *moved += 1);
-            self.shown.send_if_modified(|shown| {
-                let changed = *shown != listing;
-                *shown = listing;
-                changed
-            });
             std::mem::replace(&mut state.next_settling, next) != next
         };
         if moved {

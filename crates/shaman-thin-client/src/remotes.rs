@@ -5,11 +5,15 @@
 //! were last turned toward is the thin Client's own, in its file. Each
 //! Remote's ways are asked, each alone, whether they answer when the core
 //! opens and when the Remote is paired.
+//!
+//! Each window has an Outlook of its own, a [`WindowOutlook`]: it begins as
+//! the phone was last turned, by any window, and goes its own way from there,
+//! while the phone keeps the latest turn of any window in its file.
 
 use std::{
     collections::{BTreeMap, HashMap},
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, Weak,
         atomic::{AtomicU64, Ordering},
     },
 };
@@ -147,6 +151,55 @@ struct Turned {
     workspaces: BTreeMap<String, RememberedWorkspace>,
 }
 
+impl Turned {
+    /// The Remote `remote` first among those turned toward, and `workspace`
+    /// remembered for it where one is given.
+    fn turn(&mut self, remote: &str, workspace: Option<RememberedWorkspace>) {
+        self.order.retain(|held| held != remote);
+        self.order.insert(0, remote.to_owned());
+        if let Some(workspace) = workspace {
+            self.workspaces.insert(remote.to_owned(), workspace);
+        }
+    }
+
+    /// What was remembered of the Remote `from` remembered of `to`.
+    fn rename(&mut self, from: &str, to: &str) {
+        for turned in &mut self.order {
+            if turned == from {
+                to.clone_into(turned);
+            }
+        }
+        if let Some(workspace) = self.workspaces.remove(from) {
+            self.workspaces.insert(to.to_owned(), workspace);
+        }
+    }
+
+    fn forget(&mut self, remote: &str) {
+        self.order.retain(|turned| turned != remote);
+        self.workspaces.remove(remote);
+    }
+}
+
+/// Where one window's Outlook stands, while the window lives.
+pub(crate) struct WindowOutlook {
+    /// Where this window has been turned, begun as the phone was.
+    turned: Mutex<Turned>,
+    shown: watch::Sender<Outlook>,
+}
+
+impl WindowOutlook {
+    /// Where this window's Outlook stands, now and on every change.
+    pub fn outlook(&self) -> watch::Receiver<Outlook> {
+        self.shown.subscribe()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Turned> {
+        self.turned
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+    }
+}
+
 /// How each way of one Remote stood when last asked.
 type Standings = Vec<(Way, WayStanding)>;
 
@@ -196,7 +249,6 @@ pub(crate) struct Remotes {
     redeemer: Redeemer,
     relays: Relays,
     servers: watch::Sender<Servers>,
-    outlook: watch::Sender<Outlook>,
     /// How each Remote's ways stood when last asked, by the Remote's name,
     /// with the generation of the Pairing asked: shown only while that
     /// Pairing stands.
@@ -204,14 +256,18 @@ pub(crate) struct Remotes {
     /// How many times the core has asked a Remote's ways, so what each
     /// asking found is shown only where no later one's is.
     askings: Arc<AtomicU64>,
-    /// The Remotes, by name, in the order last turned toward, as last shown:
-    /// whatever shows the Remotes again shows the Outlook by it.
+    /// The Remotes, by name, in the order last turned toward by any window,
+    /// as last shown: where a new window's Outlook begins, and where one
+    /// stands that no Remote it was turned toward is held for.
     turned: Arc<Mutex<Turned>>,
+    /// Every window's Outlook, shown again whenever the Remotes are.
+    windows: Arc<Mutex<Vec<Weak<WindowOutlook>>>>,
 }
 
 impl Remotes {
-    /// The Remotes `redeemer` holds, the Outlook standing at the first of
-    /// `turned` it holds, in the Workspace `workspaces` remembers for it.
+    /// The Remotes `redeemer` holds, a new window's Outlook standing at the
+    /// first of `turned` it holds, in the Workspace `workspaces` remembers for
+    /// it.
     pub fn new(
         redeemer: Redeemer,
         relays: Relays,
@@ -225,10 +281,10 @@ impl Remotes {
                 remotes: Vec::new(),
                 relays: Vec::new(),
             }),
-            outlook: watch::Sender::new(Outlook::Nowhere),
             standings: Arc::default(),
             askings: Arc::default(),
             turned: Arc::default(),
+            windows: Arc::default(),
         };
         remotes.show(turned, workspaces);
         remotes
@@ -238,8 +294,39 @@ impl Remotes {
         self.servers.subscribe()
     }
 
-    pub fn outlook(&self) -> watch::Receiver<Outlook> {
-        self.outlook.subscribe()
+    /// The Outlook of a window made now, standing where the phone was last
+    /// turned by any window, and turned by that window alone from then on.
+    pub fn window(&self) -> Arc<WindowOutlook> {
+        let phone = self.lock_turned();
+        let window = Arc::new(WindowOutlook {
+            turned: Mutex::new(phone.clone()),
+            shown: watch::Sender::new(Outlook::Nowhere),
+        });
+        Self::show_window(&self.held(), &phone, &window);
+        let mut windows = self.lock_windows();
+        windows.retain(|window| window.strong_count() > 0);
+        windows.push(Arc::downgrade(&window));
+        window
+    }
+
+    fn lock_turned(&self) -> std::sync::MutexGuard<'_, Turned> {
+        self.turned
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    fn lock_windows(&self) -> std::sync::MutexGuard<'_, Vec<Weak<WindowOutlook>>> {
+        self.windows
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    /// Every window's Outlook that lives.
+    fn windows(&self) -> Vec<Arc<WindowOutlook>> {
+        self.lock_windows()
+            .iter()
+            .filter_map(Weak::upgrade)
+            .collect()
     }
 
     /// The names of the Remotes held, in the order paired.
@@ -260,67 +347,178 @@ impl Remotes {
             .collect()
     }
 
-    /// Shows the Remotes as they are held now, the Outlook at the first of
-    /// `turned` held, or at the first Remote paired where none of them is,
-    /// in the Workspace `workspaces` remembers for it; whatever shows them
-    /// again shows the Outlook by these until it is shown by others.
+    /// Shows the Remotes as they are held now, the phone's order turned
+    /// toward as `turned` says, in the Workspaces `workspaces` remembers;
+    /// whatever shows them again shows them by these until they are shown by
+    /// others. Each window's Outlook is shown again, by its own turns first.
     pub fn show(&self, turned: &[String], workspaces: &BTreeMap<String, RememberedWorkspace>) {
-        let mut shown = self
-            .turned
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
+        let mut shown = self.lock_turned();
         turned.clone_into(&mut shown.order);
         workspaces.clone_into(&mut shown.workspaces);
         self.render(&shown);
     }
 
-    /// Shows the Remotes as they are held now, the Outlook by the order they
-    /// were last shown turned toward in.
+    /// Shows the Remotes as they are held now, and each window's Outlook by
+    /// the orders last shown.
     pub fn refresh(&self) {
-        let shown = self
-            .turned
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
+        let shown = self.lock_turned();
         self.render(&shown);
     }
 
-    /// Where the Outlook stands: the Remote, by name, and the Workspace
-    /// remembered for it, where one is; none while the phone holds no Remote.
-    pub fn standing(&self) -> Option<(String, Option<RememberedWorkspace>)> {
-        let turned = self
-            .turned
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
-        Self::stands(&self.held(), &turned)
+    /// Where `window`'s Outlook stands: the Remote, by name, and the
+    /// Workspace remembered for it, where one is; none while the phone holds
+    /// no Remote.
+    pub fn standing(
+        &self,
+        window: &WindowOutlook,
+    ) -> Option<(String, Option<RememberedWorkspace>)> {
+        let phone = self.lock_turned();
+        Self::stands(&self.held(), &window.lock(), &phone)
     }
 
-    /// Where the Outlook stands among the Remotes `held`, by `turned`.
+    /// Where the phone was last turned, by any window, among the Remotes held:
+    /// where a new window's Outlook would stand.
+    pub fn phone_outlook(&self) -> Outlook {
+        let phone = self.lock_turned();
+        Self::outlook_of(Self::stands(&self.held(), &phone, &phone))
+    }
+
+    /// The Outlook standing at `standing`, or nowhere.
+    fn outlook_of(standing: Option<(String, Option<RememberedWorkspace>)>) -> Outlook {
+        standing.map_or(Outlook::Nowhere, |(name, workspace)| Outlook::Remote {
+            begins_in: BeginsIn::remote(
+                &name,
+                workspace.as_ref().map(|workspace| workspace.name.as_str()),
+            ),
+            name,
+        })
+    }
+
+    /// Where a window's Outlook stands among the Remotes `held`: at the first
+    /// of its own turns held, or else of the phone's, or else at the first
+    /// Remote paired; in the Workspace it remembers there, which is its own,
+    /// begun as the phone's when the window was made.
     fn stands(
         held: &[StoredRemote],
-        turned: &Turned,
+        own: &Turned,
+        phone: &Turned,
     ) -> Option<(String, Option<RememberedWorkspace>)> {
-        let name = turned
+        let name = own
             .order
             .iter()
+            .chain(&phone.order)
             .find(|name| held.iter().any(|stored| &stored.remote.name == *name))
             .or_else(|| held.first().map(|stored| &stored.remote.name))?;
-        Some((name.clone(), turned.workspaces.get(name).cloned()))
+        Some((name.clone(), own.workspaces.get(name).cloned()))
     }
 
-    /// Shows the Remotes as they are held now, the Outlook by `turned`: done
-    /// holding the order shown, so no showing by an older order lands after
-    /// one by a newer.
+    /// Turns `window`'s Outlook toward the Remote `remote`, and toward its
+    /// Workspace `workspace` where one is given, which this window remembers
+    /// for it; given none, the one it remembers stays. Answers the Workspace
+    /// it now stands in there, which the phone is to keep as its latest
+    /// turn: the turn is shown as that is kept, as every window is shown
+    /// again then, so what shows is kept.
+    pub fn turn(
+        &self,
+        window: &WindowOutlook,
+        remote: &str,
+        workspace: Option<RememberedWorkspace>,
+    ) -> Option<RememberedWorkspace> {
+        let mut own = window.lock();
+        own.turn(remote, workspace);
+        own.workspaces.get(remote).cloned()
+    }
+
+    /// Turns `window`'s Outlook toward the Remote of the Session `listed`
+    /// speaks of. Its Workspace becomes the one remembered for that Remote,
+    /// or, only where none is, the Session's own. Answers the Remote and the
+    /// Workspace it now stands in there.
+    pub fn turn_toward(
+        &self,
+        window: &WindowOutlook,
+        listed: &crate::listing::Listed,
+    ) -> (String, Option<RememberedWorkspace>) {
+        let remembered = window.lock().workspaces.contains_key(&listed.remote);
+        let workspace = listed
+            .workspace
+            .as_ref()
+            .filter(|_| !remembered)
+            .map(|(path, name)| RememberedWorkspace {
+                path: path.clone(),
+                name: name.clone(),
+            });
+        let standing = self.turn(window, &listed.remote, workspace);
+        (listed.remote.clone(), standing)
+    }
+
+    /// Remembers whatever each window remembered of the Remote `from` of
+    /// the Remote `to`, which is what it is called now.
+    pub fn rename_turned(&self, from: &str, to: &str) {
+        for window in self.windows() {
+            window.lock().rename(from, to);
+        }
+    }
+
+    /// Has every window forget whatever it remembered of the Remote `name`,
+    /// whose Pairing has ended: a window whose Outlook stood there turns to
+    /// the Remote the phone was most recently turned toward that is still
+    /// held, which the phone's order, forgotten there already, stands at.
+    pub fn forget_turned(&self, name: &str) {
+        let phone = self.lock_turned();
+        let held = self.held();
+        let is_held = |turned: &&String| held.iter().any(|stored| stored.remote.name == **turned);
+        let latest = phone.order.iter().find(is_held).cloned();
+        for window in self.windows() {
+            let mut own = window.lock();
+            let stood = own
+                .order
+                .iter()
+                .find(|turned| *turned == name || is_held(turned))
+                .is_some_and(|turned| turned == name);
+            own.forget(name);
+            if stood && let Some(latest) = &latest {
+                own.order.retain(|turned| turned != latest);
+                own.order.insert(0, latest.clone());
+            }
+        }
+        self.render(&phone);
+    }
+
+    /// Shows `window`'s Outlook as the Remotes `held` and the phone's order
+    /// `phone` stand. A window that stands at no Remote of its own turns
+    /// comes to stand at one as a new window would, and stands there from
+    /// then on, whatever another window turns toward after.
+    fn show_window(held: &[StoredRemote], phone: &Turned, window: &WindowOutlook) {
+        let standing = {
+            let mut own = window.lock();
+            let standing = Self::stands(held, &own, phone);
+            if let Some((name, _)) = &standing
+                && !own.order.contains(name)
+            {
+                let workspace = phone.workspaces.get(name).cloned();
+                own.order.insert(0, name.clone());
+                if let Some(workspace) = workspace {
+                    own.workspaces.entry(name.clone()).or_insert(workspace);
+                }
+            }
+            Self::stands(held, &own, phone)
+        };
+        let outlook = Self::outlook_of(standing);
+        window.shown.send_if_modified(|shown| {
+            let changed = *shown != outlook;
+            *shown = outlook;
+            changed
+        });
+    }
+
+    /// Shows the Remotes as they are held now, and each window's Outlook by
+    /// `turned`, the phone's: done holding the order shown, so no showing by
+    /// an older order lands after one by a newer.
     fn render(&self, turned: &Turned) {
         let held = self.held();
-        let outlook = Self::stands(&held, turned).map_or(Outlook::Nowhere, |(name, workspace)| {
-            Outlook::Remote {
-                begins_in: BeginsIn::remote(
-                    &name,
-                    workspace.as_ref().map(|workspace| workspace.name.as_str()),
-                ),
-                name,
-            }
-        });
+        for window in self.windows() {
+            Self::show_window(&held, turned, &window);
+        }
         let standings = self
             .standings
             .lock()
@@ -342,11 +540,6 @@ impl Remotes {
         self.servers.send_if_modified(|shown| {
             let changed = *shown != servers;
             *shown = servers;
-            changed
-        });
-        self.outlook.send_if_modified(|shown| {
-            let changed = *shown != outlook;
-            *shown = outlook;
             changed
         });
     }

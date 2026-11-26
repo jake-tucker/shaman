@@ -29,7 +29,7 @@ async fn pair(phone: &Phone, server: &ServingServer, name: &str) {
         .invite(vec![Way::Direct(server.serving_address())])
         .await;
     let paired = phone
-        .core
+        .window
         .confirm_pairing(invite, name.to_owned(), "Pocket".to_owned())
         .await;
     assert_eq!(
