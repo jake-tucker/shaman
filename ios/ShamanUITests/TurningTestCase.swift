@@ -44,13 +44,18 @@ class TurningTestCase: XCTestCase {
   /// collapse, CoreAnimation now and then tells of one starting twice, of the edge effect UIKit draws where a list
   /// scrolls beneath its bars, and of its stopping once. From then on the app never stands still to XCTest, and each
   /// step of the test waits out that minute, until the app ends. So where a turn took one, no step after it waits but
-  /// for what it looks for.
+  /// for what it looks for. The miscount may begin after the turn itself has returned, so the app is asked once more
+  /// to stand still, by being brought to the front it already stands at, unless the turn took the minute, and the two
+  /// are timed together.
   @MainActor
   func turn(
     _ orientation: UIDeviceOrientation, _ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
   ) {
     let began = Date()
     XCUIDevice.shared.orientation = orientation
+    if miscounted !== app, Date().timeIntervalSince(began) <= 55 {
+      app.activate()
+    }
     if Date().timeIntervalSince(began) > 55 {
       // That it waits neither before an event nor after one, in XCTest's own words for it, as it offers no others.
       let skips = NSSelectorFromString("setCurrentInteractionOptions:")
