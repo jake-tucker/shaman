@@ -285,6 +285,41 @@ import UIKit
     #expect(columns.preferredDisplayMode == .oneBesideSecondary)
   }
 
+  @Test func theAsideLeavesItsColumnAsTheColumnsCollapseAndReturnsOnlyAsTheirSizeTransitionEnds() async throws {
+    let hosted = try await HostedColumns(open: [open], wide: true)
+    defer { hosted.close() }
+    let columns = hosted.columns
+    let stands = { columns.viewController(for: .inspector) != nil && columns.isShowing(.inspector) }
+    hosted.stack.aside.shown = true
+    try await hosted.until(stands)
+    try await hosted.settle()
+    for _ in 0..<2 {
+      // Out of its column as the split view asks which column to collapse to, or it would stand as a sheet.
+      let collapsed = hosted.sizing(width: 402, regular: false)
+      try await hosted.until { columns.isCollapsed }
+      #expect(columns.viewController(for: .inspector) == nil)
+      #expect(columns.presentedViewController == nil)
+      #expect(!hosted.stack.asideIsOnScreen)
+      collapsed()
+      try await hosted.settle()
+      #expect(columns.viewController(for: .inspector) == nil)
+      #expect(columns.presentedViewController == nil, "it stands nowhere")
+      #expect(hosted.stack.aside.shown, "and waits")
+
+      // Set again and shown once the transition has ended, and not before.
+      let expanded = hosted.sizing(width: 951, regular: true)
+      try await hosted.until { !columns.isCollapsed }
+      try await hosted.settle()
+      #expect(columns.viewController(for: .inspector) == nil)
+      #expect(!hosted.stack.asideIsOnScreen)
+      expanded()
+      try await hosted.until(stands)
+      try await hosted.settle()
+      #expect(hosted.stack.asideIsOnScreen)
+      #expect(columns.presentedViewController == nil)
+    }
+  }
+
   @Test func theAsideFollowsTheLatestTurnWhateverIsPushedOverItsSession() async throws {
     let hosted = try await HostedColumns(open: [open], wide: true, sessions: true)
     defer { hosted.close() }

@@ -72,13 +72,18 @@ import UIKit
   /// Gives the window `width` points, of regular width or compact, and `height`. The columns are told of it as a turn
   /// tells them, as setting a window's frame does not.
   func size(width: CGFloat, height: CGFloat = 669, regular: Bool) {
+    sizing(width: width, height: height, regular: regular)()
+  }
+
+  /// Gives the window `width` points as `size` does, but leaves the transition going until what it answers is called.
+  func sizing(width: CGFloat, height: CGFloat = 669, regular: Bool) -> () -> Void {
     let size = CGSize(width: width, height: height)
     let transition = SizeTransition()
     columns.viewWillTransition(to: size, with: transition)
     window.traitOverrides.horizontalSizeClass = regular ? .regular : .compact
     window.frame = CGRect(origin: .zero, size: size)
     window.layoutIfNeeded()
-    transition.end()
+    return transition.end
   }
 
   /// Gives the window room for several columns, or for one, and lets them expand or collapse.
