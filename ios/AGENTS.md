@@ -311,8 +311,13 @@ Times, as [#722](https://github.com/jake-tucker/shaman/issues/722) gave them on 
 the app is written on, at `67a9181f` and before any of this: the app's 135 tests took 41 minutes on the Pro one after
 another, and 17 with classes in parallel on four clones, where four of them failed, which have been mended since. A full
 run as that ticket laid it out, with the closed Duo's whole suite and the Pro Max's columns, came to about 40 minutes in
-parallel and an hour and a half serially, both by sum and neither run. The script says how long each run took; what a
-pass and a full run take since is still to be measured.
+parallel and an hour and a half serially, both by sum and neither run. The script says how long each run took.
+
+The full run of 26 November 2026, at `8230dab0`, on the same Mac under another checkout's load: the package's tests
+took 1m58s, the Pro's app tests 29m8s on four clones, the closed Duo's row 25m52s and the Pro Max's row 33m15s, and the
+whole of `scripts/ios-test.sh all` 1h31m by the clock, the core's build included. That run predates the hosted tests
+waiting for one another's windows (`OneWindowAtATime`), which has them take about 11 to 12 minutes alone in parallel
+mode.
 
 On clones each test shares the Mac with three more, so a test that waits on a clock fails there and not alone. Look for
 what is to come and let the deadline be long, as it costs nothing where it comes; let nothing depend on how soon the
