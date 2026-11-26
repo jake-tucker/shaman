@@ -924,8 +924,10 @@ impl Inner {
     /// its Sessions and its ways, turning each window's Outlook that stood
     /// there, as `stood_there` says of each window, to the Remote the phone
     /// was most recently turned toward that is still held, and saying so in
-    /// that window. Where no window lives, it is said by the first to come,
-    /// as the phone's own Outlook stood.
+    /// that window alone. Where no window's Outlook stood there, why it ended
+    /// is said once, where there is anything to say, by the oldest window
+    /// that stands; and where no window lives, by the first to stand, as the
+    /// phone's own Outlook stood.
     async fn forgotten(
         &self,
         stored: &shaman_pairing::StoredRemote,
@@ -950,16 +952,25 @@ impl Inner {
             Outlook::Remote { begins_in, .. } if there => Some(begins_in.said.clone()),
             _ => None,
         };
-        if stood_there.windows.is_empty() {
-            let turned = turned(stood_there.phone, &self.remotes.phone_outlook());
+        // A window whose Outlook stood elsewhere is turned by nothing and says
+        // nothing. Where no window's stood there, what the phone is still to
+        // hear, that the Remote removed it or may still list it, is said once,
+        // by one window, as it is where no window lives yet.
+        if stood_there.windows.iter().any(|(_, there)| *there) {
+            for (window, _) in stood_there.windows.iter().filter(|(_, there)| *there) {
+                let turned = turned(true, &window.outlook.outlook().borrow());
+                if let Some(words) = ending.words(&name, turned.as_deref()) {
+                    window.notices.say(words);
+                }
+            }
+        } else {
+            let turned = if stood_there.windows.is_empty() {
+                turned(stood_there.phone, &self.remotes.phone_outlook())
+            } else {
+                None
+            };
             if let Some(words) = ending.words(&name, turned.as_deref()) {
                 self.listing.notices().say_unclaimed(words);
-            }
-        }
-        for (window, there) in stood_there.windows {
-            let turned = turned(there, &window.outlook.outlook().borrow());
-            if let Some(words) = ending.words(&name, turned.as_deref()) {
-                window.notices.say(words);
             }
         }
     }

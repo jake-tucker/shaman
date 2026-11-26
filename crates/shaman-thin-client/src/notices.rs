@@ -7,7 +7,9 @@
 //!
 //! Each window says them for itself: a Remote found newer is said once in
 //! each window, a window made later included, and seen in one it stays to be
-//! seen in the other.
+//! seen in the other. A Pairing ending is said in each window whose Outlook
+//! stood there; where none stood there, why it ended is said once, by one
+//! window.
 
 use std::{
     collections::{HashSet, VecDeque},
@@ -149,8 +151,8 @@ impl Notices {
         })
     }
 
-    /// Says `words`, said as no window stood, in the first window to stand:
-    /// where one stands by now, it says them.
+    /// Says `words` once, in one window: in the oldest window that stands,
+    /// or, where none stands yet, in the first to stand.
     pub fn say_unclaimed(&self, words: String) {
         let mut device = self.lock();
         device.windows.retain(|window| window.strong_count() > 0);

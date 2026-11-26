@@ -200,6 +200,15 @@ impl WindowOutlook {
     }
 }
 
+/// What the scene keeps of where a window's Outlook stands: its Remote by
+/// the fingerprint of its key, which outlasts a rename, and the Workspace it
+/// stands in there, where it stands in one.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct KeptOutlook {
+    remote: String,
+    workspace: Option<RememberedWorkspace>,
+}
+
 /// How each way of one Remote stood when last asked.
 type Standings = Vec<(Way, WayStanding)>;
 
@@ -427,6 +436,53 @@ impl Remotes {
         let mut own = window.lock();
         own.turn(remote, workspace);
         own.workspaces.get(remote).cloned()
+    }
+
+    /// What the scene keeps of where `window`'s Outlook stands now, the
+    /// Remote by its key and the Workspace by its path and name, as a plain
+    /// string Swift hands back unread after a cold start; none while the
+    /// phone holds no Remote.
+    pub fn kept(&self, window: &WindowOutlook) -> Option<String> {
+        let held = self.held();
+        let (name, workspace) = {
+            let phone = self.lock_turned();
+            Self::stands(&held, &window.lock(), &phone)?
+        };
+        let remote = held
+            .into_iter()
+            .find(|stored| stored.remote.name == name)?
+            .remote
+            .fingerprint;
+        serde_json::to_string(&KeptOutlook { remote, workspace }).ok()
+    }
+
+    /// Turns `window`'s Outlook back to where `kept`, what the scene kept of
+    /// it, says it stood: toward its Remote, in its Workspace or in none,
+    /// keeping nothing as the phone's latest turn. One whose Remote is no
+    /// longer held, or that this build cannot read, turns nothing, so the
+    /// window stands where a new one begins, at the Remote the phone was
+    /// most recently turned toward that is still held.
+    pub fn restore(&self, window: &WindowOutlook, kept: &str) {
+        let Ok(kept) = serde_json::from_str::<KeptOutlook>(kept) else {
+            return;
+        };
+        let Some(stored) = self
+            .held()
+            .into_iter()
+            .find(|stored| stored.remote.fingerprint == kept.remote)
+        else {
+            return;
+        };
+        {
+            let name = stored.remote.name;
+            let mut own = window.lock();
+            own.turn(&name, None);
+            match kept.workspace {
+                Some(workspace) => own.workspaces.insert(name, workspace),
+                None => own.workspaces.remove(&name),
+            };
+        }
+        self.refresh();
     }
 
     /// Turns `window`'s Outlook toward the Remote of the Session `listed`

@@ -388,6 +388,28 @@ impl ThinClientWindow {
         self.window.view.restore(&scope);
     }
 
+    /// What the scene is to keep of where this window's Outlook stands now,
+    /// its Remote and the Workspace it stands in there, as a plain string
+    /// Swift keeps beside the listing's scope and hands back by
+    /// [`Self::restore_outlook`] after a cold start; none while the phone
+    /// holds no Remote. It changes only as the Outlook does.
+    pub fn kept_outlook(&self) -> Option<String> {
+        self.device.inner.remotes.kept(&self.window.outlook)
+    }
+
+    /// Turns this window's Outlook back to where `kept` says it stood, as
+    /// Swift kept it in scene state and hands it back after a cold start,
+    /// keeping nothing as the phone's latest turn, so a window made after
+    /// still begins where the phone was last turned. One whose Remote is no
+    /// longer held turns nothing: the window stands at the Remote the phone
+    /// was most recently turned toward that is still held.
+    pub fn restore_outlook(&self, kept: String) {
+        self.device
+            .inner
+            .remotes
+            .restore(&self.window.outlook, &kept);
+    }
+
     /// Searches this window's listing by Title for `text`, while the window
     /// lives; an empty one searches for nothing.
     pub fn search_listing(&self, text: String) {

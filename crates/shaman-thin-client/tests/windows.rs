@@ -544,3 +544,216 @@ async fn a_pairing_ended_before_any_window_is_said_by_the_first_window_that_stan
     desk.shutdown().await;
     lab.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn each_window_is_handed_back_its_kept_outlook_and_scope_and_one_whose_remote_is_gone_falls_to_the_latest_held()
+ {
+    let desk = ServingServer::start("thin-windows-kept-desk").await;
+    let lab = ServingServer::start("thin-windows-kept-lab").await;
+    let phone = Phone::new();
+    pair(&phone, &desk, "desk").await;
+    pair(&phone, &lab, "lab").await;
+    let holder = tempfile::tempdir().expect("make the Workspaces' directory");
+    desk.begin(&workspace(&holder, "shaman"), "Map the workspace")
+        .await;
+    lab.begin(&workspace(&holder, "notes"), "Sort the notes")
+        .await;
+    let other = phone.another_window();
+
+    // The first window narrows to the desk's shaman, the other turns to the
+    // lab last, which the phone keeps as its latest turn.
+    let listing = phone
+        .listing_until(|listing| choice(listing, "shaman").is_some())
+        .await;
+    let shaman = choice(&listing, "shaman").expect("offered").scope;
+    phone
+        .window
+        .narrow_listing(shaman.clone())
+        .await
+        .expect("narrowed");
+    phone
+        .outlook_until(|shown| *shown == outlook("desk", Some("shaman")))
+        .await;
+    let notes = listed(&other, "Sort the notes").await;
+    drop(other.open(&notes));
+    other
+        .outlook_until(|shown| *shown == outlook("lab", Some("notes")))
+        .await;
+    let kept_here = phone.window.kept_outlook().expect("stands somewhere");
+    let kept_there = other.window.kept_outlook().expect("stands somewhere");
+    let scope_here = phone.listing_until(|_| true).await.scope;
+    let scope_there = other.listing_until(|_| true).await.scope;
+    assert_eq!(scope_here, shaman);
+
+    // After a cold start each window is handed back its own Outlook, and its
+    // own scope, whatever the phone was last turned toward.
+    drop(other);
+    let phone = phone.relaunched_before_a_window();
+    let here = phone.another_window();
+    let there = phone.another_window();
+    assert_eq!(
+        here.outlook().await,
+        outlook("lab", Some("notes")),
+        "a window begins where the phone was last turned"
+    );
+    here.window.restore_outlook(kept_here.clone());
+    here.window.restore_listing(scope_here);
+    there.window.restore_outlook(kept_there);
+    there.window.restore_listing(scope_there);
+    assert_eq!(here.outlook().await, outlook("desk", Some("shaman")));
+    assert_eq!(
+        here.listing_until(|listing| listing.title != "Everywhere")
+            .await
+            .scope,
+        shaman
+    );
+    assert_eq!(there.outlook().await, outlook("lab", Some("notes")));
+    assert_eq!(there.listing_until(|_| true).await.title, "Everywhere");
+
+    // Handed back, an Outlook is not kept as the phone's latest turn: a
+    // window made now begins where the phone was last turned.
+    let later = phone.another_window();
+    assert_eq!(later.outlook().await, outlook("lab", Some("notes")));
+    drop(later);
+
+    // One whose Remote is gone falls to the Remote the phone was most
+    // recently turned toward that is still held, and its scope to
+    // Everywhere, which with one Remote is all its Workspaces.
+    let desk_row = phone
+        .servers()
+        .await
+        .remotes
+        .into_iter()
+        .find(|row| row.name == "desk")
+        .expect("listed")
+        .remote;
+    phone.core.remove_remote(desk_row).await.expect("removed");
+    drop((here, there));
+    let phone = phone.relaunched_before_a_window();
+    let here = phone.another_window();
+    here.window.restore_outlook(kept_here);
+    here.window.restore_listing(shaman);
+    assert_eq!(here.outlook().await, outlook("lab", Some("notes")));
+    assert_eq!(
+        here.listing_until(|listing| !listing.active.is_empty())
+            .await
+            .title,
+        "All workspaces"
+    );
+
+    // What the scene kept of no Outlook this build reads turns nothing.
+    here.window.restore_outlook("not an outlook".to_owned());
+    assert_eq!(here.outlook().await, outlook("lab", Some("notes")));
+
+    drop(here);
+    phone.shutdown();
+    desk.shutdown().await;
+    lab.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pairing_ended_there_turns_and_is_said_only_where_the_outlook_stood_and_once_where_none_stood()
+ {
+    let desk = ServingServer::start("thin-windows-ended-desk").await;
+    let lab = ServingServer::start("thin-windows-ended-lab").await;
+    let attic = ServingServer::start("thin-windows-ended-attic").await;
+    let phone = Phone::new();
+    pair(&phone, &attic, "attic").await;
+    pair(&phone, &desk, "desk").await;
+    pair(&phone, &lab, "lab").await;
+    let other = phone.another_window();
+    let row = |servers: &shaman_thin_client::Servers, name: &str| {
+        servers
+            .remotes
+            .iter()
+            .find(|row| row.name == name)
+            .expect("listed")
+            .remote
+            .clone()
+    };
+    let servers = phone.servers().await;
+    // The first window stands at the lab, narrowed to it; the other turns to
+    // the desk, the phone's latest turn, and is narrowed to the lab too.
+    other
+        .window
+        .narrow_listing(format!("remote/{}", row(&servers, "desk")))
+        .await
+        .expect("narrowed");
+    other
+        .outlook_until(|shown| *shown == outlook("desk", None))
+        .await;
+    let lab_scope = format!("remote/{}", row(&servers, "lab"));
+    phone.window.restore_listing(lab_scope.clone());
+    other.window.restore_listing(lab_scope);
+    phone.listing_until(|listing| listing.title == "lab").await;
+    other.listing_until(|listing| listing.title == "lab").await;
+    assert_eq!(phone.outlook().await, outlook("lab", None));
+    // Both stand, as windows on screen do.
+    assert_eq!(phone.notice_until(|_| true).await, None);
+    assert_eq!(other.notice_until(|_| true).await, None);
+
+    // The lab removes this phone: the window whose Outlook stood there turns
+    // to the Remote the phone was most recently turned toward that is still
+    // held and says so; the other says nothing and stays. A scope naming the
+    // lab becomes Everywhere in each.
+    lab.remove_peer(&phone.fingerprint()).await;
+    let said = phone.notice_until(Option::is_some).await.expect("said");
+    assert_eq!(
+        said.words,
+        "lab removed this phone; pair with it again to reach it. New sessions begin in desk"
+    );
+    phone
+        .outlook_until(|shown| *shown == outlook("desk", None))
+        .await;
+    phone
+        .listing_until(|listing| listing.title == "Everywhere")
+        .await;
+    other
+        .listing_until(|listing| listing.title == "Everywhere")
+        .await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(
+        other.notice_until(|_| true).await,
+        None,
+        "said nothing there"
+    );
+    assert_eq!(other.outlook().await, outlook("desk", None));
+    phone.window.notice_seen(said.id);
+
+    // Where no window's Outlook stood, what the phone is to hear of its
+    // Pairing ending is said once, by the first window that stood, and turns
+    // nothing.
+    attic.remove_peer(&phone.fingerprint()).await;
+    let said = phone
+        .notice_until(|notice| {
+            notice
+                .as_ref()
+                .is_some_and(|notice| notice.words.starts_with("attic"))
+        })
+        .await
+        .expect("said");
+    assert_eq!(
+        said.words,
+        "attic removed this phone; pair with it again to reach it"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(other.notice_until(|_| true).await, None, "said once");
+    assert_eq!(phone.outlook().await, outlook("desk", None));
+    assert_eq!(other.outlook().await, outlook("desk", None));
+
+    // The last Remote going leaves pairing alone in every window.
+    let desk_row = row(&phone.servers().await, "desk");
+    phone.core.remove_remote(desk_row).await.expect("removed");
+    phone
+        .outlook_until(|shown| *shown == Outlook::Nowhere)
+        .await;
+    other
+        .outlook_until(|shown| *shown == Outlook::Nowhere)
+        .await;
+
+    drop(other);
+    phone.shutdown();
+    desk.shutdown().await;
+    lab.shutdown().await;
+    attic.shutdown().await;
+}
