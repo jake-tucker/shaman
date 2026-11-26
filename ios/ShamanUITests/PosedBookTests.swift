@@ -1,6 +1,10 @@
 import XCTest
 
 /// The Duo partly folded like a book: run by `scripts/ios-test.sh posed book`.
+///
+/// What holds that it folded is where things stand about the fold: the split view divides the Sidebar and the main view
+/// there by itself, as open flat in the same landscape the Sidebar is 320 points wide, and pairing keeps to the leading
+/// half.
 final class PosedBookTests: XCTestCase {
   /// The band kept for the fold, from head to foot of the window.
   private let band: ClosedRange<CGFloat> = 455.5...495.5
@@ -61,5 +65,42 @@ final class PosedBookTests: XCTestCase {
       form.exists && form.frame.maxX <= band.lowerBound + 1 && form.frame.width > 300
     }
     attach("The confirmation, partly folded like a book")
+  }
+
+  /// Waits until the Sidebar and the main view divide at the fold, the listing ending in its band and the main view's
+  /// `title` beginning past it, and nothing the app shows of words or buttons stands in that band.
+  @MainActor
+  private func dividedAtTheFold(
+    _ app: XCUIApplication, title: String, file: StaticString = #filePath, line: UInt = #line
+  ) {
+    let list = app.collectionViews["listing.list"]
+    let main = app.staticTexts[title]
+    waits("the Sidebar and the main view divide at the fold", file: file, line: line) {
+      list.exists && list.isHittable && band.contains(list.frame.maxX) && main.exists && main.isHittable
+        && main.frame.minX > band.upperBound
+    }
+    let inner = band.lowerBound + 1...band.upperBound - 1
+    let words = app.staticTexts.allElementsBoundByIndex + app.buttons.allElementsBoundByIndex
+    let inTheFold = words.filter(\.isHittable).filter {
+      $0.frame.maxX > inner.lowerBound && $0.frame.minX < inner.upperBound
+    }
+    XCTAssertTrue(
+      inTheFold.isEmpty, "in the fold: \(inTheFold.map { $0.identifier.isEmpty ? $0.label : $0.identifier })",
+      file: file, line: line)
+  }
+
+  @MainActor
+  func testWithASessionOpenAndTheAsideNotShownTheSidebarAndTheMainViewDivideAtTheFold() throws {
+    let app = try Pose.book.launched(self, ["--fake", "paired", "--open", "workstation-key/7", "--forget-scene"])
+    dividedAtTheFold(app, title: "session.title")
+    XCTAssertFalse(app.back.exists, "the main view's root")
+    attach("The book pose: the listing and a session, divided at the fold")
+  }
+
+  @MainActor
+  func testWithNothingOpenTheSidebarAndTheNewSessionScreenDivideAtTheFold() throws {
+    let app = try Pose.book.launched(self, ["--fake", "paired", "--forget-scene"])
+    dividedAtTheFold(app, title: "landing.title")
+    attach("The book pose: the listing and the new-session screen, divided at the fold")
   }
 }
