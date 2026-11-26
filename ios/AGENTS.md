@@ -108,7 +108,8 @@ Prompt not yet delivered, which Stop withdraws and gives back to the composer, `
 its sheet presenting itself, `/13` waits on a Questionnaire of three Questions (one choice with additional text, several
 choices or a written answer, and a secret), and `/12` is a Session whose Agent only waits on its Subagents, whose rows
 among its Turn's work push their own Sessions (`/12.1` and the others `FakeTree` holds, one spawning `/12.4`, which
-cannot be stopped alone) and whose tree its navigation bar opens as a sheet, read a moment after the first of its
+cannot be stopped alone), beside a read whose whole each of them pushes too, and whose tree its navigation bar opens
+as a sheet, read a moment after the first of its
 Sessions opens; in `several`, `homelab-key/6` is Monitoring, its bar naming its Watch, and `laptop-key/4` waits on two
 Approvals, presented one by one; in `reaching`, `homelab-key/2` is never read, so its loading mark stands; and in
 `unreachable`, the home lab no longer answers, so `homelab-key/2` opens with its composer taking nothing and saying why.
@@ -473,6 +474,9 @@ If the phone is locked, stop and ask for it to be unlocked.
   Turn it is at is worked out as it is drawn, its place holding at one or following the conversation's latest, so
   nothing has to run while it is off screen. SwiftUI keeps what it drew then, and begins none of its tasks again as
   their ids change, so what a screen in it reads is a `Reading`, which begins again each time the Aside comes on screen.
+  Each Session's screen on the path keeps a place of its own, by its `SessionRoute`, forgotten as that screen leaves
+  the path, so Back finds a parent's as it was left and a Session pushed again begins afresh; one opened again from the
+  listing or the tree, popping back to it, begins afresh too.
   While it stands it follows its Session's conversation, as the Session's own screen does only while on top; a
   conversation is read once however many follow it. What a conversation's row leads to and the tree go through
   `SessionStack.lead(to:)` and `showTree()`, which choose between the Aside and what stands where there is no room for
