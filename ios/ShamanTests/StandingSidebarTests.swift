@@ -8,7 +8,7 @@ import UIKit
 /// transition turns it. No test poses a Duo, so neither the system's own dimming of the main view, nor a tap beside the
 /// Sidebar, nor a fold the split view itself divides at, is held here: `PosedPortraitTests` and `PosedBookTests` hold
 /// those.
-@Suite(.serialized) @MainActor struct StandingSidebarTests {
+@Suite(.serialized, .oneWindowAtATime) @MainActor struct StandingSidebarTests {
   private let session = SessionRoute(session: "workstation-key/7")
   private var open: Pushed { .session(session) }
   private static let portrait = CGSize(width: 669, height: 951)

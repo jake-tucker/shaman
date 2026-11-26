@@ -112,7 +112,7 @@ import UIKit
   }
 }
 
-@Suite(.serialized) @MainActor struct PairingFoldTests {
+@Suite(.serialized, .oneWindowAtATime) @MainActor struct PairingFoldTests {
   /// Flat on the inner display in landscape, where pairing begins and the confirmation read at most 700 points across,
   /// in the middle of the window, and the scanner's picture is the whole window but the bar's.
   @Test(arguments: [[], [PairingRoute.confirm(FakeCore.invite)]])

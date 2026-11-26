@@ -136,7 +136,7 @@ private struct Standing: Equatable {
   }
 }
 
-@Suite(.serialized) @MainActor struct ConversationListHostedTests {
+@Suite(.serialized, .oneWindowAtATime) @MainActor struct ConversationListHostedTests {
   /// Rows above the foot measuring far shorter all at once, as a long Session's answers do when the text grows
   /// smaller or Textual first draws a run of short ones: the system scrolls toward the new foot over a few frames,
   /// and the list must neither ride that scroll up nor take it for the reader leaving.

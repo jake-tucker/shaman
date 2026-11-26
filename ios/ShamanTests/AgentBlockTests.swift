@@ -51,7 +51,7 @@ import UIKit
 
 /// The gaps the conversation stands a Message's blocks apart by, which are Textual's own: drawn by blocks, a Message
 /// stands as tall as Textual draws it whole.
-@Suite(.serialized) @MainActor struct AgentBlockHostedTests {
+@Suite(.serialized, .oneWindowAtATime) @MainActor struct AgentBlockHostedTests {
   /// The rows of the Message whose Markdown is `markdown`, as the core cuts it.
   private static func rows(_ markdown: String) -> [(row: ConversationRow, markdown: String)] {
     agentMessageItems(message: "message", markdown: markdown, model: nil).compactMap { item in

@@ -172,7 +172,7 @@ import UIKit
   func close() { hosted.close() }
 }
 
-@Suite(.serialized) @MainActor struct LaptopHostedTests {
+@Suite(.serialized, .oneWindowAtATime) @MainActor struct LaptopHostedTests {
   private let settled = SessionRoute(session: "workstation-key/7")
   private let working = SessionRoute(session: "workstation-key/1")
   private let delegating = SessionRoute(session: "workstation-key/12")

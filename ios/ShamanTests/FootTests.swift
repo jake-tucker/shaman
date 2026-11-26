@@ -18,6 +18,9 @@ import UIKit
   private var stood: [CGFloat] = []
   /// How far above that edge the keyboard last said it will stand.
   private(set) var keyboard: CGFloat = 0
+  /// What the keyboard said while the last frames were read, each at the frame it came at: where a field's frames go
+  /// back on themselves, whether the keyboard went down and came up again in the middle of them.
+  private(set) var said: [String] = []
 
   init(_ screen: some View, reading pose: Pose) throws {
     let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -27,6 +30,8 @@ import UIKit
     super.init()
     NotificationCenter.default.addObserver(
       self, selector: #selector(rising), name: UIResponder.keyboardWillShowNotification, object: nil)
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(falling), name: UIResponder.keyboardWillHideNotification, object: nil)
     window.rootViewController = UIHostingController(rootView: Hosting(host: host).ignoresSafeArea().reads(pose))
     window.windowLevel = .alert + 1
     window.makeKeyAndVisible()
@@ -35,6 +40,11 @@ import UIKit
   @objc private func rising(_ note: Notification) {
     guard let end = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
     keyboard = window.bounds.maxY - end.minY
+    said.append("up to \(keyboard) at frame \(stood.count)")
+  }
+
+  @objc private func falling(_ note: Notification) {
+    said.append("down at frame \(stood.count)")
   }
 
   /// The first view of `Kind` in the screen, once there is one.
@@ -72,6 +82,7 @@ import UIKit
   /// Where the field's box is drawn at each frame while `change` is made and what it animates ends.
   func frames(of field: UIView, as change: () -> Void) async throws -> [CGFloat] {
     stood = []
+    said = []
     watched = field
     let link = CADisplayLink(target: self, selector: #selector(tick))
     link.add(to: .main, forMode: .common)
@@ -103,7 +114,7 @@ private struct Hosting: UIViewControllerRepresentable {
   func updateUIViewController(_ controller: UINavigationController, context: Context) {}
 }
 
-@Suite(.serialized) @MainActor struct FootHostedTests {
+@Suite(.serialized, .oneWindowAtATime) @MainActor struct FootHostedTests {
   private func session(_ session: String = "workstation-key/7") throws -> HostedFoot {
     let route = SessionRoute(session: session)
     let stack = SessionStack(core: FakeWindow(.paired), path: [.session(route)])
@@ -146,7 +157,7 @@ private struct Hosting: UIViewControllerRepresentable {
       let raised = hosted.keyboard + 8
       #expect(abs((up.last ?? 0) - raised) < 0.5, "\(up)")
       #expect(up.allSatisfy { $0 > rests - 0.5 && $0 < raised + 0.5 }, "\(up)")
-      #expect(zip(up, up.dropFirst()).allSatisfy { $1 > $0 - 0.5 }, "\(up)")
+      #expect(zip(up, up.dropFirst()).allSatisfy { $1 > $0 - 0.5 }, "\(up), \(hosted.said)")
       #expect(up.contains { $0 > rests + 1 && $0 < raised - 1 }, "on the way: \(up)")
       #expect(try await hosted.field() === field)
       #expect(field.isFirstResponder, "it keeps its focus")
@@ -154,7 +165,7 @@ private struct Hosting: UIViewControllerRepresentable {
       let down = try await hosted.frames(of: field) { field.resignFirstResponder() }
       #expect(abs((down.last ?? 0) - rests) < 0.5, "\(down)")
       #expect(down.allSatisfy { $0 > rests - 0.5 && $0 < raised + 0.5 }, "\(down)")
-      #expect(zip(down, down.dropFirst()).allSatisfy { $1 < $0 + 0.5 }, "\(down)")
+      #expect(zip(down, down.dropFirst()).allSatisfy { $1 < $0 + 0.5 }, "\(down), \(hosted.said)")
       #expect(down.contains { $0 > rests + 1 && $0 < raised - 1 }, "on the way: \(down)")
     }
   }
@@ -187,7 +198,7 @@ private struct Hosting: UIViewControllerRepresentable {
       #expect(hosted.keyboard > 100 && hosted.pose.keyboardIsUp && abs(hosted.pose.keyboard - hosted.keyboard) < 0.5)
       #expect(abs((up.last ?? 0) - raised) < 0.5, "\(up)")
       #expect(up.allSatisfy { $0 > 21.5 && $0 < raised + 0.5 }, "\(up)")
-      #expect(zip(up, up.dropFirst()).allSatisfy { $1 > $0 - 0.5 }, "\(up)")
+      #expect(zip(up, up.dropFirst()).allSatisfy { $1 > $0 - 0.5 }, "\(up), \(hosted.said)")
       #expect(ends() < height - raised - 40)
       #expect(try await hosted.field() === field)
       #expect(field.isFirstResponder, "it keeps its focus")
@@ -195,7 +206,7 @@ private struct Hosting: UIViewControllerRepresentable {
       let down = try await hosted.frames(of: field) { field.resignFirstResponder() }
       #expect(abs((down.last ?? 0) - 22) < 0.5, "\(down)")
       #expect(down.allSatisfy { $0 > 21.5 && $0 < raised + 0.5 }, "\(down)")
-      #expect(zip(down, down.dropFirst()).allSatisfy { $1 < $0 + 0.5 }, "\(down)")
+      #expect(zip(down, down.dropFirst()).allSatisfy { $1 < $0 + 0.5 }, "\(down), \(hosted.said)")
       #expect(!hosted.pose.keyboardIsUp)
       #expect(try await hosted.field() === field)
     }

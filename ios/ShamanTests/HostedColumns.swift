@@ -127,6 +127,8 @@ import UIKit
 
   func close() {
     following?.cancel()
+    // A field left focused would keep the keyboard up over the next test's window.
+    window.endEditing(true)
     window.isHidden = true
   }
 }

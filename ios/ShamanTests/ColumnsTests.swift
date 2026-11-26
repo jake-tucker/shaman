@@ -3,7 +3,7 @@ import UIKit
 
 @testable import ShamanUI
 
-@Suite(.serialized) @MainActor struct ColumnsTests {
+@Suite(.serialized, .oneWindowAtATime) @MainActor struct ColumnsTests {
   private let session = SessionRoute(session: "workstation-key/7")
   private var open: Pushed { .session(session) }
   private var work: Pushed { .work(session, turn: "work") }

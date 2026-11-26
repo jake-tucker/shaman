@@ -7,7 +7,7 @@ import UIKit
 
 /// Where the system's authentication sheet a login at a Relay opens stands: over the window whose sheet asked for the
 /// login, where the app shows several, not over whichever is key.
-@Suite @MainActor struct LoginAnchorTests {
+@Suite(.oneWindowAtATime) @MainActor struct LoginAnchorTests {
   @Test func theSystemsSheetStandsOverTheWindowThatAskedAndNotTheKeyOne() throws {
     let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     let key = try #require(scene.keyWindow, "the app's own window is key")
