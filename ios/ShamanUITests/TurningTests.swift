@@ -101,6 +101,32 @@ final class TurningTests: TurningTestCase {
     attach("A written answer turned and turned back")
   }
 
+  /// The mend of a written answer cut off behind the foot holding as the window changes size: on a Pro Max, as a
+  /// close and an open of a Duo, from one column to the columns and back.
+  @MainActor
+  func testAQuestionnairesFieldHoldingTheKeyboardStaysAboveTheFootThroughATurn() {
+    let app = launched("paired", ["--open", "workstation-key/13", "-AutomaticMinimizationEnabled", "NO"])
+    let field = element("questionnaire.field", in: app)
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    waitForOne("questionnaire.decline", "isEnabled == true", in: app)
+    app.scrolled(to: field, over: element("questionnaire.sheet", in: app)).tap()
+    field.typeText("after lunch")
+    waitForKeyboard(true, on: field, "the field holds the keyboard")
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "the software keyboard is up")
+    _ = fieldInView(in: app, "focused")
+    for (index, held) in twiceEachWay.enumerated() {
+      turn(held, app)
+      waitForKeyboard(true, on: field, "the field holds the keyboard, turned \(index + 1)")
+      XCTAssertEqual(field.value as? String, "after lunch")
+      // Let the page come to rest where it goes.
+      RunLoop.current.run(until: Date().addingTimeInterval(1))
+      // On a Pro on its side the room over the keyboard is shorter than the field, whose top goes under the bar.
+      _ = fieldInView(
+        in: app, "turned \(index + 1), \(held.isLandscape ? "on its side" : "upright")", whole: !held.isLandscape)
+      attach("A field holding the keyboard, turned \(index + 1)")
+    }
+  }
+
   @MainActor
   func testTheTreeStaysASheetAndAServersNameHalfWrittenStaysSo() {
     let app = launched("paired", ["--open", "workstation-key/12"])

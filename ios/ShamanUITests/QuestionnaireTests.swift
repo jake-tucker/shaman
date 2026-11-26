@@ -255,27 +255,6 @@ final class QuestionnaireTests: XCTestCase {
     attach("A secret's field, the keyboard up")
   }
 
-  /// Checks that the field stands whole, its border too, between the title's bar and the foot of the page's scroll view,
-  /// and answers its height.
-  @MainActor
-  private func fieldInView(in app: XCUIApplication, _ when: String, line: UInt = #line) -> CGFloat {
-    let sheet = element("questionnaire.sheet", in: app)
-    let page = sheet.scrollViews.containing(.any, identifier: "questionnaire.field").firstMatch.frame
-    let bar = app.navigationBars.containing(.button, identifier: "questionnaire.decline").firstMatch.frame
-    let words = element("questionnaire.field", in: app).frame
-    // The frame of a field of several lines is its words', inside a border that begins 12 points below the last choice.
-    let border = words.minY - choices(in: app).element(boundBy: choices(in: app).count - 1).frame.maxY - 12
-    XCTAssertGreaterThan(border, 0, "the words stand inside a border", line: line)
-    let field = words.insetBy(dx: 0, dy: -border)
-    // Where a frame rounds to a pixel.
-    let rounding: CGFloat = 0.5
-    XCTAssertGreaterThanOrEqual(
-      field.minY, bar.maxY - rounding, "\(when), \(field) is clear of the bar at \(bar)", line: line)
-    XCTAssertLessThanOrEqual(
-      field.maxY, page.maxY + rounding, "\(when), \(field) is clear of the foot of the page at \(page)", line: line)
-    return field.height
-  }
-
   @MainActor
   func testAWrittenAnswerStaysAboveTheFootAsItGrows() {
     let app = launched(keyboardStays)
