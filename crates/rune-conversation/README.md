@@ -22,10 +22,15 @@ disagree about where each part opens and where the reader is asked for something
 | The Aside | the Subagents Section | a Turn's work or the tree, one at a time | Sections: Subagents, Changes, Queued |
 | Another Session calls | its row in the Sidebar | a toast | a strip across the main view |
 
+**`d` is what was chosen**, drawn after the other three: a in every row of the table, with c's marker that also counts
+a Turn's work, c's sheet as a second way to open a diff (set side by side), and c's Changes Section under the
+Subagents Section. In every variant a Turn Fold is one row, its marker and the work it opens onto, which glides open
+and shut in 0.16 s: twice as fast as Rune's growth spring, which it eased on at first and which read as slow.
+
 ## Running it
 
 ```
-cargo run -p rune-conversation -- a        # or b, or c
+cargo run -p rune-conversation -- d        # or a, b, c
 ```
 
 The strip under the window switches variants (⌥← ⌥→) and states (⌥↑ ⌥↓), and streams a long Message into the latest
@@ -43,6 +48,20 @@ cargo run -p rune-conversation -- a --list-scenes
 ```
 
 `results/` holds the pictures as they stood when the ticket was worked.
+
+## What a long Message costs as one row and as a row a block
+
+`RC_MEASURE=1 RC_REPEAT=12 cargo run --release -p rune-conversation` streams a Message of 6,924 words, eight words a
+commit, through Rune's headless runtime in variant d (the view, layout, text shaping and paint list on the CPU, nothing
+drawn), on an Apple-silicon Mac:
+
+| | first 500 words | last 500 words |
+|---|---|---|
+| one row | p50 0.77 ms, p95 1.04 ms | p50 1.69 ms, p95 2.17 ms |
+| a row a block | p50 0.83 ms, p95 1.20 ms | p50 1.41 ms, p95 1.71 ms |
+
+A row a block memoes every block but the last. The Message here is many short blocks (prose, lists, code); one long
+paragraph is one block either way. The column is not virtual rows, so every row is laid out on every commit in both.
 
 ## What is fake
 

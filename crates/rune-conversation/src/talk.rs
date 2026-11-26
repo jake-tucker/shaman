@@ -542,21 +542,38 @@ One thing I did not settle is what the window should offer a reader who is away 
 
 If you want the same rule in the Aside's tree, it is two lines: the tree already knows which entry is open, and keeping that entry in view is the same question asked of a different list.";
 
+/// The long answer, repeated `RC_REPEAT` times over where the environment asks, for measuring a very long Message.
+fn long_text() -> &'static str {
+    static TEXT: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    TEXT.get_or_init(|| {
+        let repeat = std::env::var("RC_REPEAT")
+            .ok()
+            .and_then(|n| n.parse::<usize>().ok())
+            .unwrap_or(1);
+        if repeat <= 1 {
+            LONG
+        } else {
+            Box::leak(vec![LONG; repeat].join("\n\n").into_boxed_str())
+        }
+    })
+}
+
 /// The first `words` words of the long answer, and whether that is all of it.
 pub fn long(words: usize) -> (&'static str, bool) {
+    let text = long_text();
     let mut seen = 0;
     let mut inside = false;
-    for (at, c) in LONG.char_indices() {
+    for (at, c) in text.char_indices() {
         let space = c.is_whitespace();
         if !space && !inside {
             seen += 1;
             if seen > words {
-                return (LONG[..at].trim_end(), false);
+                return (text[..at].trim_end(), false);
             }
         }
         inside = !space;
     }
-    (LONG, true)
+    (text, true)
 }
 
 /// A Turn as a phase leaves it standing.

@@ -499,7 +499,7 @@ fn centred(sheet: El) -> El {
 }
 
 /// An Activity, over the window: its Turn's Activities down the side, and what this one printed, read or changed.
-fn activity_sheet(s: &App, a: &'static Activity, k: &Kit) -> El {
+pub fn activity_sheet(s: &App, a: &'static Activity, k: &Kit) -> El {
     let c = &k.c;
     let width = (s.win_w - 200.0).min(1040.0);
     // The sheet is as tall as what it shows asks for, within the window.
@@ -699,6 +699,57 @@ fn intervention_sheet(s: &App, k: &Kit) -> El {
 /// The Aside as a stack of Sections: Subagents, the files the Session has changed, and queued Prompts.
 fn aside(s: &App, k: &Kit) -> El {
     let c = &k.c;
+    let changed = changes(k);
+    let queued = if s.queued { talk::QUEUED.len() } else { 0 };
+    let mut queue = col()
+        .w_full()
+        .child(bits::section_header("Queued", queued, 0, k));
+    if queued == 0 {
+        queue = queue.child(
+            row()
+                .px(8.0)
+                .child(text("Nothing queued").font(k.ty.small).color(c.text_faint)),
+        );
+    }
+    for (i, said) in talk::QUEUED.iter().enumerate().take(queued) {
+        queue = queue.child(
+            row()
+                .w_full()
+                .px(8.0)
+                .py(5.0)
+                .gap(8.0)
+                .child(
+                    text(format!("{}", i + 1))
+                        .font(k.ty.small)
+                        .color(c.text_faint),
+                )
+                .child(
+                    col()
+                        .grow(1.0)
+                        .min_w(0.0)
+                        .child(text(*said).font(k.ty.ui).color(c.text_base).wrap()),
+                ),
+        );
+    }
+    col()
+        .key("aside")
+        .w_full()
+        .h_full()
+        .padding(8.0)
+        .gap(14.0)
+        .scroll(ScrollSpec {
+            stick_bottom: false,
+        })
+        .child(bits::tree(s, k))
+        .child(bits::rule(k))
+        .child(changed)
+        .child(bits::rule(k))
+        .child(queue)
+}
+
+/// The Changes Section: the files the Session has changed, each opening its diff over the window.
+pub fn changes(k: &Kit) -> El {
+    let c = &k.c;
     let mut changed =
         col()
             .w_full()
@@ -758,49 +809,5 @@ fn aside(s: &App, k: &Kit) -> El {
             .on_press(move |s: &mut App| s.open_sheet(id)),
         );
     }
-    let queued = if s.queued { talk::QUEUED.len() } else { 0 };
-    let mut queue = col()
-        .w_full()
-        .child(bits::section_header("Queued", queued, 0, k));
-    if queued == 0 {
-        queue = queue.child(
-            row()
-                .px(8.0)
-                .child(text("Nothing queued").font(k.ty.small).color(c.text_faint)),
-        );
-    }
-    for (i, said) in talk::QUEUED.iter().enumerate().take(queued) {
-        queue = queue.child(
-            row()
-                .w_full()
-                .px(8.0)
-                .py(5.0)
-                .gap(8.0)
-                .child(
-                    text(format!("{}", i + 1))
-                        .font(k.ty.small)
-                        .color(c.text_faint),
-                )
-                .child(
-                    col()
-                        .grow(1.0)
-                        .min_w(0.0)
-                        .child(text(*said).font(k.ty.ui).color(c.text_base).wrap()),
-                ),
-        );
-    }
-    col()
-        .key("aside")
-        .w_full()
-        .h_full()
-        .padding(8.0)
-        .gap(14.0)
-        .scroll(ScrollSpec {
-            stick_bottom: false,
-        })
-        .child(bits::tree(s, k))
-        .child(bits::rule(k))
-        .child(changed)
-        .child(bits::rule(k))
-        .child(queue)
+    changed
 }

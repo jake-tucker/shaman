@@ -66,6 +66,10 @@ pub fn md(src: &str, streaming: bool, k: &Kit) -> El {
         .selection_group(false)
 }
 
+/// How a row that folds open and shut glides: twice as fast as Rune's growth spring (0.32 s), which is what a fold
+/// eased on before the reader asked for it quicker.
+pub const FOLD: rune::Spring = rune::Spring::new(0.16, 0.0);
+
 /// A Turn's answer as the rows it takes: one, or one a block where the reader asked to see a long Message split.
 pub fn answer(s: &App, id: &str, src: &str, streaming: bool, k: &Kit) -> Vec<El> {
     if !s.blocks {
@@ -97,9 +101,16 @@ pub fn answer(s: &App, id: &str, src: &str, streaming: bool, k: &Kit) -> Vec<El>
         .enumerate()
         .map(|(i, block)| {
             let live = streaming && i == last;
-            md(block, live, k)
-                .key(format!("{id}-answer-{i}"))
-                .streaming(live)
+            // A block that has stopped growing is not parsed again: only the last one moves.
+            rune::memo(
+                format!("{id}-answer-{i}"),
+                (block.len(), live, k.dark),
+                || {
+                    md(block, live, k)
+                        .key(format!("{id}-answer-{i}"))
+                        .streaming(live)
+                },
+            )
         })
         .collect()
 }

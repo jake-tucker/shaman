@@ -10,7 +10,7 @@ set -euo pipefail
 out=$1
 shift
 variants=("$@")
-[ ${#variants[@]} -eq 0 ] && variants=(a b c)
+[ ${#variants[@]} -eq 0 ] && variants=(a b c d)
 mkdir -p "$out"
 cargo build --locked -p rune-conversation
 bin=${CARGO_TARGET_DIR:-target}/debug/rune-conversation
@@ -41,6 +41,10 @@ for v in "${variants[@]}"; do
     snap "$v-approval-960" "$v" 960x720 light approval
     snap "$v-working-960" "$v" 960x720 light working
 done
+# What was chosen opens a diff over the window as well as in place.
+for v in "${variants[@]}"; do
+    [ "$v" = d ] && snap d-sheet d $wide light sheet
+done
 ls "$out" | wc -l
 
 # One page that sets the variants side by side, state by state.
@@ -52,7 +56,7 @@ states = [
     ("picture", "A Prompt with an Attachment, and an answer with a picture"),
     ("turn", "A settled Turn's work opened"), ("group", "A Group opened onto its members (a alone forms Groups)"),
     ("command", "A command's output"), ("read", "A file read"),
-    ("diff", "An edit as a diff"), ("diff-dark", "An edit as a diff, dark"), ("diff-1680", "An edit as a diff, 1680 pt"),
+    ("diff", "An edit as a diff"), ("sheet", "The same diff asked for side by side (d only)"), ("diff-dark", "An edit as a diff, dark"), ("diff-1680", "An edit as a diff, 1680 pt"),
     ("working", "A Turn working: a command runs"), ("working-dark", "A Turn working, dark"),
     ("working-960", "A Turn working, 960 pt: the Aside gives way"),
     ("streaming", "A Turn working: its Message arrives"),
@@ -67,7 +71,7 @@ states = [
     ("long-streaming", "The long answer a real window streams, 150 words in"),
     ("long", "The long answer, whole, as one row"), ("long-blocks", "The long answer, whole, as a row a block"),
 ]
-names = {"a": "a · in the flow", "b": "b · beside", "c": "c · over"}
+names = {"a": "a · in the flow", "b": "b · beside", "c": "c · over", "d": "d · chosen"}
 rows = []
 for state, title in states:
     cells = "".join(
@@ -81,7 +85,8 @@ page = """<!doctype html><meta charset=utf-8><title>Conversation prototype (#776
 figcaption{font-weight:600;padding:4px 2px}</style>
 <h1>How a Transcript, live work and Interventions read in a window</h1>
 <p>a: everything opens in place, as in the TUI · b: a Turn's work opens beside, in the Aside · c: an Activity and an
-Intervention open over the window. Click a picture for its full size.</p>
+Intervention open over the window · d: what was chosen, a with c's counting marker, its sheet for a diff and its
+Changes Section. Click a picture for its full size.</p>
 """ + "".join(rows)
 open(os.path.join(out, "index.html"), "w").write(page)
 PY

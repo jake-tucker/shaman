@@ -9,11 +9,11 @@
 use rune::{El, ScrollSpec, col, el, row, text};
 use rune_kit::{ButtonVariant, Kit, Spinner};
 
-use crate::App;
 use crate::bits;
 use crate::parts::glyph;
 use crate::shell::{self, Panes};
 use crate::talk::{self, Activity, Kind, Outcome, Phase, QUESTIONS, Shown, Unit};
+use crate::{App, Variant, over};
 
 /// How wide the Session Content Column grows.
 const COLUMN: f32 = 760.0;
@@ -59,12 +59,24 @@ pub fn view(s: &App, k: &Kit, leading: f32, trailing: f32, layer: &mut Vec<El>) 
         .h_full()
         .child(scroll)
         .child(col().w_full().px(24.0).pb(16.0).items_center().child(foot));
-    let aside = col()
+    let mut aside = col()
         .key("aside")
         .w_full()
         .h_full()
         .padding(8.0)
+        .gap(14.0)
         .child(bits::tree(s, k));
+    // What was chosen: the Aside also lists the files the Session has changed, and a diff opens over the window
+    // when the reader asks to see it side by side.
+    if s.variant == Variant::D {
+        aside = aside.child(bits::rule(k)).child(over::changes(k));
+        if let Some(a) = s.chosen.and_then(talk::activity) {
+            layer.push(
+                rune_kit::scrim("sheet-scrim", |s: &mut App| s.chosen = None).fill(k.c.scrim),
+            );
+            layer.push(over::activity_sheet(s, a, k));
+        }
+    }
     shell::view(
         s,
         k,
@@ -97,8 +109,11 @@ fn turn(s: &App, shown: &Shown, mut rows: El, k: &Kit) -> El {
 
     let settled = shown.outcome != Outcome::Working;
     let open = !settled || s.opened.contains(t.id);
+    // A Turn Fold is one row, its marker and the work it opens onto, so the row glides open and shut on a spring of
+    // its own and the marker heads it.
+    let mut fold = col().key(format!("turn-{}", t.id)).w_full().gap(14.0);
     if settled {
-        rows = rows.child(fold_marker(shown, open, k));
+        fold = fold.child(fold_marker(shown, open, s.variant == Variant::D, k));
     }
     if open {
         let mut work = col().w_full().gap(10.0);
@@ -109,7 +124,7 @@ fn turn(s: &App, shown: &Shown, mut rows: El, k: &Kit) -> El {
             work = work.child(owed(s.phase, k));
         }
         // The rule down the left says how far an opened Turn Fold reaches.
-        rows = rows.child(if settled {
+        fold = fold.child(if settled {
             row()
                 .w_full()
                 .gap(12.0)
@@ -119,6 +134,7 @@ fn turn(s: &App, shown: &Shown, mut rows: El, k: &Kit) -> El {
             work
         });
     }
+    rows = rows.child(fold.fold_glide(bits::FOLD));
     if let Some(answer) = shown.answer {
         rows = rows.children(bits::answer(s, t.id, answer, shown.streaming, k));
         if t.picture && !shown.streaming {
@@ -129,7 +145,7 @@ fn turn(s: &App, shown: &Shown, mut rows: El, k: &Kit) -> El {
 }
 
 /// The Turn Fold's marker: how the Turn settled and how long it took. It stands in the same place open or shut.
-fn fold_marker(shown: &Shown, open: bool, k: &Kit) -> El {
+fn fold_marker(shown: &Shown, open: bool, counted: bool, k: &Kit) -> El {
     let c = &k.c;
     let id = shown.turn.id;
     let (word, joiner) = match shown.outcome {
@@ -162,6 +178,8 @@ fn fold_marker(shown: &Shown, open: bool, k: &Kit) -> El {
                     .font(k.ty.small_medium)
                     .color(c.text_muted),
             )
+            // What was chosen: the marker also counts the work it stands for, as variant c's does.
+            .children(counted.then(|| text(shown.counts).font(k.ty.small).color(c.text_faint)))
             .child(el().grow(1.0).h(1.0).fill(c.border_muted)),
     )
     .role("button")
@@ -340,6 +358,15 @@ fn member(s: &App, a: &'static Activity, k: &Kit) -> El {
             .pb(6.0)
             .gap(4.0)
             .child(bits::body(s, a, lines, 420.0, k));
+        if a.kind == Kind::Edit && s.variant == Variant::D {
+            opened = opened.child(
+                row().child(
+                    bits::small_button("Side by side", ButtonVariant::Ghost, "⌘⏎", k)
+                        .on_press(move |s: &mut App| s.open_sheet(id))
+                        .build(k),
+                ),
+            );
+        }
         let more = a.body.lines().count() > PEEK;
         if matches!(a.kind, Kind::Command | Kind::Tool) && more && a.outcome != Outcome::Working {
             opened = opened.child(

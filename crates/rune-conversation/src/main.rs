@@ -14,6 +14,13 @@
 //!   for a side-by-side diff. The Working Indicator and Stop live in the band at the top. An Intervention is a sheet
 //!   over the window. The composer floats, and the Aside stacks Sections: Subagents, changed files, queued Prompts.
 //!
+//! - `d`, what was chosen: a, with c's marker that also counts a Turn's work, c's sheet as a second way to open a
+//!   diff, set side by side, and c's Changes Section under the Subagents Section in the Aside. It was drawn after the
+//!   other three.
+//!
+//! `RC_MEASURE=1 RC_REPEAT=12 cargo run --release -p rune-conversation` streams a Message of about 6,000 words through
+//! Rune's headless runtime, as one row and as a row a block, and prints what a commit costs early and late.
+//!
 //! `cargo run -p rune-conversation -- b` opens variant b; ⌥← and ⌥→, or the bar at the bottom, switch variants, and ⌥↑
 //! and ⌥↓ step through the states. Every state is a scene:
 //! `cargo run -p rune-conversation -- c --snap out.png --scene approval --size 1280x800 --theme light`, and
@@ -49,16 +56,18 @@ pub enum Variant {
     A,
     B,
     C,
+    D,
 }
 
 impl Variant {
-    const ALL: [Variant; 3] = [Variant::A, Variant::B, Variant::C];
+    const ALL: [Variant; 4] = [Variant::A, Variant::B, Variant::C, Variant::D];
 
     fn name(self) -> &'static str {
         match self {
             Variant::A => "A (in the flow: everything opens in place)",
             Variant::B => "B (beside: a Turn's work opens in the Aside)",
             Variant::C => "C (over: an Activity and an Intervention open in a sheet)",
+            Variant::D => "D (chosen: a, with c's counting marker, sheet for a diff and Changes)",
         }
     }
 
@@ -301,7 +310,7 @@ impl App {
     /// Opens an Activity of the latest Turn's Group wherever this variant opens one.
     fn reveal(&mut self, id: &'static str) {
         match self.variant {
-            Variant::A => {
+            Variant::A | Variant::D => {
                 self.opened.extend(["t2", "g3", id]);
             }
             Variant::B => {
@@ -332,6 +341,8 @@ fn init() -> App {
         Variant::B
     } else if has("c") {
         Variant::C
+    } else if has("d") {
+        Variant::D
     } else {
         Variant::A
     };
@@ -460,7 +471,7 @@ fn view(s: &App, cx: &mut Cx<App>) -> El {
         cx.titlebar_inset()
     };
     let body = match s.variant {
-        Variant::A => flow::view(s, &k, leading, room.trailing, &mut layer),
+        Variant::A | Variant::D => flow::view(s, &k, leading, room.trailing, &mut layer),
         Variant::B => beside::view(s, &k, leading, room.trailing, &mut layer),
         Variant::C => over::view(s, &k, leading, room.trailing, &mut layer),
     };
@@ -613,6 +624,11 @@ const SCENES: &[Scene] = &[
     ("command", |s| s.reveal("g3c")),
     ("read", |s| s.reveal("g3a")),
     ("diff", |s| s.reveal("g3b")),
+    // What was chosen: a diff open in place, asked for side by side.
+    ("sheet", |s| {
+        s.opened.extend(["t2", "g3", "g3b"]);
+        s.open_sheet("g3b");
+    }),
     ("working", |s| s.phase = Phase::Working),
     ("streaming", |s| s.phase = Phase::Streaming),
     ("steer", |s| {
@@ -655,8 +671,64 @@ const SCENES: &[Scene] = &[
     }),
 ];
 
+/// What a commit costs as a long Message streams, as one row and as a row a block: the view, layout, text shaping and
+/// paint list on the CPU, with nothing drawn.
+fn measure() {
+    use rune::{Env, Runtime};
+    use std::time::Instant;
+
+    const FRAME: f64 = 1.0 / 60.0;
+    const DELTA: usize = 8;
+    let total = talk::long(usize::MAX).0.split_whitespace().count();
+    println!("a Message of {total} words, {DELTA} words a commit, variant d at {SIZE:?}");
+    for blocks in [false, true] {
+        let mut app = init();
+        app.variant = Variant::D;
+        app.pill = false;
+        app.phase = Phase::Streaming;
+        app.streamed = Some(0);
+        app.blocks = blocks;
+        let mut rt = Runtime::new(app, view, SIZE, Env::new(false, 2.0));
+        rt.frame(FRAME);
+        let mut costs: Vec<(usize, f64)> = Vec::new();
+        let mut words = 0;
+        while words < total {
+            words += DELTA;
+            let began = Instant::now();
+            rt.update(move |s, _| s.streamed = Some(words));
+            rt.frame(FRAME);
+            costs.push((words, began.elapsed().as_secs_f64() * 1e3));
+        }
+        let spread = |from: usize, to: usize| {
+            let mut ms: Vec<f64> = costs
+                .iter()
+                .filter(|(w, _)| *w > from && *w <= to)
+                .map(|(_, ms)| *ms)
+                .collect();
+            ms.sort_by(f64::total_cmp);
+            let at = |q: f64| ms[((ms.len() - 1) as f64 * q).round() as usize];
+            format!(
+                "p50 {:.2} ms, p95 {:.2} ms, worst {:.2} ms",
+                at(0.5),
+                at(0.95),
+                at(1.0)
+            )
+        };
+        println!(
+            "- {}: first 500 words {}; last 500 words {}",
+            if blocks { "a row a block" } else { "one row" },
+            spread(0, 500),
+            spread(total.saturating_sub(500), total),
+        );
+    }
+}
+
 fn main() {
     rune::text::add_font(parts::NERD_FONT);
+    if std::env::var_os("RC_MEASURE").is_some() {
+        measure();
+        return;
+    }
     let spec = AppSpec {
         on_key: Some(on_key),
         scenes: SCENES,
