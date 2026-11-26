@@ -393,8 +393,9 @@
       }
       change { $0 = Self.provisionalItems(Provisional(text: text)) }
       if preparing {
-        // The new Worktree is made first, which takes a moment of its own.
-        try? await Task.sleep(for: .milliseconds(2_000))
+        // The new Worktree is made first, which takes a while of its own: long enough that a test on a slow runner,
+        // which has taken three seconds from the tap on send to reading the bar, still finds it being made.
+        try? await Task.sleep(for: .milliseconds(8_000))
         self.preparing.store(false, ordering: .relaxed)
         changeFrame { $0 = Self.provisionalFrame(text, place: place, answered: false, preparing: false) }
       }
