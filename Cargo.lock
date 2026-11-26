@@ -4785,6 +4785,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rune-conversation"
+version = "0.0.0"
+dependencies = [
+ "rune",
+ "rune-kit",
+ "shaman-icons",
+]
+
+[[package]]
 name = "rune-core"
 version = "0.0.1"
 source = "git+https://github.com/anomalyco/rune?rev=983e33b916b0da5719442d94ae04a00867c952a3#983e33b916b0da5719442d94ae04a00867c952a3"
