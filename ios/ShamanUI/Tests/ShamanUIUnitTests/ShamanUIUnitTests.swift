@@ -3420,12 +3420,10 @@ private final class CountedScanner {
     try await first.chooseWorkspace("workspace/laptop/billing-api")
     let kept = try #require(first.keptOutlook())
 
-    let relaunched = try #require(FakeCore(.several).window() as? FakeWindow)
-    relaunched.restoreOutlook(kept)
+    let relaunched = try #require(FakeCore(.several).window(kept: kept) as? FakeWindow)
     #expect(await outlook(of: relaunched) == "laptop · billing-api")
 
-    let elsewhere = try #require(FakeCore(.paired).window() as? FakeWindow)
-    elsewhere.restoreOutlook(kept)
+    let elsewhere = try #require(FakeCore(.paired).window(kept: kept) as? FakeWindow)
     #expect(await outlook(of: elsewhere) == "workstation", "the laptop is not held there")
   }
 

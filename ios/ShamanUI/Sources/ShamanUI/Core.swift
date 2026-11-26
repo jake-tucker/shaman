@@ -9,9 +9,12 @@ import ShamanCore
 /// returns once it is done, with nothing but success; what it changed arrives by the model.
 public protocol DeviceCore: AnyObject, Sendable {
   /// A window's half of the core, a Client of its own over this one: its Outlook begins where the phone was last
-  /// turned, by any window, its listing at Everywhere, and it says for itself every notice there is to say. Each
-  /// window's root asks for one once, and holds it while the window lives.
-  func window() -> any WindowCore
+  /// turned, by any window, or, handed `kept`, what its scene kept of it, where it stood, its listing at Everywhere,
+  /// and it says for itself every notice there is to say. Handed back, an Outlook is not kept as the phone's latest
+  /// turn, and one whose Remote is no longer held stands at the Remote the phone was most recently turned toward that
+  /// is still held. Each window's root asks for one once, handing back what its scene kept, and holds it while the
+  /// window lives.
+  func window(kept: String?) -> any WindowCore
 
   /// What was last half given the Questionnaire `questionnaire` of the Session `session` names, by a sheet of it in
   /// any window, where anything was: what a sheet opening starts from. It lasts as long as the core does.
@@ -92,6 +95,13 @@ public protocol DeviceCore: AnyObject, Sendable {
   func removeRemote(_ remote: String) async throws(ActError)
 }
 
+extension DeviceCore {
+  /// A window's half of the core, handed back nothing its scene kept, as a new window is.
+  public func window() -> any WindowCore {
+    window(kept: nil)
+  }
+}
+
 /// What a window of the app asks of its own half of the core, a Client of its own over the device's: its Outlook and
 /// the Workspace it stands at, its listing's scope, search and shelf, its Landing, its Workspace Picker's search and
 /// which notices it has said, beside the drafts, which are the device's and which it reads and writes through here.
@@ -147,13 +157,8 @@ public protocol WindowCore: AnyObject, Sendable {
   func searchListing(_ text: String)
 
   /// What the scene is to keep of where this window's Outlook stands now, its Remote and the Workspace it stands in,
-  /// as a plain string handed back by `restoreOutlook` after a cold start; none while it stands nowhere.
+  /// as a plain string handed back to `DeviceCore.window(kept:)` after a cold start; none while it stands nowhere.
   func keptOutlook() -> String?
-
-  /// Turns this window's Outlook back to where the scene kept it, as it hands it back after a cold start, keeping
-  /// nothing as the phone's latest turn. One whose Remote is no longer held turns nothing, so the window stands at the
-  /// Remote the phone was most recently turned toward that is still held.
-  func restoreOutlook(_ kept: String)
 
   /// The unsent text of the composer of the Session `session` names, asked for when its screen appears, with the
   /// version of it each change is handed back with.

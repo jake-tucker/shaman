@@ -453,18 +453,18 @@ If the phone is locked, stop and ask for it to be unlocked.
 - The app reaches the core only through two protocols, as each window of the app is a Client of its own over the
   device's core (ADR-0084): `DeviceCore`, the device's, which the app opens once, and `WindowCore`, a window's, which
   each window's root (`RootScreen`, or `DeviceRoot` alone in a debug build) asks the device's for once, by `HeldWindow`,
-  as it is first drawn, and holds while the window lives. `RootScreen` claims the launch arguments from
-  `LaunchArguments` as its first task runs, the first root to run one taking them all and every other none, and hands
-  the core back the Outlook its scene kept, by `restoreOutlook`, before following it; `DeviceRoot` claims and hands
-  back nothing. A window's holds its Outlook, its listing's scope, search and shelf, its Landing, its Workspace
-  Picker's search and which notices it has said, and reaches the device's by `device`; drafts are the
-  device's, read and written through a window's. A composer's field takes the kept draft whole as it opens, and after
-  that only what `Draft.taken` gives it: each Prompt the core gave back, ahead of its own text, and, shown again, the
-  text kept where its own window wrote it last, never another window's typing. A Questionnaire's half-given answers
-  are kept in the device's core as well, in memory alone, and a sheet opening starts from them. A new act or model is added to the core, to whichever protocol it is
-  the half of, and to its live and fake sides together: `LiveCore` and `FakeCore` for the device's, `LiveWindow` and
-  `FakeWindow` for a window's. A test or a preview over the fake makes `FakeWindow(<scenario>)`, a window over a fake
-  phone of its own, or asks a `FakeCore` for as many windows as it needs.
+  as it is first drawn, and holds while the window lives. `RootScreen` hands the device's the Outlook its scene kept as
+  it asks, by `window(kept:)`, and claims the launch arguments from `LaunchArguments` as its first task runs, the first
+  root to run one taking them all and every other none; `DeviceRoot` hands back and claims nothing. A window's holds its
+  Outlook, its listing's scope, search and shelf, its Landing, its Workspace Picker's search and which notices it has
+  said, and reaches the device's by `device`; drafts are the device's, read and written through a window's. A composer's
+  field takes the kept draft whole as it opens, and after that only what `Draft.taken` gives it: each Prompt the core
+  gave back, ahead of its own text, and, shown again, the text kept where its own window wrote it last, never another
+  window's typing. A Questionnaire's half-given answers are kept in the device's core as well, in memory alone, and a
+  sheet opening starts from them. A new act or model is added to the core, to whichever protocol it is the half of, and
+  to its live and fake sides together: `LiveCore` and `FakeCore` for the device's, `LiveWindow` and `FakeWindow` for a
+  window's. A test or a preview over the fake makes `FakeWindow(<scenario>)`, a window over a fake phone of its own, or
+  asks a `FakeCore` for as many windows as it needs.
 - The core writes every word a screen shows but chrome's labels, and hands Swift finished models; Swift folds nothing.
   The exception is what is said before the core is open, which Swift writes: why the identity key could not be found
   or made, and why the core's directory could not be made. An act's failure is `ActError`: `Invalid` is shown beside

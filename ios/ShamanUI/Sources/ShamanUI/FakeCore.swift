@@ -260,8 +260,12 @@
       tellWindows { $0.tellListing() }
     }
 
-    public func window() -> any WindowCore {
-      FakeWindow(over: self)
+    public func window(kept: String?) -> any WindowCore {
+      let window = FakeWindow(over: self)
+      if let kept {
+        window.restoreOutlook(kept)
+      }
+      return window
     }
 
     private let windowsMade = Atomic<Int>(0)

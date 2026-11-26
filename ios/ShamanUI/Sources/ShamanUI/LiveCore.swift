@@ -16,8 +16,8 @@ public final class LiveCore: DeviceCore {
     }
   }
 
-  public func window() -> any WindowCore {
-    LiveWindow(client.window(), of: self)
+  public func window(kept: String?) -> any WindowCore {
+    LiveWindow(client.window(kept: kept), of: self)
   }
 
   public func halfAnswered(_ questionnaire: String, of session: String) -> HalfAnswered? {
@@ -175,10 +175,6 @@ final class LiveWindow: WindowCore {
 
   public func keptOutlook() -> String? {
     window.keptOutlook()
-  }
-
-  public func restoreOutlook(_ kept: String) {
-    window.restoreOutlook(kept: kept)
   }
 
   public func draft(for session: String) -> Draft {

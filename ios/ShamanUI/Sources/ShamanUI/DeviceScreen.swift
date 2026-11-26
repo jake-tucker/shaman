@@ -15,7 +15,7 @@ import SwiftUI
     }
 
     public var body: some View {
-      DeviceScreen(core: held.core, appVersion: appVersion)
+      DeviceScreen(core: held.core(handingBack: nil), appVersion: appVersion)
     }
   }
 #endif

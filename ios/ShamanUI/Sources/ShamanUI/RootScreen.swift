@@ -8,7 +8,11 @@ public struct RootScreen: View {
   /// This window's half of the core, a Client of its own, what it says of its own accord, and what it was asked at
   /// launch to show.
   @State private var held: HeldWindow
-  private var core: any WindowCore { held.core }
+  /// This window's half of the core, asked for as the window is first drawn, handed what its scene kept of its Outlook.
+  private var core: any WindowCore { held.core(handingBack: handingBack) }
+  /// What the scene kept of the window's Outlook, to hand back as the window is made: nothing where the scene is not
+  /// restored.
+  private var handingBack: String? { restoring ? KeptScene(stored: kept).outlook : nil }
   private let appVersion: String
   /// The Invite the first screen shown confirms at once, and no screen after it.
   @State private var invite: String?
@@ -49,13 +53,9 @@ public struct RootScreen: View {
       }
     }
     // Each screen shows it beneath its own bar, by `noticeBanner`.
-    .environment(held.notices)
+    .environment(held.notices(handingBack: handingBack))
+    .task { await held.notices(handingBack: handingBack).follow() }
     .task {
-      handBack()
-      await held.notices.follow()
-    }
-    .task {
-      handBack()
       invite = held.launched.invite
       for await outlook in core.outlook() {
         if self.outlook != nil {
@@ -79,12 +79,6 @@ public struct RootScreen: View {
     }
   }
 
-  /// Hands the core the Outlook the scene kept, once, before the window's Outlook or notices are first followed, so the
-  /// window opens where it stood and says there what became of it.
-  private func handBack() {
-    held.handBack(restoring ? KeptScene(stored: kept).outlook : nil)
-  }
-
   /// Keeps `scene`, what the listing hands the scene to keep, with where the Outlook stands now.
   private func keep(_ scene: KeptScene) {
     var scene = scene
@@ -93,7 +87,8 @@ public struct RootScreen: View {
   }
 }
 
-/// A window's half of the core, asked of the device's the first time the window holding it is drawn, what the core
+/// A window's half of the core, asked of the device's the first time the window holding it is drawn, handed what its
+/// scene kept of its Outlook so nothing falls between making it and handing that back, what the core
 /// says of its own accord in that window, in the banner an act's failure is shown in, beneath each screen's bar, and
 /// what the window was asked at launch to show. SwiftUI may make a view's state more than once and keep the first, so
 /// nothing is asked of the core, nor launch arguments claimed, as it is made, but as its root's first task runs, and no
@@ -109,23 +104,28 @@ public struct RootScreen: View {
     self.noticeStands = noticeStands
   }
 
-  private(set) lazy var core: any WindowCore = device.window()
-  private(set) lazy var notices = NoticeModel(core: core, stands: noticeStands)
+  private var window: (any WindowCore)?
+  private var noticeModel: NoticeModel?
+
+  /// The window's half of the core, asked of the device's the first time, handed `kept`, what its scene kept of its
+  /// Outlook; what is handed after the first is not asked for.
+  func core(handingBack kept: String?) -> any WindowCore {
+    if let window { return window }
+    let made = device.window(kept: kept)
+    window = made
+    return made
+  }
+
+  /// What the core says of its own accord in the window, over its half of the core, made as `core(handingBack:)` is.
+  func notices(handingBack kept: String?) -> NoticeModel {
+    if let noticeModel { return noticeModel }
+    let made = NoticeModel(core: core(handingBack: kept), stands: noticeStands)
+    noticeModel = made
+    return made
+  }
   /// What this window was asked at launch to show, claimed as its root's first task runs: everything where it is the
   /// first window whose root's task runs, and nothing otherwise.
   private(set) lazy var launched = launch.claimed()
-  /// Whether the Outlook the scene kept has been handed back to the core.
-  private var handedBack = false
-
-  /// Hands `outlook`, what the scene kept of the window's Outlook, back to the core, where there is one: once, however
-  /// often it is asked.
-  func handBack(_ outlook: String?) {
-    guard !handedBack else { return }
-    handedBack = true
-    if let outlook {
-      core.restoreOutlook(outlook)
-    }
-  }
 }
 
 #if DEBUG

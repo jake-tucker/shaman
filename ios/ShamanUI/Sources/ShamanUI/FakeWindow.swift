@@ -167,7 +167,8 @@
       return ["\(remote)-key", turnedWorkspace.withLock { $0[remote] }].compactMap(\.self).joined(separator: "/")
     }
 
-    public func restoreOutlook(_ kept: String) {
+    /// Turns this window's Outlook back to where `kept`, what its scene kept, says it stood, as it is made.
+    func restoreOutlook(_ kept: String) {
       let parts = kept.split(separator: "/", maxSplits: 1).map(String.init)
       guard let key = parts.first, let remote = fake.heldNames().first(where: { "\($0)-key" == key }) else { return }
       // Turned in this window alone: the phone keeps nothing of it.
