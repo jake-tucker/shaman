@@ -48,7 +48,8 @@ final class QuestionnaireTests: XCTestCase {
 
   @MainActor
   func testAQuestionnaireIsAnsweredAPageAtATimeAndSentWhole() {
-    let app = launched(arming: 3)
+    // A moment long enough that a slow runner, which has taken longer than three seconds to find the sheet, sees it.
+    let app = launched(arming: 15)
     let next = element("questionnaire.next", in: app)
     XCTAssertTrue(next.waitForExistence(timeout: 10))
     XCTAssertFalse(element("questionnaire.decline", in: app).isEnabled, "it takes no tap for a moment")
@@ -66,7 +67,7 @@ final class QuestionnaireTests: XCTestCase {
     XCTAssertFalse(element("questionnaire.back", in: app).exists)
     attach("A questionnaire presenting itself")
 
-    wait(for: "isEnabled == true", element("questionnaire.decline", in: app))
+    wait(for: "isEnabled == true", element("questionnaire.decline", in: app), timeout: 30)
     XCTAssertFalse(next.isEnabled, "a required Question holds Next until it is answered")
     staging.tap()
     XCTAssertTrue(staging.isSelected)

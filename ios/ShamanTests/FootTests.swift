@@ -79,8 +79,16 @@ import UIKit
     return window.bounds.maxY - drawn.convert(drawn.bounds, to: window.layer.presentation()).midY - 20
   }
 
-  /// Where the field's box is drawn at each frame while `change` is made and what it animates ends.
-  func frames(of field: UIView, as change: () -> Void) async throws -> [CGFloat] {
+  /// Where the field ends as it moves: 8 points above the software keyboard, or at rest so far above the display's edge.
+  enum End {
+    case raised
+    case rests(CGFloat)
+  }
+
+  /// Where the field's box is drawn at each frame while `change` is made and what it animates ends: for a second and a
+  /// half, and on until it is drawn at its `end`, and half a second more, or for ten seconds in all, as a runner has
+  /// drawn one frame in a second and a half and not yet finished in that time.
+  func frames(of field: UIView, ending end: End, as change: () -> Void) async throws -> [CGFloat] {
     stood = []
     said = []
     watched = field
@@ -88,8 +96,20 @@ import UIKit
     link.add(to: .main, forMode: .common)
     change()
     try await Task.sleep(for: .seconds(1.5))
+    for _ in 0..<80 where !stands(field, at: end) {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    try await Task.sleep(for: .seconds(0.5))
     link.invalidate()
     return stood
+  }
+
+  /// Whether `field` is drawn at `end`.
+  private func stands(_ field: UIView, at end: End) -> Bool {
+    switch end {
+    case .raised: keyboard > 100 && abs(stands(field) - keyboard - 8) < 0.5
+    case .rests(let rests): abs(stands(field) - rests) < 0.5
+    }
   }
 
   @objc private func tick() {
@@ -152,7 +172,7 @@ private struct Hosting: UIViewControllerRepresentable {
     let field = try await hosted.field()
     for _ in 0..<2 {
       #expect(abs(hosted.stands(field) - rests) < 0.5)
-      let up = try await hosted.frames(of: field) { #expect(field.becomeFirstResponder()) }
+      let up = try await hosted.frames(of: field, ending: .raised) { #expect(field.becomeFirstResponder()) }
       #expect(hosted.keyboard > 100, "the software keyboard is up")
       let raised = hosted.keyboard + 8
       #expect(abs((up.last ?? 0) - raised) < 0.5, "\(up)")
@@ -162,7 +182,7 @@ private struct Hosting: UIViewControllerRepresentable {
       #expect(try await hosted.field() === field)
       #expect(field.isFirstResponder, "it keeps its focus")
 
-      let down = try await hosted.frames(of: field) { field.resignFirstResponder() }
+      let down = try await hosted.frames(of: field, ending: .rests(rests)) { field.resignFirstResponder() }
       #expect(abs((down.last ?? 0) - rests) < 0.5, "\(down)")
       #expect(down.allSatisfy { $0 > rests - 0.5 && $0 < raised + 0.5 }, "\(down)")
       #expect(zip(down, down.dropFirst()).allSatisfy { $1 < $0 + 0.5 }, "\(down), \(hosted.said)")
@@ -193,7 +213,7 @@ private struct Hosting: UIViewControllerRepresentable {
     for _ in 0..<2 {
       #expect(abs(hosted.stands(field) - 22) < 0.5)
       #expect(abs(ends() - fold.top) < 0.5, "\(ends())")
-      let up = try await hosted.frames(of: field) { #expect(field.becomeFirstResponder()) }
+      let up = try await hosted.frames(of: field, ending: .raised) { #expect(field.becomeFirstResponder()) }
       let raised = hosted.keyboard + 8
       #expect(hosted.keyboard > 100 && hosted.pose.keyboardIsUp && abs(hosted.pose.keyboard - hosted.keyboard) < 0.5)
       #expect(abs((up.last ?? 0) - raised) < 0.5, "\(up)")
@@ -203,7 +223,7 @@ private struct Hosting: UIViewControllerRepresentable {
       #expect(try await hosted.field() === field)
       #expect(field.isFirstResponder, "it keeps its focus")
 
-      let down = try await hosted.frames(of: field) { field.resignFirstResponder() }
+      let down = try await hosted.frames(of: field, ending: .rests(22)) { field.resignFirstResponder() }
       #expect(abs((down.last ?? 0) - 22) < 0.5, "\(down)")
       #expect(down.allSatisfy { $0 > 21.5 && $0 < raised + 0.5 }, "\(down)")
       #expect(zip(down, down.dropFirst()).allSatisfy { $1 < $0 + 0.5 }, "\(down), \(hosted.said)")
