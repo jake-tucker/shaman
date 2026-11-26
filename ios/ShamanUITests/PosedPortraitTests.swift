@@ -58,7 +58,7 @@ final class PosedPortraitTests: XCTestCase {
     let scope = app.buttons["listing.scope"]
     waits("\(identifier) stands alone", file: file, line: line) {
       shown.exists && shown.isHittable && (!scope.exists || !scope.isHittable)
-        && app.buttons["Show Sidebar"].isHittable
+        && app.buttons["Show Sidebar"].firstMatch.isHittable
     }
     XCTAssertFalse(app.back.exists, "the main view's root", file: file, line: line)
   }
@@ -87,7 +87,7 @@ final class PosedPortraitTests: XCTestCase {
     XCTAssertFalse(
       element("landing.composer", in: app).value(forKey: "hasKeyboardFocus") as? Bool ?? false, "at rest")
     // Shown again by its button, a Session chosen from it stands alone, the Sidebar going with nothing asked.
-    app.buttons["Show Sidebar"].tap()
+    app.buttons["Show Sidebar"].firstMatch.tap()
     sidebarStandsOver(app)
     let row = app.descendants(matching: .any).matching(identifier: "listing.active")
       .matching(NSPredicate(format: "label CONTAINS %@", "Tidy zsh startup time")).firstMatch
