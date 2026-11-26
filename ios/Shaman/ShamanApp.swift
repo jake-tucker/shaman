@@ -23,7 +23,7 @@ struct ShamanApp: App {
         #if DEBUG
           Group {
             if Launch.serversAndDevice {
-              DeviceScreen(core: core, appVersion: Self.version)
+              DeviceRoot(core: core, appVersion: Self.version)
             } else {
               RootScreen(
                 core: core, appVersion: Self.version, invite: Launch.invite, opening: Launch.opening,
@@ -150,7 +150,7 @@ struct ShamanApp: App {
 
 /// The core the app runs over, or why there is none.
 private enum Opened {
-  case core(any Core)
+  case core(any DeviceCore)
   case failed(String)
   /// The key cannot prove this phone, as where the Keychain gave up a blob the chip will not take: the core in
   /// `directory` opens once the user chooses to start again under a new key, kept in `item`.

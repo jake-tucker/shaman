@@ -6,7 +6,7 @@ import UIKit
 /// hears of every scene from its first, and kept for as long as the app is, since all of it ends with the follower.
 @MainActor
 public final class AppFollower {
-  private var core: (any Core)?
+  private var core: (any DeviceCore)?
   private var following: [Task<Void, Never>] = []
 
   public convenience init() {
@@ -34,12 +34,12 @@ public final class AppFollower {
   }
 
   /// Follows for `core`, the app's one, from once it is open.
-  public func follow(_ core: any Core) {
+  public func follow(_ core: any DeviceCore) {
     // The application is there only once the app has launched, which is after this is asked and before a task runs.
     follow(core, tasks: UIApplication.shared)
   }
 
-  func follow(_ core: any Core, tasks: @autoclosure @escaping @MainActor () -> any BackgroundTasks) {
+  func follow(_ core: any DeviceCore, tasks: @autoclosure @escaping @MainActor () -> any BackgroundTasks) {
     self.core = core
     following = [
       Task {

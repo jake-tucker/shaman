@@ -5,7 +5,7 @@ import SwiftUI
 /// `Columns`. It follows the listing however the columns stand, returns to what the scene kept after a cold start, hands
 /// the scene what to keep on each change, and reads how the window stands.
 struct ColumnsScreen: View {
-  let core: any Core
+  let core: any WindowCore
   let appVersion: String
   let beginsIn: BeginsIn
   /// The Invite the listing confirms at once, where one is given.
@@ -26,7 +26,7 @@ struct ColumnsScreen: View {
   /// `keep` is handed again on each change; but with the Session `opening` names open, or the new-session screen where
   /// it is `composing`. With one `opening`, the Aside is shown at `aside`'s kind, where one is given.
   init(
-    core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?, kept: KeptScene = KeptScene(),
+    core: any WindowCore, appVersion: String, beginsIn: BeginsIn, invite: String?, kept: KeptScene = KeptScene(),
     keep: @escaping (KeptScene) -> Void = { _ in }, opening: String? = nil, composing: Bool = false,
     aside: AsideKind? = nil
   ) {
@@ -116,7 +116,7 @@ struct PushedScreen: View {
 #if DEBUG
   #Preview("One server") {
     ColumnsScreen(
-      core: FakeCore(.paired), appVersion: "0.1.0 (1)",
+      core: FakeWindow(.paired), appVersion: "0.1.0 (1)",
       beginsIn: BeginsIn(
         lead: "New sessions begin in", place: "workstation", said: "New sessions begin in workstation"),
       invite: nil)
@@ -124,7 +124,7 @@ struct PushedScreen: View {
 
   #Preview("Several servers") {
     ColumnsScreen(
-      core: FakeCore(.several), appVersion: "0.1.0 (1)",
+      core: FakeWindow(.several), appVersion: "0.1.0 (1)",
       beginsIn: BeginsIn(
         lead: "New sessions begin in", place: "workstation", said: "New sessions begin in workstation"),
       invite: nil)

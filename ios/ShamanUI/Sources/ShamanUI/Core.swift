@@ -1,11 +1,28 @@
 import ShamanCore
 
-/// Everything the app asks of the thin Client's core: the one way it reaches it. `LiveCore` is the core itself; in
-/// debug builds `FakeCore` stands in with canned values, chosen by a launch argument.
+/// What the app asks of the device's half of the thin Client's core, opened once however many windows the app shows:
+/// the identity and the name, the Pairings, relay logins and connections, what each Remote says, the front, and the
+/// one way to a window's half. `LiveCore` is the core itself; in debug builds `FakeCore` stands in with canned values,
+/// chosen by a launch argument.
 ///
 /// What a screen shows arrives as a finished model, whole on every change, beginning with what it is now. An act
 /// returns once it is done, with nothing but success; what it changed arrives by the model.
-public protocol Core: AnyObject, Sendable {
+public protocol DeviceCore: AnyObject, Sendable {
+  /// A window's half of the core, a Client of its own over this one: its Outlook begins where the phone was last
+  /// turned, by any window, its listing at Everywhere, and it says for itself every notice there is to say. Each
+  /// window's root asks for one once, and holds it while the window lives.
+  func window() -> any WindowCore
+
+  /// What was last half given the Questionnaire `questionnaire` of the Session `session` names, by a sheet of it in
+  /// any window, where anything was: what a sheet opening starts from. It lasts as long as the core does.
+  func halfAnswered(_ questionnaire: String, of session: String) -> HalfAnswered?
+
+  /// Keeps `answers` as what was last half given that Questionnaire, on each change a sheet makes.
+  func keepHalfAnswered(_ answers: HalfAnswered, to questionnaire: String, of session: String)
+
+  /// Forgets what was half given that Questionnaire, as it is answered, declined or waits no more.
+  func forgetHalfAnswered(_ questionnaire: String, of session: String)
+
   /// What "This device" shows, now and on every change.
   func thisDevice() -> AsyncStream<ThisDevice>
 
@@ -15,14 +32,8 @@ public protocol Core: AnyObject, Sendable {
   /// Says no more that this phone must pair again.
   func dismissPairAgain() async throws(ActError)
 
-  /// Where the Outlook stands, now and on every change: nowhere while the phone holds no Remote.
-  func outlook() -> AsyncStream<Outlook>
-
   /// The Servers section of the sheet of Servers, Relays and This device, now and on every change.
   func servers() -> AsyncStream<Servers>
-
-  /// Every Remote's Sessions in one listing, active above the settled, now and on every change.
-  func listing() -> AsyncStream<Listing>
 
   /// Sets the Session a row names aside as done for now, once its Server has answered.
   func settle(_ session: String) async throws(ActError)
@@ -30,11 +41,76 @@ public protocol Core: AnyObject, Sendable {
   /// Brings the Session a settled row names back among the active, once its Server has answered.
   func unsettle(_ session: String) async throws(ActError)
 
+  /// Tries an Unreachable Remote again, as its slim row offers, once it answers; or fails as Unreachable where it
+  /// still does not.
+  func tryAgain(_ remote: String) async throws(ActError)
+
+  /// Whether any act is under way, now and each time that changes: iOS background time is held only while one is.
+  func actsUnderWay() -> AsyncStream<Bool>
+
+  /// Tells the core the app has come to the front, once however many windows it shows, so it checks every Remote,
+  /// keeping what answers and redialling the rest at once.
+  func cameToFront()
+
+  /// Tells the core the app has left the front, with no window left in the foreground; it does nothing to its
+  /// connections.
+  func leftFront()
+
+  /// Tells the core the network path changed, and whether there is one at all.
+  func pathChanged(hasPath: Bool)
+
+  /// What the screen where pairing begins says to do.
+  func pairingPrompt() -> String
+
+  /// What the scanner's screen and the offer to scan say, of which the app shows whichever the camera calls for.
+  func scanWords() -> ScanWords
+
+  /// Whether `text`, as the scanner read it, is an Invite, by its form alone: the scanner stops at the first that is,
+  /// a malformed one included, whose confirmation screen says what is wrong with it, and passes over anything else.
+  func isInvite(_ text: String) -> Bool
+
+  /// Reads `invite` for the confirmation screen, dialling nothing.
+  func readInvite(_ invite: String) -> InviteReading
+
+  /// Logs in at the Relay a login offer hands back, which a Remote of this phone's or the Invite last read offers: how
+  /// the login stands, now and on every change, from asking for a code to done or failed. The stream ending before the
+  /// Relay confirms the login gives it up, as the app leaving the front does; once it confirms, every Remote is tried
+  /// again.
+  func logIn(at relay: String) -> AsyncStream<DeviceLogin>
+
+  /// Removes the Relay entry a row of the Relays section hands back, giving up this phone's Login there.
+  func removeRelay(_ relay: String) async throws(ActError)
+
+  /// Renames the Remote a row of the Servers section hands back to `name`, or fails with why, in the core's words. Its
+  /// Pairing stands as it was, and what was remembered for it goes with the name.
+  func renameRemote(_ remote: String, to name: String) async throws(ActError)
+
+  /// Removes the Remote a row of the Servers section hands back, ending its Pairing: it is asked to forget this phone,
+  /// and is forgotten here whether or not it answers, with its drafts and what was remembered for it. Each window whose
+  /// Outlook stood there turns to the Remote the phone was most recently turned toward that is still held, which a
+  /// notice says in that window, or to none.
+  func removeRemote(_ remote: String) async throws(ActError)
+}
+
+/// What a window of the app asks of its own half of the core, a Client of its own over the device's: its Outlook and
+/// the Workspace it stands at, its listing's scope, search and shelf, its Landing, its Workspace Picker's search and
+/// which notices it has said, beside the drafts, which are the device's and which it reads and writes through here.
+/// `LiveWindow` is the core's; `FakeWindow` the fake's.
+public protocol WindowCore: AnyObject, Sendable {
+  /// The device's half of the core this window is over.
+  var device: any DeviceCore { get }
+
+  /// Where this window's Outlook stands, now and on every change: nowhere while the phone holds no Remote.
+  func outlook() -> AsyncStream<Outlook>
+
+  /// Every Remote's Sessions in one listing, active above the settled, now and on every change.
+  func listing() -> AsyncStream<Listing>
+
   /// Brings up the next of the settled shelf's rows.
   func showMoreSettled()
 
   /// Opens the Session a row names for a screen pushed to read it, framed at once by what the listing knows of it,
-  /// and turns the Outlook toward its Origin and Workspace. Closing it cancels nothing on the Server.
+  /// and turns this window's Outlook toward its Origin and Workspace. Closing it cancels nothing on the Server.
   func openSession(_ session: String) -> any OpenedSession
 
   /// What the Landing shows, where the Outlook stands, now and on every change: the screen a Session is begun from.
@@ -82,68 +158,19 @@ public protocol Core: AnyObject, Sendable {
   /// Prompt whose send failed, or that a stop withdrew, given back ahead of what is written, which the field takes.
   func drafts(for session: String) -> AsyncStream<Draft>
 
-  /// Whether any act is under way, now and each time that changes: iOS background time is held only while one is.
-  func actsUnderWay() -> AsyncStream<Bool>
-
-  /// What the core says of its own accord, beside what an act's failure says, now and on every change: that a Remote
-  /// is newer than the app, once for each. It stands in the banner an act's failure is shown in until `noticeSeen` says
-  /// it was seen, and is never said again.
+  /// What the core says of its own accord in this window, beside what an act's failure says, now and on every change:
+  /// that a Remote is newer than the app, once for each in each window. It stands in the banner an act's failure is
+  /// shown in until `noticeSeen` says it was seen, and is never said again in this window.
   func notices() -> AsyncStream<Notice?>
 
   /// Says the notice `id` names has been seen, so the next waiting is shown.
   func noticeSeen(_ id: UInt64)
 
-  /// Tries an Unreachable Remote again, as its slim row offers, once it answers; or fails as Unreachable where it
-  /// still does not.
-  func tryAgain(_ remote: String) async throws(ActError)
-
-  /// Tells the core the app has come to the front, once however many windows it shows, so it checks every Remote,
-  /// keeping what answers and redialling the rest at once.
-  func cameToFront()
-
-  /// Tells the core the app has left the front, with no window left in the foreground; it does nothing to its
-  /// connections.
-  func leftFront()
-
-  /// Tells the core the network path changed, and whether there is one at all.
-  func pathChanged(hasPath: Bool)
-
-  /// What the screen where pairing begins says to do.
-  func pairingPrompt() -> String
-
-  /// What the scanner's screen and the offer to scan say, of which the app shows whichever the camera calls for.
-  func scanWords() -> ScanWords
-
-  /// Whether `text`, as the scanner read it, is an Invite, by its form alone: the scanner stops at the first that is,
-  /// a malformed one included, whose confirmation screen says what is wrong with it, and passes over anything else.
-  func isInvite(_ text: String) -> Bool
-
-  /// Reads `invite` for the confirmation screen, dialling nothing.
-  func readInvite(_ invite: String) -> InviteReading
-
   /// Pairs with the Server `invite` is from, naming it `remoteName` and this phone `deviceName`, replacing any Pairing
-  /// with that Server, and turns the Outlook toward it. It keeps dialling for a few seconds while no way answers, and
-  /// keeps nothing where it fails. Where no way answered but a Relay way at a Relay this phone needs to log in at, it
-  /// says so and offers the login, after which the same Invite pairs.
+  /// with that Server, and turns this window's Outlook toward it. It keeps dialling for a few seconds while no way
+  /// answers, and keeps nothing where it fails. Where no way answered but a Relay way at a Relay this phone needs to
+  /// log in at, it says so and offers the login, after which the same Invite pairs.
   func confirmPairing(invite: String, remoteName: String, deviceName: String) async -> PairingOutcome
-
-  /// Logs in at the Relay a login offer hands back, which a Remote of this phone's or the Invite last read offers: how
-  /// the login stands, now and on every change, from asking for a code to done or failed. The stream ending before the
-  /// Relay confirms the login gives it up, as the app leaving the front does; once it confirms, every Remote is tried
-  /// again.
-  func logIn(at relay: String) -> AsyncStream<DeviceLogin>
-
-  /// Removes the Relay entry a row of the Relays section hands back, giving up this phone's Login there.
-  func removeRelay(_ relay: String) async throws(ActError)
-
-  /// Renames the Remote a row of the Servers section hands back to `name`, or fails with why, in the core's words. Its
-  /// Pairing stands as it was, and what was remembered for it goes with the name.
-  func renameRemote(_ remote: String, to name: String) async throws(ActError)
-
-  /// Removes the Remote a row of the Servers section hands back, ending its Pairing: it is asked to forget this phone,
-  /// and is forgotten here whether or not it answers, with its drafts and what was remembered for it. Where the Outlook
-  /// stood there it turns to the Remote turned toward before, which a notice says, or to none.
-  func removeRemote(_ remote: String) async throws(ActError)
 }
 
 /// One Session open on a pushed screen, read live until it is closed.
@@ -233,6 +260,22 @@ extension OpenError {
   public var message: String {
     switch self {
     case .Failed(let message), .KeyRefused(let message): message
+    }
+  }
+}
+
+extension Draft {
+  /// What a composer's field holding `text` over `version` of this draft comes to hold as the core tells it the
+  /// draft: each Prompt the core gave back since `version`, ahead of the field's own text, the latest first, as the
+  /// core puts it ahead of what it keeps. A field holds its own text while it stands and never takes another's
+  /// typing; where it is `retaking`, as it is shown again, it takes the text kept where its own window wrote it last,
+  /// as another screen of that window may have meanwhile, and never what another window wrote.
+  func taken(into text: String, over version: UInt64, retaking: Bool) -> String {
+    if retaking && writtenHere {
+      return self.text
+    }
+    return given.filter { $0.version > version }.reduce(text) { written, given in
+      written.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? given.text : "\(given.text)\n\(written)"
     }
   }
 }

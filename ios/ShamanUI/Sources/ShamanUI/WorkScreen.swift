@@ -288,14 +288,14 @@ private struct SectionView: View {
 #if DEBUG
   #Preview("A settled turn's work") {
     NavigationStack {
-      TurnWorkScreen(session: SessionModel(core: FakeCore(.paired), session: "workstation-key/7"), turn: "work")
+      TurnWorkScreen(session: SessionModel(core: FakeWindow(.paired), session: "workstation-key/7"), turn: "work")
     }
   }
 
   #Preview("A running command") {
     NavigationStack {
       ActivityDetailScreen(
-        session: SessionModel(core: FakeCore(.paired), session: "workstation-key/1"), activity: "run-qr")
+        session: SessionModel(core: FakeWindow(.paired), session: "workstation-key/1"), activity: "run-qr")
     }
   }
 #endif

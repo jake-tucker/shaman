@@ -171,14 +171,14 @@ private struct WorkspaceRowView: View {
 /// with.
 @MainActor @Observable
 final class WorkspacePickerModel {
-  private let core: any Core
+  private let core: any WindowCore
   private(set) var picker: WorkspacePicker?
   /// What the core refused of choosing a row, shown beside that row.
   private(set) var invalid: (row: String, message: String)?
   /// Why choosing failed otherwise, in the core's words, shown over the screen.
   private(set) var banner: String?
 
-  init(core: any Core) {
+  init(core: any WindowCore) {
     self.core = core
   }
 
@@ -220,7 +220,7 @@ final class WorkspacePickerModel {
 #if DEBUG
   #Preview("Every remote's workspaces") {
     NavigationStack {
-      WorkspacePickerScreen(model: WorkspacePickerModel(core: FakeCore(.several)))
+      WorkspacePickerScreen(model: WorkspacePickerModel(core: FakeWindow(.several)))
     }
   }
 #endif

@@ -5,13 +5,13 @@ import UIKit
 /// What a phone holding no Remote offers, alone: pairing. Scan pushes the scanner, and the Invite it reads its
 /// confirmation screen over it; pasting an Invite pushes its confirmation screen.
 public struct PairingScreen: View {
-  private let core: any Core
+  private let core: any WindowCore
   @State private var path: [PairingRoute]
   @State private var scanning: ScanningModel
 
   /// The screen over `core`, already confirming `invite` where one is given, as one arriving by the launch environment
   /// in a debug build is.
-  public init(core: any Core, invite: String? = nil) {
+  public init(core: any WindowCore, invite: String? = nil) {
     self.core = core
     _path = State(initialValue: invite.map { [.confirm($0)] } ?? [])
     _scanning = State(initialValue: ScanningModel(core: core))
@@ -53,7 +53,7 @@ enum PairingRoute: Hashable {
 /// Where pairing begins: the offers to scan an Invite and to paste one, and the word that this phone must pair again
 /// where it has a new key.
 struct PairingStart: View {
-  let core: any Core
+  let core: any WindowCore
   /// Opens the scanner, once the camera may be used.
   let scan: () -> Void
   /// Takes the Invite pasted.
@@ -66,7 +66,7 @@ struct PairingStart: View {
 
   /// What the core says to do, its commands drawn as code.
   private var prompt: AttributedString {
-    let words = core.pairingPrompt()
+    let words = core.device.pairingPrompt()
     return (try? AttributedString(markdown: words)) ?? AttributedString(words)
   }
 
@@ -108,7 +108,7 @@ struct PairingStart: View {
         switch offer.access {
         case .refused:
           VStack(alignment: .leading, spacing: 8) {
-            Text(core.scanWords().cameraRefused)
+            Text(core.device.scanWords().cameraRefused)
               .foregroundStyle(.secondary)
               .accessibilityIdentifier("pairing.scan.refused")
             Button("Open Settings") {
@@ -121,7 +121,7 @@ struct PairingStart: View {
             .accessibilityIdentifier("pairing.openSettings")
           }
         case .unavailable:
-          Text(core.scanWords().noCamera)
+          Text(core.device.scanWords().noCamera)
             .foregroundStyle(.secondary)
             .accessibilityIdentifier("pairing.scan.unavailable")
         case .granted, nil:
@@ -142,7 +142,7 @@ struct PairingStart: View {
       }
     }
     .task {
-      for await device in core.thisDevice() {
+      for await device in core.device.thisDevice() {
         self.device = device
       }
     }
@@ -150,7 +150,7 @@ struct PairingStart: View {
 
   private func dismissPairAgain() async {
     do {
-      try await core.dismissPairAgain()
+      try await core.device.dismissPairAgain()
       failure = nil
     } catch {
       failure = error.message
@@ -167,7 +167,7 @@ struct ConfirmationScreen: View {
   /// Told once the Remote is paired.
   private let paired: () -> Void
 
-  init(core: any Core, invite: String, scanAgain: @escaping () -> Void, paired: @escaping () -> Void) {
+  init(core: any WindowCore, invite: String, scanAgain: @escaping () -> Void, paired: @escaping () -> Void) {
     _model = State(initialValue: ConfirmationModel(core: core, invite: invite))
     self.scanAgain = scanAgain
     self.paired = paired
@@ -317,7 +317,7 @@ struct ConfirmationScreen: View {
 /// What the confirmation screen holds while it is up.
 @MainActor @Observable
 final class ConfirmationModel {
-  let core: any Core
+  let core: any WindowCore
   private let invite: String
   /// What the Invite reads as, read again once a login it offers is done.
   private(set) var reading: InviteReading
@@ -339,10 +339,10 @@ final class ConfirmationModel {
   private(set) var remoteRefusal: String?
   private(set) var deviceRefusal: String?
 
-  init(core: any Core, invite: String) {
+  init(core: any WindowCore, invite: String) {
     self.core = core
     self.invite = invite
-    let reading = core.readInvite(invite)
+    let reading = core.device.readInvite(invite)
     self.reading = reading
     if case .readable(let read) = reading {
       remoteName = read.remoteName
@@ -383,7 +383,7 @@ final class ConfirmationModel {
   /// A login done, what the Invite offers is read again, and where pairing waited on that login it goes on by itself:
   /// answers whether the Remote is paired.
   func loggedIn() async -> Bool {
-    reading = core.readInvite(invite)
+    reading = core.device.readInvite(invite)
     guard case .logIn = failure?.again else { return false }
     return await pair()
   }
@@ -391,24 +391,24 @@ final class ConfirmationModel {
 
 #if DEBUG
   #Preview("Pairing") {
-    PairingScreen(core: FakeCore(.fresh))
+    PairingScreen(core: FakeWindow(.fresh))
   }
 
   #Preview("Scanning") {
-    PairingScreen(core: FakeCore(.fresh))
+    PairingScreen(core: FakeWindow(.fresh))
       .environment(\.codeScanner, .reading(["https://example.com", FakeCore.invite]))
   }
 
   #Preview("Camera refused") {
-    PairingScreen(core: FakeCore(.fresh))
+    PairingScreen(core: FakeWindow(.fresh))
       .environment(\.codeScanner, .reading([], access: .refused))
   }
 
   #Preview("Confirming an Invite") {
-    PairingScreen(core: FakeCore(.fresh), invite: FakeCore.invite)
+    PairingScreen(core: FakeWindow(.fresh), invite: FakeCore.invite)
   }
 
   #Preview("A malformed Invite") {
-    PairingScreen(core: FakeCore(.fresh), invite: "shaman-v2-not-yet")
+    PairingScreen(core: FakeWindow(.fresh), invite: "shaman-v2-not-yet")
   }
 #endif

@@ -161,7 +161,7 @@ struct RelayLoginSheet: View {
 /// What the sheet a login is carried out in holds while it is up.
 @MainActor @Observable
 final class RelayLoginModel {
-  private let core: any Core
+  private let core: any WindowCore
   let relay: String
   private let browser: any LoginBrowser
   private let copy: @MainActor (String) -> Void
@@ -175,7 +175,7 @@ final class RelayLoginModel {
   /// The login at `relay` over `core`, opening the address its code is entered at in `browser` and copying the code
   /// by `copy`.
   init(
-    core: any Core, relay: String, browser: any LoginBrowser,
+    core: any WindowCore, relay: String, browser: any LoginBrowser,
     copy: @escaping @MainActor (String) -> Void = { UIPasteboard.general.string = $0 }
   ) {
     self.core = core
@@ -200,7 +200,7 @@ final class RelayLoginModel {
     copied = false
     opened = nil
     defer { browser.close() }
-    for await login in core.logIn(at: relay) {
+    for await login in core.device.logIn(at: relay) {
       self.login = login
       switch login {
       case .waiting(_, let code, let address, _, _, _):
@@ -240,7 +240,7 @@ final class RelayLoginModel {
 extension View {
   /// Presents the sheet a login at the Relay `ask` names is carried out in while it is set, telling `loggedIn` once the
   /// Relay confirms it.
-  func relayLogin(_ ask: Binding<LoginAsk?>, core: any Core, loggedIn: @escaping (String) -> Void) -> some View {
+  func relayLogin(_ ask: Binding<LoginAsk?>, core: any WindowCore, loggedIn: @escaping (String) -> Void) -> some View {
     sheet(item: ask) { ask in
       LoginSheetHost(core: core, relay: ask.relay) { loggedIn(ask.relay) }
     }
@@ -249,7 +249,7 @@ extension View {
 
 /// The sheet a login is carried out in, over the browser the environment makes.
 private struct LoginSheetHost: View {
-  let core: any Core
+  let core: any WindowCore
   let relay: String
   let loggedIn: () -> Void
   @Environment(\.loginBrowser) private var browser
@@ -275,7 +275,7 @@ extension EnvironmentValues {
 #if DEBUG
   #Preview("Logging in") {
     RelayLoginSheet(
-      model: RelayLoginModel(core: FakeCore(.relayLogin), relay: FakeCore.relay, browser: WebLoginBrowser())
+      model: RelayLoginModel(core: FakeWindow(.relayLogin), relay: FakeCore.relay, browser: WebLoginBrowser())
     ) {}
   }
 #endif

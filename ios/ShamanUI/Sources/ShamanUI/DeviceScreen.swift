@@ -1,6 +1,25 @@
 import ShamanCore
 import SwiftUI
 
+#if DEBUG
+  /// The sheet of Servers, Relays and This device alone at a window's root, as a debug build is asked for it: the
+  /// window asks the device's core for its own half once, as it is first drawn, as `RootScreen` does.
+  public struct DeviceRoot: View {
+    @State private var held: HeldWindow
+    private let appVersion: String
+
+    /// The sheet over a window of the device's `core`, showing `appVersion` as the app's own version.
+    public init(core: any DeviceCore, appVersion: String) {
+      _held = State(initialValue: HeldWindow(over: core))
+      self.appVersion = appVersion
+    }
+
+    public var body: some View {
+      DeviceScreen(core: held.core, appVersion: appVersion)
+    }
+  }
+#endif
+
 /// The sheet of Servers, Relays and This device: each Remote with its ways and how they stand, the offer to pair
 /// another server, and this device.
 public struct DeviceScreen: View {
@@ -10,11 +29,11 @@ public struct DeviceScreen: View {
   /// The Remote whose name is being written, while one is.
   @FocusState private var naming: String?
   @Environment(\.dismiss) private var dismiss
-  private let core: any Core
+  private let core: any WindowCore
   private let appVersion: String
 
   /// The screen over `core`, showing `appVersion` as the app's own version.
-  public init(core: any Core, appVersion: String) {
+  public init(core: any WindowCore, appVersion: String) {
     _model = State(initialValue: DeviceModel(core: core))
     _scanning = State(initialValue: ScanningModel(core: core))
     self.core = core
@@ -265,7 +284,7 @@ private enum DeviceRoute: Hashable {
 /// What the sheet of Servers, Relays and This device holds while it is up.
 @MainActor @Observable
 final class DeviceModel {
-  private let core: any Core
+  private let core: any WindowCore
   private(set) var device: ThisDevice?
   private(set) var servers: Servers?
   /// The name as it is being written, until it is kept.
@@ -317,14 +336,14 @@ final class DeviceModel {
     }
   }
 
-  init(core: any Core) {
+  init(core: any WindowCore) {
     self.core = core
   }
 
   /// Follows what the core says of this device until the screen goes. The core says it whole whatever of it changed, so
   /// a name being written stays, as does why it was refused, unless the name the core holds has become another.
   func follow() async {
-    for await device in core.thisDevice() {
+    for await device in core.device.thisDevice() {
       if device.name != self.device?.name {
         name = device.name
         refusal = nil
@@ -335,7 +354,7 @@ final class DeviceModel {
 
   /// Follows what the core says of the Remotes until the screen goes.
   func followServers() async {
-    for await servers in core.servers() {
+    for await servers in core.device.servers() {
       self.servers = servers
     }
   }
@@ -355,7 +374,7 @@ final class DeviceModel {
   private func rename(_ remote: ServerRow, to name: String) async {
     defer { renamingRemote = nil }
     do {
-      try await core.renameRemote(remote.remote, to: name)
+      try await core.device.renameRemote(remote.remote, to: name)
       remoteNames[remote.remote] = nil
       nameRefusals[remote.remote] = nil
       failure = nil
@@ -381,7 +400,7 @@ final class DeviceModel {
     removingNow = row.remote
     defer { removingNow = nil }
     do {
-      try await core.removeRemote(row.remote)
+      try await core.device.removeRemote(row.remote)
       remoteNames[row.remote] = nil
       nameRefusals[row.remote] = nil
       failure = nil
@@ -394,7 +413,7 @@ final class DeviceModel {
   func remove(_ row: RelayRow) async {
     removing = nil
     do {
-      try await core.removeRelay(row.relay)
+      try await core.device.removeRelay(row.relay)
       failure = nil
     } catch {
       failure = error.message
@@ -403,7 +422,7 @@ final class DeviceModel {
 
   func dismissPairAgain() async {
     do {
-      try await core.dismissPairAgain()
+      try await core.device.dismissPairAgain()
       failure = nil
     } catch {
       failure = error.message
@@ -414,9 +433,9 @@ final class DeviceModel {
     renaming = true
     defer { renaming = false }
     do {
-      try await core.renameDevice(name)
+      try await core.device.renameDevice(name)
       // As the core kept it, which it may have trimmed to the name it held, and says first to whoever asks.
-      for await device in core.thisDevice() {
+      for await device in core.device.thisDevice() {
         self.device = device
         name = device.name
         break
@@ -523,19 +542,19 @@ public struct CoreFailedScreen: View {
 
 #if DEBUG
   #Preview("A fresh phone") {
-    DeviceScreen(core: FakeCore(.fresh), appVersion: "0.1.0 (1)")
+    DeviceScreen(core: FakeWindow(.fresh), appVersion: "0.1.0 (1)")
   }
 
   #Preview("A named phone") {
-    DeviceScreen(core: FakeCore(.named), appVersion: "0.1.0 (1)")
+    DeviceScreen(core: FakeWindow(.named), appVersion: "0.1.0 (1)")
   }
 
   #Preview("A paired phone") {
-    DeviceScreen(core: FakeCore(.paired), appVersion: "0.1.0 (1)")
+    DeviceScreen(core: FakeWindow(.paired), appVersion: "0.1.0 (1)")
   }
 
   #Preview("A phone that must pair again") {
-    DeviceScreen(core: FakeCore(.pairAgain), appVersion: "0.1.0 (1)")
+    DeviceScreen(core: FakeWindow(.pairAgain), appVersion: "0.1.0 (1)")
   }
 
   #Preview("A key the chip refuses") {

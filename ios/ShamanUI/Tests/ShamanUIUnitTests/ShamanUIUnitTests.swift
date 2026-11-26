@@ -310,7 +310,7 @@ private final class RefusingSigner: KeySigner {
     defer { try? FileManager.default.removeItem(at: base) }
     let core = try LiveCore(directory: try CoreDirectory.prepare(in: base), signer: try madeKey())
     // A Session on a Remote the phone does not hold is never read, so what is attached to it says it is gone at once.
-    let session = core.openSession("nobody/\(UUID().uuidString.lowercased())")
+    let session = core.window().openSession("nobody/\(UUID().uuidString.lowercased())")
     defer { session.close() }
     var work = session.work(UUID().uuidString.lowercased()).makeAsyncIterator()
     #expect(await work.next()?.empty == "This turn is no longer in the session")
@@ -388,7 +388,7 @@ private final class RefusingSigner: KeySigner {
   }
 
   @Test func aNoticeStandsUntilTappedAwayAndIsNeverSaidAgain() async throws {
-    let core = FakeCore(.releases)
+    let core = FakeWindow(.releases)
     let model = NoticeModel(core: core, stands: .seconds(3600))
     let following = Task { await model.follow() }
     defer { following.cancel() }
@@ -405,7 +405,7 @@ private final class RefusingSigner: KeySigner {
   }
 
   @Test func aNoticeGoesByItselfOnceItHasStoodAWhileOnScreen() async throws {
-    let model = NoticeModel(core: FakeCore(.releases), stands: .milliseconds(50))
+    let model = NoticeModel(core: FakeWindow(.releases), stands: .milliseconds(50))
     let following = Task { await model.follow() }
     defer { following.cancel() }
     _ = try await notice(of: model) { $0 != nil }
@@ -414,7 +414,7 @@ private final class RefusingSigner: KeySigner {
   }
 
   @Test func aNoticeNoBannerShowsIsNeverSeenForItAndItsWhileRunsOnlyOnScreen() async throws {
-    let core = FakeCore(.releases)
+    let core = FakeWindow(.releases)
     let model = NoticeModel(core: core, stands: .milliseconds(300))
     let following = Task { await model.follow() }
     defer { following.cancel() }
@@ -438,7 +438,7 @@ private final class RefusingSigner: KeySigner {
     let base = try scratch()
     defer { try? FileManager.default.removeItem(at: base) }
     let core = try LiveCore(directory: try CoreDirectory.prepare(in: base), signer: try madeKey())
-    var heard = core.notices().makeAsyncIterator()
+    var heard = core.window().notices().makeAsyncIterator()
     let first = await heard.next()
     #expect(first == .some(nil))
   }
@@ -446,7 +446,7 @@ private final class RefusingSigner: KeySigner {
 
 @Suite @MainActor struct ListingModelTests {
   @Test func anActsFailureStandsInTheBannerUntilTappedAway() async {
-    let model = ListingModel(core: FakeCore(.paired), failureStands: .seconds(3600))
+    let model = ListingModel(core: FakeWindow(.paired), failureStands: .seconds(3600))
     await model.settle("a session no longer listed")
     #expect(model.failure == "That session is no longer listed")
     model.dismissFailure()
@@ -454,7 +454,7 @@ private final class RefusingSigner: KeySigner {
   }
 
   @Test func anActsFailureGoesByItselfOnceItHasStoodAWhile() async throws {
-    let model = ListingModel(core: FakeCore(.paired), failureStands: .milliseconds(50))
+    let model = ListingModel(core: FakeWindow(.paired), failureStands: .milliseconds(50))
     await model.settle("a session no longer listed")
     #expect(model.failure != nil)
     try await Task.sleep(for: .milliseconds(400))
@@ -462,7 +462,7 @@ private final class RefusingSigner: KeySigner {
   }
 
   @Test func anActThatSucceedsClearsAFailureStanding() async {
-    let model = ListingModel(core: FakeCore(.paired), failureStands: .seconds(3600))
+    let model = ListingModel(core: FakeWindow(.paired), failureStands: .seconds(3600))
     await model.settle("a session no longer listed")
     await model.settle("workstation-key/1")
     #expect(model.failure == nil)
@@ -479,7 +479,7 @@ private final class RefusingSigner: KeySigner {
   }
 
   @Test func anUnreachableRemotesRowIsTheOneTheListingHoldsNowAndGoesWithIt() async throws {
-    let core = FakeCore(.unreachable)
+    let core = FakeWindow(.unreachable)
     let model = ListingModel(core: core, failureStands: .seconds(3600))
     let following = Task { await model.follow() }
     defer { following.cancel() }
@@ -487,13 +487,13 @@ private final class RefusingSigner: KeySigner {
     let remote = try #require(listing.unreachable.first).remote
     #expect(model.unreachable(remote)?.words == "homelab unreachable")
 
-    try await core.tryAgain(remote)
+    try await core.device.tryAgain(remote)
     _ = try await self.listing(of: model) { $0.unreachable.isEmpty }
     #expect(model.unreachable(remote) == nil, "the sheet it opened goes with it")
   }
 
   @Test func aSearchIsHandedToTheCoreWhichAnswersWithWhatItFound() async throws {
-    let model = ListingModel(core: FakeCore(.paired), failureStands: .seconds(3600))
+    let model = ListingModel(core: FakeWindow(.paired), failureStands: .seconds(3600))
     let following = Task { await model.follow() }
     defer { following.cancel() }
     model.search("zsh")
@@ -504,7 +504,7 @@ private final class RefusingSigner: KeySigner {
   }
 
   @Test func aScopeChosenIsHandedToTheCoreWhichNarrowsTheListing() async throws {
-    let model = ListingModel(core: FakeCore(.several), failureStands: .seconds(3600))
+    let model = ListingModel(core: FakeWindow(.several), failureStands: .seconds(3600))
     let following = Task { await model.follow() }
     defer { following.cancel() }
     let menu = try await listing(of: model) { _ in true }
@@ -1110,7 +1110,7 @@ private func blockRows(_ markdown: String, of message: String = "m") -> [Convers
 
 @Suite @MainActor struct SessionStackTests {
   @Test func aSessionIsClosedInTheCoreOnceItsScreenLeavesThePathAndNotBefore() {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     let working = SessionRoute(session: "workstation-key/1")
     let settled = SessionRoute(session: "workstation-key/7")
     let stack = SessionStack(core: core)
@@ -1131,7 +1131,7 @@ private func blockRows(_ markdown: String, of message: String = "m") -> [Convers
   }
 
   @Test func aSessionStaysOpenWhileItsTurnsWorkOrAnActivityIsPushedOverIt() {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     let settled = SessionRoute(session: "workstation-key/7")
     let stack = SessionStack(core: core)
     stack.path = [.session(settled)]
@@ -1151,7 +1151,7 @@ private func blockRows(_ markdown: String, of message: String = "m") -> [Convers
   }
 
   @Test func anEntryChosenInTheTreeIsPushedPoppedBackToOrLeftAsTheOneOpen() {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     let parent = SessionRoute(session: "workstation-key/12")
     let stack = SessionStack(core: core)
     stack.path = [.session(parent), .work(parent, turn: "work")]
@@ -1179,7 +1179,7 @@ private func blockRows(_ markdown: String, of message: String = "m") -> [Convers
   }
 
   @Test func aSessionChosenInTheListingTakesThePlaceOfWhatIsOpenAndTheOneOpenIsPoppedBackTo() {
-    let stack = SessionStack(core: FakeCore(.paired))
+    let stack = SessionStack(core: FakeWindow(.paired))
     stack.open("workstation-key/7")
     let first = stack.path
     #expect(first.compactMap(\.route).map(\.session) == ["workstation-key/7"])
@@ -1203,7 +1203,7 @@ private func blockRows(_ markdown: String, of message: String = "m") -> [Convers
   }
 
   @Test func aSessionGoneIsLeftWithWhatIsPushedOverIt() {
-    let stack = SessionStack(core: FakeCore(.paired))
+    let stack = SessionStack(core: FakeWindow(.paired))
     let parent = SessionRoute(session: "workstation-key/12")
     let explorer = SessionRoute(session: "workstation-key/12.1")
     stack.path = [
@@ -1218,7 +1218,7 @@ private func blockRows(_ markdown: String, of message: String = "m") -> [Convers
   }
 
   @Test func theScreenAtRestIsNotOpenUntilItIsOpenedAndThenAnotherRests() async throws {
-    let core = FakeCore(.composing)
+    let core = FakeWindow(.composing)
     let stack = SessionStack(core: core)
     let route = stack.rest
     let resting = stack.landing(for: route)
@@ -1310,7 +1310,7 @@ private final class CountedSession: OpenedSession {
 
   /// A stack with the settled Session open and read, whose Turns are "earlier-work" and, the latest, "work".
   private func read() async throws -> SessionStack {
-    let stack = SessionStack(core: FakeCore(.paired), path: [.session(settled)])
+    let stack = SessionStack(core: FakeWindow(.paired), path: [.session(settled)])
     let model = stack.model(for: settled)
     let following = Task { await model.follow() }
     defer { following.cancel() }
@@ -1424,7 +1424,7 @@ private final class CountedSession: OpenedSession {
 
   @Test func noTurnIsMarkedWhileTheTreeShows() async throws {
     let delegating = SessionRoute(session: "workstation-key/12")
-    let stack = SessionStack(core: FakeCore(.paired), path: [.session(delegating)])
+    let stack = SessionStack(core: FakeWindow(.paired), path: [.session(delegating)])
     let model = stack.model(for: delegating)
     let following = Task { await model.follow() }
     defer { following.cancel() }
@@ -1454,7 +1454,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func theConversationIsReadOnceForAllThatFollowItAndUntilTheLastGoes() async throws {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     let opened = CountedSession(core.openSession("workstation-key/7"))
     let model = SessionModel(core: core, route: SessionRoute(session: opened.reference), opened: opened)
     let screen = Task { await model.followConversation() }
@@ -1497,7 +1497,7 @@ private final class CountedSession: OpenedSession {
 
   @Test func withNoTurnItsWorkIsTheCoresLineUntilTheFirstBegins() async throws {
     // Not read, read with no Turn, and the first begun.
-    let opened = FakeCore(.paired).openSession("workstation-key/11")
+    let opened = FakeWindow(.paired).openSession("workstation-key/11")
     var work = opened.work(nil).makeAsyncIterator()
     #expect(await work.next() == TurnWork(title: "", items: [], empty: "Loading"))
     #expect(await work.next() == TurnWork(title: "", items: [], empty: "Nothing done yet"))
@@ -1509,7 +1509,7 @@ private final class CountedSession: OpenedSession {
     }
     try await sending.value
     // One that cannot be read says why.
-    let behind = FakeCore(.releases).openSession("laptop-key/4")
+    let behind = FakeWindow(.releases).openSession("laptop-key/4")
     var said = behind.work(nil).makeAsyncIterator()
     #expect(await said.next()?.empty?.hasPrefix("This session cannot be read yet") == true)
   }
@@ -1522,7 +1522,7 @@ private final class CountedSession: OpenedSession {
     stack.lead(to: .detail(settled, activity: "compaction"))
     #expect(stack.showTree())
     #expect(stack.kept == kept)
-    let restored = SessionStack(core: FakeCore(.paired), restoring: kept)
+    let restored = SessionStack(core: FakeWindow(.paired), restoring: kept)
     #expect(!restored.aside.shown && restored.aside.kind == .work)
   }
 
@@ -1605,7 +1605,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func itAnswersForTheSessionOnTopAndForgetsOneThatHasGone() {
-    let stack = SessionStack(core: FakeCore(.paired))
+    let stack = SessionStack(core: FakeWindow(.paired))
     #expect(stack.openSession == nil)
     stack.compose()
     #expect(stack.openSession == nil, "none open")
@@ -1665,7 +1665,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func aSessionBegunInTheNewSessionScreenIsTheOneOpenAsTheColumnsAreTold() async throws {
-    let stack = SessionStack(core: FakeCore(.composing))
+    let stack = SessionStack(core: FakeWindow(.composing))
     stack.compose()
     guard case .landing(let route) = stack.path.first else {
       Issue.record("the new-session screen open")
@@ -1755,7 +1755,7 @@ private final class CountedSession: OpenedSession {
 
 @Suite @MainActor struct SidekickTreeTests {
   @Test func theSidekickChosenFromASessionOnAnotherServerOpenedOverItIsPoppedBackTo() {
-    let stack = SessionStack(core: FakeCore(.sidekick))
+    let stack = SessionStack(core: FakeWindow(.sidekick))
     let sidekick = SessionRoute(session: "workstation-key/20")
     let parser = SessionRoute(session: "laptop-key/22")
     stack.path = [.session(sidekick), .session(parser)]
@@ -1767,7 +1767,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func anEntryOnAnotherServerChosenInTheTreeIsPushedAsItsOwnSession() {
-    let stack = SessionStack(core: FakeCore(.sidekick))
+    let stack = SessionStack(core: FakeWindow(.sidekick))
     let sidekick = SessionRoute(session: "workstation-key/20")
     stack.path = [.session(sidekick)]
     stack.show("laptop-key/22", over: sidekick)
@@ -1782,7 +1782,7 @@ private final class CountedSession: OpenedSession {
 
 @Suite @MainActor struct ReviewTests {
   @Test func aBarsReviewPushesTheOneSubagentWaitingOpensTheTreeOrPresentsTheSessionsOwn() {
-    let core = FakeCore(.subagentsWait)
+    let core = FakeWindow(.subagentsWait)
     let parent = SessionRoute(session: "workstation-key/12")
     let stack = SessionStack(core: core)
     stack.path = [.session(parent)]
@@ -1810,7 +1810,7 @@ private final class CountedSession: OpenedSession {
   private let working = "workstation-key/1"
 
   @Test func aStopTheServerRefusesStandsInTheBannerInItsWordsAndStopsNothing() async {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     let model = SessionModel(core: core, session: "workstation-key/12")
     // A settled Subagent: its Server has nothing to stop.
     await model.stopSubagent("workstation-key/12.2")
@@ -1821,7 +1821,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func theComposerOpensOnItsDraftAndHandsTheCoreEachChange() {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     core.setDraft("half a thought", version: 0, for: working)
     let model = SessionModel(core: core, session: working)
     #expect(model.text == "half a thought")
@@ -1830,7 +1830,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func aSendEmptiesTheFieldAtOnce() async {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     let model = SessionModel(core: core, session: working)
     model.text = "Give it a quiet zone"
     let sending = Task { await model.send() }
@@ -1843,7 +1843,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func eachSendOrQueueIsCountedSoThatTheConversationGoesBackToItsFoot() async {
-    let model = SessionModel(core: FakeCore(.paired), session: working, failureStands: .seconds(3600))
+    let model = SessionModel(core: FakeWindow(.paired), session: working, failureStands: .seconds(3600))
     #expect(model.sent == 0)
     model.text = "   "
     await model.send()
@@ -1857,7 +1857,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func aRefusedSendStandsInTheBannerAndItsTextIsBackInTheField() async {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     let model = SessionModel(core: core, session: working, failureStands: .seconds(3600))
     model.text = "Please fail"
     await model.send()
@@ -1869,7 +1869,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func aSessionGonePopsTheScreenAndShowsNoBanner() async {
-    let model = SessionModel(core: FakeCore(.paired), session: working)
+    let model = SessionModel(core: FakeWindow(.paired), session: working)
     model.text = "Is it gone?"
     await model.send()
     #expect(model.popped)
@@ -1877,7 +1877,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func aQueuedPromptNoLongerThereSaysSoAndLeavesTheScreenUp() async {
-    let model = SessionModel(core: FakeCore(.paired), session: working, failureStands: .seconds(3600))
+    let model = SessionModel(core: FakeWindow(.paired), session: working, failureStands: .seconds(3600))
     await model.steerNow("no such prompt")
     #expect(model.banner == "That prompt is no longer queued")
     #expect(!model.popped)
@@ -1885,7 +1885,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func onAnUnreachableOriginASendFailsInTheBannerAndKeepsItsText() async {
-    let model = SessionModel(core: FakeCore(.unreachable), session: "homelab-key/2", failureStands: .seconds(3600))
+    let model = SessionModel(core: FakeWindow(.unreachable), session: "homelab-key/2", failureStands: .seconds(3600))
     model.text = "Upgrade it"
     await model.send()
     #expect(model.banner == "The server did not answer in time")
@@ -1893,7 +1893,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func aSendNeverAnsweredKeepsItsTextAndTheLineSaysItMayHaveBeenSent() async throws {
-    let model = SessionModel(core: FakeCore(.paired), session: working, failureStands: .seconds(3600))
+    let model = SessionModel(core: FakeWindow(.paired), session: working, failureStands: .seconds(3600))
     let following = Task { await model.follow() }
     defer { following.cancel() }
     model.text = "Unanswered, this one"
@@ -1907,7 +1907,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func textGivenBackWinsOverWhatIsTypedBeforeTheFieldHearsOfIt() async throws {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     let model = SessionModel(core: core, session: working)
     let following = Task { await model.follow() }
     defer { following.cancel() }
@@ -1926,7 +1926,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func aStopThatWithdrawsAPromptPutsItBackInTheFieldAheadOfWhatIsWritten() async {
-    let model = SessionModel(core: FakeCore(.paired), session: "workstation-key/11")
+    let model = SessionModel(core: FakeWindow(.paired), session: "workstation-key/11")
     model.text = "and the changelog"
     await model.stop()
     #expect(model.text == "Note the floor in the pairing docs\nand the changelog")
@@ -1946,7 +1946,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func theApprovalTheFramePresentsIsTheSheetsItemAndADecisionDimsItUntilTheServerAnswers() async throws {
-    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let model = SessionModel(core: FakeWindow(.paired), session: waiting)
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await until(model) { $0.presented != nil }
@@ -1966,7 +1966,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func swipingTheSheetAwayLeavesTheOrangeBarAndReviewBringsItBack() async throws {
-    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let model = SessionModel(core: FakeWindow(.paired), session: waiting)
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await until(model) { $0.presented != nil }
@@ -1981,7 +1981,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func eachDecisionUnderWayDimsItsOwnSheetUntilItsOwnAnswerComes() async throws {
-    let model = SessionModel(core: FakeCore(.several), session: "laptop-key/4")
+    let model = SessionModel(core: FakeWindow(.several), session: "laptop-key/4")
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await until(model) { $0.presented != nil }
@@ -1998,7 +1998,7 @@ private final class CountedSession: OpenedSession {
   }
 
   @Test func aDecisionOnAnApprovalNoLongerWaitingStandsInTheBanner() async {
-    let model = SessionModel(core: FakeCore(.paired), session: waiting, failureStands: .seconds(3600))
+    let model = SessionModel(core: FakeWindow(.paired), session: waiting, failureStands: .seconds(3600))
     await model.decide("no such approval", .decline)
     #expect(model.banner == "That approval is no longer waiting")
     #expect(model.deciding.isEmpty)
@@ -2055,8 +2055,8 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func theFakeSaysAnActIsUnderWayWhileOneRuns() async {
-    let core = FakeCore(.paired)
-    var heard = core.actsUnderWay().makeAsyncIterator()
+    let core = FakeWindow(.paired)
+    var heard = core.device.actsUnderWay().makeAsyncIterator()
     #expect(await heard.next() == false)
     let opened = core.openSession("workstation-key/1")
     let sending = Task { try? await opened.send("Steer it") }
@@ -2139,7 +2139,8 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func backgroundTimeIsHeldWhileAnActIsUnderWayUntilTheFollowerGoes() async throws {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
+    let device = core.fake
     let tasks = HeldTime()
     var made = 0
     func make() -> any BackgroundTasks {
@@ -2147,7 +2148,7 @@ private final class HeldTime: BackgroundTasks {
       return tasks
     }
     var follower: AppFollower? = AppFollower(scenes: NotificationCenter())
-    follower?.follow(core, tasks: make())
+    follower?.follow(device, tasks: make())
     try await until { made == 1 }
 
     let opened = core.openSession("workstation-key/1")
@@ -2166,14 +2167,14 @@ private final class HeldTime: BackgroundTasks {
 
 @Suite @MainActor struct TryAgainModelTests {
   /// The slim row the fake's listing gives the Remote `name`.
-  private func row(on core: FakeCore, _ name: String) async throws -> UnreachableRow {
+  private func row(on core: FakeWindow, _ name: String) async throws -> UnreachableRow {
     var listings = core.listing().makeAsyncIterator()
     let listing = try #require(await listings.next())
     return try #require(listing.unreachable.first { $0.words.hasPrefix(name) || name.isEmpty })
   }
 
   @Test func aRemoteThatAnswersAgainIsSaidToAndLeavesTheListing() async throws {
-    let core = FakeCore(.unreachable)
+    let core = FakeWindow(.unreachable)
     let row = try await row(on: core, "homelab")
     #expect(row.sheet.hint == .localNetwork)
     #expect(row.sheet.openSettings == "Open Settings")
@@ -2190,7 +2191,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func aRemoteStillUnreachableSaysWhyInTheCoresWords() async throws {
-    let core = FakeCore(.offline)
+    let core = FakeWindow(.offline)
     let row = try await row(on: core, "")
     #expect(row.words == "Server unreachable", "one server is never named")
     #expect(row.sheet.hint == .noNetwork)
@@ -2361,7 +2362,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func halfGivenAnswersAreKeptWhileItWaitsBehindReview() async throws {
-    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let model = SessionModel(core: FakeWindow(.paired), session: waiting)
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await until(model) { $0.presented != nil }
@@ -2384,7 +2385,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func answersSentDimTheSheetUntilTheServerAnswersAndGoWithIt() async throws {
-    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let model = SessionModel(core: FakeWindow(.paired), session: waiting)
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await until(model) { $0.presented != nil }
@@ -2401,7 +2402,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func answersRefusedStandInTheBannerAndAsItAsksAgainWhatWasGivenIsKept() async throws {
-    let model = SessionModel(core: FakeCore(.paired), session: waiting, failureStands: .seconds(3600))
+    let model = SessionModel(core: FakeWindow(.paired), session: waiting, failureStands: .seconds(3600))
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await until(model) { $0.presented != nil }
@@ -2416,7 +2417,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func aSecretWrittenThenSwipedAwayReadsAnsweredWhenReviewed() async throws {
-    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let model = SessionModel(core: FakeWindow(.paired), session: waiting)
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await until(model) { $0.presented != nil }
@@ -2434,7 +2435,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func whatWasHalfGivenGoesOnceTheFrameNoLongerListsItLive() async throws {
-    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let model = SessionModel(core: FakeWindow(.paired), session: waiting)
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await until(model) { $0.presented != nil }
@@ -2450,7 +2451,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func declinedItGoesWhole() async throws {
-    let model = SessionModel(core: FakeCore(.paired), session: waiting)
+    let model = SessionModel(core: FakeWindow(.paired), session: waiting)
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await until(model) { $0.presented != nil }
@@ -2470,7 +2471,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   /// The new-session screen over `core`, followed until its Landing stands, and what follows it.
-  private func screen(over core: any Core) async throws -> (NewSessionModel, Task<Void, Never>) {
+  private func screen(over core: any WindowCore) async throws -> (NewSessionModel, Task<Void, Never>) {
     let model = NewSessionModel(core: core)
     let following = Task { await model.follow() }
     try await landed(model)
@@ -2484,7 +2485,7 @@ private final class HeldTime: BackgroundTasks {
     let key = try madeKey()
     do {
       let core = try LiveCore(directory: directory, signer: key)
-      let (model, following) = try await screen(over: core)
+      let (model, following) = try await screen(over: core.window())
       model.text = "half a thought"
       core.leftFront()
       following.cancel()
@@ -2495,7 +2496,7 @@ private final class HeldTime: BackgroundTasks {
       "kept in the core's directory")
 
     let core = try LiveCore(directory: directory, signer: key)
-    let (model, following) = try await screen(over: core)
+    let (model, following) = try await screen(over: core.window())
     defer { following.cancel() }
     #expect(model.text == "half a thought")
   }
@@ -2504,18 +2505,20 @@ private final class HeldTime: BackgroundTasks {
     let base = try scratch()
     defer { try? FileManager.default.removeItem(at: base) }
     let file = base.appending(path: "drafts.json")
-    let core = FakeCore(.composing, keepingDraftsIn: file)
+    let core = FakeWindow(.composing, keepingDraftsIn: file)
     core.setDraft("half a thought", version: 0, for: FakeOpenedSession.landingDraft)
     core.setDraft("  ", version: 0, for: "workstation-key/1")
     #expect(!FileManager.default.fileExists(atPath: file.path(percentEncoded: false)), "not before it leaves")
-    core.leftFront()
+    core.device.leftFront()
 
-    let again = FakeCore(.composing, keepingDraftsIn: file)
-    #expect(again.draft(for: FakeOpenedSession.landingDraft) == Draft(text: "half a thought", version: 0))
+    let again = FakeWindow(.composing, keepingDraftsIn: file)
+    #expect(
+      again.draft(for: FakeOpenedSession.landingDraft)
+        == Draft(text: "half a thought", version: 0, given: [], writtenHere: true))
     let (model, following) = try await screen(over: again)
     defer { following.cancel() }
     #expect(model.text == "half a thought")
-    #expect(FakeCore(.composing).draft(for: FakeOpenedSession.landingDraft).text == "", "kept only where told to")
+    #expect(FakeWindow(.composing).draft(for: FakeOpenedSession.landingDraft).text == "", "kept only where told to")
   }
 }
 
@@ -2529,7 +2532,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func theScreenOpensOnTheLandingsOwnDraftAndHandsTheCoreEachChange() async throws {
-    let core = FakeCore(.composing)
+    let core = FakeWindow(.composing)
     core.setDraft("half a thought", version: 0, for: FakeOpenedSession.landingDraft)
     let model = NewSessionModel(core: core)
     let following = Task { await model.follow() }
@@ -2544,7 +2547,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func shownAgainTheScreenHoldsWhatItsDraftHasComeToHold() async throws {
-    let core = FakeCore(.composing)
+    let core = FakeWindow(.composing)
     let draft = FakeOpenedSession.landingDraft
     let model = NewSessionModel(core: core)
     var following = Task { await model.follow() }
@@ -2561,7 +2564,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func sendingTurnsTheScreenIntoTheSessionBegunAndEmptiesTheDraft() async throws {
-    let core = FakeCore(.composing)
+    let core = FakeWindow(.composing)
     let model = NewSessionModel(core: core)
     var adopted: SessionModel?
     model.adopted = { adopted = $0 }
@@ -2578,7 +2581,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func whereNothingCanBeginSendDoesNothing() async throws {
-    let model = NewSessionModel(core: FakeCore(.paired))
+    let model = NewSessionModel(core: FakeWindow(.paired))
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await until(model) { $0.landing != nil }
@@ -2590,7 +2593,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func theStackHoldsTheSessionBegunForAsLongAsItsScreenIsPushed() async throws {
-    let core = FakeCore(.composing)
+    let core = FakeWindow(.composing)
     let stack = SessionStack(core: core)
     let route = LandingRoute()
     stack.path = [.landing(route)]
@@ -2612,7 +2615,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func theSessionBegunChosenInTheTreeOfOnePushedOverItIsPoppedBackTo() async throws {
-    let core = FakeCore(.composing)
+    let core = FakeWindow(.composing)
     let stack = SessionStack(core: core)
     let route = LandingRoute()
     stack.path = [.landing(route)]
@@ -2631,7 +2634,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func aRefusedBeginningLeftIsTheLandingsDraftAgain() async throws {
-    let core = FakeCore(.composing)
+    let core = FakeWindow(.composing)
     let model = NewSessionModel(core: core)
     let following = Task { await model.follow() }
     defer { following.cancel() }
@@ -2650,7 +2653,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func aNewWorktreeChosenIsMadeBeforeTheSessionStarts() async throws {
-    let core = FakeCore(.composing)
+    let core = FakeWindow(.composing)
     let model = NewSessionModel(core: core)
     let following = Task { await model.follow() }
     defer { following.cancel() }
@@ -2671,7 +2674,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func turningToAnotherWorkspaceStartsTheWorktreeChoiceOnTheMainOneAgain() async throws {
-    let core = FakeCore(.composing)
+    let core = FakeWindow(.composing)
     let model = NewSessionModel(core: core)
     let following = Task { await model.follow() }
     defer { following.cancel() }
@@ -2688,7 +2691,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func aBareRepositoryOffersNoWorktreeAndNoSend() async throws {
-    let core = FakeCore(.composing)
+    let core = FakeWindow(.composing)
     let model = NewSessionModel(core: core)
     let following = Task { await model.follow() }
     defer { following.cancel() }
@@ -2716,7 +2719,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func everyRemotesWorkspacesStandUnderItsHeaderAndChoosingOneTicksIt() async throws {
-    let core = FakeCore(.several)
+    let core = FakeWindow(.several)
     let model = WorkspacePickerModel(core: core)
     let following = Task { await model.follow() }
     defer { following.cancel() }
@@ -2738,7 +2741,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func aWorkspaceItsServerCannotReadIsNotChosen() async throws {
-    let model = WorkspacePickerModel(core: FakeCore(.paired))
+    let model = WorkspacePickerModel(core: FakeWindow(.paired))
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await until(model) { $0.picker != nil }
@@ -2749,7 +2752,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func aSearchIsHandedToTheCoreWhichSaysWhereItFindsNothing() async throws {
-    let model = WorkspacePickerModel(core: FakeCore(.several))
+    let model = WorkspacePickerModel(core: FakeWindow(.several))
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await until(model) { $0.picker != nil }
@@ -2762,7 +2765,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func aSearchSaysWhichRemotesHaveYetToListTheirsAndNeverThatItFoundNothing() async throws {
-    let model = WorkspacePickerModel(core: FakeCore(.reaching))
+    let model = WorkspacePickerModel(core: FakeWindow(.reaching))
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await until(model) { $0.picker != nil }
@@ -2802,7 +2805,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func theSceneKeepsEachSessionPushedAndTheNewSessionScreenButNoTurnsWorkOrActivity() {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     let parent = SessionRoute(session: "workstation-key/12")
     let explorer = SessionRoute(session: "workstation-key/12.1")
     let stack = SessionStack(core: core)
@@ -2817,7 +2820,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func aStackKeptIsPushedAgainEachScreenReadAfresh() {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     let stack = SessionStack(
       core: core, restoring: [.session("workstation-key/12"), .session("workstation-key/12.1")])
     guard case .session(let parent) = stack.path.first, case .session(let explorer) = stack.path.last,
@@ -2842,7 +2845,7 @@ private final class HeldTime: BackgroundTasks {
 
   @Test func aSessionKeptThatIsGoneSendsTheReaderBackToTheListing() async throws {
     // The `several` phone's home lab is not held by the `paired` one.
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     let stack = SessionStack(core: core, restoring: [.session("workstation-key/1"), .session("homelab-key/6")])
     guard case .session(let gone) = stack.path.last else {
       Issue.record("a Session pushed")
@@ -2856,7 +2859,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func aSessionKeptIsSentBackToTheListingOnlyUntilItHasBeenRead() async throws {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     let stack = SessionStack(core: core, restoring: [.session("workstation-key/7")])
     guard case .session(let route) = stack.path.first else {
       Issue.record("a Session pushed")
@@ -2873,7 +2876,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func aSessionPushedWhileTheAppRunsThatIsGoneStaysToSaySo() async throws {
-    let core = FakeCore(.paired)
+    let core = FakeWindow(.paired)
     let stack = SessionStack(core: core)
     let gone = SessionRoute(session: "homelab-key/6")
     stack.path = [.session(gone)]
@@ -2885,7 +2888,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func aNewSessionScreenThatHasBegunItsSessionIsKeptAsThatSession() async throws {
-    let core = FakeCore(.composing)
+    let core = FakeWindow(.composing)
     let route = LandingRoute()
     let stack = SessionStack(core: core)
     stack.path = [.landing(route)]
@@ -2913,7 +2916,7 @@ private final class HeldTime: BackgroundTasks {
   }
 
   @Test func theScopeKeptNarrowsTheListingAgainAndTurnsNothing() async throws {
-    let core = FakeCore(.several)
+    let core = FakeWindow(.several)
     let model = ListingModel(core: core)
     let following = Task { await model.follow(restoring: "workspace/laptop-key/billing-api") }
     defer { following.cancel() }
@@ -2930,7 +2933,7 @@ private final class HeldTime: BackgroundTasks {
 
   @Test func aScopeKeptThatIsGoneNarrowsTheListingToEverywhere() async throws {
     for gone in ["remote/homelab-key", "workspace/homelab-key/home-assistant", "workspace/workstation-key/gone"] {
-      let model = ListingModel(core: FakeCore(.paired))
+      let model = ListingModel(core: FakeWindow(.paired))
       let following = Task { await model.follow(restoring: gone) }
       defer { following.cancel() }
       let listing = try await listing(of: model) { _ in true }
@@ -2957,7 +2960,7 @@ private final class RecordingBrowser: LoginBrowser {
 
 @Suite @MainActor struct RelayLoginModelTests {
   @Test func theFirstCodeIsCopiedAndItsAddressOpenedAndBothCloseOnceTheRelayConfirms() async {
-    let core = FakeCore(.relayLogin, loginConfirmsAfter: .milliseconds(300))
+    let core = FakeWindow(.relayLogin, loginConfirmsAfter: .milliseconds(300))
     let browser = RecordingBrowser()
     var copied: [String] = []
     let model = RelayLoginModel(core: core, relay: FakeCore.relay, browser: browser) { copied.append($0) }
@@ -2976,7 +2979,7 @@ private final class RecordingBrowser: LoginBrowser {
   }
 
   @Test func leavingTheFrontGivesTheLoginUpAndClosesTheSheet() async throws {
-    let core = FakeCore(.relayLogin, loginConfirmsAfter: .seconds(60))
+    let core = FakeWindow(.relayLogin, loginConfirmsAfter: .seconds(60))
     let browser = RecordingBrowser()
     let model = RelayLoginModel(core: core, relay: FakeCore.relay, browser: browser) { _ in }
     let following = Task { await model.follow() }
@@ -2984,7 +2987,7 @@ private final class RecordingBrowser: LoginBrowser {
       try await Task.sleep(for: .milliseconds(20))
     }
 
-    core.leftFront()
+    core.device.leftFront()
 
     #expect(await following.value == false)
     #expect(browser.closed >= 1)
@@ -2996,26 +2999,26 @@ private final class RecordingBrowser: LoginBrowser {
   }
 
   @Test func cancellingWhatFollowsTheLoginGivesItUpAndKeepsNothing() async throws {
-    let core = FakeCore(.relayLogin, loginConfirmsAfter: .seconds(60))
+    let core = FakeWindow(.relayLogin, loginConfirmsAfter: .seconds(60))
     let browser = RecordingBrowser()
     let model = RelayLoginModel(core: core, relay: FakeCore.relay, browser: browser) { _ in }
     let following = Task { await model.follow() }
     while browser.opened.isEmpty {
       try await Task.sleep(for: .milliseconds(20))
     }
-    var servers = core.servers().makeAsyncIterator()
+    var servers = core.device.servers().makeAsyncIterator()
     #expect(await servers.next()?.relays.first?.state == .loggingIn)
 
     following.cancel()
 
     #expect(await following.value == false)
     #expect(browser.closed >= 1)
-    var after = core.servers().makeAsyncIterator()
+    var after = core.device.servers().makeAsyncIterator()
     #expect(await after.next()?.relays.isEmpty == true, "nothing is kept of a login given up")
   }
 
   @Test func copyingAndOpeningAgainUseTheCodeShown() async throws {
-    let core = FakeCore(.relayLogin, loginConfirmsAfter: .seconds(60))
+    let core = FakeWindow(.relayLogin, loginConfirmsAfter: .seconds(60))
     let browser = RecordingBrowser()
     var copied: [String] = []
     let model = RelayLoginModel(core: core, relay: FakeCore.relay, browser: browser) { copied.append($0) }
@@ -3044,7 +3047,7 @@ private final class RecordingBrowser: LoginBrowser {
   }
 
   @Test func aNameBeingWrittenStaysAsTheCoreTellsOfSomethingElse() async throws {
-    let model = DeviceModel(core: FakeCore(.pairAgain))
+    let model = DeviceModel(core: FakeWindow(.pairAgain))
     let task = Task { await model.follow() }
     defer { task.cancel() }
     try await until { model.device?.pairAgain != nil }
@@ -3060,7 +3063,7 @@ private final class RecordingBrowser: LoginBrowser {
     let base = try scratch()
     defer { try? FileManager.default.removeItem(at: base) }
     let core = try LiveCore(directory: try CoreDirectory.prepare(in: base), signer: try madeKey())
-    let model = DeviceModel(core: core)
+    let model = DeviceModel(core: core.window())
     let task = Task { await model.follow() }
     defer { task.cancel() }
     try await until { model.name == "iPhone" }
@@ -3084,7 +3087,7 @@ private final class RecordingBrowser: LoginBrowser {
   }
 
   @Test func aNameRefusedStaysWhateverTheCoreToldOfMeanwhile() async throws {
-    let model = DeviceModel(core: FakeCore(.pairAgain))
+    let model = DeviceModel(core: FakeWindow(.pairAgain))
     let task = Task { await model.follow() }
     defer { task.cancel() }
     try await until { model.device?.pairAgain != nil }
@@ -3100,7 +3103,7 @@ private final class RecordingBrowser: LoginBrowser {
   }
 
   @Test func aNameWrittenAfterOneWasKeptStaysAsTheCoreTellsOfSomethingElse() async throws {
-    let model = DeviceModel(core: FakeCore(.pairAgain))
+    let model = DeviceModel(core: FakeWindow(.pairAgain))
     let task = Task { await model.follow() }
     defer { task.cancel() }
     try await until { model.device?.pairAgain != nil }
@@ -3117,7 +3120,7 @@ private final class RecordingBrowser: LoginBrowser {
 
 @Suite @MainActor struct ServersSectionTests {
   /// The model of a sheet over `core`, following its Remotes, once it holds them.
-  private func following(_ core: FakeCore) async throws -> (DeviceModel, Task<Void, Never>) {
+  private func following(_ core: FakeWindow) async throws -> (DeviceModel, Task<Void, Never>) {
     let model = DeviceModel(core: core)
     let task = Task { await model.followServers() }
     while model.servers == nil {
@@ -3139,7 +3142,7 @@ private final class RecordingBrowser: LoginBrowser {
   }
 
   @Test func aRefusedNameStaysBesideWhyAndAKeptOneReadsAsTheCoreHoldsIt() async throws {
-    let (model, task) = try await following(FakeCore(.several))
+    let (model, task) = try await following(FakeWindow(.several))
     defer { task.cancel() }
     let workstation = try row("workstation", in: model)
     let name = model.name(of: workstation)
@@ -3162,7 +3165,7 @@ private final class RecordingBrowser: LoginBrowser {
   }
 
   @Test func aNameLeftUnkeptReadsAsTheCoreHoldsItAgain() async throws {
-    let (model, task) = try await following(FakeCore(.several))
+    let (model, task) = try await following(FakeWindow(.several))
     defer { task.cancel() }
     let laptop = try row("laptop", in: model)
     let name = model.name(of: laptop)
@@ -3174,7 +3177,7 @@ private final class RecordingBrowser: LoginBrowser {
   }
 
   @Test func aRemovalConfirmedGoesAndOneOfARemoteGoneSaysSoInTheBanner() async throws {
-    let (model, task) = try await following(FakeCore(.several))
+    let (model, task) = try await following(FakeWindow(.several))
     defer { task.cancel() }
     let workstation = try row("workstation", in: model)
     model.removingRemote = workstation
@@ -3252,13 +3255,13 @@ private final class CountedScanner {
 @Suite @MainActor struct ScanningModelTests {
   /// A model whose screen stands at the top of its stack, as one just pushed does.
   private func atTop() -> ScanningModel {
-    let model = ScanningModel(core: FakeCore(.fresh))
+    let model = ScanningModel(core: FakeWindow(.fresh))
     model.stands(atTop: true)
     return model
   }
 
   @Test func itScansOnlyOnceItStandsAtTheTop() {
-    let model = ScanningModel(core: FakeCore(.fresh))
+    let model = ScanningModel(core: FakeWindow(.fresh))
     #expect(model.scanning == false)
     #expect(model.heard(.read(FakeCore.invite)) == nil)
     model.stands(atTop: true)
@@ -3330,8 +3333,8 @@ private final class CountedScanner {
   }
 
   @Test func itSaysWhatTheCoreWords() {
-    let model = ScanningModel(core: FakeCore(.fresh))
-    #expect(model.words == FakeCore(.fresh).scanWords())
+    let model = ScanningModel(core: FakeWindow(.fresh))
+    #expect(model.words == FakeWindow(.fresh).device.scanWords())
     #expect(model.words.looking == "Looking for a Shaman invite")
   }
 }

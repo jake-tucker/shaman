@@ -111,13 +111,13 @@ private struct Hosting: UIViewControllerRepresentable {
 @Suite(.serialized) @MainActor struct FootHostedTests {
   private func session(_ session: String = "workstation-key/7") throws -> HostedFoot {
     let route = SessionRoute(session: session)
-    let stack = SessionStack(core: FakeCore(.paired), path: [.session(route)])
+    let stack = SessionStack(core: FakeWindow(.paired), path: [.session(route)])
     return try HostedFoot(SessionScreen(model: stack.model(for: route), stack: stack), reading: stack.pose)
   }
 
   /// The new-session screen at rest, which does not arrive writing.
   private func landing() throws -> HostedFoot {
-    let core = FakeCore(.composing)
+    let core = FakeWindow(.composing)
     let stack = SessionStack(core: core)
     return try HostedFoot(
       NewSessionScreen(model: NewSessionModel(core: core), stack: stack, atRest: stack.rest), reading: stack.pose)

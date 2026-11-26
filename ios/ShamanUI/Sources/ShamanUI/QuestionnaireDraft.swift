@@ -1,9 +1,11 @@
 import ShamanCore
 
 /// What a reader has half given a Questionnaire, one Question to a page: the page they are on and, for each Question,
-/// the choices taken and what was written. It is the screen's own, kept while the Session's screen stays open, so a
-/// Questionnaire swiped away and reviewed returns as it was left; the core is handed the answers whole when they are
-/// sent. A secret's answer is never shown again once the reader has left it: its page, or the sheet.
+/// the choices taken and what was written. The screen holds its own while it stays open, so a Questionnaire swiped
+/// away and reviewed returns as it was left, and never takes another window's; the core keeps whichever was changed
+/// last, the device's as a draft is (ADR-0084), which a sheet opening later in either window starts from. The core is
+/// handed the answers whole when they are sent. A secret's answer is never shown again once the reader has left it:
+/// its page, or the sheet.
 struct QuestionnaireDraft: Equatable, Sendable {
   /// What was given one Question.
   struct Page: Equatable, Sendable {
@@ -28,6 +30,28 @@ struct QuestionnaireDraft: Equatable, Sendable {
 
   init(_ questionnaire: PendingQuestionnaire) {
     pages = questionnaire.questions.map { Page(secret: $0.secret != nil) }
+  }
+
+  /// What was half given `questionnaire` as the core kept it, where it kept anything for as many Questions. A secret's
+  /// answer given there was left by its reader, so it is sealed here.
+  init(_ questionnaire: PendingQuestionnaire, kept: HalfAnswered?) {
+    self.init(questionnaire)
+    guard let kept, kept.pages.count == pages.count else { return }
+    pages = zip(pages, kept.pages).map { page, kept in
+      var taken = Page(secret: page.secret, choices: kept.choices, text: kept.text)
+      taken.sealed = page.secret && (kept.sealed || taken.answered)
+      return taken
+    }
+    page = min(Int(kept.page), max(pages.count - 1, 0))
+  }
+
+  /// What the core keeps of it.
+  var kept: HalfAnswered {
+    HalfAnswered(
+      page: UInt32(page),
+      pages: pages.map {
+        HalfAnsweredPage(secret: $0.secret, choices: $0.choices, text: $0.text, sealed: $0.sealed)
+      })
   }
 
   /// Whether the page on show is the last, whose tap sends the answers.

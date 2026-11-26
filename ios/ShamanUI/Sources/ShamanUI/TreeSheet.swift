@@ -251,7 +251,7 @@ private struct MarkerSymbol: View {
 
 #if DEBUG
   #Preview("A tree with working and settled subagents") {
-    let model = SessionModel(core: FakeCore(.paired), session: "workstation-key/12.1")
+    let model = SessionModel(core: FakeWindow(.paired), session: "workstation-key/12.1")
     TreeSheet(model: model) { _ in }
       .task { await model.follow() }
   }

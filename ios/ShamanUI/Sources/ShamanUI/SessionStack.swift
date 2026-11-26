@@ -24,14 +24,14 @@ final class SessionStack {
   let pose = Pose()
   /// The new-session screen the main view holds at rest, while nothing is open. Not on the path, it is not open.
   @ObservationIgnored private(set) var rest = LandingRoute()
-  @ObservationIgnored private let core: any Core
+  @ObservationIgnored private let core: any WindowCore
   @ObservationIgnored private var models: [SessionRoute: SessionModel] = [:]
   @ObservationIgnored private var landings: [LandingRoute: NewSessionModel] = [:]
   /// The Sessions' screens restored after a cold start, any of which found gone before it is read sends the reader
   /// back to the listing.
   @ObservationIgnored private var restored: Set<SessionRoute> = []
 
-  init(core: any Core, path: [Pushed] = [], aside: Aside = Aside()) {
+  init(core: any WindowCore, path: [Pushed] = [], aside: Aside = Aside()) {
     self.core = core
     self.path = path
     self.aside = aside
@@ -39,7 +39,7 @@ final class SessionStack {
 
   /// The stack the scene kept, `kept`, pushed again after a cold start: each Session's screen, and the new-session
   /// screen, read afresh.
-  convenience init(core: any Core, restoring kept: [KeptScene.Screen]) {
+  convenience init(core: any WindowCore, restoring kept: [KeptScene.Screen]) {
     let path = kept.map { screen -> Pushed in
       switch screen {
       case .session(let session): .session(SessionRoute(session: session))

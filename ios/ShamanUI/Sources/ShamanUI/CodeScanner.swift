@@ -201,7 +201,7 @@ struct ScanScreen: View {
 /// over once returned to until that code leaves the frame.
 @MainActor @Observable
 final class ScanningModel {
-  private let core: any Core
+  private let core: any WindowCore
   /// What the screen says, as the core words it.
   let words: ScanWords
   /// Whether the screen stands at the top of its stack and on screen.
@@ -216,9 +216,9 @@ final class ScanningModel {
   /// Whether the camera failed, after which it scans no more.
   private(set) var failed = false
 
-  init(core: any Core) {
+  init(core: any WindowCore) {
     self.core = core
-    words = core.scanWords()
+    words = core.device.scanWords()
   }
 
   /// Whether the scanner scans: while the screen stands at the top, until it takes an Invite or the camera fails.
@@ -256,7 +256,7 @@ final class ScanningModel {
       return nil
     case .read(let text):
       guard scanning, text != ignoring else { return nil }
-      guard core.isInvite(text) else {
+      guard core.device.isInvite(text) else {
         passedOver = text
         return nil
       }

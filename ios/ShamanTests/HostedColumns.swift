@@ -24,7 +24,7 @@ import UIKit
   ) async throws {
     let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     window = UIWindow(windowScene: scene)
-    let core = FakeCore(scenario)
+    let core = FakeWindow(scenario)
     stack = SessionStack(core: core, path: open)
     let notices = noticed ? NoticeModel(core: core, stands: .seconds(600)) : nil
     self.notices = notices

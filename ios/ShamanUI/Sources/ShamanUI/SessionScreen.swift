@@ -987,7 +987,7 @@ final class SessionModel {
   /// The Session, as the core hands it back: the reference the row it was opened from handed over, or the one the
   /// core chose for a Session begun from the Landing.
   let session: String
-  private let core: any Core
+  private let core: any WindowCore
   private let opened: any OpenedSession
   private(set) var frame: SessionFrame?
   private(set) var conversation = Conversation()
@@ -1021,8 +1021,12 @@ final class SessionModel {
   /// The Questionnaires whose answers, or whose Decline, are on their way, each of whose sheets is dimmed until the
   /// Server answers.
   private(set) var answering: Set<String> = []
-  /// What the reader has half given each Questionnaire, by its reference, kept while this screen stays open.
+  /// What the reader has half given each Questionnaire, by its reference, held while this screen stays open: begun from
+  /// what the core kept, which each change is handed to.
   private(set) var questionnaireDrafts: [String: QuestionnaireDraft] = [:]
+  /// What the core kept of each Questionnaire as its sheet first read it, which it stands on until it is changed here:
+  /// a sheet holds its own while it stands, and never takes what another window gives meanwhile.
+  @ObservationIgnored private var firstRead: [String: QuestionnaireDraft] = [:]
   /// How long a failure's banner stands before it goes by itself.
   @ObservationIgnored private let failureStands: Duration
   @ObservationIgnored private var clearing: Task<Void, Never>?
@@ -1032,16 +1036,16 @@ final class SessionModel {
   @ObservationIgnored private var reading: Task<Void, Never>?
   @ObservationIgnored private var readers = 0
 
-  convenience init(core: any Core, session: String, failureStands: Duration = .seconds(6)) {
+  convenience init(core: any WindowCore, session: String, failureStands: Duration = .seconds(6)) {
     self.init(core: core, route: SessionRoute(session: session), failureStands: failureStands)
   }
 
-  convenience init(core: any Core, route: SessionRoute, failureStands: Duration = .seconds(6)) {
+  convenience init(core: any WindowCore, route: SessionRoute, failureStands: Duration = .seconds(6)) {
     self.init(core: core, route: route, opened: core.openSession(route.session), failureStands: failureStands)
   }
 
   /// The model of the Session `opened`, pushed as `route`: one the core opened, or one it began from the Landing.
-  init(core: any Core, route: SessionRoute, opened: any OpenedSession, failureStands: Duration = .seconds(6)) {
+  init(core: any WindowCore, route: SessionRoute, opened: any OpenedSession, failureStands: Duration = .seconds(6)) {
     self.route = route
     let session = opened.reference
     self.session = session
@@ -1053,11 +1057,13 @@ final class SessionModel {
     draftVersion = draft.version
   }
 
-  /// Takes the draft the core holds into the field: what it gave back always wins over what is typed meanwhile.
-  private func take(_ draft: Draft) {
-    draftVersion = draft.version
-    if text != draft.text {
-      text = draft.text
+  /// Takes into the field what the core gave back since the version it holds, ahead of its own text, or, where it is
+  /// `retaking` as the screen is followed again, the text its own window kept; never another window's typing.
+  private func take(_ draft: Draft, retaking: Bool = false) {
+    let taken = draft.taken(into: text, over: draftVersion, retaking: retaking)
+    draftVersion = max(draftVersion, draft.version)
+    if text != taken {
+      text = taken
     }
   }
 
@@ -1142,9 +1148,16 @@ final class SessionModel {
     }
   }
 
-  /// What the reader has half given `questionnaire`: nothing, until they give something.
+  /// What the reader has half given `questionnaire`: what this screen holds, or else what any sheet of it last gave
+  /// as the core kept it when this screen first read it, or else nothing.
   func draft(of questionnaire: PendingQuestionnaire) -> QuestionnaireDraft {
-    questionnaireDrafts[questionnaire.reference] ?? QuestionnaireDraft(questionnaire)
+    let reference = questionnaire.reference
+    if let held = questionnaireDrafts[reference] ?? firstRead[reference] {
+      return held
+    }
+    let read = QuestionnaireDraft(questionnaire, kept: core.device.halfAnswered(reference, of: session))
+    firstRead[reference] = read
+    return read
   }
 
   /// Changes what the reader has half given `questionnaire` as `change` does, answering what it answers.
@@ -1155,6 +1168,7 @@ final class SessionModel {
     var draft = draft(of: questionnaire)
     let answered = change(&draft)
     questionnaireDrafts[questionnaire.reference] = draft
+    core.device.keepHalfAnswered(draft.kept, to: questionnaire.reference, of: session)
     return answered
   }
 
@@ -1181,6 +1195,8 @@ final class SessionModel {
     do {
       try await act()
       questionnaireDrafts[reference] = nil
+      firstRead[reference] = nil
+      core.device.forgetHalfAnswered(reference, of: session)
     } catch {
       failed(error)
     }
@@ -1191,6 +1207,9 @@ final class SessionModel {
   func dismissInterventions() {
     for reference in questionnaireDrafts.keys {
       questionnaireDrafts[reference]?.setAside()
+      if let kept = questionnaireDrafts[reference]?.kept {
+        core.device.keepHalfAnswered(kept, to: reference, of: session)
+      }
     }
     opened.dismiss()
   }
@@ -1234,9 +1253,13 @@ final class SessionModel {
     _ = await (frames, changes, drafts)
   }
 
+  /// Follows the draft while the screen is up: the first it is told is the draft as it stands as the screen is shown
+  /// again, and each after a Prompt the core gave back.
   private func followDraft() async {
+    var retaking = true
     for await draft in core.drafts(for: session) {
-      take(draft)
+      take(draft, retaking: retaking)
+      retaking = false
     }
   }
 
@@ -1256,7 +1279,13 @@ final class SessionModel {
   private func forgetSettled(_ frame: SessionFrame) {
     let live = Set(frame.waiting)
     if questionnaireDrafts.keys.contains(where: { !live.contains($0) }) {
+      for reference in questionnaireDrafts.keys where !live.contains(reference) {
+        core.device.forgetHalfAnswered(reference, of: session)
+      }
       questionnaireDrafts = questionnaireDrafts.filter { live.contains($0.key) }
+    }
+    if firstRead.keys.contains(where: { !live.contains($0) }) {
+      firstRead = firstRead.filter { live.contains($0.key) }
     }
   }
 
@@ -1320,31 +1349,31 @@ final class SessionModel {
 #if DEBUG
   #Preview("A working session") {
     NavigationStack {
-      SessionScreen(model: SessionModel(core: FakeCore(.paired), session: "workstation-key/1"))
+      SessionScreen(model: SessionModel(core: FakeWindow(.paired), session: "workstation-key/1"))
     }
   }
 
   #Preview("A session on an unreachable server") {
     NavigationStack {
-      SessionScreen(model: SessionModel(core: FakeCore(.unreachable), session: "homelab-key/2"))
+      SessionScreen(model: SessionModel(core: FakeWindow(.unreachable), session: "homelab-key/2"))
     }
   }
 
   #Preview("A session waiting on an approval") {
     NavigationStack {
-      SessionScreen(model: SessionModel(core: FakeCore(.paired), session: "workstation-key/3"))
+      SessionScreen(model: SessionModel(core: FakeWindow(.paired), session: "workstation-key/3"))
     }
   }
 
   #Preview("A session waiting on a questionnaire") {
     NavigationStack {
-      SessionScreen(model: SessionModel(core: FakeCore(.paired), session: "workstation-key/13"))
+      SessionScreen(model: SessionModel(core: FakeWindow(.paired), session: "workstation-key/13"))
     }
   }
 
   #Preview("A settled session") {
     NavigationStack {
-      SessionScreen(model: SessionModel(core: FakeCore(.paired), session: "workstation-key/7"))
+      SessionScreen(model: SessionModel(core: FakeWindow(.paired), session: "workstation-key/7"))
     }
   }
 #endif

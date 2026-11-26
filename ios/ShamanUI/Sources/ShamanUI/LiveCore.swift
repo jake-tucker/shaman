@@ -1,12 +1,11 @@
 import Foundation
 import ShamanCore
 
-/// The thin Client's core itself, kept in a directory of the app's container.
-public final class LiveCore: Core {
+/// The device's half of the thin Client's core itself, kept in a directory of the app's container: opened once for the
+/// app, however many windows it shows.
+public final class LiveCore: DeviceCore {
   private let client: ThinClient
 
-  /// The core kept in `directory`, which `CoreDirectory.prepare` makes, proving this phone by the key `signer` signs
-  /// with. Whatever the directory holds of another key is discarded as it opens, all but the name.
   public init(directory: URL, signer: any KeySigner) throws(OpenError) {
     do {
       client = try ThinClient.open(directory: directory.path(percentEncoded: false), signer: signer)
@@ -15,6 +14,22 @@ public final class LiveCore: Core {
     } catch {
       throw .Failed(message: "This phone's records could not be read: \(error)")
     }
+  }
+
+  public func window() -> any WindowCore {
+    LiveWindow(client.window(), of: self)
+  }
+
+  public func halfAnswered(_ questionnaire: String, of session: String) -> HalfAnswered? {
+    client.halfAnswered(session: session, questionnaire: questionnaire)
+  }
+
+  public func keepHalfAnswered(_ answers: HalfAnswered, to questionnaire: String, of session: String) {
+    client.keepHalfAnswered(session: session, questionnaire: questionnaire, answers: answers)
+  }
+
+  public func forgetHalfAnswered(_ questionnaire: String, of session: String) {
+    client.forgetHalfAnswered(session: session, questionnaire: questionnaire)
   }
 
   public func thisDevice() -> AsyncStream<ThisDevice> {
@@ -29,16 +44,8 @@ public final class LiveCore: Core {
     try await acted { try await client.dismissPairAgain() }
   }
 
-  public func outlook() -> AsyncStream<Outlook> {
-    listened { send in client.watchOutlook(listener: Forwarder(send)) }
-  }
-
   public func servers() -> AsyncStream<Servers> {
     listened { send in client.watchServers(listener: Forwarder(send)) }
-  }
-
-  public func listing() -> AsyncStream<Listing> {
-    listened { send in client.watchListing(listener: Forwarder(send)) }
   }
 
   public func settle(_ session: String) async throws(ActError) {
@@ -49,78 +56,12 @@ public final class LiveCore: Core {
     try await acted { try await client.unsettle(session: session) }
   }
 
-  public func showMoreSettled() {
-    client.showMoreSettled()
-  }
-
-  public func openSession(_ session: String) -> any OpenedSession {
-    LiveOpenedSession(client.openSession(session: session))
-  }
-
-  public func landing() -> AsyncStream<Landing> {
-    listened { send in client.watchLanding(listener: Forwarder(send)) }
-  }
-
-  public func beginSession(_ text: String, newWorktree: Bool) throws(ActError) -> any OpenedSession {
-    do {
-      return LiveOpenedSession(try client.beginSession(text: text, newWorktree: newWorktree))
-    } catch let error as ActError {
-      throw error
-    } catch {
-      throw .Refused(message: "This phone could not do that: \(error)")
-    }
-  }
-
-  public func workspaces() -> AsyncStream<WorkspacePicker> {
-    listened { send in client.watchWorkspaces(listener: Forwarder(send)) }
-  }
-
-  public func searchWorkspaces(_ text: String) {
-    client.searchWorkspaces(text: text)
-  }
-
-  public func chooseWorkspace(_ workspace: String) async throws(ActError) {
-    try await acted { try await client.chooseWorkspace(workspace: workspace) }
-  }
-
-  public func narrowListing(_ scope: String) async throws(ActError) {
-    try await acted { try await client.narrowListing(scope: scope) }
-  }
-
-  public func restoreListing(_ scope: String) {
-    client.restoreListing(scope: scope)
-  }
-
-  public func searchListing(_ text: String) {
-    client.searchListing(text: text)
-  }
-
-  public func draft(for session: String) -> Draft {
-    client.draft(session: session)
-  }
-
-  public func setDraft(_ text: String, version: UInt64, for session: String) {
-    client.setDraft(session: session, text: text, version: version)
-  }
-
-  public func drafts(for session: String) -> AsyncStream<Draft> {
-    listened { send in client.watchDraft(session: session, listener: Forwarder(send)) }
+  public func tryAgain(_ remote: String) async throws(ActError) {
+    try await acted { try await client.tryAgain(remote: remote) }
   }
 
   public func actsUnderWay() -> AsyncStream<Bool> {
     listened { send in client.watchActs(listener: Forwarder(send)) }
-  }
-
-  public func notices() -> AsyncStream<Notice?> {
-    listened { send in client.watchNotices(listener: Forwarder(send)) }
-  }
-
-  public func noticeSeen(_ id: UInt64) {
-    client.noticeSeen(id: id)
-  }
-
-  public func tryAgain(_ remote: String) async throws(ActError) {
-    try await acted { try await client.tryAgain(remote: remote) }
   }
 
   public func cameToFront() {
@@ -151,10 +92,6 @@ public final class LiveCore: Core {
     client.readInvite(invite: invite)
   }
 
-  public func confirmPairing(invite: String, remoteName: String, deviceName: String) async -> PairingOutcome {
-    await client.confirmPairing(invite: invite, remoteName: remoteName, deviceName: deviceName)
-  }
-
   public func logIn(at relay: String) -> AsyncStream<DeviceLogin> {
     listened { send in client.logInAtRelay(relay: relay, listener: Forwarder(send)) }
   }
@@ -169,6 +106,95 @@ public final class LiveCore: Core {
 
   public func removeRemote(_ remote: String) async throws(ActError) {
     try await acted { try await client.removeRemote(remote: remote) }
+  }
+}
+
+/// A window's half of the core itself, a Client of its own over the device's.
+final class LiveWindow: WindowCore {
+  private let window: ThinClientWindow
+  let device: any DeviceCore
+
+  init(_ window: ThinClientWindow, of device: LiveCore) {
+    self.window = window
+    self.device = device
+  }
+
+  public func outlook() -> AsyncStream<Outlook> {
+    listened { send in window.watchOutlook(listener: Forwarder(send)) }
+  }
+
+  public func listing() -> AsyncStream<Listing> {
+    listened { send in window.watchListing(listener: Forwarder(send)) }
+  }
+
+  public func showMoreSettled() {
+    window.showMoreSettled()
+  }
+
+  public func openSession(_ session: String) -> any OpenedSession {
+    LiveOpenedSession(window.openSession(session: session))
+  }
+
+  public func landing() -> AsyncStream<Landing> {
+    listened { send in window.watchLanding(listener: Forwarder(send)) }
+  }
+
+  public func beginSession(_ text: String, newWorktree: Bool) throws(ActError) -> any OpenedSession {
+    do {
+      return LiveOpenedSession(try window.beginSession(text: text, newWorktree: newWorktree))
+    } catch let error as ActError {
+      throw error
+    } catch {
+      throw .Refused(message: "This phone could not do that: \(error)")
+    }
+  }
+
+  public func workspaces() -> AsyncStream<WorkspacePicker> {
+    listened { send in window.watchWorkspaces(listener: Forwarder(send)) }
+  }
+
+  public func searchWorkspaces(_ text: String) {
+    window.searchWorkspaces(text: text)
+  }
+
+  public func chooseWorkspace(_ workspace: String) async throws(ActError) {
+    try await acted { try await window.chooseWorkspace(workspace: workspace) }
+  }
+
+  public func narrowListing(_ scope: String) async throws(ActError) {
+    try await acted { try await window.narrowListing(scope: scope) }
+  }
+
+  public func restoreListing(_ scope: String) {
+    window.restoreListing(scope: scope)
+  }
+
+  public func searchListing(_ text: String) {
+    window.searchListing(text: text)
+  }
+
+  public func draft(for session: String) -> Draft {
+    window.draft(session: session)
+  }
+
+  public func setDraft(_ text: String, version: UInt64, for session: String) {
+    window.setDraft(session: session, text: text, version: version)
+  }
+
+  public func drafts(for session: String) -> AsyncStream<Draft> {
+    listened { send in window.watchDraft(session: session, listener: Forwarder(send)) }
+  }
+
+  public func notices() -> AsyncStream<Notice?> {
+    listened { send in window.watchNotices(listener: Forwarder(send)) }
+  }
+
+  public func noticeSeen(_ id: UInt64) {
+    window.noticeSeen(id: id)
+  }
+
+  public func confirmPairing(invite: String, remoteName: String, deviceName: String) async -> PairingOutcome {
+    await window.confirmPairing(invite: invite, remoteName: remoteName, deviceName: deviceName)
   }
 }
 

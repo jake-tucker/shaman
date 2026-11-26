@@ -3,9 +3,10 @@
   import ShamanCore
   import Synchronization
 
-  /// A stand-in for the core, holding canned values of the types it hands Swift, for previews, UI tests and looking
-  /// at a screen without a Server. Debug builds alone carry it; a launch argument chooses it and its scenario.
-  public final class FakeCore: Core {
+  /// A stand-in for the device's half of the core, holding canned values of the types it hands Swift, for previews, UI
+  /// tests and looking at a screen without a Server, and handing out a `FakeWindow` for each window. Debug builds alone
+  /// carry it; a launch argument chooses it and its scenario.
+  public final class FakeCore: DeviceCore {
     /// What the fake begins holding.
     public enum Scenario: String, CaseIterable, Sendable {
       /// A phone just installed, which has never been named and holds no Remote.
@@ -95,18 +96,13 @@
     private let device: Mutex<ThisDevice>
     private let held: Mutex<[ServerRow]>
     private let deviceListeners = Listeners<ThisDevice>()
-    private let outlookListeners = Listeners<Outlook>()
     private let serversListeners = Listeners<Servers>()
-    private let listingListeners = Listeners<Listing>()
+    /// Every window handed out, while it lives.
+    private let windows = Mutex<[Held]>([])
     /// Every Session the fake's Remotes hold, the most recently begun first.
     private let sessions = Mutex(FakeSession.canned)
-    /// How many of the shelf's rows are on show.
-    private let onShow = Mutex(FakeSession.shelfOpening)
     /// The Remotes held that have yet to answer with their Sessions, which they never do.
     private let unanswered: [String]
-    /// What the listing is narrowed to and searched for, until the fake goes.
-    private let scope = Mutex(FakeScope.everywhere)
-    private let query = Mutex("")
     /// What it was told of the front, in order: true as the app came to it and false as it left.
     let toldOfFront = Mutex<[Bool]>([])
     /// The Remotes held that read Unreachable, and why.
@@ -114,14 +110,13 @@
     /// The Remotes held that answer but that the phone and they no longer work together across, and which side is to
     /// be updated: `.updateApp` or `.updateServer`.
     private let behind: [String: UnreachableHint]
-    /// What the core says of its own accord, until it is seen.
-    private let notice: Mutex<Notice?>
-    private let noticeListeners = Listeners<Notice?>()
+    /// That a Remote is newer than the app, which every window says, a window made later included.
+    let newer: Notice?
     /// How long trying a Remote again takes to answer.
     private let tryingTakes = Duration.milliseconds(400)
 
     /// Each composer's draft, and whether an act is under way.
-    private let acts: FakeActs
+    let acts: FakeActs
     /// The tree of the Session whose Agent delegates, which every Session of it reads.
     private let tree: FakeTree
     /// Whether the phone holds the Sidekick's Session `FakeSidekick` makes the tree of.
@@ -206,9 +201,9 @@
         }
       self.unreachable = Mutex(unreachable)
       behind = scenario == .releases ? ["laptop": .updateApp, "homelab": .updateServer] : [:]
-      notice = Mutex(
+      newer =
         scenario == .releases
-          ? Notice(id: 1, words: "workstation runs a newer Shaman; some things may not show") : nil)
+        ? Notice(id: 1, words: "workstation runs a newer Shaman; some things may not show") : nil
       if scenario == .several || scenario == .reaching || scenario == .unreachable || scenario == .sidekick
         || scenario == .releases
       {
@@ -262,11 +257,62 @@
         }
       }
       tellServers()
-      listingListeners.tell(currentListing())
+      tellWindows { $0.tellListing() }
     }
 
-    public func listing() -> AsyncStream<Listing> {
-      listingListeners.stream(now: currentListing())
+    public func window() -> any WindowCore {
+      FakeWindow(over: self)
+    }
+
+    private let windowsMade = Atomic<Int>(0)
+
+    /// The number of the next window made over this fake.
+    func nextWindow() -> Int {
+      windowsMade.add(1, ordering: .relaxed).newValue
+    }
+
+    /// How many windows have been made over this fake, for a test to see none is made that never stands.
+    var windowCount: Int { windowsMade.load(ordering: .relaxed) }
+
+    /// What was last half given each Questionnaire, by its Session and its reference, for the fake's life.
+    private let halfAnswers = Mutex<[String: HalfAnswered]>([:])
+
+    public func halfAnswered(_ questionnaire: String, of session: String) -> HalfAnswered? {
+      halfAnswers.withLock { $0["\(session) \(questionnaire)"] }
+    }
+
+    public func keepHalfAnswered(_ answers: HalfAnswered, to questionnaire: String, of session: String) {
+      halfAnswers.withLock { $0["\(session) \(questionnaire)"] = answers }
+    }
+
+    public func forgetHalfAnswered(_ questionnaire: String, of session: String) {
+      _ = halfAnswers.withLock { $0.removeValue(forKey: "\(session) \(questionnaire)") }
+    }
+
+    /// What was said while no window lived, which the first window to come says, and no other.
+    private let unclaimed = Mutex<[String]>([])
+
+    /// What was said while no window lived, taken by the window asking, the first to come.
+    func takeUnclaimed() -> [String] {
+      unclaimed.withLock { unclaimed in
+        defer { unclaimed.removeAll() }
+        return unclaimed
+      }
+    }
+
+    /// Tells `window`, made over this fake, of what changes, while it lives.
+    func hold(_ window: FakeWindow) {
+      windows.withLock { windows in
+        windows.removeAll { $0.window == nil }
+        windows.append(Held(window: window))
+      }
+    }
+
+    /// Has every window that lives do `tell`.
+    private func tellWindows(_ tell: (FakeWindow) -> Void) {
+      for window in windows.withLock({ $0.compactMap(\.window) }) {
+        tell(window)
+      }
     }
 
     public func settle(_ session: String) async throws(ActError) {
@@ -277,66 +323,18 @@
       try await settling(session, to: false)
     }
 
-    public func showMoreSettled() {
-      onShow.withLock { $0 += FakeSession.shelfBatch }
-      listingListeners.tell(currentListing())
-    }
-
-    /// Every Session the fake has opened, the latest last, for a test to see each closed as its screen goes.
-    let opened = Mutex<[FakeOpenedSession]>([])
-
     /// The Prompt each Session begun from the Landing was begun with, by the Session.
     private let begun = Mutex<[String: String]>([:])
     /// How many Sessions have been begun from the Landing.
     private let begunCount = Atomic<Int>(0)
-    private let landingListeners = Listeners<Landing>()
-    /// What the Landing says of a beginning left while it may have begun.
-    private let landingNote = Mutex<String?>(nil)
 
-    public func landing() -> AsyncStream<Landing> {
-      landingListeners.stream(now: currentLanding())
-    }
-
-    public func beginSession(_ text: String, newWorktree: Bool) throws(ActError) -> any OpenedSession {
-      let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !text.isEmpty else { throw .Invalid(message: "Write something to send") }
-      let landing = currentLanding()
-      guard let remote = currentRemote(), let workspace = landing.workspace else {
-        throw .Invalid(message: landing.asks ?? "Pair with a server to begin a session there")
-      }
-      if let workingCopy = landing.workingCopy {
-        throw .Invalid(message: workingCopy)
-      }
-      if newWorktree && landing.worktree == nil {
-        throw .Invalid(message: "No new worktree can be made in this workspace")
-      }
-      let number = begunCount.add(1, ordering: .relaxed).newValue
-      let session = "\(remote)-key/begun-\(number)"
-      let place = ((held.withLock { $0.count > 1 } ? [remote] : []) + [workspace.name]).joined(separator: " · ")
-      // A Session begun anew says nothing more of one left before.
-      landingNote.withLock { $0 = nil }
-      landingListeners.tell(currentLanding())
-      let opened = FakeOpenedSession(
-        beginning: session, text: text, place: place, newWorktree: newWorktree, acts: acts
-      ) { [weak self] told in
-        guard let self else { return }
-        switch told {
-        case .began(let text): list(session, begunWith: text, on: remote, in: workspace.name)
-        case .leftUnsure:
-          landingNote.withLock {
-            $0 =
-              "The server did not answer, so a session may have begun with this prompt. Look for it in the listing "
-              + "before sending it again."
-          }
-          landingListeners.tell(currentLanding())
-        }
-      }
-      self.opened.withLock { $0.append(opened) }
-      return opened
+    /// The number of the next Session begun from a Landing, in any window.
+    func nextBegun() -> Int {
+      begunCount.add(1, ordering: .relaxed).newValue
     }
 
     /// Lists the Session `session` the fake's Server made from the Prompt `text`, on `remote` in `workspace`, first.
-    private func list(_ session: String, begunWith text: String, on remote: String, in workspace: String) {
+    func list(_ session: String, begunWith text: String, on remote: String, in workspace: String) {
       begun.withLock { $0[session] = text }
       sessions.withLock {
         $0.insert(
@@ -344,21 +342,13 @@
             id: session, remote: remote, workspace: workspace, title: text, glyph: nil, checkout: nil,
             standing: .working, running: 0, moved: 0, settled: false, reads: .working), at: 0)
       }
-      listingListeners.tell(currentListing())
+      tellWindows { $0.tellListing() }
     }
 
-    /// The Landing where the Outlook stands, as the core would show it: naming the Remote only beside others.
-    private func currentLanding() -> Landing {
-      let note = landingNote.withLock { $0 }
-      guard let remote = currentRemote() else {
-        return Landing(
-          title: "New session", place: "", workspace: nil, asks: "Pair with a server to begin a session there",
-          elsewhere: nil, worktree: nil, workingCopy: nil, agent: nil, unreachable: nil, note: note,
-          placeholder: "Message", canSend: false,
-          draft: FakeOpenedSession.landingDraft)
-      }
+    /// The Landing of a window whose Outlook stands at `remote`, in `workspace` where it remembers one, saying `note`,
+    /// as the core would show it: naming the Remote only beside others.
+    func landing(on remote: String, in workspace: String?, note: String?) -> Landing {
       let named = held.withLock { $0.count > 1 }
-      let workspace = turnedWorkspace.withLock { $0[remote] }
       let listed = workspace.flatMap { FakeWorkspace.find(remote, $0) }
       let cut = unreachable.withLock { $0[remote] != nil }
       let workingCopy = workspace != nil && listed.map({ if case .bare = $0.source { true } else { false } }) == true
@@ -390,64 +380,25 @@
         draft: FakeOpenedSession.landingDraft)
     }
 
-    private let workspacesListeners = Listeners<WorkspacePicker>()
-    /// What the Workspace Picker is searched for, until it is opened again.
-    private let workspaceQuery = Mutex("")
-
-    public func workspaces() -> AsyncStream<WorkspacePicker> {
-      workspaceQuery.withLock { $0 = "" }
-      return workspacesListeners.stream(now: currentWorkspaces())
-    }
-
-    public func searchWorkspaces(_ text: String) {
-      workspaceQuery.withLock { $0 = text }
-      workspacesListeners.tell(currentWorkspaces())
-    }
-
-    /// Turns the Outlook toward the Workspace a picker row carries, after a moment, leaving the listing's scope.
-    public func chooseWorkspace(_ workspace: String) async throws(ActError) {
-      try? await Task.sleep(for: .milliseconds(150))
-      guard let (remote, name) = FakeWorkspace.named(by: workspace), let listed = FakeWorkspace.find(remote, name),
-        held.withLock({ $0.contains { $0.name == remote } })
-      else {
-        throw .Gone(message: "That workspace is no longer listed")
-      }
-      if let unavailable = listed.unavailable {
-        throw .Invalid(message: unavailable)
-      }
-      turn(remote)
-      turnedWorkspace.withLock { $0[remote] = name }
-      turnedOutlook()
-    }
-
-    /// The Workspace Picker as the core would show it now.
-    private func currentWorkspaces() -> WorkspacePicker {
-      let remote = currentRemote()
-      return FakeWorkspace.picker(
+    /// The Workspace Picker as the core would show it in a window whose Outlook stands at `chosen`, searched for
+    /// `query`.
+    func picker(chosen: (String, String)?, query: String) -> WorkspacePicker {
+      FakeWorkspace.picker(
         on: held.withLock { $0.map(\.name) }, unanswered: unanswered,
-        unreachable: Set(unreachable.withLock { $0.keys }),
-        chosen: remote.flatMap { remote in turnedWorkspace.withLock { $0[remote] }.map { (remote, $0) } },
-        query: workspaceQuery.withLock { $0 })
+        unreachable: Set(unreachable.withLock { $0.keys }), chosen: chosen, query: query)
     }
 
     /// The Agent each of the fake's Remotes says a new Session would get: the home lab's has no Provider able to
     /// serve, and the laptop is too old to say.
     private static let agents = ["workstation": "Claude · Fable 5.2 · high", "homelab": "Agent unavailable"]
 
-    /// Tells the Outlook's, the Landing's and the Workspace Picker's listeners where the Outlook stands now.
-    private func turnedOutlook() {
-      outlookListeners.tell(currentOutlook())
-      landingListeners.tell(currentLanding())
-      workspacesListeners.tell(currentWorkspaces())
-    }
-
-    public func openSession(_ session: String) -> any OpenedSession {
+    /// The Session `session` names opened for a window's screen, and what the listing says of it, where it lists it,
+    /// which the window turns its Outlook toward.
+    func open(_ session: String) -> (FakeOpenedSession, FakeSession?) {
       if let text = begun.withLock({ $0[session] }), let found = sessions.withLock({ $0.first { $0.id == session } }) {
         let place = ((held.withLock { $0.count > 1 } ? [found.remote] : []) + [found.workspace])
           .joined(separator: " · ")
-        let opened = FakeOpenedSession(begun: session, text: text, place: place, acts: acts)
-        self.opened.withLock { $0.append(opened) }
-        return opened
+        return (FakeOpenedSession(begun: session, text: text, place: place, acts: acts), nil)
       }
       let remotes = held.withLock { $0.map(\.name) }
       let found = sessions.withLock { $0.first { $0.id == session && remotes.contains($0.remote) } }
@@ -473,12 +424,6 @@
       let frame =
         FakeTree.holds(session) && (found != nil || delegated)
         ? tree.frame(of: session, top: listed ?? gone) : listed ?? handIn ?? gone
-      if let found {
-        turn(found.remote)
-        // The Workspace remembered for the Remote stays; only where none is does the Session's own become it.
-        turnedWorkspace.withLock { $0[found.remote] = $0[found.remote] ?? found.workspace }
-        turnedOutlook()
-      }
       // A Session on a Remote yet to answer is never read: its loading mark stands.
       let read =
         found.flatMap { unanswered.contains($0.remote) ? nil : $0.reads }
@@ -501,82 +446,27 @@
         let opened = FakeOpenedSession(
           session: session, frame: cut, scenario: nil, acts: acts,
           unread: "This session cannot be read yet. \(why), and it is read as soon as it can be.")
-        self.opened.withLock { $0.append(opened) }
-        return opened
+        return (opened, found)
       }
       let opened = FakeOpenedSession(
         session: session, frame: frame, scenario: read, unreachable: cut || (handIn != nil && unlistedCut),
         acts: acts, tree: FakeTree.holds(session) && read != nil ? tree : nil,
         sidekick: sidekick && FakeSidekick.holds(session))
-      self.opened.withLock { $0.append(opened) }
-      return opened
-    }
-
-    public func draft(for session: String) -> Draft {
-      acts.draft(for: session)
-    }
-
-    public func setDraft(_ text: String, version: UInt64, for session: String) {
-      acts.setDraft(text, version: version, for: session)
-    }
-
-    public func drafts(for session: String) -> AsyncStream<Draft> {
-      acts.drafts(for: session)
+      return (opened, found)
     }
 
     public func actsUnderWay() -> AsyncStream<Bool> {
       acts.stream()
     }
 
-    public func notices() -> AsyncStream<Notice?> {
-      noticeListeners.stream(now: notice.withLock { $0 })
-    }
-
-    /// Says the notice no more, as the core never says it again.
-    public func noticeSeen(_ id: UInt64) {
-      let seen = notice.withLock { notice in
-        guard notice?.id == id else { return false }
-        notice = nil
-        return true
-      }
-      if seen {
-        noticeListeners.tell(nil)
-      }
-    }
-
     /// Gives `text` back to the composer of `session` as the core does after a failed send, for a test to see what
     /// the field makes of it.
-    static func giveBack(_ text: String, in core: FakeCore, to session: String) {
-      core.acts.giveBack(text, to: session)
+    static func giveBack(_ text: String, in window: FakeWindow, to session: String) {
+      window.fake.acts.giveBack(text, to: session)
     }
 
-    /// The Workspace last turned toward on each Remote.
+    /// The Workspace last turned toward on each Remote, by any window.
     private let turnedWorkspace = Mutex<[String: String]>([:])
-
-    public func narrowListing(_ reference: String) async throws(ActError) {
-      let remotes = held.withLock { $0.map(\.name) }
-      let chosen = FakeScope(reference).within(remotes, sessions: sessions.withLock { $0 })
-      scope.withLock { $0 = chosen }
-      if let remote = chosen.remote {
-        turn(remote)
-        if case .workspace(_, let workspace) = chosen {
-          turnedWorkspace.withLock { $0[remote] = workspace }
-        }
-        turnedOutlook()
-      }
-      listingListeners.tell(currentListing())
-    }
-
-    public func restoreListing(_ reference: String) {
-      let remotes = held.withLock { $0.map(\.name) }
-      scope.withLock { $0 = FakeScope(reference).restored(remotes, sessions: sessions.withLock { $0 }) }
-      listingListeners.tell(currentListing())
-    }
-
-    public func searchListing(_ text: String) {
-      query.withLock { $0 = text }
-      listingListeners.tell(currentListing())
-    }
 
     /// Every Remote read again answers but where the phone has no network, after a moment.
     public func tryAgain(_ remote: String) async throws(ActError) {
@@ -609,9 +499,11 @@
       if let stillUnreachable {
         throw .Unreachable(message: stillUnreachable)
       }
-      listingListeners.tell(currentListing())
-      landingListeners.tell(currentLanding())
-      workspacesListeners.tell(currentWorkspaces())
+      tellWindows { window in
+        window.tellListing()
+        window.tellLanding()
+        window.tellWorkspaces()
+      }
     }
 
     public func cameToFront() {
@@ -655,16 +547,27 @@
       guard found else {
         throw .Gone(message: "That session is no longer listed")
       }
-      listingListeners.tell(currentListing())
+      tellWindows { $0.tellListing() }
     }
 
-    /// The listing of every held Remote's Sessions, as the core would make it.
-    private func currentListing() -> Listing {
+    /// The names of the Remotes held, in the order paired.
+    func heldNames() -> [String] {
+      held.withLock { $0.map(\.name) }
+    }
+
+    /// Every Session the fake's Remotes hold.
+    func listed() -> [FakeSession] {
+      sessions.withLock { $0 }
+    }
+
+    /// The listing of every held Remote's Sessions, as the core would make it for a window showing `showing` of the
+    /// shelf's rows, narrowed to `scope` and searched for `query`.
+    func listing(showing: Int, scope: FakeScope, query: String) -> Listing {
       let remotes = held.withLock { $0.map(\.name) }
       var listing = FakeSession.listing(
         of: sessions.withLock { $0 }, on: remotes, unanswered: unanswered,
-        unreachable: unreachable.withLock { $0 }.merging(behind) { held, _ in held }, showing: onShow.withLock { $0 },
-        scope: scope.withLock { $0 }, query: query.withLock { $0 }, now: Date())
+        unreachable: unreachable.withLock { $0 }.merging(behind) { held, _ in held }, showing: showing,
+        scope: scope, query: query, now: Date())
       // A Remote renamed is named so where a row names its Origin.
       for (was, now) in renamed.withLock({ $0 }) {
         for index in listing.active.indices where listing.active[index].place.hasPrefix("\(was) · ") {
@@ -676,10 +579,6 @@
 
     public func thisDevice() -> AsyncStream<ThisDevice> {
       deviceListeners.stream(now: device.withLock { $0 })
-    }
-
-    public func outlook() -> AsyncStream<Outlook> {
-      outlookListeners.stream(now: currentOutlook())
     }
 
     public func servers() -> AsyncStream<Servers> {
@@ -793,8 +692,10 @@
         }
       }
       tellServers()
-      listingListeners.tell(currentListing())
-      landingListeners.tell(currentLanding())
+      tellWindows { window in
+        window.tellListing()
+        window.tellLanding()
+      }
     }
 
     public func removeRelay(_ relay: String) async throws(ActError) {
@@ -868,7 +769,8 @@
           deviceName: device.withLock { $0.name }))
     }
 
-    public func confirmPairing(invite: String, remoteName: String, deviceName: String) async -> PairingOutcome {
+    /// Pairs with the Server `invite` is from, as a window's `confirmPairing` asks, which turns that window toward it.
+    func pair(invite: String, remoteName: String, deviceName: String) async -> PairingOutcome {
       try? await Task.sleep(for: .milliseconds(300))
       if invite.contains("dead") {
         return .failed(message: "Invite has expired", again: .scanAgain)
@@ -903,16 +805,23 @@
       relayed.withLock { $0 = invite.contains("relay") ? [remoteName] : [] }
       turn(remoteName)
       change { $0.name = deviceName }
-      tellServers()
-      turnedOutlook()
-      listingListeners.tell(currentListing())
       return .paired(name: remoteName)
     }
 
-    /// The Remotes in the order last turned toward, the latest first: the Outlook stands at the first held.
+    /// Shows what a pairing changed in every window, once the window that paired has turned toward it.
+    func pairedTurned() {
+      tellServers()
+      tellWindows { window in
+        window.turnedOutlook()
+        window.tellListing()
+      }
+    }
+
+    /// The Remotes in the order last turned toward by any window, the latest first: a new window's Outlook stands at
+    /// the first held.
     private let turned = Mutex<[String]>([])
 
-    /// Turns the Outlook toward the Remote `remote`, first among those turned toward.
+    /// Turns the phone toward the Remote `remote`, first among those turned toward.
     private func turn(_ remote: String) {
       turned.withLock { turned in
         turned.removeAll { $0 == remote }
@@ -920,28 +829,24 @@
       }
     }
 
-    /// The Remote the Outlook stands at, where the phone holds any.
-    private func currentRemote() -> String? {
-      let names = held.withLock { $0.map(\.name) }
-      return turned.withLock({ $0 }).first(where: names.contains) ?? names.first
+    /// Keeps a window's turn toward the Remote `remote`, at `workspace` where it stands in one, as the phone's latest.
+    func keepTurn(_ remote: String, workspace: String?) {
+      turn(remote)
+      if let workspace {
+        turnedWorkspace.withLock { $0[remote] = workspace }
+      }
     }
 
-    private func currentOutlook() -> Outlook {
-      guard let name = currentRemote() else {
-        return .nowhere
-      }
-      let shown = shown(name)
-      let place = turnedWorkspace.withLock { $0[name] }.map { "\(shown) · \($0)" } ?? shown
-      return .remote(
-        name: shown,
-        beginsIn: BeginsIn(lead: "New sessions begin in", place: place, said: "New sessions begin in \(place)"))
+    /// Where the phone was last turned, by any window: the Remotes in order and the Workspace on each.
+    func lastTurned() -> ([String], [String: String]) {
+      (turned.withLock { $0 }, turnedWorkspace.withLock { $0 })
     }
 
     /// What each Remote renamed is called now, by the name the fake holds it under.
     private let renamed = Mutex<[String: String]>([:])
 
     /// What the Remote the fake holds as `name` is called now.
-    private func shown(_ name: String) -> String {
+    func shown(_ name: String) -> String {
       renamed.withLock { $0[name] } ?? name
     }
 
@@ -964,8 +869,10 @@
       }
       renamed.withLock { $0[row.name] = name }
       tellServers()
-      turnedOutlook()
-      listingListeners.tell(currentListing())
+      tellWindows { window in
+        window.turnedOutlook()
+        window.tellListing()
+      }
     }
 
     public func removeRemote(_ remote: String) async throws(ActError) {
@@ -977,40 +884,46 @@
     }
 
     /// Forgets the Remote `row`, as its Pairing ended, by this phone's user removing it or, where `removedThere`, by
-    /// its own user removing this phone: the Outlook, where it stood there, turns to the Remote turned toward before,
-    /// saying so.
+    /// its own user removing this phone: each window's Outlook that stood there turns to the Remote the phone was most
+    /// recently turned toward that is still held, saying so in that window; where no window lives, the first to come
+    /// says it.
     private func forget(_ row: ServerRow, removedThere: Bool) {
-      let stoodThere = currentRemote() == row.name
+      let windows = windows.withLock { $0.compactMap(\.window) }
+      let stoodThere = windows.map { $0.currentRemote() == row.name }
+      let phoneStoodThere = (turned.withLock { $0 }.first(where: heldNames().contains) ?? heldNames().first) == row.name
       let name = shown(row.name)
       held.withLock { $0.removeAll { $0.remote == row.remote } }
       turned.withLock { $0.removeAll { $0 == row.name } }
       _ = turnedWorkspace.withLock { $0.removeValue(forKey: row.name) }
       acts.forgetDrafts(on: "\(row.name)-key/")
-      // A Session open on it is read no more, as the core's is.
-      for session in opened.withLock({ $0 }) where session.reference.hasPrefix("\(row.name)-key/") {
-        session.end("This phone is no longer paired with the server this session is on")
-      }
-      let turnedTo: String? =
-        if stoodThere, case .remote(_, let beginsIn) = currentOutlook() { beginsIn.said } else { nil }
-      let why: String? =
-        removedThere
-        ? "\(name) removed this phone; pair with it again to reach it" : turnedTo.map { _ in "\(name) was removed" }
-      if let why {
-        say(turnedTo.map { "\(why). \($0)" } ?? why)
-      }
       tellServers()
-      turnedOutlook()
-      listingListeners.tell(currentListing())
-    }
-
-    /// Says `words` in the notice banner, until they are seen.
-    private func say(_ words: String) {
-      let said = notice.withLock { notice in
-        let next = Notice(id: (notice?.id ?? 0) + 100, words: words)
-        notice = next
-        return next
+      let latest = turned.withLock { $0 }.first(where: heldNames().contains) ?? heldNames().first
+      if windows.isEmpty {
+        let turnedTo = phoneStoodThere ? latest.map { "New sessions begin in \(shown($0))" } : nil
+        let why: String? =
+          removedThere
+          ? "\(name) removed this phone; pair with it again to reach it" : turnedTo.map { _ in "\(name) was removed" }
+        if let why {
+          unclaimed.withLock { $0.append(turnedTo.map { "\(why). \($0)" } ?? why) }
+        }
       }
-      noticeListeners.tell(said)
+      for (window, stoodThere) in zip(windows, stoodThere) {
+        window.forget(row.name, turningTo: stoodThere ? latest : nil)
+        // A Session open on it is read no more, as the core's is.
+        window.endSessions(on: row.name)
+        window.turnedOutlook()
+        window.tellListing()
+        var turnedTo: String?
+        if stoodThere, case .remote(_, let beginsIn) = window.outlookNow() {
+          turnedTo = beginsIn.said
+        }
+        let why: String? =
+          removedThere
+          ? "\(name) removed this phone; pair with it again to reach it" : turnedTo.map { _ in "\(name) was removed" }
+        if let why {
+          window.say(turnedTo.map { "\(why). \($0)" } ?? why)
+        }
+      }
     }
 
     private func change(_ change: (inout ThisDevice) -> Void) {
@@ -1077,6 +990,11 @@
         name: name, nameNote: note, fingerprint: fingerprint, pairAgain: scenario == .pairAgain ? pairAgain : nil,
         protocolVersion: 116)
     }
+  }
+
+  /// A window the fake handed out, held without holding it up.
+  private struct Held: Sendable {
+    weak var window: FakeWindow?
   }
 
   /// How the fake's phone stands at a relay.

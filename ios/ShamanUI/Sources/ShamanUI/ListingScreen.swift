@@ -6,7 +6,7 @@ import SwiftUI
 /// a Workspace and a field searching it by Title, and the bottom bar, with the sheet of Servers, Relays and This device
 /// behind its button. The screen above the columns, `ColumnsScreen`, follows what it shows.
 struct ListingScreen: View {
-  let core: any Core
+  let core: any WindowCore
   let appVersion: String
   let beginsIn: BeginsIn
   let model: ListingModel
@@ -18,7 +18,8 @@ struct ListingScreen: View {
 
   /// The listing `model` follows over `core`, confirming `invite` where one is given.
   init(
-    core: any Core, appVersion: String, beginsIn: BeginsIn, invite: String?, model: ListingModel, stack: SessionStack
+    core: any WindowCore, appVersion: String, beginsIn: BeginsIn, invite: String?, model: ListingModel,
+    stack: SessionStack
   ) {
     self.core = core
     self.appVersion = appVersion
@@ -259,7 +260,7 @@ private enum ListingSheet: Hashable, Identifiable {
 /// What the listing holds while it is up.
 @MainActor @Observable
 final class ListingModel {
-  private let core: any Core
+  private let core: any WindowCore
   private(set) var listing: Listing?
   /// Why the last act failed, shown in a banner over the listing until it is tapped away or has stood a while.
   private(set) var failure: String?
@@ -268,7 +269,7 @@ final class ListingModel {
   /// What takes the banner away once it has stood its while.
   private var clearing: Task<Void, Never>?
 
-  init(core: any Core, failureStands: Duration = .seconds(6)) {
+  init(core: any WindowCore, failureStands: Duration = .seconds(6)) {
     self.core = core
     self.failureStands = failureStands
   }
@@ -297,11 +298,11 @@ final class ListingModel {
   }
 
   func settle(_ session: String) async {
-    await act { () async throws(ActError) in try await core.settle(session) }
+    await act { () async throws(ActError) in try await core.device.settle(session) }
   }
 
   func unsettle(_ session: String) async {
-    await act { () async throws(ActError) in try await core.unsettle(session) }
+    await act { () async throws(ActError) in try await core.device.unsettle(session) }
   }
 
   func showMore() {
@@ -428,7 +429,7 @@ struct UnreachableSheetView: View {
 /// Trying an Unreachable Remote again, from its sheet.
 @MainActor @Observable
 final class TryAgainModel {
-  let core: any Core
+  let core: any WindowCore
   private let remote: String
   /// Whether the core is trying it now, during which the sheet takes no second try.
   private(set) var trying = false
@@ -436,7 +437,7 @@ final class TryAgainModel {
   /// or tried again.
   private(set) var failure: String?
 
-  init(core: any Core, remote: String) {
+  init(core: any WindowCore, remote: String) {
     self.core = core
     self.remote = remote
   }
@@ -452,7 +453,7 @@ final class TryAgainModel {
     trying = true
     defer { trying = false }
     do {
-      try await core.tryAgain(remote)
+      try await core.device.tryAgain(remote)
       failure = nil
       return true
     } catch {

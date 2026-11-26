@@ -288,7 +288,7 @@ private struct LandingField: View {
 /// is sent, the Session it began, which the screen turns into.
 @MainActor @Observable
 final class NewSessionModel {
-  private let core: any Core
+  private let core: any WindowCore
   private(set) var landing: Landing?
   /// The Session the first Prompt began, which the screen shows from then on.
   private(set) var begun: SessionModel?
@@ -301,6 +301,8 @@ final class NewSessionModel {
     }
   }
   @ObservationIgnored private var draftVersion: UInt64 = 0
+  /// Whether the field has opened on the draft kept, which it takes whole the first time alone.
+  @ObservationIgnored private var opened = false
   /// Whether the Session is to begin in a new Worktree rather than on the main one: the main one each time the screen
   /// opens, and again each time it turns to another Workspace.
   var newWorktree = false
@@ -311,12 +313,13 @@ final class NewSessionModel {
   /// Told of the Session begun, so what is open holds it as it holds a Session pushed.
   @ObservationIgnored var adopted: ((SessionModel) -> Void)?
 
-  init(core: any Core) {
+  init(core: any WindowCore) {
     self.core = core
   }
 
   /// Follows the Landing, and its draft, until the screen turns into the Session or goes; and again as it returns, when
-  /// the draft may hold what another new-session screen's field was given meanwhile.
+  /// the draft may hold what another new-session screen's field of this window was given meanwhile, which it takes,
+  /// and never what one in another window was.
   func follow() async {
     var drafts: Task<Void, Never>?
     defer { drafts?.cancel() }
@@ -326,7 +329,14 @@ final class NewSessionModel {
       }
       self.landing = landing
       if drafts == nil {
-        take(core.draft(for: landing.draft))
+        let kept = core.draft(for: landing.draft)
+        if opened {
+          take(kept, retaking: true)
+        } else {
+          opened = true
+          draftVersion = kept.version
+          text = kept.text
+        }
         let key = landing.draft
         drafts = Task { [weak self] in await self?.followDraft(key) }
       }
@@ -349,11 +359,13 @@ final class NewSessionModel {
     }
   }
 
-  /// Takes the draft the core holds into the field: what it gave back always wins over what is typed meanwhile.
-  private func take(_ draft: Draft) {
-    draftVersion = draft.version
-    if text != draft.text {
-      text = draft.text
+  /// Takes into the field what the core gave back since the version it holds, ahead of its own text, or, where it is
+  /// `retaking` as the screen is shown again, the text its own window kept; never another window's typing.
+  private func take(_ draft: Draft, retaking: Bool = false) {
+    let taken = draft.taken(into: text, over: draftVersion, retaking: retaking)
+    draftVersion = max(draftVersion, draft.version)
+    if text != taken {
+      text = taken
     }
   }
 
@@ -386,13 +398,14 @@ final class NewSessionModel {
   #Preview("Where the Outlook stands") {
     NavigationStack {
       NewSessionScreen(
-        model: NewSessionModel(core: FakeCore(.composing)), stack: SessionStack(core: FakeCore(.composing)))
+        model: NewSessionModel(core: FakeWindow(.composing)), stack: SessionStack(core: FakeWindow(.composing)))
     }
   }
 
   #Preview("Where no workspace is remembered") {
     NavigationStack {
-      NewSessionScreen(model: NewSessionModel(core: FakeCore(.paired)), stack: SessionStack(core: FakeCore(.paired)))
+      NewSessionScreen(
+        model: NewSessionModel(core: FakeWindow(.paired)), stack: SessionStack(core: FakeWindow(.paired)))
     }
   }
 #endif

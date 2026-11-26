@@ -7,18 +7,27 @@
   /// is given a file, its drafts are kept there as text alone as the app leaves the front, and read back as it is
   /// made, as the core keeps them from one run to the next; otherwise they last for its life.
   final class FakeActs: Sendable {
-    /// One composer's draft, versioned as the core versions it.
+    /// One composer's draft, versioned as the core versions it, and the phone's however many windows show it.
     private struct Held {
       var text = ""
       var version: UInt64 = 0
-      /// The text given back at each version Swift may not have heard of yet.
-      var given: [(UInt64, String)] = []
+      /// The text given back at each of the latest versions, which a field may not have heard of yet.
+      var given: [GivenBack] = []
+      /// The window that last wrote it, where one has.
+      var by: Int?
+      /// The latest version each writer has written over, by its window.
+      var heard: [Int?: UInt64] = [:]
+
+      /// The draft as a field of the window `window` is told it.
+      func draft(for window: Int?) -> Draft {
+        Draft(text: text, version: version, given: given, writtenHere: by == nil || by == window)
+      }
     }
 
     private let drafts: Mutex<[String: Held]>
     /// Where the drafts are kept, if anywhere.
     private let kept: URL?
-    private let draftListeners = Mutex<[String: Listeners<Draft>]>([:])
+    private let draftListeners = Mutex<[String: Listeners<Held>]>([:])
     private let underWay = Mutex(0)
     private let listeners = Listeners<Bool>()
 
@@ -50,31 +59,42 @@
       listeners.stream(now: underWay.withLock { $0 > 0 })
     }
 
-    func draft(for session: String) -> Draft {
-      drafts.withLock { drafts in
-        let held = drafts[session] ?? Held()
-        return Draft(text: held.text, version: held.version)
+    /// The draft of `session` as a field of the window `window` is told it.
+    func draft(for session: String, in window: Int? = nil) -> Draft {
+      drafts.withLock { ($0[session] ?? Held()).draft(for: window) }
+    }
+
+    /// The draft of `session` as the window `window` is told it, now and each time the fake changes it on its own.
+    func drafts(for session: String, in window: Int? = nil) -> AsyncStream<Draft> {
+      let told = draftListening(session).stream(now: drafts.withLock { $0[session] ?? Held() })
+      return AsyncStream { continuation in
+        let following = Task {
+          for await held in told {
+            continuation.yield(held.draft(for: window))
+          }
+          continuation.finish()
+        }
+        continuation.onTermination = { _ in following.cancel() }
       }
     }
 
-    func drafts(for session: String) -> AsyncStream<Draft> {
-      draftListening(session).stream(now: draft(for: session))
-    }
-
-    /// Holds `text` written over `version`, keeping what was given back since ahead of it, as the core does.
-    func setDraft(_ text: String, version: UInt64, for session: String) {
-      let merged = drafts.withLock { drafts -> Draft? in
+    /// Holds `text` written over `version` in the window `window`, keeping what was given back since ahead of it, as
+    /// the core does.
+    func setDraft(_ text: String, version: UInt64, for session: String, in window: Int? = nil) {
+      let merged = drafts.withLock { drafts -> Held? in
         var held = drafts[session] ?? Held()
-        let unseen = held.given.filter { $0.0 > version }.map(\.1)
+        held.by = window
+        let seen = max(version, held.heard[window] ?? 0)
+        held.heard[window] = seen
+        let unseen = held.given.filter { $0.version > seen }.map(\.text)
         if unseen.isEmpty {
-          held.given = []
           held.text = text
           drafts[session] = held
           return nil
         }
         held.text = unseen.reduce(text) { written, given in Self.ahead(given, of: written) }
         drafts[session] = held
-        return Draft(text: held.text, version: held.version)
+        return held
       }
       if let merged {
         draftListening(session).tell(merged)
@@ -92,27 +112,30 @@
 
     /// Gives `text` back to the composer of `session`, ahead of anything written there, as the core does.
     func giveBack(_ text: String, to session: String) {
-      let draft = drafts.withLock { drafts in
+      let held = drafts.withLock { drafts in
         var held = drafts[session] ?? Held()
         held.version += 1
-        held.given.append((held.version, text))
+        held.given.append(GivenBack(version: held.version, text: text))
+        if held.given.count > 16 {
+          held.given.removeFirst()
+        }
         held.text = Self.ahead(text, of: held.text)
         drafts[session] = held
-        return Draft(text: held.text, version: held.version)
+        return held
       }
-      draftListening(session).tell(draft)
+      draftListening(session).tell(held)
     }
 
     private static func ahead(_ given: String, of written: String) -> String {
       written.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? given : "\(given)\n\(written)"
     }
 
-    private func draftListening(_ session: String) -> Listeners<Draft> {
+    private func draftListening(_ session: String) -> Listeners<Held> {
       draftListeners.withLock { listeners in
         if let held = listeners[session] {
           return held
         }
-        let made = Listeners<Draft>()
+        let made = Listeners<Held>()
         listeners[session] = made
         return made
       }

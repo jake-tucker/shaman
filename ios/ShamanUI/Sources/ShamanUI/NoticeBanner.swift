@@ -7,7 +7,7 @@ import SwiftUI
 /// shows it, is never seen for it.
 @MainActor @Observable
 final class NoticeModel {
-  private let core: any Core
+  private let core: any WindowCore
   private(set) var notice: Notice?
   /// How long a notice stands on screen before it goes by itself.
   private let stands: Duration
@@ -20,7 +20,7 @@ final class NoticeModel {
   /// What takes the notice away once it has stood its while on screen.
   private var clearing: Task<Void, Never>?
 
-  init(core: any Core, stands: Duration = .seconds(8)) {
+  init(core: any WindowCore, stands: Duration = .seconds(8)) {
     self.core = core
     self.stands = stands
   }
