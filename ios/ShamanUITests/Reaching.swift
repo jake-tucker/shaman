@@ -116,8 +116,10 @@ extension XCUIApplication {
   }
 
   /// Has the app leave the front, as switching to another does: the Home button does nothing on a Duo from a test.
+  /// Settings is launched afresh and not activated, as an activation of the one an earlier test left behind has found
+  /// it gone on a slow runner and waited a minute for it before failing.
   func leaveTheFront(file: StaticString = #filePath, line: UInt = #line) {
-    XCUIApplication(bundleIdentifier: "com.apple.Preferences").activate()
+    XCUIApplication(bundleIdentifier: "com.apple.Preferences").launch()
     XCTAssertTrue(
       wait(for: .runningBackground, timeout: 10) || wait(for: .runningBackgroundSuspended, timeout: 5),
       "the app left the front", file: file, line: line)
