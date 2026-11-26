@@ -68,12 +68,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Minutes are what the job may take. The first run's, of the Pro alone, took 77, 59 of them the app's 135 tests
-        # one after another and 9 the package's; the UI tests have grown since and go on growing.
+        # Minutes are what the job may take, half as long again as it took on 26 November 2026, as the UI tests go on
+        # growing: the Pro's 149, 127 of them its app's 277 tests one after another; the closed Duo's 100, 85 of them
+        # its 167; and the Pro Max's ran out at 90, having passed 51 of its 66 in 74.
         include:
-          - { simulator: pro, device: iPhone 18 Pro, minutes: 150 }
+          - { simulator: pro, device: iPhone 18 Pro, minutes: 225 }
           - { simulator: duo, device: closed iPhone Duo, minutes: 150 }
-          - { simulator: pro-max, device: iPhone 18 Pro Max, minutes: 90 }
+          - { simulator: pro-max, device: iPhone 18 Pro Max, minutes: 180 }
     runs-on: xcode-27
     timeout-minutes: ${{ matrix.minutes }}
     env:
