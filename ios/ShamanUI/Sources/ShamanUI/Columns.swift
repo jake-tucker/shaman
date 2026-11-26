@@ -194,16 +194,17 @@ final class Columns: UISplitViewController {
   /// stays away until the next. Not from under anything moving, as the Aside going, a push or a pop, or a sheet over
   /// the columns going: once it has ended, where it is still to be asked for then.
   private func standSidebar() {
-    guard isViewLoaded, view.window != nil else { return }
-    if let moving {
-      guard !sidebarOwed else { return }
+    guard isViewLoaded, view.window != nil, !sidebarOwed else { return }
+    // Owed to the first of what moves that will say it has ended. One that will not cannot be waited for.
+    for moving in moving {
       sidebarOwed = true
-      moving.animate(alongsideTransition: nil) { [weak self] _ in
+      let waits = moving.animate(alongsideTransition: nil) { [weak self] _ in
         guard let self else { return }
         sidebarOwed = false
         standSidebar()
       }
-      return
+      if waits { return }
+      sidebarOwed = false
     }
     guard !isCollapsed, stack.path.isEmpty, displayMode == .secondaryOnly else { return }
     #if DEBUG
@@ -214,9 +215,11 @@ final class Columns: UISplitViewController {
 
   /// What moves in the columns now, or over them: the split view itself, either column's navigation controller, or a
   /// sheet over them.
-  private var moving: (any UIViewControllerTransitionCoordinator)? {
-    transitionCoordinator ?? main.transitionCoordinator ?? sidebar.transitionCoordinator
-      ?? presentedViewController?.transitionCoordinator
+  private var moving: [any UIViewControllerTransitionCoordinator] {
+    [
+      transitionCoordinator, main.transitionCoordinator, sidebar.transitionCoordinator,
+      presentedViewController?.transitionCoordinator,
+    ].compactMap { $0 }
   }
 
   #if DEBUG
