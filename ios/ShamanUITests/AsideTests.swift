@@ -8,38 +8,6 @@ final class AsideTests: TurningTestCase {
   private let delegating = "workstation-key/12"
   private let delegatingTitle = "Find what holds the session lock"
 
-  /// Waits until the Aside stands beside the main view under a bar reading `title`, with Back in it where it `pushed`
-  /// and nothing else, and the Sidebar behind its button.
-  @MainActor
-  private func asideStands(
-    _ app: XCUIApplication, at title: String, pushed: Bool = false, file: StaticString = #filePath, line: UInt = #line
-  ) {
-    let bar = app.navigationBars[title]
-    let main = element("session.conversation", in: app)
-    let button = app.buttons["session.aside"]
-    for _ in 0..<40 {
-      if bar.exists, main.exists, main.frame.maxX <= bar.frame.minX + 1, button.exists, button.label == "Hide aside",
-        bar.buttons.count == (pushed ? 1 : 0), !sidebarStands(app)
-      {
-        if pushed {
-          XCTAssertTrue(bar.buttons["BackButton"].isHittable, "its own Back", file: file, line: line)
-        }
-        return
-      }
-      RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-    }
-    XCTFail("the Aside stands at \(title)", file: file, line: line)
-  }
-
-  /// Waits until no Aside stands and the Sidebar is back beside the main view.
-  @MainActor
-  private func noAsideStands(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-    columnsStand(app, file: file, line: line)
-    waitForOne("session.aside", "label == 'Show aside'", in: app, file: file, line: line)
-    XCTAssertFalse(element("work.list", in: app).exists, file: file, line: line)
-    XCTAssertFalse(element("tree.row", in: app).exists, file: file, line: line)
-  }
-
   /// The main view's Back, where the Aside has one of its own beside it.
   @MainActor
   private func mainBack(_ app: XCUIApplication) -> XCUIElement {
@@ -56,48 +24,11 @@ final class AsideTests: TurningTestCase {
     XCTAssertTrue(app.otherElements["approval.sheet"].waitForNonExistence(timeout: 10), file: file, line: line)
   }
 
-  @MainActor
-  private func sidebarStands(_ app: XCUIApplication) -> Bool {
-    let scope = app.buttons["listing.scope"]
-    return scope.exists && scope.isHittable
-  }
-
-  /// The card of the Turn whose line reads `line`, where a tap reaches it.
-  @MainActor @discardableResult
-  private func card(_ line: String, in app: XCUIApplication) -> XCUIElement {
-    app.scrolled(to: element("session.turn", holding: line, in: app), over: element("session.conversation", in: app))
-  }
-
   /// Opens the Session the listing's row `title` names from the Sidebar, called back over the Aside.
   @MainActor
   private func openFromTheSidebar(_ title: String, in app: XCUIApplication) {
     app.buttons["Show Sidebar"].firstMatch.tap()
     open(title, in: app)
-  }
-
-  /// Sends `text` to the open Session, at rest, which begins a Turn a moment later, as its bar says by offering Stop, and
-  /// puts the keyboard down where one is up, as it leaves the conversation no room for a card.
-  @MainActor
-  private func beginTurn(_ text: String, in app: XCUIApplication) {
-    let composer = element("session.composer", in: app)
-    composer.tap()
-    composer.typeText(text)
-    app.buttons["session.send"].tap()
-    XCTAssertTrue(app.buttons["session.stop"].waitForExistence(timeout: 20), "a Turn began")
-    let keyboard = app.keyboards.firstMatch
-    guard keyboard.exists, keyboard.frame.minY < app.window.frame.maxY - 100 else { return }
-    // From the foot of the conversation, above the bar, down over the keyboard.
-    element("session.bar", in: app).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
-      .withOffset(CGVector(dx: 0, dy: -20))
-      .press(forDuration: 0.05, thenDragTo: app.point(across: 0.3, down: 0.98))
-    XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10), "the keyboard is put down")
-  }
-
-  /// Stops the open Session's Turn.
-  @MainActor
-  private func stopTurn(in app: XCUIApplication) {
-    app.buttons["session.stop"].tap()
-    XCTAssertTrue(app.buttons["session.stop"].waitForNonExistence(timeout: 10), "stopped")
   }
 
   /// Waits until the Aside stands saying `words` where its work would be, under a bar that says nothing.
