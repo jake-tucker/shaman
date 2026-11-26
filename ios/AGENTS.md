@@ -563,8 +563,9 @@ If the phone is locked, stop and ask for it to be unlocked.
   column's navigation controller or a sheet over them, it asks once that has ended, if it is still to. At the end of a
   size transition it asks only where the Sidebar stood before it, read before the split view hears of the new size, so
   a Sidebar put away by its own button, which the system keeps, stays away through a turn. It goes as something opens,
-  with nothing asked, or as the reader taps beside it, and is never stood over a touched new-session screen, which is
-  open.
+  `Columns` asking for the main view (`show(.secondary)`), as it does whenever something opens at the main view's root
+  and whenever the Sidebar stands over it, or as the reader taps beside it, and is never stood over a touched
+  new-session screen, which is open.
 - Everything the app keeps, the core keeps, in the one directory `CoreDirectory.prepare` makes and keeps out of
   backups, but for the scene's storage: what was open, as `KeptScene`, which iOS keeps for the scene and the core
   never sees. Nothing goes in `UserDefaults` or `@AppStorage`. UIKit puts one key there itself, with no way not to:

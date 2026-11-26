@@ -105,7 +105,7 @@ import UIKit
     #expect(hosted.stack.path.isEmpty)
   }
 
-  @Test func itStandsOverTheMainViewAsThePathEmptiesAndGoesAsSomethingOpensWithNothingAsked() async throws {
+  @Test func itStandsOverTheMainViewAsThePathEmptiesAndGoesAsSomethingOpensAndTheMainViewIsAskedFor() async throws {
     let hosted = try await HostedColumns(open: [open], size: Self.portrait)
     defer { hosted.close() }
     try await stands(.secondaryOnly, in: hosted, "a Session alone")

@@ -321,8 +321,9 @@ final class Columns: UISplitViewController {
       main.setViewControllers(asked, animated: kept > 0 && view.window != nil)
       owed = held != asked
     }
-    // Shown in the listing's place where it stands alone, and from under it where the system stands it over the main
-    // view, which puts it away.
+    // The main view is asked for as something opens at its root, wherever the listing stands alone, and wherever the
+    // system stands the Sidebar over the main view: shown in the listing's place, or from under the Sidebar, which that
+    // puts away. Where the Sidebar stands beside the main view, asking moves nothing.
     if kept == 0 || listingAlone || displayMode == .oneOverSecondary {
       givingWay = listingAlone
       show(.secondary)

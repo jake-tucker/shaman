@@ -86,7 +86,7 @@ final class PosedPortraitTests: XCTestCase {
     mainViewStandsAlone(app, showing: "landing.title")
     XCTAssertFalse(
       element("landing.composer", in: app).value(forKey: "hasKeyboardFocus") as? Bool ?? false, "at rest")
-    // Shown again by its button, a Session chosen from it stands alone, the Sidebar going with nothing asked.
+    // Shown again by its button, a Session chosen from it stands alone, the Sidebar going as the main view is asked for.
     app.buttons["Show Sidebar"].firstMatch.tap()
     sidebarStandsOver(app)
     let row = app.descendants(matching: .any).matching(identifier: "listing.active")
