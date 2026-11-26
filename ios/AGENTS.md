@@ -378,8 +378,8 @@ simulator. A press answered as done may have done nothing, so after each it read
 active and how the device is held. Each pose is begun from closed, so a lost "Open" is noticed. A lost "Partially Open"
 is not: neither of those, nor a window's size, tells open flat from partly open, so a test of the book or the laptop
 pose has to hold something the fold moves, or it passes on a Duo that never folded, as the book's first does, which
-holds how the bar stands alone. The book's others hold where the columns divide, and the laptop's where a Session
-stands about the fold. Never `simctl io screenConfig power` on a Duo either: it leaves SpringBoard crashing until the
+holds how the bar stands alone. The book's others hold where the columns divide and where pairing stands, and the
+laptop's where a Session stands about the fold. Never `simctl io screenConfig power` on a Duo either: it leaves SpringBoard crashing until the
 simulator is booted again.
 
 Several Device Hubs may run, and one that is stuck cannot be told from the rest by name, so the script addresses them by
@@ -558,10 +558,12 @@ If the phone is locked, stop and ask for it to be unlocked.
 - Where the split view stands the main view alone while nothing is open, as on the inner display in portrait, `Columns`
   asks for the Sidebar's column (`show(.primary)`), and the system stands it over the dimmed new-session screen. It asks
   only where it is not collapsed and its display mode is the main view alone, at four moments: as it appears, as it says
-  it did expand, as a size transition ends and as the path empties. At the end of a size transition it asks only where
-  the Sidebar stood before it, read before the split view hears of the new size, so a Sidebar put away by its own
-  button, which the system keeps, stays away through a turn. It goes as something opens, with nothing asked, or as the
-  reader taps beside it, and is never stood over a touched new-session screen, which is open.
+  it did expand, as a size transition ends and as the path empties. From under anything moving, the split view, either
+  column's navigation controller or a sheet over them, it asks once that has ended, if it is still to. At the end of a
+  size transition it asks only where the Sidebar stood before it, read before the split view hears of the new size, so
+  a Sidebar put away by its own button, which the system keeps, stays away through a turn. It goes as something opens,
+  with nothing asked, or as the reader taps beside it, and is never stood over a touched new-session screen, which is
+  open.
 - Everything the app keeps, the core keeps, in the one directory `CoreDirectory.prepare` makes and keeps out of
   backups, but for the scene's storage: what was open, as `KeptScene`, which iOS keeps for the scene and the core
   never sees. Nothing goes in `UserDefaults` or `@AppStorage`. UIKit puts one key there itself, with no way not to:

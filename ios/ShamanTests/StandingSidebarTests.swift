@@ -325,10 +325,9 @@ import UIKit
   }
 
   @Test func foldedLikeABookTheContainerSetsAndShowsNothingAsTheFoldComesAndGoes() async throws {
-    // The pose reads no fold standing upright, which the package's tests hold, so the container hears nothing of the
-    // book's, and the split view divides the columns at it by itself, given no least width for the main view. Told
-    // of a fold all the same, it sets nothing.
-    let fold = Fold(top: 314.5, bottom: 354.5, window: Self.landscape.height)
+    // The split view divides the columns at the book's fold by itself, given no least width for the main view, and the
+    // container hears nothing of it: only pairing reads it. Handed it, as the pose is, the container sets nothing.
+    let fold = BookFold(leading: 455.5, window: Self.landscape.width)
     for path in [[open], []] {
       let hosted = try await HostedColumns(open: path, size: Self.landscape)
       #expect(!hosted.stack.aside.shown, "the Aside not shown")
@@ -336,7 +335,7 @@ import UIKit
       #expect(hosted.columns.minimumSecondaryColumnWidth == UISplitViewController.automaticDimension)
       let stood = Stood(hosted)
       for told in [fold, nil, fold, nil] {
-        hosted.stack.pose.fold = told
+        hosted.stack.pose.book = told
         hosted.columns.view.setNeedsLayout()
         hosted.columns.view.layoutIfNeeded()
         try await hosted.settle()
