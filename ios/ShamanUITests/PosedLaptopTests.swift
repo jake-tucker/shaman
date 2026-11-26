@@ -2,8 +2,8 @@ import XCTest
 
 /// The Duo sat like a laptop, partly folded and turned: run by `scripts/ios-test.sh posed laptop`.
 ///
-/// What holds that it folded is where things stand about the fold, as the display open flat in the same portrait has the
-/// conversation run on to its foot, and no Aside.
+/// What holds that it folded is where things stand about the fold, as the display open flat in the same portrait has
+/// the conversation run on to its foot, and no Aside.
 final class PosedLaptopTests: XCTestCase {
   /// The band kept for the fold, across the window.
   private let band: ClosedRange<CGFloat> = 455.5...495.5
@@ -422,5 +422,47 @@ final class PosedLaptopTests: XCTestCase {
       attach("Launched sat like a laptop")
       app.terminate()
     }
+  }
+
+  /// Pairing at the root of a phone holding no Remote, over the fake scanner, which holds up the workstation's Invite
+  /// twenty seconds after it starts, so that it is still looking while the test looks at it: the scanner's picture
+  /// stands whole in the upper half, its words over it at its foot, and the forms scroll through the fold. What holds
+  /// that it folded is the picture ending at the fold, as open flat in portrait it runs on to the window's foot.
+  @MainActor
+  func testPairingsScannerStandsWholeInTheUpperHalfAndItsFormsScrollThroughTheFold() throws {
+    let app = try Pose.laptop.launched(
+      self,
+      [
+        "--fake", "fresh", "--forget-scene", "--scan", "shaman-v1-fake-workstation", "--scan-every", "20",
+      ])
+    XCTAssertTrue(app.staticTexts["Pair with a server"].waitForExistence(timeout: 10), "pairing alone is offered")
+    let window = app.window.frame
+    let form = app.collectionViews.firstMatch
+    waits("where pairing begins runs through the fold", in: app) {
+      form.exists && form.frame.minY < band.lowerBound && form.frame.maxY > band.upperBound + 300
+    }
+    attach("Where pairing begins, sat like a laptop")
+
+    app.buttons["pairing.scan"].tap()
+    let picture = element("scan.picture", in: app)
+    let looking = app.staticTexts["scan.looking"]
+    waits("the scanner's picture ends at the fold", in: app) {
+      picture.exists && abs(picture.frame.maxY - band.lowerBound) <= 1
+    }
+    XCTAssertGreaterThan(picture.frame.minY, 0, "below the title's bar")
+    XCTAssertEqual(picture.frame.width, window.width, accuracy: 1, "\(picture.frame)")
+    XCTAssertTrue(looking.exists)
+    XCTAssertLessThan(looking.frame.maxY, band.lowerBound, "its words over its picture")
+    XCTAssertGreaterThan(looking.frame.minY, picture.frame.midY, "at its foot")
+    XCTAssertEqual(looking.frame.midX, window.midX, accuracy: 1, "in the middle")
+    attach("The scanner, sat like a laptop")
+
+    // Scanning as ever, it takes the Invite it is shown.
+    XCTAssertTrue(app.navigationBars["Pair"].waitForExistence(timeout: 60), "the confirmation of the Invite read")
+    XCTAssertTrue(element("confirm.hostname", in: app).waitForExistence(timeout: 10))
+    waits("the confirmation runs through the fold", in: app) {
+      form.exists && form.frame.minY < band.lowerBound && form.frame.maxY > band.upperBound + 300
+    }
+    attach("The confirmation, sat like a laptop")
   }
 }
