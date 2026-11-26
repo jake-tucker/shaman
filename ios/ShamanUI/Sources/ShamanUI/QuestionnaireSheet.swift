@@ -6,13 +6,30 @@ import SwiftUI
 /// answers", and "Decline" in the corner. There is no review page. What the reader has half given is the screen's
 /// own, kept while the Session's screen stays open, so swiped away and reviewed it returns as it was left. It takes no
 /// tap for a moment after it appears, and answers sent dim it until the Server answers.
+///
+/// Sat like a laptop, as `pose` says, it is offered one more height, the half below the fold, and stands there,
+/// presented in the pose or up as the pose is entered, unless one of its fields holds the keyboard; it goes to full
+/// height as a field takes the keyboard, and as the pose is left. It is the one thing a change of pose moves on
+/// purpose, as the reader never chose its height; within the pose it is left where the reader puts it.
 struct QuestionnaireSheet: View {
   let questionnaire: PendingQuestionnaire
   let model: SessionModel
+  /// How the window stands, which the sheet reads the fold from.
+  let pose: Pose?
   @Environment(\.interventionArming) private var arming
   @State private var armed = false
   /// The page whose field holds the keyboard, and none where none does.
   @FocusState private var writing: Int?
+  /// The height the sheet stands at, of those it is offered.
+  @State private var height: PresentationDetent
+
+  init(questionnaire: PendingQuestionnaire, model: SessionModel, pose: Pose?) {
+    self.questionnaire = questionnaire
+    self.model = model
+    self.pose = pose
+    // Presented in the pose, where no field of it can hold the keyboard yet, it begins on the half below the fold.
+    _height = State(initialValue: pose?.fold?.halfBelow ?? .large)
+  }
 
   var body: some View {
     let draft = model.draft(of: questionnaire)
@@ -56,7 +73,15 @@ struct QuestionnaireSheet: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("questionnaire.sheet")
-    .presentationDetents([.large])
+    .presentationDetents(Self.heights(about: pose?.fold), selection: $height)
+    .onChange(of: pose?.fold) { old, fold in
+      height = Self.height(height, from: old, to: fold, writing: writing != nil)
+    }
+    .onChange(of: writing) { _, writing in
+      if writing != nil {
+        height = .large
+      }
+    }
     .presentationDragIndicator(.visible)
     .presentationBackground(Color(.systemBackground))
     .interactiveDismissDisabled(sending)
@@ -67,6 +92,33 @@ struct QuestionnaireSheet: View {
       try? await Task.sleep(for: arming)
       armed = !Task.isCancelled
     }
+  }
+}
+
+extension QuestionnaireSheet {
+  /// The heights the sheet is offered: full height, and the half below `fold` while there is one.
+  fileprivate static func heights(about fold: Fold?) -> Set<PresentationDetent> {
+    fold.map { [$0.halfBelow, .large] } ?? [.large]
+  }
+
+  /// The height the sheet stands at, standing at `height`, as the fold changes `from` one `to` another: on the half below
+  /// as the pose is entered, unless a field is `writing`; at full height as it is left; and within the pose where it
+  /// stood, on the half below the fold read again where it stood on the half.
+  fileprivate static func height(
+    _ height: PresentationDetent, from old: Fold?, to fold: Fold?, writing: Bool
+  ) -> PresentationDetent {
+    guard let fold else { return .large }
+    guard let old else { return writing ? .large : fold.halfBelow }
+    return height == old.halfBelow ? fold.halfBelow : height
+  }
+}
+
+extension Fold {
+  /// The half below the fold as a height a sheet stands at, its top 8 points past the band kept for the fold, so that
+  /// what stands in its corner is clear of the band. A height detent stands 42 points taller than it is asked, the
+  /// window's bottom safe area and 8 more, so it is asked for that half less 50.
+  fileprivate var halfBelow: PresentationDetent {
+    .height(max(0, window - bottom - 50))
   }
 }
 

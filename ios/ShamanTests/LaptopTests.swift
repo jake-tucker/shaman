@@ -621,3 +621,162 @@ import UIKit
     try await laptop.standsNowhere()
   }
 }
+
+extension Laptop {
+  /// The sheet presented over the columns, and how it stands.
+  var sheet: UIViewController? { hosted.columns.presentedViewController }
+  var sheetHeights: UISheetPresentationController? { sheet?.sheetPresentationController }
+  /// Where its top stands in the window.
+  var sheetTop: CGFloat? { sheet?.view.map { frame($0).minY } }
+  /// The field on the page the sheet is at.
+  var sheetField: UITextView? { sheet.flatMap { all(UITextView.self, in: $0.view).first { $0.isEditable } } }
+  /// Whether it is at full height.
+  var sheetIsFull: Bool { sheetHeights?.selectedDetentIdentifier == .large }
+
+  /// Waits until a sheet stands, offered full height and nothing else, or also the half below the fold, where it is
+  /// `offeredTheHalf`, and at full height, or `atTheHalf`, its top 8 points past the band kept for the fold.
+  func sheetStands(
+    offeredTheHalf: Bool, atTheHalf: Bool, sourceLocation: SourceLocation = #_sourceLocation
+  ) async throws {
+    let laptop = self
+    try await until(
+      {
+        laptop.sheetHeights?.detents.count == (offeredTheHalf ? 2 : 1) && laptop.sheetIsFull != atTheHalf
+          && laptop.sheet?.transitionCoordinator == nil
+      }, sourceLocation: sourceLocation)
+    try await hosted.settle()
+    let heights = try #require(sheetHeights, sourceLocation: sourceLocation)
+    #expect(heights.detents.count == (offeredTheHalf ? 2 : 1), sourceLocation: sourceLocation)
+    #expect(
+      sheetIsFull != atTheHalf, "at \(heights.selectedDetentIdentifier?.rawValue ?? "none")",
+      sourceLocation: sourceLocation)
+    // A height detent stands taller than it is asked by the window's bottom safe area and, on a Duo, 8 more, which a
+    // window of the test's own on an ordinary iPhone does not add; that the top is 8 points past the band is held by
+    // `PosedLaptopTests`. Full height begins well above the fold, lower here than on a Duo, at 166.
+    let top = try #require(sheetTop, sourceLocation: sourceLocation)
+    if atTheHalf {
+      #expect(top > Self.fold.bottom && top < Self.fold.bottom + 17, "\(top)", sourceLocation: sourceLocation)
+    } else {
+      #expect(top < Self.fold.top - 200, "\(top)", sourceLocation: sourceLocation)
+    }
+  }
+
+  /// Has the field on the sheet's page take the keyboard, or put it down.
+  func writes(_ writing: Bool = true, sourceLocation: SourceLocation = #_sourceLocation) async throws {
+    let laptop = self
+    // It takes no tap for a moment after it appears.
+    try await until({ laptop.sheetField?.isUserInteractionEnabled == true }, sourceLocation: sourceLocation)
+    try await Task.sleep(for: .milliseconds(800))
+    let field = try #require(sheetField, sourceLocation: sourceLocation)
+    if writing {
+      #expect(field.becomeFirstResponder(), sourceLocation: sourceLocation)
+    } else {
+      field.resignFirstResponder()
+    }
+    try await hosted.settle()
+  }
+}
+
+extension LaptopHostedTests {
+  /// The sheets of a Session's Interventions, sat like a laptop: a Questionnaire's height, which the app chooses, and an
+  /// Approval's, which the reader does. Among the laptop's tests, which run one at a time, as a field of a sheet here
+  /// and the composer's there take the app's one keyboard.
+  @Suite @MainActor struct Sheets {
+    private let asking = SessionRoute(session: "workstation-key/13")
+    private let approving = SessionRoute(session: "workstation-key/3")
+
+    @Test func aQuestionnairePresentedInThePoseStandsOnTheHalfBelowTheFoldAndGoesUpAsAFieldTakesTheKeyboard()
+      async throws
+    {
+      let laptop = try await Laptop(launched: [.session(asking)], scenario: .paired)
+      defer { laptop.close() }
+      try await laptop.sheetStands(offeredTheHalf: true, atTheHalf: true)
+      try await laptop.writes()
+      try await laptop.sheetStands(offeredTheHalf: true, atTheHalf: false)
+      // Put down, the keyboard leaves it up, as the reader may be writing on.
+      try await laptop.writes(false)
+      try await laptop.sheetStands(offeredTheHalf: true, atTheHalf: false)
+      // Laid flat, it is offered full height alone, as it is today.
+      try await laptop.sit(false)
+      try await laptop.sheetStands(offeredTheHalf: false, atTheHalf: false)
+    }
+
+    @Test func aQuestionnaireUpAsThePoseIsEnteredGoesDownUnlessAFieldHoldsTheKeyboardAndUpAsThePoseIsLeft()
+      async throws
+    {
+      let laptop = try await Laptop([.session(asking)])
+      defer { laptop.close() }
+      try await laptop.until { laptop.sheet != nil }
+      try await laptop.sheetStands(offeredTheHalf: false, atTheHalf: false)
+      let sheet = laptop.sheet
+      for _ in 0..<2 {
+        try await laptop.sit()
+        try await laptop.sheetStands(offeredTheHalf: true, atTheHalf: true)
+        try await laptop.sit(false)
+        try await laptop.sheetStands(offeredTheHalf: false, atTheHalf: false)
+      }
+      // With a field holding the keyboard, it stays at full height, the keyboard below, and keeps it.
+      try await laptop.writes()
+      let field = try #require(laptop.sheetField)
+      try await laptop.sit()
+      try await laptop.sheetStands(offeredTheHalf: true, atTheHalf: false)
+      #expect(field.isFirstResponder && laptop.sheetField === field)
+      try await laptop.sit(false)
+      try await laptop.sheetStands(offeredTheHalf: false, atTheHalf: false)
+      #expect(field.isFirstResponder)
+      try await laptop.writes(false)
+      try await laptop.sit()
+      try await laptop.sheetStands(offeredTheHalf: true, atTheHalf: true)
+      #expect(laptop.sheet === sheet, "the one sheet throughout")
+    }
+
+    @Test func aQuestionnaireTheReaderRaisesInThePoseStaysRaisedThroughTheFoldReadAgain() async throws {
+      let laptop = try await Laptop(launched: [.session(asking)], scenario: .paired)
+      defer { laptop.close() }
+      try await laptop.sheetStands(offeredTheHalf: true, atTheHalf: true)
+      // Raised, as a drag raises it, which tells whoever follows the sheet's height.
+      let heights = try #require(laptop.sheetHeights)
+      heights.animateChanges { heights.selectedDetentIdentifier = .large }
+      heights.delegate?.sheetPresentationControllerDidChangeSelectedDetentIdentifier?(heights)
+      try await laptop.sheetStands(offeredTheHalf: true, atTheHalf: false)
+      // A change of size announced and taken back, and the fold read again a hair lower, leave it where the reader put
+      // it, while the half it is offered goes with the fold.
+      laptop.stack.pose.turns(to: CGSize(width: Laptop.size.height, height: Laptop.size.width))
+      laptop.stack.pose.turns(to: Laptop.size)
+      laptop.stack.pose.fold = Fold(top: 455.7, bottom: 495.7, window: Laptop.size.height)
+      try await laptop.hosted.settle()
+      try await laptop.sheetStands(offeredTheHalf: true, atTheHalf: false)
+      // Lowered by the reader to the half, it goes with the fold read again.
+      heights.animateChanges {
+        heights.selectedDetentIdentifier = heights.detents.first { $0.identifier != .large }?.identifier
+      }
+      heights.delegate?.sheetPresentationControllerDidChangeSelectedDetentIdentifier?(heights)
+      try await laptop.sheetStands(offeredTheHalf: true, atTheHalf: true)
+      laptop.stack.pose.fold = Laptop.fold
+      try await laptop.sheetStands(offeredTheHalf: true, atTheHalf: true)
+    }
+
+    @Test func anApprovalIsLeftWhereTheReaderPutIt() async throws {
+      let laptop = try await Laptop([.session(approving)])
+      defer { laptop.close() }
+      try await laptop.until { laptop.sheetHeights != nil && laptop.sheet?.transitionCoordinator == nil }
+      try await laptop.hosted.settle()
+      let heights = try #require(laptop.sheetHeights)
+      let half = heights.selectedDetentIdentifier
+      #expect(heights.detents.count == 2 && half != .large, "at half height, as today")
+      for sat in [true, false, true, false] {
+        try await laptop.sit(sat)
+        #expect(heights.detents.count == 2)
+        #expect(heights.selectedDetentIdentifier == half)
+      }
+      // Raised to full height, as a drag raises it, it stays raised in the pose and out of it.
+      heights.animateChanges { heights.selectedDetentIdentifier = .large }
+      try await laptop.hosted.settle()
+      for sat in [true, false, true, false] {
+        try await laptop.sit(sat)
+        #expect(heights.detents.count == 2)
+        #expect(heights.selectedDetentIdentifier == .large)
+      }
+    }
+  }
+}

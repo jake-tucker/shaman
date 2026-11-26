@@ -1,21 +1,21 @@
 import ShamanCore
 import SwiftUI
-
-/// A Session open, read live as a conversation: the Title over where it stands, the user's
-/// Messages as bubbles at the right, the Agent's as Markdown across the width, and each Turn's work behind one card.
-/// It appears at once with what the listing knows, a quiet loading mark standing where the conversation will be. At
-/// its foot the bar says what the work is doing, with Stop, above the composer, whose send steers a working Turn and
-/// whose held send queues; a Prompt queued waits as a dashed bubble at the foot of the conversation. The Session's own
-/// Approval presents itself as a half-height sheet, and its Questionnaire as a full-height one; swiped away, either
-/// waits behind the orange bar's "Review". A Subagent's Intervention presents nothing here: the bar turns orange and
-/// says who needs the reader, and its "Review" pushes that Subagent's Session, where its sheet presents itself, or,
-/// where several wait, opens the tree. An act's failure is a banner over the screen, or over the sheet that asked,
-/// but a Session gone, which pops it. A Subagent's Session is named by the Subagent and has no composer. Where the tree
-/// the Session belongs to has Subagents, a button in the navigation bar opens it, and choosing an entry there has
-/// `stack` show that Session. Where the Aside has room beside it, the tree and what a Turn's card stands for are shown
-/// there, which a button in the bar shows and takes down, and the card whose work is on screen there is marked; where it
-/// has none, the tree is a sheet, and the work pushed. Sat like a laptop, the conversation ends at the fold with the bar
-/// at its foot, and the Aside stands below the fold over the composer, whatever is shown beside.
+///  A Session open, read live as a conversation: the Title over where it stands, the user's Messages as bubbles at the
+/// right, the Agent's as Markdown across the width, and each Turn's work behind one card. It appears at once with what
+/// the listing knows, a quiet loading mark standing where the conversation will be. At its foot the bar says what the
+/// work is doing, with Stop, above the composer, whose send steers a working Turn and whose held send queues; a Prompt
+/// queued waits as a dashed bubble at the foot of the conversation. The Session's own Approval presents itself as a
+/// half-height sheet, and its Questionnaire as a full-height one, or sat like a laptop on the half below the fold;
+/// swiped away, either waits behind the orange bar's "Review". A Subagent's Intervention presents nothing here: the bar
+/// turns orange and says who needs the reader, and its "Review" pushes that Subagent's Session, where its sheet
+/// presents itself, or, where several wait, opens the tree. An act's failure is a banner over the screen, or over the
+/// sheet that asked, but a Session gone, which pops it. A Subagent's Session is named by the Subagent and has no
+/// composer. Where the tree the Session belongs to has Subagents, a button in the navigation bar opens it, and choosing
+/// an entry there has `stack` show that Session. Where the Aside has room beside it, the tree and what a Turn's card
+/// stands for are shown there, which a button in the bar shows and takes down, and the card whose work is on screen
+/// there is marked; where it has none, the tree is a sheet, and the work pushed. Sat like a laptop, the conversation
+/// ends at the fold with the bar at its foot, and the Aside stands below the fold over the composer, whatever is shown
+/// beside.
 struct SessionScreen: View {
   let model: SessionModel
   /// What is open, which the Session is of, and an entry chosen in its tree is shown on.
@@ -112,7 +112,7 @@ struct SessionScreen: View {
       case .approval(let approval):
         ApprovalSheet(approval: approval, model: model)
       case .questionnaire(let questionnaire):
-        QuestionnaireSheet(questionnaire: questionnaire, model: model)
+        QuestionnaireSheet(questionnaire: questionnaire, model: model, pose: stack?.pose)
       }
     }
     .sheet(
