@@ -8,7 +8,8 @@ import UIKit
 ///
 /// What is open is `SessionStack.path` and nothing else. A change to it is asked of the main view's navigation
 /// controller, and what the reader pops there is read back as that controller says it did show a screen. While nothing
-/// is open the main view holds the new-session screen at rest.
+/// is open the main view holds the new-session screen at rest, and where the system stands the main view alone then, as
+/// on the inner display in portrait, the Sidebar is asked for over it.
 ///
 /// A notice is said once in the window: by the listing where it stands alone or over the main view, and by the main
 /// view otherwise, as the columns say in `SessionStack.noticeSaid`. The Aside never says one.
@@ -40,12 +41,15 @@ final class Columns: UISplitViewController {
   private var owed = false
   /// Whether the listing, standing alone, was asked to give way to the main view and has yet to.
   private var givingWay = false
+  /// Whether anything was open as the path was last written.
+  private var wasOpen: Bool
 
   init(stack: SessionStack, screens: Screens) {
     self.stack = stack
     self.screens = screens
     listing = HostedScreen(screens.handed(Self.said(screens.listing, listing: true, in: stack)))
     aside = HostedScreen(screens.handed(AnyView(screens.aside.environment(\.saysNotices, false))))
+    wasOpen = !stack.path.isEmpty
     super.init(style: .doubleColumn)
     delegate = self
     sidebar.delegate = self
@@ -61,8 +65,14 @@ final class Columns: UISplitViewController {
     preferredSplitBehavior = .tile
     minimumInspectorColumnWidth = Self.leastAside
     stack.moved = { [weak self] in
-      self?.follow()
-      self?.standAside()
+      guard let self else { return }
+      let emptied = wasOpen && stack.path.isEmpty
+      wasOpen = !stack.path.isEmpty
+      follow()
+      standAside()
+      if emptied {
+        standSidebar()
+      }
     }
     stack.aside.changed = { [weak self] in self?.standAside() }
     aside.appearing = { [weak self] in
@@ -172,9 +182,25 @@ final class Columns: UISplitViewController {
     sayStanding()
   }
 
+  // MARK: The Sidebar while nothing is open
+
+  /// Asks for the Sidebar's column where the split view stands the main view alone while nothing is open, as it does on
+  /// the inner display in portrait, where it will not tile: the system stands the Sidebar over the dimmed main view, and
+  /// puts it away again as something opens, or as the reader taps beside it. It is never stood over a field that holds
+  /// the keyboard, as the screen at rest is open once its field is touched. Asked only at the four moments the system
+  /// names, as the columns appear, expand and end a change of size and as the path empties, so a Sidebar put away
+  /// stays away until the next.
+  private func standSidebar() {
+    guard isViewLoaded, view.window != nil, !isCollapsed, stack.path.isEmpty, displayMode == .secondaryOnly else {
+      return
+    }
+    show(.primary)
+  }
+
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
     standAside()
+    standSidebar()
   }
 
   override func viewDidLayoutSubviews() {
@@ -187,8 +213,16 @@ final class Columns: UISplitViewController {
   override func viewWillTransition(to size: CGSize, with coordinator: any UIViewControllerTransitionCoordinator) {
     // Turned while partly folded, the fold read of the old size is not laid out against at the new.
     stack.pose.turns(to: size)
+    // Whether the Sidebar stood, read before the split view hears of the new size, as it changes its display mode as it
+    // does: put away by its own button, which the system keeps, it is not asked for after the change (#733).
+    let sidebarStood = isCollapsed || displayMode != .secondaryOnly
     super.viewWillTransition(to: size, with: coordinator)
-    coordinator.animate(alongsideTransition: nil) { [weak self] _ in self?.standAside() }
+    coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+      self?.standAside()
+      if sidebarStood {
+        self?.standSidebar()
+      }
+    }
   }
 
   // MARK: What is open
@@ -344,6 +378,7 @@ extension Columns: UISplitViewControllerDelegate {
     givingWay = false
     // Expanding as the listing is being returned to, the main view is to rest beside it.
     follow()
+    standSidebar()
   }
 }
 
