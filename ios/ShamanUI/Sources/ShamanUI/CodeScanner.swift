@@ -145,8 +145,14 @@ private struct CameraScanner: UIViewControllerRepresentable {
 /// `model` says it stands at the top of its stack, which the stack it is pushed on tells the model; the first code that
 /// is an Invite stops it and is handed on, and anything else is passed over while it keeps scanning. A camera that
 /// fails says so, offering Paste.
+///
+/// Its picture runs to the window's bottom edge, and stops at the side bar and under the title's bar. Where it is
+/// handed a `pose`, as pairing at the root hands it, it stands whole in the half before the fold while the device is
+/// partly folded, its words over its picture as ever, which goes on scanning through the fold as it comes and goes.
 struct ScanScreen: View {
   let model: ScanningModel
+  /// How the window stands about the fold, where the screen keeps to one side of it.
+  var pose: Pose?
   /// Takes the Invite read, or pasted once the camera failed.
   let found: (String) -> Void
   @Environment(\.codeScanner) private var scanner
@@ -157,7 +163,8 @@ struct ScanScreen: View {
         found(invite)
       }
     }
-    .ignoresSafeArea(edges: .bottom)
+    // Sat like a laptop, the picture ends at the fold, its foot the half below.
+    .ignoresSafeArea(edges: pose?.fold == nil ? .bottom : [])
     .overlay(alignment: .bottom) {
       VStack(spacing: 8) {
         if model.failed {
@@ -188,6 +195,7 @@ struct ScanScreen: View {
       .padding(.horizontal, 16)
       .padding(.bottom, 32)
     }
+    .standsBeforeTheFold(pose)
     .navigationTitle("Scan")
     .navigationBarTitleDisplayMode(.inline)
     // Appearing does not resume it: a back swipe begun over it and given up shows it for a moment while the
@@ -372,6 +380,10 @@ final class ScanOffer {
     override func viewDidLoad() {
       super.viewDidLoad()
       view.backgroundColor = .black
+      // So that a UI test finds where its picture stands.
+      view.isAccessibilityElement = true
+      view.accessibilityLabel = "Scanner"
+      view.accessibilityIdentifier = "scan.picture"
       drawn.contentMode = .scaleAspectFit
       drawn.layer.magnificationFilter = .nearest
       drawn.frame = view.bounds.insetBy(dx: 60, dy: 60)

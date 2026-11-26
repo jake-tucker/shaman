@@ -2,19 +2,35 @@ import ShamanCore
 import SwiftUI
 import UIKit
 
-/// What a phone holding no Remote offers, alone: pairing. Scan pushes the scanner, and the Invite it reads its
-/// confirmation screen over it; pasting an Invite pushes its confirmation screen.
+/// What a phone holding no Remote offers, alone, across the whole window: pairing. Scan pushes the scanner, and the
+/// Invite it reads its confirmation screen over it; pasting an Invite pushes its confirmation screen.
+///
+/// It is the root's, where it stands its screens, so the root's alone are laid out so: the sheet of "Servers & device"
+/// pushes the same screens, which the system places. Where pairing begins and the confirmation read in a column, as a
+/// conversation does, and the scanner's picture keeps the whole window. How the window stands about the fold is read
+/// here as it is above the columns: while the device is partly folded, the scanner stands whole in the half before the
+/// fold, the leading half partly folded like a book and the upper half sat like a laptop, and the forms stand in the
+/// leading half partly folded like a book, and sat like a laptop scroll through the fold. A fold tells the scanner
+/// nothing new.
 public struct PairingScreen: View {
   private let core: any WindowCore
   @State private var path: [PairingRoute]
   @State private var scanning: ScanningModel
+  /// How the window stands about the fold, as it is read here.
+  @State private var pose: Pose
 
   /// The screen over `core`, already confirming `invite` where one is given, as one arriving by the launch environment
   /// in a debug build is.
   public init(core: any WindowCore, invite: String? = nil) {
+    self.init(core: core, path: invite.map { [.confirm($0)] } ?? [], pose: Pose())
+  }
+
+  /// The screen over `core`, at `path`, reading how the window stands into `pose`.
+  init(core: any WindowCore, path: [PairingRoute], pose: Pose) {
     self.core = core
-    _path = State(initialValue: invite.map { [.confirm($0)] } ?? [])
+    _path = State(initialValue: path)
     _scanning = State(initialValue: ScanningModel(core: core))
+    _pose = State(initialValue: pose)
   }
 
   public var body: some View {
@@ -26,21 +42,71 @@ public struct PairingScreen: View {
       }
       // Where a server ended this phone's last pairing, what the core says of it stands here.
       .noticeBanner()
+      .readsInAColumn(pose)
       .navigationDestination(for: PairingRoute.self) { route in
         switch route {
         case .scan:
-          ScanScreen(model: scanning) { path.append(.confirm($0)) }
+          ScanScreen(model: scanning, pose: pose) { path.append(.confirm($0)) }
         case .confirm(let invite):
           // Back to the scanner where it read the Invite, and otherwise to where pairing begins.
           ConfirmationScreen(core: core, invite: invite) {
             path.removeLast()
           } paired: {
           }
+          .readsInAColumn(pose)
         }
       }
     }
     // The scanner scans only while it stands at the top of the path.
     .onChange(of: path, initial: true) { scanning.stands(atTop: path.last == .scan) }
+    .reads(pose)
+    .readsTheBooksFold(pose)
+  }
+}
+
+extension View {
+  /// Has a form pairing stands at the root read in a column at most as wide as a conversation reads, in the middle of
+  /// the window, on the grouped ground; and stand in the leading half partly folded like a book, as `pose` says, and
+  /// sat like a laptop scroll through the fold.
+  fileprivate func readsInAColumn(_ pose: Pose) -> some View {
+    frame(maxWidth: ReadingSides.widest)
+      .frame(maxWidth: .infinity)
+      .background { Color(.systemGroupedBackground).ignoresSafeArea() }
+      .standsBeforeTheFold(pose, scrollsThroughItSatLikeALaptop: true)
+  }
+
+  /// Stands it whole in the half of the window before the fold, the other half plain ground, while `pose` says the
+  /// device is partly folded: the leading half like a book, and the upper half sat like a laptop, unless it
+  /// `scrollsThroughItSatLikeALaptop`. With no pose, or none folded, it stands as it would without.
+  func standsBeforeTheFold(_ pose: Pose?, scrollsThroughItSatLikeALaptop: Bool = false) -> some View {
+    modifier(StandsBeforeTheFold(pose: pose, scrollsThrough: scrollsThroughItSatLikeALaptop))
+  }
+}
+
+/// The half after the fold as plain ground, as wide or tall as it is from where the band begins, so that what it holds
+/// ends at the fold, scrolling or not: the window's own safe area at that side is ignored, so the ground stands on the
+/// window's edge, and goes under the vertical bar standing there partly folded like a book. It pads what it holds, as a
+/// list runs on under an inset of the safe area and would scroll across the fold.
+private struct StandsBeforeTheFold: ViewModifier {
+  let pose: Pose?
+  let scrollsThrough: Bool
+
+  func body(content: Content) -> some View {
+    let book = pose?.book
+    let fold = scrollsThrough ? nil : pose?.fold
+    var edges: Edge.Set = []
+    if book != nil { edges.insert(.trailing) }
+    if fold != nil { edges.insert(.bottom) }
+    return
+      content
+      .padding(.trailing, book?.after ?? 0)
+      .padding(.bottom, fold?.below ?? 0)
+      .ignoresSafeArea(.container, edges: edges)
+      .background {
+        if !edges.isEmpty {
+          Color(.systemGroupedBackground).ignoresSafeArea()
+        }
+      }
   }
 }
 

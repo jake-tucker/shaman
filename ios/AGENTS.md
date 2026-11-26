@@ -11,7 +11,7 @@ app's shape. Everything here is built from a terminal on a Mac with Xcode 27.2; 
 | `Shaman.xcodeproj` | The project, in Xcode 27's JSON format (`project.xcproj`) with folders synced to disk, and the shared `Shaman` scheme |
 | `Shaman/` | The `Shaman` app target: `@main`, the choice of live core or fake, the Info settings |
 | `ShamanUI/` | A local package: the views, the `DeviceCore` and `WindowCore` protocols the app reaches the core through, `LiveCore` and `LiveWindow`, `FakeCore` and `FakeWindow`, and the adapters around the core. Its unit tests are `ShamanUIUnitTests` |
-| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the window a login's authentication sheet stands over, the conversation's list and the composer's foot under a ticking display link, the columns collapsing and expanding, every screen of the main view about a fold of the test's own and what Textual draws a Message's blocks as |
+| `ShamanTests/` | Unit tests hosted in the app, for what needs its entitlements, the Keychain item the identity key's blob is kept in, or a window in its scene, the window a login's authentication sheet stands over, the conversation's list and the composer's foot under a ticking display link, the columns collapsing and expanding, every screen of the main view and pairing at the root about a fold of the test's own, and what Textual draws a Message's blocks as |
 | `ShamanUITests/` | The XCUITest target |
 | `ShamanCore/` | The core and its generated Swift, written by `scripts/build-ios-core.sh`; ignored by git |
 | `build/` | Where the commands below put what `xcodebuild` makes; ignored by git |
@@ -223,6 +223,13 @@ needs to log in, and pairs by its direct ways with no login; one holding "relayo
 asks for the login and pairs by itself once it is done. In `pairAgain` the phone's records were of a key it no longer
 has, so no Server knows it, which the pairing screen says until it is dismissed.
 
+At the root, and not in the sheet, which pushes the same screens and which the system places, where pairing begins and
+the confirmation read in a column at most 700 points wide, in the middle, as a conversation does, which a turned Pro
+Max shows, and the scanner's picture keeps the whole display. `PairingScreen` reads the fold through `Pose` as the
+columns do, and the fold of the book pose too: partly folded, the scanner stands whole in the half before the fold, the
+leading half like a book and the upper half like a laptop, the other half plain ground; the forms stand in the leading
+half like a book and scroll through the fold like a laptop. A fold tells the scanner nothing, and it goes on scanning.
+
 **Scanning.** Scan asks for the camera the first time it is pressed, never at launch, and opens the scanner, VisionKit's
 data scanner behind `CodeScanner`, a seam that tells of each code that comes into sight and leaves, and of the camera
 failing; the screens find it in the environment, and what they say is the core's `ScanWords`. The scanner scans only
@@ -231,8 +238,9 @@ not start it. Returned to by "Scan again", it passes over the Invite it took unt
 simulator has no camera, so there Scan says so and Paste is the way in. A debug build launched with `--scan <code>`,
 given once for each code, runs over a fake scanner instead, started and stopped as the camera is: as it starts it sees
 again the code last in front of it, then holds up each code in turn, a second apart, or `--scan-every <seconds>` apart,
-each once over its life, drawing the code in front of it. `--camera refused` or `--camera unavailable` has it find the
-camera so, `--camera fails` has the camera fail as it starts, and `--camera granted` opens it with nothing to read.
+each once over its life, drawing the code in front of it, its picture named `scan.picture` to a UI test.
+`--camera refused` or `--camera unavailable` has it find the camera so, `--camera fails` has the camera fail as it
+starts, and `--camera granted` opens it with nothing to read.
 
 ```sh
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake fresh \
