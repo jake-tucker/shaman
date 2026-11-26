@@ -105,10 +105,13 @@ final class SessionStack {
   }
 
   /// Opens the Session `session` names, chosen in the listing, in place of whatever is open, read afresh; but where it
-  /// is what is open already, pops back to it.
+  /// is what is open already, pops back to it, its place in the Aside begun afresh.
   func open(_ session: String) {
     if let first = path.first, shows(first, session) {
       path = [first]
+      if let opened = openSession {
+        aside.startAfresh(opened)
+      }
     } else {
       path = [.session(SessionRoute(session: session))]
     }
@@ -212,11 +215,14 @@ final class SessionStack {
 
   /// Shows the Session `session` names, chosen in the tree of the Session pushed as `route`: nothing more where it is
   /// that one, popping back to it where it is on the path already, as its own screen or as the new-session screen it
-  /// was begun from, and pushing it over the path where it is not.
+  /// was begun from, its place in the Aside begun afresh, and pushing it over the path where it is not.
   func show(_ session: String, over route: SessionRoute) {
     guard route.session != session else { return }
     if let pushed = path.lastIndex(where: { shows($0, session) }) {
       path.removeSubrange(path.index(after: pushed)...)
+      if let opened = openSession {
+        aside.startAfresh(opened)
+      }
     } else {
       path.append(.session(SessionRoute(session: session)))
     }

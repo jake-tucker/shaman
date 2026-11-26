@@ -19,7 +19,8 @@ final class Aside {
   private(set) var kind: AsideKind
   /// How many times it was asked for the Turn whose work it is at, each of which returns to the top of that work.
   private(set) var returns = 0
-  /// Each Session's place in the work, where it has one other than its latest Turn's work, following.
+  /// The place in the work of each Session's screen on the main view's path, each its own, so that Back finds a
+  /// Session's as it was left; kept where it has one other than its latest Turn's work, following.
   private var places: [SessionRoute: Place] = [:]
 
   /// A Session's place in the work the Aside shows.
@@ -100,6 +101,12 @@ final class Aside {
       place.held = nil
     }
     places[route] = place
+  }
+
+  /// Has the Session open as `route` start afresh at its latest Turn's work, following, with nothing pushed over it, as
+  /// one opened anew does. The kind stays as it stands.
+  func startAfresh(_ route: SessionRoute) {
+    places[route] = nil
   }
 
   /// Forgets the place of every Session's screen but `routes`, the rest having gone.

@@ -1622,6 +1622,48 @@ private final class CountedSession: OpenedSession {
     #expect(stack.aside.place(of: settled) == Aside.Place(), "gone")
   }
 
+  @Test func eachSessionOnThePathKeepsItsOwnPlaceAndBackFindsItsParentsAsItWasLeft() async throws {
+    let stack = try await read()
+    stack.aside.hasRoom = true
+    stack.lead(to: .work(settled, turn: "earlier-work"))
+    stack.lead(to: .detail(settled, activity: "compaction"))
+    let left = Aside.Place(held: "earlier-work", pushed: [.detail(settled, activity: "compaction")])
+    #expect(stack.aside.place(of: settled) == left)
+    // A Subagent's Session pushed over it begins at its own latest Turn, and keeps a place of its own.
+    let subagent = SessionRoute(session: "workstation-key/12.1")
+    stack.path.append(.session(subagent))
+    #expect(stack.openSession == subagent)
+    #expect(stack.aside.place(of: subagent) == Aside.Place())
+    stack.aside.holdDetail("read-store", latest: "work", in: subagent)
+    #expect(stack.aside.place(of: settled) == left)
+    // Back.
+    stack.path.removeLast()
+    #expect(stack.openSession == settled)
+    #expect(stack.aside.place(of: settled) == left)
+    #expect(stack.aside.kind == .work)
+    #expect(stack.aside.place(of: subagent) == Aside.Place(), "gone with its screen")
+    // Pushed again, it is another screen of it, and begins afresh.
+    stack.show("workstation-key/12.1", over: settled)
+    #expect(stack.openSession != subagent)
+    #expect(stack.aside.place(of: stack.openSession!) == Aside.Place())
+  }
+
+  @Test func aSessionOpenedAgainFromTheSidebarOrTheTreeStartsAfreshAtItsLatestTurn() async throws {
+    let stack = try await read()
+    stack.aside.hasRoom = true
+    let subagent = SessionRoute(session: "workstation-key/12.1")
+    for opened in [{ stack.open("workstation-key/7") }, { stack.show("workstation-key/7", over: subagent) }] {
+      stack.lead(to: .work(settled, turn: "earlier-work"))
+      stack.lead(to: .detail(settled, activity: "compaction"))
+      _ = stack.showTree()
+      stack.path.append(.session(subagent))
+      opened()
+      #expect(stack.path == [.session(settled)], "the same screen")
+      #expect(stack.aside.place(of: settled) == Aside.Place())
+      #expect(stack.aside.kind == .tree, "the kind as it stood")
+    }
+  }
+
   @Test func aSessionBegunInTheNewSessionScreenIsTheOneOpenAsTheColumnsAreTold() async throws {
     let stack = SessionStack(core: FakeCore(.composing))
     stack.compose()
