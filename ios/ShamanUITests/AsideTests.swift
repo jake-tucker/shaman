@@ -40,6 +40,22 @@ final class AsideTests: TurningTestCase {
     XCTAssertFalse(element("tree.row", in: app).exists, file: file, line: line)
   }
 
+  /// The main view's Back, where the Aside has one of its own beside it.
+  @MainActor
+  private func mainBack(_ app: XCUIApplication) -> XCUIElement {
+    let edge = element("session.conversation", in: app).frame.maxX
+    return app.buttons.matching(identifier: "BackButton").allElementsBoundByIndex
+      .first { $0.frame.maxX <= edge } ?? app.back
+  }
+
+  /// Swipes away the Approval presented, which stands at full height, as a short display has it, and so has no grabber.
+  @MainActor
+  private func swipeApprovalAway(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    let top = app.staticTexts["approval.title"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+    top.press(forDuration: 0.1, thenDragTo: top.withOffset(CGVector(dx: 0, dy: 360)))
+    XCTAssertTrue(app.otherElements["approval.sheet"].waitForNonExistence(timeout: 10), file: file, line: line)
+  }
+
   @MainActor
   private func sidebarStands(_ app: XCUIApplication) -> Bool {
     let scope = app.buttons["listing.scope"]
@@ -650,7 +666,7 @@ final class AsideTests: TurningTestCase {
   }
 
   @MainActor
-  func testASubagentsRowInItPushesItsSessionInTheMainView() {
+  func testASubagentsRowInItPushesItsSessionInTheMainViewAndBackShowsTheParentsAsItWasLeft() {
     let app = launched("paired", ["--open", delegating, "--aside", "work"], turned: true)
     titled(delegatingTitle, in: app)
     asideStands(app, at: "Working")
@@ -659,10 +675,45 @@ final class AsideTests: TurningTestCase {
     asideStands(app, at: "Working")
     XCTAssertTrue(element("work.row", holding: "Grepper", in: app).waitForExistence(timeout: 10), "its own work")
     attach("A subagent's session beside its work")
+    // A place of its own in it.
+    element("work.row", holding: "Read src/sessions/store.rs", in: app).tap()
+    asideStands(app, at: "Read", pushed: true)
+    mainBack(app).tap()
+    titled(delegatingTitle, in: app)
+    asideStands(app, at: "Working")
+    XCTAssertTrue(element("work.row", holding: "Explorer", in: app).waitForExistence(timeout: 10))
+    attach("Back, the Aside as it was left")
+    // Pushed again, it begins afresh.
+    element("work.row", holding: "Explorer", in: app).tap()
+    titled("Find what held the lock", in: app)
+    asideStands(app, at: "Working")
+    XCTAssertTrue(element("work.row", holding: "Grepper", in: app).waitForExistence(timeout: 10))
+  }
+
+  @MainActor
+  func testBackFromASubagentsSessionShowsTheActivityPushedInTheParentsAsItWasLeft() {
+    let app = launched(
+      "subagentWaits", ["--open", delegating, "--aside", "work", "--arming-moment", "0.3"], turned: true)
+    let sheet = app.otherElements["approval.sheet"]
+    XCTAssertTrue(sheet.waitForExistence(timeout: 10), "its own")
+    swipeApprovalAway(app)
+    asideStands(app, at: "Working")
+    element("work.row", holding: "Read src/sessions/store.rs", in: app).tap()
+    asideStands(app, at: "Read", pushed: true)
+    // Explorer's, pushed over it by the "Review" its Approval marks the bar with.
+    app.buttons["session.review"].tap()
+    XCTAssertTrue(sheet.waitForExistence(timeout: 10), "Explorer's own")
+    swipeApprovalAway(app)
+    titled("Find what held the lock", in: app)
+    asideStands(app, at: "Working")
+    XCTAssertTrue(element("work.row", holding: "Grepper", in: app).waitForExistence(timeout: 10), "its own work")
     app.back.tap()
     titled(delegatingTitle, in: app)
-    XCTAssertTrue(element("work.row", holding: "Explorer", in: app).waitForExistence(timeout: 10))
+    asideStands(app, at: "Read", pushed: true)
+    attach("Back, the Activity pushed in the Aside as it was left")
+    app.navigationBars["Read"].buttons["BackButton"].tap()
     asideStands(app, at: "Working")
+    XCTAssertTrue(element("work.row", holding: "Explorer", in: app).waitForExistence(timeout: 10))
   }
 
   @MainActor
@@ -707,10 +758,7 @@ final class AsideTests: TurningTestCase {
     let sheet = app.otherElements["approval.sheet"]
     XCTAssertTrue(sheet.waitForExistence(timeout: 10), "presented over the tree")
     attach("An Approval over the Aside")
-    // At full height, as a short display has it, a sheet has no grabber.
-    let top = app.staticTexts["approval.title"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-    top.press(forDuration: 0.1, thenDragTo: top.withOffset(CGVector(dx: 0, dy: 360)))
-    XCTAssertTrue(sheet.waitForNonExistence(timeout: 10))
+    swipeApprovalAway(app)
     asideStands(app, at: "Subagents")
     XCTAssertTrue(element("tree.row", holding: delegatingTitle, in: app).isSelected)
     // And over a Subagent's Session and its work, where its own does, and is answered.

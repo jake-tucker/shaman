@@ -193,6 +193,7 @@
       "run-serve": command(
         "cargo run -- serve --print-invite", status: "Completed (exit 0)", output: "shaman-v1-AAAQ…"),
       "read-panel": tool("Read", "src/tui/serve_panel.rs", output: "312 lines"),
+      "read-store": tool("Read", "src/sessions/store.rs", output: "488 lines"),
       "grep-prefix": tool("Grep", "\"shaman-v1-\"", output: "6 matches in 4 files"),
       "read-serving": tool("Read", "src/serving.rs", output: "2140 lines"),
       "add-qrcode": command(

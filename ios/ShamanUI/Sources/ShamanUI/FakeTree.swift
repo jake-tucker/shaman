@@ -470,7 +470,7 @@
             kind: .row(
               row: WorkRow(
                 glyph: "\u{eb6d}", title: "Read src/sessions/store.rs", titleStyle: .monospace, line: nil,
-                trailing: nil, needsYou: false, tone: .succeeded, tap: .nothing)))
+                trailing: nil, needsYou: false, tone: .succeeded, tap: .detail(activity: "read-store"))))
         ]
         + spawned.map { member in
           let stoppedAfter = stopped(member)
