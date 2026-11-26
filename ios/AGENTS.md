@@ -87,8 +87,9 @@ kill "$RESIZING"
 
 The simulator holds a hardware keyboard and minimises the software one below the screen. To see a screen with the
 software keyboard up, launch the app with `-AutomaticMinimizationEnabled NO`, as a UI test does that types with it up:
-it stays up for that launch alone, and the simulator's own setting is left as it was. iOS leaves the keyboard of a secure
-field out of screenshots.
+it stays up for that launch alone, and the simulator's own setting is left as it was. The scheme's test action launches
+the app that hosts `ShamanTests` with it too, so a field a hosted test focuses raises the software keyboard. iOS leaves
+the keyboard of a secure field out of screenshots.
 
 ```sh
 xcrun simctl launch --terminate-running-process "$UDID" com.jaketucker.shaman --fake paired -AutomaticMinimizationEnabled NO

@@ -5,14 +5,14 @@ import UIKit
 @testable import ShamanUI
 
 /// A screen with a composer's foot in a window of the app's own scene, as tall as the display, over the software
-/// keyboard, which the simulator holding a hardware one would else minimise. How the window stands is read above it, as
-/// it is above the columns: the screen is hosted in a navigation controller of its own within the one read.
+/// keyboard, which the simulator holding a hardware one would else minimise: the scheme's test action launches the app
+/// that hosts these tests with `-AutomaticMinimizationEnabled NO`. How the window stands is read above it, as it is above
+/// the columns: the screen is hosted in a navigation controller of its own within the one read.
 @MainActor private final class HostedFoot: NSObject {
   let window: UIWindow
   /// How the window stands, as it is read above the screen.
   let pose: Pose
   private let host: UIHostingController<AnyView>
-  private let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
   private var watched: UIView?
   /// How far above the display's bottom edge the field's box was drawn at each frame.
   private var stood: [CGFloat] = []
@@ -20,10 +20,6 @@ import UIKit
   private(set) var keyboard: CGFloat = 0
 
   init(_ screen: some View, reading pose: Pose) throws {
-    // As a launch argument has it, and for this process alone.
-    UserDefaults.standard.setVolatileDomain(
-      arguments.merging(["AutomaticMinimizationEnabled": false]) { _, new in new },
-      forName: UserDefaults.argumentDomain)
     let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     window = UIWindow(windowScene: scene)
     self.pose = pose
@@ -93,7 +89,6 @@ import UIKit
     window.endEditing(true)
     window.isHidden = true
     NotificationCenter.default.removeObserver(self)
-    UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
   }
 }
 
