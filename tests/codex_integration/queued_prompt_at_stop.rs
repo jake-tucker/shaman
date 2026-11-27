@@ -68,7 +68,7 @@ const QUEUED: &str = "B: the Prompt queued behind it";
 const NEXT: &str = "C: the Prompt the reader writes after the stop";
 
 /// How long the probe waits to see whether a Server does something by itself.
-const WATCH: Duration = Duration::from_millis(1500);
+pub(super) const WATCH: Duration = Duration::from_millis(1500);
 
 #[derive(Clone, Copy, Debug)]
 enum Stop {
@@ -97,15 +97,15 @@ enum Follow {
     PromoteThenNextSteer,
 }
 
-struct Roots {
-    state: DetachedServers,
-    data: tempfile::TempDir,
-    workspace: tempfile::TempDir,
+pub(super) struct Roots {
+    pub(super) state: DetachedServers,
+    pub(super) data: tempfile::TempDir,
+    pub(super) workspace: tempfile::TempDir,
 }
 
-struct Server {
-    process: std::process::Child,
-    descriptor: RuntimeDescriptor,
+pub(super) struct Server {
+    pub(super) process: std::process::Child,
+    pub(super) descriptor: RuntimeDescriptor,
 }
 
 impl Server {
@@ -133,7 +133,7 @@ impl Drop for Server {
     }
 }
 
-async fn launch(
+pub(super) async fn launch(
     codex: &ScriptedCodex,
     roots: &Roots,
     channel: &str,
@@ -190,7 +190,7 @@ async fn launch(
     }
 }
 
-async fn read(descriptor: &RuntimeDescriptor, session: &str) -> Value {
+pub(super) async fn read(descriptor: &RuntimeDescriptor, session: &str) -> Value {
     crate::support::loopback_client()
         .get(format!("{}/v1/sessions/{session}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
@@ -205,7 +205,7 @@ async fn read(descriptor: &RuntimeDescriptor, session: &str) -> Value {
         .expect("decode Session")
 }
 
-async fn admit(
+pub(super) async fn admit(
     descriptor: &RuntimeDescriptor,
     session: &str,
     text: &str,
@@ -246,7 +246,7 @@ async fn admit(
     )
 }
 
-async fn post(descriptor: &RuntimeDescriptor, path: &str) -> Value {
+pub(super) async fn post(descriptor: &RuntimeDescriptor, path: &str) -> Value {
     let response = crate::support::loopback_client()
         .post(format!("{}{path}", descriptor.base_url))
         .bearer_auth(&descriptor.token)
@@ -298,7 +298,7 @@ fn summary(snapshot: &Value) -> Value {
 }
 
 /// What Codex was asked that says a Turn was begun, steered or stopped.
-fn asked(codex: &ScriptedCodex) -> Vec<Value> {
+pub(super) fn asked(codex: &ScriptedCodex) -> Vec<Value> {
     codex
         .requests()
         .into_iter()
@@ -321,7 +321,7 @@ fn asked(codex: &ScriptedCodex) -> Vec<Value> {
         .collect()
 }
 
-fn turn_starts(codex: &ScriptedCodex) -> usize {
+pub(super) fn turn_starts(codex: &ScriptedCodex) -> usize {
     codex
         .methods()
         .iter()
@@ -330,7 +330,7 @@ fn turn_starts(codex: &ScriptedCodex) -> usize {
 }
 
 /// Waits `within` for Codex to be asked for a Turn past the `known` it had.
-async fn turn_started(codex: &ScriptedCodex, known: usize, within: Duration) -> bool {
+pub(super) async fn turn_started(codex: &ScriptedCodex, known: usize, within: Duration) -> bool {
     timeout(within, async {
         while turn_starts(codex) <= known {
             sleep(Duration::from_millis(10)).await;
@@ -341,7 +341,7 @@ async fn turn_started(codex: &ScriptedCodex, known: usize, within: Duration) -> 
 }
 
 /// Waits for no Turn to be open, answering whether that came.
-async fn settled(descriptor: &RuntimeDescriptor, session: &str) -> bool {
+pub(super) async fn settled(descriptor: &RuntimeDescriptor, session: &str) -> bool {
     timeout(Duration::from_secs(5), async {
         loop {
             let snapshot = read(descriptor, session).await;

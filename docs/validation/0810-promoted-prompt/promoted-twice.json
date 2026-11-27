@@ -1,0 +1,248 @@
+{
+  "1_Admit(\"B: queued behind it\", Queue)": {
+    "answer": {
+      "http": 201,
+      "status": "pending",
+      "delivery": "queue",
+      "error": null,
+      "message": null
+    },
+    "codex_was_asked": [
+      "thread/start",
+      {
+        "turn/start": "A: the Prompt whose Turn is working"
+      }
+    ],
+    "snapshot": {
+      "session_status": "active",
+      "working": true,
+      "prompts": [
+        {
+          "text": "A: the Prompt whose Turn is working",
+          "delivery": "steer",
+          "status": "delivered"
+        },
+        {
+          "text": "B: queued behind it",
+          "delivery": "queue",
+          "status": "pending"
+        }
+      ],
+      "turns": [
+        {
+          "turn": 1,
+          "begun_by": "A: the Prompt whose Turn is working",
+          "status": "active"
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "content": "A: the Prompt whose Turn is working"
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "content": ""
+        }
+      ],
+      "activities": []
+    }
+  },
+  "2_Promote(\"B: queued behind it\")": {
+    "answer": {
+      "http": 200,
+      "delivery": "steer",
+      "status": "pending"
+    },
+    "codex_was_asked": [
+      "thread/start",
+      {
+        "turn/start": "A: the Prompt whose Turn is working"
+      }
+    ],
+    "snapshot": {
+      "session_status": "active",
+      "working": true,
+      "prompts": [
+        {
+          "text": "A: the Prompt whose Turn is working",
+          "delivery": "steer",
+          "status": "delivered"
+        },
+        {
+          "text": "B: queued behind it",
+          "delivery": "steer",
+          "status": "pending"
+        }
+      ],
+      "turns": [
+        {
+          "turn": 1,
+          "begun_by": "A: the Prompt whose Turn is working",
+          "status": "active"
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "content": "A: the Prompt whose Turn is working"
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "content": ""
+        }
+      ],
+      "activities": []
+    }
+  },
+  "3_Promote(\"B: queued behind it\")": {
+    "answer": {
+      "http": 200,
+      "delivery": "steer",
+      "status": "pending"
+    },
+    "codex_was_asked": [
+      "thread/start",
+      {
+        "turn/start": "A: the Prompt whose Turn is working"
+      }
+    ],
+    "snapshot": {
+      "session_status": "active",
+      "working": true,
+      "prompts": [
+        {
+          "text": "A: the Prompt whose Turn is working",
+          "delivery": "steer",
+          "status": "delivered"
+        },
+        {
+          "text": "B: queued behind it",
+          "delivery": "steer",
+          "status": "pending"
+        }
+      ],
+      "turns": [
+        {
+          "turn": 1,
+          "begun_by": "A: the Prompt whose Turn is working",
+          "status": "active"
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "content": "A: the Prompt whose Turn is working"
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "content": ""
+        }
+      ],
+      "activities": []
+    }
+  },
+  "4_Watch": {
+    "for_ms": 1500,
+    "codex_was_asked": [
+      "thread/start",
+      {
+        "turn/start": "A: the Prompt whose Turn is working"
+      }
+    ],
+    "snapshot": {
+      "session_status": "active",
+      "working": true,
+      "prompts": [
+        {
+          "text": "A: the Prompt whose Turn is working",
+          "delivery": "steer",
+          "status": "delivered"
+        },
+        {
+          "text": "B: queued behind it",
+          "delivery": "steer",
+          "status": "pending"
+        }
+      ],
+      "turns": [
+        {
+          "turn": 1,
+          "begun_by": "A: the Prompt whose Turn is working",
+          "status": "active"
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "content": "A: the Prompt whose Turn is working"
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "content": ""
+        }
+      ],
+      "activities": []
+    }
+  },
+  "5_LetGo": {
+    "turn": 1,
+    "the_turn_ended": true,
+    "codex_asked_for_another_turn": false,
+    "codex_was_asked": [
+      "thread/start",
+      {
+        "turn/start": "A: the Prompt whose Turn is working"
+      }
+    ],
+    "snapshot": {
+      "session_status": "idle",
+      "working": false,
+      "prompts": [
+        {
+          "text": "A: the Prompt whose Turn is working",
+          "delivery": "steer",
+          "status": "delivered"
+        },
+        {
+          "text": "B: queued behind it",
+          "delivery": "steer",
+          "status": "delivered"
+        }
+      ],
+      "turns": [
+        {
+          "turn": 1,
+          "begun_by": "A: the Prompt whose Turn is working",
+          "status": "completed"
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "content": "A: the Prompt whose Turn is working"
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "content": "Answer 1."
+        },
+        {
+          "turn": 1,
+          "role": "user",
+          "content": "B: queued behind it"
+        }
+      ],
+      "activities": []
+    }
+  }
+}

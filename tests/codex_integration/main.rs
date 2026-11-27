@@ -17,6 +17,7 @@ mod errors;
 mod interruption;
 mod models;
 mod process;
+mod promoted_prompt;
 mod questionnaires;
 mod queued_prompt_at_stop;
 mod reroutes;
