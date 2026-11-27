@@ -556,11 +556,11 @@ A transient, one-line message a client shows about Shaman's own behavior rather 
 _Avoid_: Banner, toast, alert, diagnostic
 
 **Theme**:
-The named set of colors a Client paints its surfaces with, chosen as a Setting, as opposed to the shapes and layout of what it paints. Every Theme but System brings its own background; Shaman ships a set of Themes and a user may supply more.
+The named set of colors a Client paints its surfaces with, as opposed to the shapes and layout of what it paints. Every Theme but System has a light form and a dark form, and a Setting chooses which a Client paints or has it follow the terminal in the TUI and the operating system in the desktop app. The TUI's Theme is chosen as a TUI Setting: every one but System brings its own background, Shaman ships a set of them and a user may supply more. The desktop app paints with one Theme of its own and reads none of the TUI's.
 _Avoid_: Color scheme, skin, palette (for the user-facing choice)
 
 **System**:
-The Theme that paints with the terminal's own colors and leaves its background to the terminal, so Shaman looks like whatever the terminal already is. When the terminal reports that its colors changed, a Client using System reads them again and repaints without restarting. It is the Theme every Client starts with.
+The Theme that paints with the terminal's own colors and leaves its background to the terminal, so Shaman looks like whatever the terminal already is. When the terminal reports that its colors changed, a TUI using System reads them again and repaints without restarting. It is the Theme every TUI starts with, and the desktop app has none.
 _Avoid_: Default theme, terminal theme, no theme
 
 **Code Block**:
