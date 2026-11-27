@@ -1,0 +1,318 @@
+{
+  "stop": "Kill",
+  "follow": "PromoteThenNextSteer",
+  "1_queued_admission": {
+    "http": 201,
+    "status": "pending",
+    "delivery": "queue",
+    "error": null,
+    "message": null
+  },
+  "2_before_the_stop": {
+    "revision": 7,
+    "session_status": "active",
+    "working_since": 1795795349428,
+    "prompts": [
+      {
+        "text": "A: the Prompt whose Turn is working",
+        "delivery": "steer",
+        "status": "delivered",
+        "withdrawal": null
+      },
+      {
+        "text": "B: the Prompt queued behind it",
+        "delivery": "queue",
+        "status": "pending",
+        "withdrawal": null
+      }
+    ],
+    "turns": [
+      {
+        "prompt": "A: the Prompt whose Turn is working",
+        "status": "active"
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "text": null
+      },
+      {
+        "role": "agent",
+        "text": null
+      }
+    ]
+  },
+  "3_stop": {
+    "asked": "SIGKILL",
+    "exit": "ExitStatus(unix_wait_status(9))",
+    "codex_was_asked": [
+      "thread/start",
+      {
+        "turn/start": "A: the Prompt whose Turn is working"
+      }
+    ]
+  },
+  "4_as_the_next_server_first_reads": {
+    "revision": 8,
+    "session_status": "idle",
+    "working_since": null,
+    "prompts": [
+      {
+        "text": "A: the Prompt whose Turn is working",
+        "delivery": "steer",
+        "status": "delivered",
+        "withdrawal": null
+      },
+      {
+        "text": "B: the Prompt queued behind it",
+        "delivery": "queue",
+        "status": "pending",
+        "withdrawal": null
+      }
+    ],
+    "turns": [
+      {
+        "prompt": "A: the Prompt whose Turn is working",
+        "status": "failed"
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "text": null
+      },
+      {
+        "role": "agent",
+        "text": null
+      }
+    ]
+  },
+  "5_left_alone": {
+    "for_ms": 1500,
+    "codex_asked_for_a_turn": false,
+    "snapshot": {
+      "revision": 8,
+      "session_status": "idle",
+      "working_since": null,
+      "prompts": [
+        {
+          "text": "A: the Prompt whose Turn is working",
+          "delivery": "steer",
+          "status": "delivered",
+          "withdrawal": null
+        },
+        {
+          "text": "B: the Prompt queued behind it",
+          "delivery": "queue",
+          "status": "pending",
+          "withdrawal": null
+        }
+      ],
+      "turns": [
+        {
+          "prompt": "A: the Prompt whose Turn is working",
+          "status": "failed"
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "text": null
+        },
+        {
+          "role": "agent",
+          "text": null
+        }
+      ]
+    }
+  },
+  "5b_steer_now": {
+    "answer": {
+      "http": 200,
+      "body": {
+        "id": "5b78fd70-9b4b-461a-97ea-e88ededc2168",
+        "text": "B: the Prompt queued behind it",
+        "skill_invocations": [],
+        "delivery": "steer",
+        "admission_order": 2,
+        "status": "pending"
+      }
+    },
+    "snapshot": {
+      "revision": 9,
+      "session_status": "idle",
+      "working_since": null,
+      "prompts": [
+        {
+          "text": "A: the Prompt whose Turn is working",
+          "delivery": "steer",
+          "status": "delivered",
+          "withdrawal": null
+        },
+        {
+          "text": "B: the Prompt queued behind it",
+          "delivery": "steer",
+          "status": "pending",
+          "withdrawal": null
+        }
+      ],
+      "turns": [
+        {
+          "prompt": "A: the Prompt whose Turn is working",
+          "status": "failed"
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "text": null
+        },
+        {
+          "role": "agent",
+          "text": null
+        }
+      ]
+    }
+  },
+  "6_reader_writes_another": {
+    "admission": {
+      "http": 201,
+      "status": "pending",
+      "delivery": "steer",
+      "error": null,
+      "message": null
+    },
+    "codex_asked_for_a_turn": true,
+    "codex_was_asked": [
+      "thread/start",
+      {
+        "turn/start": "A: the Prompt whose Turn is working"
+      },
+      "thread/resume",
+      {
+        "turn/start": "C: the Prompt the reader writes after the stop"
+      }
+    ],
+    "snapshot": {
+      "revision": 11,
+      "session_status": "active",
+      "working_since": 1795795351849,
+      "prompts": [
+        {
+          "text": "A: the Prompt whose Turn is working",
+          "delivery": "steer",
+          "status": "delivered",
+          "withdrawal": null
+        },
+        {
+          "text": "B: the Prompt queued behind it",
+          "delivery": "steer",
+          "status": "pending",
+          "withdrawal": null
+        },
+        {
+          "text": "C: the Prompt the reader writes after the stop",
+          "delivery": "steer",
+          "status": "delivered",
+          "withdrawal": null
+        }
+      ],
+      "turns": [
+        {
+          "prompt": "A: the Prompt whose Turn is working",
+          "status": "failed"
+        },
+        {
+          "prompt": "C: the Prompt the reader writes after the stop",
+          "status": "active"
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "text": null
+        },
+        {
+          "role": "agent",
+          "text": null
+        },
+        {
+          "role": "user",
+          "text": null
+        }
+      ]
+    }
+  },
+  "7_after_turn_2_is_let_go": {
+    "settled": true,
+    "codex_asked_for_another_turn": false,
+    "codex_was_asked": [
+      "thread/start",
+      {
+        "turn/start": "A: the Prompt whose Turn is working"
+      },
+      "thread/resume",
+      {
+        "turn/start": "C: the Prompt the reader writes after the stop"
+      }
+    ],
+    "snapshot": {
+      "revision": 15,
+      "session_status": "idle",
+      "working_since": null,
+      "prompts": [
+        {
+          "text": "A: the Prompt whose Turn is working",
+          "delivery": "steer",
+          "status": "delivered",
+          "withdrawal": null
+        },
+        {
+          "text": "B: the Prompt queued behind it",
+          "delivery": "steer",
+          "status": "delivered",
+          "withdrawal": null
+        },
+        {
+          "text": "C: the Prompt the reader writes after the stop",
+          "delivery": "steer",
+          "status": "delivered",
+          "withdrawal": null
+        }
+      ],
+      "turns": [
+        {
+          "prompt": "A: the Prompt whose Turn is working",
+          "status": "failed"
+        },
+        {
+          "prompt": "C: the Prompt the reader writes after the stop",
+          "status": "completed"
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "text": null
+        },
+        {
+          "role": "agent",
+          "text": null
+        },
+        {
+          "role": "user",
+          "text": null
+        },
+        {
+          "role": "agent",
+          "text": null
+        },
+        {
+          "role": "user",
+          "text": null
+        }
+      ]
+    }
+  }
+}

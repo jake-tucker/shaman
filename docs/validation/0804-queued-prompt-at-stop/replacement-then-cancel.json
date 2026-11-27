@@ -1,0 +1,189 @@
+{
+  "stop": "Replacement",
+  "follow": "Cancel",
+  "1_queued_admission": {
+    "http": 201,
+    "status": "pending",
+    "delivery": "queue",
+    "error": null,
+    "message": null
+  },
+  "2_before_the_stop": {
+    "revision": 7,
+    "session_status": "active",
+    "working_since": 1795795248820,
+    "prompts": [
+      {
+        "text": "A: the Prompt whose Turn is working",
+        "delivery": "steer",
+        "status": "delivered",
+        "withdrawal": null
+      },
+      {
+        "text": "B: the Prompt queued behind it",
+        "delivery": "queue",
+        "status": "pending",
+        "withdrawal": null
+      }
+    ],
+    "turns": [
+      {
+        "prompt": "A: the Prompt whose Turn is working",
+        "status": "active"
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "text": null
+      },
+      {
+        "role": "agent",
+        "text": null
+      }
+    ]
+  },
+  "3_stop": {
+    "asked": {
+      "http": 202
+    },
+    "exit": "ExitStatus(unix_wait_status(0))",
+    "codex_was_asked": [
+      "thread/start",
+      {
+        "turn/start": "A: the Prompt whose Turn is working"
+      },
+      "turn/interrupt"
+    ]
+  },
+  "4_as_the_next_server_first_reads": {
+    "revision": 8,
+    "session_status": "idle",
+    "working_since": null,
+    "prompts": [
+      {
+        "text": "A: the Prompt whose Turn is working",
+        "delivery": "steer",
+        "status": "delivered",
+        "withdrawal": null
+      },
+      {
+        "text": "B: the Prompt queued behind it",
+        "delivery": "queue",
+        "status": "pending",
+        "withdrawal": null
+      }
+    ],
+    "turns": [
+      {
+        "prompt": "A: the Prompt whose Turn is working",
+        "status": "failed"
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "text": null
+      },
+      {
+        "role": "agent",
+        "text": null
+      }
+    ]
+  },
+  "5_left_alone": {
+    "for_ms": 1500,
+    "codex_asked_for_a_turn": false,
+    "snapshot": {
+      "revision": 8,
+      "session_status": "idle",
+      "working_since": null,
+      "prompts": [
+        {
+          "text": "A: the Prompt whose Turn is working",
+          "delivery": "steer",
+          "status": "delivered",
+          "withdrawal": null
+        },
+        {
+          "text": "B: the Prompt queued behind it",
+          "delivery": "queue",
+          "status": "pending",
+          "withdrawal": null
+        }
+      ],
+      "turns": [
+        {
+          "prompt": "A: the Prompt whose Turn is working",
+          "status": "failed"
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "text": null
+        },
+        {
+          "role": "agent",
+          "text": null
+        }
+      ]
+    }
+  },
+  "6_reader_acts_on_it": {
+    "answer": {
+      "http": 200,
+      "body": {
+        "id": "4f4fc2e9-b7b7-4617-97ef-f3c24d408efa",
+        "text": "B: the Prompt queued behind it",
+        "skill_invocations": [],
+        "delivery": "queue",
+        "admission_order": 2,
+        "status": "cancelled"
+      }
+    },
+    "codex_asked_for_a_turn": false,
+    "codex_was_asked": [
+      "thread/start",
+      {
+        "turn/start": "A: the Prompt whose Turn is working"
+      },
+      "turn/interrupt"
+    ],
+    "snapshot": {
+      "revision": 9,
+      "session_status": "idle",
+      "working_since": null,
+      "prompts": [
+        {
+          "text": "A: the Prompt whose Turn is working",
+          "delivery": "steer",
+          "status": "delivered",
+          "withdrawal": null
+        },
+        {
+          "text": "B: the Prompt queued behind it",
+          "delivery": "queue",
+          "status": "cancelled",
+          "withdrawal": null
+        }
+      ],
+      "turns": [
+        {
+          "prompt": "A: the Prompt whose Turn is working",
+          "status": "failed"
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "text": null
+        },
+        {
+          "role": "agent",
+          "text": null
+        }
+      ]
+    }
+  }
+}

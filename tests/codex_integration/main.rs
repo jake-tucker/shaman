@@ -18,6 +18,7 @@ mod interruption;
 mod models;
 mod process;
 mod questionnaires;
+mod queued_prompt_at_stop;
 mod reroutes;
 mod shutdown;
 mod skills;
