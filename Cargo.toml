@@ -31,6 +31,7 @@ members = [
     "crates/rune-layout",
     "crates/rune-conversation",
     "crates/rune-landing",
+    "crates/rune-agents",
 ]
 # The Relay, the protocol it shares with the Server, the protocol every Client shares with the Server, the readers and
 # commands every Client reads a Server with, the redeeming side of a Pairing and the schema of its wire, the text and
