@@ -10,7 +10,7 @@ set -euo pipefail
 out=$1
 shift
 variants=("$@")
-[ ${#variants[@]} -eq 0 ] && variants=(a b c)
+[ ${#variants[@]} -eq 0 ] && variants=(a b c d)
 mkdir -p "$out"
 cargo build --locked -p rune-settings
 bin=${CARGO_TARGET_DIR:-target}/debug/rune-settings
@@ -77,7 +77,7 @@ states = [
     ("after", "The view shut, and what five changes left in the window"),
 ]
 names = {"a": "a · the brief: a sheet over a scrim", "b": "b · a pane in the Aside's place, no scrim",
-         "c": "c · a page in the main view"}
+         "c": "c · a page in the main view", "d": "d · chosen: a's sheet, a changed row marked, a gear in the Sidebar"}
 rows = []
 for state, title in states:
     cells = "".join(
@@ -92,7 +92,8 @@ figcaption{font-weight:600;padding:4px 2px}</style>
 <h1>How the minimal settings view looks and behaves</h1>
 <p>a: the brief, a sheet in the middle of the window over a scrim, headings, a switch or segments, the default
 marked among the values · b: a pane in the Aside's place with no scrim, stacked rows, selects, only a changed row
-marked · c: a page in the main view, one line a row, a filter and no headings, every value a segment.
+marked · c: a page in the main view, one line a row, a filter and no headings, every value a segment · d: what
+was chosen, a's sheet with only a changed row marked, the rows taking the keys, and a gear at the Sidebar's foot.
 Click a picture for its full size.</p>
 """ + "".join(rows)
 open(os.path.join(out, "index.html"), "w").write(page)

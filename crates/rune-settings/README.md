@@ -3,7 +3,7 @@
 Throwaway, for [How the minimal settings view looks and behaves](https://github.com/jake-tucker/shaman/issues/791).
 Not shipped, not a default member.
 
-Three variants of the minimal settings view, in the window the earlier prototypes chose (`crates/rune-agents`,
+Three variants of the minimal settings view, and what was chosen from them, in the window the earlier prototypes chose (`crates/rune-agents`,
 variant `d`), on fake data, in Rune's default light and dark themes. What the view lists is the same in all three:
 the 14 Client Settings the desktop app reads that take named values, with the labels and descriptions of
 `src/settings.rs`, in the schema's order, and the line at the foot. A change applies at once in all three.
@@ -19,10 +19,33 @@ the 14 Client Settings the desktop app reads that take named values, with the la
 | What shuts it | Esc, the close button, a press on the scrim, the settings key again | Esc, the close button, the Aside's toggle, the settings key again | Esc, **Back** in the band, the settings key again, opening a Session |
 | Rows seen at 1280 × 800 | 7½ of 14 | 6 of 14 | all 14 |
 
+**`d` is what was chosen**, drawn after the other three.
+
+- **The form is a's**: a sheet in the middle of the window over a scrim, modal, one scrolling list under the
+  schema's four headings, a row its label and description with the control beside them, a switch for on or off and
+  segments otherwise.
+- **The default is marked b's way.** Only a row that has left its default says so, by a dot before its label, and
+  offers **Reset** beside its control. Nothing is marked among the values, so a switch needs no words.
+- **The rows take the keys.** The list is one Tab stop, and the view's only other is the close button. ↑ and ↓
+  move through the rows, ← and → step a row's value and stop at either end, Space takes the next value round, ⌃D
+  resets the row, and Esc shuts the view: the TUI's `settings.previous`, `settings.next`, `settings.value.cycle`,
+  `settings.reset` and `settings.close`, with ← and → added, which the TUI gives to its tabs. Return does nothing:
+  it is the TUI's `settings.row.open`, and no row here opens anything.
+- **A change to the fold posture or to Groups refolds the open Transcript at once.**
+- **A gear at the foot of the Sidebar opens the view**, at its left, in a strip with room for more.
+
+The kit makes every control a Tab stop of its own and offers no way to say otherwise, so d draws each control
+inert and takes the presses over it. Driven by the same script: every key above did what it says, a press on a
+segment, a switch, **Reset**, the gear and the scrim each did, and Tab went from the list to the close button and
+back and nowhere else. ↑ and ↓ still move the rows while the close button has focus.
+
+Not taken: a's dots and words for the default, b's pane and its selects, and c's page, its one-line rows, its
+filter and its strip.
+
 ## Running it
 
 ```
-cargo run -p rune-settings -- a        # or b, c
+cargo run -p rune-settings -- d        # or a, b, c
 ```
 
 The strip under the window switches variants (⌥← ⌥→) and states (⌥↑ ⌥↓), and its **Settings** button opens the

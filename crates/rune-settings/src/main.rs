@@ -1077,6 +1077,8 @@ fn init() -> App {
         Look::B
     } else if has("c") {
         Look::C
+    } else if has("d") {
+        Look::D
     } else {
         Look::A
     };

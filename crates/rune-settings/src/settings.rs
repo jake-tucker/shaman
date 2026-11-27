@@ -27,16 +27,19 @@ pub enum Look {
     A,
     B,
     C,
+    /// What was chosen, drawn after the other three.
+    D,
 }
 
 impl Look {
-    pub const ALL: [Look; 3] = [Look::A, Look::B, Look::C];
+    pub const ALL: [Look; 4] = [Look::A, Look::B, Look::C, Look::D];
 
     pub fn name(self) -> &'static str {
         match self {
             Look::A => "A (the brief: a sheet over a scrim, headings, switch and segments)",
             Look::B => "B (a drawer with no scrim, stacked rows, selects, changed rows marked)",
             Look::C => "C (a page in the main view, one line a row, a filter, all segments)",
+            Look::D => "D (chosen: a's sheet, only a changed row marked, rows take the keys)",
         }
     }
 
@@ -403,7 +406,18 @@ pub fn key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
         }
         return true;
     }
-    if !s.settings.open || ev.mods.alt || ev.mods.cmd || ev.mods.ctrl {
+    if !s.settings.open {
+        return false;
+    }
+    // d: the TUI's `settings.reset`, on the row the keys are on.
+    let chosen = s.settings.look == Look::D;
+    if chosen && ev.mods.ctrl && matches!(&ev.key, Key::Text(t) if t.eq_ignore_ascii_case("d")) {
+        let at = s.settings.row;
+        s.settings.keys = true;
+        s.set_setting(at, SETTINGS[at].default);
+        return true;
+    }
+    if ev.mods.alt || ev.mods.cmd || ev.mods.ctrl {
         return false;
     }
     match &ev.key {
@@ -424,6 +438,8 @@ pub fn key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
             s.set_setting(at, next);
             true
         }
+        // d: Return is the TUI's `settings.row.open`, kept for a row that opens something, which none here does.
+        Key::Enter if chosen => true,
         Key::Enter => {
             cycle(s);
             true
@@ -471,7 +487,7 @@ pub fn overlays(s: &App, k: &Kit, layer: &mut Vec<El>) {
         return;
     }
     match s.settings.look {
-        Look::A => {
+        Look::A | Look::D => {
             layer.push(
                 rune_kit::scrim("settings-scrim", |s: &mut App| s.close_settings()).fill(k.c.scrim),
             );
@@ -579,18 +595,52 @@ fn switch(s: &App, at: usize, k: &Kit) -> El {
         .key(format!("switch-{}", x.key))
 }
 
-/// Every value a segment, as wide as its longest word asks.
-fn segments(s: &App, at: usize, k: &Kit) -> El {
+/// Every value a segment, as wide as its longest word asks, the default dotted where `mark` asks.
+fn segments(s: &App, at: usize, mark: bool, k: &Kit) -> El {
     let x = &SETTINGS[at];
     let words: Vec<String> = x.values.iter().map(|v| word(v)).collect();
-    SegmentedControl::new(&words, Some(s.settings.values[at]))
+    let mut built = SegmentedControl::new(&words, Some(s.settings.values[at]))
         .label(x.label)
         .fit()
-        .trailing(x.default, dot(k))
-        .description(x.default, "The built-in default")
-        .on_pick(move |s: &mut App, value, _| s.set_setting(at, value))
-        .build(k)
-        .key(format!("segments-{}", x.key))
+        .on_pick(move |s: &mut App, value, _| s.set_setting(at, value));
+    if mark {
+        built = built
+            .trailing(x.default, dot(k))
+            .description(x.default, "The built-in default");
+    }
+    built.build(k).key(format!("segments-{}", x.key))
+}
+
+/// d: a row's control as the kit draws it, taken out of the Tab order so that the list is one stop and the rows
+/// take the keys. The kit makes every control a stop of its own and offers no way to say otherwise, so the control
+/// is drawn inert and the presses are taken over it.
+fn still(s: &App, at: usize, k: &Kit) -> El {
+    let x = &SETTINGS[at];
+    if x.boolean() {
+        return k
+            .interactive(
+                row()
+                    .key(format!("press-{}", x.key))
+                    .child(switch(s, at, k).inert()),
+            )
+            .on_press(move |s: &mut App| {
+                let other = SETTINGS[at].values.len() - 1 - s.settings.values[at];
+                s.set_setting(at, other);
+            });
+    }
+    let mut cells = row().pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0));
+    for value in 0..x.values.len() {
+        cells = cells.child(
+            el().key(format!("cell{value}"))
+                .grow(1.0)
+                .h_full()
+                .on_press(move |s: &mut App| s.set_setting(at, value)),
+        );
+    }
+    row()
+        .key(format!("press-{}", x.key))
+        .child(segments(s, at, false, k).inert())
+        .child(cells)
 }
 
 /// A select: the kit's field over the kit's menu, the default badged among its values. The kit's own listbox
@@ -647,6 +697,7 @@ fn sheet(s: &App, k: &Kit) -> El {
     let width = (s.win_w - 48.0).min(SHEET);
     let height = (s.win_h - 96.0).min(760.0);
     let stacked = width < STACKS_UNDER;
+    let chosen = s.settings.look == Look::D;
     let mut list = col()
         .key("settings-list")
         .w_full()
@@ -659,15 +710,47 @@ fn sheet(s: &App, k: &Kit) -> El {
             if x.group != group {
                 continue;
             }
+            // d: only a row that has left its default says so, by a dot before its label, and offers the way back.
+            let changed = chosen && s.settings.changed(at);
+            let mut name = row().gap(7.0).center_y();
+            if changed {
+                name = name.child(
+                    el().key("changed")
+                        .size(6.0, 6.0)
+                        .radius(3.0)
+                        .fill(c.info.icon),
+                );
+            }
+            name = name.child(text(x.label).font(k.ty.ui_medium).color(c.text_base));
             let words = col()
                 .grow(1.0)
                 .min_w(0.0)
                 .gap(3.0)
-                .child(text(x.label).font(k.ty.ui_medium).color(c.text_base))
+                .child(name)
                 .child(text(x.says).font(k.ty.small).color(c.text_muted).wrap());
-            // The default is marked among the values: a dot on its segment, and beside a switch, which has no
+            let reset = changed.then(|| {
+                k.interactive(
+                    row()
+                        .key(format!("reset-{}", x.key))
+                        .px(8.0)
+                        .py(4.0)
+                        .radius(k.radius.sm)
+                        .child(text("Reset").font(k.ty.small_medium).color(c.text_muted)),
+                )
+                .role("button")
+                .label(format!("Reset {}", x.label))
+                .help(format!("Back to {} (⌃D)", word(x.values[x.default])))
+                .on_press(move |s: &mut App| s.set_setting(at, SETTINGS[at].default))
+            });
+            // a: the default is marked among the values: a dot on its segment, and beside a switch, which has no
             // values to mark, in words.
-            let control = if x.boolean() {
+            let control = if chosen {
+                row()
+                    .gap(8.0)
+                    .center_y()
+                    .children(reset)
+                    .child(still(s, at, k))
+            } else if x.boolean() {
                 row()
                     .gap(10.0)
                     .center_y()
@@ -682,7 +765,7 @@ fn sheet(s: &App, k: &Kit) -> El {
                     )
                     .child(switch(s, at, k))
             } else {
-                segments(s, at, k)
+                segments(s, at, true, k)
             };
             let mut built = if stacked {
                 col()
@@ -735,7 +818,45 @@ fn sheet(s: &App, k: &Kit) -> El {
                 })
                 .child(list),
         )
-        .child(foot(k).child(legend))
+        .child(if chosen {
+            foot(k)
+        } else {
+            foot(k).child(legend)
+        })
+}
+
+/// d: the foot of the Sidebar, which holds the way into the settings for a pointer and has room for more.
+pub fn sidebar_foot(s: &App, k: &Kit) -> Option<El> {
+    if s.settings.look != Look::D {
+        return None;
+    }
+    let c = &k.c;
+    let mut gear = row()
+        .key("sidebar-settings")
+        .size(28.0, 28.0)
+        .center()
+        .radius(k.radius.md)
+        .child(parts::glyph('\u{f013}', 14.0, c.icon_muted));
+    if s.settings.open {
+        gear = gear.fill(c.layer_03);
+    }
+    Some(
+        row()
+            .key("sidebar-foot")
+            .w_full()
+            .h(40.0)
+            .px(8.0)
+            .gap(2.0)
+            .center_y()
+            .border_sides([1.0, 0.0, 0.0, 0.0], c.border_muted)
+            .child(
+                k.interactive(gear)
+                    .role("button")
+                    .label("Settings")
+                    .help("Settings (⌘,)")
+                    .on_press(|s: &mut App| s.open_settings()),
+            ),
+    )
 }
 
 // -- b: a drawer -------------------------------------------------------------------------------------------------
@@ -893,7 +1014,7 @@ pub fn page(s: &App, k: &Kit) -> El {
                     .min_w(0.0)
                     .child(text(x.label).font(k.ty.ui).color(c.text_base).truncate()),
             )
-            .child(segments(s, at, k));
+            .child(segments(s, at, true, k));
         if s.settings.row == at {
             built = built.fill(c.layer_02);
         }

@@ -265,6 +265,8 @@ fn sidebar(s: &App, k: &Kit, layer: &mut Vec<El>) -> El {
             })
             .child(list),
     );
+    // d: the Sidebar's foot, where a gear opens the settings.
+    let body = body.children(crate::settings::sidebar_foot(s, k));
     parts::row_menu(s, body, k, layer)
 }
 
