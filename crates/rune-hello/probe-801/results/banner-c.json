@@ -1,0 +1,31 @@
+﻿{
+    "label":  "c",
+    "target":  "banner",
+    "action":  "none",
+    "started":  "2026-11-27T23:46:31.2983129+08:00",
+    "foregroundBefore":  "C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\c\\rune-toast.exe (pid 25072, WindowsTerminal)",
+    "appBefore":  null,
+    "coreWindowsSeen":  [
+                            "Windows Input Experience",
+                            "",
+                            "Start",
+                            "Search",
+                            "New notification",
+                            "Windows Shell Experience Host"
+                        ],
+    "found":  true,
+    "tree":  [
+                 "Window name=\"New notification\" id=\"\" class=\"Windows.UI.Core.CoreWindow\" rect=4526,1860,594,228",
+                 "  Pane name=\"\" id=\"ToastCenterScrollViewer\" class=\"ScrollViewer\" rect=4526,1887,594,201",
+                 "    Window name=\"New notification from Shaman C, c title, Fix the build.. 1 of 1\" id=\"NormalToastView\" class=\"FlexibleToastView\" rect=4550,1905,546,162",
+                 "      Image name=\"\" id=\"AppLogo\" class=\"Image\" rect=4574,1928,24,24",
+                 "      Text name=\"Shaman C\" id=\"SenderName\" class=\"TextBlock\" rect=4610,1923,82,27",
+                 "      Button name=\"Settings for this notification\" id=\"SettingsButton\" class=\"Button\" rect=4966,1910,60,59",
+                 "        Text name=\"\" id=\"\" class=\"TextBlock\" rect=4987,1931,18,18",
+                 "      Button name=\"Move this notification to Notification Centre\" id=\"DismissButton\" class=\"Button\" rect=5026,1910,60,59",
+                 "        Text name=\"\" id=\"DismissTextBlock\" class=\"TextBlock\" rect=5047,1931,18,18",
+                 "      Text name=\"c title\" id=\"Title\" class=\"TextBlock\" rect=4574,1980,51,28",
+                 "      Text name=\"Fix the build\" id=\"MessageText\" class=\"TextBlock\" rect=4574,2008,114,28"
+             ],
+    "finished":  "2026-11-27T23:46:32.7831015+08:00"
+}

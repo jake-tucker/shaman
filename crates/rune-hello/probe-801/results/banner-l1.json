@@ -1,0 +1,42 @@
+﻿{
+    "label":  "l1",
+    "target":  "banner",
+    "action":  "click",
+    "started":  "2026-11-27T23:55:22.0960849+08:00",
+    "foregroundBefore":  "Shaman D probe (pid 25072, WindowsTerminal)",
+    "appBefore":  "pid 9972 window 853676 minimized False",
+    "coreWindowsSeen":  [
+                            "Windows Input Experience",
+                            "",
+                            "Start",
+                            "Search",
+                            "Notification Centre",
+                            "New notification",
+                            "Windows Shell Experience Host"
+                        ],
+    "found":  true,
+    "tree":  [
+                 "Window name=\"New notification\" id=\"\" class=\"Windows.UI.Core.CoreWindow\" rect=4526,1860,594,228",
+                 "  Pane name=\"\" id=\"ToastCenterScrollViewer\" class=\"ScrollViewer\" rect=4526,1887,594,201",
+                 "    Window name=\"New notification from Shaman D probe, l1 title, Fix the build.. 1 of 1\" id=\"NormalToastView\" class=\"FlexibleToastView\" rect=4550,1905,546,162",
+                 "      Image name=\"\" id=\"AppLogo\" class=\"Image\" rect=4577,1931,18,18",
+                 "      Text name=\"Shaman D probe\" id=\"SenderName\" class=\"TextBlock\" rect=4610,1923,137,27",
+                 "      Button name=\"Settings for this notification\" id=\"SettingsButton\" class=\"Button\" rect=4966,1910,60,59",
+                 "        Text name=\"\" id=\"\" class=\"TextBlock\" rect=4987,1931,18,18",
+                 "      Button name=\"Move this notification to Notification Centre\" id=\"DismissButton\" class=\"Button\" rect=5026,1910,60,59",
+                 "        Text name=\"\" id=\"DismissTextBlock\" class=\"TextBlock\" rect=5047,1931,18,18",
+                 "      Text name=\"l1 title\" id=\"Title\" class=\"TextBlock\" rect=4574,1980,55,28",
+                 "      Text name=\"Fix the build\" id=\"MessageText\" class=\"TextBlock\" rect=4574,2008,114,28"
+             ],
+    "acted":  "ControlType.Text name=\"l1 title\" id=\"Title\"",
+    "patterns":  [
+                     "TextPatternIdentifiers.Pattern",
+                     "ScrollItemPatternIdentifiers.Pattern"
+                 ],
+    "how":  "pressed with the pointer",
+    "clickedAt":  "4602,1994",
+    "foregroundAfter":  "Toast probe (pid 9972, rune-toast)",
+    "centerOpenAfter":  true,
+    "appAfter":  "pid 9972 window 788132 minimized False",
+    "finished":  "2026-11-27T23:55:27.5076534+08:00"
+}

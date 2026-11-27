@@ -1,0 +1,16 @@
+﻿{
+    "label":  "b2",
+    "target":  "banner",
+    "action":  "none",
+    "started":  "2026-11-27T23:46:36.1646446+08:00",
+    "foregroundBefore":  "C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\b\\rune-toast.exe (pid 25072, WindowsTerminal)",
+    "appBefore":  null,
+    "coreWindowsSeen":  [
+                            "Windows Input Experience",
+                            "",
+                            "Start",
+                            "Search"
+                        ],
+    "found":  false,
+    "finished":  "2026-11-27T23:47:02.8682451+08:00"
+}

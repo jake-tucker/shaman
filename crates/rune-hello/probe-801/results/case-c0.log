@@ -1,0 +1,5 @@
+1795794349.830 pid=17904 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\c0\\rune-toast.exe") args=[] mode=register id=ai.shaman.probe801.c0 name="Shaman C0" icon=None scheme=None single=false front=false
+1795794349.831 pid=17904 identity by register: Ok(()), available true
+1795794349.844 pid=17904 ready
+1795794357.678 pid=17904 post "n-c0" "c0 title" -> true (available true, focused false)
+1795794359.085 pid=17904 quit on command

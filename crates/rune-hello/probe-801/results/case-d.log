@@ -1,0 +1,31 @@
+1795794459.330 pid=7360 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\d\\rune-toast.exe") args=[] mode=adopt id=ai.shaman.probe801.d name="Shaman probe" icon=None scheme=None single=false front=false
+1795794459.331 pid=7360 identity by adopt: Ok(()), available true
+1795794459.345 pid=7360 ready
+1795794462.157 pid=7360 post "n-d" "d title" -> true (available true, focused false)
+1795794463.765 pid=7360 quit on command
+1795794464.761 pid=13364 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\d\\rune-toast.exe") args=[] mode=adopt id=ai.shaman.probe801.d name="Shaman probe" icon=None scheme=None single=false front=false
+1795794464.762 pid=13364 identity by adopt: Ok(()), available true
+1795794464.774 pid=13364 ready
+1795794479.440 pid=13364 post "n-d-direct" "d-direct title" -> true (available true, focused false)
+1795794481.047 pid=13364 quit on command
+1795794797.186 pid=14440 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\d\\rune-toast.exe") args=[] mode=adopt id=ai.shaman.probe801.d name="Shaman probe" icon=None scheme=None single=false front=false
+1795794797.186 pid=14440 identity by adopt: Ok(()), available true
+1795794797.196 pid=14440 ready
+1795794799.406 pid=14440 post "n-i4" "i4 title" -> true (available true, focused false)
+1795794800.813 pid=14440 quit on command
+1795794920.164 pid=9972 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\d\\rune-toast.exe") args=[] mode=adopt id=ai.shaman.probe801.d name="Shaman probe" icon=None scheme=Some("shaman-probe801d") single=true front=true
+1795794920.164 pid=9972 identity by adopt: Ok(()), available true
+1795794920.174 pid=9972 ready
+1795794923.186 pid=9972 post "n-l1" "l1 title" -> true (available true, focused false)
+1795794924.628 pid=16612 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\d\\rune-toast.exe") args=["shaman-probe801d://notification/n-l1?session=ses_1"] mode=adopt id=ai.shaman.probe801.d name="Shaman probe" icon=None scheme=Some("shaman-probe801d") single=true front=true
+1795794924.629 pid=16612 another process of the app runs: this launch was handed to it
+1795794924.629 pid=9972 on_open_url "shaman-probe801d://notification/n-l1?session=ses_1" click=Some(Click { id: "n-l1", info: [("session", "ses_1")] })
+1795794924.636 pid=9972 bring_to_front after a link
+1795794935.844 pid=9972 post "n-l2" "l2 title" -> true (available true, focused true)
+1795794937.050 pid=9972 quit on command
+1795794951.868 pid=24844 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\d\\rune-toast.exe") args=["shaman-probe801d://notification/n-l2?session=ses_1"] mode=adopt id=ai.shaman.probe801.d name="Shaman probe" icon=None scheme=Some("shaman-probe801d") single=true front=true
+1795794951.868 pid=24844 identity by adopt: Ok(()), available true
+1795794951.871 pid=24844 on_open_url "shaman-probe801d://notification/n-l2?session=ses_1" click=Some(Click { id: "n-l2", info: [("session", "ses_1")] })
+1795794951.872 pid=24844 bring_to_front after a link
+1795794951.892 pid=24844 ready
+1795794959.288 pid=24844 quit on command

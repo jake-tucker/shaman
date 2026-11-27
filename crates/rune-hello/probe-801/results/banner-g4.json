@@ -1,0 +1,21 @@
+﻿{
+    "label":  "g4",
+    "target":  "banner",
+    "action":  "none",
+    "started":  "2026-11-27T23:49:45.0962864+08:00",
+    "foregroundBefore":  "Toast probe (pid 29024, rune-toast)",
+    "appBefore":  null,
+    "coreWindowsSeen":  [
+                            "Windows Input Experience",
+                            "",
+                            "New notification",
+                            "Start",
+                            "Search",
+                            "Windows Shell Experience Host"
+                        ],
+    "found":  true,
+    "tree":  [
+                 "Pane name=\"New notification\" id=\"\" class=\"Windows.UI.Core.CoreWindow\" rect=4526,1860,594,228"
+             ],
+    "finished":  "2026-11-27T23:49:51.7414139+08:00"
+}

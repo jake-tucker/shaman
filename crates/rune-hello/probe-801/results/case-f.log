@@ -1,0 +1,5 @@
+1795794512.647 pid=6656 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\f\\rune-toast.exe") args=[] mode=register id=ai.shaman.probe801.f name="Shaman F registry" icon=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\run\\orange.png") scheme=None single=false front=false
+1795794512.647 pid=6656 identity by register: Ok(()), available true
+1795794512.661 pid=6656 ready
+1795794515.471 pid=6656 post "n-f" "f title" -> true (available true, focused false)
+1795794516.877 pid=6656 quit on command

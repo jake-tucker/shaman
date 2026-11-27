@@ -1,0 +1,16 @@
+﻿{
+    "label":  "e",
+    "target":  "banner",
+    "action":  "none",
+    "started":  "2026-11-27T23:48:04.9985208+08:00",
+    "foregroundBefore":  "Shaman E probe (pid 25072, WindowsTerminal)",
+    "appBefore":  null,
+    "coreWindowsSeen":  [
+                            "Windows Input Experience",
+                            "",
+                            "Start",
+                            "Search"
+                        ],
+    "found":  false,
+    "finished":  "2026-11-27T23:48:30.7302430+08:00"
+}

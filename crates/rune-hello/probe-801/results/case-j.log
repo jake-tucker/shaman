@@ -1,0 +1,16 @@
+1795794858.504 pid=3384 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\j\\rune-toast.exe") args=[] mode=register id=ai.shaman.probe801.j name="Shaman J" icon=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\run\\orange.png") scheme=Some("shaman-probe801") single=true front=true
+1795794858.506 pid=3384 identity by register: Ok(()), available true
+1795794858.518 pid=3384 ready
+1795794862.123 pid=3384 post "n-j" "j title" -> true (available true, focused false)
+1795794863.566 pid=19704 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\j\\rune-toast.exe") args=["shaman-probe801://notification/n-j?session=ses_1"] mode=register id=ai.shaman.probe801.j name="Shaman J" icon=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\run\\orange.png") scheme=Some("shaman-probe801") single=true front=true
+1795794863.566 pid=19704 another process of the app runs: this launch was handed to it
+1795794863.566 pid=3384 on_open_url "shaman-probe801://notification/n-j?session=ses_1" click=Some(Click { id: "n-j", info: [("session", "ses_1")] })
+1795794863.577 pid=3384 bring_to_front after a link
+1795794877.179 pid=3384 post "n-k" "k title" -> true (available true, focused true)
+1795794878.585 pid=3384 quit on command
+1795794893.418 pid=27392 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\j\\rune-toast.exe") args=["shaman-probe801://notification/n-k?session=ses_1"] mode=register id=ai.shaman.probe801.j name="Shaman J" icon=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\run\\orange.png") scheme=Some("shaman-probe801") single=true front=true
+1795794893.419 pid=27392 identity by register: Ok(()), available true
+1795794893.422 pid=27392 on_open_url "shaman-probe801://notification/n-k?session=ses_1" click=Some(Click { id: "n-k", info: [("session", "ses_1")] })
+1795794893.422 pid=27392 bring_to_front after a link
+1795794893.442 pid=27392 ready
+1795794917.509 pid=27392 quit on command

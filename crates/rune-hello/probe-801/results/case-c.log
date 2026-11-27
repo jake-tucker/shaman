@@ -1,0 +1,10 @@
+1795794360.342 pid=3412 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\c\\rune-toast.exe") args=[] mode=register id=ai.shaman.probe801.c name="Shaman C" icon=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\run\\orange.png") scheme=None single=false front=false
+1795794360.343 pid=3412 identity by register: Ok(()), available true
+1795794360.355 pid=3412 ready
+1795794367.778 pid=3412 post "n-c" "c title" -> true (available true, focused false)
+1795794367.979 pid=3412 quit on command
+1795794389.336 pid=8596 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\c\\rune-toast.exe") args=[] mode=register id=ai.shaman.probe801.c name="Shaman C" icon=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\run\\orange.png") scheme=None single=false front=false
+1795794389.337 pid=8596 identity by register: Ok(()), available true
+1795794389.353 pid=8596 ready
+1795794391.761 pid=8596 post "n-c" "c title" -> true (available true, focused false)
+1795794393.166 pid=8596 quit on command

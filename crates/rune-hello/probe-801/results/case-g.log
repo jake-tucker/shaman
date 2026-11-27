@@ -1,0 +1,16 @@
+1795794539.083 pid=15640 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\g\\rune-toast.exe") args=[] mode=register id=ai.shaman.probe801.g name="Shaman G" icon=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\run\\orange.png") scheme=None single=false front=false
+1795794539.084 pid=15640 identity by register: Ok(()), available true
+1795794539.097 pid=15640 ready
+1795794542.707 pid=15640 post "n-g1" "g1 title" -> true (available true, focused false)
+1795794544.025 pid=15640 on_click Click { id: "n-g1", info: [("session", "ses_1")] }
+1795794555.357 pid=15640 post-button "n-g3" "g3 title" -> true (available true, focused false)
+1795794556.669 pid=15640 on_click Click { id: "n-g3", info: [("rune.action", "approve"), ("rune.id", "n-g3"), ("session", "ses_1")] }
+1795794560.973 pid=15640 quit on command
+1795794575.097 pid=29024 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\g\\rune-toast.exe") args=[] mode=register id=ai.shaman.probe801.g name="Shaman G" icon=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\run\\orange.png") scheme=None single=false front=true
+1795794575.098 pid=29024 identity by register: Ok(()), available true
+1795794575.120 pid=29024 ready
+1795794578.113 pid=29024 post "n-g2" "g2 title" -> true (available true, focused false)
+1795794579.382 pid=29024 on_click Click { id: "n-g2", info: [("session", "ses_1")] }
+1795794579.386 pid=29024 bring_to_front after a click
+1795794590.765 pid=29024 post "n-g4" "g4 title" -> true (available true, focused true)
+1795794592.172 pid=29024 quit on command

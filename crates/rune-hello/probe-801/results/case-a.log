@@ -1,0 +1,5 @@
+1795794306.073 pid=18756 start exe=Some("C:\\Users\\Jake\\AppData\\Local\\Temp\\shaman-801-20261127\\cases\\a\\rune-toast.exe") args=[] mode=none id=ai.shaman.probe801.a name="Shaman probe" icon=None scheme=None single=false front=false
+1795794306.074 pid=18756 identity by none: Ok(()), available false
+1795794306.087 pid=18756 ready
+1795794313.905 pid=18756 post "n-a" "a title" -> false (available false, focused false)
+1795794323.150 pid=18756 quit on command
