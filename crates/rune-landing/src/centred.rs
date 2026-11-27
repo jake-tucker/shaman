@@ -27,7 +27,8 @@ pub fn landing(s: &App, k: &Kit, layer: &mut Vec<El>) -> El {
         line = line.child(reading(r, k));
     }
     let mut panel = col().w_full().max_w(PANEL).gap(10.0);
-    if s.banner {
+    // What was chosen has no banner: the app does not read `appearance.landingPage`.
+    if s.banner && s.variant != crate::Variant::D {
         panel = panel.child(
             row()
                 .w_full()

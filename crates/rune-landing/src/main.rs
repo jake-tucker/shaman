@@ -15,6 +15,10 @@
 //!   one browser in place under them, three columns wide (Workspace, working copy, directory), with nothing over
 //!   the window at all.
 //!
+//! - `d`, what was chosen: a, with the Aside standing from the Landing on, empty until there is a Session for it to
+//!   answer for, so that nothing beside the main view moves when the first Prompt is sent. The app does not read
+//!   `appearance.landingPage`, so d has no banner. It was drawn after the other three.
+//!
 //! `cargo run -p rune-landing -- b` opens variant b; ⌥← and ⌥→, or the bar at the bottom, switch variants, and ⌥↑
 //! and ⌥↓ step through the states. Every state is a scene:
 //! `cargo run -p rune-landing -- c --snap out.png --scene worktrees --size 1280x800 --theme light`, and
@@ -53,16 +57,18 @@ pub enum Variant {
     A,
     B,
     C,
+    D,
 }
 
 impl Variant {
-    const ALL: [Variant; 3] = [Variant::A, Variant::B, Variant::C];
+    const ALL: [Variant; 4] = [Variant::A, Variant::B, Variant::C, Variant::D];
 
     fn name(self) -> &'static str {
         match self {
             Variant::A => "A (centred: the TUI's Landing, each picker a dialog)",
             Variant::B => "B (docked: the composer where it stays, a popover from each reading)",
             Variant::C => "C (laid out: the place as fields, one browser in place)",
+            Variant::D => "D (chosen: a, with the Aside standing empty from the Landing on)",
         }
     }
 
@@ -718,6 +724,8 @@ fn init() -> App {
         Variant::B
     } else if has("c") {
         Variant::C
+    } else if has("d") {
+        Variant::D
     } else {
         Variant::A
     };

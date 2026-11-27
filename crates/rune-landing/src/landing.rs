@@ -21,11 +21,12 @@ pub fn view(s: &App, k: &Kit, leading: f32, trailing: f32, layer: &mut Vec<El>) 
     } else {
         Panes {
             main: match s.variant {
-                Variant::A => centred::landing(s, k, layer),
+                Variant::A | Variant::D => centred::landing(s, k, layer),
                 Variant::B => docked::landing(s, k, layer),
                 Variant::C => laid::landing(s, k, layer),
             },
-            aside: None,
+            // What was chosen: the Aside stands on the Landing too, with nothing in it yet.
+            aside: (s.variant == Variant::D).then(|| aside(None, k)),
         }
     };
     shell::view(s, k, leading, trailing, panes, layer)
@@ -290,37 +291,48 @@ fn provisional(s: &App, k: &Kit) -> Panes {
             .items_center()
             .child(col().w_full().max_w(COLUMN).child(flow::composer(s, k))),
     );
-    // The Session's Aside: its own entry in the Subagents Section and nothing changed yet. Before the Session
-    // exists it is either that, empty, or no Aside at all.
-    let aside = (s.stage == Stage::Born || s.early_aside).then(|| {
-        let mut tree = col().w_full().child(bits::section_header(
-            "Subagents",
-            usize::from(s.stage == Stage::Born),
-            0,
-            k,
-        ));
-        tree = tree.child(if s.stage == Stage::Born {
-            bits::tree_entry(&claim.title, "Claude · Fable 5.2", "3s", true, k)
-        } else {
-            quiet("None yet", k)
-        });
-        col()
-            .key("aside")
-            .w_full()
-            .h_full()
-            .padding(8.0)
-            .gap(14.0)
-            .child(tree)
-            .child(bits::rule(k))
-            .child(
-                col()
-                    .w_full()
-                    .child(bits::section_header("Changes", 0, 0, k))
-                    .child(quiet("None yet", k)),
-            )
-    });
+    // The Session's Aside: its own entry in the Subagents Section and nothing changed yet. What was chosen has it
+    // answer for the Provisional Session with that lone entry, as the glossary does; the other variants show it
+    // empty before the Session exists, or not at all.
+    let born = s.stage == Stage::Born;
+    let aside = if born {
+        Some(aside(Some((claim.title.as_str(), "3s")), k))
+    } else if s.variant == Variant::D {
+        Some(aside(Some((claim.title.as_str(), "")), k))
+    } else {
+        s.early_aside.then(|| aside(None, k))
+    };
     let _ = over::changes;
     Panes { main, aside }
+}
+
+/// The Aside of a Session that has done nothing yet, or of no Session at all: the Subagents Section holding the
+/// Session's own entry where there is one, over a Changes Section with nothing in it.
+fn aside(own: Option<(&str, &str)>, k: &Kit) -> El {
+    let mut tree = col().w_full().child(bits::section_header(
+        "Subagents",
+        usize::from(own.is_some()),
+        0,
+        k,
+    ));
+    tree = tree.child(match own {
+        Some((title, time)) => bits::tree_entry(title, "Claude · Fable 5.2", time, true, k),
+        None => quiet("None yet", k),
+    });
+    col()
+        .key("aside")
+        .w_full()
+        .h_full()
+        .padding(8.0)
+        .gap(14.0)
+        .child(tree)
+        .child(bits::rule(k))
+        .child(
+            col()
+                .w_full()
+                .child(bits::section_header("Changes", 0, 0, k))
+                .child(quiet("None yet", k)),
+        )
 }
 
 fn quiet(said: &str, k: &Kit) -> El {

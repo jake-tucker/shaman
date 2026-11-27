@@ -21,6 +21,13 @@ exists and about what a reading opens.
 | Over the window | a scrim and one dialog at a time | a popover, no scrim | nothing |
 | The banner | over the composer | in the middle of the main view | over the heading |
 
+**`d` is what was chosen**, drawn after the other three: a in every row of the table, with the Aside standing from
+the Landing on. On the Landing its Sections are empty; from the first Prompt the Subagents Section holds the
+Provisional Session's own entry, which the real Session replaces in place, so nothing beside the main view moves
+when a Prompt is sent or when the Server answers. It has no banner, since the app does not read
+`appearance.landingPage`. Not taken from the others: b's composer docked at the foot, its popovers, its reading for
+the top directory and the system's folder dialog; c's fields and its browser in place.
+
 The same in all three, and so not what the variants are for:
 
 - **The Provisional Session.** The first Prompt is a bubble at the right of the column, the Working Indicator
@@ -35,7 +42,7 @@ The same in all three, and so not what the variants are for:
 ## Running it
 
 ```
-cargo run -p rune-landing -- b        # or a, c
+cargo run -p rune-landing -- d        # or a, b, c
 ```
 
 The strip under the window switches variants (⌥← ⌥→) and states (⌥↑ ⌥↓), turns the banner on, chooses what the fake

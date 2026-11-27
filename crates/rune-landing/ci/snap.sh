@@ -10,7 +10,7 @@ set -euo pipefail
 out=$1
 shift
 variants=("$@")
-[ ${#variants[@]} -eq 0 ] && variants=(a b c)
+[ ${#variants[@]} -eq 0 ] && variants=(a b c d)
 mkdir -p "$out"
 cargo build --locked -p rune-landing
 bin=${CARGO_TARGET_DIR:-target}/debug/rune-landing
@@ -34,9 +34,12 @@ for v in "${variants[@]}"; do
     snap "$v-landing" "$v" $wide light
     snap "$v-landing-dark" "$v" $wide dark
     for scene in "${scenes[@]}"; do
+        # What was chosen has no banner, and its Aside is not the switcher's to show.
+        [ "$v" = d ] && { [ "$scene" = banner ] || [ "$scene" = provisional-aside ]; } && continue
         snap "$v-$scene" "$v" $wide light "$scene"
     done
     for scene in subdirectory banner workspaces worktrees directories provisional; do
+        [ "$v" = d ] && [ "$scene" = banner ] && continue
         snap "$v-$scene-dark" "$v" $wide dark "$scene"
     done
     # A larger window, one too narrow for the Aside, and one with the Sidebar closed for want of room.
@@ -90,7 +93,7 @@ states = [
     ("born", "The real Session, in the Provisional Session's place"),
     ("born-worktree", "The real Session, in the Worktree Shaman made for it"),
 ]
-names = {"a": "a · centred, dialogs", "b": "b · docked, popovers", "c": "c · laid out, one browser in place"}
+names = {"a": "a · centred, dialogs", "b": "b · docked, popovers", "c": "c · laid out, one browser in place", "d": "d · chosen"}
 rows = []
 for state, title in states:
     cells = "".join(
@@ -105,7 +108,8 @@ figcaption{font-weight:600;padding:4px 2px}</style>
 <h1>How a Session begins in a window</h1>
 <p>a: the TUI's Landing, the composer centred and each picker a dialog over the window · b: the composer docked at the
 foot where an open Session keeps it, a popover from each reading · c: the place laid out as three fields, one browser
-opening in place under them. Click a picture for its full size.</p>
+opening in place under them · d: what was chosen, a with the Aside standing empty from the Landing on and no banner.
+Click a picture for its full size.</p>
 """ + "".join(rows)
 open(os.path.join(out, "index.html"), "w").write(page)
 PY
