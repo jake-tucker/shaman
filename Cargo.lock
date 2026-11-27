@@ -4903,6 +4903,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rune-landing"
+version = "0.0.0"
+dependencies = [
+ "rune",
+ "rune-kit",
+ "shaman-icons",
+]
+
+[[package]]
 name = "rune-layout"
 version = "0.0.0"
 dependencies = [
