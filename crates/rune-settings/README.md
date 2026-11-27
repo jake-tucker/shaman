@@ -31,7 +31,11 @@ the 14 Client Settings the desktop app reads that take named values, with the la
   resets the row, and Esc shuts the view: the TUI's `settings.previous`, `settings.next`, `settings.value.cycle`,
   `settings.reset` and `settings.close`, with ← and → added, which the TUI gives to its tabs. Return does nothing:
   it is the TUI's `settings.row.open`, and no row here opens anything.
-- **A change to the fold posture or to Groups refolds the open Transcript at once.**
+- **Reset takes the pin out**, as the TUI's ⌃D does, and the built-in default resumes. A row is marked where its
+  value differs from that default, so a Setting pinned to the default's own value is not. (Decided after d was
+  drawn; the prototype only puts the default's value back.)
+- **A change to the fold posture or to Groups refolds the open Transcript at once**, and every Session view the
+  Client holds with it, in the TUI as in the app. Today the TUI gives a new posture to a fresh view alone.
 - **A gear at the foot of the Sidebar opens the view**, at its left, in a strip with room for more.
 
 The kit makes every control a Tab stop of its own and offers no way to say otherwise, so d draws each control
