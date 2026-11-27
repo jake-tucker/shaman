@@ -14,7 +14,7 @@ use crate::bits;
 use crate::parts::glyph;
 use crate::shell::Panes;
 use crate::talk::{self, Activity, Kind, Outcome, Phase, QUESTIONS, Shown, Unit};
-use crate::{App, Stage, Variant, choose, family, over, reach};
+use crate::{App, Stage, choose, family, over, reach};
 
 /// How wide the Session Content Column grows.
 const COLUMN: f32 = 760.0;
@@ -25,11 +25,11 @@ const LIVE_TAIL: usize = 3;
 pub fn panes(s: &App, k: &Kit, layer: &mut Vec<El>) -> Panes {
     let sub = s.sub.and_then(family::node);
     // a and b: a Subagent's Session takes the main view. c: its parent keeps it.
-    let main = match sub.filter(|_| !s.variant.one()) {
+    let main = match sub.filter(|_| !s.variant.beside()) {
         Some(n) => reach::sub_main(s, n, k),
         None => session(s, k, layer),
     };
-    let aside = match sub.filter(|_| s.variant.one()) {
+    let aside = match sub.filter(|_| s.variant.beside()) {
         Some(n) if s.aside.is_open() => reach::beside(s, n, k, layer),
         Some(n) => {
             reach::beside_sheet(s, n, k, layer);
@@ -451,7 +451,7 @@ fn indicator(s: &App, k: &Kit) -> El {
         .child(text("·").font(k.ty.ui).color(c.text_faint))
         .child(text("esc to interrupt").font(k.ty.ui).color(c.text_faint));
     // a: the way in to the Subagent Picker, which the TUI opens with Down from an empty composer.
-    if s.variant == Variant::A && !s.working().is_empty() {
+    if s.variant.picker() && !s.working().is_empty() {
         line = line.child(el().grow(1.0)).child(
             bits::small_button("Subagents", ButtonVariant::Ghost, "↓", k)
                 .on_press(|s: &mut App| s.sub_picker = !s.sub_picker)

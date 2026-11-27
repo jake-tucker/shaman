@@ -23,9 +23,10 @@ What a picker lists and what the tree lists are the glossary's and the same in a
 | Stopping a working Subagent | the Subagent Picker, docked over the composer (↓, or **Subagents** on the Working Indicator) | its entry in the tree, its row in the Transcript, or the bar | the pane's head |
 | The Subagent Picker | kept | none: the tree does its work, and the band offers the tree when the Aside is shut | none: the pane's Title is a menu of the tree |
 
-**`d` is what was chosen**, drawn after the other three: c in every row of the table, with two changes the user
-asked for.
+**`d` is what was chosen**, drawn after the other three and taken from all of them.
 
+- **Choosing is c's**: one reading for the whole line, and one picker over the Models, what each costs and holds,
+  its Model Options and the Approval Posture, applied together on **Use**.
 - **The posture in plain words.** The reading and the picker name each value in words of Shaman's own (`Ask each
   time`, `Accept edits`, `Deny unless allowed`, `Allow everything`, `Auto`; for Codex `Ask when needed · Write in
   workspace`), the same words wherever two Providers mean the same thing. The picker sets a row a value, with what
@@ -33,6 +34,14 @@ asked for.
   `bypassPermissions` short.
 - **The posture on the Landing.** The picker sets it there too, as the posture the next Session begins under. That
   asks the Server to take a posture when it makes a Session, which it does not do today.
+- **A Subagent's Session takes the main view**, as in a, under b's trail in the band, with b's bar where the
+  composer was: the Subagent's name, Model and standing, **Stop** and **Back**.
+- **A working Subagent is stopped** from its entry in the tree, from that bar, or from the Subagent Picker, which
+  is kept from a for a reader whose Aside is shut: ↓ from an empty composer, or **Subagents** on the Working
+  Indicator and on the bar.
+
+Not taken: a's three readings and its dialogs in two steps, b's chips and menus, b's Stop on a Subagent's row in the
+Transcript, its fourth line on the Sidebar's row and its tree from the band, and c's Subagent beside its parent.
 
 The same in all three, and so not what the variants are for:
 

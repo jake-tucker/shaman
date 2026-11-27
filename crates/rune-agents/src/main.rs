@@ -68,13 +68,31 @@ impl Variant {
             Variant::A => "A (the TUI's: a dialog from each reading, the Subagent Picker)",
             Variant::B => "B (a menu from each reading, the tree stops a Subagent)",
             Variant::C => "C (one picker over all of it, a Subagent beside its parent)",
-            Variant::D => "D (chosen: c, the posture in plain words and set on the Landing too)",
+            Variant::D => {
+                "D (chosen: c's one picker; a Subagent in the main view, the tree and the picker stop)"
+            }
         }
     }
 
-    /// Whether this is c or what was chosen from it: one picker, and a Subagent beside its parent.
+    /// Whether the whole line under the composer is one reading that opens one picker: c, and what was chosen.
     pub fn one(self) -> bool {
         matches!(self, Variant::C | Variant::D)
+    }
+
+    /// Whether a Subagent's Session opens beside its parent, which only c does.
+    pub fn beside(self) -> bool {
+        self == Variant::C
+    }
+
+    /// Whether the Subagent Picker docks over the composer: the TUI's, and what was chosen.
+    pub fn picker(self) -> bool {
+        matches!(self, Variant::A | Variant::D)
+    }
+
+    /// Whether the band carries the trail of Sessions above a Subagent, the tree's entries stop a working one,
+    /// and a bar stands where the composer was: b, and what was chosen.
+    pub fn trail(self) -> bool {
+        matches!(self, Variant::B | Variant::D)
     }
 
     fn step(self, by: usize) -> Variant {
@@ -317,7 +335,7 @@ impl App {
 
     /// c: whether a Subagent's Session stands beside its parent, in the Aside's place.
     pub fn besides(&self) -> bool {
-        self.variant.one() && self.sub.is_some()
+        self.variant.beside() && self.sub.is_some()
     }
 
     pub fn toggle_aside(&mut self) {
@@ -1408,7 +1426,7 @@ pub fn field_key(s: &mut App, ev: &KeyEvent) -> bool {
     }
     // a: Down from an empty composer opens the Subagent Picker while there is something to browse.
     if ev.key == Key::Down
-        && s.variant == Variant::A
+        && s.variant.picker()
         && s.choosing.is_none()
         && s.picker.is_none()
         && s.draft.text.is_empty()
@@ -1491,9 +1509,9 @@ const SCENES: &[Scene] = &[
     ("stopping", |s| {
         s.delegating();
         match s.variant {
-            Variant::A => s.sub_picker = true,
+            Variant::A | Variant::D => s.sub_picker = true,
             Variant::B => {}
-            Variant::C | Variant::D => s.open_sub("s2"),
+            Variant::C => s.open_sub("s2"),
         }
     }),
     // A working Subagent's Session.

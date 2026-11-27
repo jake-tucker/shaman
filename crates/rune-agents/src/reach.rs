@@ -137,7 +137,7 @@ fn entry(s: &App, n: &'static Node, sidekick: bool, k: &Kit) -> El {
             ),
         );
     // b: a working Subagent is stopped from its entry, so the one tree does the Subagent Picker's work.
-    if s.variant == Variant::B && outcome == Outcome::Working && n.stoppable {
+    if s.variant.trail() && outcome == Outcome::Working && n.stoppable {
         first = first.child(stop_button(id, k));
     }
     let word = match outcome {
@@ -405,7 +405,7 @@ pub fn delegated(s: &App, n: &'static Node, k: &Kit) -> El {
     }
     line = line.child(rune::icon(k.glyph.caret_right, 12.0).color(c.icon_faint));
     // c: the row of the Subagent open beside is marked, since nothing else in the main view says which it is.
-    if s.variant.one() && s.sub == Some(id) {
+    if s.variant.beside() && s.sub == Some(id) {
         line = line.fill(c.layer_03);
     }
     k.interactive(line)
@@ -578,10 +578,22 @@ fn bar(s: &App, n: &'static Node, k: &Kit) -> El {
         .child(text(standing).font(k.ty.ui).color(c.text_muted))
         .child(el().grow(1.0))
         .child(
-            text("A subagent takes no prompts")
-                .font(k.ty.small)
-                .color(c.text_faint),
+            row().shrink().min_w(0.0).child(
+                text("A subagent takes no prompts")
+                    .font(k.ty.small)
+                    .color(c.text_faint)
+                    .truncate(),
+            ),
         );
+    // What was chosen keeps the Subagent Picker, which a Subagent's Session opens as its parent's does.
+    if s.variant.picker() && !s.working().is_empty() {
+        line = line.child(
+            bits::small_button("Subagents", ButtonVariant::Ghost, "↓", k)
+                .on_press(|s: &mut App| s.sub_picker = !s.sub_picker)
+                .build(k)
+                .key("browse"),
+        );
+    }
     if outcome == Outcome::Working && n.stoppable {
         line = line.child(
             Button::new("Stop")
@@ -687,7 +699,7 @@ pub fn picker(s: &App, k: &Kit) -> El {
 /// own header stands.
 pub fn header(s: &App, k: &Kit) -> Option<El> {
     let c = &k.c;
-    if let Some(n) = s.sub.and_then(family::node).filter(|_| !s.variant.one()) {
+    if let Some(n) = s.sub.and_then(family::node).filter(|_| !s.variant.beside()) {
         let path = family::path(n.id);
         let top = path[0];
         if s.variant == Variant::A {
