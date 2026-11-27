@@ -1,0 +1,12 @@
+
+
+[package]
+name = "rune-pictures"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+rune = { git = "https://github.com/anomalyco/rune", rev = "983e33b916b0da5719442d94ae04a00867c952a3" }
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "983e33b916b0da5719442d94ae04a00867c952a3", features = ["markdown"] }
+shaman-icons = { path = "../shaman-icons" }
