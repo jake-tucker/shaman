@@ -2,6 +2,8 @@
 
 Sessions, their Transcripts, Agent Selections, and provider Resume State are persisted in a single user-scoped SQLite database owned by the server, so Sessions survive server replacement. This supersedes the "without prematurely committing to durable history" clause of ADR-0003; the rest of that decision (server-authoritative Sessions, thin-client boundary) stands. In-memory state remains canonical while the server runs: storage is a write-through mirror fed by a background writer that coalesces streaming content updates, so a hard crash may lose the tail of an in-flight Turn but never a completed one.
 
+A Client holds to that as well (#798). One attached as its Server is replaced, restarted or lost and started again stays in the Session it had open and opens it afresh on the next Server, where a Turn that was working reads as failed and says the Server stopped before it finished. Until then the TUI left for the Landing with "Session ended because the shared server was replaced", the last of ADR-0003's "server replacement ends all Sessions" still standing after storage had made it untrue. Only a Session the next Server does not hold sends its reader to the Landing, with what they had written.
+
 ## Considered Options
 
 - **Schema shape**: an event log of `SessionChange` replayed through `apply_update` (t3-code-style event sourcing) was rejected because it welds the storage format to the churning wire protocol, forcing a data migration per protocol change. Instead, entities are rows with typed identity/ordering/metadata columns and a JSON payload column for content (opencode-style). A whole-snapshot blob per session was rejected because writes would scale with transcript length.
