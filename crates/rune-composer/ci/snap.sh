@@ -10,7 +10,7 @@ set -euo pipefail
 out=$1
 shift
 forms=("$@")
-[ ${#forms[@]} -eq 0 ] && forms=(a b c)
+[ ${#forms[@]} -eq 0 ] && forms=(a b c d)
 mkdir -p "$out"
 cargo build --locked -p rune-composer
 bin=${CARGO_TARGET_DIR:-target}/debug/rune-composer
@@ -69,7 +69,7 @@ states = [
     ("drop", "Files dragged over what takes them"),
     ("refused", "A command nobody has"),
     ("queued", "Three Prompts queued under a working Turn"),
-    ("queued-acting", "a: the keys on the queue · b: the pointer on a card · c: the fold open"),
+    ("queued-acting", "a: the keys on the queue · b and d: the pointer on a card · c: the fold open"),
     ("queued-acting-dark", "The same, dark"),
     ("queued-acting-960", "The same at 960 pt"),
     ("armed", "Esc pressed once while a Turn works"),
@@ -83,7 +83,8 @@ states = [
 ]
 names = {"a": "a · the TUI's: labels and lines, completions docked, a Pending box",
          "b": "b · a chat's: a tray of pictures, a floating list, cards",
-         "c": "c · all in the text: pills with pictures, a list in the box, a folded queue"}
+         "c": "c · all in the text: pills with pictures, a list in the box, a folded queue",
+         "d": "d · chosen: b's tray, cards and drop; c's list joined to the box, over the Transcript"}
 rows = []
 for state, title in states:
     cells = "".join(
@@ -96,7 +97,7 @@ page = """<!doctype html><meta charset=utf-8><title>Composer prototype (#797)</t
 .row{display:flex;gap:12px;overflow-x:auto}figure{margin:0;flex:0 0 auto}img{height:520px;display:block;border-radius:6px}
 figcaption{font-weight:600;padding:4px 2px}</style>
 <h1>How the composer works in a window</h1>
-<p>Three forms of the same composer, on the same editor and the same keys. Click a picture for its full size.</p>
+<p>Three forms of the same composer, on the same editor and the same keys, and d, what was chosen from them. Click a picture for its full size.</p>
 """ + "".join(rows)
 open(os.path.join(out, "index.html"), "w").write(page)
 PY

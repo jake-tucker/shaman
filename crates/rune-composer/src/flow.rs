@@ -111,25 +111,13 @@ fn session(s: &App, k: &Kit, layer: &mut Vec<El>) -> El {
     } else {
         composer(s, k, layer)
     });
-    let mut main = col()
+    let main = col()
         .key("main")
         .w_full()
         .h_full()
         .child(scroll)
         .child(col().w_full().px(24.0).pb(16.0).items_center().child(foot));
-    if s.c.form == crate::compose::Form::B {
-        main = main
-            .on_drop_files(
-                |s: &mut App, files: &[std::path::PathBuf], _: &mut rune::Tx| {
-                    crate::compose::take_files(s, files)
-                },
-            )
-            .on_drop_hover(|s: &mut App, over: bool, _: &mut rune::Tx| s.c.over = over);
-        if s.c.over {
-            main = main.child(crate::compose::drop_veil(k));
-        }
-    }
-    main
+    crate::compose::drop_target(s, main, k)
 }
 
 /// One Turn: its Prompt, its work behind a Turn Fold once it has settled, and its answer.

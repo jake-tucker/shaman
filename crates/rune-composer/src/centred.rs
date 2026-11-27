@@ -39,7 +39,7 @@ pub fn landing(s: &App, k: &Kit, layer: &mut Vec<El>) -> El {
             Picker::Directory => directory_browser(s, k),
         }));
     }
-    col()
+    let landing = col()
         .key("landing")
         .w_full()
         .h_full()
@@ -47,7 +47,8 @@ pub fn landing(s: &App, k: &Kit, layer: &mut Vec<El>) -> El {
         .px(24.0)
         // The panel sits a little above the middle, where the eye rests.
         .pb(60.0)
-        .child(panel)
+        .child(panel);
+    crate::compose::drop_target(s, landing, k)
 }
 
 /// A reading in the line beneath the composer: words in the muted ink, a way in under the pointer where it is one.

@@ -281,6 +281,7 @@ fn provisional(s: &App, k: &Kit, layer: &mut Vec<El>) -> Panes {
                 .child(flow::composer(s, k, layer)),
         ),
     );
+    let main = crate::compose::drop_target(s, main, k);
     // The Session's Aside: its own entry in the Subagents Section and nothing changed yet. What was chosen has it
     // answer for the Provisional Session with that lone entry, as the glossary does; the other variants show it
     // empty before the Session exists, or not at all.

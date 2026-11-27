@@ -1084,6 +1084,8 @@ fn init() -> App {
         compose::Form::B
     } else if has("c") {
         compose::Form::C
+    } else if has("d") {
+        compose::Form::D
     } else {
         compose::Form::A
     };
@@ -1586,7 +1588,7 @@ const SCENES: &[Scene] = &[
     ("queued-acting", |s| {
         compose::pose_queue(s);
         s.c.managing = (s.c.form == compose::Form::A).then_some(1);
-        s.c.hover = (s.c.form == compose::Form::B).then_some(1);
+        s.c.hover = s.c.form.veils().then_some(1);
         s.c.queue_open = s.c.form == compose::Form::C;
     }),
     // Esc pressed once while a Turn works.

@@ -3,7 +3,7 @@
 Throwaway, for [How the composer works in a window](https://github.com/jake-tucker/shaman/issues/797). Not shipped,
 not a default member.
 
-Three forms of the composer in the window the earlier prototypes chose (`crates/rune-settings`, variant `d`, whose
+Three forms of the composer, and what was chosen from them, in the window the earlier prototypes chose (`crates/rune-settings`, variant `d`, whose
 code this crate began from and still carries), on fake data, in Rune's default light and dark themes. All three
 stand on the same editor, the same hooks and the same keys, which is the half of the ticket that asks what Rune's
 editor can do. They disagree about what is drawn around it. `src/compose.rs` holds all of it.
@@ -15,6 +15,24 @@ editor can do. They disagree about what is drawn around it. `src/compose.rs` hol
 | Completions | docked over the composer and as wide as it, the list beside what the row under the keys means | Rune's own popup list, 420 pt, floating from the composer's leading corner | the same list inside the box, over the field |
 | Queued Prompts | one Pending box, **Steer now** and **Cancel** on every row, and the TUI's keys once **Manage** is pressed | a card each, **Steer now**, **Edit** and a cross arriving with the pointer | one line, `3 queued · next: …`, opening onto rows with the three actions |
 | A drop | the box takes it and says so in its border and placeholder | the whole main view takes it, behind a veil that says what happens | as a |
+
+**`d` is what was chosen**, drawn after the other three.
+
+- **Attachments are b's**: the label in the text and the picture in a tray at the head of the box.
+- **Completions are c's list, moved.** In c the list opened inside the box, which grew and pushed the Transcript
+  up, and while the box grew the list was drawn over the field and the reading. In d the list is the head of the
+  box and lies over the Transcript: it hangs from a holder of no height above the box, squares the corners the two
+  share, and fades in where it stands. Read frame by frame from the element tree as `/` is typed, the Transcript
+  keeps its height (594.5 pt throughout, where c took it from 594.5 to 355.5), and the field, the reading and the
+  button keep their place and opacity in every frame.
+- **Queued Prompts are b's cards**, **Steer now**, **Edit** and a cross arriving with the pointer. Nothing in d
+  reaches the queue by key.
+- **A drop is b's**: the whole main view takes it behind a veil, on the Landing too.
+- **A Skill Invocation is one unit**, as every form here has it; in the TUI an edit inside `$name` unbinds it.
+- **Prompt history hangs on the draft's ends**, and the TUI is to do the same.
+
+Not taken: a's lines under the text, its docked list and its Pending box; b's floating list; c's pictures in the
+labels, its previews and its folded queue.
 
 ## What Rune's editor does, tried here
 
@@ -62,7 +80,7 @@ each. Every line below was seen to hold.
 ## Running it
 
 ```
-cargo run -p rune-composer -- a        # or b, c
+cargo run -p rune-composer -- d        # or a, b, c
 ```
 
 The strip under the window switches forms (⌥← ⌥→) and states (⌥↑ ⌥↓). Its buttons set a Turn working or settle it,

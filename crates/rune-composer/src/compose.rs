@@ -48,19 +48,30 @@ pub enum Form {
     A,
     B,
     C,
+    /// What was chosen, drawn after the other three.
+    D,
 }
 
 impl Form {
-    pub const ALL: [Form; 3] = [Form::A, Form::B, Form::C];
+    pub const ALL: [Form; 4] = [Form::A, Form::B, Form::C, Form::D];
 
     pub fn name(self) -> &'static str {
         match self {
             Form::A => "A (the TUI's: labels and lines, completions docked, a Pending box)",
             Form::B => "B (a chat's: a tray of pictures, a floating list, cards)",
+            Form::D => {
+                "D (chosen: b's tray, cards and drop; c's list, joined to the box and laid over the Transcript)"
+            }
             Form::C => {
                 "C (all in the text: pills with pictures, a list in the box, a folded queue)"
             }
         }
+    }
+
+    /// Whether the whole main view takes a drop behind a veil, and the box alone does not say so: b, and what was
+    /// chosen.
+    pub fn veils(self) -> bool {
+        matches!(self, Form::B | Form::D)
     }
 
     pub fn step(self, by: usize) -> Form {
@@ -1238,6 +1249,7 @@ pub fn composer(
     let c = &k.c;
     let form = s.c.form;
     let foot = row()
+        .key("composer-foot")
         .w_full()
         .justify_between()
         .center_y()
@@ -1252,7 +1264,7 @@ pub fn composer(
         .fill(c.layer_01)
         .border(
             1.0,
-            if s.c.over && form != Form::B {
+            if s.c.over && !form.veils() {
                 c.info.border
             } else {
                 c.border_base
@@ -1263,12 +1275,17 @@ pub fn composer(
     let field = field(s, placeholder, 1, 8, k);
     inner = match form {
         Form::A => inner.child(field).children(lines(s, k)).child(foot),
-        Form::B => inner.children(tray(s, k)).child(field).child(foot),
+        Form::B | Form::D => inner.children(tray(s, k)).child(field).child(foot),
         Form::C => {
             let list = (s.c.popup.is_some()).then(|| embedded(s, k));
             inner.children(list).child(field).child(foot)
         }
     };
+    // d: the list stands on the box as one piece with it, so the box squares the corners they share.
+    let joined = form == Form::D && s.c.popup.is_some();
+    if joined {
+        inner = inner.corners([0.0, 0.0, k.radius.lg, k.radius.lg]);
+    }
     let boxed = pill_menu(s, inner, k, layer);
     if form == Form::B && s.c.popup.is_some() {
         floating(s, k, layer);
@@ -1277,7 +1294,7 @@ pub fn composer(
     if !s.c.queue.is_empty() && s.open.is_some() {
         stack = stack.child(match form {
             Form::A => pending(s, k),
-            Form::B => cards(s, k),
+            Form::B | Form::D => cards(s, k),
             Form::C => folded(s, k),
         });
     }
@@ -1290,7 +1307,22 @@ pub fn composer(
     if let Some(note) = &s.c.note {
         stack = stack.child(refusal(note, k));
     }
-    stack.child(boxed)
+    if form != Form::D {
+        return stack.child(boxed);
+    }
+    // d: the list hangs from a holder of no height over the box, so it lies over the Transcript and moves nothing:
+    // the field, the reading and the button stay where they are while it comes and goes.
+    let mut holder = el().key("completions-holder").w_full().h(0.0);
+    if joined {
+        holder = holder.child(over_box(s, k));
+    }
+    stack.child(
+        col()
+            .key("composer-joined")
+            .w_full()
+            .child(holder)
+            .child(boxed),
+    )
 }
 
 fn refusal(note: &str, k: &Kit) -> El {
@@ -1718,6 +1750,22 @@ fn floating(s: &App, k: &Kit, layer: &mut Vec<El>) {
         .build(k, layer);
 }
 
+/// d: c's list as the head of the composer's box, laid over what is above it.
+fn over_box(s: &App, k: &Kit) -> El {
+    let c = &k.c;
+    col()
+        .key("completions")
+        // One point under the holder, so the box's own top border is the line between the two.
+        .pin(Some(0.0), None, Some(0.0), Some(-1.0))
+        .padding(6.0)
+        .corners([k.radius.lg, k.radius.lg, 0.0, 0.0])
+        .fill(c.layer_01)
+        .border(1.0, c.border_base)
+        .transition(rune::Transition::opacity())
+        .preserve_focus_on_press(true)
+        .child(popup_list(s, k, "").max_height(224.0).build_list(k))
+}
+
 /// c: the same list inside the composer's box, over the field.
 fn embedded(s: &App, k: &Kit) -> El {
     col()
@@ -2086,8 +2134,23 @@ pub fn posture_state(s: &App, k: &Kit) -> Option<El> {
     }
 }
 
+/// b and d: the main view takes a drop anywhere, and says so behind a veil.
+pub fn drop_target(s: &App, main: El, k: &Kit) -> El {
+    if !s.c.form.veils() {
+        return main;
+    }
+    let main = main
+        .on_drop_files(|s: &mut App, files: &[PathBuf], _: &mut Tx| take_files(s, files))
+        .on_drop_hover(|s: &mut App, over: bool, _: &mut Tx| s.c.over = over);
+    if s.c.over {
+        main.child(drop_veil(k))
+    } else {
+        main
+    }
+}
+
 /// b: what the main view shows while files are dragged over it.
-pub fn drop_veil(k: &Kit) -> El {
+fn drop_veil(k: &Kit) -> El {
     let c = &k.c;
     col()
         .key("drop-veil")
