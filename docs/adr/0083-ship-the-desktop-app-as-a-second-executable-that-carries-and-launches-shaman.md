@@ -25,7 +25,7 @@ This was chosen over one executable for what one executable costs on each platfo
 ## Consequences
 
 - `PROTOCOL_VERSION` is the only check between the app's own code and the Server it attaches to, where the TUI and its Server are one build. In a release their packaging makes them one release. In development the app finds whatever `shaman` was last built beside it, so the two are built together by a script, a missing `shaman` is an error that names what to build, and a change to the loopback wire that forgets to move `PROTOCOL_VERSION` can go unseen there as it cannot in the TUI.
-- On macOS `shaman` is nested code in the app's bundle, signed by itself as `ai.shaman.cli` before the bundle is signed under an id of its own. That the keychain trusts it there as it trusts the bare binary, and that notarization accepts it, are not yet seen with a Developer ID.
+- On macOS `shaman` is nested code in the app's bundle, signed by itself as `ai.shaman.cli` before the bundle is signed under an id of its own. The keychain trusts it there as it trusts the bare binary and notarization accepts it, both seen with the release's Developer ID (#781), and it stays the file published bare only while nothing signs it again: the bundle is signed alone, never with `--deep`.
 - On a Mac's case-insensitive disk an app named Shaman and `shaman` cannot both sit in `Contents/MacOS`, so one of them is named or placed otherwise.
 - Linux ships no AppImage: its executable lives on a mount, which is a path that does not last.
 - On Windows the app is a windows-subsystem executable in release builds, and a console one in debug builds so that its headless flags still print.
