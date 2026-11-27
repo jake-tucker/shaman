@@ -220,7 +220,7 @@ Input submitted for delivery to an agent: the user's own, or a Sidekick's sent o
 _Avoid_: Request, draft, message
 
 **Attachment**:
-Media a user places on a Prompt beside its text — an image pasted from the clipboard being the first kind — that stands in the Prompt's text as a numbered label such as `[Image 1]`, carried as a typed binding beside the text as a Skill Invocation is, and travels with the Prompt whether that Prompt begins a Turn or steers one. An Attachment belongs to the user Message its Prompt becomes for as long as the Session does, so every client viewing the Session can present it.
+Media a user places on a Prompt beside its text — an image, pasted from the clipboard or dropped in as a file, being the first kind — that stands in the Prompt's text as a numbered label such as `[Image 1]`, carried as a typed binding beside the text as a Skill Invocation is, and travels with the Prompt whether that Prompt begins a Turn or steers one. An Attachment belongs to the user Message its Prompt becomes for as long as the Session does, so every client viewing the Session can present it.
 _Avoid_: File, upload, media, image (for the concept), attachment (for a Client joining a Session)
 
 **Collapsed Paste**:
