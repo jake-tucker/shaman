@@ -10,7 +10,7 @@ set -euo pipefail
 out=$1
 shift
 variants=("$@")
-[ ${#variants[@]} -eq 0 ] && variants=(a b c)
+[ ${#variants[@]} -eq 0 ] && variants=(a b c d)
 mkdir -p "$out"
 cargo build --locked -p rune-agents
 bin=${CARGO_TARGET_DIR:-target}/debug/rune-agents
@@ -27,7 +27,8 @@ snap() {
 }
 
 wide=1280x800
-scenes=(landing models models-landing models-query advisory options effort posture posture-pinned posture-codex
+scenes=(landing models models-landing models-query advisory options effort posture posture-pinned posture-landing
+    posture-codex
     next-turn subagents stopping subagent subagent-settled subagent-deep subagent-asks subagent-asking
     subagent-stopped sidekick subsession)
 for v in "${variants[@]}"; do
@@ -37,6 +38,8 @@ for v in "${variants[@]}"; do
         # b's menu has no search and no place for a Model's details; only b gives the effort a way in of its own.
         [ "$v" = b ] && { [ "$scene" = models-query ] || [ "$scene" = advisory ]; } && continue
         [ "$v" != b ] && [ "$scene" = effort ] && continue
+        # Only the one picker opens for the posture on the Landing.
+        { [ "$v" = a ] || [ "$v" = b ]; } && [ "$scene" = posture-landing ] && continue
         snap "$v-$scene" "$v" $wide light "$scene"
     done
     for scene in models models-landing options posture subagents stopping subagent subagent-asking sidekick; do
@@ -72,6 +75,7 @@ states = [
     ("effort", "The reasoning effort, which b gives a chip of its own"),
     ("posture", "The Approval Posture, as the Provider's Setting has it"), ("posture-dark", "The same, dark"),
     ("posture-pinned", "A posture this Session overrides, and the way back to the Setting"),
+    ("posture-landing", "The posture on the Landing: c names the Setting and sets nothing; d sets what the next Session begins under"),
     ("posture-codex", "Codex's posture, which has two dimensions"),
     ("next-turn", "The Agent Selection changed while a Turn works"),
     ("subagents", "A Turn waiting on its Subagents"), ("subagents-dark", "The same, dark"),
@@ -92,7 +96,8 @@ states = [
     ("subsession", "A Subsession: a Session that takes Prompts, under its Sidekick's row"),
 ]
 names = {"a": "a · the TUI's: dialogs, the Subagent Picker", "b": "b · a menu from each reading, the tree stops",
-         "c": "c · one picker, a Subagent beside its parent", "d": "d · chosen"}
+         "c": "c · one picker, a Subagent beside its parent",
+         "d": "d · chosen: c, the posture in plain words"}
 rows = []
 for state, title in states:
     cells = "".join(
@@ -107,7 +112,8 @@ figcaption{font-weight:600;padding:4px 2px}</style>
 <h1>How an Agent is selected and Subagents are reached in a window</h1>
 <p>a: the TUI's, a dialog from each of three readings, a Subagent's Session in the main view, the Subagent Picker
 over the composer · b: a chip and a menu for each reading, a trail in the band, a working Subagent stopped from the
-tree · c: one reading and one picker over Models, options and posture, a Subagent's Session beside its parent.
+tree · c: one reading and one picker over Models, options and posture, a Subagent's Session beside its parent · d:
+what was chosen, c with each posture value in plain words and the posture set on the Landing too.
 Click a picture for its full size.</p>
 """ + "".join(rows)
 open(os.path.join(out, "index.html"), "w").write(page)

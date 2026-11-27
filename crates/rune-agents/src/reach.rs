@@ -405,7 +405,7 @@ pub fn delegated(s: &App, n: &'static Node, k: &Kit) -> El {
     }
     line = line.child(rune::icon(k.glyph.caret_right, 12.0).color(c.icon_faint));
     // c: the row of the Subagent open beside is marked, since nothing else in the main view says which it is.
-    if s.variant == Variant::C && s.sub == Some(id) {
+    if s.variant.one() && s.sub == Some(id) {
         line = line.fill(c.layer_03);
     }
     k.interactive(line)
@@ -687,11 +687,7 @@ pub fn picker(s: &App, k: &Kit) -> El {
 /// own header stands.
 pub fn header(s: &App, k: &Kit) -> Option<El> {
     let c = &k.c;
-    if let Some(n) = s
-        .sub
-        .and_then(family::node)
-        .filter(|_| s.variant != Variant::C)
-    {
+    if let Some(n) = s.sub.and_then(family::node).filter(|_| !s.variant.one()) {
         let path = family::path(n.id);
         let top = path[0];
         if s.variant == Variant::A {

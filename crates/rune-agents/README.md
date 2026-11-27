@@ -23,6 +23,17 @@ What a picker lists and what the tree lists are the glossary's and the same in a
 | Stopping a working Subagent | the Subagent Picker, docked over the composer (↓, or **Subagents** on the Working Indicator) | its entry in the tree, its row in the Transcript, or the bar | the pane's head |
 | The Subagent Picker | kept | none: the tree does its work, and the band offers the tree when the Aside is shut | none: the pane's Title is a menu of the tree |
 
+**`d` is what was chosen**, drawn after the other three: c in every row of the table, with two changes the user
+asked for.
+
+- **The posture in plain words.** The reading and the picker name each value in words of Shaman's own (`Ask each
+  time`, `Accept edits`, `Deny unless allowed`, `Allow everything`, `Auto`; for Codex `Ask when needed · Write in
+  workspace`), the same words wherever two Providers mean the same thing. The picker sets a row a value, with what
+  it means and the Provider's native value beside it, in place of c's row of segments, which cut
+  `bypassPermissions` short.
+- **The posture on the Landing.** The picker sets it there too, as the posture the next Session begins under. That
+  asks the Server to take a posture when it makes a Session, which it does not do today.
+
 The same in all three, and so not what the variants are for:
 
 - **The Subagents Section.** Two lines for a Subagent (its Marker and Title; its name, Model, `Failed` or `Stopped`,
@@ -41,7 +52,7 @@ The same in all three, and so not what the variants are for:
 ## Running it
 
 ```
-cargo run -p rune-agents -- a        # or b, c
+cargo run -p rune-agents -- d        # or a, b, c
 ```
 
 The strip under the window switches variants (⌥← ⌥→) and states (⌥↑ ⌥↓), says whether Codex is signed in, and

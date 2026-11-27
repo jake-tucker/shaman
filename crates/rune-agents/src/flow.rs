@@ -25,11 +25,11 @@ const LIVE_TAIL: usize = 3;
 pub fn panes(s: &App, k: &Kit, layer: &mut Vec<El>) -> Panes {
     let sub = s.sub.and_then(family::node);
     // a and b: a Subagent's Session takes the main view. c: its parent keeps it.
-    let main = match sub.filter(|_| s.variant != Variant::C) {
+    let main = match sub.filter(|_| !s.variant.one()) {
         Some(n) => reach::sub_main(s, n, k),
         None => session(s, k, layer),
     };
-    let aside = match sub.filter(|_| s.variant == Variant::C) {
+    let aside = match sub.filter(|_| s.variant.one()) {
         Some(n) if s.aside.is_open() => reach::beside(s, n, k, layer),
         Some(n) => {
             reach::beside_sheet(s, n, k, layer);

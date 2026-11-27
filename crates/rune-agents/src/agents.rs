@@ -36,6 +36,8 @@ pub struct Dimension {
     pub what: &'static str,
     /// Each native value and what it means. The meanings are the prototype's own words: the TUI lists the values bare.
     pub values: &'static [(&'static str, &'static str)],
+    /// Each value in plain words, which is what variant d shows; the native value stays beside it in the picker.
+    pub words: &'static [&'static str],
     /// What the Provider's Setting gives a Session that has not overridden it.
     pub setting: usize,
 }
@@ -156,6 +158,13 @@ pub static PROVIDERS: [Provider; 3] = [
                     "Claude's classifier passes routine requests and asks about the rest",
                 ),
             ],
+            words: &[
+                "Ask each time",
+                "Accept edits",
+                "Deny unless allowed",
+                "Allow everything",
+                "Auto",
+            ],
             setting: 4,
         }],
     },
@@ -217,6 +226,7 @@ pub static PROVIDERS: [Provider; 3] = [
                     ("on-request", "Asks when the agent wants out of its sandbox"),
                     ("never", "Asks nothing"),
                 ],
+                words: &["Ask unless safe", "Ask when needed", "Never ask"],
                 setting: 1,
             },
             Dimension {
@@ -230,6 +240,7 @@ pub static PROVIDERS: [Provider; 3] = [
                         "Reads and writes anywhere, network included",
                     ),
                 ],
+                words: &["Read only", "Write in workspace", "Full access"],
                 setting: 1,
             },
         ],
@@ -292,6 +303,7 @@ pub static PROVIDERS: [Provider; 3] = [
                 ),
                 ("allowAll", "Asks nothing"),
             ],
+            words: &["Ask each time", "Auto", "Allow everything"],
             setting: 1,
         }],
     },
@@ -368,6 +380,17 @@ pub fn posture_reading(provider: usize, posture: &[usize]) -> String {
         .iter()
         .zip(posture)
         .map(|(d, at)| d.values[*at].0)
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+/// A posture in plain words: `Auto`, or `Ask when needed · Write in workspace`.
+pub fn posture_words(provider: usize, posture: &[usize]) -> String {
+    PROVIDERS[provider]
+        .posture
+        .iter()
+        .zip(posture)
+        .map(|(d, at)| d.words[*at])
         .collect::<Vec<_>>()
         .join(" · ")
 }

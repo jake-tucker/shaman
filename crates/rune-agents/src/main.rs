@@ -57,17 +57,24 @@ pub enum Variant {
     A,
     B,
     C,
+    D,
 }
 
 impl Variant {
-    const ALL: [Variant; 3] = [Variant::A, Variant::B, Variant::C];
+    const ALL: [Variant; 4] = [Variant::A, Variant::B, Variant::C, Variant::D];
 
     fn name(self) -> &'static str {
         match self {
             Variant::A => "A (the TUI's: a dialog from each reading, the Subagent Picker)",
             Variant::B => "B (a menu from each reading, the tree stops a Subagent)",
             Variant::C => "C (one picker over all of it, a Subagent beside its parent)",
+            Variant::D => "D (chosen: c, the posture in plain words and set on the Landing too)",
         }
+    }
+
+    /// Whether this is c or what was chosen from it: one picker, and a Subagent beside its parent.
+    pub fn one(self) -> bool {
+        matches!(self, Variant::C | Variant::D)
     }
 
     fn step(self, by: usize) -> Variant {
@@ -310,7 +317,7 @@ impl App {
 
     /// c: whether a Subagent's Session stands beside its parent, in the Aside's place.
     pub fn besides(&self) -> bool {
-        self.variant == Variant::C && self.sub.is_some()
+        self.variant.one() && self.sub.is_some()
     }
 
     pub fn toggle_aside(&mut self) {
@@ -497,7 +504,7 @@ impl App {
         self.choose(match self.variant {
             Variant::A => a,
             Variant::B => Choosing::Menu(b),
-            Variant::C => Choosing::All,
+            Variant::C | Variant::D => Choosing::All,
         });
     }
 
@@ -554,7 +561,7 @@ impl App {
                 self.apply_agent(next);
                 self.close_choosing();
             }
-            Variant::C => {
+            Variant::C | Variant::D => {
                 if provider != self.draft_agent.provider {
                     self.draft_posture = agents::setting(provider);
                     self.draft_pinned = false;
@@ -1047,6 +1054,8 @@ fn init() -> App {
         Variant::B
     } else if has("c") {
         Variant::C
+    } else if has("d") {
+        Variant::D
     } else {
         Variant::A
     };
@@ -1437,7 +1446,7 @@ const SCENES: &[Scene] = &[
         s.landed();
         s.choose_part(Choosing::Models, Chip::Model);
         s.focus_model = (1, 2);
-        if s.variant == Variant::C {
+        if s.variant.one() {
             s.pick_model(1, 2);
         }
     }),
@@ -1454,6 +1463,17 @@ const SCENES: &[Scene] = &[
         s.posture = vec![1];
         s.pinned = true;
         s.choose_part(Choosing::Posture, Chip::Posture);
+    }),
+    // The posture on the Landing: what the next Session begins under. Only c and d open a picker there, and only d
+    // lets it be set.
+    ("posture-landing", |s| {
+        s.landed();
+        if s.variant.one() {
+            s.choose(Choosing::All);
+            if s.variant == Variant::D {
+                s.set_posture(0, 1);
+            }
+        }
     }),
     // Codex's posture, which has two dimensions.
     ("posture-codex", |s| {
@@ -1473,7 +1493,7 @@ const SCENES: &[Scene] = &[
         match s.variant {
             Variant::A => s.sub_picker = true,
             Variant::B => {}
-            Variant::C => s.open_sub("s2"),
+            Variant::C | Variant::D => s.open_sub("s2"),
         }
     }),
     // A working Subagent's Session.

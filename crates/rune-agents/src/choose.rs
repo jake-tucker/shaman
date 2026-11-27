@@ -43,7 +43,7 @@ pub fn readings(s: &App, k: &Kit, layer: &mut Vec<El>) -> El {
     match s.variant {
         Variant::A => plain(s, k),
         Variant::B => chips(s, k, layer),
-        Variant::C => one(s, k),
+        Variant::C | Variant::D => one(s, k),
     }
 }
 
@@ -346,7 +346,11 @@ fn one(s: &App, k: &Kit) -> El {
         .child(word(agent.reading()))
         .child(el().w(1.0).h(12.0).fill(c.border_base))
         .child(glyph(shaman_icons::activity::APPROVAL, 12.0, c.icon_muted))
-        .child(word(agents::posture_reading(agent.provider, &s.posture)))
+        .child(word(if s.variant == Variant::D {
+            agents::posture_words(agent.provider, &s.posture)
+        } else {
+            agents::posture_reading(agent.provider, &s.posture)
+        }))
         .child(rune::icon(k.glyph.chevron_down, 11.0).color(c.icon_faint));
     if open {
         line = line.fill(c.layer_03);
@@ -933,6 +937,11 @@ fn detail(s: &App, model: &'static Model, k: &Kit) -> El {
             .child(el().w_full().h(1.0).fill(c.border_muted))
             .child(options);
     }
+    if s.variant == Variant::D {
+        return pane
+            .child(el().w_full().h(1.0).fill(c.border_muted))
+            .child(posture_words(s, k));
+    }
     // The posture is the Session's own override, so the picker sets it for an open Session alone.
     let provider = agent.provider();
     let mut posture = col().w_full().gap(8.0).child(
@@ -990,10 +999,137 @@ fn detail(s: &App, model: &'static Model, k: &Kit) -> El {
         .child(posture)
 }
 
+/// d: the posture in plain words, a row a value, set for an open Session or for the one the Landing will begin.
+fn posture_words(s: &App, k: &Kit) -> El {
+    let c = &k.c;
+    let provider = s.draft_agent.provider();
+    let at_provider = s.draft_agent.provider;
+    let mut list = col().key("posture").w_full().gap(1.0).child(
+        row()
+            .w_full()
+            .pb(4.0)
+            .gap(8.0)
+            .center_y()
+            .child(
+                text("Approval posture")
+                    .font(k.ty.small_medium)
+                    .color(c.text_muted),
+            )
+            .child(
+                text(if s.open.is_some() {
+                    "for this session"
+                } else {
+                    "for the session this begins"
+                })
+                .font(k.ty.small)
+                .color(c.text_faint),
+            ),
+    );
+    let tick = |on: bool| {
+        row().w(16.0).justify_center().child(if on {
+            rune::icon(k.glyph.check_small, 12.0).color(c.icon_base)
+        } else {
+            el()
+        })
+    };
+    for (d, dim) in provider.posture.iter().enumerate() {
+        // A Provider whose posture has one dimension needs no heading over it.
+        if provider.posture.len() > 1 {
+            list = list.child(
+                row()
+                    .w_full()
+                    .px(8.0)
+                    .pt(if d == 0 { 0.0 } else { 8.0 })
+                    .pb(2.0)
+                    .gap(8.0)
+                    .child(text(dim.what).font(k.ty.small).color(c.text_faint)),
+            );
+        }
+        let at = s.draft_posture.get(d).copied().unwrap_or(dim.setting);
+        for (v, (native, means)) in dim.values.iter().enumerate() {
+            let on = at == v;
+            let mut line = row()
+                .key(format!("posture-{d}-{v}"))
+                .w_full()
+                .h(28.0)
+                .px(8.0)
+                .gap(8.0)
+                .center_y()
+                .radius(k.radius.sm)
+                .child(tick(on))
+                .child(
+                    row()
+                        .w(140.0)
+                        .child(text(dim.words[v]).font(k.ty.ui).color(c.text_base)),
+                )
+                .child(
+                    row()
+                        .grow(1.0)
+                        .min_w(0.0)
+                        .child(text(*means).font(k.ty.small).color(c.text_muted).truncate()),
+                )
+                .child(text(*native).font(k.ty.mono).color(c.text_faint));
+            // The fill marks an override; a value the Provider's Setting gives is only ticked.
+            if on && s.draft_pinned {
+                line = line.fill(c.layer_03);
+            }
+            list = list.child(
+                k.interactive(line)
+                    .role("button")
+                    .on_press(move |s: &mut App| s.set_posture(d, v)),
+            );
+        }
+    }
+    let mut follow = row()
+        .key("posture-reset")
+        .w_full()
+        .h(28.0)
+        .px(8.0)
+        .gap(8.0)
+        .center_y()
+        .radius(k.radius.sm)
+        .child(tick(!s.draft_pinned))
+        .child(
+            text(format!("Follow {}'s setting", provider.name))
+                .font(k.ty.ui)
+                .color(c.text_base),
+        )
+        .child(el().grow(1.0))
+        .child(
+            text(agents::posture_words(
+                at_provider,
+                &agents::setting(at_provider),
+            ))
+            .font(k.ty.small)
+            .color(c.text_faint),
+        );
+    if !s.draft_pinned {
+        follow = follow.fill(c.layer_03);
+    }
+    list.child(
+        row()
+            .w_full()
+            .py(3.0)
+            .child(el().w_full().h(1.0).fill(c.border_muted)),
+    )
+    .child(
+        k.interactive(follow)
+            .role("button")
+            .on_press(|s: &mut App| s.reset_posture()),
+    )
+}
+
 fn all_dialog(s: &App, k: &Kit) -> El {
     let c = &k.c;
     let width = (s.win_w - 120.0).clamp(640.0, 900.0);
-    let height = (s.win_h - 140.0).clamp(420.0, 560.0);
+    let height = (s.win_h - 140.0).clamp(
+        420.0,
+        if s.variant == Variant::D {
+            640.0
+        } else {
+            560.0
+        },
+    );
     let draft = &s.draft_agent;
     let side = col()
         .w(300.0)
