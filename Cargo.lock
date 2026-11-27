@@ -4794,6 +4794,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rune-composer"
+version = "0.0.0"
+dependencies = [
+ "rune",
+ "rune-kit",
+ "shaman-icons",
+]
+
+[[package]]
 name = "rune-conversation"
 version = "0.0.0"
 dependencies = [
