@@ -448,8 +448,12 @@ The long-lived Shaman process that owns a user's Sessions, Server Settings, and 
 _Avoid_: Daemon, backend, host
 
 **Manual stop**:
-A Server's stopping because its user asked: `shaman server stop`, or the operating system's signal answered as one, such as a plain `kill`. It is recorded for the Channel before the Server lets the Channel go, and is final for every Server launched before it, so it is neither undone by a Client recovering nor by a Keeper; only a later launch serves. A stop asked for with no Server there to answer it, one having just crashed, is recorded all the same. Distinct from a crash, which records nothing and is answered by starting another, and from a replacement, which hands the Channel on.
+A Server's stopping because its user asked: `shaman server stop`, or the operating system's signal answered as one, such as a plain `kill`. It is recorded for the Channel before the Server lets the Channel go, and is final for every Server launched before it, so it is neither undone by a Client recovering nor by a Keeper; only a later launch serves. A stop asked for with no Server there to answer it, one having just crashed, is recorded all the same. Distinct from a crash, which records nothing and is answered by starting another, and from a replacement, which hands the Channel on. A TUI attached as one lands leaves; the desktop app stays, says its Server was stopped, and starts none until its reader asks, which is a later launch.
 _Avoid_: Shutdown, kill, quit
+
+**Restart**:
+A Server's being started afresh because its user asked, which the desktop app offers. The Client that asked stops the Server as a replacement and launches the next one itself, so the Channel is handed on and no stop is recorded: attached Clients follow to the new Server, and a Keeper has nothing to hold to. Work under way ends as it does at any stop, each working Turn failed, and every Session is there on the new Server. Distinct from a Manual stop, which leaves the Channel with no Server until a later launch.
+_Avoid_: Reboot, reload, bounce
 
 **Login start**:
 A Channel's registration with the machine's service manager to run its Keeper whenever its user logs in: a LaunchAgent, a systemd user unit, or a Scheduled Task at logon, off until asked for with `shaman server install`, never needing elevation, and in force from the next login. It is a start at login rather than at boot because a Server's identity key may be out of reach until then, and neither registering nor removing one touches a Server running now.
@@ -520,7 +524,7 @@ The scope under which a listing of Sessions ranges over every Server the Client 
 _Avoid_: All servers, all machines, fleet, merged view, global
 
 **Channel**:
-The build variant (release or a development channel) whose Sessions and runtime state are kept separate. Which Worktrees a Repository has is no concern of the Channel: Shaman manages its Worktrees in one place, and Channels that select the same Worktree share its working-copy files.
+The build variant (release or a development channel) whose Sessions and runtime state are kept separate. Which Worktrees a Repository has is no concern of the Channel: Shaman manages its Worktrees in one place, and Channels that select the same Worktree share its working-copy files. A Client says nothing of the release Channel, the ordinary case staying quiet; the desktop app names any other wherever it stands, and a second launch of it finds only a window of its own Channel.
 _Avoid_: Environment, profile
 
 **Log**:
