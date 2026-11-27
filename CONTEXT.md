@@ -336,7 +336,7 @@ The Activity recording one shell command a Provider ran while working a Turn; a 
 _Avoid_: Shell invocation, exec
 
 **File Change**:
-The Activity recording one Provider-reported operation over one or more files in the Workspace, whichever Tool the Provider performed it with. Shaman's own name for the concept is File Change everywhere except the words a Group's marker counts it in, which deliberately say _edit_.
+The Activity recording one Provider-reported operation over one or more files in the Workspace, whichever Tool the Provider performed it with. Shaman's own name for the concept is File Change everywhere except the words a Group's marker counts it in, which deliberately say _edit_. A File Change may hold a diff for each of its files: the change as its Provider reported it, the one proposed until the change is made and the one made from then on. A File Change that was declined, failed or was stopped keeps the diff it proposed, and one that holds no diff shows its paths alone.
 _Avoid_: Patch, file edit
 
 **Tool Call**:
