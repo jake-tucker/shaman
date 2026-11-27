@@ -4966,6 +4966,15 @@ version = "0.1.0"
 source = "git+https://github.com/anomalyco/rune?rev=983e33b916b0da5719442d94ae04a00867c952a3#983e33b916b0da5719442d94ae04a00867c952a3"
 
 [[package]]
+name = "rune-settings"
+version = "0.0.0"
+dependencies = [
+ "rune",
+ "rune-kit",
+ "shaman-icons",
+]
+
+[[package]]
 name = "rune-spell"
 version = "0.0.1"
 source = "git+https://github.com/anomalyco/rune?rev=983e33b916b0da5719442d94ae04a00867c952a3#983e33b916b0da5719442d94ae04a00867c952a3"
