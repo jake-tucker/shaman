@@ -10,7 +10,7 @@ set -euo pipefail
 out=$1
 shift
 looks=("$@")
-[ ${#looks[@]} -eq 0 ] && looks=(a b c)
+[ ${#looks[@]} -eq 0 ] && looks=(a b c d)
 mkdir -p "$out"
 cargo build --locked -p rune-pictures
 bin=${CARGO_TARGET_DIR:-target}/debug/rune-pictures
@@ -56,7 +56,8 @@ states = [
 ]
 names = {"a": "a · a viewer over the window; a frame holds a lost picture's place",
          "b": "b · bands and lines; the sheet a diff opens in; a lost picture is a row",
-         "c": "c · in place: a press shows all of it; a lost picture is its words"}
+         "c": "c · in place: a press shows all of it; a lost picture is its words",
+         "d": "d · chosen: a's thumbnails, viewer and frames; a URL stays a link; previews always on"}
 rows = []
 for state, title in states:
     cells = "".join(

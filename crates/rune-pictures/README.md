@@ -20,7 +20,16 @@ wrote, a path that names no file, and a picture a Tool Call returned.
 | A picture that cannot be read | the frame, saying why, with **Try again** | one row, saying why, with **Try again** | the broken-image glyph and the alt text; why is a tooltip |
 | A URL's picture | a frame naming the host, with **Load picture** | one row naming the host, with **Load picture** | a link, as the TUI draws it; nothing fetches it |
 
-Where `transcript.imagePreviews` is off, every look names each picture in a line and draws none.
+Where `transcript.imagePreviews` is off, looks a, b and c name each picture in a line and draw none.
+
+**`d` is what was chosen**, drawn after the other three: a throughout, with two changes.
+
+- **A URL's picture is a link**, as in c and in the TUI. Nothing fetches it, and a press opens it in the browser.
+- **The app does not read `transcript.imagePreviews`**, which exists for terminals that draw pictures badly. In d
+  the strip's "Previews off" changes nothing.
+
+Not taken: b's bands, lines, sheet and rows; c's cut, its growing in place and its line of actions; a's
+**Load picture**.
 
 ## What Rune does, tried here
 
@@ -38,7 +47,7 @@ Where `transcript.imagePreviews` is off, every look names each picture in a line
 ## Running it
 
 ```
-cargo run -p rune-pictures -- a        # or b, c
+cargo run -p rune-pictures -- d        # or a, b, c
 ```
 
 The strip under the window switches looks (⌥← ⌥→) and states (⌥↑ ⌥↓). Its buttons make every picture slow, stop the

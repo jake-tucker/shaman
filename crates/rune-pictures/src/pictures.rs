@@ -34,16 +34,22 @@ pub enum Look {
     A,
     B,
     C,
+    /// What was chosen: a throughout, but for a URL's picture, which stays a link, and the previews Setting,
+    /// which the app does not read.
+    D,
 }
 
 impl Look {
-    pub const ALL: [Look; 3] = [Look::A, Look::B, Look::C];
+    pub const ALL: [Look; 4] = [Look::A, Look::B, Look::C, Look::D];
 
     pub fn name(self) -> &'static str {
         match self {
             Look::A => "A (a viewer over the window; a frame holds a lost picture's place)",
             Look::B => "B (bands and lines; the sheet a diff opens in; a lost picture is a row)",
             Look::C => "C (in place: a press shows all of it; a lost picture is its words)",
+            Look::D => {
+                "D (chosen: a's thumbnails, viewer and frames; a URL stays a link; previews always on)"
+            }
         }
     }
 
@@ -249,7 +255,8 @@ impl State {
 
     pub fn status(&self, at: usize) -> Status<'_> {
         let pic = &PICS[at];
-        if self.off {
+        // What was chosen: the app draws pictures whatever `transcript.imagePreviews` says, which is the TUI's.
+        if self.off && self.look != Look::D {
             return Status::Off;
         }
         if pic.from == From::Url && !self.fetched {
@@ -614,13 +621,18 @@ fn picture(s: &App, at: usize, k: &Kit) -> El {
     let pic = &PICS[at];
     match s.p.status(at) {
         Status::Ready(image) => match s.p.look {
-            Look::A => whole(at, image, k),
+            Look::A | Look::D => whole(at, image, k),
             Look::B => band(at, image, k),
             Look::C => in_place(s, at, image, k),
         },
         Status::Off => named(at, "Previews are off", None, k),
         status => match s.p.look {
-            Look::A => frame(s, at, &status, k),
+            // What was chosen: nothing fetches a URL's picture, which is a link that opens in the browser.
+            Look::D if matches!(status, Status::Unfetched) => {
+                bits::md(&format!("[image: {}]({})", pic.name, pic.src), false, k)
+                    .key(format!("link-{at}"))
+            }
+            Look::A | Look::D => frame(s, at, &status, k),
             Look::B => match status {
                 Status::Loading => named(at, "Reading…", None, k),
                 Status::Unfetched => named(
@@ -887,7 +899,7 @@ pub fn overlays(s: &App, k: &Kit, layer: &mut Vec<El>) {
     let Some(image) = s.p.ready(at) else { return };
     let close = |s: &mut App| s.p.viewing = None;
     match s.p.look {
-        Look::A => {
+        Look::A | Look::D => {
             layer.push(rune_kit::scrim("viewer-scrim", close).fill(k.c.scrim));
             let shown = el().key("viewer-picture").pixels(image.pixels());
             layer.push(

@@ -1085,6 +1085,8 @@ fn init() -> App {
         pictures::Look::B
     } else if has("c") {
         pictures::Look::C
+    } else if has("d") {
+        pictures::Look::D
     } else {
         pictures::Look::A
     };
