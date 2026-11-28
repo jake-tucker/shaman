@@ -1,0 +1,55 @@
+{"at_ms":2,"dir":"to_cli","method":"connect","id":1,"event":null}
+{"at_ms":366,"dir":"from_cli","method":null,"id":1,"event":null}
+{"at_ms":366,"dir":"to_cli","method":"status.get","id":2,"event":null}
+{"at_ms":366,"dir":"from_cli","method":null,"id":2,"event":null}
+{"at_ms":367,"dir":"to_cli","method":"session.create","id":3,"event":null}
+{"at_ms":385,"dir":"from_cli","method":null,"id":3,"event":null}
+{"at_ms":385,"dir":"to_cli","method":"session.permissions.setMode","id":4,"event":null}
+{"at_ms":386,"dir":"from_cli","method":"session.event","id":null,"event":"session.permissions_changed"}
+{"at_ms":386,"dir":"from_cli","method":null,"id":4,"event":null}
+{"at_ms":386,"dir":"to_cli","method":"session.model.getCurrent","id":5,"event":null}
+{"at_ms":387,"dir":"from_cli","method":null,"id":5,"event":null}
+{"at_ms":387,"dir":"to_cli","method":"account.getCurrentAuth","id":6,"event":null}
+{"at_ms":387,"dir":"from_cli","method":null,"id":6,"event":null}
+{"at_ms":388,"dir":"to_cli","method":"models.list","id":7,"event":null}
+{"at_ms":2283,"dir":"from_cli","method":null,"id":7,"event":null}
+{"at_ms":2290,"dir":"to_cli","method":"session.model.list","id":8,"event":null}
+{"at_ms":2296,"dir":"from_cli","method":null,"id":8,"event":null}
+{"at_ms":2302,"dir":"to_cli","method":"session.model.switchTo","id":9,"event":null}
+{"at_ms":2303,"dir":"from_cli","method":"session.event","id":null,"event":"session.model_change"}
+{"at_ms":2303,"dir":"from_cli","method":null,"id":9,"event":null}
+{"at_ms":2304,"dir":"to_cli","method":"session.send","id":10,"event":null,"mode":null,"prompt":"Reply with exactly the word ALPHA and nothing else."}
+{"at_ms":2304,"dir":"from_cli","method":"session.event","id":null,"event":"pending_messages.modified"}
+{"at_ms":2305,"dir":"from_cli","method":null,"id":10,"event":null}
+{"at_ms":2314,"dir":"from_cli","method":"session.event","id":null,"event":"pending_messages.modified"}
+{"at_ms":4129,"dir":"from_cli","method":"session.event","id":null,"event":"user.message","delivery":"idle","content":"Reply with exactly the word ALPHA and nothing else."}
+{"at_ms":4130,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.turn_start"}
+{"at_ms":7212,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.message_start"}
+{"at_ms":7220,"dir":"to_cli","method":"session.send","id":11,"event":null,"mode":"immediate","prompt":"STEER-MARKER: reply with exactly the word BRAVO and nothing "}
+{"at_ms":7221,"dir":"from_cli","method":"session.event","id":null,"event":"pending_messages.modified"}
+{"at_ms":7221,"dir":"from_cli","method":null,"id":11,"event":null}
+{"at_ms":7354,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.message","content":"ALPHA"}
+{"at_ms":7354,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.reasoning"}
+{"at_ms":7356,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.turn_end"}
+{"at_ms":7363,"dir":"from_cli","method":"session.event","id":null,"event":"pending_messages.modified"}
+{"at_ms":7363,"dir":"from_cli","method":"session.event","id":null,"event":"pending_messages.modified"}
+{"at_ms":7380,"dir":"from_cli","method":"session.event","id":null,"event":"user.message","delivery":"queued","content":"STEER-MARKER: reply with exactly the word BRAVO and nothing "}
+{"at_ms":7382,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.turn_start"}
+{"at_ms":8797,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.message_start"}
+{"at_ms":8856,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.message","content":"BRAVO"}
+{"at_ms":8856,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.reasoning"}
+{"at_ms":8856,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.turn_end"}
+{"at_ms":8861,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.idle"}
+{"at_ms":8861,"dir":"from_cli","method":"session.event","id":null,"event":"session.idle"}
+{"at_ms":28878,"dir":"to_cli","method":"session.send","id":12,"event":null,"mode":null,"prompt":"Reply with exactly the word CHARLIE and nothing else."}
+{"at_ms":28879,"dir":"from_cli","method":"session.event","id":null,"event":"pending_messages.modified"}
+{"at_ms":28879,"dir":"from_cli","method":null,"id":12,"event":null}
+{"at_ms":28880,"dir":"from_cli","method":"session.event","id":null,"event":"pending_messages.modified"}
+{"at_ms":28895,"dir":"from_cli","method":"session.event","id":null,"event":"user.message","delivery":"idle","content":"Reply with exactly the word CHARLIE and nothing else."}
+{"at_ms":28897,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.turn_start"}
+{"at_ms":29889,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.message_start"}
+{"at_ms":30004,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.message","content":"CHARLIE"}
+{"at_ms":30004,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.reasoning"}
+{"at_ms":30004,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.turn_end"}
+{"at_ms":30009,"dir":"from_cli","method":"session.event","id":null,"event":"assistant.idle"}
+{"at_ms":30009,"dir":"from_cli","method":"session.event","id":null,"event":"session.idle"}

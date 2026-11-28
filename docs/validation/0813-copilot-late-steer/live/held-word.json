@@ -1,0 +1,380 @@
+[
+  {
+    "step": "the steer is admitted",
+    "at_ms": 9979,
+    "note": {
+      "answer_shown_at_ms": 8968,
+      "turn_just_before": "active",
+      "asked_at_ms": 9974,
+      "answered_at_ms": 9978,
+      "admission": {
+        "delivery": "steer",
+        "status": "pending"
+      }
+    },
+    "session": {
+      "session_status": "active",
+      "turns": [
+        "active"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: reply with exactly the wor",
+          "delivery": "steer",
+          "status": "pending",
+          "taken_in_turn": null,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"453ccb22-e5f9-4252-b989-3234d8d397a0\",\"turn_id\":\"656ab731-3b39-42a4-af0e-7380e09455cd\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  },
+  {
+    "step": "the first Turn settles",
+    "at_ms": 12992,
+    "note": {
+      "settled": true
+    },
+    "session": {
+      "session_status": "idle",
+      "turns": [
+        "completed"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: reply with exactly the wor",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        },
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "STEER-MARKER: reply with exactly the word BRAVO and nothing else."
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"453ccb22-e5f9-4252-b989-3234d8d397a0\",\"turn_id\":\"656ab731-3b39-42a4-af0e-7380e09455cd\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  },
+  {
+    "step": "twenty seconds on",
+    "at_ms": 32998,
+    "note": {
+      "bravo_txt": false
+    },
+    "session": {
+      "session_status": "idle",
+      "turns": [
+        "completed"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: reply with exactly the wor",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        },
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "STEER-MARKER: reply with exactly the word BRAVO and nothing else."
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"453ccb22-e5f9-4252-b989-3234d8d397a0\",\"turn_id\":\"656ab731-3b39-42a4-af0e-7380e09455cd\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  },
+  {
+    "step": "one more Prompt is admitted",
+    "at_ms": 33004,
+    "note": {
+      "admission": {
+        "delivery": "queue",
+        "status": "pending"
+      }
+    },
+    "session": {
+      "session_status": "active",
+      "turns": [
+        "completed",
+        "active"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: reply with exactly the wor",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "Reply with exactly the word CHARLIE and ",
+          "delivery": "queue",
+          "status": "delivered",
+          "taken_in_turn": 2,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        },
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "STEER-MARKER: reply with exactly the word BRAVO and nothing else."
+        },
+        {
+          "turn": 2,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word CHARLIE and nothing else."
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"453ccb22-e5f9-4252-b989-3234d8d397a0\",\"turn_id\":\"656ab731-3b39-42a4-af0e-7380e09455cd\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  },
+  {
+    "step": "its Turn settles",
+    "at_ms": 34001,
+    "note": {
+      "settled": true
+    },
+    "session": {
+      "session_status": "idle",
+      "turns": [
+        "completed",
+        "completed"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: reply with exactly the wor",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "Reply with exactly the word CHARLIE and ",
+          "delivery": "queue",
+          "status": "delivered",
+          "taken_in_turn": 2,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        },
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "STEER-MARKER: reply with exactly the word BRAVO and nothing else."
+        },
+        {
+          "turn": 2,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word CHARLIE and nothing else."
+        },
+        {
+          "turn": 2,
+          "role": "agent",
+          "status": "completed",
+          "content": "CHARLIE"
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"453ccb22-e5f9-4252-b989-3234d8d397a0\",\"turn_id\":\"656ab731-3b39-42a4-af0e-7380e09455cd\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}",
+        "{\"kind\":\"reasoning\",\"id\":\"fd67722e-d56a-4b47-b044-df71df088c43\",\"turn_id\":\"9cfb6591-6a6f-4cd7-ae16-0d8f4b8057ab\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  },
+  {
+    "step": "fifteen seconds on",
+    "at_ms": 49009,
+    "note": {
+      "bravo_txt": false
+    },
+    "session": {
+      "session_status": "idle",
+      "turns": [
+        "completed",
+        "completed"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: reply with exactly the wor",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "Reply with exactly the word CHARLIE and ",
+          "delivery": "queue",
+          "status": "delivered",
+          "taken_in_turn": 2,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        },
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "STEER-MARKER: reply with exactly the word BRAVO and nothing else."
+        },
+        {
+          "turn": 2,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word CHARLIE and nothing else."
+        },
+        {
+          "turn": 2,
+          "role": "agent",
+          "status": "completed",
+          "content": "CHARLIE"
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"453ccb22-e5f9-4252-b989-3234d8d397a0\",\"turn_id\":\"656ab731-3b39-42a4-af0e-7380e09455cd\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}",
+        "{\"kind\":\"reasoning\",\"id\":\"fd67722e-d56a-4b47-b044-df71df088c43\",\"turn_id\":\"9cfb6591-6a6f-4cd7-ae16-0d8f4b8057ab\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  }
+]

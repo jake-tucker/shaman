@@ -1,0 +1,32 @@
+{"at_ms":1,"probe":{"sent":"prompt","text":"Run exactly one bash tool call: `sleep 6 && echo one`. Then reply with one short sentence saying what it printed."}}
+{"at_ms":1,"type":"pending_messages.modified","data":{}}
+{"at_ms":5,"type":"pending_messages.modified","data":{}}
+{"at_ms":2440,"type":"user.message","data":{"content":"Run exactly one bash tool call: `sleep 6 && echo one`. Then reply with one short sentence saying what it printed.","delivery":"idle","messageId":"6e4c3dfa-eacc-4eca-88c9-934dd8695bf6","interactionId":"262868f7-30d0-4315-8f91-8eb37b2aa9e3","turnId":"0"}}
+{"at_ms":2442,"type":"assistant.turn_start","data":{"interactionId":"262868f7-30d0-4315-8f91-8eb37b2aa9e3","turnId":"0"}}
+{"at_ms":5388,"type":"assistant.message","data":{"content":"","messageId":"af857781-420a-41b9-b980-2e6369e49064","interactionId":"262868f7-30d0-4315-8f91-8eb37b2aa9e3","turnId":"0","toolRequests":1}}
+{"at_ms":5389,"type":"tool.execution_start","data":{"turnId":"0","toolName":"bash"}}
+{"at_ms":5389,"probe":{"sending":"immediate","text":"STEER-MARKER: reply with exactly the word BRAVO and nothing else."}}
+{"at_ms":5390,"type":"pending_messages.modified","data":{}}
+{"at_ms":5390,"probe":{"answered":"Ok(\"16269986-fa49-4c03-87f9-0f48450d5f0b\")"}}
+{"at_ms":5427,"type":"tool.execution_complete","data":{"interactionId":"262868f7-30d0-4315-8f91-8eb37b2aa9e3","turnId":"0"}}
+{"at_ms":5429,"type":"assistant.turn_end","data":{"turnId":"0"}}
+{"at_ms":5429,"type":"assistant.turn_start","data":{"interactionId":"262868f7-30d0-4315-8f91-8eb37b2aa9e3","turnId":"1"}}
+{"at_ms":5431,"type":"pending_messages.modified","data":{}}
+{"at_ms":5431,"type":"user.message","data":{"content":"STEER-MARKER: reply with exactly the word BRAVO and nothing else.","delivery":"steering","messageId":"16269986-fa49-4c03-87f9-0f48450d5f0b","interactionId":"262868f7-30d0-4315-8f91-8eb37b2aa9e3","turnId":"1"}}
+{"at_ms":7074,"type":"assistant.message_start","data":{"messageId":"edf5101b-b781-4d6d-bde5-c9ae00ce38c2","phase":"final_answer"}}
+{"at_ms":7146,"type":"pending_messages.modified","data":{}}
+{"at_ms":7146,"type":"assistant.message","data":{"content":"BRAVO","messageId":"edf5101b-b781-4d6d-bde5-c9ae00ce38c2","interactionId":"262868f7-30d0-4315-8f91-8eb37b2aa9e3","turnId":"1","phase":"final_answer","toolRequests":0}}
+{"at_ms":7147,"type":"assistant.turn_end","data":{"turnId":"1"}}
+{"at_ms":7149,"type":"assistant.idle","data":{}}
+{"at_ms":11439,"type":"pending_messages.modified","data":{}}
+{"at_ms":11440,"type":"pending_messages.modified","data":{}}
+{"at_ms":11455,"type":"assistant.message","data":{"content":"","messageId":"cdb5936e-e513-43d3-9f72-b6105572c9ac","toolRequests":1}}
+{"at_ms":11456,"type":"tool.execution_start","data":{"toolName":"read_bash"}}
+{"at_ms":11456,"type":"tool.execution_complete","data":{}}
+{"at_ms":11459,"type":"assistant.turn_start","data":{"interactionId":"262868f7-30d0-4315-8f91-8eb37b2aa9e3","turnId":"0"}}
+{"at_ms":13815,"type":"assistant.message_start","data":{"messageId":"e00f4569-be75-4989-b2c7-7c17a16a3d28","phase":"final_answer"}}
+{"at_ms":13894,"type":"assistant.message","data":{"content":"It printed `one`.","messageId":"e00f4569-be75-4989-b2c7-7c17a16a3d28","interactionId":"262868f7-30d0-4315-8f91-8eb37b2aa9e3","turnId":"0","phase":"final_answer","toolRequests":0}}
+{"at_ms":13896,"type":"assistant.turn_end","data":{"turnId":"0"}}
+{"at_ms":13900,"type":"assistant.idle","data":{}}
+{"at_ms":13900,"type":"session.idle","data":{}}
+{"at_ms":33902,"probe":{"quiet_for_s":20}}

@@ -1,0 +1,22 @@
+{"at_ms":0,"probe":{"sent":"prompt","text":"Reply with exactly the word ALPHA and nothing else."}}
+{"at_ms":0,"type":"pending_messages.modified","data":{}}
+{"at_ms":3,"type":"pending_messages.modified","data":{}}
+{"at_ms":2164,"type":"user.message","data":{"content":"Reply with exactly the word ALPHA and nothing else.","delivery":"idle","messageId":"d019e173-6eae-4642-b84f-21ad37ad1b35","interactionId":"cd59ff50-e487-46e2-94c4-b38d931aa657","turnId":"0"}}
+{"at_ms":2168,"type":"assistant.turn_start","data":{"interactionId":"cd59ff50-e487-46e2-94c4-b38d931aa657","turnId":"0"}}
+{"at_ms":4899,"type":"assistant.message_start","data":{"messageId":"22c780ad-95b8-4de2-8372-2e41d4dba73c","phase":"final_answer"}}
+{"at_ms":5158,"type":"assistant.message","data":{"content":"ALPHA","messageId":"22c780ad-95b8-4de2-8372-2e41d4dba73c","interactionId":"cd59ff50-e487-46e2-94c4-b38d931aa657","turnId":"0","phase":"final_answer","toolRequests":0}}
+{"at_ms":5158,"type":"assistant.turn_end","data":{"turnId":"0"}}
+{"at_ms":5161,"type":"assistant.idle","data":{}}
+{"at_ms":5161,"type":"session.idle","data":{}}
+{"at_ms":5161,"probe":{"sending":"immediate","text":"STEER-MARKER: reply with exactly the word BRAVO and nothing else."}}
+{"at_ms":5162,"type":"pending_messages.modified","data":{}}
+{"at_ms":5162,"probe":{"answered":"Ok(\"37c33462-03e7-4b0f-9838-8899aa07cb00\")"}}
+{"at_ms":5163,"type":"pending_messages.modified","data":{}}
+{"at_ms":5191,"type":"user.message","data":{"content":"STEER-MARKER: reply with exactly the word BRAVO and nothing else.","delivery":"idle","messageId":"37c33462-03e7-4b0f-9838-8899aa07cb00","interactionId":"7e805a9f-02ff-4e35-b907-e5df04c6cf51","turnId":"0"}}
+{"at_ms":5194,"type":"assistant.turn_start","data":{"interactionId":"7e805a9f-02ff-4e35-b907-e5df04c6cf51","turnId":"0"}}
+{"at_ms":6185,"type":"assistant.message_start","data":{"messageId":"25ee2d76-2a69-426e-9139-cb7936b820ed","phase":"final_answer"}}
+{"at_ms":6284,"type":"assistant.message","data":{"content":"BRAVO","messageId":"25ee2d76-2a69-426e-9139-cb7936b820ed","interactionId":"7e805a9f-02ff-4e35-b907-e5df04c6cf51","turnId":"0","phase":"final_answer","toolRequests":0}}
+{"at_ms":6285,"type":"assistant.turn_end","data":{"turnId":"0"}}
+{"at_ms":6286,"type":"assistant.idle","data":{}}
+{"at_ms":6286,"type":"session.idle","data":{}}
+{"at_ms":26289,"probe":{"quiet_for_s":20}}

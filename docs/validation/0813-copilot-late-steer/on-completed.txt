@@ -1,0 +1,12 @@
+c0-1: ALPHA@8370 idle@8374 | sent mode=enqueue at 8382 delivery=idle | turn before=completed | turns=completed,completed steer=delivered/turn2 bravo=turn2
+c0-2: ALPHA@7738 idle@7739 | sent mode=enqueue at 7752 delivery=idle | turn before=completed | turns=completed,completed steer=delivered/turn2 bravo=turn2
+c0-3: ALPHA@8281 idle@8286 | sent mode=enqueue at 8297 delivery=idle | turn before=completed | turns=completed,completed steer=delivered/turn2 bravo=turn2
+c0-4: ALPHA@8248 idle@8252 | sent mode=enqueue at 8261 delivery=idle | turn before=completed | turns=completed,completed steer=delivered/turn2 bravo=turn2
+c1-5: ALPHA@8088 idle@8090 | sent mode=enqueue at 8102 delivery=idle | turn before=completed | turns=completed,completed steer=delivered/turn2 bravo=turn2
+c1-6: ALPHA@8390 idle@8395 | sent mode=enqueue at 8407 delivery=idle | turn before=completed | turns=completed,completed steer=delivered/turn2 bravo=turn2
+c2-7: ALPHA@7979 idle@7984 | sent mode=enqueue at 7998 delivery=idle | turn before=completed | turns=completed,completed steer=delivered/turn2 bravo=turn2
+c2-8: ALPHA@8133 idle@8138 | sent mode=enqueue at 8151 delivery=idle | turn before=completed | turns=completed,completed steer=delivered/turn2 bravo=turn2
+c3-10: ALPHA@8319 idle@8323 | sent mode=enqueue at 8338 delivery=idle | turn before=completed | turns=completed,completed steer=delivered/turn2 bravo=turn2
+c3-9: ALPHA@8054 idle@8059 | sent mode=enqueue at 8073 delivery=idle | turn before=completed | turns=completed,completed steer=delivered/turn2 bravo=turn2
+c5-11: ALPHA@8099 idle@8103 | sent mode=enqueue at 8117 delivery=idle | turn before=completed | turns=completed,completed steer=delivered/turn2 bravo=turn2
+c5-12: ALPHA@8349 idle@8354 | sent mode=enqueue at 8371 delivery=idle | turn before=completed | turns=completed,completed steer=delivered/turn2 bravo=turn2

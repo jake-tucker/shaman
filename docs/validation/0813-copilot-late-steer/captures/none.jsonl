@@ -1,0 +1,11 @@
+{"at_ms":3,"probe":{"sent":"prompt","text":"Reply with exactly the word ALPHA and nothing else."}}
+{"at_ms":3,"type":"pending_messages.modified","data":{}}
+{"at_ms":12,"type":"pending_messages.modified","data":{}}
+{"at_ms":2466,"type":"user.message","data":{"content":"Reply with exactly the word ALPHA and nothing else.","delivery":"idle","messageId":"04f5f5cb-2491-48f1-94cd-022e44158ed0","interactionId":"2b035d65-ee2c-4653-83f5-8e12b9869168","turnId":"0"}}
+{"at_ms":2470,"type":"assistant.turn_start","data":{"interactionId":"2b035d65-ee2c-4653-83f5-8e12b9869168","turnId":"0"}}
+{"at_ms":5499,"type":"assistant.message_start","data":{"messageId":"ac78f918-07de-4735-bb9b-35d7cbae7baf","phase":"final_answer"}}
+{"at_ms":5750,"type":"assistant.message","data":{"content":"ALPHA","messageId":"ac78f918-07de-4735-bb9b-35d7cbae7baf","interactionId":"2b035d65-ee2c-4653-83f5-8e12b9869168","turnId":"0","phase":"final_answer","toolRequests":0}}
+{"at_ms":5750,"type":"assistant.turn_end","data":{"turnId":"0"}}
+{"at_ms":5753,"type":"assistant.idle","data":{}}
+{"at_ms":5753,"type":"session.idle","data":{}}
+{"at_ms":25760,"probe":{"quiet_for_s":20}}

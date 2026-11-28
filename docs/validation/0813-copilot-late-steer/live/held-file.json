@@ -1,0 +1,524 @@
+[
+  {
+    "step": "the steer is admitted",
+    "at_ms": 8725,
+    "note": {
+      "answer_shown_at_ms": 7716,
+      "turn_just_before": "active",
+      "asked_at_ms": 8721,
+      "answered_at_ms": 8724,
+      "admission": {
+        "delivery": "steer",
+        "status": "pending"
+      }
+    },
+    "session": {
+      "session_status": "active",
+      "turns": [
+        "active"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: run exactly one bash tool ",
+          "delivery": "steer",
+          "status": "pending",
+          "taken_in_turn": null,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"40eb5b90-f65a-40bb-ac05-014952772150\",\"turn_id\":\"ff198ea4-50a6-4748-a529-56f131dd0a2c\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  },
+  {
+    "step": "the first Turn settles",
+    "at_ms": 11942,
+    "note": {
+      "settled": true
+    },
+    "session": {
+      "session_status": "idle",
+      "turns": [
+        "completed"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: run exactly one bash tool ",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        },
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "STEER-MARKER: run exactly one bash tool call, `sleep 8 && echo bravo > bravo.txt"
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"40eb5b90-f65a-40bb-ac05-014952772150\",\"turn_id\":\"ff198ea4-50a6-4748-a529-56f131dd0a2c\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  },
+  {
+    "step": "twenty seconds on",
+    "at_ms": 31946,
+    "note": {
+      "bravo_txt": false
+    },
+    "session": {
+      "session_status": "idle",
+      "turns": [
+        "completed"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: run exactly one bash tool ",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        },
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "STEER-MARKER: run exactly one bash tool call, `sleep 8 && echo bravo > bravo.txt"
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"40eb5b90-f65a-40bb-ac05-014952772150\",\"turn_id\":\"ff198ea4-50a6-4748-a529-56f131dd0a2c\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  },
+  {
+    "step": "one more Prompt is admitted",
+    "at_ms": 31950,
+    "note": {
+      "admission": {
+        "delivery": "queue",
+        "status": "pending"
+      }
+    },
+    "session": {
+      "session_status": "active",
+      "turns": [
+        "completed",
+        "active"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: run exactly one bash tool ",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "Reply with exactly the word CHARLIE and ",
+          "delivery": "queue",
+          "status": "delivered",
+          "taken_in_turn": 2,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        },
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "STEER-MARKER: run exactly one bash tool call, `sleep 8 && echo bravo > bravo.txt"
+        },
+        {
+          "turn": 2,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word CHARLIE and nothing else."
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"40eb5b90-f65a-40bb-ac05-014952772150\",\"turn_id\":\"ff198ea4-50a6-4748-a529-56f131dd0a2c\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  },
+  {
+    "step": "its Turn settles",
+    "at_ms": 121952,
+    "note": {
+      "settled": false
+    },
+    "session": {
+      "session_status": "active",
+      "turns": [
+        "completed",
+        "active"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: run exactly one bash tool ",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "Reply with exactly the word CHARLIE and ",
+          "delivery": "queue",
+          "status": "delivered",
+          "taken_in_turn": 2,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        },
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "STEER-MARKER: run exactly one bash tool call, `sleep 8 && echo bravo > bravo.txt"
+        },
+        {
+          "turn": 2,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word CHARLIE and nothing else."
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"40eb5b90-f65a-40bb-ac05-014952772150\",\"turn_id\":\"ff198ea4-50a6-4748-a529-56f131dd0a2c\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  },
+  {
+    "step": "fifteen seconds on",
+    "at_ms": 136957,
+    "note": {
+      "bravo_txt": false
+    },
+    "session": {
+      "session_status": "active",
+      "turns": [
+        "completed",
+        "active"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: run exactly one bash tool ",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "Reply with exactly the word CHARLIE and ",
+          "delivery": "queue",
+          "status": "delivered",
+          "taken_in_turn": 2,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        },
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "STEER-MARKER: run exactly one bash tool call, `sleep 8 && echo bravo > bravo.txt"
+        },
+        {
+          "turn": 2,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word CHARLIE and nothing else."
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"40eb5b90-f65a-40bb-ac05-014952772150\",\"turn_id\":\"ff198ea4-50a6-4748-a529-56f131dd0a2c\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  },
+  {
+    "step": "the reader interrupts",
+    "at_ms": 136967,
+    "note": {
+      "interrupt": "Ok(StoppedWork)",
+      "settled": true
+    },
+    "session": {
+      "session_status": "idle",
+      "turns": [
+        "completed",
+        "interrupted"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: run exactly one bash tool ",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "Reply with exactly the word CHARLIE and ",
+          "delivery": "queue",
+          "status": "delivered",
+          "taken_in_turn": 2,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        },
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "STEER-MARKER: run exactly one bash tool call, `sleep 8 && echo bravo > bravo.txt"
+        },
+        {
+          "turn": 2,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word CHARLIE and nothing else."
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"40eb5b90-f65a-40bb-ac05-014952772150\",\"turn_id\":\"ff198ea4-50a6-4748-a529-56f131dd0a2c\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  },
+  {
+    "step": "a Prompt after the interrupt",
+    "at_ms": 148516,
+    "note": {
+      "admitted": true,
+      "settled": true,
+      "bravo_txt": false
+    },
+    "session": {
+      "session_status": "idle",
+      "turns": [
+        "completed",
+        "interrupted",
+        "completed"
+      ],
+      "prompts": [
+        {
+          "text": "Reply with exactly the word ALPHA and no",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "STEER-MARKER: run exactly one bash tool ",
+          "delivery": "steer",
+          "status": "delivered",
+          "taken_in_turn": 1,
+          "withdrawal": null
+        },
+        {
+          "text": "Reply with exactly the word CHARLIE and ",
+          "delivery": "queue",
+          "status": "delivered",
+          "taken_in_turn": 2,
+          "withdrawal": null
+        },
+        {
+          "text": "Reply with exactly the word DELTA and no",
+          "delivery": "queue",
+          "status": "delivered",
+          "taken_in_turn": 3,
+          "withdrawal": null
+        }
+      ],
+      "messages": [
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word ALPHA and nothing else."
+        },
+        {
+          "turn": 1,
+          "role": "agent",
+          "status": "completed",
+          "content": "ALPHA"
+        },
+        {
+          "turn": 1,
+          "role": "user",
+          "status": "completed",
+          "content": "STEER-MARKER: run exactly one bash tool call, `sleep 8 && echo bravo > bravo.txt"
+        },
+        {
+          "turn": 2,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word CHARLIE and nothing else."
+        },
+        {
+          "turn": 3,
+          "role": "user",
+          "status": "completed",
+          "content": "Reply with exactly the word DELTA and nothing else."
+        },
+        {
+          "turn": 3,
+          "role": "agent",
+          "status": "completed",
+          "content": "DELTA"
+        }
+      ],
+      "activities": [
+        "{\"kind\":\"reasoning\",\"id\":\"40eb5b90-f65a-40bb-ac05-014952772150\",\"turn_id\":\"ff198ea4-50a6-4748-a529-56f131dd0a2c\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}",
+        "{\"kind\":\"reasoning\",\"id\":\"41f62c43-0164-469f-afd6-35645ab869ac\",\"turn_id\":\"c94666c8-c11a-412a-abe3-a291986e0bba\",\"status\":\"completed\",\"title\":null,\"content\":\"\",\"content_truncated\":false,\"duration_ms\":0}"
+      ],
+      "pending_approvals": 0
+    }
+  }
+]
