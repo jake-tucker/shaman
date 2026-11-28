@@ -8,7 +8,7 @@ The files an Agent points at are the ones least likely to last: a screenshot in 
 
 - **Whose Messages.** An Agent's alone, a Subagent's among them in its own Session, and a Superseded Message's as any other's. A path written in a Prompt is never read.
 - **Which files.** Any regular file the Server's user can read, wherever it stands, with symlinks followed. Nothing holds it to the Worktree or the Workspace. A device, a pipe and a directory are not read.
-- **What counts as an image.** The four kinds an Attachment may be (PNG, JPEG, GIF, WebP), told by the file's first bytes and never by its name, and 5 MiB at most.
+- **What counts as an image.** The four kinds an Attachment may be (PNG, JPEG, GIF, WebP), told by the file's first bytes and never by its name, and 10 MiB at most (10,485,760 bytes), whatever its size in pixels. That was an Attachment's 5 MiB until ADR-0088 raised it for every Picture; an Attachment stays at 5 MiB, which is what a Provider accepts from a user.
 - **How a name is read.** By the Server alone, which knows its own platform. An absolute path is read as written. `~` is the Server's home, and `~user` is not read. A `file:` URL with no host, or `localhost`, is its path with the percent-encoding undone. A plain path is tried as written and then with its percent-encoding undone, where that differs. Any other scheme is never read, and one letter before a colon is a drive and not a scheme.
 - **What a relative path is read from.** The Session's Execution Directory as the Message stops being written. Where no file is there, the root of the Worktree holding that directory. Where both hold one, the Execution Directory's is the Picture.
 - **When.** Once, as the Message stops being written, however its Turn settled, so a Message cut off by an interrupt keeps its Pictures too. All of one Message's files are given five seconds together. Nothing is read again: a file that appears afterwards yields no Picture, and neither does any Message written before this.
@@ -34,5 +34,6 @@ The files an Agent points at are the ones least likely to last: a screenshot in 
 - The list joins what a Peer is answered and changes by addition only from then on. The reason is an enum with a fallback for a kind a Client does not know.
 - The route that hands over an Attachment now hands over a Picture too, by an id that is the hash of its bytes and is scoped to no Session, as an Attachment's already is.
 - The TUI and the phone are handed the list and draw nothing from it yet; the TUI keeps writing the name out.
-- A picture a Tool Call returned has a place to be kept in. How it is carried is decided apart from this.
-- The limits (16 names, 20 MiB, five seconds) were chosen in conversation and never measured.
+- A picture a Tool Call returned has a place to be kept in. ADR-0088 says how it is kept and carried, and shares this list's entry and its reasons.
+- The limits (16 names, 20 MiB, five seconds) were chosen in conversation and never measured. Since a Picture may now be 10 MiB, 20 MiB holds two of the largest.
+- A Client's cap on what it fetches by the Attachment's route rises to a Picture's 10 MiB.
