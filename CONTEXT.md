@@ -216,7 +216,7 @@ How the Sessions living on one Server worked over one span of time, beside how m
 _Avoid_: Stats, analytics, Usage Metrics (for the figures of how work went)
 
 **Prompt**:
-Input submitted for delivery to an agent: the user's own, or a Sidekick's sent on the user's behalf. A delivered Prompt becomes either the user Message that begins a Turn or a later user Message that steers its active Turn. A Prompt a Sidekick sent says so as a typed property naming the Sidekick's Session, and its Message is drawn apart from one the user wrote and leads back to that Session, so a reader always knows which words were theirs.
+Input submitted for delivery to an agent: the user's own, or a Sidekick's sent on the user's behalf. A delivered Prompt becomes either the user Message that begins a Turn or a later user Message that steers its active Turn. A Prompt sent to steer that its Provider has not taken is a **waiting steer**, and one the Provider refused waits for its Turn to end, where its writer may take it back meanwhile. When that Turn completes, a waiting steer begins the next Turn ahead of every queued Prompt, as the same Prompt sent a moment later would have, and any others waiting with it steer that Turn in the order they were written; when that Turn fails or is interrupted it is withdrawn, its text returned to whoever wrote it. A steer no Turn took stands in no Transcript. A Prompt a Sidekick sent says so as a typed property naming the Sidekick's Session, and its Message is drawn apart from one the user wrote and leads back to that Session, so a reader always knows which words were theirs.
 _Avoid_: Request, draft, message
 
 **Attachment**:
