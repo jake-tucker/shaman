@@ -466,7 +466,7 @@ If the phone is locked, stop and ask for it to be unlocked.
 ## Rules
 
 - The app reaches the core only through two protocols, as each window of the app is a Client of its own over the
-  device's core (ADR-0084): `DeviceCore`, the device's, which the app opens once, and `WindowCore`, a window's, which
+  device's core (ADR-0089): `DeviceCore`, the device's, which the app opens once, and `WindowCore`, a window's, which
   each window's root (`RootScreen`, or `DeviceRoot` alone in a debug build) asks the device's for once, by `HeldWindow`,
   as it is first drawn, and holds while the window lives. `RootScreen` hands the device's the Outlook its scene kept as
   it asks, by `window(kept:)`, and claims the launch arguments from `LaunchArguments` as its first task runs, the first

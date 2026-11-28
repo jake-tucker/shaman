@@ -1,6 +1,6 @@
 # Make each window of a thin Client a Client over the device's core
 
-_Follows ADR-0080, which put a thin Client's protocol code in one Rust core the app opens once, and ADR-0081, which keeps its identity on its device. Decided in #721, on the findings of #711, and built in #764. Numbered 0084 because 0083 is already taken on another branch, `feature/desktop-app-full-client`, which has not reached main yet._
+_Follows ADR-0080, which put a thin Client's protocol code in one Rust core the app opens once, and ADR-0081, which keeps its identity on its device. Decided in #721, on the findings of #711, and built in #764. First numbered 0084, a number the desktop app's ADR about the shared model took on another branch at the same time; renumbered 0089, the next free, so that each number names one ADR._
 
 A phone can show a thin Client in two windows at once: on an iPhone Duo a person docks the app to one side and opens it again in the other half, and the system makes the second window, which the app neither offers nor arranges. Until now the two shared everything the core held, so narrowing the listing in one narrowed the other, and opening a Session in one turned the Outlook a first Prompt was being written for in the other.
 

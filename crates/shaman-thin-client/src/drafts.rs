@@ -11,7 +11,7 @@
 //! before Swift hears.
 //!
 //! A draft is the device's, one however many windows show its composer
-//! (ADR-0084). Each field holds its own text while it stands: told of what was
+//! (ADR-0089). Each field holds its own text while it stands: told of what was
 //! given back, it puts that ahead of its own text, and it is told whether the
 //! text kept was last written in its own window, so that a screen shown again
 //! takes what another screen of that window wrote and never another window's

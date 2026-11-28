@@ -3,7 +3,7 @@ import ShamanCore
 /// What a reader has half given a Questionnaire, one Question to a page: the page they are on and, for each Question,
 /// the choices taken and what was written. The screen holds its own while it stays open, so a Questionnaire swiped
 /// away and reviewed returns as it was left, and never takes another window's; the core keeps whichever was changed
-/// last, the device's as a draft is (ADR-0084), which a sheet opening later in either window starts from. The core is
+/// last, the device's as a draft is (ADR-0089), which a sheet opening later in either window starts from. The core is
 /// handed the answers whole when they are sent. A secret's answer is never shown again once the reader has left it:
 /// its page, or the sheet.
 struct QuestionnaireDraft: Equatable, Sendable {

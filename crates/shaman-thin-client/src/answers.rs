@@ -1,6 +1,6 @@
 //! What a reader has half given each Questionnaire waiting: the device's, as a
 //! composer's draft is, so a sheet of it opening later, in either window,
-//! starts from whichever sheet last changed it (ADR-0084).
+//! starts from whichever sheet last changed it (ADR-0089).
 //!
 //! Each sheet holds its own while it stands and hands the core each change; it
 //! is never told of another's. What is kept lasts as long as the core does and
