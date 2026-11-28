@@ -1,0 +1,40 @@
+{
+ "provider": "copilot",
+ "case": "show-home",
+ "exit": 0,
+ "cli": "1.0.117",
+ "model": "gpt-6.2-sol",
+ "prompt": "Show me ~/probe-822.z90ipi/shared/team-photo.jpg",
+ "cwd": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/show-home/acme-dashboard",
+ "out": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.b838eb3r",
+ "seconds": 9.6,
+ "messages": [
+  {
+   "text": "![The team, offsite 2026: Ana, Bo, and Chi](/Users/reader/probe-822.z90ipi/shared/team-photo.jpg)",
+   "subagent": false
+  }
+ ],
+ "tools": [
+  "view: {\"path\": \"/Users/reader/probe-822.z90ipi/shared/team-photo.jpg\"}"
+ ],
+ "pictures": [
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/show-home/acme-dashboard/design notes/login flow.png",
+   "kind": "png",
+   "bytes": 4802,
+   "new": false
+  },
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/show-home/acme-dashboard/docs/architecture.png",
+   "kind": "png",
+   "bytes": 5153,
+   "new": false
+  },
+  {
+   "path": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.b838eb3r/screens/dashboard.png",
+   "kind": "png",
+   "bytes": 20640,
+   "new": false
+  }
+ ]
+}

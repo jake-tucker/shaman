@@ -1,0 +1,47 @@
+{
+ "provider": "codex",
+ "case": "show-out",
+ "cli": "shaman/0.167.0 (Mac OS 27.2.1; arm64) ghostty/1.4.0 (shaman; 0.0.0-probe-822)",
+ "model": "gpt-6.2-sol",
+ "effort": "low",
+ "stop": "completed",
+ "error": null,
+ "exit": 0,
+ "prompt": "Show me /var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.6_h6j4qg/screens/dashboard.png",
+ "cwd": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/show-out/acme-dashboard",
+ "out": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.6_h6j4qg",
+ "seconds": 9.0,
+ "messages": [
+  {
+   "text": "I’ll open the dashboard screenshot.",
+   "phase": "commentary"
+  },
+  {
+   "text": "![Dashboard screenshot showing orders by month](/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.6_h6j4qg/screens/dashboard.png)",
+   "phase": "final_answer"
+  }
+ ],
+ "tools": [
+  "imageView: /var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.6_h6j4qg/screens/dashboard.png"
+ ],
+ "pictures": [
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/show-out/acme-dashboard/design notes/login flow.png",
+   "kind": "png",
+   "bytes": 4802,
+   "new": false
+  },
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/show-out/acme-dashboard/docs/architecture.png",
+   "kind": "png",
+   "bytes": 5153,
+   "new": false
+  },
+  {
+   "path": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.6_h6j4qg/screens/dashboard.png",
+   "kind": "png",
+   "bytes": 20640,
+   "new": false
+  }
+ ]
+}

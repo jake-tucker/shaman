@@ -1,0 +1,42 @@
+{
+ "provider": "claude",
+ "case": "show-out",
+ "cli": "2.1.322",
+ "model": "claude-sonnet-5-5",
+ "result": "The image is a line chart titled \"Orders by month\". The x-axis runs 1–12, which looks like months. The y-axis is order count.\n\n- **Start:** about 310 orders in month 1.\n- **Dip:** a low of about 298 in month 2.\n- **Rise:** the line then climbs, with small pullbacks at month 6 (about 380) and month 10 (about 449).\n- **End:** a peak of about 530 in month 12.\n\nOrders rose about 70% over the year. The x-axis has no month names or year, and the y-axis has no label.",
+ "stop": "success",
+ "exit": 0,
+ "prompt": "Show me /var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.5qa6_6ma/screens/dashboard.png",
+ "cwd": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/show-out/acme-dashboard",
+ "out": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.5qa6_6ma",
+ "seconds": 4.8,
+ "messages": [
+  {
+   "text": "The image is a line chart titled \"Orders by month\". The x-axis runs 1–12, which looks like months. The y-axis is order count.\n\n- **Start:** about 310 orders in month 1.\n- **Dip:** a low of about 298 in month 2.\n- **Rise:** the line then climbs, with small pullbacks at month 6 (about 380) and month 10 (about 449).\n- **End:** a peak of about 530 in month 12.\n\nOrders rose about 70% over the year. The x-axis has no month names or year, and the y-axis has no label.",
+   "subagent": false
+  }
+ ],
+ "tools": [
+  "Read: {\"file_path\": \"/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.5qa6_6ma/screens/dashboard.png\"}"
+ ],
+ "pictures": [
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/show-out/acme-dashboard/design notes/login flow.png",
+   "kind": "png",
+   "bytes": 4802,
+   "new": false
+  },
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/show-out/acme-dashboard/docs/architecture.png",
+   "kind": "png",
+   "bytes": 5153,
+   "new": false
+  },
+  {
+   "path": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.5qa6_6ma/screens/dashboard.png",
+   "kind": "png",
+   "bytes": 20640,
+   "new": false
+  }
+ ]
+}

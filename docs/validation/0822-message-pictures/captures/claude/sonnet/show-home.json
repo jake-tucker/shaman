@@ -1,0 +1,42 @@
+{
+ "provider": "claude",
+ "case": "show-home",
+ "cli": "2.1.322",
+ "model": "claude-sonnet-5-5",
+ "result": "The file is a simple graphic, not a photograph. It has:\n\n- A caption at the top left: \"The team, offsite 2026\".\n- Three rounded rectangles in a row, with brown outlines and white fill, labeled **Ana**, **Bo** and **Chi**.\n- Short brown connector lines between the boxes.\n\nThere are no faces or people in it.",
+ "stop": "success",
+ "exit": 0,
+ "prompt": "Show me ~/probe-822.z90ipi/shared/team-photo.jpg",
+ "cwd": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/show-home/acme-dashboard",
+ "out": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.uyn9b246",
+ "seconds": 5.1,
+ "messages": [
+  {
+   "text": "The file is a simple graphic, not a photograph. It has:\n\n- A caption at the top left: \"The team, offsite 2026\".\n- Three rounded rectangles in a row, with brown outlines and white fill, labeled **Ana**, **Bo** and **Chi**.\n- Short brown connector lines between the boxes.\n\nThere are no faces or people in it.",
+   "subagent": false
+  }
+ ],
+ "tools": [
+  "Read: {\"file_path\": \"/Users/reader/probe-822.z90ipi/shared/team-photo.jpg\"}"
+ ],
+ "pictures": [
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/show-home/acme-dashboard/design notes/login flow.png",
+   "kind": "png",
+   "bytes": 4802,
+   "new": false
+  },
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/show-home/acme-dashboard/docs/architecture.png",
+   "kind": "png",
+   "bytes": 5153,
+   "new": false
+  },
+  {
+   "path": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.uyn9b246/screens/dashboard.png",
+   "kind": "png",
+   "bytes": 20640,
+   "new": false
+  }
+ ]
+}

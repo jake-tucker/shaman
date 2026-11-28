@@ -1,0 +1,40 @@
+{
+ "provider": "copilot",
+ "case": "show-out",
+ "exit": 0,
+ "cli": "1.0.117",
+ "model": "gpt-6.2-sol",
+ "prompt": "Show me /var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.h0aiu8gs/screens/dashboard.png",
+ "cwd": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/show-out/acme-dashboard",
+ "out": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.h0aiu8gs",
+ "seconds": 9.8,
+ "messages": [
+  {
+   "text": "![Dashboard: Orders by month](/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.h0aiu8gs/screens/dashboard.png)",
+   "subagent": false
+  }
+ ],
+ "tools": [
+  "view: {\"path\": \"/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.h0aiu8gs/screens/dashboard.png\"}"
+ ],
+ "pictures": [
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/show-out/acme-dashboard/design notes/login flow.png",
+   "kind": "png",
+   "bytes": 4802,
+   "new": false
+  },
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/show-out/acme-dashboard/docs/architecture.png",
+   "kind": "png",
+   "bytes": 5153,
+   "new": false
+  },
+  {
+   "path": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.h0aiu8gs/screens/dashboard.png",
+   "kind": "png",
+   "bytes": 20640,
+   "new": false
+  }
+ ]
+}

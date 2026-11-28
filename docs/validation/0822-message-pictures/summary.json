@@ -1,0 +1,3780 @@
+[
+ {
+  "provider": "claude",
+  "model": "claude-fable-5-2",
+  "case": "make-show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/fable/make-show-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/fable/make-show-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-fable-5-2",
+  "case": "make-show-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/fable/make-show-space/acme-dashboard/design notes/monthly revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "design notes/monthly revenue.png",
+     "form": "relative",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   },
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/fable/make-show-space/acme-dashboard/docs/revenue.png",
+    "on_disk": false,
+    "final": {
+     "how": "code",
+     "exact": "design notes/monthly revenue.png",
+     "form": "name-only"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/fable/make-show-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-fable-5-2",
+  "case": "make-where-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/fable/make-where-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/fable/make-where-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-fable-5-2",
+  "case": "show-find",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/fable/show-find/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/fable/show-find.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-fable-5-2",
+  "case": "show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/fable/show-in/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/fable/show-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-fable-5-2",
+  "case": "show-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/fable/show-space/acme-dashboard/design notes/login flow.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "design notes/login flow.png",
+     "form": "relative",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/fable/show-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-fable-5-2",
+  "case": "unasked-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/fable/unasked-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/fable/unasked-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "diagram-show",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus/diagram-show/acme-dashboard/src-dependencies.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "src-dependencies.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/diagram-show.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "make-show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/tmp/salesviz/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/salesviz/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/make-show-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "make-show-out",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.b6oc6t73/exports/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.b6oc6t73/exports/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/make-show-out.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "make-show-space",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus/make-show-space/acme-dashboard/design notes/monthly revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "design notes/monthly revenue.png",
+     "form": "relative",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/make-show-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "make-where-in",
+  "messages": 3,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus/make-where-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "code",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/make-where-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "make-where-out",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/Desktop/acme_monthly_revenue_2026.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/Users/reader/Desktop/acme_monthly_revenue_2026.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/make-where-out.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "make-where-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus/make-where-space/acme-dashboard/design notes/monthly revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "design notes/monthly revenue.png",
+     "form": "relative",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   },
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus/make-where-space/acme-dashboard/docs/revenue.png",
+    "on_disk": false,
+    "final": {
+     "how": "code",
+     "exact": "design notes/monthly revenue.png",
+     "form": "name-only"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/make-where-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "show-find",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus/show-find/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/show-find.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "show-home",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/shared/team-photo.jpg",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "~/probe-822.z90ipi/shared/team-photo.jpg",
+     "form": "tilde"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/show-home.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus/show-in/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/show-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "show-out",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.4e7125kf/screens/dashboard.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "dashboard.png",
+     "form": "name-only"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/show-out.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "show-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus/show-space/acme-dashboard/design notes/login flow.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "design notes/login flow.png",
+     "form": "relative",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/show-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "unasked-fix",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus/unasked-fix/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/unasked-fix.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "unasked-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus/unasked-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/unasked-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "unasked-out",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.bcccjlr7/exports/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.bcccjlr7/exports/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   },
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus/unasked-out/acme-dashboard/docs/revenue.png",
+    "on_disk": false,
+    "final": {
+     "how": "code",
+     "exact": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.bcccjlr7/exports/monthly_revenue.png",
+     "form": "name-only"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/unasked-out.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "unasked-space",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus/unasked-space/acme dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus/unasked-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "make-show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/make-show-in/acme-dashboard/charts/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/make-show-in/acme-dashboard/charts/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus+note/make-show-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "make-show-space",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/make-show-space/acme-dashboard/design notes/monthly revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/make-show-space/acme-dashboard/design%20notes/monthly%20revenue.png",
+     "form": "absolute",
+     "spaces": "percent"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus+note/make-show-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "make-where-in",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/make-where-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/make-where-in/acme-dashboard/docs/revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "code",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus+note/make-where-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "show-find",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/show-find/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/show-find/acme-dashboard/docs/architecture.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus+note/show-find.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/show-in/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/show-in/acme-dashboard/docs/architecture.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus+note/show-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "show-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/show-space/acme-dashboard/design notes/login flow.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/show-space/acme-dashboard/design notes/login flow.png",
+     "form": "absolute",
+     "spaces": "angle"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus+note/show-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "case": "unasked-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/unasked-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/claude/opus+note/unasked-in/acme-dashboard/docs/revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/opus+note/unasked-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "diagram-show",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/tmp/diag/deps.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/diag/deps.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/diagram-show.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "make-show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/tmp/acme-chart/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/acme-chart/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/make-show-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "make-show-in.r2",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/tmp/acme-chart/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/acme-chart/revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   },
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/make-show-in.r2/acme-dashboard/docs/revenue.png",
+    "on_disk": false,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/acme-chart/revenue.png",
+     "form": "name-only"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/make-show-in.r2.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "make-show-in.r3",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/tmp/acme-chart/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/acme-chart/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/make-show-in.r3.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "make-show-out",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.hzbdoyy3/exports/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.hzbdoyy3/exports/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/make-show-out.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "make-show-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/make-show-space/acme-dashboard/design notes/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "design notes/monthly-revenue.png",
+     "form": "relative",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/make-show-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "make-where-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/make-where-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/make-where-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "make-where-in.r2",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/make-where-in.r2/acme-dashboard/docs/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/monthly_revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/make-where-in.r2.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "make-where-in.r3",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/make-where-in.r3/acme-dashboard/docs/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/make-where-in.r3/acme-dashboard/docs/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/make-where-in.r3.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "make-where-out",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/Documents/charts/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/Users/reader/Documents/charts/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/make-where-out.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "make-where-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/make-where-space/acme-dashboard/design notes/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/make-where-space/acme-dashboard/design notes/monthly-revenue.png",
+     "form": "absolute",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/make-where-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "show-find",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/show-find/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/show-find.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "show-find.r2",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/show-find.r2/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/show-find.r2.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "show-find.r3",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/show-find.r3/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/show-find.r3.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "show-home",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/shared/team-photo.jpg",
+    "on_disk": true,
+    "final": {
+     "how": "none"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/show-home.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/show-in/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/show-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "show-in.r2",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/show-in.r2/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/show-in.r2.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "show-in.r3",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/show-in.r3/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/show-in.r3.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "show-out",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.5qa6_6ma/screens/dashboard.png",
+    "on_disk": true,
+    "final": {
+     "how": "none"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/show-out.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "show-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/show-space/acme-dashboard/design notes/login flow.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "design notes/login flow.png",
+     "form": "relative",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/show-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "unasked-fix",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/unasked-fix/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/unasked-fix.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "unasked-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/tmp/revenue_check.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/revenue_check.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/unasked-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "unasked-in.r2",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/tmp/revenue_check.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "--out /tmp/revenue_check.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   },
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/unasked-in.r2/acme-dashboard/--out /tmp/revenue_check.png",
+    "on_disk": false,
+    "final": {
+     "how": "code",
+     "exact": "--out /tmp/revenue_check.png",
+     "form": "relative",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   },
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/unasked-in.r2/acme-dashboard/docs/revenue.png",
+    "on_disk": false,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/unasked-in.r2.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "unasked-in.r3",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/tmp/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "revenue.png",
+     "form": "name-only"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/unasked-in.r3.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "unasked-out",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.d28tpkjd/exports/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.d28tpkjd/exports/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/unasked-out.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "unasked-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/tmp/revenue_check.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/revenue_check.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   },
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet/unasked-space/acme dashboard/docs/revenue.png",
+    "on_disk": false,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet/unasked-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "make-show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/tmp/claude-501/plots/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/tmp/claude-501/plots/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet+note/make-show-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "make-show-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/make-show-space/acme-dashboard/design notes/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "design notes/monthly-revenue.png",
+     "form": "relative",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet+note/make-show-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "make-where-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/make-where-in/acme-dashboard/output/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/make-where-in/acme-dashboard/output/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet+note/make-where-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "show-find",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/show-find/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/show-find/acme-dashboard/docs/architecture.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet+note/show-find.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/show-in/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/show-in/acme-dashboard/docs/architecture.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet+note/show-in.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "show-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/show-space/acme-dashboard/design notes/login flow.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "design notes/login flow.png",
+     "form": "relative",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet+note/show-space.json"
+ },
+ {
+  "provider": "claude",
+  "model": "claude-sonnet-5-5",
+  "case": "unasked-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/tmp/revenue_check.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/revenue_check.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   },
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/unasked-in/acme-dashboard/docs/revenue.png",
+    "on_disk": false,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "claude/sonnet+note/unasked-in.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "diagram-show",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/diagram-show/acme-dashboard/docs/module-dependencies.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/diagram-show/acme-dashboard/docs/module-dependencies.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/diagram-show.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "make-show-in",
+  "messages": 3,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-show-in/acme-dashboard/outputs/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-show-in/acme-dashboard/outputs/monthly-revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/make-show-in.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "make-show-in.r2",
+  "messages": 3,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-show-in.r2/acme-dashboard/outputs/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-show-in.r2/acme-dashboard/outputs/monthly-revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/make-show-in.r2.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "make-show-in.r3",
+  "messages": 3,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-show-in.r3/acme-dashboard/outputs/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "outputs/monthly-revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/make-show-in.r3.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "make-show-out",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.9du6ytjn/exports/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.9du6ytjn/exports/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/make-show-out.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "make-show-space",
+  "messages": 3,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-show-space/acme-dashboard/design notes/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-show-space/acme-dashboard/design notes/monthly-revenue.png",
+     "form": "absolute",
+     "spaces": "angle"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/make-show-space.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "make-where-in",
+  "messages": 3,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-where-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-where-in/acme-dashboard/docs/revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/make-where-in.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "make-where-in.r2",
+  "messages": 3,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-where-in.r2/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-where-in.r2/acme-dashboard/docs/revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/make-where-in.r2.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "make-where-in.r3",
+  "messages": 3,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-where-in.r3/acme-dashboard/outputs/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-where-in.r3/acme-dashboard/outputs/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/make-where-in.r3.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "make-where-out",
+  "messages": 3,
+  "pictures": [
+   {
+    "picture": "/tmp/acme-revenue-38pkw72t/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "/private/tmp/acme-revenue-38pkw72t/monthly-revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/make-where-out.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "make-where-space",
+  "messages": 3,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-where-space/acme-dashboard/design notes/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/make-where-space/acme-dashboard/design notes/monthly-revenue.png",
+     "form": "absolute",
+     "spaces": "angle"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/make-where-space.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "show-find",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/show-find/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/show-find/acme-dashboard/docs/architecture.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/show-find.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "show-find.r2",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/show-find.r2/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/show-find.r2/acme-dashboard/docs/architecture.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/show-find.r2.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "show-find.r3",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/show-find.r3/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/show-find.r3/acme-dashboard/docs/architecture.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/show-find.r3.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "show-home",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/shared/team-photo.jpg",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/shared/team-photo.jpg",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/show-home.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "show-in",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/show-in/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/show-in.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "show-in.r2",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/show-in.r2/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/show-in.r2.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "show-in.r3",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/show-in.r3/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/show-in.r3.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "show-out",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.01zt22mt/screens/dashboard.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.01zt22mt/screens/dashboard.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/show-out.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "show-space",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/show-space/acme-dashboard/design notes/login flow.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/show-space/acme-dashboard/design notes/login flow.png",
+     "form": "absolute",
+     "spaces": "angle"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/show-space.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "unasked-fix",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/unasked-fix/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/unasked-fix/acme-dashboard/docs/revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/unasked-fix.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "unasked-in",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/unasked-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/unasked-in.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "unasked-in.r2",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/unasked-in.r2/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/unasked-in.r2.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "unasked-in.r3",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/unasked-in.r3/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/unasked-in.r3.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "unasked-out",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.ah9rb9e2/exports/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.ah9rb9e2/exports/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/unasked-out.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "case": "unasked-space",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.1-sol/unasked-space/acme dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.1-sol/unasked-space.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "diagram-show",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/diagram-show/acme-dashboard/module-dependencies.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/diagram-show/acme-dashboard/module-dependencies.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/diagram-show.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "diagram-show.r2",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/diagram-show.r2/acme-dashboard/docs/src-dependencies.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/diagram-show.r2/acme-dashboard/docs/src-dependencies.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/diagram-show.r2.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "diagram-show.r3",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/diagram-show.r3/acme-dashboard/module-dependencies.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/diagram-show.r3/acme-dashboard/module-dependencies.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/diagram-show.r3.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "diagram-show.r4",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/diagram-show.r4/acme-dashboard/docs/module-dependencies.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/diagram-show.r4/acme-dashboard/docs/module-dependencies.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/diagram-show.r4.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "make-show-in",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/make-show-in/acme-dashboard/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/make-show-in/acme-dashboard/monthly-revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/make-show-in.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "make-show-in.r2",
+  "messages": 3,
+  "pictures": [],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/make-show-in.r2.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "make-show-in.r3",
+  "messages": 3,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/make-show-in.r3/acme-dashboard/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/make-show-in.r3/acme-dashboard/monthly-revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   },
+   {
+    "picture": "/tmp/acme-monthly-revenue-2026.png",
+    "on_disk": true,
+    "final": {
+     "how": "none"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/make-show-in.r3.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "make-show-in.r4",
+  "messages": 2,
+  "pictures": [],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/make-show-in.r4.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "make-show-out",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.9m0if2zx/exports/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.9m0if2zx/exports/monthly-revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/make-show-out.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "make-show-space",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/make-show-space/acme-dashboard/design notes/monthly revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/make-show-space/acme-dashboard/design notes/monthly revenue.png",
+     "form": "absolute",
+     "spaces": "angle"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/make-show-space.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "make-where-in",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/make-where-in/acme-dashboard/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/make-where-in/acme-dashboard/monthly-revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/make-where-in.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "make-where-out",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/tmp/acme-revenue-8tu2sr5g/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "/private/tmp/acme-revenue-8tu2sr5g/monthly-revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/make-where-out.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "make-where-space",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/make-where-space/acme-dashboard/design notes/monthly revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/make-where-space/acme-dashboard/design notes/monthly revenue.png",
+     "form": "absolute",
+     "spaces": "angle"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/make-where-space.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "show-find",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/show-find/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/show-find/acme-dashboard/docs/architecture.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/show-find.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "show-home",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/shared/team-photo.jpg",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/shared/team-photo.jpg",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/show-home.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "show-in",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/show-in/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/show-in/acme-dashboard/docs/architecture.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/show-in.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "show-out",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.6_h6j4qg/screens/dashboard.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.6_h6j4qg/screens/dashboard.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/show-out.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "show-space",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/show-space/acme-dashboard/design notes/login flow.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/show-space/acme-dashboard/design notes/login flow.png",
+     "form": "absolute",
+     "spaces": "angle"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/show-space.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "unasked-fix",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/unasked-fix/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/unasked-fix.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "unasked-in",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/unasked-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/unasked-in.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "unasked-out",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.nqsu3yqs/exports/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.nqsu3yqs/exports/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/unasked-out.json"
+ },
+ {
+  "provider": "codex",
+  "model": "gpt-6.2-sol",
+  "case": "unasked-space",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/codex/gpt-6.2-sol/unasked-space/acme dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "codex/gpt-6.2-sol/unasked-space.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "diagram-show",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/tmp/deps.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/deps.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/diagram-show.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "make-show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/tmp/plot/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/plot/revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/make-show-in.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "make-show-in.r2",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/tmp/plots/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/plots/revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/make-show-in.r2.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "make-show-in.r3",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/tmp/plot/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/plot/revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/make-show-in.r3.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "make-show-out",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.vu26643l/exports/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.vu26643l/exports/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/make-show-out.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "make-show-space",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/make-show-space/acme-dashboard/design notes/monthly revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "design notes/monthly revenue.png",
+     "form": "relative",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/make-show-space.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "make-where-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/make-where-in/acme-dashboard/docs/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/monthly_revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/make-where-in.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "make-where-in.r2",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/make-where-in.r2/acme-dashboard/data/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "data/monthly_revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/make-where-in.r2.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "make-where-in.r3",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/make-where-in.r3/acme-dashboard/data/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "data/monthly_revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/make-where-in.r3.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "make-where-out",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/Desktop/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/Users/reader/Desktop/monthly_revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/make-where-out.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "make-where-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/make-where-space/acme-dashboard/design notes/monthly revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "design notes/monthly revenue.png",
+     "form": "relative",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/make-where-space.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "show-find",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/show-find/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/show-find.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "show-find.r2",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/show-find.r2/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/show-find.r2.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "show-find.r3",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/show-find.r3/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/show-find.r3.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "show-home",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/shared/team-photo.jpg",
+    "on_disk": true,
+    "final": {
+     "how": "none"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/show-home.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/show-in/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/show-in.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "show-in.r2",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/show-in.r2/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/show-in.r2.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "show-in.r3",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/show-in.r3/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/show-in.r3.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "show-out",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.ym7v3y_i/screens/dashboard.png",
+    "on_disk": true,
+    "final": {
+     "how": "none"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/show-out.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "show-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/show-space/acme-dashboard/design notes/login flow.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "design notes/login flow.png",
+     "form": "relative",
+     "spaces": "as-is"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/show-space.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "unasked-fix",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/unasked-fix/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/unasked-fix.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "unasked-in",
+  "messages": 2,
+  "pictures": [],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/unasked-in.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "unasked-in.r2",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/tmp/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   },
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/claude-sonnet-5.5/unasked-in.r2/acme-dashboard/--output /tmp/revenue.png",
+    "on_disk": false,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/revenue.png",
+     "form": "name-only"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/unasked-in.r2.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "unasked-in.r3",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/tmp/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/tmp/revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/unasked-in.r3.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "unasked-out",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.jen57m2t/exports/monthly_revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "monthly_revenue.png",
+     "form": "name-only"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/unasked-out.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "claude-sonnet-5.5",
+  "case": "unasked-space",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/tmp/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "revenue.png",
+     "form": "name-only"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/claude-sonnet-5.5/unasked-space.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gemini-4-neon",
+  "case": "make-show-in",
+  "messages": 6,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gemini-4-neon/make-show-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "code",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gemini-4-neon/make-show-in.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gemini-4-neon",
+  "case": "make-show-space",
+  "messages": 4,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gemini-4-neon/make-show-space/acme-dashboard/design notes/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "design%20notes/monthly-revenue.png",
+     "form": "relative",
+     "spaces": "percent"
+    },
+    "earlier": "code",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gemini-4-neon/make-show-space.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gemini-4-neon",
+  "case": "make-where-in",
+  "messages": 6,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gemini-4-neon/make-where-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "code",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gemini-4-neon/make-where-in.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gemini-4-neon",
+  "case": "show-find",
+  "messages": 3,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gemini-4-neon/show-find/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "code",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gemini-4-neon/show-find.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gemini-4-neon",
+  "case": "show-in",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gemini-4-neon/show-in/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "code",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gemini-4-neon/show-in.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gemini-4-neon",
+  "case": "show-space",
+  "messages": 3,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gemini-4-neon/show-space/acme-dashboard/design notes/login flow.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "design%20notes/login%20flow.png",
+     "form": "relative",
+     "spaces": "percent"
+    },
+    "earlier": "code",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gemini-4-neon/show-space.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gemini-4-neon",
+  "case": "unasked-in",
+  "messages": 5,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gemini-4-neon/unasked-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "code",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gemini-4-neon/unasked-in.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "diagram-show",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/.copilot/session-state/4c1d4e88-634c-4a0f-a04d-add55273b650/files/src-module-dependencies.png",
+    "on_disk": false,
+    "final": {
+     "how": "image",
+     "written": "file:///Users/reader/.copilot/session-state/4c1d4e88-634c-4a0f-a04d-add55273b650/files/src-module-dependencies.png",
+     "form": "file-url"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/diagram-show.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "make-show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/.copilot/session-state/2f7f0d51-7e23-474a-8d6c-488661a033f8/files/monthly-revenue.png",
+    "on_disk": false,
+    "final": {
+     "how": "link",
+     "written": "/Users/reader/.copilot/session-state/2f7f0d51-7e23-474a-8d6c-488661a033f8/files/monthly-revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/make-show-in.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "make-show-out",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.er4qii58/exports/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.er4qii58/exports/monthly-revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/make-show-out.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "make-show-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/make-show-space/acme-dashboard/design notes/monthly revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "design%20notes/monthly%20revenue.png",
+     "form": "relative",
+     "spaces": "percent"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/make-show-space.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "make-where-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/make-where-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/make-where-in.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "make-where-out",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/.copilot/session-state/d387b70f-94cc-4f5d-94a7-f483583bbc88/files/monthly-revenue.png",
+    "on_disk": false,
+    "final": {
+     "how": "code",
+     "exact": "/Users/reader/.copilot/session-state/d387b70f-94cc-4f5d-94a7-f483583bbc88/files/monthly-revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/make-where-out.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "make-where-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/make-where-space/acme-dashboard/design notes/monthly-revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "link",
+     "written": "design%20notes/monthly-revenue.png",
+     "form": "relative",
+     "spaces": "percent"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/make-where-space.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "show-find",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/show-find/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/show-find.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "show-home",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/shared/team-photo.jpg",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/Users/reader/probe-822.z90ipi/shared/team-photo.jpg",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/show-home.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "show-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/show-in/acme-dashboard/docs/architecture.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "docs/architecture.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/show-in.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "show-out",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.h0aiu8gs/screens/dashboard.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.h0aiu8gs/screens/dashboard.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/show-out.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "show-space",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/show-space/acme-dashboard/design notes/login flow.png",
+    "on_disk": true,
+    "final": {
+     "how": "image",
+     "written": "design%20notes/login%20flow.png",
+     "form": "relative",
+     "spaces": "percent"
+    },
+    "earlier": "none",
+    "rule_finds": true,
+    "tool_returned": true
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/show-space.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "unasked-fix",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/unasked-fix/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/unasked-fix.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "unasked-in",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/unasked-in/acme-dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/unasked-in.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "unasked-out",
+  "messages": 1,
+  "pictures": [
+   {
+    "picture": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.j70t9fsx/exports/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.j70t9fsx/exports/revenue.png",
+     "form": "absolute"
+    },
+    "earlier": "none",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/unasked-out.json"
+ },
+ {
+  "provider": "copilot",
+  "model": "gpt-6.2-sol",
+  "case": "unasked-space",
+  "messages": 2,
+  "pictures": [
+   {
+    "picture": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/unasked-space/acme dashboard/docs/revenue.png",
+    "on_disk": true,
+    "final": {
+     "how": "code",
+     "exact": "docs/revenue.png",
+     "form": "relative"
+    },
+    "earlier": "code",
+    "rule_finds": false,
+    "tool_returned": false
+   }
+  ],
+  "other_images": [],
+  "new_svg": [],
+  "file": "copilot/gpt-6.2-sol/unasked-space.json"
+ }
+]

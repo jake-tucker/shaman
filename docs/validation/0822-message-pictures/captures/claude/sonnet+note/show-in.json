@@ -1,0 +1,43 @@
+{
+ "provider": "claude",
+ "case": "show-in",
+ "cli": "2.1.322",
+ "model": "claude-sonnet-5-5",
+ "result": "Here's `docs/architecture.png`:\n\n![Acme dashboard architecture](/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/show-in/acme-dashboard/docs/architecture.png)\n\nIt's titled \"Acme dashboard: architecture\". The diagram is four boxes in a row, joined by lines: **app → report → charts → db**.",
+ "stop": "success",
+ "exit": 0,
+ "note": "This client draws a Markdown image whose destination is a local file. To show your reader a picture that is a file on disk, write it in your message as a Markdown image: ![description](/path/to/picture.png).",
+ "prompt": "Show me docs/architecture.png",
+ "cwd": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/show-in/acme-dashboard",
+ "out": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.sbqbvmzj",
+ "seconds": 4.3,
+ "messages": [
+  {
+   "text": "Here's `docs/architecture.png`:\n\n![Acme dashboard architecture](/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/show-in/acme-dashboard/docs/architecture.png)\n\nIt's titled \"Acme dashboard: architecture\". The diagram is four boxes in a row, joined by lines: **app → report → charts → db**.",
+   "subagent": false
+  }
+ ],
+ "tools": [
+  "Read: {\"file_path\": \"/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/show-in/acme-dashboard/docs/architecture.png\"}"
+ ],
+ "pictures": [
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/show-in/acme-dashboard/design notes/login flow.png",
+   "kind": "png",
+   "bytes": 4802,
+   "new": false
+  },
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/claude/sonnet+note/show-in/acme-dashboard/docs/architecture.png",
+   "kind": "png",
+   "bytes": 5153,
+   "new": false
+  },
+  {
+   "path": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.sbqbvmzj/screens/dashboard.png",
+   "kind": "png",
+   "bytes": 20640,
+   "new": false
+  }
+ ]
+}

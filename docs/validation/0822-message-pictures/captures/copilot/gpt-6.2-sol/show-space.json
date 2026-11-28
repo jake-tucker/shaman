@@ -1,0 +1,42 @@
+{
+ "provider": "copilot",
+ "case": "show-space",
+ "exit": 0,
+ "cli": "1.0.117",
+ "model": "gpt-6.2-sol",
+ "prompt": "Show me the login flow picture from the design notes",
+ "cwd": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/show-space/acme-dashboard",
+ "out": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.i37h42aq",
+ "seconds": 12.4,
+ "messages": [
+  {
+   "text": "![Login flow: visit → sign in → two-factor authentication → dashboard](design%20notes/login%20flow.png)",
+   "subagent": false
+  }
+ ],
+ "tools": [
+  "rg: {\"pattern\": \"login flow|design notes\", \"-i\": true, \"output_mode\": \"content\", \"head_limit\": 30}",
+  "bash: {\"command\": \"git ls-files | head -80\", \"description\": \"List tracked project files\"}",
+  "view: {\"path\": \"/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/show-space/acme-dashboard/design notes/login flow.png\"}"
+ ],
+ "pictures": [
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/show-space/acme-dashboard/design notes/login flow.png",
+   "kind": "png",
+   "bytes": 4802,
+   "new": false
+  },
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/copilot/gpt-6.2-sol/show-space/acme-dashboard/docs/architecture.png",
+   "kind": "png",
+   "bytes": 5153,
+   "new": false
+  },
+  {
+   "path": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.i37h42aq/screens/dashboard.png",
+   "kind": "png",
+   "bytes": 20640,
+   "new": false
+  }
+ ]
+}

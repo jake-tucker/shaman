@@ -1,0 +1,42 @@
+{
+ "provider": "claude",
+ "case": "show-home",
+ "cli": "2.1.322",
+ "model": "claude-opus-5-5",
+ "result": "Here's `~/probe-822.z90ipi/shared/team-photo.jpg`. It isn't actually a photo. It's a simple diagram:\n\n- **Caption (top left):** \"The team, offsite 2026\"\n- **Three rounded boxes** with orange-brown outlines, side by side and joined by short lines:\n  - **Ana** → **Bo** → **Chi**\n\nThere are no people or other pictures in it, just the three labelled boxes on a white background (about 800×400).",
+ "stop": "success",
+ "exit": 0,
+ "prompt": "Show me ~/probe-822.z90ipi/shared/team-photo.jpg",
+ "cwd": "/Users/reader/probe-822.z90ipi/runs/claude/opus/show-home/acme-dashboard",
+ "out": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.sda36ujk",
+ "seconds": 7.9,
+ "messages": [
+  {
+   "text": "Here's `~/probe-822.z90ipi/shared/team-photo.jpg`. It isn't actually a photo. It's a simple diagram:\n\n- **Caption (top left):** \"The team, offsite 2026\"\n- **Three rounded boxes** with orange-brown outlines, side by side and joined by short lines:\n  - **Ana** → **Bo** → **Chi**\n\nThere are no people or other pictures in it, just the three labelled boxes on a white background (about 800×400).",
+   "subagent": false
+  }
+ ],
+ "tools": [
+  "Read: {\"file_path\": \"/Users/reader/probe-822.z90ipi/shared/team-photo.jpg\"}"
+ ],
+ "pictures": [
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/claude/opus/show-home/acme-dashboard/design notes/login flow.png",
+   "kind": "png",
+   "bytes": 4802,
+   "new": false
+  },
+  {
+   "path": "/Users/reader/probe-822.z90ipi/runs/claude/opus/show-home/acme-dashboard/docs/architecture.png",
+   "kind": "png",
+   "bytes": 5153,
+   "new": false
+  },
+  {
+   "path": "/var/folders/h8/0f01fyr1509bx1f4qm08px7r0000gn/T/p822.sda36ujk/screens/dashboard.png",
+   "kind": "png",
+   "bytes": 20640,
+   "new": false
+  }
+ ]
+}
