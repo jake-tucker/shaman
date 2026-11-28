@@ -1,4 +1,4 @@
-# A picture a Tool Call returns arrives inline from Claude and Copilot and from Codex's MCP calls, each under limits of its own, and as a path alone from Codex's `view_image`
+# A picture a Tool Call returns arrives inline from Claude and Copilot and from Codex's MCP calls and image generation, each under limits of its own, and as a path alone from Codex's `view_image`
 
 Recorded 2026-11-28 on macOS 27.2 (arm64) against Claude Code 2.1.322, `codex-cli` 0.167.0 and
 GitHub Copilot CLI 1.0.114, each driven the way its adapter in `src/provider` drives it, with every
@@ -24,11 +24,15 @@ what the three say together.
   files were read by each Provider's own tool: `Read`, `view_image`, `view`.
 - **Claude** ran live on Haiku, 25 captures. **Copilot** ran live on `claude-haiku-4.5`, with one
   case on `gpt-5.6-luna`, 27 Turns.
-- **Codex ran with its Model scripted.** The sign-in on this machine can no longer be refreshed, so
-  no Turn reached a real Model. The driver points the real `codex app-server` at a loopback
-  stand-in that answers with the call a Model would have chosen; the tool call, the notifications,
-  the stored thread and the resume are Codex's own. Image generation, which only a ChatGPT sign-in
-  is offered, was not seen.
+- **Codex ran with its Model scripted, and then signed in.** At first the sign-in on this machine
+  could not be refreshed, so no Turn reached a real Model. The driver points the real
+  `codex app-server` at a loopback stand-in that answers with the call a Model would have chosen;
+  the tool call, the notifications, the stored thread and the resume are Codex's own. After
+  `codex login`, for
+  [See what Codex reports for a picture it generates, on a signed-in account](https://github.com/jake-tucker/shaman/issues/812),
+  image generation, which only a ChatGPT sign-in is offered, ran on `gpt-5.6-luna`, three times
+  over two threads, and one MCP picture, the 1 MiB cut and one `view_image` ran again there. Their
+  items matched the scripted ones field for field.
 - Every capture in the repo has passed through `probe/elide.py`: a base64 string is replaced by its
   length, the sha256 of its bytes and the kind those bytes begin as, and each line keeps
   `_raw_bytes`, its length as it arrived. No raw capture is in the repo.
@@ -40,7 +44,7 @@ what the three say together.
 | Claude, `Read` and MCP | the `user` event holding the tool result | `message.content[i].content[j]`: `{"type":"image","source":{"type":"base64","media_type","data"}}`, and again in the event's top-level `tool_use_result` | `source.media_type` | Base64 inline, twice |
 | Codex, MCP | `item/completed` for an `mcpToolCall` | `params.item.result.content[i]`: `{"type":"image","data","mimeType"}` | `mimeType` | Base64 inline, once |
 | Codex, `view_image` | `item/started` and `item/completed` for an `imageView` | `params.item.path`, absolute | none | None: the path alone |
-| Codex, image generation | not seen | the installed schema gives the item `savedPath` and one of `result` or `fileId` | | |
+| Codex, image generation | `item/completed` for an `imageGeneration` | `params.item.result`, a bare base64 string, beside `params.item.savedPath`, an absolute path under Codex's home to a file of the same bytes | none; all three seen were PNG, 1536 x 1024 | Base64 inline, once, and never cut: 0.96 to 1.27 MB of picture |
 | Copilot, MCP | `tool.execution_complete` | `data.result.contents[i]`: `{"type":"image","data","mimeType"}`, and the Model's copy in `data.result.binaryResultsForLlm[j]` | `mimeType` | Base64 inline, twice |
 | Copilot, `view` | `tool.execution_complete` | `data.result.binaryResultsForLlm[0]` alone: `{"type":"image","data","mimeType","description"}`. There is no `contents` | `mimeType` | Base64 inline, once |
 
@@ -64,9 +68,10 @@ what the three say together.
 | Copilot, the Model's copy | up to about 3 MiB and 2000 px a side | Resized. For `view` this is the only copy, and `view` refuses a file over 10 MiB. |
 
 The largest event seen that carried a picture: 1.35 MB from Claude (each picture rides twice),
-1.05 MB from Codex, and 18.2 MB from Copilot for a 10 MiB picture. A picture of Claude's is never
-past about 0.5 MiB, and one of Codex's never past about 0.78 MiB. Only Copilot hands over a picture
-past the Attachment's 5 MiB.
+1.69 MB from Codex for a picture it generated, and 18.2 MB from Copilot for a 10 MiB picture. A
+picture of Claude's is never past about 0.5 MiB, and one a tool hands Codex never past about
+0.78 MiB. A picture Codex generates is not held to that: the three seen were 956,002 to 1,269,223
+bytes and arrived whole. Only Copilot hands over a picture past the Attachment's 5 MiB.
 
 ## Which kinds
 
@@ -90,11 +95,12 @@ Client: only the Model is told.
 | | What comes back |
 | --- | --- |
 | Claude | Nothing. `--resume` replays no event, and Shaman reads no history from the CLI. The CLI's own transcript does hold the picture. |
-| Codex | `thread/resume` and `thread/read` answer with every stored item, but a result past about 64 KiB comes back as cut text. A 44,852-byte picture came back whole and a 53,283-byte one did not. An `imageView` comes back as its path. |
+| Codex | `thread/resume` and `thread/read` answer with every stored item, but a result past about 64 KiB comes back as cut text. A 44,852-byte picture came back whole and a 53,283-byte one did not. An `imageView` comes back as its path. A generated picture is the exception: its `imageGeneration` item comes back whole, 956,002 bytes of it, from `thread/resume`, `thread/read`, `thread/turns/list` and `thread/items/list`, so Shaman's resume, which asks for the turns and reads none, is sent it again each time. |
 | Copilot | Nothing is replayed. History read with `session.getMessages` has lost `contents` and keeps the Model's copy alone, moved on CLI 1.0.114 into a `session.binary_asset` event and inline again on 1.0.116. |
 
-No Provider can be asked again for a picture it once reported. One that is to be shown later has
-to be kept as it arrives.
+No Provider can be asked again for a picture a tool returned. One that is to be shown later has
+to be kept as it arrives. A picture Codex generated can be had again two ways, from a resumed
+thread and from the file `savedPath` names, for as long as Codex keeps each.
 
 ## What else returns something that is not text
 
@@ -108,6 +114,27 @@ to be kept as it arrives.
 - Copilot's `view` returns no `contents`, so `omitted_result_parts` in
   `src/provider/copilot/projection.rs`, which counts `contents`, counts nothing for a picture it
   showed the Model.
+
+## What a picture Codex generates is
+
+An item of its own, `imageGeneration`, and not a tool's result: started with `result: ""`, and
+completed 8 to 10 seconds later with the PNG as bare base64 in `result`, a `revisedPrompt` the
+Model wrote, a `generationId`, and `savedPath`, which names
+`<Codex home>/generated_images/<thread id>/<item id>.png`, a file of the same bytes outside the
+Execution Directory. Nothing names the kind or the size in pixels. An edit of an earlier picture is
+a second item with a file of its own.
+
+Codex tells its Model that "the generated image is already displayed to the user" and that it need
+not name it in its answer, so the Message after a generation names no file. Asked to put the
+picture in the working directory, the Model copied it there with a Command and ended on a Markdown
+link to the copy, not an image.
+
+The schema the installed binary writes gives the item one of `result` or `fileId`, the second "its
+durable attachment-store identity", and speaks of a migration from the first to the second. Codex
+0.167.0 sent `result`. `savedPath` is the field both shapes carry.
+
+Shaman's adapter reads the item today, and the picture is the one part it leaves: the Tool Call's
+input is the revised prompt, its output the saved path as text, and no part is counted as omitted.
 
 ## How large a browser's screenshot is
 
@@ -134,12 +161,14 @@ Copilot. Every whole-page screenshot was several times taller than the 8,192 px 
 
 ## Not seen
 
-- **Codex on a real account.** No Turn reached a Model, so that a real Model's calls produce the
-  same items is inferred from the tools being Codex's own. Image generation was not seen at all:
-  whether its item carries base64 inline or a `fileId`, of what kind and size, and whether
-  `savedPath` names a file holding the same bytes. `probe/codex_capture.py image-generation` runs
-  it once `codex login` has been done, and every other case runs again without `--scripted`.
-- A Codex Model that is not in code mode, where a tool is called directly and not through `exec`.
+- **Most of Codex's cases on a real account.** Three ran there and matched; the other kinds, the
+  embedded resource, the resource link and the resumes of MCP results are the scripted pass alone.
+- A generation that fails, one that reads a local file, one that comes out transparent or in a
+  kind other than PNG, one past 1.27 MB, and an item that carries a `fileId` and no bytes. Whether
+  the saved file is on disk before the item is sent, and whether Codex ever sweeps its
+  `generated_images`.
+- A Codex Model that is not in code mode, where a tool is called directly and not through `exec`:
+  the catalog fetched on signing in offers none.
 - Claude's exact threshold for re-encoding, which lies between 256,227 and 512,343 bytes; a picture
   past 6 MiB; whether a picture that is wide and not square, or one from MCP, is scaled as the
   square one read from disk was.
