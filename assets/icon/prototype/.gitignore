@@ -1,0 +1,2 @@
+# The 1024 px pictures are 1 to 2 MB each; build.py writes them again.
+candidates/*/renders/mac-Default-1024.png
